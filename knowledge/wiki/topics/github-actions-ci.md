@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-10
 sources:
-  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
-    sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
   - url: https://github.com/fro-bot/.github
     sha: 36894f69e0048103a4209eaf7e811319db7f9adb
@@ -67,8 +67,14 @@ tags:
     fork-guard,
     fail-open,
     undrained-queue,
+    cache-budget,
+    cache-eviction,
+    prompt-routing,
+    pin-scope,
+    curl-pipe-sh,
   ]
 related:
+  - marcusrbrown--dotfiles
   - marcusrbrown--tokentoilet
   - fro-bot--agent
   - fro-bot--systematic
@@ -115,6 +121,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--marcusrbrown-com]] — 5 workflows (2026-09-01): `ci.yaml` (shared `setup` → parallel Lint/Build/Test/Type Check/Validate → `quality-gate` aggregator that mints a GitHub App token and comments "Ready for review"), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-file **three-mode**, 625 lines / 29 KB, agent **v0.107.0** — 20 minutes behind upstream release, fleet's fastest adopter), `renovate.yaml` (`bfra-me/.github` reusable @ v4.23.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup` (Node 22 + pnpm + **opt-in** Playwright). No CodeQL/Scorecard; no Probot `settings.yml` (branch protection is imperative via `scripts/configure-branch-protection.mjs`). Notable: **two of three declared test tiers have no CI actuator** — `playwright.config.ts` + `tests/e2e/` are only installed by the autoheal job, and `lhci.config.js` has no workflow at all.
 - [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
+- [[marcusrbrown--dotfiles]] — 4 workflows (2026-09-10): `main.yaml` (Devcontainer CI → GHCR publish with `cacheFrom`; `Install mise` smoke test; `Script Tests` matrix on ubuntu + macOS running colocated Bun tests for the repo's operational agent scripts, collapsed into a stable aggregator status context so branch protection has one name to bind to), `fro-bot.yaml` (single-file three-mode, agent **v0.109.4** — ahead of the control plane's patch-frozen v0.109.0 pins), plus `renovate.yaml` and `update-repo-settings.yaml` as `bfra-me/.github` reusable callers. Required checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, Script Tests, with `enforce_admins: true`. **97 of its last 100 Fro Bot runs concluded `skipped`** (65 `pull_request`, 30 `issues`, 2 `issue_comment`) against a ~100% bot-authored trigger surface — a third instance of the no-op run storm after [[marcusrbrown--tokentoilet]] and [[bfra-me--ha-addon-repository]]. Source of the 2026-09-10 findings below on cache-versus-verification, cross-category prompt routing, and sibling pins.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -1512,25 +1519,64 @@ Three things generalize:
 
 Do not read "quiet queue" as "current." Under this rule the queue is quiet by construction, and the dashboard is the only place the deferred work is visible.
 
-### The Unsuppressed Side of the Same Census (2026-09-10)
+### A Cache Can Skip the Verification It Wraps — and Starve the Rest of the Budget (2026-09-10)
 
-The patch-suppression finding above measured three repos that decline patch updates. The same-day survey of [[marcusrbrown--opencode-copilot-delegate]] supplies the control: a repo with **no** patch-disable rule — `renovate.json5` carries exactly three `packageRules`, two `allowedVersions` allowlists and one `semanticCommitType` override — over the identical sixteen-day window.
+[[marcusrbrown--dotfiles]] removed `cache: true` from its `Install mise` job (#2503) and committed the reasoning above the step. Two independent defects, and both generalize past mise.
 
-The result confirms the diagnosis and prices the alternative. Where the suppressed repos hold `fro-bot/agent` at `v0.109.0` while `v0.109.4` ships, this repo reached `v0.109.4`. It got there through **twelve separate Renovate PRs** — #378 `v0.105.1`, #379 `v0.106.0`, #380 `v0.106.2`, #381 `v0.107.0`, #383 `v0.107.1`, #384 `v0.107.2`, #385 `v0.107.3`, #386 `v0.108.1`, #387 `v0.109.0`, #388 `v0.109.2`, #389 `v0.109.3`, #390 `v0.109.4` — each merged same-day, each a **one-line change to a workflow file** that nevertheless triggers the full required gate (Biome, `tsc --noEmit`, `bun build` + declarations, a Node ESM export-shape smoke test, and the unit suite). Twelve of the window's sixteen commits are the daemon versioning itself; the other four carry all of the repo's actual dependency movement.
+**1. Caching a verification job can void the verification.** The job exists to prove that every tool declared in `.config/mise/config.toml` installs cleanly on a clean runner. Nothing downstream consumes the installed tools — the install *is* the assertion. A cache hit restores the tool tree and skips the install, so the job can report success without ever having exercised the thing under test. The rule: **before enabling a cache, ask what the job asserts.** If the assertion is "this install works," the cache is not an optimization, it is a bypass. This is the same shape as a required check that cannot fail loudly, reached from the opposite direction — there the check could not observe a failure, here it never performs the operation that would produce one.
 
-Both postures have a cost and they are not the same kind of cost:
+**2. Actions caches share one LRU quota, and a large entry evicts many small ones.** The cache key was mise version × config hash × ref, which produced a new ~993 MB entry on every mise bump, every config edit, and every branch. Nine such entries accumulated to **8.9 GB of the repository's 10 GB budget**, and GitHub's LRU eviction then discarded everything else — including the **~40 KB agent session caches that carry continuity between Fro Bot runs**. A 993 MB entry and a 40 KB entry compete on equal terms in an LRU sweep over a shared quota; the large one always wins on recency and the small, high-value one always loses. Consequences worth naming:
 
-| | Patch suppressed (3 of 34 repos) | Patch unsuppressed (30 of 34) |
-| --- | --- | --- |
-| Agent pin | Frozen at `v0.109.0` | Current at `v0.109.4` |
-| Queue | Quiet by construction | 12 PRs / 16 days for one dependency |
-| Commit log | Reads clean | ~75% self-maintenance |
-| Failure mode | Silent — a suppressed bug-fix patch can freeze the daemon that would report the freeze | Loud and cheap — CI minutes and log noise |
-| Where the truth lives | Dependency Dashboard annotations | The commit log itself |
+- **Cache pressure is a cross-workflow failure mode.** The job that hoards the budget is not the job that suffers. An agent losing its session continuity looks like an agent problem, not a CI-configuration problem, and nothing in either workflow's logs connects them.
+- **Key cardinality is the real cost driver, not entry size alone.** A large cache with a stable key is one entry. A large cache keyed on `ref` multiplies by every active branch — precisely the repos with hot Renovate queues.
+- **Audit the eviction victims, not the cache-hit rate.** A 100% hit rate on the offending job is fully compatible with every other cache in the repo being cold.
 
-The asymmetry is the point. The unsuppressed cost is **visible and bounded**: you can see it in `git log`, and it buys currency. The suppressed cost is **invisible and unbounded**: nothing surfaces it except a dashboard nobody reads, and it eventually buys an outage — as it did for `dessant/lock-threads` v6.0.2. Given a choice between a noisy commit log and a silent version freeze, prefer the noise; it is the only one of the two that is self-reporting.
+The remediation that matters as much as the flag: **the rationale is a committed comment above the step.** A bare `cache: false` reads as an oversight and invites the next contributor to "fix" it.
 
-There is a third option neither repo takes, and it is the actual recommendation: **group the high-frequency, low-risk pin into a single scheduled batch** rather than choosing between per-release PRs and total suppression. A `groupName` on `fro-bot/agent` with a weekly `schedule` collapses twelve PRs into one without freezing anything. The current fleet is split between two extremes because nobody configured the middle.
+### Cross-Category Routing Moves the Work but Not the Permission (2026-09-10)
+
+The fleet has now recorded three distinct root-cause layers for the same symptom — *an autonomous agent runs green, reports fixes, and writes nothing*. [[fro-bot--dashboard]] found it at the **output-mode/credential** layer (`output-mode: branch-pr` unscoped, `persist-credentials`), [[marcusrbrown--tokentoilet]] found it at the **workflow-shape** layer (the harness moved commit/push/PR to the caller and the caller never grew that half). [[marcusrbrown--dotfiles]] adds the third: the **prompt** layer, where the workflow, the token, and the permissions were all correct and the *instructions* closed every delivery path.
+
+The mechanism. A scheduled maintenance prompt is organized into numbered categories carrying different permissions — some may push, others are report-only. Category 3 said:
+
+```yaml
+- Check that AGENTS.md accurately reflects the current directory
+  structure. If drift is found, open a PR with corrections.
+Report findings but put actual fixes into category 4.
+```
+
+…and category 4 is *"Report on static analysis findings only. Do not run formatting tools or open formatting PRs."* Instruction one grants a delivery path; instruction two routes the fix elsewhere; the destination revokes the path. Nothing remained except editing the ephemeral Actions checkout, which is discarded at run end. The agent detected the same 3-line drift for **five consecutive days**, applied it, and reported it fixed — honestly, because from inside a single run it really did.
+
+Four rules:
+
+1. **Never route a fix into a category that forbids delivering it.** Cross-category handoffs move the work but not the permissions. If a category needs an exception, **state it in place** rather than deferring: *"This is the one exception to this category's report-only default, so do not defer it to another category. Everything else in this category is report-only."*
+2. **Name the delivery mechanism as steps, not as an outcome.** "Open a PR" is a result. *"create a branch, commit it, push, and open a PR"* is a procedure. An agent with a closed path can satisfy the first reading and not the second.
+3. **State the failure mode inside the prompt** so the agent can recognize the trap: *"Editing the working tree without opening a PR does not persist and will silently recur every run."*
+4. **A repeated identical "fixed" report is a missing delivery path, not a flaky one.** A flaky commit step produces intermittent success; a closed delivery path produces a *perfectly consistent* no-op. Sameness is the signal.
+
+And the meta-rule, which is the reason this cost five days: **be skeptical of an agent's diagnosis of its own harness.** The report escalated it as "a caller-workflow bug, not a content problem," which would have sent a human to debug the workflow. The agent could see that it made an edit and that the edit was gone; it could not see that its own instructions never permitted the edit to leave the container. Pairs with *An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing* (2026-09-08): detection is not diagnosis.
+
+Greppable shapes, from the source postmortem:
+
+```bash
+grep -nE "fixes into category|handle .* in category|defer .* to category" .github/workflows/*.yaml
+grep -nE "report-only|Report on .* only|Do not .* open .* PRs"           .github/workflows/*.yaml
+grep -nE "open a PR|fix it|apply corrections"                            .github/workflows/*.yaml
+```
+
+Any instruction that grants a delivery path deserves a check that no later instruction takes it away.
+
+### Two Jobs Pinning the Same Tool Are Not the Same Pin (2026-09-10)
+
+[[marcusrbrown--dotfiles]]'s `main.yaml` set `MISE_VERSION: 2026.8.14` for its `Install mise` job, which uses `jdx/mise-action`. Its devcontainer installed mise separately, via unpinned `curl https://mise.run | sh` inside a feature script. When mise `2026.9.0` shipped a behavior change, `Devcontainer CI` failed 8 consecutive runs on a required, admin-enforced check while `Install mise` stayed **green throughout** — because the pin covered only the job it was declared in.
+
+The green sibling job was worse than no signal: it was read as evidence that mise was fine, which is exactly what sent the investigation through eight wrong hypotheses. Three rules:
+
+1. **A pin's scope is the job it is declared in, not the tool it names.** Enumerate every install path for a tool before treating any one pin as coverage. In a repo with a devcontainer, there are usually at least two.
+2. **The unpinned path is the one that will change under you.** Anything fetched with `curl … | sh` moves on the upstream project's release schedule, which means a regression appears with **no corresponding repository commit** — the most expensive shape of failure to diagnose, because bisecting the repo finds nothing.
+3. **When you do pin after an incident, pin forward to the release that exposed the bug, not backward to the last good one.** Pinning backward makes the symptom disappear while preserving the cause behind a stale toolchain, and the next person to bump it inherits the outage with none of the context.
+
+The completing move is making the new pins visible to the update bot: the repo widened its Renovate `_VERSION` custom manager's `managerFilePatterns` to cover the devcontainer feature scripts. **A `# renovate:` comment does not make a version managed** — confirm a manager's file pattern actually matches the file (Renovate's debug log reports which files each manager matched). An unmatched marker is worse than no marker: it looks managed during review while drifting in practice. Same wrong-target class as *SHA Pinning Validates the Ref, Not the Path* (2026-08-30).
 
 ### Convention Enforcement via Tests
 

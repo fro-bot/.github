@@ -5009,69 +5009,81 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb
 
-## [2026-09-10 10:00] ingest | repo:marcusrbrown/opencode-copilot-delegate
+## [2026-09-10 10:12] ingest | repo:marcusrbrown/.dotfiles
 
-Sixth survey of the Copilot-delegation plugin, at HEAD `b67bd4da` (prior
-`c6c055d`, 2026-08-25). Read scope held to the constraint: recursive tree
-listing, `package.json` / `mise.toml` / `biome.json` / `tsconfig.json` /
-`opencode.json` / `tui.json` / `.changeset/config.json` / `.github/renovate.json5`
-/ `.github/settings.yml`, all six workflow files, `README.md`, `AGENTS.md`,
-`CHANGELOG.md`, plus repository metadata, the commit-range compare, and the open
-issue/PR list. No source files read.
+Surveyed `marcusrbrown/.dotfiles` at HEAD `fe0144c` (115 commits since the
+2026-08-26 SHA `3479589`; 57 files; authorship `mrbro-bot[bot]` 75 /
+`marcusrbrown` 40) and ingested the results additively across six pages.
 
-v0.12.1 held for a sixth straight survey (48 days since the tag). The window is
-16 commits touching 7 files, all `mrbro-bot[bot]`, with zero source-tree change.
-Three findings recorded:
+The interval's durable content is failures found, not versions bumped. Four new
+`docs/solutions/` postmortems landed in eight days, and all four share one shape:
+an artifact that passed inspection and failed execution.
 
-1. **Twelve of the sixteen commits are `fro-bot/agent` pin bumps** (v0.105.0 →
-   v0.109.4, #378–#390 less #382). The repo carries no patch-disable rule, which
-   makes it the control case for the same-day patch-suppression census in
-   [[github-actions-ci]] — suppressed repos froze at v0.109.0, this one tracked
-   every release at a cost of ~75% self-maintenance commit volume. Generalized
-   into a new topic section pricing both postures and naming the unconfigured
-   middle (`groupName` + weekly schedule).
-2. **`README.md` documents three tools; four have shipped since v0.12.0.**
-   `copilot_resume` appears zero times in its 121 lines while `AGENTS.md` is
-   correct. README ships in `files[]`, so the stale surface is the npm page.
-   Generalized into [[opencode-plugins]] as the agent-doc-vs-front-door
-   divergence pattern, with the mechanically checkable fix (assert registered
-   tool names appear in the README) and a survey-method rule.
-3. **`update-repo-settings.yaml` pins a bare untagged SHA with no version
-   comment** (`f6a7976c` = `v4.16.8-3-gf6a7976`, 2026-04-23), invisible to
-   Renovate, while its sibling `renovate.yaml` advanced v4.19.0 → v4.27.0 in the
-   same window. Third fleet instance of the settings-sync workflow being the
-   frozen one; recorded in [[probot-settings]] with the three-mechanism table and
-   the lint that catches all three.
+Recorded on the repo page:
 
-Four prior claims on the repo page corrected additively (prior text retained
-with its date): the Biome schema/CLI gap is widening rather than a one-hop lag
-(`biome.json` untouched at 2.5.5, CLI 2.5.9 → 2.5.12); `settings.yml` uses the
-bare short-form `_extends` and inherits `marcusrbrown/.github`, not
-`fro-bot/.github`; `rimraf` + the `clean` script and `actions/checkout` v7.0.1
-were already present and went unrecorded; the Renovate preset was `#5.2.12`, not
-`#5.2.9`. The page's own Overview had inherited the README's three-tool error
-across four surveys and is corrected.
+1. A shell subsystem documented as live had not run since 2024-01-10 — 967 days.
+   26 of 28 files under `.config/bash/` had no referrer; the wiki had carried the
+   dead load chain as live for five surveys. Consequences included a telemetry
+   opt-out that never applied, README credential guidance pointing into a void,
+   and a Fro Bot prompt teaching the dead conventions forward. Salvage (#2504)
+   then delete (#2506).
+2. `.dotfiles/.gitignore` → `.dotfiles/ignore` (#2434/#2435) — the old name was
+   read twice, the second time anchored to `.dotfiles/`, silently voiding
+   allowlist entries.
+3. A `remoteEnv` `GIT_DIR` export broke `Devcontainer CI` for 8 consecutive runs
+   on a required, admin-enforced check with no repository change, once mise
+   2026.9.0 began shelling out to `git` for pyenv (#2488).
+4. Pinned `curl | sh` installers moved to `set -eo pipefail`; Renovate's
+   `_VERSION` manager widened to the devcontainer feature scripts (#2497).
+5. The `Install mise` cache disabled (#2503) — it skipped the install it existed
+   to verify and hoarded 8.9 GB of a 10 GB budget in nine ~993 MB entries.
+6. The maintenance prompt forbade its own fix path (#2498) — five days of honest
+   "fixed" reports that never persisted.
+7. Explicit prompt-cache anchoring reaches only Anthropic-family models
+   (`anomalyco/opencode#48246`), measured over 10 days.
+8. `.config/cortexkit/` restores the July-deleted plugin configs with per-harness
+   `"opencode"` / `"pi"` model blocks.
+9. Stale MCP preset references returned four-deep; the 2026-08-26 "fixed in
+   lockstep" reading is corrected to incidental, not enforced.
+10. Four mise majors (npm v12, pnpm v12, typescript v7, typescript-language-server
+    v6); agent v0.105.0 → v0.109.4; OMO-slim presets 5 → 6 with a new
+    `openai/gpt-6-astra` line.
 
-Fro Bot workflow is present and current (agent v0.109.4), so no follow-up
-onboarding draft is warranted. Its job ends at `Run Fro Bot` with no
-commit/push/PR step — the working-dir delivery shape from
-[[marcusrbrown--tokentoilet]] — consistent with the newest fro-bot artifact
-being PR #335 of 2026-08-01 while perpetual issue #26 still updates.
+Contradictions noted rather than overwritten: the 2026-07-10 "magic-context and
+aft now run on plugin defaults — a material simplification" reading is superseded
+by the `.config/cortexkit/` restoration; the 2026-08-26 MCP-lockstep claim is
+superseded; the Bash init chain documented since 2026-04-18 is retained on the
+[[dotfiles]] topic page as an approach but marked superseded as a description of
+this repo, with the reason it survived five surveys made the durable lesson.
 
-Limitation: this pass ran without GitHub credentials (`gh` unauthenticated;
-anonymous REST exhausted mid-run). Workflow-run telemetry — conclusion counts,
-scheduled-run liveness, issue-body inspection — was not obtained, and every
-claim above is scoped to what was actually read. Delivery mode `working-dir`;
-no branch, commit, push, or PR performed by this run.
+Generalizations written to topic/entity pages:
 
-Pages touched: `wiki/repos/marcusrbrown--opencode-copilot-delegate.md`,
-`wiki/topics/opencode-plugins.md`, `wiki/topics/github-actions-ci.md`,
-`wiki/topics/probot-settings.md`, `index.md`.
+- [[dotfiles]] — two bare-repo footguns (double-read `excludesFile`, process-wide
+  `GIT_DIR`), a full "dormant configuration" section (verify by executing, trace
+  the entry point, salvage-then-delete, scrub reference docs but not failure
+  records), and network-installer pinning rules.
+- [[github-actions-ci]] — three new sections: cache-versus-verification plus
+  cache-budget eviction; cross-category prompt routing as the third distinct
+  delivery-break layer; and sibling pins that are not the same pin. Repo added to
+  the "Repos Using GitHub Actions" roster (third instance of the no-op run storm,
+  97/100 skipped).
+- [[mise]] — the 2026.9.0 pyenv/`git` behavior change and its failure signature,
+  the `cache: true` hazard, current toolchain snapshot, and the
+  extend-the-manager-past-the-TOML rule.
+- [[opencode-plugins]] — prompt-cache family gate with its three measurement
+  rules, per-harness config blocks, and unvalidated preset references.
+- [[pi-coding-agent]] — second, independent sighting, with its limit stated
+  (schema supports Pi; installation unconfirmed).
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate@b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c; https://github.com/marcusrbrown/opencode-copilot-delegate/compare/c6c055d906b8df3de5f371221daf930c8bd49f99...b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c; https://github.com/bfra-me/.github@f6a7976c5cc48af150f7de3df331362262f15a18
+`index.md` entries extended for all six pages. Frontmatter `updated` advanced and
+a `fe0144c` source added on each; the repo page gained its `node_id`. Branch
+protection was not re-read this pass — the survey token receives HTTP 403 on that
+endpoint — so the prior reading is carried with the limitation stated inline.
 
-## [2026-09-10 10:02] ingest | repo:marcusrbrown/opencode-copilot-delegate
+Sources: https://github.com/marcusrbrown/.dotfiles@fe0144c0e9fc0168fc4ed9aa9fa0492df4846599; https://github.com/fro-bot/.github/actions/runs/34462689425
 
-Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+## [2026-09-10 10:11] ingest | repo:marcusrbrown/.dotfiles
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles

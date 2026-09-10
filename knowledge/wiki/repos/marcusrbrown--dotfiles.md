@@ -1,8 +1,9 @@
 ---
 type: repo
-title: "marcusrbrown/.dotfiles"
+title: marcusrbrown/.dotfiles
 created: 2026-04-18
-updated: 2026-08-26
+updated: 2026-09-10
+node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
 sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 2f2d1e6ac04999c5e61ee054fc585d9542cd3a74
@@ -34,78 +35,194 @@ sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 347958930a27f22f630996c1d0d65e02416218f0
     accessed: 2026-08-26
-tags: [dotfiles, configuration, zsh, bash, mise, sheldon, starship, devcontainer, bare-git-repo, opencode, magic-context, copilot-cli, systematic, gitleaks, kimi-k2, harness, opencode-doctor, sqlite-maintenance, deepseek, ollama-distill, oh-my-opencode-slim, openai-auth, bun-test, ci-matrix]
-aliases: [dotfiles]
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
+    accessed: 2026-09-10
+tags:
+  - dotfiles
+  - configuration
+  - zsh
+  - bash
+  - mise
+  - sheldon
+  - starship
+  - devcontainer
+  - bare-git-repo
+  - opencode
+  - magic-context
+  - copilot-cli
+  - systematic
+  - gitleaks
+  - kimi-k2
+  - harness
+  - opencode-doctor
+  - sqlite-maintenance
+  - deepseek
+  - ollama-distill
+  - oh-my-opencode-slim
+  - openai-auth
+  - bun-test
+  - ci-matrix
+  - dormant-config
+  - git-dir-leak
+  - excludes-file
+  - prompt-cache
+  - delivery-path
+  - curl-pipe-sh
+  - cache-budget
+  - pi-harness
+  - gpt-6
+aliases:
+  - dotfiles
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--systematic
   - marcusrbrown--opencode-copilot-delegate
+  - pi-coding-agent
 ---
 
 # marcusrbrown/.dotfiles
 
 Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** pattern (`GIT_DIR=~/.dotfiles`, `GIT_WORK_TREE=$HOME`) to track shell and development environment configuration directly in `$HOME` without symlinks.
 
+## 2026-09-10 Survey — the interval the repo audited itself
+
+HEAD `fe0144c` (2026-09-10T07:11Z), 115 commits since `3479589`, 57 files touched, authorship `mrbro-bot[bot]` 75 / **`marcusrbrown` 40**. Four new `docs/solutions/` entries landed in eight days (8 total), and every one of them is a *false-signal* postmortem: an artifact that looked correct on inspection and was not. This is the first survey where the durable content is failures found, not versions bumped — though the versions moved too (four mise majors).
+
+**1. A shell subsystem documented as live had not run since 2024 — 967 days.** `.config/bash/` held 28 tracked files; **two** were live (`exports`, `aliases`). The other 26 — `main`, `functions`, 19 `init.d/*.bash`, two `completion.d/*.bash`, `os_darwin`, `os_mingw`, `local.d/.gitkeep` — had **no referrer at all**, while `AGENTS.md` and both READMEs documented them as the live Bash chain (`.bashrc → main → functions → aliases → init.d/* → local.d/*`). Commit `b1b887f` (2024-01-10, "overhaul shells") moved the subsystem under `.config/bash/` and replaced a `.bashrc` that sourced `~/.bash_profile`/`~/.shrc` with a sheldon-only one; the subsystem's internal wiring survived the move unchanged, still pointing at pre-move `~/.bash/` paths (`functions:89` → `~/.bash/main`, `main:150` → `~/.bash/functions`), so its only remaining references were **to each other**, through a directory that no longer existed. It could not have been restored as written.
+
+What accumulated in those 967 days is the point: `DOTNET_CLI_TELEMETRY_OPTOUT` lived in `init.d/dotnet.bash` and therefore **never applied** — a live privacy gap in a repo whose stated posture is privacy-first; `EDITOR`/`VISUAL`/`PAGER` were unset for the same reason; both READMEs instructed readers to write credentials to `.config/bash/local.d/` (`echo 'export MY_SECRET_TOKEN="..."' > ~/.config/bash/local.d/secrets`) into a void; `DISCORD_TOKEN` was empty in every shell while `local.d/discord.bash` sat there correct and readable; and **the Fro Bot maintenance prompt carried `init.d/` numbering and `local.d/` overrides as live conventions**, so the agent kept recommending a mechanism that could not work. Resolution was salvage-then-delete in separate commits — #2504 moved the four environment values into `exports` and gave bash a real init path, #2506 deleted the 26 files and corrected the docs. Generalized in [[dotfiles]]; the entry-point discipline generalizes past shells.
+
+**2. `core.excludesFile` named `.gitignore` inside the git dir is read twice** (#2434 → #2435). With the git dir at `$HOME/.dotfiles` — *inside* the work tree — a file at `.dotfiles/.gitignore` is read both as `core.excludesFile` **and** as an ordinary per-directory ignore file, where the leading `/*` re-anchors to `.dotfiles/` and every `!/…` negation resolves to a path that never exists. Symptom: new `docs/` files needed an explicit `git add` despite matching allowlist entries. Fix is a rename to `.dotfiles/ignore` plus a comment in `.dotfiles/.gitconfig` recording *why the name matters*, so restoring the old name cannot look like tidying.
+
+**3. `remoteEnv` exporting `GIT_DIR`/`GIT_WORK_TREE` broke `Devcontainer CI` for 8 consecutive runs** (2026-09-01 → 09-03) on a **required, `enforce_admins: true`** check, blocking every open PR — with **no repository change**. mise 2026.9.0, released 2026-09-01, began resolving Python's version list by cloning pyenv and shelling out to `git`; the process-wide `GIT_DIR` redirected those internal calls at the dotfiles bare repo, the pyenv tree never landed, and mise executed a `python-build` that did not exist. Latency to onset was one release: last pass 12:35, first failure 12:37. The devcontainer installed mise unpinned (`curl https://mise.run | sh`), so it adopted the new behavior the day it shipped with **no commit to correlate against** — and the `MISE_VERSION` pin in `main.yaml` covered only the separate `jdx/mise-action` job, which is why that job stayed green while the container died. Eight plausible hypotheses were tested and disproven against the published image before a single-variable flip (`env -u GIT_DIR` vs exported) settled it. Fixed by dropping both vars from `remoteEnv` (#2488) and pinning `MISE_VERSION` **forward** to the release that exposed the bug, not backward — pinning backward would mask the cause behind a stale toolchain.
+
+**4. A pinned `curl | sh` installer needs `pipefail`, not just `set -e`.** #2497 pinned three installers (`MISE_VERSION 2026.9.4`, `UV_VERSION 0.12.10` via a versioned URL because uv bakes its version in, `STARSHIP_VERSION v1.26.0` via `-v`) and moved both feature scripts to `set -eo pipefail`, with the reason inline: *a versioned URL that 404s pipes an empty script into `sh`, which exits 0 and would hide a bad pin*. Pinning without `pipefail` converts a loud 404 into a silent no-op install.
+
+**5. The CI cache defeated the verification it wrapped, and starved the cache budget doing it** (#2503). The `Install mise` job exists to prove every tool in `.config/mise/config.toml` installs cleanly; **a cache hit skips the install being verified**. Keyed on mise version × config hash × ref, it accumulated **nine ~993 MB entries — 8.9 GB of the repo's 10 GB budget** — and LRU-evicted every other cache, including the **~40 KB agent session caches that carry continuity between runs**. Now `cache: false` with the rationale committed above the step. Cataloged in [[github-actions-ci]].
+
+**6. The maintenance prompt forbade its own fix path** — and the agent misdiagnosed it as a harness bug. For **five consecutive runs** Fro Bot detected the same 3-line `AGENTS.md` drift, applied it, and reported it fixed; report #2474 escalated it as "a caller-workflow bug, not a content problem." It was neither. Category 3 said *"If drift is found, open a PR with corrections"*, then *"Report findings but put actual fixes into category 4"* — and category 4 is report-only. Cross-category routing moved the work but not the permissions, leaving only an edit to the ephemeral Actions checkout. The repaired prompt does three separable things: names the delivery mechanism as steps (*create a branch, commit it, push, and open a PR*) rather than the outcome "open a PR"; keeps the exception **in place** instead of routing it; and **states the failure mode in the prompt** (*"Editing the working tree without opening a PR does not persist and will silently recur every run"*) so the agent can recognize the trap. It also now instructs the agent to verify shell load order **against a live shell** before documenting it. Fleet significance: this is the **prompt-layer** sibling of the workflow-layer delivery break in [[fro-bot--dashboard]] and [[marcusrbrown--tokentoilet]] — identical symptom (a green daemon that writes nothing), a third distinct root-cause layer after permissions and output-mode wiring.
+
+**7. Explicit prompt-cache anchoring reaches only Anthropic-family models** (2026-09-10, upstream `anomalyco/opencode#48246`). OpenCode's `applyCaching()` places breakpoints on the first two system messages and the last two non-system messages — an anchor that advances every turn — but its call site gates on model family, so a model on `@ai-sdk/openai` never runs it and falls back to OpenAI's implicit prefix cache, which truncates at the first differing byte with nothing to re-anchor. Measured over 10 days: `claude-sonnet-5` 100.0% reuse (17,615 turns), `claude-opus-5` 100.0%, vs `gpt-6-astra` 92.1%, `gpt-5.6-sol` 64.9%, `github-copilot/gpt-5.4-mini` 80.1%, `github-copilot/gemini-3.5-flash` 91.3%. **`github-copilot` serves Claude at 100% and its own GPT/Gemini at 80/91% — same provider, opposite behavior**, which is what makes the split a *family* fact and not a provider fact. Three method rules fell out: normalize as `cached/(input+cached)` because Anthropic reports input exclusive of cache reads and OpenAI inclusive (`cached/input` produced a 12,509,400% row); collapse run-lengths into episodes before reading the numbers (144 collapsed turns → 84 onsets, median episode **1 turn**, 64 single-turn episodes carrying 48.2% of waste — so the headline "8.5% of turns cause 89% of waste" invited a threshold fix the data does not support); and read the formula in the installed bundle, not the config key name — Magic Context caps the history budget at `Math.min(executeThresholdPercentage, 80)`, so lowering the knob below 80 shrinks the budget and buys nothing while raising it above 80 does nothing at all. Cataloged in [[opencode-plugins]].
+
+**8. `.config/cortexkit/` — the deleted plugin configs are back, at an upstream-owned path, now per-harness.** `magic-context.jsonc` and `aft.jsonc`, both deleted at SHA `e8ebc5c` (2026-07-10) with the note "now run on plugin defaults," have **returned** under `.config/cortexkit/`. The 2026-07-10 "material simplification" reading is superseded: the tuning came back once upstream gave it a stable home. Both files now carry **`"opencode": {…}` and `"pi": {…}` model blocks** — the first consumer-side sighting of [[pi-coding-agent]] anywhere in the fleet's local configuration, and evidence that the multi-harness split documented in [[marcusrbrown--systematic]] has reached the config layer. `dreamer` also replaced its single `00:00-08:00` window with a **nine-task cron scheduler** (`verify`, `verify-broad`, `curate`, `classify-memories`, `retrospective`, `maintain-docs`, `map-memories`, `evaluate-smart-notes`, `review-user-memories`).
+
+**9. Stale MCP references are back, four-deep — and the previous survey's "fixed" was incidental.** OMO-slim's `librarian.mcps` now reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` while `opencode.json` registers exactly **two** servers (`context7`, `gh_grep`). Four names — `aha`, `atlassian`, `box`, `slack` — resolve to nothing. The 2026-08-26 survey recorded the `tavily` drift of 2026-07-10 as repaired "in lockstep, so no stale reference this time"; that lockstep was a coincidence of one edit, not an enforced invariant, and the drift returned wider the moment the preset roster grew. Nothing validates preset `mcps` names against the registered `mcp` block.
+
+**10. Version churn — four mise majors in one window.** npm 11.19.0 → **12.0.2**, pnpm 11.22.0 → **12.3.4**, `npm:typescript` 6.0.3 → **7.0.2**, `typescript-language-server` 5.3.0 → **6.0.0**; node 24.21.0, go 1.27.1, rust 1.98.1, bun 1.4.2, deno 2.9.6, ast-grep 0.45.3. Fro Bot agent v0.105.0 → **v0.109.4** — still the ecosystem version leader, and notably *ahead of the control plane*, whose own 2026-09-10 pass recorded six `fro-bot/agent` pins frozen at v0.109.0 (see [[github-actions-ci]]). Harness `1.18.21-harness.22dee0ee` → **`1.18.29-harness.88b6b5fb`**; `@fro.bot/systematic` 3.15.0 → **3.16.5**.
+
+**11. Daemon shape: healthy scheduler, inert content half.** Fro Bot is **15/15 green** on scheduled runs (2026-08-26 → 09-09, `30 15` UTC) and files a daily report. But **97 of the last 100 runs concluded `skipped`** — 65 `pull_request`, 30 `issues`, 2 `issue_comment` — with only 2 scheduled and 1 PR run executing. The trust gate blocks bot-authored PRs and issues, and the trigger surface is ~100% `mrbro-bot[bot]` Renovate traffic. Same census as [[marcusrbrown--tokentoilet]]; the difference is that here the scheduled half now actually delivers, because finding #6 restored its PR path.
+
 ## Overview
 
 - **Purpose:** Synchronize shell configuration and dev environment across machines
 - **Default branch:** `main`
 - **Created:** 2011-06-09
-- **Last push:** 2026-08-26
-- **License:** _Still undetectable (2026-08-26, SHA `3479589`):_ the GitHub License API continues to return `null` (`license: null`, `/license` endpoint 404) and no `LICENSE`/`UNLICENSE` file appears in the tree. This is now the **fifth consecutive survey** with no machine-detectable license (first flagged SHA `4df0c2d`, 2026-06-16). Prior surveys through SHA `70c211bc` (2026-06-06) recorded **The Unlicense (public domain)**. Treat license status as **unspecified**.
+- **Last push:** 2026-09-10
+- **`node_id`:** `MDEwOlJlcG9zaXRvcnkxODY5MTU0` (repo id `1869154`)
+- **License:** _Still undetectable (2026-09-10, SHA `fe0144c`):_ the GitHub License API continues to return `null` (`license: null`, `/license` endpoint 404) and no `LICENSE`/`UNLICENSE` file appears in the tree. This is now the **sixth consecutive survey** with no machine-detectable license (first flagged SHA `4df0c2d`, 2026-06-16). Prior surveys through SHA `70c211bc` (2026-06-06) recorded **The Unlicense (public domain)**. Treat license status as **unspecified**.
 - **Topics:** `dotfiles`, `configuration`, `settings`, `preferences`, `zsh`, `sheldon`, `mise`, `starship`
-- **Languages:** TypeScript (primary by size, ~362 KB), Shell, Vim Script, JavaScript, Ruby
-- **Open issues:** 6 (@ 2026-08-26; `open_issues_count` 7 = 6 issues + 1 PR; was 5 @ 2026-07-27). Open: #2434 (docs/ allowlist entries don't take effect — new docs need explicit git-add), #1924 (OpenCode DB perf tuning beyond prune/vacuum), #444 (Renovate Dependency Dashboard) + three rolling `fro-bot` daily-maintenance reports (#2425/#2419/#2404). One open PR #2433 (docs runbook: AFT legacy index cleanup).
-- **Stars:** 20 (unchanged @ 2026-08-26)
+- **Languages:** TypeScript (primary by size, ~362 KB), Shell (~34 KB, down from the Bash-subsystem deletion), Vim Script, JavaScript, Ruby
+- **Tracked files:** 203 per `AGENTS.md` (was 196 @ 2026-08-26) — net of **26 deletions** under `.config/bash/` against new `docs/` and `.config/cortexkit/` additions
+- **Open issues:** 6 (@ 2026-09-10; `open_issues_count` 7 = 6 issues + 1 PR; unchanged count from 2026-08-26 but fully rotated). Open: #1924 (OpenCode DB perf tuning beyond prune/vacuum), #444 (Renovate Dependency Dashboard) + **four** rolling `fro-bot` daily-maintenance reports (#2562/#2558/#2546/#2540). One open PR #2560 (`astral-sh/uv` → v0.12.12 — the pin introduced by #2497, now Renovate-visible). **#2434 closed 2026-08-26** by #2435 (the `.dotfiles/ignore` rename); **#2433 merged** (AFT legacy-index cleanup runbook). Note the daily-report overhang: the stale-report cleanup closes entries older than 3 days, and #2540 (09-06) is 4 days old at survey time — the step runs on `schedule` only, so the window is bounded by cron granularity, not broken.
+- **Stars:** 20 (unchanged @ 2026-09-10; watchers 20, forks 0)
 
 ## Repository Architecture
 
 ### Bare Git Repo Pattern
 
-The repo uses an allowlist `.gitignore` — everything is ignored by default (`/*`), and tracked paths are explicitly un-ignored with `!/path` entries in `.dotfiles/.gitignore`. All git operations require the dotfiles alias:
+The repo uses an allowlist ignore file — everything is ignored by default (`/*`), and tracked paths are explicitly un-ignored with `!/path` entries. All git operations require the dotfiles alias:
 
 ```bash
 alias .dotfiles='GIT_DIR=$HOME/.dotfiles GIT_WORK_TREE=$HOME'
 .dotfiles git status
 ```
 
+**The allowlist file is `.dotfiles/ignore`, not `.dotfiles/.gitignore` (renamed 2026-08-26, #2435 — supersedes every prior survey).** The old name was read **twice**: once as `core.excludesFile`, and again as an ordinary per-directory ignore file, because the git dir sits inside the work tree at `$HOME/.dotfiles/`. In the second reading the leading `/*` re-anchors to `.dotfiles/` and every `!/…` negation resolves to a path that never exists — so allowlist entries silently failed to take effect (issue #2434: new `docs/` files needed an explicit `git add`). `.dotfiles/.gitconfig` now carries the reason as a header comment, and `.dotfiles/README.md` states it plainly: *"Renaming a file back to `.gitignore` here reintroduces that bug."* This is a bare-repo-specific footgun — it exists only because the git dir is a directory inside the work tree. Generalized in [[dotfiles]].
+
 ### Shell Configuration
 
-Supports both Bash and Zsh. XDG-compliant — all configs live under `~/.config/`.
+Zsh is the daily shell; Bash is a minimal fallback. XDG-compliant — all configs live under `~/.config/`.
 
-**Bash initialization chain:**
+**Only two files under `.config/bash/` are live: `exports` and `aliases`** (as of #2506, 2026-09-04). See finding 1 above — the 26-file `main`/`functions`/`init.d/`/`completion.d/`/`local.d/` subsystem documented through the 2026-08-26 survey had **not executed since 2024-01-10** and was deleted after salvage.
 
-1. `.bashrc` sources `.config/bash/main`
-2. `main` sources: `exports`, `functions`, `aliases`, `init.d/*`, `local.d/*`
-3. `init.d/` files use numbered prefixes for ordering (e.g., `002-prompt.bash`)
-4. `local.d/` for machine-specific overrides (gitignored)
+**Zsh initialization chain (the daily shell):**
 
-**Zsh initialization chain:**
+1. `.zshenv` → `ZDOTDIR/.zshenv`
+2. `.zshrc` sources `.config/bash/exports` and `~/.zshrc.local`, then Sheldon (deferred loading, compiled cache)
+3. Sheldon's `[plugins.aliases]` loads `.config/bash/aliases`
+4. Prezto modules loaded for environment, history, directory
 
-1. `.zshenv` sources `.config/zsh/.zshenv`
-2. `.zshrc` uses Sheldon for plugin management with deferred loading and compiled cache
-3. Prezto modules loaded for environment, history, directory
+**Bash initialization chain (corrected 2026-09-04):**
+
+1. `.profile` sources `.config/bash/exports` (login shells)
+2. `.bashrc` sources `exports` **only if `command_exists` is undefined** (i.e. a non-login `bash -i`), then `aliases`
+3. Sheldon (`plugins.bash.toml`) → `mise activate` + `starship init`, and nothing else
+
+The `declare -F command_exists` guard in `.bashrc` is load-bearing: `aliases` calls `command_exists`, which is defined in `exports`; a login bash gets `exports` via `.profile`, a non-login `bash -i` reads only `.bashrc` and would otherwise source `aliases` with the helper undefined.
+
+**Machine-local overrides are `*.local` files only** — `~/.zshrc.local` is the supported path. The `local.d/` directory mechanism documented through 2026-08-26 never worked and is gone; the runbook at `docs/runbooks/discord-admin-agent.md` was corrected to match (#2500–#2502).
+
+_Superseded (recorded through 2026-08-26, now known to be documentation of dead code):_ `.bashrc` → `.config/bash/main` → `functions` → `aliases` → `init.d/*` (numbered prefixes, `d`-prefix to disable) → `local.d/*`.
 
 ### Key Directories
 
 | Directory               | Purpose                                                                                |
 | ----------------------- | -------------------------------------------------------------------------------------- |
-| `.config/bash/`         | Bash config: main entry, aliases, exports, functions, init.d/, completion.d/, local.d/ |
+| `.config/bash/`         | **Two files only** (since #2506): `exports` (shared env + helper functions) and `aliases` |
 | `.config/zsh/`          | Zsh config and local plugin configs                                                    |
 | `.config/sheldon/`      | Zsh plugin manager: `plugins.toml` (zsh), `plugins.bash.toml` (bash)                   |
-| `.config/mise/`         | Tool version management: `config.toml`, `tasks/`                                       |
+| `.config/mise/`         | Tool version management: `config.toml`, `tasks/` (`distill`, `format`, `install`, `mise`, `opencode`, `print`) |
 | `.config/git/`          | Global git config, ignore, attributes                                                  |
+| `.config/cortexkit/`    | **New (2026-08-28):** upstream-owned cortexkit plugin config — `magic-context.jsonc`, `aft.jsonc` |
 | `.config/starship.toml` | Cross-shell prompt (Catppuccin Mocha palette)                                          |
 | `.claude/`              | Claude Code config: agents, commands, rules                                            |
 | `.config/opencode/`     | OpenCode AI config (has own AGENTS.md)                                                 |
 | `.devcontainer/`        | Devcontainer with custom features                                                      |
-| `.dotfiles/`            | Bare repo metadata: .gitconfig, .gitignore, .prettierrc.yaml                           |
+| `.dotfiles/`            | Bare repo metadata: `.gitconfig`, **`ignore`** (renamed from `.gitignore`, #2435), `.prettierrc.yaml`, `docs/` |
 | `Brewfile`              | macOS Homebrew dependencies                                                            |
 | `Library/LaunchAgents/` | macOS launch agents (`dev.mrbro.*` prefix)                                             |
 
 ### Tool Stack (via [[mise]])
 
-Managed tool versions in `.config/mise/config.toml` (as of SHA `3479589`, 2026-08-26):
+Managed tool versions in `.config/mise/config.toml` (as of SHA `fe0144c`, 2026-09-10):
+
+| Tool                          | Version       | Notes                                                     |
+| ----------------------------- | ------------- | --------------------------------------------------------- |
+| node                          | 24.21.0       | Primary JS runtime; bumped from 24.19.0                   |
+| npm                           | **12.0.2**    | **v11 → v12 major boundary** (was 11.19.0)                |
+| bun                           | 1.4.2         | npm installs (`settings.npm.bun = true`); also the CI test runner (Script Tests matrix, bumped in lockstep) |
+| pnpm                          | **12.3.4**    | **v11 → v12 major boundary** (was 11.22.0)                |
+| python                        | 3.14.7        | Unchanged — but see the mise 2026.9.0 pyenv resolution change under `Devcontainer` |
+| pipx                          | 1.17.2        | Bumped from 1.16.7                                        |
+| pipx:poetry                   | 2.4.3         | Bumped from 2.4.1                                          |
+| deno                          | 2.9.6         | Bumped from 2.9.5                                          |
+| rust                          | 1.98.1        | Bumped from 1.98.0                                         |
+| cargo-binstall                | 1.23.0        | Bumped from 1.22.0                                         |
+| zig / zls                     | 0.15.2 / 0.16.0 | Unchanged                                                |
+| go                            | 1.27.1        | Bumped from 1.27.0                                         |
+| ast-grep                      | 0.45.3        | Bumped from 0.44.1 (first movement in three surveys)      |
+| shfmt (aqua:mvdan/sh)         | 3.14.1        | Bumped from 3.13.1                                         |
+| gitleaks (aqua:gitleaks)      | 8.30.1        | Unchanged                                                  |
+| typescript                    | **7.0.2** (npm) | **v6 → v7 major boundary** (was 6.0.3, held since 2026-04-22) |
+| playwright                    | 1.63.0 (npm)  | Bumped from 1.62.1                                         |
+| prettier                      | 3.9.6 (npm)   | With `@bfra.me/prettier-config` 0.16.11 (both unchanged)  |
+| @biomejs/biome                | 2.5.12 (npm)  | Bumped from 2.5.10                                         |
+| rimraf                        | 6.1.3 (npm)   | Unchanged                                                  |
+| tsx                           | 4.23.13 (npm) | Bumped from 4.23.12                                        |
+| @anthropic-ai/claude-code     | 2.1.163 (npm) | Renovate updates disabled (manual); **unchanged for 3 surveys** (~6 weeks) |
+| @fro.bot/harness              | **1.18.29-harness.88b6b5fb** (npm) | Patched-OpenCode CLI from [[fro-bot--agent]] (#2521); harness base `1.18.21` → `1.18.29`. Sole OpenCode binary — stock `opencode-ai` remains absent (2nd survey) |
+| @github/copilot               | 1.0.83 (npm)  | Bumped from 1.0.80                                         |
+| agent-browser                 | 0.36.0 (npm)  | Bumped from 0.34.0                                         |
+| skills                        | 1.5.24 (npm)  | Bumped from 1.5.23                                         |
+| ocx                           | 2.0.15 (npm)  | Unchanged                                                  |
+| @marcusrbrown/infra           | latest (npm)  | Personal infra CLI ([[marcusrbrown--infra]])              |
+| pyright                       | 1.1.413 (npm) | Unchanged                                                  |
+| typescript-language-server    | **6.0.0** (npm) | **v5 → v6 major boundary** (was 5.3.0)                   |
+
+**Four major boundaries in one window (SHA `fe0144c`, 2026-09-10):** npm v11 → v12, pnpm v11 → v12, `npm:typescript` v6 → v7, `typescript-language-server` v5 → v6. `[settings] idiomatic_version_file_enable_tools = ["node"]` is still declared; `[env]` (`UV_SYSTEM_CERTS`, templated `NPM_TOKEN`, redacted `~/.config/mise/.env.local`) is unchanged. No tools were added or removed this window — pure version movement, in contrast to the 2026-08-26 window's three removals.
+
+#### Historical Snapshot (SHA `3479589`, 2026-08-26) — superseded
 
 | Tool                          | Version       | Notes                                                     |
 | ----------------------------- | ------------- | --------------------------------------------------------- |
@@ -308,12 +425,42 @@ Telemetry disabled where possible:
 The repo includes configuration for multiple AI coding agents:
 
 - **Claude Code** (`.claude/`): Custom agents (dotfiles-reviewer), commands, rules, `settings.json`
-- **OpenCode** (`.config/opencode/`): Has its own `AGENTS.md`, plus `agents/`, `commands/`, `scripts/`, `skills/`, `profiles/`, `ocx.jsonc`
-- **AGENTS.md** at repo root: Comprehensive project knowledge base for AI agents; refreshed at `90742fb` via `/init-deep`
+- **OpenCode** (`.config/opencode/`): Has its own `AGENTS.md`, plus `agents/` (one subagent, `research.md`), `commands/`, `scripts/` (`opencode-doctor.ts`, `ollama-distill.ts`, both with colocated Bun tests, plus `lib/` and `tsconfig.json`), `skills/` (11), `profiles/`, `ocx.jsonc`, `tui.json` (theme-only), and — new @ 2026-09-10 — `oh-my-opencode-slim/` holding `designer_append.md` / `orchestrator_append.md`
+- **cortexkit plugins** (`.config/cortexkit/`, new @ 2026-08-28): `magic-context.jsonc`, `aft.jsonc` — see the plugin-ecosystem section
+- **AGENTS.md** at repo root: Comprehensive project knowledge base for AI agents; refreshed at `90742fb` via `/init-deep`. **Materially corrected @ 2026-09-03/09-04** (#2498/#2506) — the structure tree, the shell-config table, the CONVENTIONS load-chain block, and the ANTI-PATTERNS list all described the dormant Bash subsystem and the double-read `.gitignore`. Tracked-file count 196 → 203
 
-#### OpenCode Plugin Ecosystem (as of SHA `3479589`, 2026-08-26)
+#### OpenCode Plugin Ecosystem (as of SHA `fe0144c`, 2026-09-10)
 
 OpenCode plugins are pinned by version directly in `.config/opencode/opencode.json` (managed by a Renovate custom manager that matches `"name@x.y.z"` patterns inside `opencode.json` / `tui.json`):
+
+| Plugin | Version | Purpose |
+| --- | --- | --- |
+| `@cortexkit/opencode-anthropic-auth` | 1.22.0 | Anthropic auth provider — upstream cortexkit package; bumped from 1.19.1 |
+| `@cortexkit/opencode-openai-auth` | 0.7.1 | OpenAI auth provider (upstream cortexkit); bumped from 0.6.3 |
+| `oh-my-opencode-slim` | 2.2.11 | Slimmed multi-agent routing layer; **version held**, but the config it reads changed substantially (see routing below) |
+| `@cortexkit/opencode-magic-context` | 0.41.4 | Adaptive context management; bumped from 0.38.1 — **and re-acquired a config file** at `.config/cortexkit/magic-context.jsonc` |
+| `@cortexkit/aft-opencode` | 0.55.1 | AFT plugin; bumped from 0.52.1 — **re-acquired** `.config/cortexkit/aft.jsonc` |
+| `opencode-copilot-delegate` | 0.12.1 | Copilot-CLI delegation as a headless plugin (see [[marcusrbrown--opencode-copilot-delegate]]); held for a second survey after the 2026-08-26 re-add |
+| `@fro.bot/systematic` | 3.16.5 | Systematic skills + agents; bumped from 3.15.0 (steady v3 minor train — see [[marcusrbrown--systematic]] / [[fro-bot--systematic]]) |
+
+**`.config/cortexkit/` — deleted configs return, per-harness (SHA `fe0144c`, 2026-09-10; supersedes the 2026-07-10 "runs on plugin defaults" reading):** a new `.config/cortexkit/` directory holds `magic-context.jsonc` (3,252 B) and `aft.jsonc` (335 B). Both were **deleted** at SHA `e8ebc5c` (2026-07-10) and the page then recorded that as "a material simplification: two of the most heavily tuned config surfaces in the repo were deleted in one window, deferring behavior to upstream plugin defaults." That framing is now **superseded** — the tuning was not abandoned, it was waiting for upstream to give it a stable, plugin-owned path outside `.config/opencode/`. Both files declare upstream `$schema` URLs (`cortexkit/magic-context`, `cortexkit/aft`) and set `auto_update: false`.
+
+The structurally interesting part is the **per-harness split**. `historian` and `dreamer` no longer carry a flat `model` key; each carries sibling `"opencode": {…}` and `"pi": {…}` blocks:
+
+```jsonc
+"historian": {
+  "opencode": { "model": "anthropic/claude-sonnet-5", "variant": "medium" },
+  "pi":       { "model": "anthropic/claude-sonnet-5" }
+}
+```
+
+This is the **first consumer-side sighting of [[pi-coding-agent]] in the fleet's local configuration** — the multi-harness architecture documented source-side at [[marcusrbrown--systematic]] (one content source, three shipped adapters) has now reached the plugin-config layer of a *different* vendor's package. Note the asymmetry that mirrors the upstream capability matrix: the OpenCode block carries a `variant`, the Pi block does not.
+
+`dreamer` also replaced its single `00:00-08:00` window with a **nine-task cron scheduler** — `verify` (`0 0 * * *`), `verify-broad` (`0 4 * * 0`), `curate`, `classify-memories` (`0 6 * * *`), `retrospective` (`0 5 * * *`), `maintain-docs` (empty schedule = disabled), `map-memories`, `evaluate-smart-notes`, `review-user-memories` (`promotion_threshold: 3`). `cache_ttl` and `execute_threshold_percentage` gained `anthropic/claude-sonnet-5`, `claude-opus-5`, the `gpt-5.6-*`/`-fast` family at 30 m / 80, and **`openai/gpt-6-astra`** at 30 m / 80. `sidekick` stays disabled; `temporal_awareness`, `history_budget_percentage: 0.15`, `historian_timeout_ms: 420000`, the memory block, and the Council `system_prompt_injection` skip-signature are carried forward from the pre-deletion config unchanged. `aft.jsonc` keeps `search_index`/`semantic_search: false` and `bridge.hang_threshold: 5`, and adds a `bash` block (`rewrite`/`compress`/`background` all `true`).
+
+**MCP set holds at two — and the preset references drifted again (SHA `fe0144c`, 2026-09-10):** `opencode.json` still registers exactly `context7` (via `CONTEXT7_API_KEY` header) and `gh_grep` (`https://mcp.grep.app`). But OMO-slim's `librarian.mcps` now reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` in **every one of the six presets** — four names that resolve to nothing. The 2026-08-26 survey recorded the `tavily` drift of 2026-07-10 as repaired "in lockstep, so no stale reference this time"; **that lockstep was incidental, not enforced**, and the drift returned four-deep the moment the preset roster grew. There is no validation of preset `mcps` entries against the registered `mcp` block. `opencode.json` otherwise holds: `"snapshot": false`, `compaction.auto/prune: false`, `experimental.openTelemetry: false`, `lsp: true`, `general`/`explore` disabled, no top-level default `"model"`.
+
+##### Historical Plugin Snapshot (SHA `3479589`, 2026-08-26) — superseded
 
 | Plugin | Version | Purpose |
 | --- | --- | --- |
@@ -365,7 +512,8 @@ OpenCode plugins are pinned by version directly in `.config/opencode/opencode.js
 **Config files in `.config/opencode/` (SHA `e8ebc5c`, 2026-07-10):**
 - `aft.jsonc` — **removed.** The dedicated AFT config file (documented through 2026-06-27 with `restrict_to_project_root: false`, `search_index`/`semantic_search: false`, `bridge.hang_threshold`) is gone (404). `@cortexkit/aft-opencode@0.46.0` now runs on plugin defaults.
 - `magic-context.jsonc` — **removed.** The extensive per-model historian/dreamer/cache-TTL/threshold config (documented in detail below through 2026-06-27) is gone (404). `@cortexkit/opencode-magic-context@0.31.5` now runs on plugin defaults. This is a material simplification: two of the most heavily tuned config surfaces in the repo were deleted in one window, deferring behavior to upstream plugin defaults.
-- `systematic.jsonc` — Systematic skills configuration file. **Retuned again (SHA `3479589`, 2026-08-26):** still on `schemas/v3/systematic-config.schema.json` (now tracking `@fro.bot/systematic@3.15.0`). The `categories` block gained a fifth **`workflow`** category (→ `opencode-go/gpt-5.6-luna` variant low) alongside design → `github-copilot/gemini-3.5-flash`, document-review / research / review → `github-copilot/gpt-5.4-mini` variant low (the `review` seat moved off `openai/gpt-5.5` onto Copilot `gpt-5.4-mini`). `agents`: repo-research-analyst → `opencode-go/gpt-5.6-luna` variant low, spec-flow-analyzer → `github-copilot/gemini-3.5-flash` variant high, **systematic-implementer → `opencode-go/gpt-5.6-luna` variant high** (moved off `openai/gpt-5.6-luna`; temp field dropped). A new top-level **`workflow_guard: { mode: "protected", debug: false }`** block was added — the v3 workflow-guard surface (see [[fro-bot--systematic]] / [[opencode-plugins]] two-axis versioning).
+- `systematic.jsonc` — Systematic skills configuration file. **Retuned again (SHA `fe0144c`, 2026-09-10):** still on `schemas/v3/systematic-config.schema.json`, now tracking `@fro.bot/systematic@3.16.5`. Five categories held, but the **routing swung back toward Copilot and Anthropic and off `opencode-go`** (#2449 "switch models to github copilot", #2513 "lower systematic variant"): `design` → `github-copilot/gemini-3.5-flash`; `document-review` / `research` / **`review`** → `github-copilot/gpt-5.4-mini` variant low (the `review` seat, which moved onto Copilot at 2026-08-26, holds); **`workflow` → `anthropic/claude-sonnet-5` variant low** (was `opencode-go/gpt-5.6-luna`). Agents: **`repo-research-analyst` → `github-copilot/gpt-5.4-mini` low** (was `opencode-go/gpt-5.6-luna`), `spec-flow-analyzer` → `github-copilot/gemini-3.5-flash` high (held), **`systematic-implementer` → `anthropic/claude-sonnet-5` variant medium** (was `opencode-go/gpt-5.6-luna` high — both provider and variant lowered). `workflow_guard: { mode: "protected", debug: false }` is carried unchanged, so the v3 guard surface stays on for a second survey.
+  - _Prior (SHA `3479589`, 2026-08-26):_ tracking 3.15.0. The `categories` block gained a fifth **`workflow`** category (→ `opencode-go/gpt-5.6-luna` variant low) alongside design → `github-copilot/gemini-3.5-flash`, document-review / research / review → `github-copilot/gpt-5.4-mini` variant low (the `review` seat moved off `openai/gpt-5.5` onto Copilot `gpt-5.4-mini`). `agents`: repo-research-analyst → `opencode-go/gpt-5.6-luna` variant low, spec-flow-analyzer → `github-copilot/gemini-3.5-flash` variant high, **systematic-implementer → `opencode-go/gpt-5.6-luna` variant high** (moved off `openai/gpt-5.6-luna`; temp field dropped). A new top-level **`workflow_guard: { mode: "protected", debug: false }`** block was added — the v3 workflow-guard surface (see [[fro-bot--systematic]] / [[opencode-plugins]] two-axis versioning).
   - _Prior (SHA `cd03ad8`, 2026-07-27):_ four categories (design → gemini-3.5-flash, document-review/research → gpt-5.4-mini low, review → `openai/gpt-5.5` low); agents repo-research-analyst → gpt-5.4-mini, spec-flow-analyzer → gemini-3.5-flash, systematic-implementer → `openai/gpt-5.6-luna` xhigh temp 0.1.
   - _Prior (SHA `e8ebc5c`, 2026-07-10):_ five categories (design → gemini-3.5-flash, docs → `opencode-go/kimi-k2.7-code`, document-review → gpt-5.4-mini, research → `opencode-go/minimax-m3`, review → `opencode-go/deepseek-v4-flash`); agents repo-research-analyst → `opencode-go/minimax-m3`, spec-flow-analyzer → gemini-3.5-flash, systematic-implementer → `anthropic/claude-sonnet-5` temp 0.1.
 
@@ -412,7 +560,39 @@ The `opencode-magic-context` plugin (0.22.4) provides adaptive context compactio
 
 **Earlier delta (SHA `ae026c1`):** Historian migrated from `github-copilot/gpt-5.4` to `openai/gpt-5.5-fast`. Dreamer reverted to direct Anthropic model. Sidekick disabled outright. Plugin version 0.13.0 → 0.21.8.
 
-#### oh-my-opencode-slim Routing (SHA `3479589`, 2026-08-26)
+#### oh-my-opencode-slim Routing (SHA `fe0144c`, 2026-09-10)
+
+Config at `.config/opencode/oh-my-opencode-slim.jsonc` (plugin **2.2.11**, version held — the churn this window is entirely in the config, ~180 changed lines across #2449/#2450/#2472/#2476/#2511/#2512/#2516/#2528/#2541/#2542/#2543/#2545). **Active preset stays `mixed`** for a second survey.
+
+**Preset roster 5 → 6.** Two new presets — **`mixed-astra`** (`openai/gpt-6-astra` orchestrator / `anthropic/claude-opus-5` oracle) and **`mixed-go`** (`claude-opus-5` orchestrator / `opencode-go/qwen3.7-max` oracle / `deepseek-v4-pro` council) — join `openai`, `opencode-go`, `mixed` (active), `mixed-fable`. Roster is now: `openai`, `opencode-go`, `mixed`, `mixed-astra`, `mixed-fable`, `mixed-go`.
+
+**New `openai/gpt-6-astra` model line — the GPT-6 boundary (#2541/#2542).** `gpt-6-astra` takes the `mixed` **oracle** seat (`variant: medium`, raised from an initial low), the `mixed-astra` orchestrator, and the `mixed-fable` oracle. It also entered the Magic Context `cache_ttl` (30 m) and `execute_threshold_percentage` (80) tables. `gpt-5.6-sol`/`-luna`/`-terra` remain in service; `gpt-5.6-terra` no longer holds the council gamma seat.
+
+**`mixed-fable` orchestrator → `anthropic/claude-fable-5-1`** (#2511, from `claude-fable-5`), variant lowered to `medium` (#2528).
+
+**Active `mixed` preset agent assignments (SHA `fe0144c`, 2026-09-10):**
+
+| Agent | Model | Notes |
+| --- | --- | --- |
+| orchestrator | `anthropic/claude-opus-5` | `variant: high`; skills **`["*", "!worktrees"]`** — first observed *negation* in a skills array; MCPs `["*", "!context7"]` |
+| oracle | `openai/gpt-6-astra` | `variant: medium`; skills `ce:brainstorm` + **`ce:ideate`** (#2516) + `simplify` + `systematic:*` + **`reflect`** |
+| council | `openai/gpt-5.6-sol` | Council routing |
+| librarian | `openai/gpt-5.6-luna` | `variant: low`; MCPs `["aha","atlassian","box","context7","gh_grep","slack"]` — **four of six are unregistered**, see the MCP drift note above |
+| explorer | `openai/gpt-5.6-luna` | `variant: low`; no skills/MCPs |
+| designer | `openai/gpt-5.6-luna` | `variant: medium`; **moved off `github-copilot/gemini-3.5-flash`** (#2545); skills expanded to `agent-browser` + **`brand-voice`** + `content-research-writer` + `impeccable` + **`openai-imagegen`** + `systematic:*` |
+| fixer | `anthropic/claude-sonnet-5` | `variant: medium` (#2512, was `openai/gpt-5.6-luna` high); skills gained **`ce:*`**, **`clonedeps`**, **`file-organizer`** |
+| fast-generic | `github-copilot/gpt-5.4-mini` | `variant: low`; **now defined per-preset**, not once at the top level |
+
+**Structural changes to the config shape (SHA `fe0144c`):**
+
+- **Skill/MCP negation syntax is in use** — `skills: ["*", "!worktrees"]` on every orchestrator. The `worktrees` skill (added to `.config/opencode/skills/` at 2026-08-26) is explicitly withheld from the agent most likely to invoke it.
+- **`fast-generic` moved into the preset shape.** The top-level `agents.fast-generic` block now carries only `prompt`, `orchestratorPrompt`, `skills`, `mcps` — the **model is set per preset** (`mixed`/`mixed-astra`/`mixed-fable`/`mixed-go` → `github-copilot/gpt-5.4-mini`; `openai` → the two-element fallback array `["openai/gpt-5.3-codex-spark", "github-copilot/gpt-5.4-mini"]`; `opencode-go` → `deepseek-v4-flash`). The 2026-08-26 "fallback array" observation is therefore narrowed: it survives only in the `openai` preset, not as a top-level property.
+- **`backgroundJobs.strategy: "checkpoint-compatible"`** is new (alongside the carried `continueOnIdle: false`).
+- **Council gamma moved `openai/gpt-5.6-terra` → `opencode-go/deepseek-v4-pro`** (`variant: high`); alpha `claude-opus-5` high, beta `github-copilot/gemini-3.5-flash` high.
+- **New `.config/opencode/oh-my-opencode-slim/` directory** holding `designer_append.md` and `orchestrator_append.md` — per-agent prompt-append files, a surface that did not exist at 2026-08-26.
+- **`.agents/skills/` grew 1 → 2**: `copilot-cli` joined by **`openai-imagegen`** (referenced by every preset's `designer`). `.config/opencode/skills/` holds at 11.
+
+#### oh-my-opencode-slim Routing (SHA `3479589`, 2026-08-26) — superseded
 
 Config at `.config/opencode/oh-my-opencode-slim.jsonc` (plugin **2.2.11**, in-v2 minor from 2.2.8). **Active preset flipped back `openai` → `mixed`** — reverting the 2026-07-27 flip to `openai`; `mixed` was the default through 2026-07-10 before the July experiment. The five-preset roster is unchanged (`openai`, `opencode-go`, `mixed` [active], `mixed-fable`, plus the top-level `fast-generic`). The `designer`/`fixer` skill triple `["agent-browser", "impeccable", "systematic:*"]` is unchanged.
 
@@ -527,6 +707,8 @@ Six bespoke skills now live under `.config/opencode/skills/` (distinct from the 
 | `file-organizer` | Cleanup of scattered/cluttered directories, dedup, folder restructuring |
 | `simplify` | Behavior-preserving code simplification for clarity/maintainability |
 
+**Skills trees (SHA `fe0144c`, 2026-09-10):** `.config/opencode/skills/` **holds at 11** — `clonedeps`, `codemap`, `content-research-writer`, `copilot-cloud-agent`, `deepwork`, `file-organizer`, `oh-my-opencode-slim`, `reflect`, `simplify`, `verification-planning`, `worktrees`. `.agents/skills/` **grew 1 → 2**: `copilot-cli` joined by **`openai-imagegen`**, which every preset's `designer` now loads. Note two names referenced by the OMO-slim presets that live in neither tree — `brand-voice` and `impeccable` — so they resolve from the `skills` npm package or another install path; the preset config does not validate skill names any more than it validates MCP names.
+
 **Skills tree grew 6 → 11 (SHA `3479589`, 2026-08-26):** `.config/opencode/skills/` added five bespoke skills — `deepwork`, `oh-my-opencode-slim` (a skill mirroring the routing plugin), `reflect`, `verification-planning`, `worktrees` — joining the original six. Note the framing from 2026-07-10 ("`copilot-cloud-agent` is the likely replacement for the dropped `opencode-copilot-delegate` plugin — delegation now skill-driven") no longer holds cleanly: **`opencode-copilot-delegate@0.12.1` is back in `opencode.json`** this survey, so plugin-driven and skill-driven Copilot delegation now coexist.
 
 #### OpenCode Runtime Env Toggles (bash exports, SHA `a159c44`, 2026-06-27)
@@ -587,7 +769,25 @@ Per-agent model assignments in the now-replaced `oh-my-openagent.json`:
 
 Published pre-built image: `ghcr.io/marcusrbrown/dotfiles-devcontainer:latest`
 
-Base image: `mcr.microsoft.com/devcontainers/base:2.1.9` (bumped from 2.1.7 @ 2026-07-10)
+Base image: `mcr.microsoft.com/devcontainers/base:2.1.9` (bumped from 2.1.7 @ 2026-07-10; unchanged @ 2026-09-10). Remote features: `common-utils:2.5.9`, `github-cli:1.1.2` (was 1.1.1), `node:2.1.0`, `lukewiwa/shellcheck:0.2.3`, `schlich/starship:0`.
+
+#### The `remoteEnv` `GIT_DIR` leak (SHA `fe0144c`, 2026-09-10) — the interval's hardest failure
+
+`devcontainer.json` used to set `GIT_DIR`/`GIT_WORK_TREE` in `remoteEnv`, which looks like the natural implementation of the bare-repo pattern and is the one place it must never go. `remoteEnv` applies to **every remote process**, including `postCreateCommand`. The defect was latent for as long as that file existed and detonated on **2026-09-01**, when mise `2026.9.0` began resolving Python's version list by cloning pyenv and running `python-build --definitions` — its first internal `git` invocations in this container. Those calls were redirected at the dotfiles bare repo, the pyenv tree never landed at the expected path, and mise executed a binary that did not exist. `Devcontainer CI` — a **required check with `enforce_admins: true`** — failed 8 consecutive runs (last pass 12:35, first failure 12:37) and blocked every open PR for ~2 days.
+
+Three things make this worth carrying forward:
+
+1. **A dependency release produced a repository regression with no repository commit.** The devcontainer installed mise via unpinned `curl https://mise.run | sh`, so it adopted the new upstream behavior the day it shipped. The `MISE_VERSION` pin that existed in `.github/workflows/main.yaml` covered only the separate `jdx/mise-action` job — which is exactly why that job stayed green while the container died, and why the green job was misleading rather than reassuring.
+2. **Eight plausible hypotheses were tested and disproven** against the published image before the answer landed — including "mise 2026.9.x is broken," GitHub API rate limiting, `vscode`-user permissions, `~/.cache` ownership, the `pipx`/`poetry` chain, `cacheFrom` baking a partial pyenv checkout, and a repository change. One near-miss is recorded on purpose: an early grep appeared to show the last passing run on mise `2026.8.25`, but that string was `pbs-installer==2026.8.25`, a pipx dependency — treating the grep hit as fact would have anchored the whole investigation on a false timeline.
+3. **The diagnostic is a single-variable flip**, and it is cheap: run the same command twice in the same container changing only the environment (`env -u GIT_DIR -u GIT_WORK_TREE mise install` vs `GIT_DIR=… mise install`). If only the second fails, it is a process-wide git-env leak, not a defect in the tool being blamed.
+
+Fixes, all in this window:
+
+- `remoteEnv` reduced to `GH_TOKEN` only, with the reason committed inline (#2488). The dotfiles clone is unaffected — `features/dotfiles-dev/install.sh` generates a `post-create.sh` that sets both variables **process-locally**, and each `postCreateCommand` runs as its own `/bin/sh -c`, so that export never reaches `mise install`.
+- `MISE_VERSION` pinned **forward** to the release that exposed the bug (now `2026.9.4`), not backward — pinning backward would mask the cause behind a stale toolchain.
+- `UV_VERSION 0.12.10` pinned via a versioned URL (the uv installer bakes its version in, so an env var does not work) and `STARSHIP_VERSION v1.26.0` via `-v` (#2497).
+- Both feature scripts moved `set -e` → **`set -eo pipefail`**, with the reason inline: a versioned URL that 404s pipes an empty script into `sh`, which exits 0 and would hide a bad pin.
+- The Renovate `_VERSION` custom manager's `managerFilePatterns` extended to cover `.devcontainer/features/mise/install.sh` and `.devcontainer/features/dotfiles-dev/install.sh`. A `# renovate:` comment alone does not make a version managed — before this, nothing watched the new pins and they would have drifted against the copy in `main.yaml`. (Confirmation that this took: open PR #2560 is Renovate proposing `astral-sh/uv` → v0.12.12.)
 
 Custom features in `.devcontainer/features/`:
 
@@ -620,16 +820,36 @@ Host requirements: 4 CPUs. Workspace mounted as Docker volume for performance.
 ### Main Workflow Jobs
 
 1. **Devcontainer CI** — Builds devcontainer image, pushes to GHCR on push/release, uses `cacheFrom` for PR builds. Runs `devcontainer-info` as smoke test.
-2. **Install mise** — Checks out repo, installs mise via `jdx/mise-action@v4.3.0` (was v4.2.0); `MISE_VERSION` pinned to `2026.8.14` as of SHA `3479589` (was `2026.7.5`). Renovate tracks both the action and the `MISE_VERSION` env var. Devcontainer base image `mcr.microsoft.com/devcontainers/base:2.1.9` (unchanged).
-3. **Script Tests (matrix) — new structural addition (SHA `3479589`, 2026-08-26).** The HEAD commit (`ci: run the script tests on macOS as well as Linux`, #2432) introduced a `script-tests-matrix` job running on `[ubuntu-latest, macos-latest]` (`fail-fast: false`). Each leg: sets up **Bun 1.4.0** via `oven-sh/setup-bun@v2.2.0`, verifies `lsof` is present, then runs `bun test opencode-doctor.test.ts` and `bun test ollama-distill.test.ts` under `.config/opencode/scripts`. Tests needing a real OpenCode server binary self-skip when none resolves — no runner is installed in CI. A separate **`Script Tests` aggregator job** (`needs: [script-tests-matrix]`, `if: always()`) collapses the per-leg matrix names into one stable status context so branch protection has a single required check to bind to (a required matrix leg name would never report and would block every PR). This is the **first CI-enforced unit-test surface** for the repo's Bun/TypeScript operational scripts (`opencode-doctor`, `ollama-distill`), and the first cross-platform (macOS) CI leg. The scripts dir gained a `lib/` subdirectory and `tsconfig.json` to support the test harness.
+2. **Install mise** — Checks out repo, installs mise via `jdx/mise-action@v4.3.0`; `MISE_VERSION` pinned to **`2026.9.4`** as of SHA `fe0144c` (was `2026.8.14`). Renovate tracks the action, the `MISE_VERSION` env var, and (new this window) the same marker inside the two devcontainer feature install scripts.
+
+   **`cache: false` — a cache that defeated the verification it wrapped (#2503, 2026-09-04).** The job's whole purpose is to prove every tool in `.config/mise/config.toml` installs cleanly; **a cache hit skips the install being verified**, so the job could pass without ever exercising the thing under test. The second failure mode was worse and is the transferable one: keyed on mise version × config hash × ref, the cache accumulated **nine ~993 MB entries — 8.9 GB of the repo's 10 GB budget** — and LRU-evicted every other cache in the repository, including the **~40 KB agent session caches that carry continuity between Fro Bot runs**. A 993 MB entry and a 40 KB entry compete on equal terms in an LRU eviction over a shared quota; the large one always wins and the small, high-value one always loses. The rationale is committed as a comment above the step so the next person to "optimize" the job reads the reason first. Cataloged in [[github-actions-ci]].
+3. **Script Tests (matrix) — durable, second survey (SHA `fe0144c`, 2026-09-10: Bun bumped `1.4.0` → **`1.4.2`** in lockstep with the mise pin; structure otherwise byte-stable).** Introduced at SHA `3479589` (`ci: run the script tests on macOS as well as Linux`, #2432) as a `script-tests-matrix` job running on `[ubuntu-latest, macos-latest]` (`fail-fast: false`). Each leg: sets up Bun via `oven-sh/setup-bun@v2.2.0`, verifies `lsof` is present, then runs `bun test opencode-doctor.test.ts` and `bun test ollama-distill.test.ts` under `.config/opencode/scripts`. Tests needing a real OpenCode server binary self-skip when none resolves — no runner is installed in CI. A separate **`Script Tests` aggregator job** (`needs: [script-tests-matrix]`, `if: always()`) collapses the per-leg matrix names into one stable status context so branch protection has a single required check to bind to (a required matrix leg name would never report and would block every PR). This is the **first CI-enforced unit-test surface** for the repo's Bun/TypeScript operational scripts (`opencode-doctor`, `ollama-distill`), and the first cross-platform (macOS) CI leg. The scripts dir gained a `lib/` subdirectory and `tsconfig.json` to support the test harness.
 
 ### Branch Protection
 
-Required status checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, and now **Script Tests** (the matrix aggregator context, SHA `3479589`). Linear history enforced, admin enforcement enabled, no required PR reviews.
+Required status checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, and **Script Tests** (the matrix aggregator context, SHA `3479589`). Linear history enforced, **admin enforcement enabled** (`enforce_admins: true`), no required PR reviews. _2026-09-10: not re-read directly — the survey token gets `403 Resource not accessible by integration` on the branch-protection endpoint. Carried from the 2026-08-26 reading and independently corroborated by `docs/solutions/2026-09-03-devcontainer-git-dir-leak-mise-pyenv.md`, which cites `Devcontainer CI` as "a required check with `enforce_admins: true`" that blocked every open PR for the duration of the outage._
+
+### Workflow health (SHA `fe0144c`, 2026-09-10)
+
+Four active workflows plus the dynamic `copilot-swe-agent` entry; none `disabled_inactivity` (contrast [[marcusrbrown--cortexkit-anthropic-auth]]). `Main` is green across its last 10 runs on both `push` and `pull_request` — the 8-run `Devcontainer CI` outage of 2026-09-01 → 09-03 is fully closed.
+
+`Fro Bot` is **15/15 `success` on scheduled runs** (2026-08-26 → 2026-09-09, `30 15` UTC, with two 19:xx stragglers on 08-27/08-28) and files a daily report. But across the last **100** runs of that workflow the conclusions break down as **65 `pull_request`/skipped, 30 `issues`/skipped, 2 `issue_comment`/skipped, 2 `schedule`/success, 1 `pull_request`/success** — i.e. **97 of 100 runs did no work**. The cause is benign and by design: the job-level trust gate blocks bot-authored PRs and issues, and the trigger surface is ~100% `mrbro-bot[bot]` Renovate traffic. This is the same census recorded at [[marcusrbrown--tokentoilet]] (98/100 skipped), and it means a "Fro Bot is healthy" claim resting on overall run conclusions is measuring almost nothing — only the 2 scheduled runs are evidence. The difference from tokentoilet is that here the executing half **does** deliver, because the prompt fix below restored its PR path.
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.105.0` (SHA `335e4f8a9c74f7fe7a40565d23acfbf321dc983e`) — single-file three-mode pattern shared with [[marcusrbrown--marcusrbrown-github-io]] et al. Bumped v0.95.0 → v0.105.0 across this survey window (crosses cosmetic v0.100; see [[fro-bot--agent]]); the workflow reads its model from the `FRO_BOT_MODEL` repo variable. `actions/checkout` holds at v7.0.1 (`3d3c42e`). The repo continues to ride interim agent releases and remains an ecosystem version leader. Single daily cron `30 15` (15:30 UTC) — the maintenance/oversight pass; workflow body (crons, trust-gating, stale-report cleanup, category prompts) is byte-stable this window.
+**Fro Bot workflow present** (`fro-bot.yaml`). Uses **`fro-bot/agent@v0.109.4`** (SHA `b799b64d102584774af338ddd26a4803d73ae192`) as of SHA `fe0144c` — bumped v0.105.0 → v0.109.4 this window (was `335e4f8`, v0.105.0). Single-file three-mode pattern; the workflow reads its model from the `FRO_BOT_MODEL` repo variable. `actions/checkout` holds at v7.0.1 (`3d3c42e`). The repo remains an **ecosystem version leader — and is now ahead of the control plane**: the [[github-actions-ci]] pass of the same date recorded six `fro-bot/agent` pins in `fro-bot/.github` frozen at v0.109.0 by a patch-suppression Renovate rule, while this repo (which has no such rule) is on v0.109.4. Single daily cron `30 15` (15:30 UTC) — the maintenance/oversight pass.
+
+**The prompt changed materially this window (#2498, #2506) — first non-pin `fro-bot.yaml` body change since onboarding.** Two classes of edit:
+
+1. **Delivery-path repair.** Category 3 (CONFIG QUALITY & REPO HYGIENE) previously said *"If drift is found, open a PR with corrections"* and then *"Report findings but put actual fixes into category 4"* — and category 4 (DEVELOPER EXPERIENCE) is report-only. The cross-category handoff moved the work but not the permission, so for **five consecutive runs** the agent detected the same 3-line `AGENTS.md` drift, edited the ephemeral Actions checkout, and honestly reported it fixed; report #2474 escalated it as *"a caller-workflow bug, not a content problem."* It was a prompt bug. The replacement names the mechanism as steps, keeps the exception in place, and **states the failure mode in the prompt itself**:
+
+   > If drift is found, deliver the correction: create a branch, commit it, push, and open a PR. This is the one exception to this category's report-only default, so do not defer it to another category. Editing the working tree without opening a PR does not persist and will silently recur every run.
+
+   It also adds a standing verification invariant: *"Before documenting shell load order, verify it against a live shell rather than reading the files — several scripts under `.config/bash/` have no referrer and never execute."*
+
+2. **Dead-convention scrub.** Every reference to `init.d/` numbered prefixes and `local.d/` machine-local overrides is gone from the PR-review prompt, the maintenance prompt, and the hard-boundaries block — replaced by `.config/bash/exports` / `.config/bash/aliases` and `*.local` files. `.dotfiles/.gitignore` → `.dotfiles/ignore` throughout. This closes the third-order consequence of the dormant subsystem: the agent had been **teaching the dead conventions forward** in every review it wrote.
+
+Two transferable rules from this, both cataloged in [[github-actions-ci]]: *a repeated identical "fixed" report is a missing delivery path, not a flaky one* (a flaky commit step produces intermittent success; a closed delivery path produces a perfectly consistent no-op), and *be skeptical of an agent's diagnosis of its own harness* — it can see that it made an edit and that the edit is gone, but not that its instructions never permitted the edit to leave the container.
 
 Triggers: PR events (opened, synchronize, reopened, ready_for_review, review_requested), `issues` (opened, edited), `issue_comment`, `pull_request_review_comment`, daily schedule (15:30 UTC), `workflow_dispatch` with a required `prompt` input.
 
@@ -637,7 +857,7 @@ Concurrency: grouped by issue/PR number (with `github.run_id` fallback for sched
 
 **Stale-report cleanup:** A dedicated `Close stale daily reports` step runs on `schedule` only — queries open `fro-bot`-authored issues matching `Daily Maintenance Report in:title`, finds entries older than 3 days, and auto-closes them with reason `not planned`. Cross-platform `date -u -d` / `date -u -v-3d` fallback keeps the step portable.
 
-**PR review prompt** (PR_REVIEW_PROMPT env) includes dotfiles-specific checks: allowlist `.gitignore` verification, shell startup correctness, macOS/Linux portability, security (no secrets), convention compliance (numbered `init.d`, `local.d`, XDG, GPG signing, `dev.mrbro.*` LaunchAgents), devcontainer impact. Output structure is locked: required headings are `## Verdict` (`PASS | CONDITIONAL | REJECT`), `### Blocking issues`, `### Non-blocking concerns`, `### Security check`, `### Risk assessment`. Sections with no findings must render as `None`.
+**PR review prompt** (PR_REVIEW_PROMPT env) includes dotfiles-specific checks: **`.dotfiles/ignore` allowlist verification** (renamed from `.gitignore` @ 2026-09-10), shell startup correctness, macOS/Linux portability, security (no secrets — machine-specific config belongs in `*.local` files), convention compliance (shared env vars in `.config/bash/exports`, XDG, GPG signing, `dev.mrbro.*` LaunchAgents), devcontainer impact. _Superseded @ 2026-09-10: the "numbered `init.d`, `local.d`" convention checks were removed — they described a subsystem that had not executed since 2024._ Output structure is locked: required headings are `## Verdict` (`PASS | CONDITIONAL | REJECT`), `### Blocking issues`, `### Non-blocking concerns`, `### Security check`, `### Risk assessment`. Sections with no findings must render as `None`.
 
 **Scheduled maintenance prompt** (SCHEDULE_PROMPT env) covers 6 categories — Errored PRs, Security, Config Quality & Repo Hygiene, Developer Experience (now report-only — "Formatting is handled manually by the repo owner"), Devcontainer & CI Health, Cross-Project Progressive Improvement (observation-only survey of all `marcusrbrown` repos). Single-issue daily report titled `Daily Maintenance Report — YYYY-MM-DD (UTC)`, with explicit table schemas for each category and explicit "do not query Dependabot/vulnerability-alert APIs" guard (Marcus's PAT is a collaborator token on user-owned repos and those endpoints 404 by design).
 
@@ -647,9 +867,9 @@ Concurrency: grouped by issue/PR number (with `github.run_id` fallback for sched
 
 ### Renovate
 
-Extends `marcusrbrown/renovate-config#5.2.12` (was `#5.2.0` @ 2026-07-27) + `sanity-io/renovate-config:semantic-commit-type`. Major version crossed the v4→v5 boundary documented in [[marcusrbrown--renovate-config]] (2026-05-13). Two custom managers:
+Extends **`marcusrbrown/renovate-config#5.2.13`** (was `#5.2.12` @ 2026-08-26) + `sanity-io/renovate-config:semantic-commit-type`. Major version crossed the v4→v5 boundary documented in [[marcusrbrown--renovate-config]] (2026-05-13). Two custom managers:
 
-1. `_VERSION` regex manager for variables in mise config files (`(^|/)\.?mise\.toml$`, `(^|/)\.?mise/config\.toml$`).
+1. `_VERSION` regex manager, **scope widened @ 2026-09-10 (#2497)** from mise config files alone (`(^|/)\.?mise\.toml$`, `(^|/)\.?mise/config\.toml$`) to also cover `(^|/)\.devcontainer/features/mise/install\.sh$` and `(^|/)\.devcontainer/features/dotfiles-dev/install\.sh$`, with the description updated to say so. This is the rule that makes the three new `curl | sh` pins (`MISE_VERSION`, `UV_VERSION`, `STARSHIP_VERSION`) actually managed. The generalizable point is recorded in the repo's own postmortem: **a `# renovate:` comment alone does not make a version managed** — confirm a manager's file pattern covers the file (Renovate's debug log reports which files each manager matched), because an unmatched marker is worse than no marker, looking managed during review while drifting in practice. Same wrong-target class as the mis-pathed `uses:` case at [[marcusrbrown--esphome-life]], caught here at authoring time instead of ~100 commits later.
 2. Pinned npm plugin version manager for `(^|/)\.config/opencode/opencode\.json$` and `tui\.json` — matches `"name@x.y.z"` patterns to surface OpenCode plugin updates. **Enhanced (2026-05-29):** Now uses semver versioning strategy and supports cross-series prerelease upgrades (e.g., `@marcusrbrown/opencode-anthropic-auth` mb.1 → mb.2 → mb.3 prerelease series).
 
 Package rules:
@@ -668,6 +888,9 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 
 ## Notable Patterns
 
+- **Documentation as a lagging indicator (2026-09-10):** the interval's four postmortems share one shape — a plausible-looking artifact that never executes, reported as working by something that could not observe the difference. A dormant shell subsystem, an ignore file read at the wrong anchor, an agent editing a checkout that gets discarded, and a cache hit standing in for the install it was supposed to verify. All four passed inspection; none survived execution. The repo's own conclusion, worth quoting: *"Dormant configuration is worse than absent configuration because it absorbs work that appears to succeed. Absent config produces an error; dormant config accepts the edit, reports nothing, and does nothing."*
+- **Salvage-then-delete, in separate commits (2026-09-10):** removing 26 dormant files was split into #2504 (salvage the four values the dead scripts were supposed to set) and #2506 (delete). Salvage changes behavior; deletion does not. Separated, either reverts alone. The repo also declined to *restore* the subsystem — reviving it would have activated 967 days of untested behavior at once (a prompt competing with starship, `gcloud`/`nix`/`p4`/`rvm` init for tools that are not installed, and an `ssh-agent` script that would have overwritten gpg-agent's `SSH_AUTH_SOCK`).
+- **Scrub dead names from reference docs; never from failure records (2026-09-10):** a first pass at the cleanup rewrote the *learning* docs too, replacing `init.d/pager.bash` and `local.d/discord.bash` with prose like "a former entry point" — deleting the evidence those docs existed to preserve. The test is whether a document **recommends** the path or **explains why it failed**.
 - **Bare git repo without symlinks:** The entire `$HOME` is the working tree. No stow, chezmoi, or rcm — just native git with an allowlist ignore pattern. Requires discipline but avoids all symlink tooling.
 - **XDG compliance:** All configs under `~/.config/`, data under `~/.local/share/`, cache under `~/.cache/`. Even in devcontainer, XDG vars are explicitly set.
 - **Deferred Zsh loading:** Sheldon + zsh-defer pattern for fast shell startup. Plugins loaded lazily after the prompt renders.
@@ -675,17 +898,18 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 - **Multi-agent AI setup:** Both Claude Code and OpenCode configured with project-specific rules and agents. AGENTS.md serves as the canonical knowledge base.
 - **Published devcontainer image:** Pre-built image on GHCR enables fast Codespaces and cross-machine parity.
 - **Cross-project health monitoring:** Fro Bot's scheduled prompt includes observation-only scanning of all `marcusrbrown` repos for CI health, missing workflows, and stale PRs.
-- **Copilot-hosted model routing:** All OpenCode agents now route through `github-copilot/*` hosted models (migrated from direct `anthropic/*` provider endpoints), reducing API key management overhead and leveraging GitHub's Copilot infrastructure.
+- **Copilot-hosted model routing:** _Recorded 2026-04-22, long since superseded._ At that snapshot all OpenCode agents routed through `github-copilot/*` hosted models. Routing has since oscillated across `anthropic/*`, `openai/*`, `opencode-go/*`, and `github-copilot/*` several times per quarter (see the OMO-slim routing sections). As of 2026-09-10 the active `mixed` preset is genuinely mixed: `anthropic/claude-opus-5` orchestrator, `openai/gpt-6-astra` oracle, `openai/gpt-5.6-luna` librarian/explorer/designer, `anthropic/claude-sonnet-5` fixer, `github-copilot/gpt-5.4-mini` fast-generic. The durable observation is not any particular provider — it is that **model routing is the fastest-churning surface in the repo**, and that finding 7 above supplies a first non-preference reason to prefer one family: explicit prompt-cache anchoring only reaches Anthropic-family models.
 
 ## Cross-References
 
-- Shares [[mise]] tooling and Renovate config patterns with [[marcusrbrown--ha-config]]
-- Consumes [[marcusrbrown--systematic]] as `@fro.bot/systematic@3.15.0` via OpenCode plugin slot (steady v3 minor climb from 3.3.0; v3 schema + new `workflow_guard` block in `systematic.jsonc`); cross-confirmed downstream at [[fro-bot--systematic]]
-- Consumes [[fro-bot--agent]] both as the `fro-bot/agent@v0.105.0` workflow action (was v0.95.0) and as the `@fro.bot/harness@1.18.21-harness.22dee0ee` CLI build pinned in mise (harness base `1.18.21`); **stock `opencode-ai` dropped from mise** this survey, so the harness build is the sole OpenCode binary
-- [[marcusrbrown--opencode-copilot-delegate]] **re-consumed as a headless OpenCode plugin** (`opencode-copilot-delegate@0.12.1` back in `opencode.json` @ 2026-08-26 — reverses the 2026-07-10 drop); now coexists with the `copilot-cli` / `copilot-cloud-agent` skills
-- Anthropic auth: on upstream `@cortexkit/opencode-anthropic-auth@1.19.1` (was 1.18.0 @ 2026-07-27); Marcus's fork [[marcusrbrown--cortexkit-anthropic-auth]] remains unconsumed here across five surveys. Companion `@cortexkit/opencode-openai-auth@0.6.3` (was 0.4.3) backs the OpenAI routing
-- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard, as of its 2026-07-23 survey, now vendors the same skill in-repo at `.agents/skills/impeccable/` plus an Impeccable OpenCode plugin at `.opencode/impeccable/`, alongside its CI Design Check)
-- Tracks [[marcusrbrown--renovate-config]] at v5.2.12 (was v5.2.0; v4→v5 boundary crossed)
+- Shares [[mise]] tooling and Renovate config patterns with [[marcusrbrown--ha-config]]. The mise 2026.9.0 pyenv-resolution change recorded here is an upstream behavior shift with fleet reach — see [[mise]]
+- Consumes [[marcusrbrown--systematic]] as `@fro.bot/systematic@3.16.5` via OpenCode plugin slot (was 3.15.0; steady v3 minor train, `workflow_guard` held); cross-confirmed downstream at [[fro-bot--systematic]]
+- **First consumer-side sighting of [[pi-coding-agent]]:** `.config/cortexkit/magic-context.jsonc` and `aft.jsonc` now carry sibling `"opencode"` / `"pi"` model blocks. The multi-harness split documented source-side at [[marcusrbrown--systematic]] has reached a third-party plugin's config schema
+- Consumes [[fro-bot--agent]] both as the `fro-bot/agent@v0.109.4` workflow action (was v0.105.0) and as the `@fro.bot/harness@1.18.29-harness.88b6b5fb` CLI build pinned in mise (harness base `1.18.29`); stock `opencode-ai` still absent, so the harness build remains the sole OpenCode binary. Its `applyCaching()` family gate is the subject of finding 7 above
+- [[marcusrbrown--opencode-copilot-delegate]] consumed as a headless OpenCode plugin (`opencode-copilot-delegate@0.12.1`, held for a second survey); coexists with the `copilot-cli` / `copilot-cloud-agent` skills
+- Anthropic auth: on upstream `@cortexkit/opencode-anthropic-auth@1.22.0` (was 1.19.1 @ 2026-08-26); Marcus's fork [[marcusrbrown--cortexkit-anthropic-auth]] remains unconsumed here across six surveys — and that fork's own workflow is now `disabled_inactivity`, so the fork is doubly dormant. Companion `@cortexkit/opencode-openai-auth@0.7.1` (was 0.6.3) backs the OpenAI routing
+- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard, as of its 2026-07-23 survey, now vendors the same skill in-repo at `.agents/skills/impeccable/` plus an Impeccable OpenCode plugin at `.opencode/impeccable/`, alongside its CI Design Check). Both repos also independently closed an agent **delivery break** — dashboard at the workflow layer (output-mode + credential scoping), dotfiles at the prompt layer
+- Tracks [[marcusrbrown--renovate-config]] at v5.2.13 (was v5.2.12; v4→v5 boundary crossed)
 - Both repos extend `fro-bot/.github:common-settings.yaml` for Probot settings
 - Both repos use reusable workflows from `bfra-me/.github`
 - Dotfiles devcontainer features could be consumed by other repos via the published GHCR image
@@ -703,4 +927,5 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 | 2026-06-27 | `debcb8e` | Agent v0.65.0 → v0.79.1 (14 minors, web-operator wave); `@fro.bot/harness` 1.17.6 → 1.17.9-harness.bd89c818 (aligns with agent base rebase); **license still undetectable** (2nd consecutive survey, `licenseInfo: null`); **opencode-doctor gains SQLite DB prune+VACUUM + `--set-incremental-vacuum`** (fixes ~13 GB session-DB bloat); magic-context 0.24.1 → 0.26.0 with **historian → `opencode-go/deepseek-v4-flash`** (gpt-5.5 demoted to fallback); AFT `search_index`/`semantic_search` disabled + `embedding.provider: off`; OMO-slim `designer`/`fixer` standardized on `agent-browser`+`impeccable`+systematic skills; auth 1.9.2 → 1.10.3, aft 0.39.2 → 0.39.4, systematic 2.32.0 → 2.32.1; new bash OpenCode env toggles (`OPENCODE_DISABLE_FFF=1`, `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true`); `mise-action@v4.2.0`/`MISE_VERSION 2026.6.14`; tool bumps (node 24.18, pnpm 11.9, deno 2.9, biome 2.5.1, agent-browser 0.29.1, copilot 1.0.64); stars 18 → 20, open issues 4 → 6 |
 | 2026-07-27 | `cd03ad8` | Agent v0.84.3 → v0.95.0; `actions/checkout` v6.0.3 → v7.0.1; `@fro.bot/harness` 1.17.14 → **1.18.5-harness.3a55d7d2** and stock `opencode-ai` 1.17.12 → 1.18.5 (**realigned in lockstep on base 1.18.5**); **license still undetectable** (4th consecutive survey); **`oh-my-opencode-slim` v1→v2 major** (1.1.2 → 2.2.8) — **active preset flipped `mixed` → `openai`**, `copilot` preset dropped, new `mixed-fable` preset added; new **`openai/gpt-5.6-*` model line** (sol/luna/terra) + `gpt-5.3-codex-spark`; new top-level `agents.fast-generic` mechanical agent; council block moved into slim config; `backgroundJobs.continueOnIdle: false`; **`@fro.bot/systematic` v2→v3 major** (2.33.2 → 3.3.0), `systematic.jsonc` retuned to v3 schema (4 categories, systematic-implementer → `openai/gpt-5.6-luna`); **new `@cortexkit/opencode-openai-auth@0.4.3` plugin**; auth 1.13.0 → 1.18.0, magic-context 0.31.5 → 0.33.0, aft 0.46.0 → 0.48.1; `opencode.json` gained `"snapshot": false`; tool bumps (rust 1.97.1, deno 2.9.4, pnpm 11.17.0, ast-grep 0.44.1, biome 2.5.5, prettier 3.9.6, cargo-binstall 1.21.1, agent-browser 0.33.0, skills 1.5.20, copilot 1.0.74, claude-code 2.1.163, tsx 4.23.1); stars 20 (unchanged), open issues 6 → 5 |
 | 2026-08-26 | `3479589` | Agent v0.95.0 → **v0.105.0** (crosses cosmetic v0.100); `@fro.bot/harness` 1.18.5 → **1.18.21-harness.22dee0ee**; **stock `opencode-ai` dropped from mise** (harness build sole OpenCode CLI); **license still undetectable** (5th consecutive survey); **new CI Script Tests matrix** (ubuntu + macOS, Bun 1.4.0) running `opencode-doctor.test.ts`/`ollama-distill.test.ts` + stable aggregator status context (#2432, first CI unit-test surface + first macOS leg); mise: **`puppeteer`/`vibe-tools` dropped**, `pipx` pinned, node 24.19.0/rust 1.98.0/go 1.27.0/bun 1.4.0/pnpm 11.22.0/deno 2.9.5/biome 2.5.10/tsx 4.23.12/playwright 1.62.1/copilot 1.0.80/agent-browser 0.34.0/ocx 2.0.15; **`opencode-copilot-delegate@0.12.1` re-added** to `opencode.json` (reverses 2026-07-10 drop); **OMO-slim active preset flipped back `openai` → `mixed`** (2.2.11), Anthropic seat → **`claude-opus-5`** (mixed orchestrator), `fast-generic` now a model fallback array; **MCP 3 → 2** (`websearch`/Exa removed, `grep_app` renamed `gh_grep`); systematic 3.3.0 → **3.15.0** (+`workflow` category, +`workflow_guard` block, systematic-implementer → `opencode-go/gpt-5.6-luna`); auth 1.18.0 → 1.19.1, openai-auth 0.4.3 → 0.6.3, magic-context 0.33.0 → 0.38.1, aft 0.48.1 → 0.52.1; skills tree 6 → 11 (+deepwork/oh-my-opencode-slim/reflect/verification-planning/worktrees); Renovate preset 5.2.0 → 5.2.12; mise-action v4.2.0 → v4.3.0, MISE_VERSION 2026.7.5 → 2026.8.14; stars 20, open issues 5 → 6 (+#2434 docs allowlist) |
+| 2026-09-10 | `fe0144c` | **The interval the repo audited itself** — 115 commits (75 bot / 40 `marcusrbrown`), 57 files, four new `docs/solutions/` postmortems in eight days. **(1) A shell subsystem documented as live had not run since 2024-01-10 — 967 days**: 26 of 28 files under `.config/bash/` had no referrer, `DOTNET_CLI_TELEMETRY_OPTOUT` never applied, both READMEs pointed credentials into a void, and the Fro Bot prompt taught the dead conventions forward; salvaged (#2504) then deleted (#2506). **(2) `.dotfiles/.gitignore` → `.dotfiles/ignore`** (#2434/#2435) — the old name was read twice, the second time anchored to `.dotfiles/`, silently voiding allowlist entries. **(3) `remoteEnv` `GIT_DIR` leak broke `Devcontainer CI` 8 consecutive runs** (09-01 → 09-03, required + `enforce_admins`) with no repo change, when mise 2026.9.0 started shelling out to `git` for pyenv; fixed by dropping the vars (#2488) and pinning `MISE_VERSION` **forward** to 2026.9.4. **(4) Pinned `curl \| sh` installers moved to `set -eo pipefail`** (a 404'd versioned URL pipes an empty script into `sh`, exit 0) + `UV_VERSION 0.12.10` / `STARSHIP_VERSION v1.26.0`, with the Renovate `_VERSION` manager widened to the feature scripts (#2497). **(5) `Install mise` cache disabled** (#2503) — it skipped the install it existed to verify **and** hoarded 8.9 GB of a 10 GB budget in nine ~993 MB entries, LRU-evicting the ~40 KB agent session caches. **(6) The maintenance prompt forbade its own fix path** — 5 days of "fixed" reports that never persisted, because category 3 routed fixes to report-only category 4; repaired with concrete delivery steps + an in-prompt statement of the failure mode (#2498). **(7) Prompt-cache anchoring is Anthropic-family-only** (`anomalyco/opencode#48246`): claude 100% reuse vs gpt-6-astra 92.1% / gpt-5.6-sol 64.9%, and `github-copilot` serves Claude at 100% while serving its own models at 80–91% — a family split, not a provider split. **(8) `.config/cortexkit/` — `magic-context.jsonc`/`aft.jsonc` return** (deleted 2026-07-10) with **per-harness `"opencode"`/`"pi"` model blocks** (first consumer-side [[pi-coding-agent]] sighting) and a nine-task dreamer cron scheduler. **(9) Stale MCP refs return four-deep** (`aha`/`atlassian`/`box`/`slack` in every preset's `librarian.mcps`, none registered) — the 2026-08-26 "fixed in lockstep" was incidental. **(10) Four mise majors**: npm 11 → **12.0.2**, pnpm 11 → **12.3.4**, typescript 6 → **7.0.2**, typescript-language-server 5 → **6.0.0**; node 24.21.0, go 1.27.1, rust 1.98.1, bun 1.4.2, deno 2.9.6, ast-grep 0.45.3, shfmt 3.14.1, biome 2.5.12. Agent v0.105.0 → **v0.109.4** (ahead of the control plane's frozen v0.109.0 pins); harness → **1.18.29-harness.88b6b5fb**; systematic → **3.16.5**; auth 1.22.0 / openai-auth 0.7.1 / magic-context 0.41.4 / aft 0.55.1. OMO-slim presets 5 → **6** (`mixed-astra`, `mixed-go`; `mixed` still active), new **`openai/gpt-6-astra`** line, `mixed-fable` → `claude-fable-5-1`, orchestrator skills gained a negation (`["*", "!worktrees"]`), `fast-generic` moved per-preset, `backgroundJobs.strategy: "checkpoint-compatible"`, new `oh-my-opencode-slim/{designer,orchestrator}_append.md`. `systematic.jsonc` routed back to Copilot + `claude-sonnet-5`. `.agents/skills/` 1 → 2 (+`openai-imagegen`). Renovate preset 5.2.12 → 5.2.13. **License still undetectable (6th consecutive survey)**; stars 20, open count 7 (fully rotated); Fro Bot 15/15 scheduled green but **97 of last 100 runs `skipped`** |
 | 2026-07-10 | `e8ebc5c` | Agent v0.79.1 → v0.84.3; `@fro.bot/harness` 1.17.9 → 1.17.14-harness.e98fbc0f; **license still undetectable** (3rd consecutive survey); **`magic-context.jsonc` and `aft.jsonc` config files deleted** — both plugins now run on defaults; `tui.json` reduced to theme-only (plugin array dropped); `opencode.json` **default `"model": opencode-go/kimi-k2.6` removed** (routing deferred to OMO-slim presets); **`tavily` MCP removed** (4→3 servers; websearch Exa moved key/tools to URL query — OMO librarian tavily ref now stale); **`opencode-copilot-delegate` plugin dropped** from opencode.json/tui.json; auth 1.10.3 → 1.13.0, magic-context 0.26.0 → 0.31.5, aft 0.39.4 → 0.46.0, systematic 2.32.1 → 2.33.2; OMO-slim models migrated to `claude-sonnet-5` / `gemini-3.5-flash`, mixed orchestrator `variant: xhigh`; `systematic.jsonc` gained categories + agents model routing; **new `ollama-distill` local-LLM session-distillation pipeline** (`distill` mise task); 6 new repo-scoped OpenCode skills (clonedeps, codemap, content-research-writer, copilot-cloud-agent, file-organizer, simplify) + `research` subagent; devcontainer base 2.1.7 → 2.1.9; `MISE_VERSION 2026.7.5`; tool bumps (rust 1.97, go 1.26.5, pnpm 11.10, npm 11.18, deno 2.9.2, prettier 3.9.4, biome 2.5.2, opencode-ai 1.17.12, claude-code 2.1.128, agent-browser 0.31.1, copilot 1.0.68, puppeteer 25.3.0, tsx 4.23.0); stars 20, issues 6 (unchanged) |

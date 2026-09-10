@@ -2,11 +2,8 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-10
+updated: 2026-09-08
 sources:
-  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
-    sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
-    accessed: 2026-09-10
   - url: https://github.com/marcusrbrown/mothership
     sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
     accessed: 2026-09-08
@@ -73,7 +70,10 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary]
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
+    accessed: 2026-09-10
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement]
 ---
 
 # OpenCode Plugin Development
@@ -531,36 +531,86 @@ A second, immediately reusable provenance rule from the same document. For the p
 
 When a published package wraps a patched runtime, `gitHead` answers *"what did we package?"*, not *"what will execute?"*. Auditing plugin or harness behavior from `gitHead` alone reads the wrong tree. Related: [[marcusrbrown--systematic]]'s `HARNESSES.md`, which solves the adjacent honesty problem by making unverified matrix cells say the literal string `UNVERIFIED` rather than defaulting to an optimistic assumption.
 
-## The Agent-Facing Doc and the Package Front Door Drift Apart (2026-09-10)
+## Explicit Prompt-Cache Anchoring Reaches Only Anthropic-Family Models (2026-09-10)
 
-From [[marcusrbrown--opencode-copilot-delegate]] at `b67bd4da`. The plugin has shipped **four** tools since v0.12.0 (2026-05-21): `copilot_delegate`, `copilot_output`, `copilot_cancel`, `copilot_resume`, one file each under `src/tools/`. Two documents describe that surface, and they disagree:
+Measured from the consumer side at [[marcusrbrown--dotfiles]] and filed upstream as `anomalyco/opencode#48246`. This is the first observation on this page that gives a **non-preference, economic reason to prefer one model family** in an OpenCode routing config.
 
-- `AGENTS.md` line 5: *"It exposes four tools to OpenCode sessions"*, with `copilot_resume` enumerated and `src/tools/resume.ts` in its tree diagram. **Correct.**
-- `README.md` line 7: *"This plugin registers three tools in OpenCode."* Line 100 repeats it. `copilot_resume` appears **zero times** in the file's 121 lines. **Wrong for ~3.7 months.**
+**The mechanism.** OpenCode's `applyCaching()` in `packages/opencode/src/provider/transform.ts` places explicit cache breakpoints on the first two system messages and **the last two non-system messages** — an anchor that advances every turn as the conversation grows. Its call site gates on model family:
 
-Three things make this a pattern rather than a typo.
+```ts
+if (
+  (model.providerID === "anthropic" ||
+    model.api.id.includes("anthropic") ||
+    model.api.id.includes("claude") ||
+    model.api.npm === "@ai-sdk/anthropic" || …) &&
+  model.api.npm !== "@ai-sdk/gateway" &&
+  !usesAnthropicAutomaticCaching
+) {
+  msgs = applyCaching(msgs, model)
+}
+```
 
-**1. The stale surface is the published one.** `README.md` is listed in `package.json`'s `files[]`, so it is the npm package page — and `.github/settings.yml` declares that npm page as the repository homepage. The plugin's front door under-reports its own tool catalog by 25%. For a plugin, the tool catalog *is* the API; a consumer deciding whether to install has no reason to discover `copilot_resume` at all.
+A model on `@ai-sdk/openai` matches none of the disjuncts, so the function never runs and reuse falls back to OpenAI's implicit prefix cache — which truncates at the first differing byte and **has nothing to re-anchor**. The `openrouter` / `bedrock` / `copilot` / `openaiCompatible` keys inside `applyCaching()`'s own provider map exist for Claude routed *through* those gateways; the absence of an `openai` key is a consequence of the gate, not a gap in the map.
 
-**2. The drift survives because the readers who would catch it are reading the other file.** Every agent that touches this repo loads `AGENTS.md` and sees four tools. Human contributors do the same. The README's audience is people who have not cloned the repo — exactly the population that cannot notice the discrepancy and has no channel to report it. **An agent-facing doc that is more accurate than the public one is a failure mode, not a success**, because it removes the pressure that normally keeps the public one honest.
+**Measured over 10 days of real sessions:**
 
-**3. Nothing mechanical looks at it.** The repo's CI gate is thorough about *shape* — Biome, `tsc --noEmit`, `bun build` plus declarations, a Node ESM export-shape smoke test that fails the build if the plugin entry exports anything but `default`, and the unit suite. Its autoheal prompt has four categories covering errored PRs, security advisories, dependency and changeset hygiene, and lint/typecheck/build. Not one step compares documented surface to registered surface.
+| provider/model | family | turns | reuse | collapsed |
+|---|---|---|---|---|
+| anthropic/claude-sonnet-5 | claude | 17,615 | 100.0% | 0.0% |
+| anthropic/claude-opus-5 | claude | 11,499 | 100.0% | 0.1% |
+| openai/gpt-6-astra | other | 1,691 | 92.1% | 8.5% |
+| openai/gpt-5.6-sol | other | 343 | 64.9% | 27.4% |
+| github-copilot/gpt-5.4-mini | other | 2,768 | 80.1% | 18.3% |
+| github-copilot/gemini-3.5-flash | other | 693 | 91.3% | 4.6% |
 
-The fix is small and the repo already contains its template. `tests/package-exports.test.ts` exists precisely to mirror a CI assertion about the public surface locally; the same shape pointed at documentation — assert every registered tool name appears in `README.md` — would have failed on the v0.12.0 commit that introduced the divergence. **For any plugin, the registered tool names are the one part of the docs that is mechanically checkable, because they are string literals in both places.** Check them.
+The row that settles it: **`github-copilot` serves Claude at 100% and its own GPT and Gemini models at 80.1% and 91.3%** — same provider, opposite behavior. A provider-shaped reading of this data reaches the wrong conclusion; the split is by **model family**.
 
-Generalizes the [[marcusrbrown--tokentoilet]] rule ("grep the non-code surfaces whenever an abstraction absorbs a major bump") from version strings to **capability inventories**, and sharpens [[marcusrbrown--marcusrbrown-com]]'s AGENTS.md-drift case by inverting it: there the agent doc was stale and the code was current; here the agent doc is current and the *public* doc is stale, which is harder to see and worse to ship.
+**Three measurement rules that generalize past this bug**, all from the same investigation:
 
-A closing note on survey method, since this wiki reproduced the error for four consecutive passes: the repo page's own Overview said "three tools" from 2026-04-23 through 2026-08-25 while the sections beneath it correctly documented `copilot_resume` from 2026-05-21. The cause was reading the README for the summary and the tree for the detail. **A survey that sources its summary from a README will faithfully republish that README's errors.** Derive the summary from the tree, then diff the README against it — the diff is itself a finding.
+1. **Normalize for the provider's reporting convention before comparing.** Anthropic reports `input` *exclusive* of cache reads; OpenAI reports it *inclusive*. Use `reuse = cached / (input + cached)`. The naive `cached / input` produced an Anthropic row at **12,509,400%** — nonsense loud enough to catch, which is luckier than it sounds.
+2. **Collapse run-lengths into episodes before drawing a conclusion.** A collapsed turn is a symptom; an episode is the event. Here 144 collapsed turns decomposed into **84 onsets with a median episode length of 1 turn**, and 64 single-turn episodes carried 48.2% of all waste — ordinary rewarming that recovers by itself. The headline "8.5% of turns cause 89% of the waste" reads as a systemic condition worth tuning against; the episode view shows the actionable remainder is **two long episodes carrying 30.5%**, a targeted-recovery problem rather than a threshold problem.
+3. **Read the formula in the installed bundle, not the config key name.** Magic Context computes its history-summary budget as `Math.floor(displayContextLimit * (Math.min(executeThresholdPercentage, 80) / 100) * historyBudgetPercentage)`. The `Math.min(…, 80)` makes 80 a **ceiling**: lowering `execute_threshold_percentage` to 65 cuts the history budget by exactly 18.75% and buys nothing, while raising it above 80 does nothing at all. **A knob can be capped, and the config key will not say so.**
+
+Three hypotheses were reasoned to confidently and then killed by measurement — worth not re-walking: that encrypted reasoning items were not being requested (they were, via an npm-keyed switch rather than the suspected gate); that compaction causes the collapse (one affected session never compacted; only 13 of 84 onsets follow one); and that lowering the context threshold would cut the blast radius (see rule 3). Diagnostic detail: every observed cached value is an exact multiple of **128**, matching OpenAI's documented prefix-match increment, and one collapse recurred **12 seconds** after the prefix was written — so not TTL expiry.
+
+**There is no local workaround.** Placing a breakpoint requires `providerOptions.<ns>.promptCacheBreakpoint` on a content block; `chat.params` exposes only request-level `options`, and the published `TextPart` type carries `metadata` but no `providerOptions`, with no mapping between them anywhere in the build. A plugin cannot reach the seam.
+
+**Consequence for routing configs.** [[marcusrbrown--dotfiles]] flips its active OMO-slim preset and per-seat models several times a quarter. Under this finding, each flip between an Anthropic seat and an OpenAI/Copilot seat is also a cache-economics decision, and the two are not comparable on price-per-token alone.
+
+## `.config/cortexkit/` — Per-Harness Model Blocks in a Third-Party Plugin Config (2026-09-10)
+
+The multi-harness architecture recorded at [[marcusrbrown--systematic]] (one content source, three shipped adapters, all peers optional) has reached the **config layer of a different vendor's package**. `@cortexkit/opencode-magic-context` and `@cortexkit/aft-opencode` moved their config out of `.config/opencode/` into a plugin-owned `.config/cortexkit/`, and their agent definitions replaced a flat `model` key with sibling harness blocks:
+
+```jsonc
+"historian": {
+  "temperature": 0.1,
+  "permission": { "bash": "deny", "webfetch": "deny", "edit": "deny" },
+  "opencode": { "model": "anthropic/claude-sonnet-5", "variant": "medium" },
+  "pi":       { "model": "anthropic/claude-sonnet-5" }
+}
+```
+
+Two observations. First, **the config-path move is what made the tuning survivable**: this same file was *deleted* at 2026-07-10 and the wiki recorded that as a deliberate simplification ("deferring behavior to upstream plugin defaults"). It was not — the tuning returned intact the moment upstream provided a stable, vendor-owned home for it. A config file's disappearance is weak evidence about intent when the plugin is still moving its own conventions.
+
+Second, **the asymmetry between the two blocks mirrors the upstream capability matrix**: the `opencode` block carries a `variant`, the `pi` block does not. This is the same shape as `HARNESSES.md`'s honest two-tier matrix — content portability and capability portability are different claims — showing up as a *schema* fact in an unrelated package rather than as documentation. See [[pi-coding-agent]].
+
+A third, smaller item from the same config: `dreamer` replaced a single `schedule: "00:00-08:00"` window with a **nine-task cron scheduler** (`verify`, `verify-broad`, `curate`, `classify-memories`, `retrospective`, `maintain-docs`, `map-memories`, `evaluate-smart-notes`, `review-user-memories`), with an empty schedule string used as the disable mechanism for one task.
+
+## Preset References Are Not Validated Against Registered Servers (2026-09-10)
+
+`oh-my-opencode-slim` presets name MCP servers and skills as bare strings. Nothing checks them against `opencode.json`'s `mcp` block or against any installed skill tree. At [[marcusrbrown--dotfiles]] the `librarian.mcps` array in **all six presets** reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` while exactly two servers are registered — four dangling names — and two skill names in every `designer` array (`brand-voice`, `impeccable`) live in neither local skills tree.
+
+The instructive part is the history. The same drift was recorded on 2026-07-10 (`tavily`, one name), reported as **repaired** on 2026-08-26 ("updated in lockstep, so no stale reference this time"), and returned four-deep on 2026-09-10. **The lockstep was a property of one edit, not an enforced invariant** — so "it was fixed last time" is not evidence about this time when the mechanism that fixed it was a person noticing. A dangling MCP name fails silently at agent-construction time, which is why the drift can widen for weeks without a signal. Any config that names capabilities in one file and registers them in another needs a check, not a habit.
 
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Was the largest OpenCode plugin; **as of v3 a three-harness workflow system** (OpenCode + [[pi-coding-agent]] + Claude Code, all peers optional). v3 boundary is **`3.0.0`, 2026-07-17** (the earlier `v3.2.5`/07-22 reading was a downstream artifact); catalog contracted 104 → 73 components (37 agents / 31 skills); discovered-skills-as-slash-commands added v2.33.0
 - [[pi-coding-agent]] — Second Tier 1 harness; bounded delegate (20 turns, depth-1, `noExtensions`), no native blocking-question or task-tracking primitive
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
-- [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin; **four** tools since v0.12.0, though its README still says three (see the doc-drift section above). Contributes the agent-doc-vs-front-door divergence pattern
+- [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
-- [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
+- [[marcusrbrown--dotfiles]] — The ecosystem's reference *consumer* config: `.agents/skills/` skill bus, seven pinned OpenCode plugins, six OMO-slim routing presets, and `.config/cortexkit/` per-harness plugin config. Source of the 2026-09-10 findings above on prompt-cache anchoring, per-harness model blocks, and unvalidated preset references
 - [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

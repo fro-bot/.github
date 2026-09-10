@@ -2,15 +2,19 @@
 type: entity
 title: Pi (coding agent)
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-10
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
-tags: [pi, coding-agent, harness, agent-harness, extensions, skills, subagents, typebox, npm]
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
+    accessed: 2026-09-10
+tags: [pi, coding-agent, harness, agent-harness, extensions, skills, subagents, typebox, npm, per-harness-config, cortexkit]
 aliases: [pi-coding-agent, earendil-works/pi-coding-agent]
 related:
   - marcusrbrown--systematic
+  - marcusrbrown--dotfiles
   - opencode-plugins
   - fro-bot--systematic
 ---
@@ -67,6 +71,27 @@ Systematic's largest subsystem — the workflow guard and receipt ledger — is 
 - **Carries over:** skill content, agent content, `SKILL.md` discovery, skill loading, bounded delegation.
 - **Does not carry over:** workflow guard, receipt/attestation enforcement, and the blocking-question and task-tracking primitives those flows assume.
 
+## Second sighting: a third-party plugin adopted per-harness config keys (2026-09-10)
+
+The 2026-09-05 entry above was built entirely from one consumer, [[marcusrbrown--systematic]]. A second, independent sighting has now landed at [[marcusrbrown--dotfiles]], and it is a different *kind* of evidence: not a package declaring a Pi adapter, but an **unrelated vendor's plugin config schema growing a Pi branch**.
+
+`@cortexkit/opencode-magic-context` and `@cortexkit/aft-opencode` moved their config into a new `.config/cortexkit/` directory, and their agent definitions replaced a flat `model` key with sibling harness blocks:
+
+```jsonc
+"historian": {
+  "opencode": { "model": "anthropic/claude-sonnet-5", "variant": "medium" },
+  "pi":       { "model": "anthropic/claude-sonnet-5" }
+}
+```
+
+Three things this establishes that the Systematic observation could not:
+
+1. **Pi is being targeted by parties outside the Systematic line.** `cortexkit` is a separate vendor with no relationship to `@fro.bot/systematic`. Two independent packages adopting harness-keyed config is weak-but-real evidence that Pi is becoming an ecosystem assumption rather than one project's portability bet.
+2. **The capability asymmetry shows up as a schema fact.** The `opencode` block carries `variant`; the `pi` block carries only `model`. That is `HARNESSES.md`'s two-tier matrix — *content parity is not capability parity* — reappearing as a data-shape difference in an unrelated package, without anyone writing it down. It is a useful tell: **where a per-harness config block is smaller, the harness is probably missing the primitive**, not merely defaulting.
+3. **Adoption is at the config layer, not just the code layer.** A user's `~/.config` now encodes which harness a given agent seat runs under. That is the point at which multi-harness stops being a packaging concern and starts being an operations concern.
+
+Still unobserved: whether Pi is actually *installed* on that machine, or whether the `pi` blocks are aspirational config that the plugin reads and ignores. The dotfiles repo pins no Pi package in mise and lists none in its OpenCode plugin array, so the honest reading is that the **schema** supports Pi and the **installation** is unconfirmed. Recorded as-is rather than upgraded.
+
 ## Open questions
 
 - Pi's own release cadence, licensing, and repository health are unsurveyed. `0.83.0` on a `0.x` line implies no stability guarantee, which makes the `^0.83.0` peer range wider than it looks — under semver, `^0.x.y` allows only patch-level drift, so the range is in fact narrow, but the upstream is pre-1.0 and may break within it.
@@ -74,6 +99,7 @@ Systematic's largest subsystem — the workflow guard and receipt ledger — is 
 
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — the tri-harness consumer; source of every observation here
+- [[marcusrbrown--systematic]] — the tri-harness consumer; source of the 2026-09-05 observations here
+- [[marcusrbrown--dotfiles]] — second, independent sighting: `.config/cortexkit/` per-harness `"opencode"` / `"pi"` model blocks in a third-party plugin's config (2026-09-10)
 - [[opencode-plugins]] — the OpenCode-side plugin patterns Pi is now contrasted against
 - [[fro-bot--systematic]] — deploy target hosting the docs and registry that describe the Pi install path
