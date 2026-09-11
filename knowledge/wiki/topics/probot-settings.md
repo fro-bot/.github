@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-10
+updated: 2026-09-11
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: 002d2f56fe28996005261726d1b1fb04677d9ce9
+    accessed: 2026-09-11
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
     accessed: 2026-09-10
@@ -18,6 +21,7 @@ tags:
     drift-detection,
     reusable-workflows,
     sha-pinning,
+    updated-at,
   ]
 related:
   - marcusrbrown--github
@@ -142,6 +146,22 @@ Two details worth carrying:
 
 - **Cron schedules are per-caller, not inherited.** extend-vscode runs settings sync on `23 0` UTC; esphome.life on `23 12`. Nothing about the upstream workflow imposes a schedule, so a "consistent org-wide sync time" is an illusion unless someone enforces it.
 - **The correct wiring is indistinguishable from the broken one at review time.** Both are ten-line files, both resolve, both report success, both are SHA-pinned with a version comment. The only distinguishing feature is that the `uses:` basename matches the caller's own filename. That is exactly the assertion worth automating.
+
+### Second confirmation of the working wiring — and the template source is one of them (2026-09-11)
+
+[[marcusrbrown--github]] wires the pair correctly, which matters more than usual because this is the repository that _holds_ `common-settings.yaml` for the whole `marcusrbrown/*` account:
+
+| Caller file | `uses:` path | Pin |
+| --- | --- | --- |
+| `.github/workflows/renovate.yaml` | `bfra-me/.github/.github/workflows/renovate.yaml` | `4861d88a` (v4.27.0) |
+| `.github/workflows/update-repo-settings.yaml` | `bfra-me/.github/.github/workflows/update-repo-settings.yaml` | `4861d88a` (v4.27.0) |
+
+`Update Repo Settings` has **571 lifetime runs and 30/30 `success`** in the most recent window, firing on a `55 2 * * *` cron and on every push to `main` — a third distinct cron in the family (extend-vscode `23 0`, esphome.life `23 12`, this repo `55 2`), which re-confirms that org-wide sync timing is not a thing that exists.
+
+Two additions:
+
+- **The basename-matching assertion proposed above would now be validated against three correct callers and two broken ones** ([[marcusrbrown--esphome-life]]'s mis-pathed `uses:`, [[bfra-me--works]]'s frozen settings-sync ref). That is enough of a corpus to justify writing it as a fleet lint rather than continuing to find instances one survey at a time.
+- **A daily settings sync makes `updated_at` useless as a content signal.** Probot Settings applies configuration through the API on every pass, so the repository's `updated_at` advances on the sync cron whether or not the tree moved — at survey time [[marcusrbrown--github]]'s `updated_at` was 2026-09-11T02:58:39Z, the exact timestamp of settings-sync run #1637, while HEAD had not moved since 2026-09-10T01:00:33Z. Any staleness check over a Probot-Settings-managed fleet must read the HEAD commit date, not `updated_at`. The general form of the rule — _a timestamp with a second writer is not a content signal_ — is recorded in [[github-actions-ci]].
 
 ### `_extends` resolves within the repository's own owner (correction, 2026-08-31)
 

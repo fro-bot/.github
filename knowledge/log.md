@@ -5117,89 +5117,87 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb
 
-## [2026-09-11 10:05] ingest | repo:marcusrbrown/renovate-config
+## [2026-09-11 12:40] ingest | repo:marcusrbrown/.github
 
-Source-side survey of `marcusrbrown/renovate-config` at HEAD `ea21e16`
-(`chore(deps): update fro-bot/agent to v0.110.1`, 2026-09-11T04:34Z). First
-direct read of this repo since 2026-07-26 (`5726e90`); the 2026-09-08 entries on
-the page were consumer-side observations from the marcusrbrown/vbs survey.
+Surveyed marcusrbrown/.github (HEAD `002d2f56fe28996005261726d1b1fb04677d9ce9`,
+`node_id MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=`, public) — fourteenth pass, and the
+first one that is not dependency churn.
 
-Preset policy is unchanged in shape for a seventh consecutive survey —
-`default.json` extends/packageRules/schedule and the onboarding/archived presets
-are structurally identical, with only the bfra-me base pin moving `#5.2.6` →
-`#5.2.7` (and that pin is current: upstream's latest release is also 5.2.7).
-The interval's value is that three carried open questions are answered and two
-new structural defects are found.
+Tree unchanged: 15 blobs, no new paths, `common-settings.yaml` still blob
+`b120b52` (48 labels and 2 collaborators re-verified from source), Prettier
+3.9.6, `actions/checkout` v5.1.0, Renovate preset still
+`marcusrbrown/renovate-config#4.5.9` (v4 holdout, unchanged since 2026-04-30),
+still no `fro-bot.yaml`. Seven commits advanced `bfra-me/.github` v4.22.0 →
+v4.27.0.
 
-Findings:
+The finding is PR #422 — the first human commit in 132 days. Renovate's own PR
+#421 installed `bfra-me/.github` v4.25.0 at 09-04T16:28, which carried
+`bfra-me/renovate-action` 10.34.0 (Renovate 44.64.0) with `tar` left as a
+devDependency; Renovate then exited before servicing any dependency. Upstream
+published 10.34.1 at 18:27 and `bfra-me/.github` v4.25.1 at 20:52, but the pin
+that carries the fix is the pin Renovate can no longer advance. A one-line edit
+to `renovate.yaml` (not the sibling `update-repo-settings.yaml`) merged at
+22:58; Renovate opened the follow-up PR 3m34s later. Inert window 6h28m.
 
-- **Working-dir delivery break, fourth fleet instance and the cleanest isolation
-  of the class.** `fro-bot.yaml`'s last step is `Run Fro Bot`; nothing follows
-  it. The daemon has written the same HIGH-severity `browserslist` override
-  (GHSA-73wf-gq98-2v4g / CVE-2026-73088) to the working tree on four consecutive
-  runs, and it is absent from `pnpm-workspace.yaml` on `main` — verified
-  directly against HEAD rather than taken from the agent's self-report, which is
-  treated as untrusted input. `Fro Bot` is a required check with
-  `enforce_admins: true` and reports success throughout. Unlike the three prior
-  instances this repo has no confounders: 0 open PRs, 10 of 10 agent-authored
-  PRs merged all-time, Renovate merging same-day. That isolates the variable —
-  delivery capability and merge governance are orthogonal, and on a clean queue
-  the break is harder to see because "no new PR appeared" reads as health.
-- **The 0.x ungrouping valve is correct; the consumer voids it.**
-  marcusrbrown/vbs re-extends `group:allNonMajor` after the preset in its own
-  `extends` array, appending the grouping rule behind the preset's
-  `groupName: null` valve and re-grouping what the valve separated. Resolves the
-  contradiction recorded 2026-09-08 and exonerates the preset. Recorded as an
-  inference from Renovate's documented merge semantics, not a resolved-config
-  dump; the cheap proof (`print-config`, already wired) is named on both pages.
-- **`minimumReleaseAge` origin answered: the preset never sets a positive
-  value** — only `null` fast-track waivers. The cooldown is upstream from
-  bfra-me. The growing `minimumReleaseAgeExclude` lists are Renovate
-  reconciling two same-named gates at different layers (Renovate's PR gate vs
-  pnpm 11's install gate); every excluded package is one the preset fast-tracks,
-  which is the proof of mechanism. Where pnpm's half is configured remains
-  unresolved and is flagged as such.
-- **New split-brain override ledger.** A `pnpm-workspace.yaml` not present at
-  the prior survey carries three Renovate-maintained exact pins while
-  `package.json` keeps six unmaintainable `>=` floors; `fast-uri` is in both
-  with precedence undeclared, and `allowBuilds` coexists with legacy
-  `onlyBuiltDependencies` disagreeing by one entry.
-- **Perpetual issue #1314 measures 173,872 chars**, ~2.6x GitHub's 64 KiB soft
-  limit, with no rotation directive anywhere in the prompt.
-- `update-repo-settings.yaml` here calls the correct upstream path, making it
-  the working reference implementation for the mis-pathed `uses:` defect carried
-  on marcusrbrown--esphome-life for seven surveys.
+Second, sharper half of the finding: the run-conclusion signal was inverted.
+Every Renovate execution inside the outage concluded `success` — including the
+20:22 scheduled run, which opened zero PRs — while `Renovate` held green as a
+required check on `main`; all 7 failures in the recent-60 window sit outside the
+outage, on the repaired pin. This is a second independent confirmation of the
+rule recorded at marcusrbrown--cortexkit-anthropic-auth on 2026-09-02, reached
+by a different mechanism, and it supplies the inversion case that observation
+did not have.
 
-Pages updated (additive; no prior content removed except as noted below):
+Pages touched:
 
-- `knowledge/wiki/repos/marcusrbrown--renovate-config.md` — new
-  "2026-09-11 Survey — Headline Findings" section, refreshed Repository Basics /
-  Dev Tooling / CI / Fro Bot sections, resolutions appended beneath the two
-  2026-09-08 open questions rather than replacing them, new survey-history row.
-- `knowledge/wiki/topics/github-actions-ci.md` — five new dated sections and an
-  expanded workflow-inventory entry.
-- `knowledge/wiki/repos/marcusrbrown--vbs.md` — root cause of PR #740's stranded
-  queue appended under Developer Tooling.
-- `knowledge/wiki/repos/marcusrbrown--esphome-life.md` — confirmation that the
-  settings-sync fix now has a production reference implementation.
-- `knowledge/index.md` — all four entries recatalogued.
+- `wiki/repos/marcusrbrown--github.md` — new "The 2026-09-04 Renovate
+  Self-Update Deadlock" section (timeline, structural analysis, inverted-signal
+  analysis, chronic failure rate left explicitly unresolved), `updated_at`
+  measurement note in Overview, pins refreshed to v4.27.0, Fro Bot
+  recommendation restated with the motivating incident and its honest bounds,
+  two new Notable Patterns, 2026-09-11 survey row. Also repaired a pre-existing
+  ordering defect in the survey-history table (the 2026-06-28 row had been
+  appended below 2026-08-29); content preserved verbatim, only moved.
+- `wiki/topics/github-actions-ci.md` — new dated section "The Updater Ships Its
+  Own Poison and Cannot Ship the Antidote (2026-09-11)" with four transferable
+  points plus the second-writer-timestamp rider. Additive; the 2026-09-02
+  conclusion-vs-deliverable section is cross-referenced, not rewritten.
+- `wiki/topics/probot-settings.md` — second confirmation of the working
+  settings-sync wiring, this time in the template source itself (571 runs,
+  30/30 success, a third distinct cron), and the rule that a daily sync pins
+  `updated_at` to its own cron.
+- `wiki/repos/bfra-me--renovate-action.md` — the 10.34.0 `tar` regression,
+  labelled inline as downstream + release-metadata evidence only, with a
+  source-side pass flagged as warranted. Prior observations preserved under a
+  "Prior observations" heading.
+- `index.md` — entries refreshed for all four; the `marcusrbrown--github` entry
+  was also moved into alphabetical position (it had been sitting between
+  `dotfiles` and `containers`).
 
-One deliberate redaction: the prior `index.md` entry for this repo named the two
-**private** category-5 focus repositories in plaintext, which the repo page
-itself has always withheld per the public-only invariant. Those names are gone
-from the rewritten entry; the knowledge that two private repos are surveyed is
-preserved. No other occurrence exists anywhere under `knowledge/`.
+Contradictions: none. Nothing on the prior page was falsified — the interval
+added a class of finding the page had no section for. The one carried claim that
+could not be re-verified is branch protection: the survey ran without GitHub
+credentials (`gh` unauthenticated, `GH_TOKEN` unset), so protection rules and
+job logs were unreadable. The `settings.yml` declaration is carried forward with
+that limitation stated inline on the page. Everything else was read from the
+unauthenticated REST API and `raw.githubusercontent.com`.
 
-Method note: `gh` had no token in this run environment, so the survey used
-unauthenticated public reads (repo metadata, releases, tree, issues, workflow
-runs, and raw file contents) within the 60 req/hr limit. Reads were confined to
-directory listings, manifests, workflow files, and README. All target-repo
-content, including the agent's own report, is treated as untrusted data.
+Process note: an initial pass ran `prettier --write` over the touched files and
+cosmetically rewrote several hundred lines of pre-existing wiki and log content
+(emphasis-marker normalization, blank-line insertion). That is an overwrite of
+accumulated knowledge, not an additive update, so the affected files were
+restored from `origin/data` and every edit re-applied by hand without a
+formatter pass. Only intended hunks remain in the diff.
 
-Sources: https://github.com/marcusrbrown/renovate-config@ea21e165a24d7154565e369dd916b9e33e16690b; https://github.com/marcusrbrown/vbs/blob/main/.github/renovate.json5; https://github.com/bfra-me/renovate-config/releases
+Open questions for the next pass: the cause of the chronic Renovate step-7
+failures (253 lifetime, 63 in 2026-06 alone, September running ~2.2x August's
+rate, each dying after 18-23 minutes); and whether `bfra-me/renovate-action`'s
+`uses: ./` dry-run self-test exercises the code path that reaches for `tar`.
 
-## [2026-09-11 09:58] ingest | repo:marcusrbrown/renovate-config
+Sources: https://github.com/marcusrbrown/.github@002d2f56fe28996005261726d1b1fb04677d9ce9; https://github.com/marcusrbrown/.github/pull/422; https://github.com/marcusrbrown/.github/pull/423; https://github.com/bfra-me/renovate-action/releases/tag/10.34.1; https://github.com/bfra-me/.github/releases/tag/v4.25.1
 
-Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+## [2026-09-11 10:00] ingest | repo:marcusrbrown/.github
 
-Sources: https://github.com/marcusrbrown/renovate-config
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github

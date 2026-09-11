@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-08-10
+updated: 2026-09-11
 sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: bc9c45917d3f7b33962d3ba44b11d58d9f6c2647
@@ -22,7 +22,19 @@ sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: a4b5a95579396b1e97a9a84d18e0ed5f37cf3ae5
     accessed: 2026-08-10
-tags: [renovate, github-action, composite, self-hosted, docker, typescript, semantic-release, bfra-me]
+  - url: https://github.com/bfra-me/renovate-action
+    accessed: 2026-09-11
+tags:
+  - renovate
+  - github-action
+  - composite
+  - self-hosted
+  - docker
+  - typescript
+  - semantic-release
+  - bfra-me
+  - bootstrap-dependency
+  - runtime-dependency
 related:
   - bfra-me--ha-addon-repository
   - marcusrbrown--renovate-config
@@ -33,6 +45,7 @@ related:
   - github-actions-ci
   - docker-containers
   - probot-settings
+node_id: R_kgDOKWu8zQ
 ---
 
 # bfra-me/renovate-action
@@ -298,6 +311,27 @@ YAML anchors define reusable lists:
 The **single-workflow-with-mode-dispatch** Fro Bot layout in this repo is notable: instead of separate `fro-bot.yaml` and `fro-bot-autoheal.yaml` files (the pattern in most Marcus repos), this repo collapses both into one workflow with an inline `Determine mode and prompt` step that selects from three inline prompts (review / maintenance / autoheal). This mirrors the [[marcusrbrown--marcusrbrown-github-io]] "single-file three-mode" evolution noted in the index (`agent v0.44.0, v0.44.1 in flight` — this repo was on `v0.44.2` at the time; `v0.60.0` as of 2026-06-11). The pattern has since consolidated: [[marcusrbrown--systematic]] (#446) and [[marcusrbrown--vbs]] (#594) both collapsed their two-workflow splits into single three-mode files.
 
 ## Observations
+
+### The 10.34.0 `tar` Regression (2026-09-04, recorded 2026-09-11 from downstream evidence)
+
+**Evidence class: downstream + release metadata only.** This entry was written during a survey of [[marcusrbrown--github]], not a source-side survey of this repo. Nothing here is a claim about this repo's tree; it rests on published release notes, release timestamps, and observed downstream behavior. A source-side pass should confirm the mechanism and is warranted.
+
+The release sequence, from this repo's own notes:
+
+| Release | Published (UTC) | Content |
+| --- | --- | --- |
+| `10.34.0` | 2026-09-04T13:23:43Z | `renovate` → **v44.64.0** (feature bump) |
+| `10.34.1` | 2026-09-04T18:27:48Z | `renovate` → **v44.64.1** (fix) |
+
+The consuming tag `bfra-me/.github` v4.25.1 (2026-09-04T20:52:07Z) states the substance verbatim: _"Update `bfra-me/renovate-action` to 10.34.1, which bundles Renovate 44.64.1 and **promotes `tar` to a production dependency**."_ Downstream at [[marcusrbrown--github]], repos running 10.34.0 exhibited Renovate **exiting before servicing any dependency** — while the job still concluded `success`.
+
+Three things this adds to the page:
+
+1. **A bundled action has a runtime dependency graph, and `dependencies` vs `devDependencies` is a production boundary in it.** This repo ships a `dist/` tsup bundle with CI drift verification — that check proves the bundle matches the source, not that the bundle's runtime needs are declared in the right section of the manifest. Bundle-integrity checks and dependency-classification correctness are orthogonal, and only the first is currently instrumented (per the `dist/ artifact in repo` row above). The existing CI self-test (`uses: ./` with dry-run) is the natural place to catch this class, if a dry run exercises the code path that reaches for `tar`; that it did not is the open question for the next source-side survey.
+2. **Time-to-fix was excellent; time-to-delivery was not, and they are different numbers.** Upstream turned the fix around in **5h04m**. Downstream consumers that had already taken 10.34.0 could not receive it, because the pin that carries this action into a repo is advanced _by this action_. That deadlock is documented in full at [[marcusrbrown--github]] and generalized in [[github-actions-ci]] as _The Updater Ships Its Own Poison and Cannot Ship the Antidote_. The relevant property for this page: **as the fleet's dependency-update runner, this repo is a bootstrap dependency for every consumer**, so a defect here has an asymmetric recovery cost that an ordinary action's defect does not. Its own self-Renovate loop — the mechanism behind the agent-version-leadership observation below — is the same loop, and would be subject to the same stall.
+3. **A fast patch cadence partially mitigates this, and pinning practice partially defeats the mitigation.** Consumers on a SHA-pinned reusable-workflow tag cannot take a patch fix without a bot run. That is the intended supply-chain trade everywhere else; on the updater's own ref it is the trade that creates the deadlock.
+
+### Prior observations
 
 - **Agent version leadership — confirmed across six surveys.** At first survey (2026-05-20) this repo led the ecosystem on `fro-bot/agent@v0.44.2`; then `v0.60.0` (2026-06-11), `v0.73.0` (2026-06-21), `v0.82.0` (2026-07-03), `v0.93.1` (2026-07-18), and now `v0.98.2` (2026-08-10) — the highest (or effectively tied-highest) pin observed anywhere in the wiki each time. The canary hypothesis holds across all six checkpoints: this repo absorbs agent updates first, almost certainly because its self-Renovate loop (`renovate.yaml` running the action against itself) merges bumps continuously. The lead has *narrowed* — [[fro-bot--dashboard]] and [[marcusrbrown--gpt]] were at v0.97.0 at their 2026-08-08 surveys, so the canary is now roughly one patch ahead of the fleet's front rather than several minors. Still first-in.
 - **`zzglobal_config` naming.** The `zz` prefix on the inline base config env var is intentional — it forces the variable to sort last when the GitHub Actions UI alphabetizes env blocks, keeping the (large) JSON payload out of the way visually. Mildly clever; mildly footgun if someone tries to grep for "global_config" expecting one canonical name.
