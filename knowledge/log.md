@@ -5087,3 +5087,32 @@ Sources: https://github.com/marcusrbrown/.dotfiles@fe0144c0e9fc0168fc4ed9aa9fa04
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-09-11 04:30] manual-edit | topic:github-actions-ci
+
+Daily oversight pass (categories 5-8) surfaced a fleet-wide escalation of the
+autoheal re-derivation pattern and recorded it additively under the existing
+"Converged Autoheal: the Null Verdict as a First-Class Outcome" section rather
+than as a new page, since it is the counterfactual to the control case already
+documented there.
+
+The finding: marcusrbrown/gpt issue #2519 has six open fro-bot PRs (#2664,
+#2665, #2672, #2673, #2674, #2692) all editing the same single file across 20
+days, two with byte-identical titles 19 days apart, and three now CONFLICTING
+with each other rather than with upstream drift. Exact-title day-apart pairs
+also appear in bfra-me/github-action (#1463/#1467) and bfra-me/github-app
+(#840/#843); neither repo has a wiki page, which is why the class went
+uncounted.
+
+This supersedes nothing. It extends the single-pair observation recorded at
+marcusrbrown--marcusrbrown-github-io (#283 vs #254) with a severity tier that
+observation did not reach: duplication that ends in a merge deadlock. Prior
+content left intact; frontmatter `updated` advanced and a source added.
+
+Sources: https://github.com/marcusrbrown/gpt/issues/2519; https://github.com/fro-bot/.github/actions/runs/34560259464
+
+## [2026-09-11 04:12] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb

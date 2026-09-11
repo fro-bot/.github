@@ -2,8 +2,10 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-10
+updated: 2026-09-11
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    accessed: 2026-09-11
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
@@ -287,6 +289,33 @@ At the 2026-08-30 survey its rolling `Fro Bot Autoheal` issue (#10) carried **53
 Paired with the **reopen-not-spam** rolling-issue lookup (search by exact title across all states → reopen if closed → comment; create only if absent) and a hard `at most ONE focused PR or run per invocation` cap, the result is a daemon that converges and _stays_ converged.
 
 The second half of the lesson is structural, not prompt-level. dev-like's mutable surface at rest is essentially **action pins**, which Renovate automerges — 30 commits and 0 open PRs in the same four weeks. Repos with large source trees generate autoheal-eligible findings faster than a human merge gate drains them. So fleet PR backlogs are a **merge-gate-plus-surface-area** problem, not evidence the agent is unproductive; dev-like's clean queue is not a better agent, it is a smaller surface plus full automerge coverage plus a prompt that permits doing nothing.
+
+#### Re-derivation Escalates to Self-Blocking (fleet sweep, 2026-09-11)
+
+The duplicate-authoring behavior first recorded at [[marcusrbrown--marcusrbrown-github-io]] (#283 vs #254 — one pair, one repo) is now measurable fleet-wide from a single org-oversight snapshot, and it has crossed into a **new severity tier**: the duplicates conflict with each other.
+
+The worst instance is [[marcusrbrown--gpt]] issue #2519 (_"Accessibility: Ollama settings color contrast fails axe"_), which has **six open fro-bot PRs all editing the same single file**, `src/components/settings/ollama-settings.tsx`, opened across 20 days:
+
+| PR | Opened | Mergeable |
+| --- | --- | --- |
+| #2664 `fix(a11y): improve ollama status contrast` | 2026-07-08 | **CONFLICTING** |
+| #2665 `fix(a11y): improve ollama settings contrast` | 2026-07-09 | **CONFLICTING** |
+| #2672 `fix(ui): restore ollama chip contrast` | 2026-07-12 | MERGEABLE |
+| #2673 `fix(accessibility): improve ollama status chip contrast` | 2026-07-13 | MERGEABLE |
+| #2674 `fix(accessibility): keep ollama status legible` | 2026-07-18 | **CONFLICTING** |
+| #2692 `fix(a11y): improve ollama settings contrast` | 2026-07-28 | MERGEABLE |
+
+Note #2665 and #2692 carry **byte-identical titles** 19 days apart. Two exact-title pairs appear in the bfra-me org on the same day-apart cadence, both touching only `pnpm-lock.yaml` + `pnpm-workspace.yaml`: `bfra-me/github-action` #1463 / #1467 (`fix(security): add pnpm overrides for esbuild and fast-uri`, 2026-06-15 / 06-16) and `bfra-me/github-app` #840 / #843 (`fix(security): add pnpm overrides for esbuild, fast-uri, undici`, same two days). Neither repo has a wiki page yet — they are unsurveyed, which is itself why this class went uncounted for three months.
+
+Three rules fall out:
+
+1. **An unmerged autoheal PR is not inert — it is a recurring cost.** The finding that produced it stays true, so the next run re-detects it and authors again. Backlog growth is therefore not linear in findings; it is linear in *findings × runs since the merge gate last drained*.
+2. **Past a small N, re-derivation becomes self-blocking.** Three of gpt's six contrast PRs are `CONFLICTING` — against each other, not against upstream drift. The loop has generated work that can no longer be merged without a human picking a winner and closing five. Duplication that starts as noise ends as a merge deadlock the agent cannot exit.
+3. **Deduplication must be a pre-authoring gate, not a post-hoc report note.** Checking for an existing open self-authored PR on the same root cause *before* opening one is the only intervention that works here; every other control (caps, null verdicts, ladders) limits volume per run without preventing the same fix from being authored on the next one.
+
+This is the counterfactual to the 2026-08-30 [[marcusrbrown--dev-like]] control case above. dev-like's prompt grants the null verdict and its surface is automerged; the repos in this table have neither, and the outcome is not merely a longer queue but a **queue that has begun to fight itself**.
+
+Method note for anyone re-measuring: the signature is cheap to detect and does not need prose comparison — group open bot-authored PRs by `(repo, changed file set)` and flag any group with size > 1. All eight PRs above are single-file or two-file changes, so the file-set key is exact.
 
 ### `gh --body` Does Not Expand `@path` (agent comment-delivery footgun, 2026-08-30)
 
