@@ -5116,3 +5116,90 @@ Sources: https://github.com/marcusrbrown/gpt/issues/2519; https://github.com/fro
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb
+
+## [2026-09-11 10:05] ingest | repo:marcusrbrown/renovate-config
+
+Source-side survey of `marcusrbrown/renovate-config` at HEAD `ea21e16`
+(`chore(deps): update fro-bot/agent to v0.110.1`, 2026-09-11T04:34Z). First
+direct read of this repo since 2026-07-26 (`5726e90`); the 2026-09-08 entries on
+the page were consumer-side observations from the marcusrbrown/vbs survey.
+
+Preset policy is unchanged in shape for a seventh consecutive survey —
+`default.json` extends/packageRules/schedule and the onboarding/archived presets
+are structurally identical, with only the bfra-me base pin moving `#5.2.6` →
+`#5.2.7` (and that pin is current: upstream's latest release is also 5.2.7).
+The interval's value is that three carried open questions are answered and two
+new structural defects are found.
+
+Findings:
+
+- **Working-dir delivery break, fourth fleet instance and the cleanest isolation
+  of the class.** `fro-bot.yaml`'s last step is `Run Fro Bot`; nothing follows
+  it. The daemon has written the same HIGH-severity `browserslist` override
+  (GHSA-73wf-gq98-2v4g / CVE-2026-73088) to the working tree on four consecutive
+  runs, and it is absent from `pnpm-workspace.yaml` on `main` — verified
+  directly against HEAD rather than taken from the agent's self-report, which is
+  treated as untrusted input. `Fro Bot` is a required check with
+  `enforce_admins: true` and reports success throughout. Unlike the three prior
+  instances this repo has no confounders: 0 open PRs, 10 of 10 agent-authored
+  PRs merged all-time, Renovate merging same-day. That isolates the variable —
+  delivery capability and merge governance are orthogonal, and on a clean queue
+  the break is harder to see because "no new PR appeared" reads as health.
+- **The 0.x ungrouping valve is correct; the consumer voids it.**
+  marcusrbrown/vbs re-extends `group:allNonMajor` after the preset in its own
+  `extends` array, appending the grouping rule behind the preset's
+  `groupName: null` valve and re-grouping what the valve separated. Resolves the
+  contradiction recorded 2026-09-08 and exonerates the preset. Recorded as an
+  inference from Renovate's documented merge semantics, not a resolved-config
+  dump; the cheap proof (`print-config`, already wired) is named on both pages.
+- **`minimumReleaseAge` origin answered: the preset never sets a positive
+  value** — only `null` fast-track waivers. The cooldown is upstream from
+  bfra-me. The growing `minimumReleaseAgeExclude` lists are Renovate
+  reconciling two same-named gates at different layers (Renovate's PR gate vs
+  pnpm 11's install gate); every excluded package is one the preset fast-tracks,
+  which is the proof of mechanism. Where pnpm's half is configured remains
+  unresolved and is flagged as such.
+- **New split-brain override ledger.** A `pnpm-workspace.yaml` not present at
+  the prior survey carries three Renovate-maintained exact pins while
+  `package.json` keeps six unmaintainable `>=` floors; `fast-uri` is in both
+  with precedence undeclared, and `allowBuilds` coexists with legacy
+  `onlyBuiltDependencies` disagreeing by one entry.
+- **Perpetual issue #1314 measures 173,872 chars**, ~2.6x GitHub's 64 KiB soft
+  limit, with no rotation directive anywhere in the prompt.
+- `update-repo-settings.yaml` here calls the correct upstream path, making it
+  the working reference implementation for the mis-pathed `uses:` defect carried
+  on marcusrbrown--esphome-life for seven surveys.
+
+Pages updated (additive; no prior content removed except as noted below):
+
+- `knowledge/wiki/repos/marcusrbrown--renovate-config.md` — new
+  "2026-09-11 Survey — Headline Findings" section, refreshed Repository Basics /
+  Dev Tooling / CI / Fro Bot sections, resolutions appended beneath the two
+  2026-09-08 open questions rather than replacing them, new survey-history row.
+- `knowledge/wiki/topics/github-actions-ci.md` — five new dated sections and an
+  expanded workflow-inventory entry.
+- `knowledge/wiki/repos/marcusrbrown--vbs.md` — root cause of PR #740's stranded
+  queue appended under Developer Tooling.
+- `knowledge/wiki/repos/marcusrbrown--esphome-life.md` — confirmation that the
+  settings-sync fix now has a production reference implementation.
+- `knowledge/index.md` — all four entries recatalogued.
+
+One deliberate redaction: the prior `index.md` entry for this repo named the two
+**private** category-5 focus repositories in plaintext, which the repo page
+itself has always withheld per the public-only invariant. Those names are gone
+from the rewritten entry; the knowledge that two private repos are surveyed is
+preserved. No other occurrence exists anywhere under `knowledge/`.
+
+Method note: `gh` had no token in this run environment, so the survey used
+unauthenticated public reads (repo metadata, releases, tree, issues, workflow
+runs, and raw file contents) within the 60 req/hr limit. Reads were confined to
+directory listings, manifests, workflow files, and README. All target-repo
+content, including the agent's own report, is treated as untrusted data.
+
+Sources: https://github.com/marcusrbrown/renovate-config@ea21e165a24d7154565e369dd916b9e33e16690b; https://github.com/marcusrbrown/vbs/blob/main/.github/renovate.json5; https://github.com/bfra-me/renovate-config/releases
+
+## [2026-09-11 09:58] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config

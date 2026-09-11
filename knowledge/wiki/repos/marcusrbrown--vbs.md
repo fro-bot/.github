@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-09-08
+updated: 2026-09-11
 node_id: R_kgDOPOixzg
 sources:
   - url: https://github.com/marcusrbrown/vbs
@@ -35,6 +35,9 @@ sources:
   - url: https://github.com/marcusrbrown/vbs
     sha: a552e7335af70122f68380440c78a415a785749f
     accessed: 2026-04-18
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: ea21e165a24d7154565e369dd916b9e33e16690b
+    accessed: 2026-09-11
 tags:
   - typescript
   - vite
@@ -251,7 +254,11 @@ A `workflow_dispatch` carrying only a custom `prompt` (no `mode`) previously had
 ## Developer Tooling
 
 - **pnpm supply-chain cooldown exclusions (new 2026-08-23):** `pnpm-workspace.yaml` gained a `minimumReleaseAgeExclude:` list (`'@bfra.me/eslint-config@0.51.2'`, `'@bfra.me/prettier-config@0.16.10 || 0.16.11'`), written by Renovate in #738/#739. This is Renovate reconciling its own release-age cooldown policy with pnpm 11's install-time `minimumReleaseAge` gate by emitting per-version escape hatches into the workspace manifest — the first instance of the pattern observed in the ecosystem. **Coherence caveat:** no `minimumReleaseAge` value is declared anywhere in the repo (not in `pnpm-workspace.yaml`, and there is no `.npmrc`), so either the cooldown is inherited from a non-repo source or the exclusion list is inert configuration. Recorded as observed, not resolved.
-- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.12` + `group:allNonMajor`; `postUpgradeTasks` runs `pnpm install` + `pnpm fix` in `branch` execution mode, `rebaseWhen: 'behind-base-branch'`. Pin unchanged at 2026-09-08 (`#5.2.13` is stranded inside blocked PR #740). Was `#5.2.12` at 2026-08-19, `#5.2.7` at 2026-07-19, `#5.2.4` at 2026-07-05, `#5.2.3` at 2026-06-21, `#5.2.1` at 2026-06-10, `#5.2.0` at 2026-05-29, `#4.5.9` before that. Config lives in `.github/renovate.json5`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.12` + `group:allNonMajor`; `postUpgradeTasks` runs `pnpm install` + `pnpm fix` in `branch` execution mode, `rebaseWhen: 'behind-base-branch'`.
+
+  **Root cause of PR #740's stranded queue, from the 2026-09-11 source-side survey of [[marcusrbrown--renovate-config]] (`ea21e16`).** The `group:allNonMajor` entry in this `extends` array is **redundant and destructive**. The base preset already extends `group:allNonMajor`, and then narrows it with a final packageRule — `matchCurrentVersion: "/^0\\./"`, `groupName: null` — that peels 0.x packages back out. Renovate resolves `extends` left-to-right and concatenates `packageRules` in resolution order, later rules winning on the same field. Re-declaring `group:allNonMajor` *after* the preset appends the grouping rule **behind** the valve, re-grouping exactly the 0.x packages it had separated — which is why `@bfra.me/eslint-config` `0.51.2 → 0.52.1` rode inside `renovate/all-minor-patch` and took the entire non-major queue down with it for 14+ days.
+
+  The preset is not defective; the fix is deleting one array element here. This is an inference from Renovate's documented merge semantics rather than a resolved-config dump — the cheap proof is a `Renovate` dispatch with `print-config: true`, which is already wired via the `bfra-me/.github` reusable workflow and has never been used in a survey. Generalized on [[github-actions-ci]] as *Re-Extending a Preset Your Base Already Extends Inverts Its Layering*. Pin unchanged at 2026-09-08 (`#5.2.13` is stranded inside blocked PR #740). Was `#5.2.12` at 2026-08-19, `#5.2.7` at 2026-07-19, `#5.2.4` at 2026-07-05, `#5.2.3` at 2026-06-21, `#5.2.1` at 2026-06-10, `#5.2.0` at 2026-05-29, `#4.5.9` before that. Config lives in `.github/renovate.json5`.
 - **pnpm overrides for security remediation:** `pnpm-workspace.yaml` now carries an `overrides` block (`fast-uri: ^3.1.3`) — added by Fro Bot in PR #655 (2026-07-04) to remediate two High-severity `fast-uri` Dependabot alerts (path traversal GHSA-q3j6-qgpj-74h6, host confusion GHSA-v39h-62p7-jpjc) in a transitive devDependency chain (`ajv` ← `eslint-plugin-json-schema-validator` ← `@bfra.me/eslint-config`). This mirrors the `fro-bot`-authored override-remediation pattern seen across the ecosystem ([[marcusrbrown--tokentoilet]], [[marcusrbrown--mrbro-dev]], [[bfra-me--works]]). **2026-09-08 correction:** this override is the only one that ever landed. The five later `fix(security)` PRs are all `CONFLICTING` and — per the 2026-09-08 autoheal report, cross-checked against 0 open Dependabot alerts (44 historical, all `fixed`) — **redundant**: every advisory they target was resolved on `main` by ordinary Renovate bumps while the PRs sat. #697 in particular re-remediates GHSA-v39h-62p7-jpjc, which #655 had already fixed 19 days earlier. This **supersedes** the 2026-08-19 reading of "5 open High-severity remediations stacking" as a risk signal: the backlog is stale, not pending.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirms membership in the Fro Bot-managed ecosystem.
 - **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML files.

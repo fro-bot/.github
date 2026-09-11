@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/esphome.life
 created: 2026-04-18
-updated: 2026-08-30
+updated: 2026-09-11
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 5fffe20526f0a29abfcb198a8b82330a90f7e621
     accessed: 2026-08-30
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: ea21e165a24d7154565e369dd916b9e33e16690b
+    accessed: 2026-09-11
 tags:
   - esphome
   - iot
@@ -164,6 +167,8 @@ Three findings added this survey:
 3. **Renovate has been maintaining the misconfiguration for over a year.** The commit history for `update-repo-settings.yaml` is ≥100 commits deep and every sampled entry is a `chore(deps): update bfra-me/.github` bump; the oldest page reachable reaches `v4.0.9` on **2025-07-27** without hitting the introduction. SHA pinning validates the *ref*, not the *path* — so automation has faithfully kept a wrong `uses:` target current for ~13+ months. Generalized in [[github-actions-ci]].
 
 Still a candidate for a follow-up PR; the diff is now fully specified.
+
+**2026-09-11 — the fix is now demonstrated, not just available (from the source-side survey of [[marcusrbrown--renovate-config]] at `ea21e16`; this repo was not re-read).** Finding 1 above established that the correct upstream target exists. A sibling repo is running it in production: `marcusrbrown/renovate-config`'s `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/update-repo-settings.yaml@v4.27.0` (SHA `4861d88`) with the same three triggers (`push` to `main`, `23 12` cron, dispatch), the same `APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets block, and no inputs — byte-comparable to this repo's caller except for the one path token. The upstream workflow has also continued to exist and be maintained across five minor releases since v4.22.0, so it is not a transient. There is no remaining uncertainty about the target, the signature, or the trigger compatibility; the eighth confirmation of this footgun would be purely ceremonial.
 
 ### Branch Protection
 

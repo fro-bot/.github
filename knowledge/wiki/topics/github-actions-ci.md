@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-11
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: ea21e165a24d7154565e369dd916b9e33e16690b
+    accessed: 2026-09-11
   - url: https://github.com/marcusrbrown/gpt
     accessed: 2026-09-11
   - url: https://github.com/marcusrbrown/.dotfiles
@@ -74,6 +77,9 @@ tags:
     prompt-routing,
     pin-scope,
     curl-pipe-sh,
+    preset-extends-order,
+    issue-body-overflow,
+    config-migration-drift,
   ]
 related:
   - marcusrbrown--dotfiles
@@ -116,7 +122,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
-- [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
+- [[marcusrbrown--renovate-config]] — 6 workflows (2026-09-11): `main.yaml` (Lint → Release, semantic-release with dry-run on PRs plus a major-branch `v5` ref push), `fro-bot.yaml` (single-file, **477 lines / 21 KB**, agent v0.110.1, six autoheal categories with a Sunday-gated category 6), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.27.0 — and unlike [[marcusrbrown--esphome-life]], the settings caller points at the **correct** upstream path, making this the working reference implementation for that repo's seven-survey mis-pathed-`uses:` defect), `codeql-analysis.yaml` (v4.38.0), `scorecard.yaml`. Required checks on `main`: Analyze, CodeQL, Fro Bot, Lint, Release, Renovate / Renovate, with `enforce_admins: true`. **36 of its last 40 Fro Bot runs concluded `skipped`** — fourth instance of the no-op run storm. Source of the 2026-09-11 findings below on delivery-versus-governance, downstream `extends` order, and unbounded perpetual issues
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
 - [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
@@ -1606,6 +1612,110 @@ The green sibling job was worse than no signal: it was read as evidence that mis
 3. **When you do pin after an incident, pin forward to the release that exposed the bug, not backward to the last good one.** Pinning backward makes the symptom disappear while preserving the cause behind a stale toolchain, and the next person to bump it inherits the outage with none of the context.
 
 The completing move is making the new pins visible to the update bot: the repo widened its Renovate `_VERSION` custom manager's `managerFilePatterns` to cover the devcontainer feature scripts. **A `# renovate:` comment does not make a version managed** — confirm a manager's file pattern actually matches the file (Renovate's debug log reports which files each manager matched). An unmatched marker is worse than no marker: it looks managed during review while drifting in practice. Same wrong-target class as *SHA Pinning Validates the Ref, Not the Path* (2026-08-30).
+
+### Delivery Is Not a Governance Property (2026-09-11)
+
+Fourth independent instance of the working-dir delivery break, from [[marcusrbrown--renovate-config]], after [[marcusrbrown--tokentoilet]], `fro-bot/.github` itself, and [[marcusrbrown--mothership]]. The workflow shape is identical to the others — checkout, setup, `Run Fro Bot`, nothing after — so the mechanism adds nothing new. What this instance adds is the **controlled comparison the first three could not provide.**
+
+Every prior instance was confounded. Tokentoilet's outage sat alongside seven PRs parked 29–48 days, a `Security Audit` that never ran on `main`, and 19 open Dependabot alerts; it was genuinely hard to say which failure was doing the damage. renovate-config has none of those problems:
+
+- **0 open PRs.** Not a small backlog — zero.
+- **10 of 10 agent-authored PRs merged, all-time.** No closed-unmerged, no duplicates, no conflicts.
+- Renovate's half merges same-day, 40 consecutive automerges in the surveyed window.
+- The daemon runs green: 4/4 scheduled runs `success`, workflow `state: active`, perpetual report updated daily.
+
+And the same HIGH-severity override (`browserslist`, GHSA-73wf-gq98-2v4g) was written to the working tree on four consecutive days and is **absent from `pnpm-workspace.yaml` on `main`** — verified against HEAD, not inferred from the agent's report.
+
+The conclusion the isolation buys: **delivery capability and merge governance are orthogonal, measured by different instruments, and neither is visible from the other.** A repo can solve every governance problem the fleet has — automerge coverage for the agent's author identity, no review gate, a maintainer who lands security PRs — and still ship nothing, because delivery is a property of *workflow shape* and governance is a property of *merge policy*. The corollary is worse: on a repo with a clean queue, the break is **harder** to see, because "no new PR appeared" is what a healthy steady state looks like. The undrained-queue repos at least produce a visible pile.
+
+Two additions to the delivery lint already proposed in [A Delivery Contract With Only One Half Implemented](#a-delivery-contract-with-only-one-half-implemented-2026-09-07):
+
+1. **Do not use queue health as a proxy for delivery health.** They are independent. A dashboard that tracks open bot PRs will show renovate-config as the healthiest repo in the fleet on the exact day its fourth consecutive security fix is discarded.
+2. **Scope every "merge rate" claim to the window in which the agent could open PRs.** renovate-config's 100% merge rate is real and entirely historical — the last agent-authored PR was created 2026-08-07. A success metric computed over a period when the mechanism was disconnected measures nothing.
+
+The one genuinely reassuring datum: the `gh`-mediated paths — updating issues, commenting on PRs — are unaffected in all four instances. The break is specific to working-tree file edits. An agent that reports through the API and fixes through the filesystem loses exactly half of itself, which is why the reports keep arriving and sounding fine.
+
+### Re-Extending a Preset Your Base Already Extends Inverts Its Layering (2026-09-11)
+
+From [[marcusrbrown--renovate-config]], resolving a contradiction carried since 2026-09-08. Renovate-specific in syntax, general in shape.
+
+[[marcusrbrown--vbs]]'s grouped `renovate/all-minor-patch` PR froze for 14 days because a `@bfra.me/eslint-config` `0.51.2 → 0.52.1` bump introduced a lint violation that turned the whole group red — and the base preset was supposed to have prevented exactly that, via a rule peeling 0.x packages out of `group:allNonMajor`:
+
+```json
+{ "matchCurrentVersion": "/^0\\./", "groupName": null }
+```
+
+The rule is correct and correctly positioned **last** in the preset's `packageRules`, so it wins over the grouping the preset itself extends. The consumer voids it in one line:
+
+```json5
+extends: ['github>marcusrbrown/renovate-config#5.2.12', 'group:allNonMajor'],
+```
+
+`extends` resolves left-to-right and `packageRules` concatenate in resolution order, later rules overriding earlier ones on the same field. Re-declaring `group:allNonMajor` *after* the base preset appends `groupName: 'all non-major dependencies'` behind the valve, re-grouping what the valve just separated.
+
+**A base preset's job is to layer refinements after the broad presets it pulls in. Re-declaring one of those broad presets downstream moves it to the end of the chain, where it overrides every refinement the base applied on top of it.** The duplicate reads as redundant during review — same preset name, already in effect, no apparent change — which is precisely why it survives. It is not redundant; it is destructive, and silently so.
+
+This generalizes past Renovate to any last-write-wins layered config: ESLint `extends`, Tailwind presets, `tsconfig` inheritance chains, Kubernetes kustomize bases. The check is the same everywhere: **if your base already provides a layer, naming it again downstream does not reinforce it — it relocates it.**
+
+Practical notes:
+
+- **Grep for it.** A consumer's `extends` array containing a well-known shared preset that its own base preset is known to extend is a mechanical, fleet-wide lint. It needs no resolution engine.
+- **Prove it with resolved config, not reasoning.** The `bfra-me/.github` reusable `renovate.yaml` exposes a `print-config` dispatch input that dumps the fully-resolved config including presets. It is wired in every consumer that uses the reusable workflow and appears to have been used in zero surveys. One dispatch settles questions that otherwise cost a source-side survey of two repos.
+- **Prefer name-based guards to heuristic ones for high-blast-radius packages.** The 0.x valve is a version heuristic; it happens to cover lint tooling because that tooling is pre-1.0. Ungrouping lint and formatter packages *by name* would be order-independent and would not silently expire when a package reaches 1.0. The justification is that lint tooling has a property ordinary devDependencies lack: **it can turn previously-valid source into a CI failure with no source change.** The same 0.52.1 bump merged without incident in renovate-config, which lints only JSON/YAML/Markdown — so the blast radius is a function of the consumer's source tree, not of the bump, and no consumer discovers it until it happens to them.
+
+### Two Gates With the Same Name at Different Layers (2026-09-11)
+
+From [[marcusrbrown--renovate-config]], answering a question left open on 2026-09-08 about where a `minimumReleaseAgeExclude` list in a `pnpm-workspace.yaml` comes from.
+
+`minimumReleaseAge` names **two independently-configured gates**: Renovate's (may a PR be opened for a version this new?) and pnpm 11's install-time gate (will the package manager install a version this new?). A shared preset that fast-tracks its own org's packages with `minimumReleaseAge: null` relaxes exactly one of them. Renovate then reconciles with the other by writing per-version escape hatches into the workspace manifest:
+
+```yaml
+minimumReleaseAgeExclude:
+  - '@bfra.me/eslint-config@0.51.2 || 0.51.3 || 0.51.4 || 0.52.0 || 0.52.1'
+  - '@bfra.me/prettier-config@0.16.10 || 0.16.11'
+```
+
+Every excluded package is one the preset fast-tracks. The correlation is the proof of mechanism.
+
+The consequence worth carrying: **the harder a shared preset fast-tracks its own org's packages, the more install-layer exclusions accumulate downstream.** The fast-track is one policy decision in one shared file; the exclusions are mechanical debt paid per-repo, per-version, append-only, in a manifest nobody reviews. Two repos surveyed three days apart already have divergent lists, and the longer-lived one has five versions of a single package.
+
+Generalized: **when the same knob exists at two layers of a toolchain, configuring one of them is a half-fix, and the automation will paper over the other layer rather than report the conflict.** Papering over is the failure mode to watch for — an append-only exclusion list is what a tool does instead of telling you your policy is inconsistent.
+
+Unresolved and worth one CI probe: neither surveyed repo declares a `minimumReleaseAge` value anywhere (no key, no `.npmrc`). Either it is a pnpm 11 default, it comes from config outside the tree, or the exclusions are inert and Renovate is writing them speculatively.
+
+### A Perpetual Issue With No Rotation Contract Is an Unbounded Write (2026-09-11)
+
+From [[marcusrbrown--renovate-config]]. Third instance of the class, and the one that clarifies the remediation.
+
+The single-perpetual-issue pattern — prepend a dated section, never create a new issue — is durable across [[bfra-me--ha-addon-repository]], [[bfra-me--works]], [[bfra-me--github]], and [[marcusrbrown--renovate-config]], and it genuinely solved the dated-issue sprawl it was designed for (46 → 6 open issues on one repo). It has one unhandled failure mode: **the body grows monotonically and nothing in the prompt can stop it.**
+
+renovate-config's `Daily Autohealing Report` measures **173,872 characters** — roughly 2.6× GitHub's 64 KiB REST soft limit for issue bodies, accumulating ~10 KB per day. The prompt says *"ALWAYS prepend new updates to existing content"* with no size cap, no rotation directive, and no archival destination.
+
+Contrast with [[marcusrbrown--cortexkit-anthropic-auth]], which reached 54,813 chars against a prompt directive to rotate at 50,000. That is a *violated* budget — an agent asked to reason about a soft prose limit and failing to. renovate-config has **no budget to violate**. The distinction drives the fix: a self-enforced prose budget is unreliable (cortexkit is the counterexample), so the contract needs a named mechanical destination, not a number to respect.
+
+Two properties make this worse than a slow leak:
+
+- **The overflow is silently accepted.** The API has been taking oversized bodies for days. No error, no failed run, no degraded status — until whatever limit is actually enforced is hit, on a daemon whose runs nobody reads because they are always green. Same shape as [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02).
+- **The report format is also the input format.** Every run must read the body it prepends to. Unbounded growth is a monotonically increasing per-run context cost, and on this repo it is being paid to produce output that the delivery break then discards.
+
+The contract that fixes it is already half-written in these prompts: the *dated-issue cleanup* clause closes old dated issues with a link to the perpetual one. Rotation is that clause pointed the other way — at a hard character budget, close-and-link the current perpetual issue to a dated successor, carry forward only the open "Needs Human Attention" items.
+
+### A Half-Finished Config Migration Driven by a Bot Never Finishes (2026-09-11)
+
+From [[marcusrbrown--renovate-config]], which now maintains two dependency-override ledgers with different syntax and different maintenance semantics:
+
+| Ledger | Form | Maintained by |
+| --- | --- | --- |
+| `package.json` → `pnpm.overrides` | open-ended floors (`fast-uri >=3.1.2`) | nothing — a `>=` floor gives Renovate no version to bump |
+| `pnpm-workspace.yaml` → `overrides` | exact pins (`fast-uri: 3.1.7`) | Renovate, actively, one PR per bump |
+
+Keys migrate from the first to the second **only when Renovate happens to touch them**, which happens only when a new version ships. `undici` migrated; `fast-uri` is mid-migration and currently lives in both files at different specs; `flatted`, `handlebars`, `lodash-es`, and `picomatch` have not moved and, being quiet packages, will not.
+
+**Divergence in a bot-driven config migration is proportional to how rarely each key is touched, and the migration cannot complete on its own** — the agent of migration only visits active keys. The same file shows the pattern twice: `allowBuilds` (pnpm 11) and legacy `onlyBuiltDependencies` both present, disagreeing by one entry, so whether that dependency may run build scripts depends on which key the package manager honors.
+
+The specific hazard is not a live conflict — `3.1.7` satisfies `>=3.1.2`, and today nothing breaks. It is that **precedence is undeclared and both ledgers read as authoritative during review.** Whichever loses is dead weight that still looks like policy. Reviewers will keep updating the wrong one.
+
+Remediation shape: when a tool relocates a config surface, **migrate the whole surface in one commit rather than letting the update bot do it opportunistically**, and delete the old location outright. A partial migration where both locations remain valid is strictly worse than either endpoint. If a full migration is not possible, leave a comment in the losing file naming the winner.
 
 ### Convention Enforcement via Tests
 
