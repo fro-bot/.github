@@ -102,7 +102,12 @@ jobs:
     steps:
       - id: lock-threads
         name: Lock stale issues and pull requests
-        uses: dessant/lock-threads@7266a7ce5c1df01b1c6db85bf8cd86c737dadbe7 # v6.0.0
+        # v6.0.0 validates `github-token` with `Joi.string().max(100)`, and the
+        # runner-issued GITHUB_TOKEN is now longer than that, so every scheduled
+        # run failed with `"github-token" length must be less than or equal to
+        # 100 characters long`. v6.0.2 raises the bound to 1000 (upstream #55).
+        # Renovate cannot ship this: repo policy disables patch updates.
+        uses: dessant/lock-threads@89ae32b08ed1a541efecbab17912962a5e38981c # v6.0.2
         with:
           exclude-any-issue-labels: awaiting-approval,work-in-progress
           exclude-any-pr-labels: awaiting-approval,work-in-progress
