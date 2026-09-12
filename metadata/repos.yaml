@@ -391,12 +391,12 @@ repos:
     name: dev-like
     added: 2026-07-12
     onboarding_status: onboarded
-    last_survey_at: 2026-08-29
-    last_survey_status: success
+    last_survey_at: 2026-09-12
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-10-01
+    next_survey_eligible_at: 2026-10-12
     private: false
     node_id: R_kgDOTVrJ0w
     database_id: 1297795539
