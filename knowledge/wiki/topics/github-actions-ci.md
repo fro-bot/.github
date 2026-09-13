@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-11
+updated: 2026-09-13
 sources:
+  - url: https://github.com/fro-bot/.github
+    sha: e86b08774d59c6fc7b08c6a43e743627ba3b4d81
+    accessed: 2026-09-13
   - url: https://github.com/marcusrbrown/.github
     sha: 002d2f56fe28996005261726d1b1fb04677d9ce9
     accessed: 2026-09-11
@@ -1631,6 +1634,21 @@ This is the second independent confirmation of [A Run's Conclusion Measures the 
 Mitigations worth considering before the next occurrence, in increasing cost: an out-of-band delivery monitor (cheapest, and the only one that generalizes); a floating patch constraint on the runner ref so upstream patch fixes arrive without the bot's participation (trades SHA-pinning's supply-chain guarantee for self-recovery — a real trade, not a free win, and it argues against applying this to anything but the updater itself); or moving the runner pin out of the updater's own scope entirely, so a second, differently-powered channel owns it.
 
 One adjacent measurement note from the same survey: that repo's `updated_at` never goes stale, because a `55 2 * * *` settings-sync job writes repository settings through the API on every pass. **A daily settings-sync workflow pins `updated_at` to its own cron**, so `updated_at` on any Probot-Settings-managed repo is a statement about the sync job, not about the tree. Use the HEAD commit date. Same family as the [[github-pages]] rule about probing a frozen deploy target with `pushed_at` and getting the diagnosis exactly backwards — a timestamp that has a second writer is not a content signal.
+
+### An Honest Red Signal Nobody Subscribes To (2026-09-13)
+
+Observed from this control plane's daily org-oversight sweep across 34 non-archived accessible repositories. The scheduled `Fro Bot` job was concluding `failure` on the default branch of **seven** repositories at once — [[marcusrbrown--marcusrbrown-com]], [[bfra-me--github]], `bfra-me/ha-addon-repository`, [[fro-bot--space-bus]], [[marcusrbrown--containers]], [[marcusrbrown--dev-like]], and `marcusrbrown/cortexkit_anthropic-auth`. On `marcusrbrown.com` it had failed **twelve consecutive scheduled runs**, twice daily without interruption since 2026-09-07, and nothing anywhere had raised a hand.
+
+This is the exact complement of [The Updater Ships Its Own Poison](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11) and [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02), and it is worth recording precisely because it inverts them. Those two document a conclusion signal that was *wrong* — green while broken. Here the conclusion signal was **exactly right for six days running** and it still bought nothing, because a scheduled workflow that fails on the default branch of a repository nobody is actively opening produces no notification, no required-check block, and no PR annotation. It fails into an empty room.
+
+The generalizable rule: **signal correctness and signal delivery are independent failure modes, and fixing the first does not touch the second.** A monitoring review that asks only "is the check telling the truth?" passes cleanly here. The question that catches this is "who is on the other end of the wire, and what makes them look?" For content-triggered CI the answer is built in — a human is already watching a PR. For *scheduled* workflows there is no such reader by construction, so a scheduled job needs an explicit delivery channel or its conclusion is decorative.
+
+Two further points the sweep established:
+
+1. **A fleet-wide symptom is not evidence of a fleet-wide cause.** The seven failures carried at least two distinct signatures: `marcusrbrown.com` (agent pin `v0.107.0`) died on `OpenCode server bootstrap failed: Timeout waiting for server to start after 5000ms`, while `dev-like` (pin `v0.111.0`) died on `Agent execution failed with exit code 130` — a signal-130 interruption, a different layer entirely. Grouping them as "the agent is down" would have produced one wrong fix. The shared property is the *unobserved scheduled trigger*, not the defect.
+2. **Version spread widens the blast pattern and narrows nothing.** Across the sampled downstreams the `fro-bot/agent` pin ranged over `v0.106.0`, `v0.107.0`, `v0.107.1`, `v0.109.0` (this repo), and `v0.111.0` against a latest release of `v0.111.0` (source: the `fro-bot/agent` GitHub Releases feed; major drift is not in play — the action is still `0.x`). A five-version spread means no single bump verifies the fleet and no single rollback clears it.
+
+[[marcusrbrown--infra]] already carries the shape of the mitigation: its `release-alert.yaml` is a `workflow_run` post-merge liveness alert on `Release`, a second workflow whose only job is to notice that the first one failed. That pattern is directly adoptable by any repo running scheduled agent passes, and is cheap — it consumes an event the platform already emits rather than polling anything.
 
 ### Convention Enforcement via Tests
 

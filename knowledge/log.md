@@ -5201,3 +5201,38 @@ Sources: https://github.com/marcusrbrown/.github@002d2f56fe28996005261726d1b1fb0
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-09-13 03:00] oversight | topic:github-actions-ci
+
+Daily org-oversight sweep over 34 non-archived accessible repositories found
+the scheduled `Fro Bot` job concluding `failure` on the default branch of seven
+of them simultaneously, with `marcusrbrown/marcusrbrown.com` red for twelve
+consecutive scheduled runs (twice daily since 2026-09-07) and no alert raised
+anywhere.
+
+Added "An Honest Red Signal Nobody Subscribes To" to `topics/github-actions-ci.md`.
+The finding inverts the two existing run-conclusion observations on that page:
+those record a conclusion signal that lied, this records one that was correct for
+six days and still delivered nothing, because a scheduled workflow failing on a
+default branch has no reader by construction — no notification, no required-check
+block, no PR annotation.
+
+Two supporting observations recorded: the seven failures carry at least two
+distinct signatures (`OpenCode server bootstrap` 5000ms timeout on agent pin
+v0.107.0 vs. `exit code 130` on v0.111.0), so a fleet-wide symptom is not
+evidence of a fleet-wide cause; and the downstream `fro-bot/agent` pin spread
+spans v0.106.0 through v0.111.0 against a v0.111.0 latest release, so no single
+bump verifies the fleet. `marcusrbrown/infra`'s `release-alert.yaml`
+(`workflow_run` liveness alert) is named as the directly adoptable mitigation.
+
+Open question for the next pass: whether the `exit code 130` signature is a
+job-timeout kill or an upstream cancellation, which decides if it belongs in the
+same class as the bootstrap timeout at all.
+
+Sources: https://github.com/fro-bot/.github@e86b08774d59c6fc7b08c6a43e743627ba3b4d81; https://github.com/marcusrbrown/marcusrbrown.com/actions/runs/34702727075; https://github.com/marcusrbrown/dev-like/actions/runs/34699774219; https://github.com/fro-bot/agent/releases
+
+## [2026-09-13 03:05] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@e86b08774d59c6fc7b08c6a43e743627ba3b4d81
