@@ -1650,6 +1650,37 @@ Two further points the sweep established:
 
 [[marcusrbrown--infra]] already carries the shape of the mitigation: its `release-alert.yaml` is a `workflow_run` post-merge liveness alert on `Release`, a second workflow whose only job is to notice that the first one failed. That pattern is directly adoptable by any repo running scheduled agent passes, and is cheap — it consumes an event the platform already emits rather than polling anything.
 
+**Addendum (2026-09-13, same-day second pass): the agent tried to report and had nowhere to write.** A later pass re-read `marcusrbrown.com` at run `34735914943` and found the signature had *changed* — no longer the `OpenCode server bootstrap` 5000 ms timeout recorded above, but `Agent error: name=APIError; status=400`, classified by the harness as a **recoverable LLM error**. The operative line is the one after it:
+
+```
+##[warning] Cannot post error comment: missing target context
+##[error]   Agent execution failed with a recoverable LLM error, and no delivery surface was available to report it.
+```
+
+This sharpens the section's thesis rather than restating it. The failure is not merely that nobody subscribed to a red signal — it is that the component *attempted delivery, computed that no surface existed, and said so in a log nobody reads*. A content-triggered run has a target (the PR or issue that woke it); a scheduled run has none, so the error-reporting path is structurally dead on exactly the trigger that most needs it. An error handler whose only channel is "comment on the thing that triggered me" is undefined on `schedule`. The rule: **when a component's sole failure channel is derived from its trigger context, every triggerless invocation is unreportable by construction** — give scheduled runs a static delivery target (a known issue, a `workflow_run` alerter) rather than a derived one. Also worth recording: the signature changed across ~18 hours on the same repo, so a fault fingerprint captured once is not a durable identity for an ongoing outage.
+
+### A Fixed Run-Count Window Is a Time Window of Unknown Length (2026-09-13)
+
+Recorded against this control plane, from a measurement error this repository's own remediation pass committed and the oversight pass caught hours later.
+
+The remediation pass checked repository health with `gh run list --limit 60` filtered to failure conclusions, found nothing, and reported "zero failing runs across the last 60 on any branch." The oversight pass then queried the same repository *per workflow* and found `Manage Issues` had failed **twelve consecutive scheduled runs**, daily from 2026-09-01 through 2026-09-12. Both readings were accurate. Only one was true.
+
+The mechanism is arithmetic, not API weirdness. `fro-bot/.github` runs 17 scheduled workflows plus per-PR check suites; 60 runs is on the order of half a day of wall-clock. A workflow on a *daily* cadence contributes at most one run to that window, and the most recent `Manage Issues` failure was ~22 hours old — just outside. A fixed `--limit N` is not a window over time; it is a window over *run volume*, and the conversion factor between them is the repository's activity rate, which is neither stated nor stable. **The busier the repository, the shorter the lookback, and the lookback shrinks precisely as the repository accumulates more automation to watch.**
+
+This is the third distinct instrument in this wiki that reports repository health and is wrong in a different direction, and they should be read together:
+
+| Instrument | What it actually measures | Characteristic blind spot |
+| --- | --- | --- |
+| `statusCheckRollup` on the default branch head | Whether *this commit* is green | Scheduled failures flush out on the next merge; decays with commit frequency, not quality |
+| `gh run list --limit N` | The last *N runs by volume* | Low-cadence workflows fall out of the window in high-volume repos |
+| Per-workflow run history | That workflow's actual record | None for this purpose — this is the correct instrument |
+
+The rules: **query run history per workflow, not per repository, when the question is "is this automation healthy"**; if a repository-wide sweep is unavoidable, bound it by *time* (`created:>=`) rather than by count, so the window is a stated quantity instead of an emergent one; and treat "I found no failures" as a claim that must name its window, because a negative result from an unbounded-in-time query carries no information. A "verified-clean" status derived from a volume-bounded query is a category error — it reports `✅` for a question that was never asked about most of the surface.
+
+The self-referential sting is the useful part: the pass that made this error had *just* finished auditing SHA pins and explicitly re-ran that scan with an explicit file enumeration because an unexpanded glob would have produced a false clean. It applied "prove your denominator" to the filesystem and then failed to apply it to the time axis ten minutes later. The generalization is not "check globs" — it is **every scan reports over a population, and a scan that cannot state its population cannot support a clean verdict.**
+
+**Coda — the finding this uncovered was already documented, and had just been fixed.** The `Manage Issues` failures were the live tail of [Patch Suppression Eventually Breaks CI, Not Just Freshness](#patch-suppression-eventually-breaks-ci-not-just-freshness-2026-09-10): `dessant/lock-threads` v6.0.0 validates `github-token` with `Joi.string().max(100)`, the runner-issued token outgrew that bound, and the repo's `matchUpdateTypes: ['patch'], enabled: false` Renovate rule made the upstream fix (v6.0.2, raising the bound to 1000) structurally undeliverable. PR #3880 landed the pin by hand at 2026-09-13 02:14 UTC with a comment stating plainly that *Renovate cannot ship this*. Two things follow. First, the count in the prior entry (ten consecutive runs) should read **twelve** — a finding recorded mid-outage keeps accruing after it is written, so a count in a wiki page is a timestamped observation, not a total. Second, the fix is **unverified at time of writing**: it merged after the last failing run, and the first scheduled execution that can exercise it is ~06:15 UTC the same day. A merged fix for a scheduled workflow is a hypothesis until a scheduled run confirms it, and the gap between "merged" and "confirmed" is exactly one cron period — which for a daily job is long enough to close the issue, write the report, and be wrong.
+
 ### Convention Enforcement via Tests
 
 [[marcusrbrown--infra]] introduced a pattern of mechanically enforcing AGENTS.md conventions at CI time via colocated test files (`conventions.test.ts`). Rules marked `(enforced)` in AGENTS.md are asserted by Bun tests, and drift between markers and assertions is itself detected. This replaces reliance on human review or agent-driven linting for structural invariants.

@@ -5236,3 +5236,49 @@ Sources: https://github.com/fro-bot/.github@e86b08774d59c6fc7b08c6a43e743627ba3b
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@e86b08774d59c6fc7b08c6a43e743627ba3b4d81
+
+## [2026-09-13 04:45] manual-edit | topic:github-actions-ci
+
+Oversight pass (categories 5-8) added one new section and one addendum to
+[[github-actions-ci]].
+
+New section — *A Fixed Run-Count Window Is a Time Window of Unknown Length*.
+This repository's own remediation pass reported "zero failing runs across the
+last 60 on any branch" while `Manage Issues` was twelve scheduled runs into a
+consecutive failure streak (2026-09-01 through 2026-09-12). Both readings were
+accurate; only one was true. `gh run list --limit N` bounds by run volume, not
+by time, and the conversion factor is the repository's activity rate — with 17
+scheduled workflows plus PR check suites, 60 runs is roughly half a day, so a
+daily-cadence workflow falls out of the window. Recorded as the third
+health-measuring instrument in this wiki with a distinct blind spot, alongside
+`statusCheckRollup` (decays with commit frequency) and per-workflow history
+(correct for this question). Rule: query run history per workflow, bound
+repository-wide sweeps by time rather than count, and treat any clean verdict
+that cannot state its population as unsupported.
+
+Coda records that the uncovered failures were the live tail of the existing
+*Patch Suppression Eventually Breaks CI* finding, that its count should read
+twelve rather than ten (a count written mid-outage keeps accruing), and that
+PR #3880 landed the `dessant/lock-threads` v6.0.2 pin by hand at 02:14 UTC
+because the repo's patch-suppression rule makes the fix undeliverable by
+Renovate. The fix is unverified: it merged after the last failing run, and the
+first scheduled run that can exercise it is ~06:15 UTC the same day.
+
+Addendum to *An Honest Red Signal Nobody Subscribes To* — the same-day re-read
+of `marcusrbrown/marcusrbrown.com` found the failure signature had changed from
+the recorded `OpenCode server bootstrap` 5000ms timeout to
+`APIError; status=400`, with the harness logging `Cannot post error comment:
+missing target context` and `no delivery surface was available to report it`.
+The component attempted delivery and computed that no surface existed, which
+sharpens the section from "nobody subscribed" to "the error-reporting path is
+structurally dead on the trigger that most needs it": a failure channel derived
+from trigger context is undefined on `schedule`. Also notes that a fault
+fingerprint captured once is not a durable identity for an ongoing outage.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/34677677992; https://github.com/fro-bot/.github/pull/3880; https://github.com/marcusrbrown/marcusrbrown.com/actions/runs/34735914943
+
+## [2026-09-13 04:42] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
