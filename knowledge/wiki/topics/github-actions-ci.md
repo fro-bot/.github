@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-13
 sources:
-  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
-    sha: d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: e603ff54e34aa4f62cf6c74909abff334cf71880
     accessed: 2026-09-13
   - url: https://github.com/fro-bot/.github
     sha: e86b08774d59c6fc7b08c6a43e743627ba3b4d81
@@ -86,8 +86,14 @@ tags:
     bootstrap-dependency,
     self-update-deadlock,
     liveness-detection,
+    codegen-correctness,
+    error-suppression,
+    audit-determinism,
+    scope-hole,
+    consolidation,
   ]
 related:
+  - marcusrbrown--sparkle
   - marcusrbrown--dotfiles
   - marcusrbrown--tokentoilet
   - fro-bot--agent
@@ -839,28 +845,6 @@ Practical consequences for surveying:
   [[marcusrbrown--marcusrbrown-com]] ("merge gates sorted by authorship,
   not quality") — but here it resolved, and the resolution was a human
   taking the diff and discarding the branch.
-
-**Second independent confirmation (2026-09-13, [[marcusrbrown--mrbro-dev]]).**
-The same resolution shape, ten days later, in an unrelated repo — and
-this one is the cleaner specimen because the pairwise disposition is
-legible in the API. On 2026-08-29 between 19:01 and 22:44 UTC, one day
-after a survey recorded the queue as stuck for a tenth consecutive
-interval, the entire backlog was disposed at once: three PRs merged,
-**#266 `fix(security): remediate high audit advisories` closed
-unmerged**, seven issues closed `completed`. #266's content then landed
-by hand as merged #346 and #359 within four days. A merge-rate audit
-scores that window as a rejected security fix; a `pnpm-workspace.yaml`
-diff scores it as full remediation.
-
-Two refinements the second case adds. **The window is short and the
-trigger is not the agent** — 31 days of nothing, then four hours of total
-disposal, then 30+ human-authored PRs in three days; a survey cadence of
-a few days can land entirely inside the frozen phase and read the repo as
-inert right up to the day it wasn't. And **the human audit outgrew the
-agent's**: the daemon's four-item CI least-privilege cluster was closed,
-and the operator's own issues (#355–#358, all false-success defects)
-replaced it — so "the backlog was closed" was not a retreat from the work
-but a substitution of a better-scoped one.
 
 Corollary on dead proposals: this wiki flagged `bfra-me/works` #3691 as
 a "pending v0 → v1 major" for three surveys. It closed unmerged, the
@@ -1706,89 +1690,119 @@ The self-referential sting is the useful part: the pass that made this error had
 
 **Coda — the finding this uncovered was already documented, and had just been fixed.** The `Manage Issues` failures were the live tail of [Patch Suppression Eventually Breaks CI, Not Just Freshness](#patch-suppression-eventually-breaks-ci-not-just-freshness-2026-09-10): `dessant/lock-threads` v6.0.0 validates `github-token` with `Joi.string().max(100)`, the runner-issued token outgrew that bound, and the repo's `matchUpdateTypes: ['patch'], enabled: false` Renovate rule made the upstream fix (v6.0.2, raising the bound to 1000) structurally undeliverable. PR #3880 landed the pin by hand at 2026-09-13 02:14 UTC with a comment stating plainly that *Renovate cannot ship this*. Two things follow. First, the count in the prior entry (ten consecutive runs) should read **twelve** — a finding recorded mid-outage keeps accruing after it is written, so a count in a wiki page is a timestamped observation, not a total. Second, the fix is **unverified at time of writing**: it merged after the last failing run, and the first scheduled execution that can exercise it is ~06:15 UTC the same day. A merged fix for a scheduled workflow is a hypothesis until a scheduled run confirms it, and the gap between "merged" and "confirmed" is exactly one cron period — which for a daily job is long enough to close the issue, write the report, and be wrong.
 
-### A Green Reviewer Run Is Not a Review (2026-09-13)
+### A Green Pipeline Can Be a Wrong Pipeline (2026-09-13)
 
-From [[marcusrbrown--mrbro-dev]], surveyed through the
-`marcusrbrown.github.io` name binding. PR #369 — a rolling
-`mrbro-bot[bot]` blog-snapshot PR, one commit, one file — has been open
-ten days. In that window the `Fro Bot` workflow fired on it on a
-`pull_request` event **eleven consecutive days and concluded `success`
-every time**. It posted **zero reviews and zero comments**. The repo had
-merged #353 (`ci(blog): let Fro Bot review content-only bot PRs`) nine
-days earlier for the express purpose of making those runs produce
-review output.
+Recorded from [[marcusrbrown--sparkle]], and it extends the fleet's most-cited finding along a new axis.
 
-Three status surfaces on that one PR all read healthy while nothing is
-true:
+This wiki has repeatedly established that _a run's conclusion measures the harness, not the deliverable_ — [[marcusrbrown--cortexkit-anthropic-auth]] (44 consecutive `success` runs producing zero comments), [[marcusrbrown--github]] (every run inside a Renovate outage concluded `success` with zero PRs opened). Both are **liveness** failures: the job ran, and nothing came out.
 
-| Surface | Reads | Actually |
-| --- | --- | --- |
-| `Fro Bot` run conclusion | `success` ×11 | No review artifact produced |
-| Last thread comment (`mrbro-bot[bot]`, 09-03) | "✅ All CI checks passed! Ready for review." | `CI` has failed 5 times since 09-09 |
-| Review count | — | `0`, and structurally unobtainable |
+Sparkle's docs pipeline is the **correctness** case. Something came out. It was wrong.
 
-The first row is the wiki's existing [A Run's Conclusion Measures the
-Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02)
-applied to a **reviewer**, which is the worst place for it: a reviewer's
-whole output is a side effect. Nothing in the run's exit status depends
-on whether a review was posted, so the job that produces no review and
-the job that produces a good one are indistinguishable from the Actions
-UI, from `statusCheckRollup`, and from any required-check configuration.
-**Assert on the artifact, not the exit code** — a review job should fail,
-or at minimum emit a distinguishable neutral conclusion, when it
-completes without writing a review.
+`.github/actions/setup-ci` ends at `pnpm install`; it never builds. Every `@sparkle/*` package resolves only through `dist`, and `dist` is gitignored. So the `Regenerate Documentation` workflow generated API documentation **without ever building the packages it documents**, and every cross-package type reference resolved against a directory that did not exist. The published signature read `mergeThemes(baseTheme, overrideTheme): ThemeConfig`; the source is `mergeThemes(baseTheme: ThemeConfig, overrideTheme: Partial<ThemeConfig>)`. One overload, so not a mis-documented alternative — just a wrong type, shipped.
 
-The second row generalizes separately and cheaply: **a verdict posted as
-a comment is a point-in-time observation rendered as a status.** "All CI
-checks passed" was true when written and has been false for four days;
-comments do not expire, are not re-evaluated, and sit above the actual
-check list in most reading orders. Prefer a re-rendered check summary, or
-edit the comment in place, over appending a verdict that outlives its
-evidence.
+The second half is why nobody noticed. `docs/typedoc.json` sets `skipErrorChecking: true`, which converts TypeScript resolution failures during generation into silently wrong output instead of a failed build. The repo's own issue states it exactly: _"Every regeneration was green. The documentation was wrong. Nothing surfaced it until someone diffed generated output against source by hand."_
 
-The third row is the root cause and is architectural. The repo's own open
-issue #334 states it: `ci(blog): rolling content PR can never receive an
-approving review`. A long-lived bot-authored content PR has no eligible
-approver — the author cannot self-approve, the reviewer is another bot
-whose output is not a formal review, and the requirement is therefore
-unsatisfiable by construction. Such a PR does not stall; it **accrues
-check history in place of progress**, which is why it looks busy. When a
-rolling PR is a delivery mechanism rather than a proposal, either give it
-an automerge path keyed on its author and path scope, or stop routing it
-through a review gate it cannot clear. Cf. [Merge Gates Sorted by
-Authorship, Not Quality](#merge-gates-sorted-by-authorship-not-quality-2026-09-01),
-which is the same asymmetry seen from the other side.
+Three rules fall out:
 
-### When a Re-Derivation Loop Is Cleaned Up, the Duplicate Wins (2026-09-13)
+1. **A generator whose failure mode is wrong-output needs an assertion on the artifact, not on the exit code.** Sparkle's autoheal already runs a docs-drift check (`docs:automation` then `git status`), which proves the artifact is *reproducible* — it does not prove it is *correct*. Reproducibly wrong is a stable state.
+2. **An error-suppression flag turns a loud category of failure into a silent one, and the two categories it merges are rarely distinguishable.** `skipErrorChecking` was presumably added to stop unrelated workspace type errors from failing the docs build — a reasonable goal that also suppresses the errors meaning the output is untrustworthy. Suppression that cannot discriminate is a permanent downgrade in signal.
+3. **Fixing the defect does not fix the invisibility.** The build-ordering bug was patched; the flag that hid it is still set. When a bug is found *because a human hand-diffed*, the follow-up work is the instrument, not the bug.
 
-From [[marcusrbrown--mrbro-dev]]. This wiki tracked #283-vs-#254 for six
-surveys as a defect: the autoheal daemon had regenerated its own
-unmerged `docs: correct automation script count` PR as a byte-titled
-duplicate rather than noticing the open original. On 2026-08-29 the
-backlog was finally cleared — and the **duplicate merged at 19:21 while
-the 44-day-old original was closed unmerged at 20:57**.
+A related third defect on the same pipeline generalizes to any codegen that writes into a shared directory: `docs:automation:force` calls `cleanupPrevious()`, which deletes generated output directories wholesale, but the target directory holds both generated and hand-authored files. One forced run produced **`+1 −1858` across 6 files**. The generator writes `button.md`; the deleted file was hand-maintained `button.mdx`. **Nothing at cleanup time distinguishes "output I own" from "a file that happens to live here"** — a manifest of emitted paths, or an ownership marker in each generated file, is the minimum. Rarity of the `--force` path is why it had not bitten yet, which is a schedule, not a mitigation.
 
-The defect was not corrected. It was ratified, and the audit trail now
-shows a clean merge.
+### Gate the Delivery Mode and the Credential on One Computed Value (2026-09-13)
 
-The mechanism is ordinary and worth naming because it is invisible after
-the fact: a bulk cleanup resolves by *branch freshness*, because the
-fresh branch is the one that still rebases cleanly, still has green
-checks, and is at the top of the list. Being first-correct confers no
-advantage in that pass. Two consequences:
+The strongest observed repair of the output-mode delivery class, from [[marcusrbrown--sparkle]] (`#2001` + `#2003`).
 
-- **A merged duplicate is not evidence the duplication was handled.**
-  A fleet lint that counts open duplicate-titled PRs reports zero after
-  such a cleanup while the generating loop is untouched. Check the
-  *closed* side too: an original closed unmerged next to a merged copy of
-  the same title is the signature.
-- **Dedup belongs at proposal time, not at cleanup time.** The
-  deduplication clauses in these agent prompts have now failed the same
-  way in two repos (here, and #473/#523 at
-  [[marcusrbrown--marcusrbrown-com]] — byte-identical proposals 32 days
-  apart on differently-named branches). Prompt text asking the model to
-  check for an existing PR is not a dedup mechanism; a branch-name or
-  title-keyed pre-flight query is.
+Prior entries established the failure: the harness moved commit/push/PR to the caller workflow, `resolveOutputMode()`'s `auto` default resolves to `working-dir`, and callers that never grew the delivery half run fully-permissioned daemons that write nothing ([[marcusrbrown--tokentoilet]]). [[fro-bot--dashboard]] fixed its own case by scoping `output-mode: branch-pr` to schedule and dispatch. Sparkle's version adds the property that keeps the fix from decaying:
+
+```yaml
+- name: Resolve delivery mode
+  id: gate
+  env:
+    DELIVERS_BRANCH_PR: >-
+      ${{ (github.event_name == 'workflow_dispatch' && (inputs.mode == 'autoheal' || inputs.mode == ''))
+          || (github.event_name == 'schedule' && github.event.schedule == '0 5 * * *') }}
+  run: |
+    if [ "${DELIVERS_BRANCH_PR}" = 'true' ]; then mode='branch-pr'; else mode='working-dir'; fi
+    echo "branch-pr=${DELIVERS_BRANCH_PR}" >> "$GITHUB_OUTPUT"
+    echo "output-mode=${mode}"            >> "$GITHUB_OUTPUT"
+```
+
+Both consumers read from `steps.gate.outputs`: the agent's `output-mode:` input, and the `if:` on the step that restores push credentials. The workflow's own comment names the reason — _"the two can never drift apart, which is the exact class of bug this workflow already hit once."_
+
+The generalizable shape: **a delivery decision expressed twice is a delivery decision that will eventually disagree with itself.** Requesting `branch-pr` without a credential produces a push failure; restoring a credential without requesting `branch-pr` produces a silently-discarded working tree. Neither half is independently meaningful, so neither half should be independently authored.
+
+Three supporting decisions worth copying:
+
+- **Workflow-level `permissions: contents: read`, job-level escalation.** The write grant is scoped to the one job that needs it rather than inherited by the file.
+- **`persist-credentials: false` on checkout, credential restored conditionally afterward.** The PAT never lands in `.git/config` on the fork-PR-head comment path, and lands there only for runs that will actually push. Written to `.git/config` rather than passed by env because the agent scrubs its child environment — a harness detail that must be encoded in the caller or the fix silently fails.
+- **Write capability follows prompt intent, not trigger type.** Review is read-only; maintenance updates a perpetual issue the API token already covers; only autoheal delivers fixes. The mode that *can* write is the smallest one that *must*.
+
+### A Red Check Between Two Category Definitions (2026-09-13)
+
+From [[marcusrbrown--sparkle]]: a required-context job red for six consecutive days on an open PR, with a one-line fix, correctly reported every night, and actioned by nobody — because no actor had both the capability and the mandate.
+
+PR #2036 is a Renovate `lockFileMaintenance` PR whose regenerated lockfile pulls in `@parcel/watcher@2.6.0`, a package with a build script absent from every allowlist in `pnpm-workspace.yaml` (`allowBuilds`, `onlyBuiltDependencies`, `ignoredBuiltDependencies`). `pnpm install` exits 1 with `ERR_PNPM_IGNORED_BUILDS`. The remedy is one entry.
+
+- **Renovate cannot ship it.** The fix is a workspace-config change, not a version bump — and Renovate is the author of the failing branch.
+- **The autoheal daemon will not.** It reports the PR, the exact error string, and its own reason: _"Category 1 excludes dependency/security PRs; category 2 only covers security PRs with conflicts/failures."_ A routine dependency PR that is red but not security-related is defined out of both categories.
+- **The human has not.**
+
+This is deliberately *not* filed as a detection failure. The daemon's `Needs Human Attention` section names the PR and suggests the fix. It is a **scope-definition hole**, and the diagnostic difference matters: detection gaps are fixed by better instrumentation, scope holes are fixed by editing a category boundary. The same family as [The Updater Ships Its Own Poison and Cannot Ship the Antidote](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11) — the actor with the capability lacks the mandate; the actor with the mandate is the broken component.
+
+The rule for prompt authors: **category exclusions written to prevent one behavior (don't touch dependency PRs, that's Renovate's job) silently create an unowned region whenever the excluded owner is itself incapable.** An autoheal contract needs an explicit escape clause — _if the nominal owner cannot deliver the fix, the exclusion lapses_ — or a standing rule that any red required check on an open PR is category 1 regardless of authorship.
+
+### A Prose-Driven Audit Is a Sampling Process, Not a Lint (2026-09-13)
+
+Two observations from the same rolling report in [[marcusrbrown--sparkle]], pointing in opposite directions. Both are worth keeping, because together they bound how much weight an LLM-authored health report can carry.
+
+**It can be rigorous about populations.** The 2026-09-11 workflow-health row reads: _"`main.yaml` on the `main` branch itself: 70 success / 1 cancelled over the last 7 days (0 failures). Raw `main.yaml` totals incl. PR branches: 287 runs, 84 failures (≈29%) — isolated to Renovate/PR branches, not a `main` CI regression."_ It states the population, states the alternative population, and reconciles them. That is precisely the discipline [A Fixed Run-Count Window Is a Time Window of Unknown Length](#a-fixed-run-count-window-is-a-time-window-of-unknown-length-2026-09-13) demanded, executed unprompted. The same report also **refuses** a mechanical fix it could have made — declining to rename `.github/settings.yml` to the repo's `.yaml` convention because the filename is very likely required verbatim by the Settings App, and flagging it for a human instead. A convention lint would have renamed it and broken settings sync.
+
+**It is not deterministic.** On an unchanged tree, two consecutive nightly runs return opposite verdicts on that same file:
+
+| Run | Convention-drift verdict |
+| --- | --- |
+| 2026-09-11 | ✅ Clean — _"No `.yml` files in the repo."_ |
+| 2026-09-13 | ⚠️ Issues — _"`.github/settings.yml` uses the `.yml` extension, violating the convention."_ |
+
+`.github/settings.yml` exists in both. Nothing changed between the runs except the sampling.
+
+A model-executed audit re-derives its own checklist every invocation. Coverage is a distribution, not a guarantee. Therefore: **a green line in a generated audit means "this run did not find it," never "it is not there."** The correct read of a clean verdict is one draw from a sampler, and the correct response to a check that must hold every time is to move it out of prose and into `eslint.config.ts` or a CI job. Sparkle did exactly that for its class-usage rule (an absolute ban that the nightly pass had been re-reporting for weeks became a `no-restricted-syntax` lint requiring a justified suppression) and has not done it for the file-extension rule — which is why one is settled and the other oscillates.
+
+Corollary for anything that consumes these reports, including this wiki: **do not treat the absence of a finding in a generated report as evidence.** Only positive findings carry information.
+
+### Delete the Duplicated Fact, Don't Re-Sync It (2026-09-13)
+
+An eight-week drift saga in [[marcusrbrown--sparkle]] that this wiki tracked across five surveys, and the resolution is a shape worth naming.
+
+`llms.txt` text-declared `packageManager: pnpm@10.33.4` while the root manifest advanced to `11.24.0` — a full major plus fourteen minors. The autoheal category-3 accuracy check found it on 2026-07-11, opened issue #1800 per its contract (open an issue, not a PR), and re-flagged it on every subsequent survey without healing it. This page previously recorded the boundary correctly: the daemon can see the drift but is contractually barred from patching the doc, so remediation waits on a human.
+
+The suggested fix at the time was to permit a narrow `docs(llms)` PR for the mechanical case. That would have worked and would have been wrong. What actually shipped:
+
+> - Package manager: **pnpm** — exact version pinned by `packageManager` in the root `package.json`
+> - Node: pinned via `.node-version` (24.x) — repo `engines` floor is `>=22.13.1`
+
+The version literal was **removed and replaced with a pointer to its single source**. Re-syncing would have restarted the clock; the pointer ends the class. The check now reports `✅ Current` for a structural reason rather than a maintenance one.
+
+The rule: **when an accuracy check keeps firing on the same line, the question is whether the line should exist, not whether it should be updated.** A document that restates a value owned elsewhere has created a second source of truth and signed up for perpetual reconciliation. This applies directly to agent-facing context files (`llms.txt`, `AGENTS.md`, `copilot-instructions.md`), which accumulate restated versions, paths, and counts precisely because they are written to be self-contained — see [[marcusrbrown--marcusrbrown-com]], where an autoheal AGENTS.md-accuracy check reported "✅ Current" while the Stack line named three wrong versions. Self-containment and freshness are in direct tension, and freshness should win for anything with a machine-readable origin.
+
+A second-order note: the same session closed the parallel convention-drift issue by **rewriting the rule rather than the code** — the absolute class ban was, in the PR author's words, _"unambiguous but false,"_ and enforcing it as written would have spent regression budget making syntax uniform while leaving behavior identical. Both closures share a structure. A nightly audit that keeps re-reporting the same finding is evidence about the *contract*, not only about the tree, and "the check is right and the rule is wrong" is a live hypothesis that a heal-the-code-only loop cannot reach.
+
+### Consolidate, Don't Rebase, When Autoheal PRs Share a Hunk (2026-09-13)
+
+From [[marcusrbrown--sparkle]]'s 2026-09-06 backlog drain, and a refinement of [The Backlog Was Closed, Not Merged](#the-backlog-was-closed-not-merged-2026-09-03).
+
+Three fro-bot security PRs (#1838 `adm-zip`, #1862 `postcss`, #1866 `brace-expansion`) each added one entry to the *same* `overrides` block in `pnpm-workspace.yaml`. Once a fourth (#1904 `nanoid`) merged, the remaining three conflicted against `main` and against each other. The daemon responded by doing what it was built to do: it rebased them. Repeatedly — seven recorded conflict-resolution comments across the three branches, each regenerating a lockfile against a `main` that had moved 65+ commits including an Astro major. On one it even *widened* its own override when a second advisory landed mid-flight, which left the PR title stale relative to its own diff.
+
+All of that work was discarded. A single human PR (#2002) folded the three overrides into one change against current `main` in one pass, with the stated reasoning: _"Rebasing them sequentially means three rounds of the same merge resolution. One entry point is cheaper and easier to review."_ It also raised the `postcss` floor beyond what any of the bot PRs asked for, to close an additional medium advisory _"by constraint rather than by whatever resolution happens to land"_ — a phrasing worth adopting: an override floor should be chosen against the advisory set, not against the minimum that clears today's alert.
+
+Two rules:
+
+1. **N open PRs editing the same hunk is a consolidation signal, not a rebase queue.** The rebase cost is O(N) per merge to `main` and recurs indefinitely while the queue is gated. The daemon is the best-positioned actor to detect the condition — it is the one authoring the conflict-resolution comments — and the worst-positioned to act on it under a one-fix-per-PR contract.
+2. **A bot that amends its own PR must amend the title too.** #1862's title advertised `^8.5.12` while its diff targeted `^8.5.18`. Anyone triaging by title had stale information, and the discrepancy only surfaced because a human read the diff.
+
+This also sharpens the closed-not-merged reading: three PRs closed unmerged here is a *complete* remediation with a *raised* floor, and the only reason that is legible at all is that the human left an explicit supersede comment on each thread. The bfra-me case had no such note, which is why the merge-rate reading and the manifest reading diverged silently. **Closing a superseded bot PR without naming its successor destroys the only evidence that the work landed.**
 
 ### Convention Enforcement via Tests
 

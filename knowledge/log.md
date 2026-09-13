@@ -5283,22 +5283,99 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
 
-## [2026-09-13 07:20] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-09-13 10:36] ingest | repo:marcusrbrown/sparkle
 
-Surveyed the target repository and ingested durable findings. The name still resolves to repo id `1174807412` / `node_id R_kgDORgYjdA` — the mrbro.dev developer portfolio, not the brand site (id `1021912280`) — so the collision recorded since 2026-07-20 holds; binding + delta recorded on the name page, durable per-repo knowledge on the canonical page.
+Eleventh survey of `marcusrbrown/sparkle` at HEAD `e603ff5`. The 2026-08-29 page
+read this repo as a textbook propose-without-merge backlog — 15 open PRs, 13
+fro-bot-authored, none merging. That reading is superseded as a trajectory. Open
+PRs are 15 → 2, and the entire queue cleared inside a 112-minute window on
+2026-09-06: ten merged, and #1838/#1862/#1866 closed unmerged as *superseded* by
+human PR #2002, which consolidated all three security overrides into one change
+and raised the postcss floor beyond what any bot PR asked for, to close an extra
+medium advisory "by constraint rather than by whatever resolution happens to
+land." Second confirmation of the closed-not-merged class first recorded against
+`bfra-me/works`, with better hygiene — an explicit supersede comment sits on each
+closed thread, which is the only reason a merge-rate audit and a manifest diff
+reconcile at all. The interval also priced the stall: the daemon spent seven
+conflict-resolution cycles keeping those three branches alive against a `main`
+that had moved 65+ commits, and on #1862 widened its own override mid-flight,
+leaving the PR title stale relative to its own diff. All of it discarded.
 
-First substantive interval through this name since 2026-08-01, and it closes the longest-running finding on the page. The ten-survey propose-without-merge stall ended on 2026-08-29 between 19:01 and 22:44 UTC — one day after the last no-op pass called the queue stuck — by liquidation rather than promotion: #283/#263/#253 merged, #266 (security remediation) and #254 closed unmerged, and #287/#271/#270/#261/#212/#162/#292 closed `completed`. The #283-vs-#254 duplicate resolved in favor of the duplicate (copy merged 19:21, 44-day-old original closed 20:57). The substance was then re-authored by hand: 30+ `marcusrbrown`-authored PRs between 08-31 and 09-03, 18 trunk commits since `0e1710b` (17 human, 1 bot) in ~29 hours, with #266 reappearing as merged #346 + #359. Second independent confirmation of the [[bfra-me--works]] "backlog closed, not merged" pattern.
+Authorship inverted with it — 89 commits, 50 `mrbro-bot[bot]` / 27
+`marcusrbrown` / 12 `fro-bot`. Prior intervals were effectively all-bot. Almost
+all of the human work is auditing machinery that had been reporting itself
+healthy, and it produced the ingest's most durable finding: a green pipeline
+that emitted wrong output. `setup-ci` ends at `pnpm install`, `dist` is
+gitignored, so `Regenerate Documentation` generated API docs without ever
+building the packages it documents and published `mergeThemes(base, override):
+ThemeConfig` against a source `Partial<ThemeConfig>` (#2022). `skipErrorChecking:
+true` in `typedoc.json` is why nobody saw it (#2023, still open). A forced
+regeneration deletes hand-authored docs — `+1 −1858` across six files, with the
+`.md`/`.mdx` extension as the only discriminator between generated and
+hand-written (#2025, open). And the JSDoc parser underneath all of it is
+`doctrine`, archived since 2018 (#2032, open). This extends the fleet's
+most-cited finding — a run's conclusion measures the harness, not the deliverable
+— from liveness to correctness: not "the daemon ran and nothing came out," but
+"the daemon ran, delivered, and the artifact was wrong."
 
-The campaign has one theme — false success in the repo's own instrumentation — diagnosed by human-filed issues (#355-#358) and written down in a new five-category `docs/solutions/` compound-docs tree (10 documents, same YAML-frontmatter convention as this control plane); HEAD is `docs(solutions): capture the recursive-fix failure mode (#367)`. The loop is already reopening: trunk frozen 10 days, the sole open PR #369 failing `CI → Validate Dependencies → Check for security vulnerabilities` five consecutive runs since 09-09 with no `fro-bot` PR proposed since the drain, zero reviews in ten days (cause named by the repo's own #334), a stale "✅ All CI checks passed! Ready for review." standing as the thread verdict, and `Fro Bot` concluding `success` on eleven consecutive daily `pull_request` runs while emitting nothing.
+Four long-running threads on the page closed. #1812 (typedoc 0.28.20), carried
+since 2026-07-11, was stuck on `typedoc-plugin-frontmatter@1.3.1` importing
+`typedoc` with no dependency or peer declaration and resolving through
+`shamefullyHoist: true` — CI-only, never reproducible locally under an identical
+lockfile. #1800 (llms.txt drift), flagged across five surveys, closed by
+*removing* the duplicated version literal and pointing at `packageManager`
+instead of re-syncing it. #1937 (convention drift) closed by rewriting the rule:
+the absolute class ban was "unambiguous but false," and became a
+justified-exception rule plus a `no-restricted-syntax` lint after seven genuinely
+unjustified classes were deleted. Both closures share a structure worth naming —
+a nightly audit that keeps re-reporting the same finding is evidence about the
+contract, not only about the tree.
 
-Pins and structure: agent v0.93.1 → v0.105.1 (`e9501a9`, first movement since 07-20); `fro-bot.yaml` 1,165 lines / 51,776 B across 5 jobs, single `30 3` cron, `persist-credentials: false` on every checkout, `LIVE_AUDIT_WRITE_MODE` default `disabled`; 8 committed workflows + 2 dynamic Copilot entries; React 19 / React Router `^7.18.2` / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 / Node >=24; new devDep `agent-browser 0.33.0`; `lhci.config.js` → `lighthouserc.cjs`; Renovate preset `#5.2.7` unmoved ~8 weeks; still no `.github/settings.yml` (404), branch protection governed imperatively. Open items 14 → 5. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.
+The delivery-mode class was diagnosed and repaired with the strongest version
+seen in the fleet (#2001 + #2003): a `Resolve delivery mode` gate step is the
+single computed source for both the conditional credential restore and the
+agent's `output-mode`, with an inline comment naming the drift class it prevents.
+Workflow-level `contents: read`, job-level escalation, `persist-credentials:
+false`, credential written to `.git/config` only for `branch-pr` runs because the
+agent scrubs its child environment. Stronger than `fro-bot/dashboard`'s #413,
+which scoped output-mode alone.
 
-Pages touched: `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (delta log + survey-history row), `wiki/repos/marcusrbrown--mrbro-dev.md` (durable delta log + survey-history row + `node_id`; discharges the 2026-09-01 standing re-survey note), `wiki/topics/github-actions-ci.md` (two new entries — "A Green Reviewer Run Is Not a Review", "When a Re-Derivation Loop Is Cleaned Up, the Duplicate Wins" — plus a second-confirmation block on "The Backlog Was Closed, Not Merged"), `index.md`. All updates additive; no prior content overwritten. Reads were limited to directory listings, README/manifest files, and workflow files, all treated as untrusted input; `gh` had no credential (`GH_TOKEN` unset), so access was unauthenticated `api.github.com` + `raw.githubusercontent.com`.
+Two findings cut against the daemon. PR #2036 has been red six days on
+`ERR_PNPM_IGNORED_BUILDS @parcel/watcher@2.6.0` — a one-line allowlist fix
+orphaned between Renovate's mandate and autoheal's category definitions, and
+filed here as a scope hole rather than a detection gap because the daemon names
+the PR and the exact error string every night. And the autoheal report, which
+declares its own populations rigorously (main-branch vs all-branch run health,
+reconciled) and correctly refuses to rename a load-bearing `settings.yml`,
+returns opposite verdicts on that same unchanged file two nights apart. A
+model-executed audit re-derives its checklist each run; a green line means "this
+run did not find it," never "it is not there."
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io@d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
+New subsystem: `.deciduous/`, a git-tracked decision graph (≥1000 node + 664 edge
+JSON records, edges keyed on `change_id`, reconciled against per-machine SQLite).
+A second knowledge-graph substrate in the ecosystem, with the same
+key-on-something-that-survives-regeneration lesson as this wiki's `node_id`-keyed
+corrections store.
 
-## [2026-09-13 10:30] ingest | repo:marcusrbrown/marcusrbrown.github.io
+One contradiction recorded rather than overwritten: `.github/settings.yml` reads
+`_extends: .github:common-settings.yaml`, which is owner-relative and therefore
+resolves to `marcusrbrown/.github`, not `fro-bot/.github` as this page has
+claimed since 2026-04-28. Both readings preserved; Fro Bot ecosystem membership
+was never established by settings inheritance anyway.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Dependency deltas: docs stack crossed majors (Astro v6 → ^7, Starlight → ^0.41,
+Vitest → ^4, React 19.3.0); pnpm 11.24.0 → 11.26.0; `.node-version` 24.20.0 →
+24.21.0; agent v0.105.1 → v0.111.0 across thirteen bumps; `bfra-me/.github` →
+v4.27.0; Renovate preset #5.2.13; overrides ledger to 14 entries plus a new
+`minimumReleaseAgeExclude` escape hatch. Scheduled daemon 40/40 green.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Pages touched: `wiki/repos/marcusrbrown--sparkle.md` (updated),
+`wiki/topics/github-actions-ci.md` (six new sections), `index.md`.
+
+Sources: https://github.com/marcusrbrown/sparkle@e603ff54e34aa4f62cf6c74909abff334cf71880
+
+## [2026-09-13 10:38] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
