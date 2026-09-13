@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/mrbro.dev"
+title: marcusrbrown/mrbro.dev
 created: 2026-04-18
-updated: 2026-08-01
+updated: 2026-09-13
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -43,11 +43,30 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
     accessed: 2026-08-01
-tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm, name-collision, analytics, privacy, umami]
-aliases: [mrbro-dev, mrbro.dev]
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
+    accessed: 2026-09-13
+tags:
+  - portfolio
+  - react
+  - typescript
+  - vite
+  - github-pages
+  - blog
+  - pnpm
+  - name-collision
+  - analytics
+  - privacy
+  - umami
+  - compound-docs
+  - false-success
+aliases:
+  - mrbro-dev
+  - mrbro.dev
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--marcusrbrown-github-io
+  - marcusrbrown--marcusrbrown-com
   - marcusrbrown--infra
 ---
 
@@ -396,6 +415,53 @@ The delta is a single large feature landed across two commits (#256 `feat: add p
 - **Stack steady at `9e54dbc`:** React `^19.0.0`, React Router `^7.15.0`, TypeScript **5.9.3** (still pre-v6), Vite **7.3.6**, Vitest 4.1.10, Playwright 1.61.1, `@opencode-ai/plugin` 1.18.2, pnpm **11.1.3** (`engines.pnpm >=11.1.3`, Node `>=24.0.0`). Renovate `github>marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`. 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; `fro-bot.yaml` still the single `30 3 * * *` daily oversight+autoheal pass (#234 consolidation holds). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted.**
 - **Open issues (readable this run):** #259 (Daily Fro Bot Report — 2026-08-01, the consolidated daily report), **#258 (`ci: make performance budget failures visible and actionable`** — new autoheal-filed CI-visibility task), #212 (authenticated git push for mention runs — still open), #1 (Dependency Dashboard). API `open_issues_count` reads 6 (folds in open PRs). Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
 
+## Delta Log (2026-09-13, SHA `d9eaaff` — the false-success audit: a backlog liquidated, re-authored by hand, and written down as a defect class)
+
+Re-surveyed via the `marcusrbrown.github.io` name binding (repo id `1174807412`, `node_id R_kgDORgYjdA` — the collision holds; `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`). This discharges the standing re-survey note left by the 2026-09-01 incidental observation on [[marcusrbrown--marcusrbrown-github-io]]. No `gh` credential again (`GH_TOKEN` unset), so reads were unauthenticated API + raw fetch over directory listings, README/manifest files, and workflow files.
+
+`main` advanced `9e54dbc` → `0e1710b` → **`d9eaaff`** (`docs(solutions): capture the recursive-fix failure mode (#367)`, 2026-09-03T02:14:28Z). The interval is the largest human-authored burst this page has recorded: **30+ PRs authored by `marcusrbrown` between 2026-08-31 and 2026-09-03**, of which eighteen commits landed on trunk since `0e1710b` — **seventeen human, one `mrbro-bot[bot]`** — inside ~29 hours.
+
+### The 31-day stall ended by liquidation, not by merging
+
+Between **2026-08-29T19:01 and 22:44 UTC**, one day after the last no-op survey recorded the queue as frozen, every carried artifact was disposed at once. #283, #263 and #253 **merged**; **#266 (`fix(security): remediate high audit advisories`) and #254 were closed unmerged**; the entire CI least-privilege cluster (#287/#271/#270/#261), the ~5-week-old #212, and the legacy #162 autoheal report were all closed `completed`. #258 followed on 08-31.
+
+Two things about the shape of that resolution are worth keeping:
+
+- **The duplicate won.** #283 was the daemon's 2026-08-21 re-derivation of its own unmerged #254. The copy merged at 19:21; the 44-day-old original was closed at 20:57. When a re-derivation loop is finally cleaned up under time pressure, the survivor is the freshest branch, not the first-correct one — so a re-derivation defect can be closed out without ever being corrected.
+- **The security PR's content shipped anyway.** #266 closed unmerged, then reappeared as merged #346 (`fix(deps): override browserslist to clear two high-severity advisories`) and #359 (`fix(deps): override qs and fast-uri to clear six advisories`). This is the **second independent confirmation** of the [[bfra-me--works]] finding: measured by PR merge rate the window is two rejections; measured by manifest diff it is complete remediation. **Diff the ledger, not the queue.**
+
+### The theme is uniform: the repo audited its own instrumentation for false success
+
+The commit titles read as a taxonomy rather than a changelog — `fix(ci): remove two CI values that report nothing (#342)` · `fix(hooks): make the Copilot guardrail actually block (#341)` · `fix(ci): stop exposing write credentials to dependency installation (#343)` · `fix(hooks): close destructive-command gaps in the guardrail patterns (#344)` · `fix(fro-bot): stop reporting success on work that did not happen (#350)` · `docs: record the guardrail that blocked nothing (#352)` · `fix(scripts): stop reporting success on absent and unwritten data (#361)` · `fix(scripts): distinguish lookup failure from a real negative (#362)` · `fix(perf): fail closed when performance evidence is absent (#363)` · `fix(perf): stop gating on contention-sensitive timing (#365)` · `fix(theme): separate validation from sanitization (#360)`, preceded in the 08-31 half of the burst by `fix(test): report real results instead of fabricated ones (#327)` and `fix(performance): measure what the metric labels claim (#328)`.
+
+The corresponding open issues were filed by **`marcusrbrown`, not the daemon** — #355 (`validation accepts unknown fields and mutates its input`), #356 (`dashboard reports passing on malformed, missing, and unwritten data`), #357 (`performance checks pass with evidence classes absent`), #358 (`three latent false-success paths worth settling`) — so the diagnosis, not just the fix, was human. That inverts this page's long-running "the daemon audits and drafts; nobody promotes" reading: the daemon's four-item CI least-privilege cluster was closed, and the human's own audit replaced it with a larger, sharper one.
+
+**The class got written down.** `docs/solutions/` is now a five-category compound-docs tree (`best-practices`, `integration-issues`, `logic-errors`, `security`, `ui-bugs`; 10 documents) using the same YAML-frontmatter convention as `fro-bot/.github`'s own learnings store. This window added `best-practices/checks-that-pass-while-validating-nothing-2026-09-01.md`, `best-practices/fixing-a-check-that-validates-nothing-2026-09-02.md`, `security/copilot-guardrail-contract-drift-2026-09-02.md`, and `integration-issues/brokered-mention-push-fro-bot-workflow-2026-08-29.md` — the last being the write-up that finally closed #212 after ~5 weeks. HEAD is the recursion: **`docs(solutions): capture the recursive-fix failure mode (#367)`** — the fix for the check that validated nothing also validated nothing.
+
+### And it is already reopening
+
+Trunk has been frozen 10 days. The only open PR is **#369** (`chore(blog): refresh snapshot and preview images`, `mrbro-bot[bot]`, 1 commit / 1 file, open since 2026-09-03), and three independent false signals are live on it simultaneously:
+
+1. **`CI` has failed five consecutive runs since 2026-09-09**, always `Validate Dependencies` → `Check for security vulnerabilities`, cascading into `Quality Gate` → `Check all jobs`. Same advisory class #266 was opened for; the ledger was hand-patched on 09-02 and a new advisory reopened the hole six days later. **No `fro-bot`-authored PR has been opened since the 08-29 drain** — the daemon still files `Daily Fro Bot Report` unbroken (#368 → #379, 09-03 → 09-13) and proposes nothing.
+2. **The thread's standing verdict is stale.** The last comment is `mrbro-bot[bot]` at 2026-09-03T07:01: "✅ All CI checks passed! Ready for review." Written once, five failures ago. A verdict comment is a point-in-time artifact rendered as a status.
+3. **`Fro Bot` ran on that PR on a `pull_request` event every day for eleven days, concluded `success` each time, and emitted neither a review nor a comment** — after #353 (`ci(blog): let Fro Bot review content-only bot PRs`) was merged specifically to enable it. The gap #350 fixed on the autoheal path is unfixed on the review path.
+
+Zero reviews in ten days, `mergeable_state: unstable`. The cause is already named by the repo's own open issue **#334** (`ci(blog): rolling content PR can never receive an approving review`) — a rolling bot-authored content PR has no eligible approver, so the review requirement is structurally unsatisfiable and the PR accumulates check history instead of progress. Companion open issue **#366** (`fix(ci): performance summary masks dashboard failures with || echo`) is one more instance of the same class, still unfixed.
+
+### Structure, pins, and gaps at HEAD
+
+- **Fro Bot agent v0.93.1 → v0.105.1** (`fro-bot/agent@e9501a93f428fec4eedcef3f11ee97bbd903d6e8`) — first pin movement since 2026-07-20; still behind the fleet leader ([[marcusrbrown--dotfiles]], v0.109.4).
+- `fro-bot.yaml` is **1,165 lines / 51,776 bytes** across **five jobs**: `fro-bot-scheduled` (schedule + `autoheal` dispatch), `fro-bot` (content-triggered), and `live-audit-{preflight,discovery,reporter}`. Single `30 3 * * *` cron (#234 consolidation holds). **`persist-credentials: false` on every checkout**, with the PAT brokered per-step rather than written to the git config — the generalized form of the #236/#212 push-auth fixes. `response-mode: none` on discovery; `LIVE_AUDIT_WRITE_MODE` resolves to `disabled` for manual dispatch and defaults to `disabled` — live-audit write capability is opt-in by repo variable, not by job permission. #354 (`only resolve PR scope for the author that uses it`) narrowed the scope resolution further.
+- **8 committed workflows**, all `active` (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`), plus two `dynamic/copilot-*` entries that account for the "10 workflows" reading at 2026-09-01.
+- **Stack held**: React `^19.0.0`, `react-router-dom` **`^7.18.2`**, TypeScript **5.9.3** (still pre-v6 — a ~4-month hold while the rest of the fleet is on 6/7), Vite 7.3.6, Vitest 4.1.10, Playwright 1.61.1, ESLint 10.7.0, Prettier 3.9.5, `@opencode-ai/plugin` 1.18.2, pnpm **11.1.3**, Node `>=24.0.0`. New devDependency **`agent-browser 0.33.0`** — the skill vendored at 2026-07-26 now has a pinned package behind it. `lhci.config.js` → **`lighthouserc.cjs`**.
+- **Override ledger** stays single-source in `pnpm-workspace.yaml`: ~24 GHSA-annotated overrides, `allowBuilds`, and `auditConfig.ignoreGhsas` with **two** entries — one (`GHSA-jmr9-qjv8-65gv`, `extract-zip`) carrying an explicit in-file rationale that no patched release exists and the path is dev-only. An exception with a stated expiry condition rather than a silent suppression.
+- **Renovate preset still `marcusrbrown/renovate-config#5.2.7`** — unmoved since 2026-07-20 (~8 weeks) while the fleet runs `#5.2.12`/`#5.2.13`.
+- **Gaps:** still **no `.github/settings.yml`** (raw fetch 404) and still no CodeQL/Scorecard. Branch protection is governed **imperatively** — `scripts/branch-protection-api.ts` (with a new `tests/scripts/branch-protection-api.test.ts`), `.github/BRANCH_PROTECTION.md`, and a new `docs/repo-settings-sync.md` — the same manifest-less pattern as [[marcusrbrown--marcusrbrown-com]], with the same consequences noted in [[probot-settings]]: no drift detection, no diffable state, invisible to fleet lint.
+- **Open items 14 → 5**: #379 (daily report) / #369 (stuck blog PR) / #366 / #334 / #1 (Dependency Dashboard). Stars 1, forks 0, license API-null (MIT in `package.json`), `pushed_at` 2026-09-13T06:58 (PR-branch pushes), `updated_at` 2026-09-03T02:15.
+- `deploy.yaml` at **226 runs** (208 on 2026-09-01), twelve most recent all `success`. Which keeps [[marcusrbrown--marcusrbrown-com]]'s README badge rendering a healthy pipeline for a repository it does not describe.
+
+Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted.**
+
 ## Survey History
 
 | Date | SHA | Delta |
@@ -413,3 +479,4 @@ The delta is a single large feature landed across two commits (#256 `feat: add p
 | 2026-07-28 | `345bc21` | **Fro Bot workflow architecture delta — two crons collapse to one daily oversight+autoheal pass (#234).** `main` advanced `2643703` → `345bc21` (`fix(blog): authenticate gist reads with a dedicated PAT (#238)`). `fro-bot.yaml` drops the `30 15` maintenance cron and the `maintenance` dispatch mode; **single `30 3 * * *` cron** now, dispatch modes `review`/`autoheal`/`live-audit`, with dedicated `live-audit-preflight`/`discovery`/`reporter` jobs and a `live-audit-slot` input. Scheduled autoheal now wires an authenticated git remote (#236, targets the #212 push-auth failure mode for the *scheduled* path; #212 still open for *mention* runs). Live-audit tolerates delayed scheduled delivery (#237); blog gist reads use a dedicated PAT (#238) with hook-skip follow-on PR #239. Impeccable design skill → v4.0.2 (#233); hero-CTA WCAG AA contrast fix (#231/#232). Report-issue set collapsed from the split #162/#13 pair to a single **#235 "Daily Fro Bot Report — 2026-07-28 (UTC)"**, mirroring the workflow consolidation. Stack steady (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7, `pnpm.overrides` empty — unchanged. No `gh` auth (unauthenticated API + raw fetch). Gaps hold. Fro Bot active — no onboarding PR. |
 | 2026-07-30 | `aa23250` | **Front-of-house UI/UX polish + build-time-snapshot delivery shift (#240–#251).** `main` advanced `345bc21` → `aa23250` (`docs: document mobile nav hit-target overlap (#251)`). Mobile nav hit-target fix loop (#249 polish → #250 overlap fix → #251 doc); footer redesigned as a structured "site-close" (#244, plausible remediation of the long-open #213 missing-footer-landmark a11y bug — #213 now absent from the open listing); **`/projects` served from a build-time snapshot (#243)** instead of a live GitHub-API read; project cards use each repo's custom social-preview image when set, self-hosted PNGs now the fallback (#242); blog index refined as "curated evidence" (#248) + routine snapshot/preview refreshes (#241/#245/#246); **blog-refresh now delivers via PR, not direct push to `main` (#240)** — automation domesticated into the review path (follows #238 PAT / #239 hook-skip). Stack steady (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty). Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7 — unchanged. Open issues 3 (#252 Daily Fro Bot Report / #212 / #1). No `gh` auth (unauthenticated API + raw fetch). Gaps hold. Fro Bot active — no onboarding PR. |
 | 2026-08-01 | `9e54dbc` | **Privacy-preserving, fail-closed Umami analytics subsystem (#256/#257).** `main` advanced `aa23250` → `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`). Self-hosted Umami at `metrics.fro.bot` (an [[marcusrbrown--infra]] app), **disabled-by-default** — driven by a step-scoped `UMAMI_WEBSITE_ID` repo variable (→ `VITE_UMAMI_WEBSITE_ID` only on `deploy.yaml`'s build step), deliberately unset so the prod build ships no tracker. Human activation gate blocked on version-controlled `marcusrbrown/infra` retention evidence (`docs/analytics.md` Go/No-Go runbook; current Umami "retains data indefinitely, so production collection is not approved"). Typed/bounded event catalog (7 families) in `src/utils/analytics.ts` (−205 net, legacy consent/session/queue/error/search machinery deleted); DNT suppression, query/hash exclusion, one-way monthly-rotating visitor hash, no cookies/PII/raw-IP/fingerprinting. Manual React-Router pageviews via `AnalyticsTracker.tsx` (auto-pageviews off). CSP-safe static bootstraps `public/scripts/{spa-redirect,spa-restore,theme-preloader}.js` replace removed `src/utils/theme-preloader.ts`; Node-only validation split to `src/utils/blog-validation.ts`. New `/privacy` page + heavy analytics test coverage. Textbook no-unconsented-telemetry application of Marcus's baseline. Stack steady (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24). Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7 — unchanged. Open issues 4 (#259 Daily Fro Bot Report / #258 perf-budget CI visibility / #212 / #1). No `gh` auth (unauthenticated API + raw fetch). Gaps hold. Fro Bot active — no onboarding PR. |
+| 2026-09-13 | `d9eaaff` | **The false-success audit — a 31-day backlog liquidated, re-authored by hand, then filed as a defect class.** Surveyed via the `marcusrbrown.github.io` name binding (id `1174807412`, `node_id R_kgDORgYjdA`); discharges the 2026-09-01 standing re-survey note. `main` `9e54dbc` → `0e1710b` → **`d9eaaff`** (`docs(solutions): capture the recursive-fix failure mode (#367)`). **30+ `marcusrbrown`-authored PRs 08-31 → 09-03**; 18 trunk commits since `0e1710b` (17 human, 1 bot) in ~29 h. On **2026-08-29 19:01–22:44 UTC** the whole carried queue was disposed at once — #283/#263/#253 merged, **#266 security + #254 closed unmerged**, #287/#271/#270/#261/#212/#162/#292 closed `completed` (#258 on 08-31); the **duplicate #283 merged while the 44-day-old original #254 was closed 96 min later**, and #266's content shipped anyway as merged #346 + #359 — second independent confirmation of [[bfra-me--works]]'s _backlog closed, not merged_ (**diff the ledger, not the queue**). Campaign theme is uniform false-success remediation of the repo's own instrumentation (`remove two CI values that report nothing` / `make the Copilot guardrail actually block` / `stop reporting success on work that did not happen` / `report real results instead of fabricated ones` / `measure what the metric labels claim` / `fail closed when performance evidence is absent` / `distinguish lookup failure from a real negative`), with the diagnosing issues (#355–#358) filed by the **human**, not the daemon. Class written down in a new five-category **`docs/solutions/`** compound-docs tree (10 docs, `fro-bot/.github` frontmatter convention), incl. the write-up that closed #212 after ~5 weeks. **Already reopening:** trunk frozen 10 days; sole open PR **#369** has failed `CI → Validate Dependencies → Check for security vulnerabilities` **five consecutive runs since 09-09** with **no `fro-bot` PR since the drain**; **zero reviews in 10 days** (cause named by open issue **#334** — a rolling bot-authored content PR has no eligible approver); thread's standing verdict is a stale `mrbro-bot[bot]` **"✅ All CI checks passed! Ready for review."** from 09-03; and `Fro Bot` ran on it **11 straight days, all `success`, emitting nothing** despite #353 enabling exactly that. Pins: agent **v0.93.1 → v0.105.1** (`e9501a9`, first movement since 07-20); `fro-bot.yaml` **1,165 lines / 51,776 B**, 5 jobs (`fro-bot-scheduled` / `fro-bot` / `live-audit-{preflight,discovery,reporter}`), single `30 3` cron, **`persist-credentials: false` on every checkout**, `LIVE_AUDIT_WRITE_MODE` default `disabled`; 8 workflows + 2 dynamic Copilot. Stack held: React 19 / RR **`^7.18.2`** / TS **5.9.3** (~4-month pre-v6 hold) / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24; new devDep **`agent-browser 0.33.0`**; `lhci.config.js` → `lighthouserc.cjs`; ledger single-source (~24 overrides + 2 `ignoreGhsas`, one with a stated no-patch rationale). **Renovate `#5.2.7` unmoved ~8 weeks.** Gaps hold — still no `.github/settings.yml` (404), no CodeQL/Scorecard; branch protection imperative via `scripts/branch-protection-api.ts` + `docs/repo-settings-sync.md` (cf. [[marcusrbrown--marcusrbrown-com]]). Open items **14 → 5** (#379/#369/#366/#334/#1). `deploy.yaml` 226 runs, all recent green — still what [[marcusrbrown--marcusrbrown-com]]'s badge renders. No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. |

@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-13
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
+    accessed: 2026-09-13
   - url: https://github.com/fro-bot/.github
     sha: e86b08774d59c6fc7b08c6a43e743627ba3b4d81
     accessed: 2026-09-13
@@ -836,6 +839,28 @@ Practical consequences for surveying:
   [[marcusrbrown--marcusrbrown-com]] ("merge gates sorted by authorship,
   not quality") — but here it resolved, and the resolution was a human
   taking the diff and discarding the branch.
+
+**Second independent confirmation (2026-09-13, [[marcusrbrown--mrbro-dev]]).**
+The same resolution shape, ten days later, in an unrelated repo — and
+this one is the cleaner specimen because the pairwise disposition is
+legible in the API. On 2026-08-29 between 19:01 and 22:44 UTC, one day
+after a survey recorded the queue as stuck for a tenth consecutive
+interval, the entire backlog was disposed at once: three PRs merged,
+**#266 `fix(security): remediate high audit advisories` closed
+unmerged**, seven issues closed `completed`. #266's content then landed
+by hand as merged #346 and #359 within four days. A merge-rate audit
+scores that window as a rejected security fix; a `pnpm-workspace.yaml`
+diff scores it as full remediation.
+
+Two refinements the second case adds. **The window is short and the
+trigger is not the agent** — 31 days of nothing, then four hours of total
+disposal, then 30+ human-authored PRs in three days; a survey cadence of
+a few days can land entirely inside the frozen phase and read the repo as
+inert right up to the day it wasn't. And **the human audit outgrew the
+agent's**: the daemon's four-item CI least-privilege cluster was closed,
+and the operator's own issues (#355–#358, all false-success defects)
+replaced it — so "the backlog was closed" was not a retreat from the work
+but a substitution of a better-scoped one.
 
 Corollary on dead proposals: this wiki flagged `bfra-me/works` #3691 as
 a "pending v0 → v1 major" for three surveys. It closed unmerged, the
@@ -1680,6 +1705,90 @@ The rules: **query run history per workflow, not per repository, when the questi
 The self-referential sting is the useful part: the pass that made this error had *just* finished auditing SHA pins and explicitly re-ran that scan with an explicit file enumeration because an unexpanded glob would have produced a false clean. It applied "prove your denominator" to the filesystem and then failed to apply it to the time axis ten minutes later. The generalization is not "check globs" — it is **every scan reports over a population, and a scan that cannot state its population cannot support a clean verdict.**
 
 **Coda — the finding this uncovered was already documented, and had just been fixed.** The `Manage Issues` failures were the live tail of [Patch Suppression Eventually Breaks CI, Not Just Freshness](#patch-suppression-eventually-breaks-ci-not-just-freshness-2026-09-10): `dessant/lock-threads` v6.0.0 validates `github-token` with `Joi.string().max(100)`, the runner-issued token outgrew that bound, and the repo's `matchUpdateTypes: ['patch'], enabled: false` Renovate rule made the upstream fix (v6.0.2, raising the bound to 1000) structurally undeliverable. PR #3880 landed the pin by hand at 2026-09-13 02:14 UTC with a comment stating plainly that *Renovate cannot ship this*. Two things follow. First, the count in the prior entry (ten consecutive runs) should read **twelve** — a finding recorded mid-outage keeps accruing after it is written, so a count in a wiki page is a timestamped observation, not a total. Second, the fix is **unverified at time of writing**: it merged after the last failing run, and the first scheduled execution that can exercise it is ~06:15 UTC the same day. A merged fix for a scheduled workflow is a hypothesis until a scheduled run confirms it, and the gap between "merged" and "confirmed" is exactly one cron period — which for a daily job is long enough to close the issue, write the report, and be wrong.
+
+### A Green Reviewer Run Is Not a Review (2026-09-13)
+
+From [[marcusrbrown--mrbro-dev]], surveyed through the
+`marcusrbrown.github.io` name binding. PR #369 — a rolling
+`mrbro-bot[bot]` blog-snapshot PR, one commit, one file — has been open
+ten days. In that window the `Fro Bot` workflow fired on it on a
+`pull_request` event **eleven consecutive days and concluded `success`
+every time**. It posted **zero reviews and zero comments**. The repo had
+merged #353 (`ci(blog): let Fro Bot review content-only bot PRs`) nine
+days earlier for the express purpose of making those runs produce
+review output.
+
+Three status surfaces on that one PR all read healthy while nothing is
+true:
+
+| Surface | Reads | Actually |
+| --- | --- | --- |
+| `Fro Bot` run conclusion | `success` ×11 | No review artifact produced |
+| Last thread comment (`mrbro-bot[bot]`, 09-03) | "✅ All CI checks passed! Ready for review." | `CI` has failed 5 times since 09-09 |
+| Review count | — | `0`, and structurally unobtainable |
+
+The first row is the wiki's existing [A Run's Conclusion Measures the
+Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02)
+applied to a **reviewer**, which is the worst place for it: a reviewer's
+whole output is a side effect. Nothing in the run's exit status depends
+on whether a review was posted, so the job that produces no review and
+the job that produces a good one are indistinguishable from the Actions
+UI, from `statusCheckRollup`, and from any required-check configuration.
+**Assert on the artifact, not the exit code** — a review job should fail,
+or at minimum emit a distinguishable neutral conclusion, when it
+completes without writing a review.
+
+The second row generalizes separately and cheaply: **a verdict posted as
+a comment is a point-in-time observation rendered as a status.** "All CI
+checks passed" was true when written and has been false for four days;
+comments do not expire, are not re-evaluated, and sit above the actual
+check list in most reading orders. Prefer a re-rendered check summary, or
+edit the comment in place, over appending a verdict that outlives its
+evidence.
+
+The third row is the root cause and is architectural. The repo's own open
+issue #334 states it: `ci(blog): rolling content PR can never receive an
+approving review`. A long-lived bot-authored content PR has no eligible
+approver — the author cannot self-approve, the reviewer is another bot
+whose output is not a formal review, and the requirement is therefore
+unsatisfiable by construction. Such a PR does not stall; it **accrues
+check history in place of progress**, which is why it looks busy. When a
+rolling PR is a delivery mechanism rather than a proposal, either give it
+an automerge path keyed on its author and path scope, or stop routing it
+through a review gate it cannot clear. Cf. [Merge Gates Sorted by
+Authorship, Not Quality](#merge-gates-sorted-by-authorship-not-quality-2026-09-01),
+which is the same asymmetry seen from the other side.
+
+### When a Re-Derivation Loop Is Cleaned Up, the Duplicate Wins (2026-09-13)
+
+From [[marcusrbrown--mrbro-dev]]. This wiki tracked #283-vs-#254 for six
+surveys as a defect: the autoheal daemon had regenerated its own
+unmerged `docs: correct automation script count` PR as a byte-titled
+duplicate rather than noticing the open original. On 2026-08-29 the
+backlog was finally cleared — and the **duplicate merged at 19:21 while
+the 44-day-old original was closed unmerged at 20:57**.
+
+The defect was not corrected. It was ratified, and the audit trail now
+shows a clean merge.
+
+The mechanism is ordinary and worth naming because it is invisible after
+the fact: a bulk cleanup resolves by *branch freshness*, because the
+fresh branch is the one that still rebases cleanly, still has green
+checks, and is at the top of the list. Being first-correct confers no
+advantage in that pass. Two consequences:
+
+- **A merged duplicate is not evidence the duplication was handled.**
+  A fleet lint that counts open duplicate-titled PRs reports zero after
+  such a cleanup while the generating loop is untouched. Check the
+  *closed* side too: an original closed unmerged next to a merged copy of
+  the same title is the signature.
+- **Dedup belongs at proposal time, not at cleanup time.** The
+  deduplication clauses in these agent prompts have now failed the same
+  way in two repos (here, and #473/#523 at
+  [[marcusrbrown--marcusrbrown-com]] — byte-identical proposals 32 days
+  apart on differently-named branches). Prompt text asking the model to
+  check for an existing PR is not a dedup mechanism; a branch-name or
+  title-keyed pre-flight query is.
 
 ### Convention Enforcement via Tests
 

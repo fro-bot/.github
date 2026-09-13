@@ -5282,3 +5282,23 @@ Sources: https://github.com/fro-bot/.github/actions/runs/34677677992; https://gi
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
+
+## [2026-09-13 07:20] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed the target repository and ingested durable findings. The name still resolves to repo id `1174807412` / `node_id R_kgDORgYjdA` — the mrbro.dev developer portfolio, not the brand site (id `1021912280`) — so the collision recorded since 2026-07-20 holds; binding + delta recorded on the name page, durable per-repo knowledge on the canonical page.
+
+First substantive interval through this name since 2026-08-01, and it closes the longest-running finding on the page. The ten-survey propose-without-merge stall ended on 2026-08-29 between 19:01 and 22:44 UTC — one day after the last no-op pass called the queue stuck — by liquidation rather than promotion: #283/#263/#253 merged, #266 (security remediation) and #254 closed unmerged, and #287/#271/#270/#261/#212/#162/#292 closed `completed`. The #283-vs-#254 duplicate resolved in favor of the duplicate (copy merged 19:21, 44-day-old original closed 20:57). The substance was then re-authored by hand: 30+ `marcusrbrown`-authored PRs between 08-31 and 09-03, 18 trunk commits since `0e1710b` (17 human, 1 bot) in ~29 hours, with #266 reappearing as merged #346 + #359. Second independent confirmation of the [[bfra-me--works]] "backlog closed, not merged" pattern.
+
+The campaign has one theme — false success in the repo's own instrumentation — diagnosed by human-filed issues (#355-#358) and written down in a new five-category `docs/solutions/` compound-docs tree (10 documents, same YAML-frontmatter convention as this control plane); HEAD is `docs(solutions): capture the recursive-fix failure mode (#367)`. The loop is already reopening: trunk frozen 10 days, the sole open PR #369 failing `CI → Validate Dependencies → Check for security vulnerabilities` five consecutive runs since 09-09 with no `fro-bot` PR proposed since the drain, zero reviews in ten days (cause named by the repo's own #334), a stale "✅ All CI checks passed! Ready for review." standing as the thread verdict, and `Fro Bot` concluding `success` on eleven consecutive daily `pull_request` runs while emitting nothing.
+
+Pins and structure: agent v0.93.1 → v0.105.1 (`e9501a9`, first movement since 07-20); `fro-bot.yaml` 1,165 lines / 51,776 B across 5 jobs, single `30 3` cron, `persist-credentials: false` on every checkout, `LIVE_AUDIT_WRITE_MODE` default `disabled`; 8 committed workflows + 2 dynamic Copilot entries; React 19 / React Router `^7.18.2` / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 / Node >=24; new devDep `agent-browser 0.33.0`; `lhci.config.js` → `lighthouserc.cjs`; Renovate preset `#5.2.7` unmoved ~8 weeks; still no `.github/settings.yml` (404), branch protection governed imperatively. Open items 14 → 5. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.
+
+Pages touched: `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (delta log + survey-history row), `wiki/repos/marcusrbrown--mrbro-dev.md` (durable delta log + survey-history row + `node_id`; discharges the 2026-09-01 standing re-survey note), `wiki/topics/github-actions-ci.md` (two new entries — "A Green Reviewer Run Is Not a Review", "When a Re-Derivation Loop Is Cleaned Up, the Duplicate Wins" — plus a second-confirmation block on "The Backlog Was Closed, Not Merged"), `index.md`. All updates additive; no prior content overwritten. Reads were limited to directory listings, README/manifest files, and workflow files, all treated as untrusted input; `gh` had no credential (`GH_TOKEN` unset), so access was unauthenticated `api.github.com` + `raw.githubusercontent.com`.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io@d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
+
+## [2026-09-13 10:30] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
