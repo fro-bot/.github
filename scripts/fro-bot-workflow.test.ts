@@ -8,8 +8,11 @@
  * mirrors publish-wiki-workflow.test.ts.
  */
 
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
+import {execFileSync} from 'node:child_process'
+import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
@@ -315,5 +318,166 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
     const observeOutput = env.OBSERVE_OUTPUT ?? ''
     expect(observeOutput).toContain('Do not re-analyze those')
     expect(observeOutput).toContain('Fro-Bot-authored PRs')
+  })
+})
+
+describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
+  const contentJob = froBotParsed.jobs['fro-bot']
+  const contentIf = String(contentJob?.if ?? '')
+  const checkoutStep = contentJob?.steps?.find(step => step.name === 'Checkout repository')
+
+  it('configuration contract: full if predicate matches expected condition (whitespace-normalized)', () => {
+    // Not redundant with the narrower tests below: only a full-predicate pin catches
+    // guard placement drift (right clause text, wrong branch) and an unsafe `|| true`
+    // bypass appended to one clause — neither a substring/contains check on a single
+    // clause would detect either. This is a static string comparison, not a live GHA evaluation.
+    const expectedIf = `
+      (
+        github.event.pull_request == null ||
+        (
+          !github.event.pull_request.head.repo.fork &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+        )
+      ) && (
+        (
+          github.event_name == 'issues' &&
+          !endsWith(github.event.issue.user.login || '', '[bot]') &&
+          (github.event.issue.user.login || '') != 'fro-bot' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association || '')
+        ) ||
+        (
+          github.event_name == 'pull_request' &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+          (github.event.pull_request.user.login || '') != 'fro-bot'
+        ) ||
+        (
+          (github.event_name == 'issue_comment' ||
+           github.event_name == 'pull_request_review_comment' ||
+           github.event_name == 'discussion_comment') &&
+          contains(github.event.comment.body || '', '@fro-bot') &&
+          (github.event.comment.user.login || '') != 'fro-bot' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
+        )
+      )
+    `
+
+    expect(contentIf.replaceAll(/\s+/g, ' ').trim()).toBe(expectedIf.replaceAll(/\s+/g, ' ').trim())
+  })
+
+  it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {
+    expect(contentIf).toContain(`!endsWith(github.event.issue.user.login || '', '[bot]')`)
+    expect(contentIf).toContain(`(github.event.issue.user.login || '') != 'fro-bot'`)
+    const issuesTypes = (froBotParsed.on as {issues?: {types?: string[]}}).issues?.types
+    expect(issuesTypes).toEqual(['opened', 'edited'])
+  })
+
+  it('leaves the comment branch untouched', () => {
+    expect(contentIf).toContain(
+      `contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')`,
+    )
+  })
+
+  it('fro-bot-remediate keeps checkout credential persistence effective (its branch-pr push needs it)', () => {
+    const remediateCheckout = froBotParsed.jobs['fro-bot-remediate']?.steps?.find(
+      step => step.name === 'Checkout repository',
+    )
+    expect(remediateCheckout).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
+    // output-mode: branch-pr commits and pushes from this job, so persist-credentials must
+    // stay effective — the actions/checkout default (undefined) or an explicit true; never false.
+    expect(remediateCheckout?.with?.['persist-credentials']).not.toBe(false)
+  })
+
+  it('sets persist-credentials: false on the content-trigger job checkout while keeping the PAT token', () => {
+    const expressionStart = '$' + '{{'
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+    expect(checkoutStep?.with?.token).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+    expect(checkoutStep?.with?.['fetch-depth']).toBe(0)
+  })
+
+  it('leaves the agent step github-token input unchanged', () => {
+    const agentStep = contentJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const expressionStart = '$' + '{{'
+    expect(agentStep?.with?.['github-token']).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+  })
+})
+
+describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
+  const syncStep = froBotParsed.jobs['fro-bot']?.steps?.find(step => step.name === 'Sync wiki from data branch')
+  const runScript = String(syncStep?.run ?? '')
+
+  // Bounded, single-purpose fake `git`: only the three subcommands this step calls
+  // are recognized, each exits per an env var the test controls, and each appends its
+  // own name to a trace file so tests can assert which subcommands actually ran.
+  // Not a git reimplementation.
+  const fakeGit = [
+    '#!/bin/sh',
+    'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
+    'case "$1" in',
+    '  ls-remote) exit "$FAKE_GIT_LS_REMOTE_EXIT" ;;',
+    '  fetch) exit "$FAKE_GIT_FETCH_EXIT" ;;',
+    '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
+    '  *) exit 0 ;;',
+    'esac',
+  ].join('\n')
+
+  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; trace: string[]} {
+    const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
+    try {
+      const gitPath = join(dir, 'git')
+      writeFileSync(gitPath, fakeGit)
+      chmodSync(gitPath, 0o755)
+      const scriptPath = join(dir, 'step.sh')
+      writeFileSync(scriptPath, runScript)
+      const traceFile = join(dir, 'trace')
+      writeFileSync(traceFile, '')
+      const runEnv = {...env, PATH: `${dir}:${process.env.PATH ?? ''}`, FAKE_GIT_TRACE_FILE: traceFile}
+      let result: {status: number; stdout: string}
+      try {
+        const stdout = execFileSync('bash', [scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+        result = {status: 0, stdout}
+      } catch (error) {
+        const failure = error as {status?: number; stdout?: string}
+        result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
+      }
+      const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
+      return {...result, trace}
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  }
+
+  it('branch present, fetch and restore succeed: exits clean with no warning or skip message', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).not.toContain('not yet established')
+  })
+
+  it('data branch absent (ls-remote exit 2): informational message, no warning, exits clean', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout.toLowerCase()).toContain('not yet established')
+  })
+
+  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed with ::error::, no fetch/restore attempted', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote'])
+  })
+
+  it('fetch fails after a successful probe: fails closed with ::error::, no restore attempted', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote', 'fetch'])
+  })
+
+  it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
+    expect(result.status).not.toBe(0)
   })
 })
