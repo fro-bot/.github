@@ -152,7 +152,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 25 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 29 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -224,6 +224,9 @@ Fro Bot control plane:
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
+| **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |
+| **Publish Wiki** | Build the Quartz site from the wiki and deploy it to GitHub Pages | Push to main touching `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, or `quartz-site/**`; dispatch |
+| **Unpublish Wiki (emergency takedown)** | Replace the live wiki site with a static "unavailable" page | Manual dispatch |
 
 Repository management:
 
