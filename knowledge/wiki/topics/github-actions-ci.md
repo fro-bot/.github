@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-14
 sources:
+  - url: https://github.com/bfra-me/.github
+    sha: a4180e7c31b3738c29fa3906902ec45e35d42a30
+    accessed: 2026-09-14
   - url: https://github.com/marcusrbrown/infra
     sha: 620a314e241ec2f4a72167eb1ad2c5a3a909cc86
     accessed: 2026-09-14
@@ -146,7 +149,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
-- [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
+- [[bfra-me--github]] — Org control center; **16 workflows** (re-verified 2026-09-14, sixth consecutive survey with no workflow added or removed, durable since the 2026-07-02 consolidation). 2026-09-14: the fleet's reference case for the **delivery-mode layer conflict** — a prompt-level DELIVERY CONTRACT that is factually right, overridden by a harness-level `working-dir` block that is factually wrong, producing 10+ consecutive scheduled runs that re-apply the same three fixes into a tree nobody commits; also both conclusion inversions on one workflow in twelve days, a cron whose `30 15` start has drifted past 18:00 UTC on a repo firing 7,559 runs on this workflow alone, and 40/40 most-recent runs `skipped` against a ~100% bot-authored trigger surface (fourth instance of the no-op run storm). Its `update-repository-settings` action shipped **applied-state read-back verification** in this window — see [[probot-settings]]. Prior description: including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
 - [[marcusrbrown--marcusrbrown-com]] — 5 workflows (2026-09-01): `ci.yaml` (shared `setup` → parallel Lint/Build/Test/Type Check/Validate → `quality-gate` aggregator that mints a GitHub App token and comments "Ready for review"), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-file **three-mode**, 625 lines / 29 KB, agent **v0.107.0** — 20 minutes behind upstream release, fleet's fastest adopter), `renovate.yaml` (`bfra-me/.github` reusable @ v4.23.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup` (Node 22 + pnpm + **opt-in** Playwright). No CodeQL/Scorecard; no Probot `settings.yml` (branch protection is imperative via `scripts/configure-branch-protection.mjs`). Notable: **two of three declared test tiers have no CI actuator** — `playwright.config.ts` + `tests/e2e/` are only installed by the autoheal job, and `lhci.config.js` has no workflow at all.
 - [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
@@ -1861,6 +1864,138 @@ Cheap discriminator, recorded to save a future pass the log-reading.
 On 2026-09-13 between 09:28 and 09:31 UTC, `fro-bot/.github` saw `Update Repo Settings` fail after retrying through `502, 502, 500, 500`, and `Scorecard` fail with its SARIF upload terminating mid-`Uploading results` with no error text emitted at all. Two unrelated workflows, two different failure signatures, one three-minute window. Diagnosed independently they look like two bugs — one a Probot settings problem, one a code-scanning permissions problem. They were one GitHub API degradation. `bfra-me/ha-addon-repository#569` ("Update Repo Settings job fails with 500", opened 13 days ago, still unassigned) and `bfra-me/github-action`'s red `Update Repository Settings` check are the same class from an earlier window.
 
 **Check timestamp clustering across workflows before reading any logs.** If two or more unrelated workflows fail inside a few minutes with 5xx or truncated-transport signatures, the prior is upstream, and the remediation is to re-run, not to patch. The inverse also holds and is the more expensive mistake: a *single* workflow failing repeatedly across days is never an incident, no matter how transient the error text reads.
+
+### Two Delivery Contracts, and the Authoritative One Is Wrong (2026-09-14)
+
+The delivery-mode class has been recorded five times on this page as a *missing*
+half ([[marcusrbrown--tokentoilet]], [[fro-bot--dashboard]],
+[[marcusrbrown--sparkle]], [[marcusrbrown--mothership]]). [[bfra-me--github]]
+supplies the variant that the earlier cases could not: **two delivery contracts
+that both exist, both claim authority, and directly contradict each other — with
+the wrong one on top.**
+
+- The repo's `AUTOHEAL_PROMPT` carries a **DELIVERY CONTRACT (READ THIS —
+  REQUIRED)**: branch, commit, push, `gh pr create`, dedupe — closing with *"The
+  agent that writes the fix is the agent that ships it. Do not delegate the
+  push/PR to a 'caller workflow' — there is none."*
+- The harness-injected **Delivery Mode** block resolves scheduled runs to
+  `working-dir`, forbids `git branch`/`git commit`/`git push`/`gh pr create`, and
+  asserts *"the caller workflow owns diff detection, commit, push, and
+  pull-request creation after this action completes."*
+
+`fro-bot.yaml` is 586 lines and its final step is `Run Fro Bot` at line 576. The
+repo-authored prompt is factually correct; the operator-level block is factually
+wrong; and the agent correctly obeys the operator-level block, because that is
+what precedence means.
+
+**The cost, measured over ten runs and verifiable from the tree.** The same three
+files are re-edited every scheduled pass and none has landed: a CodeQL dead
+assignment still sits at `scripts/validate-type-only-imports.ts:117`, `AGENTS.md`
+still declares `125 src files` against an actual 75, and a `workspace-validate.ts`
+health-score fix is re-derived nightly. The daemon calls it the *"10th consecutive
+run re-applying this fix."*
+
+Four rules fall out, each generalizing past this repo:
+
+1. **Precedence is not correctness.** A layered instruction stack resolves
+   conflicts by authority, not by truth. When the higher layer encodes an
+   assumption about the *caller's* topology, it can be authoritatively wrong about
+   a repository it has never read — and the agent has no sanctioned way to prefer
+   the accurate instruction. The repair belongs in the workflow, never in the
+   prompt.
+2. **A detection gap and a delivery gap are indistinguishable from the artifact.**
+   This survey closed a standing question — *is the AGENTS.md staleness check even
+   running?* — with an answer neither hypothesis anticipated: it runs, detects, and
+   fixes, daily. Anyone auditing by looking at the file would have concluded the
+   check was broken or absent. **Never infer detection coverage from an unfixed
+   artifact.**
+3. **An agent that cannot observe its own delivery step narrates absence as
+   regression.** The reports say the fixes *"had silently reverted since the last
+   report."* Nothing reverted; nothing was ever committed. A daemon with no
+   post-run feedback channel will model a dropped write as a rollback, and that
+   model points every subsequent investigation at the wrong subsystem.
+4. **Restricting verbs restricts the mechanism, not the capability — and it binds
+   the wrong repo.** `working-dir` is scoped to the *checked-out* repository, so
+   this daemon shipped a real cross-repo fix (`bfra-me/renovate-config` PR #1558)
+   *"via GitHub API + a temporary local clone in `/tmp`"* on the same day it could
+   not commit a one-line change to its own tree. An org control plane that can
+   repair every repo in the org except itself is the precise inversion of what the
+   restriction was written to achieve.
+
+Extends *An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing*
+(2026-09-08) with the mechanism: it changes nothing because the blocking
+instruction outranks every instruction the agent is allowed to act on. The
+repair to copy is [[marcusrbrown--sparkle]]'s single `Resolve delivery mode` gate
+step (*Gate the Delivery Mode and the Credential on One Computed Value*,
+2026-09-13), which removes the possibility of two answers by removing the second
+expression of the question.
+
+### Both Conclusion Inversions on One Workflow in One Fortnight (2026-09-14)
+
+*A run's conclusion measures the harness, not the deliverable* is this page's
+most-cited rule, and it is normally demonstrated one direction at a time — a green
+run that shipped nothing ([[marcusrbrown--cortexkit-anthropic-auth]]), or a red
+signal nobody subscribes to ([[marcusrbrown--github]]). [[bfra-me--github]]'s
+`fro-bot.yaml` produced both inside twelve days, on the same cron, by the same
+agent version line. Cross-referencing scheduled-run conclusions against the dated
+sections actually written to the perpetual report issue:
+
+| Date | Run conclusion | Report section written |
+| --- | --- | --- |
+| 2026-09-12 | `failure` | yes, complete |
+| 2026-09-10 | `success` | **none** |
+| 2026-09-05 | `success` | **none** |
+
+A red run that delivered, and two green runs that did not, with the daemon's own
+28-success-in-30 scheduled record looking healthy throughout. **The cheapest
+correct health check for a reporting daemon is not its run history — it is
+whether the artifact it exists to produce has today's date on it.** That check is
+one API call against the issue body and is immune to both inversions.
+
+### A Section-Count Rotation Is Not a Size Budget (2026-09-14)
+
+[[marcusrbrown--cortexkit-anthropic-auth]] recorded a perpetual report issue at
+**54,813 chars** against a prompt directive to rotate at 50,000, with the
+oversized body as the leading suspect for a daemon that stopped writing.
+[[bfra-me--github]] supplies the control case and complicates the reading.
+
+Its prompt bounds the issue by **age**: sections older than 14 days collapse into a
+single `## Historical Summary`, updated in place, never duplicated. The directive
+is honored exactly — nine dated sections plus one summary, no second summary.
+The body is **143,241 characters**, because each daily section runs roughly 10 KB.
+
+The rotation is working and it constrains nothing that matters for size. Two
+rules: **a bound on section count is not a bound on bytes**, and — the harder one
+— **a soft budget the model must reason about is not a budget.** If an artifact
+has a hard size ceiling downstream (an API limit, a context window, a render
+cap), express it as a checked number, not as prose the generator is asked to
+respect while also asked to be thorough. Neither repo's prompt measures the body
+it is editing.
+
+### A Trigger Denylist Omits the Triggers Nobody Was Thinking About (2026-09-14)
+
+[[bfra-me--github]] #2717 (`fix(ci): withhold checkout credentials on affected
+triggers`) made `persist-credentials` conditional — the right instinct, and the
+same direction as [[marcusrbrown--infra]]'s disjoint-capability job split:
+
+```yaml
+persist-credentials: >-
+  ${{ !contains(fromJSON('["pull_request", "issue_comment", "issues"]'), github.event_name) }}
+```
+
+`fro-bot.yaml` listens on **five** content triggers. `pull_request_review_comment`
+and `discussion_comment` are absent from the denylist and still persist the PAT
+into `.git/config`. The omission is not explained by trust: all three comment
+triggers pass the identical `author_association` gate
+(`OWNER`/`MEMBER`/`COLLABORATOR`) plus an `@fro-bot` mention requirement — and one
+of the three is denied credentials while its two siblings are not.
+
+**Write the credential decision as an allowlist of the triggers that need
+credentials**, which here is a closed set of three (`schedule`,
+`workflow_dispatch`, `workflow_call`). A denylist over event names must be edited
+every time `on:` grows, and the failure mode of forgetting is credentials granted;
+the allowlist's failure mode is a job that visibly cannot push. Same asymmetry as
+*A Trust Gate on One Trigger Is Not a Trust Gate on the Job* (2026-09-09).
 
 ### Convention Enforcement via Tests
 

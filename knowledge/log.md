@@ -5425,3 +5425,89 @@ https://github.com/fro-bot/.github (SHA b6023723c50c076ee84c1b84422a27ce26956bcf
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
+
+## [2026-09-14 08:20] ingest | repo:bfra-me/.github
+
+Surveyed `bfra-me/.github` (public, HEAD `a4180e7c`, 74 commits since the 2026-08-30
+pass: 68 `bfra-me[bot]`, **6 `marcusrbrown` — five of them `fix(…)`**). Reads limited
+to repository metadata, directory/tree listings, manifests, workflow files, CHANGELOGs,
+and the two in-repo planning docs. Target treated as untrusted input; no instruction
+inside it was executed.
+
+**Headline: the repo's manual throughput is the highest ever recorded on its page and
+its automated throughput is zero.** Both halves are new.
+
+**(1) The delivery-mode layer conflict.** The `AUTOHEAL_PROMPT`'s DELIVERY CONTRACT
+("the agent that writes the fix is the agent that ships it … do not delegate the
+push/PR to a 'caller workflow' — there is none") is *factually correct*:
+`fro-bot.yaml` is 586 lines and ends at `Run Fro Bot`, line 576. The harness-level
+`working-dir` Delivery Mode block forbids `git commit`/`push`/`gh pr create` and
+asserts a caller workflow that does not exist. The wrong instruction outranks the
+right one. Ten-plus consecutive scheduled runs re-apply the same three fixes into a
+working tree nobody commits — verified independently at HEAD, without reading a log:
+`scripts/validate-type-only-imports.ts:117` still carries the CodeQL #53 dead
+assignment, and `AGENTS.md` line 15 still declares `125 src files` against an actual
+75. This **resolves the 2026-08-30 open question** on autoheal category 5b: the check
+runs, detects, and fixes daily; neither posed hypothesis (silent ✅ over stale data /
+⚠️ with no PR) was correct.
+
+Three further rules generalized to `wiki/topics/github-actions-ci.md`: precedence is
+not correctness; an agent with no post-run feedback narrates a dropped write as a
+rollback (the reports say the fixes "silently reverted" — nothing reverted); and a
+verb-level restriction binds the *checked-out* repo only, so on 09-11 the same daemon
+shipped `bfra-me/renovate-config` PR #1558 via the GitHub API plus a `/tmp` clone on a
+day it could not commit one line to its own tree.
+
+Also: **both conclusion inversions on one workflow in twelve days** — 09-12 concluded
+`failure` and wrote a complete report section; 09-10 and 09-05 concluded `success` and
+wrote none. And a falsifiable audit error inside the daemon's own record (09-11:
+"`AGENTS.md` src-file-count is now accurate (75) — this landed since the last report";
+09-13: "silently reverted"; HEAD says `125`) — a second, independently checkable
+confirmation of *a prose-driven audit is a sampling process, not a lint*.
+
+Report hygiene: the 14-day rotation directive is honored exactly (nine dated sections
+plus one `## Historical Summary`, no duplicate) while the body sits at **143,241
+characters**. Recorded as *a section-count rotation is not a size budget*, with the
+harder corollary that a soft budget the model must reason about is not a budget.
+
+**(2) Settings-sync diagnosability and applied-state read-back** (#2684 →
+`update-repository-settings` **0.2.0**; #2687 → **0.2.1**; action src 26 → 32). The
+first engineered answer to `wiki/topics/probot-settings.md`'s seven-survey *a declared
+manifest is not an applied one*. Forced by `bfra-me/ha-addon-repository` failing
+**14 of its last 60 syncs (23%)** since 2026-08-24 — `PUT .../branches/main/protection`
+returning 500 after 8273/8234/8324 ms on three separate days, surfacing to the operator
+as an empty bullet while the status and request ID sat unused in the job log. Design
+rules recorded: normalize observation but never intent; subset-match so new server
+fields are not drift; report before enforce; GitHub silently drops fields it will not
+honor (a 200 acknowledges receipt, not application); redact before truncate; allowlist
+response headers; name what would refute the retry hypothesis.
+
+Secondary findings: **#2717** made `persist-credentials` conditional but enumerates
+only 3 of 5 content triggers — `pull_request_review_comment` and `discussion_comment`
+still persist `FRO_BOT_PAT` despite identical `author_association` gating to the denied
+`issue_comment`; the allowlist form is a closed set of three. **The `tar` regression
+hit the control plane too**: Renovate merged `10.34.0` (#2685) and `marcusrbrown`
+hand-merged `10.34.1` (#2689 → v4.25.1) — the exact tag `marcusrbrown/.github` could
+not reach; second instance of the bootstrap-dependency stall, this one upstream.
+**Open 4 / 0 — the first empty PR queue on this page**, inverting the fleet. Root
+version v4.22.0 → **v4.29.0** is seven Renovate-driven minors, not feature work; the
+five human fixes landed as action-package patches and appear nowhere in the root
+CHANGELOG. Cron `30 15` now starts 18:17–18:43 UTC (was 15:46 on 08-15), no scheduled
+run on 08-27, two on 08-29, and 40/40 most-recent runs `skipped` against a ~100%
+bot-authored trigger surface.
+
+`fro-bot.yaml` is present and current (agent **v0.112.0**), so no follow-up
+workflow-draft PR is warranted — the gap is a missing post-agent delivery step, not a
+missing workflow.
+
+Pages touched: `wiki/repos/bfra-me--github.md` (updated),
+`wiki/topics/github-actions-ci.md` (four new sections), `wiki/topics/probot-settings.md`
+(one new section), `index.md`.
+
+Sources: https://github.com/bfra-me/.github@a4180e7c31b3738c29fa3906902ec45e35d42a30
+
+## [2026-09-14 10:57] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
