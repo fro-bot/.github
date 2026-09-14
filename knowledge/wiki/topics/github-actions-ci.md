@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-13
+updated: 2026-09-14
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 620a314e241ec2f4a72167eb1ad2c5a3a909cc86
+    accessed: 2026-09-14
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: aa5f8a3ff214d4a395a7b96e9a32fe7eac15df99
+    accessed: 2026-09-14
+  - url: https://github.com/fro-bot/.github
+    sha: b6023723c50c076ee84c1b84422a27ce26956bcf
+    accessed: 2026-09-14
   - url: https://github.com/marcusrbrown/sparkle
     sha: e603ff54e34aa4f62cf6c74909abff334cf71880
     accessed: 2026-09-13
@@ -1803,6 +1812,55 @@ Two rules:
 2. **A bot that amends its own PR must amend the title too.** #1862's title advertised `^8.5.12` while its diff targeted `^8.5.18`. Anyone triaging by title had stale information, and the discrepancy only surfaced because a human read the diff.
 
 This also sharpens the closed-not-merged reading: three PRs closed unmerged here is a *complete* remediation with a *raised* floor, and the only reason that is legible at all is that the human left an explicit supersede comment on each thread. The bfra-me case had no such note, which is why the merge-rate reading and the manifest reading diverged silently. **Closing a superseded bot PR without naming its successor destroys the only evidence that the work landed.**
+
+### The Fleet Already Built the Liveness Alarm and Installed It Once (2026-09-14)
+
+Three sections on this page converge on the same failure and have never named the fix that already exists in the fleet: [[marcusrbrown--cortexkit-anthropic-auth]]'s daemon that produced no artifact across 44 green runs, [[marcusrbrown--github]]'s Renovate outage where every run inside the window concluded `success`, and [[bfra-me--ha-addon-repository]]'s daemon that fails loudly and is ignored. The stated rules — *a run's conclusion measures the harness, not the deliverable*; *monitor output freshness, not run status* — are diagnoses. Neither is a mechanism.
+
+[[marcusrbrown--infra]] has the mechanism. `release-alert.yaml` is a `workflow_run`-triggered job on `workflows: [Release]`, `types: [completed]`, gated on `github.event.workflow_run.conclusion == 'failure'`, holding `permissions: issues: write` and nothing else. It opens or updates a marker-keyed issue (`<!-- release-publish-failure:v1 -->`) carrying run URL, head SHA, and conclusion. It also ships an owner-only `workflow_dispatch` path that fires the same code with a distinct label and marker (`release-publish-failure-test`) — a **synthetic self-test**, so the alarm can be proven live without waiting for a real failure. That last part matters more than the alert: an unexercised alarm is indistinguishable from a working one, which is exactly the trap [[marcusrbrown--cortexkit-anthropic-auth]] fell into when the disabling condition and the detected condition turned out to be the same condition.
+
+It is installed in exactly one repository, on exactly one workflow (`Release`), out of nineteen workflows in that repo and ~29 in this one.
+
+The 2026-09-14 oversight pass produced three independent confirmations of what the gap costs, all inside one fleet, all invisible to the repos' own required checks:
+
+| Repo | Workflow | Failure run | Noticed by |
+| --- | --- | --- | --- |
+| `fro-bot/.github` | `Manage Issues` | **12 consecutive** scheduled runs, 09-01 → 09-12 | a per-workflow oversight query, 12 days late |
+| `fro-bot/.github` | `Merge Data Branch` | 1 run (2026-09-13), weekly cron — next retry 2026-09-20 | the same query, same day, by luck of cadence |
+| `marcusrbrown/marcusrbrown.com` | `Fro Bot` | **15 consecutive** scheduled runs, 09-07 → 09-14 | nothing, until this pass |
+
+None of these is a PR-gating check, so no branch protection surfaced them and no human saw a red X on a PR. All three were 100%-failure daemons running on schedule with nobody downstream of the failure.
+
+Two rules, both narrower than "add monitoring":
+
+1. **A scheduled workflow with no `workflow_run` consumer has no failure surface.** Required checks cover PR paths. Cron paths terminate in the Actions tab, which nobody reads on a healthy day. The consumer is ~40 lines and needs only `issues: write`; the marker-key upsert makes it idempotent across repeated failures, so a 12-run outage produces one issue, not twelve.
+2. **Ship the synthetic dispatch path with the alarm, not after it.** Gate it on `github.actor == github.repository_owner` so it cannot be fired by a fork or a compromised content trigger. Without it, the alarm's first execution is also its first test, during an incident.
+
+The obvious extension for this control plane: one `workflow_run` alert listening on the full set of scheduled control-plane workflows (`Merge Data Branch`, `Manage Issues`, `Update Metadata`, `Reconcile Repos`, `Wiki Lint`, `Poll Invitations`, `Dispatch Renovate`) rather than one alert per workflow — `workflow_run.workflows` accepts a list.
+
+### A Flat Run-List Page Silently Excludes Low-Cadence Workflows (2026-09-14)
+
+The measurement bug that hid the table above, recorded because two consecutive daily passes on `fro-bot/.github` got opposite answers from the same repository on the same day.
+
+`gh run list --limit N` bounds by **run volume**, not by time. On a repo with 29 workflows plus PR suites, `--limit 60` reaches back roughly half a day. Any workflow on a daily-or-slower cadence is therefore *structurally* outside the window — not rare in it, absent from it. The 2026-09-12 pass queried that way, found zero failures, and reported clean while `Manage Issues` was eleven failures deep.
+
+The correction is not a larger limit; a larger limit just moves the horizon. It is to **enumerate the workflows first and query each one**:
+
+```bash
+gh run list --workflow "<name>" --limit 5 --json conclusion,createdAt,event
+```
+
+or to group a wide query by workflow name and read the *latest per workflow* rather than the *first N overall*. The general form: **when a paginated API is ordered by a dimension you are not filtering on, a clean read is evidence about the page, not about the population.** The same shape bites `gh search prs --limit 100` (which silently truncated this pass's fleet PR scan at exactly 100 of 114) and any `per_page` read without `--paginate`.
+
+Corollary for report writing: a ✅ derived from a bounded query that could not have seen the failure is worse than a ❔, because it launders a coverage gap into a health claim.
+
+### Correlated Same-Window Failures Are One Upstream Incident (2026-09-14)
+
+Cheap discriminator, recorded to save a future pass the log-reading.
+
+On 2026-09-13 between 09:28 and 09:31 UTC, `fro-bot/.github` saw `Update Repo Settings` fail after retrying through `502, 502, 500, 500`, and `Scorecard` fail with its SARIF upload terminating mid-`Uploading results` with no error text emitted at all. Two unrelated workflows, two different failure signatures, one three-minute window. Diagnosed independently they look like two bugs — one a Probot settings problem, one a code-scanning permissions problem. They were one GitHub API degradation. `bfra-me/ha-addon-repository#569` ("Update Repo Settings job fails with 500", opened 13 days ago, still unassigned) and `bfra-me/github-action`'s red `Update Repository Settings` check are the same class from an earlier window.
+
+**Check timestamp clustering across workflows before reading any logs.** If two or more unrelated workflows fail inside a few minutes with 5xx or truncated-transport signatures, the prior is upstream, and the remediation is to re-run, not to patch. The inverse also holds and is the more expensive mistake: a *single* workflow failing repeatedly across days is never an incident, no matter how transient the error text reads.
 
 ### Convention Enforcement via Tests
 

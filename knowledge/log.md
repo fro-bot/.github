@@ -5379,3 +5379,49 @@ Sources: https://github.com/marcusrbrown/sparkle@e603ff54e34aa4f62cf6c74909abff3
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-09-14 04:45] oversight | topic:github-actions-ci
+
+Daily oversight pass (categories 5–8) on `fro-bot/.github`. Three sections added to
+`wiki/topics/github-actions-ci.md`, all grounded in this run's fleet scan rather than a
+single-repo survey.
+
+**The Fleet Already Built the Liveness Alarm and Installed It Once.** Names the mechanism
+that three existing sections on the page diagnose but never supply: `marcusrbrown/infra`'s
+`release-alert.yaml` — a `workflow_run`/`completed`/`conclusion == 'failure'` consumer with
+`permissions: issues: write`, a marker-keyed idempotent issue upsert, and an owner-gated
+`workflow_dispatch` synthetic self-test. Installed on one workflow in one repo. Three
+independent confirmations of the gap this interval, all 100%-failure scheduled daemons with
+no failure surface: `fro-bot/.github` `Manage Issues` (12 consecutive, 09-01 → 09-12),
+`fro-bot/.github` `Merge Data Branch` (weekly cron, blocked 2026-09-13, next retry 09-20),
+`marcusrbrown/marcusrbrown.com` `Fro Bot` (15 consecutive, 09-07 → 09-14, OpenCode server
+bootstrap timeout on a pin frozen at agent v0.107.0 while the fleet moved to v0.109–v0.111).
+
+**A Flat Run-List Page Silently Excludes Low-Cadence Workflows.** `gh run list --limit N`
+bounds by run volume, not time; on a 29-workflow repo `--limit 60` reaches back ~half a day,
+so daily-or-slower workflows are structurally absent rather than rare. Recorded because two
+consecutive daily passes got opposite answers from the same repo. Same shape truncated this
+pass's own fleet PR scan at exactly 100 of 114 under `gh search prs --limit 100`. Corollary:
+a ✅ from a query that could not have seen the failure is worse than a ❔.
+
+**Correlated Same-Window Failures Are One Upstream Incident.** `Update Repo Settings`
+(`502,502,500,500`) and `Scorecard` (SARIF upload truncated, no error text) both died inside
+2026-09-13 09:28–09:31 UTC. One GitHub API degradation, two signatures. Check timestamp
+clustering before reading logs; the inverse — one workflow failing across days — is never an
+incident regardless of how transient the error text reads.
+
+Also recorded for the record, not persisted to a page: `#3512`'s Gateway rollout claims have
+drifted (deployed pin claimed `v0.83.0`, live `v0.93.1`; agent releases claimed `v0.85.0`,
+live `v0.112.0`; `fro-bot/dashboard#179` claimed Open, live CLOSED since 2026-07-11). The
+operator contract claim holds — `v0.93.1` and `v0.112.0` both declare `1.6.0` and
+`dashboard.fro.bot/operator/health` returns `{"ok":true,"contractVersion":"1.6.0"}`.
+
+Sources: https://github.com/marcusrbrown/infra (SHA 620a314e241ec2f4a72167eb1ad2c5a3a909cc86),
+https://github.com/marcusrbrown/marcusrbrown.com (SHA aa5f8a3ff214d4a395a7b96e9a32fe7eac15df99),
+https://github.com/fro-bot/.github (SHA b6023723c50c076ee84c1b84422a27ce26956bcf)
+
+## [2026-09-14 04:44] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
