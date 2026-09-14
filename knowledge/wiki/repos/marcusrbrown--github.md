@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-09-11
+updated: 2026-09-14
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: fd398954a17ea11c94c68f4f0708cd6356e65191
+    accessed: 2026-09-14
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
     accessed: 2025-06-18
@@ -256,6 +259,15 @@ A conclusion-based liveness check would have reported the broken interval as hea
 The correct detector measures **delivery**, not conclusion. Available cheap signals here: PRs opened per scheduled cycle (this repo's steady state is ~1 bump every 2–3 days and a `15 */4` cron, so "N consecutive scheduled runs with no Renovate-authored activity and a non-empty Dependency Dashboard" is a real alarm), or the `updated_at` of Dependency Dashboard issue **#214**.
 
 This is a second, independent confirmation of the rule first recorded at [[marcusrbrown--cortexkit-anthropic-auth]] — _a run's conclusion measures the harness, not the deliverable_ — reached by a different mechanism (a missing runtime binary rather than a prose size budget), and it adds the inversion case that observation did not have. Generalized in [[github-actions-ci]].
+
+### Addendum (2026-09-14): the sibling repo, and what the sweep cost
+
+Recorded from a survey of [[marcusrbrown--esphome-life]]; this repo was **not** re-read. That repo took the same poisoned tag and shows the same signature — v4.25.0 merged 16:35:43, the next Renovate pass green with zero PRs, inert **6 h 25 m 43 s**, a hand-merged `+1/-1` PR at 23:01:26 on a branch also named `chore/bfra-me-github-v4.25.1`, and Renovate's follow-up **5 m 11 s** later.
+
+The useful detail is the **~5-minute gap between the two manual fixes** (22:56:41 here, 23:01:26 there). This was not two independent diagnoses; it was one diagnosis and a serial fleet sweep. Property 2 above — "the blast radius is a fleet, not a repo" — now has a price attached: **the investigation amortizes across consumers, the remediation does not**, and it is paid by a human opening one PR per affected `uses:` reference. Two further points the second repo supplies that this one could not:
+
+- **Run duration does not discriminate either.** There the poisoned `Renovate` step ran 46 s against a healthy band of ~55–100 s. The obvious cheaper-than-output proxy is unavailable; the detector has to read an artifact.
+- **A mis-pathed `uses:` multiplies the per-repo cost.** Point 3 above notes that bumping `update-repo-settings.yaml` here "would have been a correct-looking, fully-green, completely useless change." At esphome.life that sibling file wrongly calls the upstream *Renovate* workflow, so it was not useless — it was a **second live copy of the poisoned runner**, which the merge of the fix itself then executed once more. Same two-file shape, opposite consequence, decided entirely by whether the second `uses:` path is correct.
 
 ### Chronic Renovate failure rate (separate condition)
 

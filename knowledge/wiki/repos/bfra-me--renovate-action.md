@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-09-11
+updated: 2026-09-14
 sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: bc9c45917d3f7b33962d3ba44b11d58d9f6c2647
@@ -24,6 +24,12 @@ sources:
     accessed: 2026-08-10
   - url: https://github.com/bfra-me/renovate-action
     accessed: 2026-09-11
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: fd398954a17ea11c94c68f4f0708cd6356e65191
+    accessed: 2026-09-14
+  - url: https://github.com/bfra-me/.github
+    sha: 0e881c39715f02ec987bfe61037fd38afee85e74
+    accessed: 2026-09-14
 tags:
   - renovate
   - github-action
@@ -36,6 +42,7 @@ tags:
   - bootstrap-dependency
   - runtime-dependency
 related:
+  - marcusrbrown--esphome-life
   - bfra-me--ha-addon-repository
   - marcusrbrown--renovate-config
   - marcusrbrown--ha-config
@@ -330,6 +337,20 @@ Three things this adds to the page:
 1. **A bundled action has a runtime dependency graph, and `dependencies` vs `devDependencies` is a production boundary in it.** This repo ships a `dist/` tsup bundle with CI drift verification — that check proves the bundle matches the source, not that the bundle's runtime needs are declared in the right section of the manifest. Bundle-integrity checks and dependency-classification correctness are orthogonal, and only the first is currently instrumented (per the `dist/ artifact in repo` row above). The existing CI self-test (`uses: ./` with dry-run) is the natural place to catch this class, if a dry run exercises the code path that reaches for `tar`; that it did not is the open question for the next source-side survey.
 2. **Time-to-fix was excellent; time-to-delivery was not, and they are different numbers.** Upstream turned the fix around in **5h04m**. Downstream consumers that had already taken 10.34.0 could not receive it, because the pin that carries this action into a repo is advanced _by this action_. That deadlock is documented in full at [[marcusrbrown--github]] and generalized in [[github-actions-ci]] as _The Updater Ships Its Own Poison and Cannot Ship the Antidote_. The relevant property for this page: **as the fleet's dependency-update runner, this repo is a bootstrap dependency for every consumer**, so a defect here has an asymmetric recovery cost that an ordinary action's defect does not. Its own self-Renovate loop — the mechanism behind the agent-version-leadership observation below — is the same loop, and would be subject to the same stall.
 3. **A fast patch cadence partially mitigates this, and pinning practice partially defeats the mitigation.** Consumers on a SHA-pinned reusable-workflow tag cannot take a patch fix without a bot run. That is the intended supply-chain trade everywhere else; on the updater's own ref it is the trade that creates the deadlock.
+
+#### Second downstream confirmation, and a blast-radius measurement (2026-09-14)
+
+Still no source-side pass — the standing "warranted" note above is **not** discharged. This addition comes from surveying [[marcusrbrown--esphome-life]], a second independent consumer, and it strengthens the case for a source-side look rather than substituting for one.
+
+The release timeline reproduces exactly from that repo's side (`10.34.0` at 13:23:43, `10.34.1` at 18:27:48, `bfra-me/.github` v4.25.1 at 20:52:07), and so does the failure signature: v4.25.0 merged at 16:35:43, the next Renovate pass concluded `success` with its `Renovate` step green, opened **zero PRs**, and the repo sat inert **6 h 25 m 43 s** until a human merged a one-line pin bump at 23:01:26 — against 6 h 28 m at [[marcusrbrown--github]]. Both manual fixes merged within ~5 minutes of each other, same branch name, same commit body. One diagnosis, a manual sweep for the application.
+
+Three items for this page specifically:
+
+1. **Blast radius is measurable and it is per-`uses:`-reference, not per-repo.** esphome.life carries a mis-pathed settings-sync workflow that also points at the upstream `renovate.yaml`, so it had **two** callers of the poisoned tag. Remediation needed two PRs and completed 34 m 53 s after the operator believed it was done — and in between, the merge of the fix itself executed the known-poisoned runner one more time. When estimating the reach of a defect in this action, count `uses:` references across the fleet, not repositories.
+2. **Run duration is not a usable detector for this failure, which raises the value of the `dist/`-side instrumentation.** At esphome.life the poisoned `Renovate` step ran **46 s** against a healthy band of roughly 55–100 s — inside the noise for a small repo where most passes legitimately find nothing. No downstream timing heuristic will catch a missing-runtime-dependency exit. That pushes detection back upstream, to this repo, and makes the open question from point 1 above (does the `uses: ./` dry-run self-test reach the `tar` path?) the highest-value thing a source-side survey could answer.
+3. **`renovate-action` recovered instantly once unblocked.** Renovate opened the follow-up PR **5 m 11 s** after the fix merged at esphome.life, 3 m 34 s at the sibling repo. Nothing about this incident class is slow to repair; the entire cost is detection latency on the consumer side, which is an argument for shipping the detector rather than tightening the release process.
+
+By 2026-09-14 the upstream reusable workflow (`bfra-me/.github` v4.29.0) pins this action at **10.39.0**, five minors past the regression.
 
 ### Prior observations
 

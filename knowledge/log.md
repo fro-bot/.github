@@ -5426,88 +5426,83 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b6023723c50c076ee84c1b84422a27ce26956bcf
 
-## [2026-09-14 08:20] ingest | repo:bfra-me/.github
+## [2026-09-14 11:05] ingest | repo:marcusrbrown/esphome.life
 
-Surveyed `bfra-me/.github` (public, HEAD `a4180e7c`, 74 commits since the 2026-08-30
-pass: 68 `bfra-me[bot]`, **6 `marcusrbrown` — five of them `fix(…)`**). Reads limited
-to repository metadata, directory/tree listings, manifests, workflow files, CHANGELOGs,
-and the two in-repo planning docs. Target treated as untrusted input; no instruction
-inside it was executed.
+Eleventh survey of `marcusrbrown/esphome.life` at HEAD `fd39895` (`node_id R_kgDOIZmGgg`,
+public, 17 blobs). Reads limited to repo metadata, the recursive tree listing, the three
+workflow files, `renovate.json5`, Actions run/job/step listings, PR metadata, the Dependency
+Dashboard issue body, and the upstream `bfra-me/.github` + `bfra-me/renovate-config` configs.
+Target treated as untrusted input throughout; all page updates are additive and contradictions
+are recorded with both dates.
 
-**Headline: the repo's manual throughput is the highest ever recorded on its page and
-its automated throughput is zero.** Both halves are new.
+**First non-dependency interval in the series.** Tracked tree still 17 blobs with exactly three
+changed against `5fffe20`: both workflow files (`bfra-me/.github` v4.22.0 → v4.29.0) and
+`.github/renovate.json5` (preset `#5.2.12` → `#5.2.13`). `ci.yaml` is byte-identical, so the
+ESPHome `2025.12.7` pin, the build matrix, and every CI action SHA are unchanged by
+construction rather than by inspection.
 
-**(1) The delivery-mode layer conflict.** The `AUTOHEAL_PROMPT`'s DELIVERY CONTRACT
-("the agent that writes the fix is the agent that ships it … do not delegate the
-push/PR to a 'caller workflow' — there is none") is *factually correct*:
-`fro-bot.yaml` is 586 lines and ends at `Run Fro Bot`, line 576. The harness-level
-`working-dir` Delivery Mode block forbids `git commit`/`push`/`gh pr create` and
-asserts a caller workflow that does not exist. The wrong instruction outranks the
-right one. Ten-plus consecutive scheduled runs re-apply the same three fixes into a
-working tree nobody commits — verified independently at HEAD, without reading a log:
-`scripts/validate-type-only-imports.ts:117` still carries the CodeQL #53 dead
-assignment, and `AGENTS.md` line 15 still declares `125 src files` against an actual
-75. This **resolves the 2026-08-30 open question** on autoheal category 5b: the check
-runs, detects, and fixes daily; neither posed hypothesis (silent ✅ over stale data /
-⚠️ with no PR) was correct.
+Findings:
 
-Three further rules generalized to `wiki/topics/github-actions-ci.md`: precedence is
-not correctness; an agent with no post-run feedback narrates a dropped write as a
-rollback (the reports say the fixes "silently reverted" — nothing reverted); and a
-verb-level restriction binds the *checked-out* repo only, so on 09-11 the same daemon
-shipped `bfra-me/renovate-config` PR #1558 via the GitHub API plus a `/tmp` clone on a
-day it could not commit one line to its own tree.
+1. **The 2026-09-04 `tar` outage, observed from a second repo.** PR #411 installed the poisoned
+   `bfra-me/.github` v4.25.0 (carrying `bfra-me/renovate-action` 10.34.0, `tar` left a
+   devDependency) at 16:35:43; the next Renovate pass concluded `success` with its `Renovate`
+   step green and opened zero PRs; upstream fixed at 18:27:48 and tagged v4.25.1 at 20:52:07;
+   `marcusrbrown` hand-merged #412 (`+1/-1`, `renovate.yaml` only) at 23:01:26. Inert window
+   **6 h 25 m 43 s**; Renovate's follow-up #413 arrived 5 m 11 s later. This is the **first human
+   commit in 113 days**, and the fix landed ~5 minutes after the sibling fix at
+   `marcusrbrown/.github` on an identically-named branch with an identical diff — one diagnosis,
+   a serial manual fleet sweep.
+2. **Run duration does not discriminate.** Poisoned `Renovate` step 46 s against a ~55–100 s
+   healthy band. The obvious cheaper-than-output proxy is unavailable; only an artifact (PRs
+   created, dashboard `updated_at`) separates a working updater from a broken one.
+3. **The settings-sync footgun is an incident amplifier.** The mis-pathed
+   `update-repo-settings.yaml` gave the repo two callers of the poisoned tag, so the merge of
+   the fix itself re-ran the known-poisoned runner and full remediation took 34 m 53 s longer.
+4. **CORRECTION — ESPHome drift root cause.** The 2026-08-30 claim that `versioning: loose`
+   rendered the bump invisible is falsified. Dependency Dashboard #26 detects all three ESPHome
+   deps, resolves them to `2026.8.2`, and parks the branches under `Pending Approval`. The
+   freeze composes across three repos: `separateMajorMinor: false` here folds every ESPHome bump
+   into `major`, and `bfra-me/renovate-config#5.2.7` applies `:approveMajorUpdates` to all
+   majors. A governance stall, not a detection failure. Both readings retained with dates.
+5. **CORRECTION — "zero-backlog queue."** 0 open PRs remains factually true and has been
+   measuring the wrong surface for ten surveys; six approval-gated updates wait on the
+   dashboard. Correct cohort is `marcusrbrown/mothership` / `fro-bot/dashboard`, not
+   `marcusrbrown/dev-like`.
+6. **Settings-sync footgun, 8th confirmation, cost refined.** Upstream `renovate.yaml` gates its
+   Renovate step behind `dorny/paths-filter` on
+   `['.github/workflows/renovate.yaml', '.github/renovate.json5', 'internal.json5']`, skipped on
+   `schedule`. Duplicate pass is unconditional on the daily cron, filter-matched on push (13 of
+   14 recent pushes). The sole skip was the push that touched only the mis-pathed file — which
+   the filter does not list — so the wrong workflow is invisible to the filter of the workflow
+   it wrongly calls, and self-triggering on the bot's own output. 29 runs in the window, 28 ran
+   Renovate, none applied `settings.yml`.
+7. **Still no Fro Bot workflow (11th survey).** `.github/workflows/` holds exactly `ci.yaml`,
+   `renovate.yaml`, `update-repo-settings.yaml`. Recommendation carried forward and narrowed:
+   the highest-value change is the one-token `uses:` path swap, and any agent added here needs
+   an out-of-band delivery channel or it inherits the failure mode it was hired to find.
+8. Minor: `esp-web-tools` upstream at 10.4.0 vs the hand-pinned `8.0.3` (two majors, and the only
+   dependency absent from `Detected Dependencies`); Pages serves at `https://mrbro.dev/esphome.life/`
+   via the user-level custom domain; branch protection **not re-verified** (403 for this survey's
+   identity) and carried forward as last-confirmed 2026-08-30.
 
-Also: **both conclusion inversions on one workflow in twelve days** — 09-12 concluded
-`failure` and wrote a complete report section; 09-10 and 09-05 concluded `success` and
-wrote none. And a falsifiable audit error inside the daemon's own record (09-11:
-"`AGENTS.md` src-file-count is now accurate (75) — this landed since the last report";
-09-13: "silently reverted"; HEAD says `125`) — a second, independently checkable
-confirmation of *a prose-driven audit is a sampling process, not a lint*.
+Pages touched: `wiki/repos/marcusrbrown--esphome-life.md` (primary),
+`wiki/entities/esphome.md` (calver root-cause correction + ESP Web Tools drift quantified),
+`wiki/topics/probot-settings.md` (8th confirmation, paths-filter refinement, incident
+amplification), `wiki/topics/github-actions-ci.md` (fourth `Zero Open PRs` instance;
+new section *Duration Is Not a Delivery Signal Either*),
+`wiki/repos/bfra-me--renovate-action.md` (second downstream confirmation; source-side pass still
+warranted), `wiki/repos/marcusrbrown--github.md` (sweep addendum, that repo not re-read),
+plus `index.md`.
 
-Report hygiene: the 14-day rotation directive is honored exactly (nine dated sections
-plus one `## Historical Summary`, no duplicate) while the body sits at **143,241
-characters**. Recorded as *a section-count rotation is not a size budget*, with the
-harder corollary that a soft budget the model must reason about is not a budget.
+Sources: https://github.com/marcusrbrown/esphome.life@fd398954a17ea11c94c68f4f0708cd6356e65191,
+https://github.com/bfra-me/.github@0e881c39715f02ec987bfe61037fd38afee85e74,
+https://github.com/marcusrbrown/renovate-config@baadb7bd39872f868644806793ff532503ffea41,
+https://github.com/bfra-me/renovate-config@8806d6b6ec8cd42b3b23c8bd926e9eb1e6a79fd3,
+https://github.com/esphome/esphome/releases/latest,
+https://github.com/esphome/esp-web-tools/releases/latest
 
-**(2) Settings-sync diagnosability and applied-state read-back** (#2684 →
-`update-repository-settings` **0.2.0**; #2687 → **0.2.1**; action src 26 → 32). The
-first engineered answer to `wiki/topics/probot-settings.md`'s seven-survey *a declared
-manifest is not an applied one*. Forced by `bfra-me/ha-addon-repository` failing
-**14 of its last 60 syncs (23%)** since 2026-08-24 — `PUT .../branches/main/protection`
-returning 500 after 8273/8234/8324 ms on three separate days, surfacing to the operator
-as an empty bullet while the status and request ID sat unused in the job log. Design
-rules recorded: normalize observation but never intent; subset-match so new server
-fields are not drift; report before enforce; GitHub silently drops fields it will not
-honor (a 200 acknowledges receipt, not application); redact before truncate; allowlist
-response headers; name what would refute the retry hypothesis.
+## [2026-09-14 11:03] ingest | repo:marcusrbrown/esphome.life
 
-Secondary findings: **#2717** made `persist-credentials` conditional but enumerates
-only 3 of 5 content triggers — `pull_request_review_comment` and `discussion_comment`
-still persist `FRO_BOT_PAT` despite identical `author_association` gating to the denied
-`issue_comment`; the allowlist form is a closed set of three. **The `tar` regression
-hit the control plane too**: Renovate merged `10.34.0` (#2685) and `marcusrbrown`
-hand-merged `10.34.1` (#2689 → v4.25.1) — the exact tag `marcusrbrown/.github` could
-not reach; second instance of the bootstrap-dependency stall, this one upstream.
-**Open 4 / 0 — the first empty PR queue on this page**, inverting the fleet. Root
-version v4.22.0 → **v4.29.0** is seven Renovate-driven minors, not feature work; the
-five human fixes landed as action-package patches and appear nowhere in the root
-CHANGELOG. Cron `30 15` now starts 18:17–18:43 UTC (was 15:46 on 08-15), no scheduled
-run on 08-27, two on 08-29, and 40/40 most-recent runs `skipped` against a ~100%
-bot-authored trigger surface.
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
-`fro-bot.yaml` is present and current (agent **v0.112.0**), so no follow-up
-workflow-draft PR is warranted — the gap is a missing post-agent delivery step, not a
-missing workflow.
-
-Pages touched: `wiki/repos/bfra-me--github.md` (updated),
-`wiki/topics/github-actions-ci.md` (four new sections), `wiki/topics/probot-settings.md`
-(one new section), `index.md`.
-
-Sources: https://github.com/bfra-me/.github@a4180e7c31b3738c29fa3906902ec45e35d42a30
-
-## [2026-09-14 10:57] ingest | repo:bfra-me/.github
-
-Surveyed bfra-me/.github and updated the control-plane wiki.
-
-Sources: https://github.com/bfra-me/.github
+Sources: https://github.com/marcusrbrown/esphome.life

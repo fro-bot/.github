@@ -4,8 +4,11 @@ title: Probot Settings
 created: 2025-06-18
 updated: 2026-09-14
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: fd398954a17ea11c94c68f4f0708cd6356e65191
+    accessed: 2026-09-14
   - url: https://github.com/bfra-me/.github
-    sha: a4180e7c31b3738c29fa3906902ec45e35d42a30
+    sha: 0e881c39715f02ec987bfe61037fd38afee85e74
     accessed: 2026-09-14
   - url: https://github.com/marcusrbrown/.github
     sha: 002d2f56fe28996005261726d1b1fb04677d9ce9
@@ -133,6 +136,22 @@ Two governance implications worth generalizing:
 2. **Identical secrets signatures make miswiring undetectable.** Both reusable workflows take the same two required secrets and no inputs, so there is no type-level guard. When publishing a family of reusable workflows, differentiating the input surface (even a single required no-op input) would turn this class of error into a hard failure at `workflow_call` resolution time.
 
 The repair is a one-token path swap. See [[github-actions-ci]] for the generalized "SHA pinning validates the ref, not the path" analysis.
+
+#### 8th confirmation, with the cost corrected and a new failure mode (2026-09-14)
+
+Still mis-pathed at `renovate.yaml@0e881c3 # v4.29.0`. Two updates from reading the upstream workflow's step list rather than its name.
+
+**The "every merge runs Renovate twice" claim is corrected.** Upstream `renovate.yaml` gates its `Renovate` step behind a `dorny/paths-filter@v4.0.3` step that is itself `if: github.event_name == 'push'`, with
+
+```yaml
+default_path_filters: "['.github/workflows/renovate.yaml', '.github/renovate.json5', 'internal.json5']"
+```
+
+So the duplicate pass is **unconditional on the cron** (the filter step is skipped on `schedule`, and the `Renovate` step's `if` admits any non-`push`/`workflow_run` event) and **conditional on push**. Measured at esphome.life: 13 of the 14 most recent `push` runs executed the Renovate step; over the 2026-08-27 → 2026-09-14 window, **29 runs, 28 of which ran a full Renovate pass and none of which applied `settings.yml`**.
+
+**The new failure mode is in the one exception.** The single skip was the push of a PR that touched *only* `update-repo-settings.yaml` — which is not in `default_path_filters`, and the caller does not set the `path-filters` input upstream exposes. **The mislabeled workflow is invisible to the filter belonging to the workflow it wrongly calls.** The result inverts intuition: changing the broken file is free, while every Renovate PR that touches `renovate.yaml` or `renovate.json5` — which is what Renovate's PRs here almost always touch — fires the duplicate. The misconfiguration is self-triggering: the bot's own output is what makes it run.
+
+**And during a supply-chain incident the footgun is not merely wasteful.** On 2026-09-04 the upstream `renovate.yaml` briefly shipped a broken Renovate runtime (`bfra-me/renovate-action` 10.34.0, `tar` left a devDependency). Because of the mis-path, esphome.life had **two** callers of the poisoned tag instead of one. The operator's manual fix correctly touched only the load-bearing `renovate.yaml`, so the merge of the fix itself triggered `Update Repo Settings` on a ref still pinned to the bad tag and **ran the known-poisoned Renovate one more time**, 34 m 53 s before the second PR cleaned it up. Generalizable: **a wrong-but-valid `uses:` path silently widens the blast radius of any regression in the workflow it wrongly points at, and adds a step to every recovery.** Cost accounting for this defect class should include incident amplification, not just duplicated compute.
 
 ### The working reference wiring (2026-08-31)
 
@@ -290,92 +309,6 @@ entry above, with one addition: **flag any `uses:` that lacks a version comment*
 not merely ones that disagree with their siblings. Two of the three cases here are
 invisible to a disagreement check — esphome.life's ref was *correct*, and
 opencode-copilot-delegate's has no version to disagree with.
-
-### The applied-state read-back: an engineered answer to "a declared manifest is not an applied one" (bfra-me/.github, 2026-09-04)
-
-For seven surveys this page has carried a diagnosis with no remedy: a
-`settings.yml` on disk proves intent, never application
-([[marcusrbrown--esphome-life]]'s mis-pathed `uses:`, [[bfra-me--works]]'s
-never-advancing reference, [[marcusrbrown--marcusrbrown-com]]'s imperative
-script with no diffable state). On 2026-09-04 [[bfra-me--github]] shipped the
-first actual fix: `update-repository-settings` **0.2.0** (#2684) and **0.2.1**
-(#2687) add applied-state verification and diagnosable failures. The
-requirements doc (`docs/brainstorms/2026-09-03-settings-sync-diagnosability-requirements.md`)
-is the most useful artifact — it reasons about the problem class, not the ticket.
-
-**The failure that forced it.** [[bfra-me--ha-addon-repository]] had been failing
-settings sync since 2026-08-24 — **14 of its last 60 runs, 23%** — with every
-sampled failure identical: `PUT /repos/.../branches/main/protection` returning
-**500 after 8273 ms, 8234 ms, 8324 ms** on three separate days. What reached the
-operator was two lines and an empty bullet:
-
-```text
-##[error]Failed to apply branches settings:
-##[error]Failed to apply settings:
-```
-
-The status and request ID **were in the job log the whole time** — Octokit's
-bundled request logger emits them — but absent from the action's own error object.
-First rule: **a diagnostic present in the log but missing from the error is not
-instrumented.** Alerting, downstream tooling, and the first thing an operator
-reads all consume the error, not the log.
-
-Second rule, and the one that makes this a settings-sync entry rather than a
-logging entry: **a settings-sync failure is not a self-contained CI failure.** As
-the doc puts it, "it means a repository's configuration no longer matches its
-declared config, and the divergence persists until someone notices." A red build
-is a state that a rerun clears. A red settings sync is a state that persists in
-the *governed* system after the run ends.
-
-**The design rules, extracted:**
-
-- **Normalize observation; never normalize intent.** `compareBranchProtection`
-  sanitizes the read-back through `sanitizeBranchProtection` and leaves the
-  declared config raw, with the reason in the source: "normalizing both sides
-  would let a bug in the normalizer distort intent and observation identically,
-  hiding the exact class of bug this comparison exists to catch." Generalizes to
-  every drift detector, schema validator, and golden-file test.
-- **Subset match, not equality.** Only fields the declared config mentions are
-  compared, so a server-populated response field GitHub adds next quarter cannot
-  register as drift. #2687 is the same-day proof this is load-bearing: the first
-  thing the read-back reported was *representational* difference, not real
-  difference, and a verifier that cries drift is switched off within a week.
-- **Report before you enforce.** R7 states divergence surfaces as a warning and a
-  job-summary row and **never fails the run** — because GitHub's read shape
-  differs from its write shape, and gating on day one manufactures false failures.
-  The gate decision is deferred until the reporting has produced evidence.
-- **GitHub silently drops fields it will not honor.** R6's premise: the API
-  "accepts requests and silently drops fields it does not support for the
-  repository's plan or ownership type." A 200 on a settings `PUT` is an
-  acknowledgment of receipt, not of application. This is the mechanism behind the
-  whole *declared ≠ applied* class.
-- **Redact before you truncate.** `error-detail.ts`: "Structured bodies are
-  redacted before truncation so a length bound can never expose a field the
-  denylist would have removed." The reverse order passes every test until the one
-  pathological body arrives.
-- **Allowlist response headers.** Only `x-github-request-id` survives; "every
-  other header (including `authorization`) is dropped, never merely hidden."
-  Body-key denylist is named by meaning, not pattern: `slug`, `login`, `id`,
-  `bypass_pull_request_allowances`, `dismissal_restrictions` — the principal-
-  identifying set, stripped at any nesting depth.
-- **Name what would refute your instrument.** Retry ships as an explicit
-  hypothesis, not a fix: three same-duration failures "cannot separate a fixed
-  upstream timeout from queueing or a slow downstream dependency. A retry that
-  succeeds after a delayed attempt falsifies it. If the hypothesis holds, retry
-  repeats the failure at triple the cost." Success is defined as a measurable
-  rate (success-after-retry over runs that failed at least once), so the
-  instrument settles its own question.
-- **Scope verification to where the failures are.** R8 confines read-back to
-  branch protection; repository, labels and teams are explicitly excluded until
-  the first implementation shows signal rather than noise.
-
-**What is still missing, fleet-wide.** This verifies that *one repo's* applied
-state matches *its own* declared config. It does not address the other half of the
-thread: a repo whose sync workflow points at the wrong path, or whose reusable-
-workflow ref never advances, never runs the action at all — and an action that is
-never invoked cannot report divergence. The read-back closes *declared ≠ applied*;
-it does not close *declared ≠ attempted*. That still needs the repo-level `uses:`
-lint proposed in the [[bfra-me--works]] entry above.
 
 ## Common Configuration Patterns
 
