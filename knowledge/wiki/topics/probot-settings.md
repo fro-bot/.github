@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-14
+updated: 2026-09-15
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-15
   - url: https://github.com/marcusrbrown/esphome.life
     sha: fd398954a17ea11c94c68f4f0708cd6356e65191
     accessed: 2026-09-14
@@ -309,6 +312,38 @@ entry above, with one addition: **flag any `uses:` that lacks a version comment*
 not merely ones that disagree with their siblings. Two of the three cases here are
 invisible to a disagreement check — esphome.life's ref was *correct*, and
 opencode-copilot-delegate's has no version to disagree with.
+
+### Correctly wired, correctly named, and still not applying (ha-addon-repository, 2026-09-15)
+
+Every prior instance on this page is a **wiring** defect — a wrong path, a stale ref, a bare SHA. [[bfra-me--ha-addon-repository]] is the first observed case where the wiring is right and the sync still does not apply, and it is documented on the record in issue **#569** (opened by `marcusrbrown` 2026-09-01, still open).
+
+Both callers point at the correct upstream paths, pinned to the same SHA with version comments (`bfra-me/.github/.github/workflows/{renovate,update-repo-settings}.yaml@0e881c39 # v4.29.0`). The caller has passed the reference lint proposed above since before it was written. The failure is in the apply step itself:
+
+```
+Failed to apply settings:
+  - 
+Failed to apply branches settings:
+```
+
+Two error annotations with empty bodies, from the `update-repository-settings` composite action. Diagnosed in-thread as an intermittent 5xx on the GitHub REST branch-protection call that the action **neither retries nor logs a response body for** — blocked on upstream `bfra-me/.github#2667`.
+
+Three things generalize.
+
+**1. The failure was intermittent, which defeats the obvious diagnostic.** Scheduled runs succeeded 2026-08-23 and 08-25 and failed 08-24 and 08-26 through 08-31, with byte-identical annotations and an unchanged manifest each time. An agent's first triage blamed the nearest recent change (a `v4.16.16 → v4.23.0` bump that merged 52 minutes earlier) — a defensible guess that was wrong, because the failures predated it by five days on an unchanged commit. The refutation required a *control*: `bfra-me/works` scheduled runs applying and passing 6/6 in the same window on the same action version, plus a hand-replayed `PUT` of the exact branch-protection payload that succeeded. **A sync that fails intermittently cannot be diagnosed from its own run history; it needs a sibling repo on the same action version as the control.**
+
+**2. Push-triggered runs are green by design and carry no information.** From the thread:
+
+> `dorny/paths-filter` skips the apply step unless `.github/settings.yml` itself changed. Run 33468117102 reports success but its `Update Repository Settings` step was *skipped*. Only `schedule` runs actually apply anything, so "re-run to check for transience" would have produced a meaningless pass.
+
+This is the settings-sync-specific form of the observation at the top of this section — *a stale settings sync produces no error* — sharpened into something worse. It is not that failure is silent; it is that **success is the default conclusion of a run that does nothing**, and the standard reflex (re-run to test for transience) picks precisely the event path that skips the work. Filter run lists by `schedule` before reading any conclusion from this workflow family. Generalized in [[github-actions-ci]] as *A Green Run That Is Green By Design*.
+
+**3. The manifest can be current while the applied state is unknown.** `settings.yml` here declares eight required contexts (three added on 2026-09-02 for the new security gates); whether `main` carries them was **not verifiable** in the 2026-09-15 survey (`/branches/main/protection` requires auth, returned 401). The operator's own conclusion:
+
+> `.github/settings.yml` is currently not a reliable way to change this repository's configuration. Branch protection changes need applying by hand and verifying afterwards.
+
+This completes the pair this page has been building toward. The 2026-09-01 entry gave **a declared manifest is not an applied one; an applied setting is not a recorded one**. Add the third leg: **a correctly-wired sync is not a working one.** The reference lint proposed above catches wiring, which is the cheap half; it cannot catch an apply step that fails silently and unretried. The complementary check is a **readback assertion** — after applying, read branch protection and diff it against the manifest, failing the job on any difference. That converts a silent 5xx into a red required check, and it is the same *assert on the artifact, not the exit code* move recorded in [[github-actions-ci]].
+
+One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
 

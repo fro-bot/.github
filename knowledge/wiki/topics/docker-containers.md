@@ -2,12 +2,15 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-09
+updated: 2026-09-15
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-15
   - url: https://github.com/fro-bot/dashboard
     sha: a11f1b7dc5c3cf2ae021eb6c147b0d8fca0684f0
     accessed: 2026-09-09
-tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine, trivy, sarif, multi-stage, non-root, ignore-unfixed]
+tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine, trivy, sarif, multi-stage, non-root, ignore-unfixed, manifest-verification, native-arm-runners]
 related:
   - marcusrbrown--containers
   - bfra-me--ha-addon-repository
@@ -57,6 +60,26 @@ Labels follow the [OCI Image Spec annotations](https://github.com/opencontainers
 ### Multi-Architecture
 
 Multi-arch builds target `linux/amd64` and `linux/arm64` via Docker Buildx with QEMU. Build arguments `TARGETPLATFORM`, `TARGETOS`, and `TARGETARCH` are declared for platform-aware logic.
+
+#### One generic base beats per-architecture bases (2026-09-15)
+
+[[bfra-me--ha-addon-repository]] replaced a per-arch base-image scheme with a single arch-agnostic one and wrote the reason into its `AGENTS.md` as a hard rule:
+
+> `build-image` injects only `BUILD_ARCH` and `BUILD_VERSION`. Add-on Dockerfiles must use a generic multi-platform base such as `ghcr.io/home-assistant/base:<tag>@sha256:<digest>`, never a per-architecture `{arch}-base` image. **A per-architecture base can silently put the wrong architecture inside another tag.**
+
+The old shape was a `build.yaml` mapping four architectures to four `{arch}-base` images, each independently pinned, consumed through `ARG BUILD_FROM`. Three failure modes fall out of that design and all of them are silent:
+
+- **Cross-contamination.** The arch → base mapping and the arch the builder is told to produce are two separate declarations. If they disagree, you publish an `aarch64`-tagged image containing `amd64` binaries. Nothing fails; the image runs on the wrong host and dies at exec time, in production, on someone else's hardware.
+- **Independent drift.** Four pins rotate at four rates. This repo carried `:3.23` for 64-bit and `:3.22` for 32-bit ARM for months because upstream lags on 32-bit — a real divergence in the userland of images shipped under one add-on version.
+- **A larger pin surface for no benefit.** A multi-platform manifest resolves the right layer by the *builder's* platform. The per-arch indirection reimplements, by hand and in YAML, something the registry already does correctly.
+
+With a single `FROM ghcr.io/home-assistant/base:3.24@sha256:…` there is exactly one pin, and the architecture comes from the runner rather than from a lookup table that can be wrong.
+
+**Native runners over QEMU.** The same change moved the matrix to `amd64 → ubuntu-24.04` and `aarch64 → ubuntu-24.04-arm`, with an explicit `::error::Unsupported architecture` default arm that fails rather than silently dropping a target. This is only clean because the repo simultaneously dropped `armhf`/`armv7` — there are no GitHub-hosted 32-bit ARM runners, so any 32-bit target forces the emulation path back for the whole matrix. **The decision to keep 32-bit ARM support is therefore also a decision to keep QEMU**, and it should be costed as one.
+
+**Verify the published manifest, not the push.** The same repo's `publish-manifest` job reads the pushed reference back with `docker buildx imagetools inspect --raw`, projects the declared arch list into expected `{os, architecture}` pairs, and fails on a difference — filtering `platform.os != "unknown"` so attestation manifests do not make a correct 2-platform manifest look like 4. A green push proves bytes were accepted; it does not prove the manifest lists the platforms you declared. See [[github-actions-ci]].
+
+**Separate build from publish by permission, not by flag.** The prior design ran one job with a `--test` flag on PRs and a full build on push — meaning the fork-reachable path executed inside a job declaring `packages: write` + `id-token: write`. The current design splits them: `build-addon` (pull requests, `contents: read`, `push: 'false'`) and `publish-addon` (default branch only, `packages: write` + `id-token: write`, cosign). A flag that gates publishing is a correctness control; a permission that makes publishing impossible is a security control, and only the second survives a bug in the flag.
 
 ## CI/CD Patterns
 
@@ -129,6 +152,16 @@ The failure mode is quiet in both directions: with no `apk` pins present the man
 This is the same class as the wrong-`uses:`-path defect in [[github-actions-ci]]: **the configuration is syntactically correct and semantically aimed at the wrong target**, so every green run is evidence of nothing. Mitigations: bump the branch in the same PR that bumps the base image (treat them as one coupled change), or drop version-pinned `apk` lines entirely and rely on the digest-pinned base plus an `apk upgrade` step — which is already the preferred posture per *Base Image Pinning* above.
 
 Extra weight when the file lives in a **template repository**: a wrong default propagates to every fork, and adding pinned apk packages is among the first things a forker does.
+
+#### Fixed the value, not the class (2026-09-15)
+
+[[bfra-me--ha-addon-repository]] now reads `depNameTemplate: 'alpine_3_24/{{package}}'`, matching the new single base image `ghcr.io/home-assistant/base:3.24@sha256:…`. Correct today.
+
+**The defect class survives intact.** The branch is still hard-coded in `renovate.json5` and the base image tag still lives in the Dockerfile, with no link between them. Renovate's own `Home Assistant Add-ons` package rule will propose the next base bump as routine churn; nothing in that PR touches the manager, and nothing fails if it does not. The repo is one automated, automergeable base-image bump away from reproducing the exact state this section was written about — and it will reproduce it silently, because the manager is still inert (no `apk` version pins exist in the example add-on) and an inert manager cannot be wrong in a way anyone observes.
+
+Recording the correction is worth less than recording what it teaches: **fixing a coupled-constant defect by editing the constant leaves the coupling undeclared, so the fix has the lifetime of the next bump.** The durable repairs are unchanged from above — couple the two edits in one PR, template the branch off the base tag, or add a lint asserting `depNameTemplate`'s branch equals the base image's tag. The last is the only one that survives an inattentive maintainer, and it is a three-line check.
+
+Corollary for surveys: a value that is correct on inspection tells you nothing about whether the mechanism that made it wrong was addressed. Check whether the *link* was established, not whether the *number* matches.
 
 ## Related Technologies
 

@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-08
+updated: 2026-09-15
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-15
   - url: https://github.com/marcusrbrown/mothership
     sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
     accessed: 2026-09-08
@@ -594,7 +597,19 @@ Two observations. First, **the config-path move is what made the tuning survivab
 
 Second, **the asymmetry between the two blocks mirrors the upstream capability matrix**: the `opencode` block carries a `variant`, the `pi` block does not. This is the same shape as `HARNESSES.md`'s honest two-tier matrix — content portability and capability portability are different claims — showing up as a *schema* fact in an unrelated package rather than as documentation. See [[pi-coding-agent]].
 
-A third, smaller item from the same config: `dreamer` replaced a single `schedule: "00:00-08:00"` window with a **nine-task cron scheduler** (`verify`, `verify-broad`, `curate`, `classify-memories`, `retrospective`, `maintain-docs`, `map-memories`, `evaluate-smart-notes`, `review-user-memories`), with an empty schedule string used as the disable mechanism for one task.
+**2026-09-15 — the same vendor's state directory appears at repository scope.** [[bfra-me--ha-addon-repository]], an infrastructure template with no OpenCode plugin, no `package.json`, and no JS runtime, added `.cortexkit/.gitignore` containing a fenced managed block:
+
+```gitignore
+# >>> cortexkit:magic-context
+magic-context/
+# <<< cortexkit:magic-context
+```
+
+Two small but real extensions to the observation above. First, `@cortexkit/*` adoption is not confined to a user's `~/.config` — **magic-context materializes per-project state inside the repository it operates on**, and the plugin manages its own ignore rules there with fenced begin/end markers (the same idempotent-edit convention `mise`, `sheldon`, and shell framework installers use, and the right one: it makes the block re-writable without clobbering a hand-edited file).
+
+Second, it means an agent-tooling artifact is now committed to a **template repository**, so every fork inherits an ignore rule for a plugin the forker may not run. Harmless — it ignores a directory that will not exist — but it is the first observed case of agent-plugin state crossing into a fork-propagated tree, and the general caution from [[bfra-me--ha-addon-repository]]'s interval applies: a template artifact should state which repository it is about, and this one does not.
+
+A third, smaller item from the 2026-09-10 config: `dreamer` replaced a single `schedule: "00:00-08:00"` window with a **nine-task cron scheduler** (`verify`, `verify-broad`, `curate`, `classify-memories`, `retrospective`, `maintain-docs`, `map-memories`, `evaluate-smart-notes`, `review-user-memories`), with an empty schedule string used as the disable mechanism for one task.
 
 ## Preset References Are Not Validated Against Registered Servers (2026-09-10)
 
