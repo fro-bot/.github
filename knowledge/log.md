@@ -5527,3 +5527,62 @@ https://github.com/fro-bot/agent/releases/latest
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@4adeae1e14921791e01f7dc218fe79239b42f11c
+
+## [2026-09-15 10:23] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode at HEAD `2c78b3d2` (17 commits from
+`2a3ec002`, all `mrbro-bot[bot]` Renovate automerges, #536-#551). Tree
+byte-identical for the third consecutive survey - 123 blobs at both SHAs, eight
+files changed content, all version tokens. Seventeenth survey with no
+structural, architectural, or source change; seventeenth with no Fro Bot agent
+workflow (~21 weeks).
+
+Three long-carried readings corrected and four new findings recorded.
+
+1. The release pipeline was never "unexercised." `publish.yaml` fires on every
+   push to `main` and has run 233 times since 2025-08-17, failing 230 at
+   `Pre-Release Validation (vulnerabilities)`; `fail-fast: true` reports the
+   other seven matrix legs as `cancelled` and `Semantic Release` as `skipped`.
+   The three successes are all on 2025-11-01 and are fully green including
+   `Semantic Release`, so the pipeline is proven end-to-end and simply had no
+   releasable commit. Zero tags is a red supply-chain gate, not missing wiring.
+   It reached nobody because `Publish` is not a required status check while the
+   required `Run Checks` contains no vulnerability scan.
+2. The 2026-09-04 `tar` outage reached this repo - third after
+   marcusrbrown/.github and marcusrbrown/esphome.life - and the fix was blocked
+   by the consumer's own update policy rather than the poisoned runner. v4.25.1
+   is a patch; the repo's blanket patch kill-switch made it unreachable; escape
+   came with the next minor. Exposure 2 d 8 h 37 m 59 s.
+3. Duration discriminates here: the two poisoned Renovate passes ran 39 s and
+   40 s against a 63-72 s band over ten others. This qualifies rather than
+   contradicts esphome.life's "duration does not discriminate" - the variable is
+   band variance (workload uniformity), and it is per-repo.
+4. `renovate.yaml` carries no cron (100-run census: 0 `schedule` events), so the
+   updater is merge-chained off `workflow_run: [Main]` with no heartbeat
+   independent of its own success.
+5. `vitest` split 4.1.11 / 4.1.0 across its own monorepo by the patch rule, and
+   invisible to the required gate. `@types/vscode` 1.137.0 against
+   `engines.vscode` `^1.102.0` - 35 minors of drift on a two-sided contract with
+   nothing comparing the halves.
+6. #508's 47-day stall explained (11 failing `Main` runs on a required context),
+   and its title had already been retitled to `10.34.4` four weeks before the
+   2026-08-02 survey read it as v11. TS v6 (#466) failed `Main` three times
+   before Renovate autoclosed it.
+7. Blob-count correction: the prior "156 tracked blobs" counted directories; the
+   same commit returns `{blob: 123, tree: 33}`.
+
+Pages touched: `wiki/repos/marcusrbrown--extend-vscode.md` (new 2026-09-15 delta
++ Overview/Release-posture supersede notes + six Notable Patterns + survey-history
+row), `wiki/topics/github-actions-ci.md` (four new dated sections + repo entry),
+`wiki/topics/vscode-extensions.md` (2026-08-31 correction + engine-drift
+section), `index.md` (three entries).
+
+Sources: https://github.com/marcusrbrown/extend-vscode@2c78b3d2b86a0f3dd09171131ae6e29916118fcc,
+https://github.com/marcusrbrown/extend-vscode@2a3ec00223b951119cce53664dd8ce03ffa63d05,
+https://github.com/bfra-me/.github/releases
+
+## [2026-09-15 10:25] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode

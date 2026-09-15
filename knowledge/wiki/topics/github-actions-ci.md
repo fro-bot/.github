@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-15
 sources:
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
+    accessed: 2026-09-15
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     accessed: 2026-09-15
   - url: https://github.com/fro-bot/dashboard
@@ -163,6 +166,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
 - [[marcusrbrown--dotfiles]] — 4 workflows (2026-09-10): `main.yaml` (Devcontainer CI → GHCR publish with `cacheFrom`; `Install mise` smoke test; `Script Tests` matrix on ubuntu + macOS running colocated Bun tests for the repo's operational agent scripts, collapsed into a stable aggregator status context so branch protection has one name to bind to), `fro-bot.yaml` (single-file three-mode, agent **v0.109.4** — ahead of the control plane's patch-frozen v0.109.0 pins), plus `renovate.yaml` and `update-repo-settings.yaml` as `bfra-me/.github` reusable callers. Required checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, Script Tests, with `enforce_admins: true`. **97 of its last 100 Fro Bot runs concluded `skipped`** (65 `pull_request`, 30 `issues`, 2 `issue_comment`) against a ~100% bot-authored trigger surface — a third instance of the no-op run storm after [[marcusrbrown--tokentoilet]] and [[bfra-me--ha-addon-repository]]. Source of the 2026-09-10 findings below on cache-versus-verification, cross-category prompt routing, and sibling pins.
+- [[marcusrbrown--extend-vscode]] — 6 workflows (2026-09-15), all dependency/publish/settings plumbing and **no Fro Bot workflow** after 17 surveys: `main.yaml` (`Run Checks` — lint / test / test:web / build; the only required context besides Renovate), `publish.yaml` (8-leg `fail-fast` pre-release matrix → `semantic-release` to Marketplace + OpenVSIX + npm; **233 runs, 230 failures**, not a required check), `rollback.yaml` (per-platform emergency rollback, **0 runs ever**), `renovate.yaml` and `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.29.0, both correctly pathed — the in-fleet counter-example to [[marcusrbrown--esphome-life]]'s miswiring), `cache-cleanup.yaml` (405 runs, 100/100 success). Notable: `renovate.yaml` carries **no cron** and is merge-chained off `workflow_run: [Main]`. Source of the 2026-09-15 findings below on optional release gates, duration-band variance, suppressed remediations, and clockless updaters.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -1964,6 +1968,72 @@ Both are **Debian 12 OS packages in the base image**, not npm dependencies. The 
 This is a distinct failure class from an unpatched npm advisory, and it presents identically in a red check. The discriminators, in order of cheapness: the scan's `Type` column says `debian` rather than `node-pkg`; the `Installed Version` has a distro suffix shape (`10.42-1`) rather than semver; and the package name is not in any manifest. **When a container release gate fails, read the package type before opening the lockfile.** The remediation is a base-image rebuild or an explicit `apt-get upgrade` layer with a cache-busting pin, and its cadence is owned by whatever rebuilds images — which in most of this fleet is nothing, because images rebuild only when code changes.
 
 The second-order effect is the one to watch: a release pipeline gated on a vulnerability scan of a *base image* will go red on a schedule set by Debian's security team, with no local commit, and stay red until someone rebuilds. Every such gate is an implicit, undeclared dependency on an image-refresh cadence that usually does not exist.
+
+### A Release Gate Outside the Required Set Degrades to No Gate (2026-09-15)
+
+[[marcusrbrown--extend-vscode]] has a complete three-target semantic-release pipeline and **zero releases in thirteen months**. The obvious reading — and the one this wiki carried for two surveys — is that the pipeline has never run. It has run **233 times**, once per push to `main` since 2025-08-17, and failed **230** of them.
+
+The structure that hides this is worth naming precisely:
+
+- `publish.yaml` fires on `push` to `main`. Its `pre-release-validation` matrix has eight legs; one of them, `vulnerabilities`, shells out to a repo script. That leg fails.
+- The matrix declares `fail-fast: true`, so the other seven legs report **`cancelled`**, not `failure`.
+- `semantic-release` declares `needs: [validate-secrets, pre-release-validation]`, so it reports **`skipped`**.
+- `.github/settings.yml` declares `required_status_checks.contexts: [Renovate / Renovate, Run Checks]`. **`Publish` is not among them.**
+
+So every merge produces a red workflow that blocks nothing, cancels most of its own evidence, and skips the job whose absence is the actual symptom. Meanwhile the *required* check — `Run Checks`, `enforce_admins: true` — runs lint, test, test:web, build, and contains no vulnerability scan at all. **The gate that knows about advisories has no authority; the gate with authority does not know.**
+
+Two sharper points:
+
+1. **A red check and an absent capability are indistinguishable from the outside.** The repo reads as "release automation was built and never wired up." The truth is "release automation was built, wired up, verified end-to-end on 2025-11-01 — three fully green runs including `Semantic Release` — and has been blocked at one leg ever since." Those two states call for completely different remediations, and only the run history separates them. Before concluding a pipeline is unexercised, count its runs.
+2. **`cancelled` legs make a matrix failure look smaller than it is.** Seven of eight legs report `cancelled` here. A dashboard that counts `failure` finds one leg; a human reading the run finds seven grey boxes and one red one and reasonably concludes something transient happened. Pair with [A Cancelled Run Is Not a Failed Run](#a-cancelled-run-is-not-a-failed-run-2026-09-06) — the inverse mistake, same ambiguity.
+
+Same family as [A Critical Publish Job That Cannot Be a Required Check](#a-critical-publish-job-that-cannot-be-a-required-check-2026-09-05) and [A Release Gate on a Base Image Fails on Packages No Dependency Bot Owns](#a-release-gate-on-a-base-image-fails-on-packages-no-dependency-bot-owns-2026-09-15). The through-line across all three: release-time supply-chain gates sit outside the merge-time required set by necessity, which means they are the only checks in a repository whose redness is nobody's job.
+
+### Whether Duration Discriminates Is a Property of the Band (2026-09-15)
+
+Direct qualification of [Duration Is Not a Delivery Signal Either](#duration-is-not-a-delivery-signal-either--and-recovery-cost-scales-with-fleet-size-2026-09-14), from a third repo inside the same 2026-09-04 `tar` incident.
+
+[[marcusrbrown--extend-vscode]] ran exactly two Renovate passes on the poisoned `bfra-me/.github` v4.25.0: **39 s** and **40 s**. The ten other `workflow_run` passes in the same 100-run window measured 63, 63, 67, 67, 67, 67, 69, 69, 70, 70, 72 s. Healthy band **63–72 s**, σ ≈ 3 s; the poisoned runs sit 37 % below its floor. Both concluded `success`. Timing separates them cleanly.
+
+[[marcusrbrown--esphome-life]] measured 46 s poisoned against a 55–100 s healthy band and concluded duration was useless. Both measurements are correct, and the difference is not the poison — it is **workload uniformity**:
+
+| Repo | Healthy band | Why | Does duration discriminate? |
+| --- | --- | --- | --- |
+| extend-vscode | 63–72 s | Every pass is the same single-repo post-merge sweep over a 123-blob tree | Yes, unambiguously |
+| esphome.life | 55–100 s | 17-blob repo where most healthy passes are *also* no-ops, so "did work" and "found nothing" already overlap | No |
+
+**The rule: before discarding duration as a health signal, measure the variance of the healthy band. The answer is per-repo, not per-incident.** A fleet lint can compute this for free — a rolling median and IQR per workflow — and flag only the repos where the band is tight enough for a threshold to mean something. The safe default remains "measure the artifact, not the timing," because artifacts work everywhere; but writing off timing globally throws away a working detector in the repos whose workloads are uniform, which tends to be the small, steady-state ones where nothing else is watching either.
+
+### A Suppressed Update Class Suppresses Its Remediations (2026-09-15)
+
+Fourth angle on the 2026-09-04 `tar` incident, and a new failure mode: at [[marcusrbrown--extend-vscode]] the fix was blocked not by the poisoned runner but by **the consumer's own update policy**.
+
+The repo's first Renovate rule is a blanket patch kill-switch (`matchUpdateTypes: ['patch']`, `matchPackageNames: ['!typescript']`, `enabled: false`) with no `matchManagers` restriction, so it covers the `github-actions` manager too. Timeline:
+
+- v4.25.0 (poisoned) published 16:18:57, merged here 16:29:13.
+- v4.25.1 (the fix) published 20:52:07 — **a patch. Never proposed. Structurally unreachable.**
+- v4.26.0 (the next minor) published 2026-09-06T21:54:25; merged 2026-09-07T01:07:12.
+
+**Exposure 2 d 8 h 37 m 59 s**, against ~6½ h at [[marcusrbrown--github]] and [[marcusrbrown--esphome-life]]. The repo escaped by accident of upstream cadence — the next minor happened to carry the fix — not by any process.
+
+This generalizes past Renovate config. **Any policy that mutes an update class also mutes the fixes shipped inside that class, and fixes are exactly the updates nobody gets to schedule.** Semantic versioning puts urgent remediations in the patch slot by convention, so "disable patch updates to keep the queue quiet" is, read literally, "opt out of the channel upstream uses for emergencies." The security bypass (`vulnerabilityAlerts` ignores `enabled: false`) covers advisories *about the dependency itself* — it did nothing here, because the defect was a packaging mistake in a bundled action, not a CVE.
+
+Two corroborations from the same repo, both showing the rule is real and not incidental:
+
+- `pnpm/action-setup` sat at **v6.0.0** through the entire v6.0.1–v6.0.9 patch series and moved only when **v6.1.0** shipped. The intermediate patches were never proposed.
+- `vitest` rode the vulnerability bypass to **4.1.11** while `@vitest/coverage-v8` and `@vitest/ui` remain **4.1.0**, because catching up is a patch. A monorepo split eleven patch versions by policy — and invisible to the required gate, which runs `vitest run` and never loads either sibling. Compare [Patch Suppression Eventually Breaks CI, Not Just Freshness](#patch-suppression-eventually-breaks-ci-not-just-freshness-2026-09-10); this is the same class arriving through the *security* path rather than the ordinary one.
+
+The cheap mitigation is narrow and worth stating: exempt the manager that carries your CI runners from the patch rule, or pin the runner ref to a floating patch constraint. Both reduce the recovery-cost `N` from [Duration Is Not a Delivery Signal Either](#duration-is-not-a-delivery-signal-either--and-recovery-cost-scales-with-fleet-size-2026-09-14) at zero queue cost, because upstream reusable workflows do not ship patch releases often enough to be noisy.
+
+### A Merge-Chained Updater Has No Way to Restart Itself (2026-09-15)
+
+[[marcusrbrown--extend-vscode]]'s `renovate.yaml` has **no `schedule:` trigger**. Its triggers are `issues: [edited]`, `pull_request: [edited]`, `push: branches-ignore: [main]`, `workflow_dispatch`, and `workflow_run` on **Main** completing on `main`. A 100-run event census confirms the shape: 59 `issues` (all concluding `skipped`), 20 `push`, 21 `workflow_run`, **zero `schedule`**.
+
+So an in-repo Renovate pass is a *consequence of a merge*, and a merge is a consequence of Renovate having worked. While the loop turns it looks identical to a cron-driven updater — roughly one PR a day, consistently green. It is not equivalent. **A merge-chained daemon has no heartbeat independent of its own success**, so the failure mode is absorbing: stop it once and it stays stopped, and the only restarts available are a human `workflow_dispatch` or a human Dependency Dashboard edit. The dashboard path is additionally gated on `!contains(github.actor, '[bot]')`, so the bot's own dashboard churn cannot restart it.
+
+That the same repo's `update-repo-settings.yaml` *does* carry `cron: '23 0 * * *'` (99/100 success) shows this is a choice rather than an oversight — which makes it worth flagging in a fleet lint. The cheap check is one line of API: for every workflow whose name matches the updater, assert that `on:` contains `schedule`. The expensive alternative is noticing months later that a repo went quiet, which is the same detection-latency problem as the `tar` incident with a different cause.
+
+Observed cost in this repo, small but real: a **40 h 35 m PR drought** spanning the poisoned window, against an otherwise ~daily cadence — the chain idled because the last pass on the poisoned runner produced nothing to merge.
 
 ### Convention Enforcement via Tests
 
