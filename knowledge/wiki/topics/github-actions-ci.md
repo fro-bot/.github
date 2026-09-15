@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-14
+updated: 2026-09-15
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    accessed: 2026-09-15
+  - url: https://github.com/fro-bot/dashboard
+    accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/infra
+    accessed: 2026-09-15
   - url: https://github.com/marcusrbrown/esphome.life
     sha: fd398954a17ea11c94c68f4f0708cd6356e65191
     accessed: 2026-09-14
@@ -1893,6 +1899,71 @@ Three additions.
 **3. A mis-pathed `uses:` multiplies N within a single repo.** esphome.life's settings-sync workflow wrongly calls the upstream *Renovate* workflow (see [[probot-settings]]), so that repo had **two** callers of the poisoned tag. The operator fixed only the load-bearing one — correct, and the point of "enumerate which pins are load-bearing for recovery" — which meant the merge of the fix itself triggered the mislabeled workflow on a ref still pinned to the bad tag and **executed the known-poisoned runner one more time**, at the moment the repo was believed repaired. Full remediation needed a second PR 34 m 53 s later. Wrong-path defects are normally filed as wasted compute; they should also be filed as **incident amplifiers**, because they clone the compromised component into a place nobody is looking at.
 
 Corollary worth stating once: the Renovate follow-up PR appeared **5 m 11 s** after the human fix merged, and 3 m 34 s at the sibling repo. The bot recovers instantly and completely the moment it can run. Nothing about this failure class is slow to repair — it is slow to *detect*, and every minute of the 6-plus-hour window was detection latency.
+
+### A Version-Drift Diagnosis Can Be Right About the Drift and Wrong About the Cause (2026-09-15)
+
+[[marcusrbrown--marcusrbrown-com]]'s scheduled `Fro Bot` has now failed **19 consecutive times** since 2026-09-07. The 2026-09-14 oversight pass diagnosed it as a stale agent pin: the repo sat at `v0.107.0` (last moved 08-31) with `OpenCode server bootstrap failed: Timeout waiting for server to start after 5000ms`, while healthy fleet members ran `v0.109.0` and `v0.111.0`. The recommended next step was to bump the pin.
+
+The pin was bumped — to `8822ad55` / **`v0.112.1`**, which is the newest release in existence (published 2026-09-14T18:33, ahead of this control plane's own `v0.112.0`). The run at 2026-09-15T03:37 **still failed**, with a different error:
+
+```json
+{"level":"error","message":"Session error persisted through grace period","phase":"execution","error":"name=APIError; status=400","graceCycles":3}
+{"level":"info","message":"Agent failed with recoverable LLM error","type":"configuration","durationMs":72709}
+```
+
+The drift was real, the bump was correct, and the failure streak did not break. The bootstrap timeout was a *surface* fault sitting on top of a *configuration* fault; fixing the first exposed the second, and the streak counter carried across the boundary without resetting, which is exactly what makes this misread easy.
+
+**The generalizable rule: a consecutive-failure streak is not one fault until you have compared the error text across the streak's start and end.** Version drift co-located with a failure is an attractive explanation precisely because it is always findable — every repo in a fleet is behind something. Before recommending a bump as a remediation, check that the error signature is *characteristic of the drift* (a startup/compat failure, not an API-response failure), and after the bump, check that the signature *changed* rather than that the run count grew. A streak that survives a correct fix with a new error message is two faults reported as one, and the second one has been invisible the entire time.
+
+Note the classification the harness itself emits: `"type":"configuration"`. The runtime knew this was not a transient LLM error. That field was available from the first post-bump run and is a cheaper discriminator than any version comparison.
+
+### A Scheduled Run That Fails Has No Delivery Surface (2026-09-15)
+
+From the same [[marcusrbrown--marcusrbrown-com]] run, the last two log lines:
+
+```
+##[warning]{"level":"warning","message":"Cannot post error comment: missing target context","phase":"main"}
+##[error]Agent execution failed with a recoverable LLM error, and no delivery surface was available to report it.
+```
+
+A content-triggered agent run has somewhere to report: the issue or PR that triggered it. A **scheduled** run does not. When it fails before producing its report, the failure exists only as a red run in a tab nobody opens. That is why 19 failures accumulated across eight days without anything escalating — not because the signal was weak, but because the signal had no destination.
+
+This is the third independent confirmation of the case for [[marcusrbrown--infra]]'s `release-alert.yaml` pattern — a `workflow_run` consumer holding `issues: write` and nothing else, upserting a marker-keyed issue so an N-run outage yields one issue rather than N. The prior two confirmations were inferred from outcomes; this one is the agent **explicitly reporting that it has no reporting channel**. The gap is now self-documented in the logs of the repo that has it.
+
+Worth pairing with [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02): that finding says a green run can hide a broken deliverable. This one is the mirror — a red run can hide *itself*, because redness is only a signal to something that is watching. An out-of-band consumer is what converts a run conclusion into a notification, and it is one file.
+
+### A Settled Tracker Snapshot Is Not a Correctness Claim (2026-09-15)
+
+`fro-bot/.github#3512`'s Gateway rollout tracker has been running green, and its recorded snapshot hash has not moved. Meanwhile the issue body it tracks is wrong on three of four machine-checkable version claims, and has been for months:
+
+| Claim in the body | Live value | Source |
+| --- | --- | --- |
+| deployed gateway pinned to `v0.83.0` | **`v0.93.1`** | `marcusrbrown/infra:apps/gateway/upstream.json` |
+| "releases have since advanced to `v0.85.0`" | **`v0.112.1`** (2026-09-14) | `fro-bot/agent` latest release |
+| `fro-bot/dashboard#179` listed **Open** | **CLOSED / COMPLETED** since 2026-07-11 | that issue |
+| operator contract `v1.6.0` | holds — `/operator/health` returns `1.6.0` | live endpoint |
+
+The tracker is not malfunctioning. It is idempotent-on-state-change by design (`fro-bot/.github#3517`), and the state it hashes is the Project matrix, not the prose. **A tracker that only notices transitions cannot notice that its subject was wrong before it started watching**, and a stable snapshot hash reads as "nothing changed," which is indistinguishable from "nothing was ever right."
+
+The structural version of this is worse. Project 1 holds **21 items, 20 `Done` and 1 `Todo`** — the `Todo` being the coordination issue itself. None of the items the body's "Still open / not yet complete" section turns on (`agent#1033`, `#1109`, `#1111`, the six push PRs, `dashboard#108`/`#122`/`#179`) are in the Project at all. The body calls the Project "the structured source of truth"; the Project does not contain the open work. Two ledgers diverged, each one green against itself.
+
+**The rule: when an automation declares a coordination artifact settled, that is a statement about convergence, not accuracy.** Any claim in the prose that the automation does not parse is unverified by construction, however green the tracker is. Machine-checkable claims — version pins, issue states, deployed refs — should be *re-probed against their live source* on a schedule independent of change detection, which is exactly what `Status Truth` does for `docs/status.md` and does not do for issue bodies.
+
+### A Release Gate on a Base Image Fails on Packages No Dependency Bot Owns (2026-09-15)
+
+[[fro-bot--dashboard]]'s `Release` workflow has failed 3 of its last 12 runs, all since 2026-09-12, at a step named `🚦 Enforce fixed HIGH/CRITICAL vulnerabilities`. The Trivy scan output:
+
+```
+Total: 2 (HIGH: 2, CRITICAL: 0)
+libpcre2-8-0  CVE-2026-86145  HIGH  fixed  10.42-1 → 10.42-1+deb12u1
+              CVE-2026-89161
+```
+
+Both are **Debian 12 OS packages in the base image**, not npm dependencies. The gate is correct and the fix exists upstream (`+deb12u1` is published), but nothing in the repository's dependency graph can deliver it: Renovate manages manifests and lockfiles, Dependabot manages ecosystems it recognizes, and neither rebuilds a base layer to pick up an `apt` security update. The repository's own dependency automation is structurally incapable of clearing its own release gate.
+
+This is a distinct failure class from an unpatched npm advisory, and it presents identically in a red check. The discriminators, in order of cheapness: the scan's `Type` column says `debian` rather than `node-pkg`; the `Installed Version` has a distro suffix shape (`10.42-1`) rather than semver; and the package name is not in any manifest. **When a container release gate fails, read the package type before opening the lockfile.** The remediation is a base-image rebuild or an explicit `apt-get upgrade` layer with a cache-busting pin, and its cadence is owned by whatever rebuilds images — which in most of this fleet is nothing, because images rebuild only when code changes.
+
+The second-order effect is the one to watch: a release pipeline gated on a vulnerability scan of a *base image* will go red on a schedule set by Debian's security team, with no local commit, and stay red until someone rebuilds. Every such gate is an implicit, undeclared dependency on an image-refresh cadence that usually does not exist.
 
 ### Convention Enforcement via Tests
 

@@ -5506,3 +5506,24 @@ https://github.com/esphome/esp-web-tools/releases/latest
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-09-15 04:45] manual-edit | repo:fro-bot/.github
+
+Daily oversight pass (categories 5-8) added four cross-cutting findings to the
+GitHub Actions CI topic page and an index addendum: a version-drift diagnosis
+refuted by its own remediation, the absent delivery surface on scheduled agent
+runs, a settled tracker snapshot that is not a correctness claim, and a release
+gate failing on base-image OS packages no dependency bot owns. No repo pages
+changed.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com,
+https://github.com/fro-bot/dashboard,
+https://github.com/marcusrbrown/infra,
+https://github.com/fro-bot/.github/issues/3512,
+https://github.com/fro-bot/agent/releases/latest
+
+## [2026-09-15 04:33] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@4adeae1e14921791e01f7dc218fe79239b42f11c
