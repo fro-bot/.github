@@ -5612,3 +5612,160 @@ https://github.com/fro-bot/.github/pull/3895
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@4adeae1e14921791e01f7dc218fe79239b42f11c
+
+## [2026-09-16 11:05] manual-edit | repo:marcusrbrown/extend-vscode
+
+Restoring a log entry that was silently deleted. The 2026-09-15 extend-vscode
+survey committed as `88fa1be` on `data` at 03:25:33. Four minutes later
+`ee3ff7b` - a sibling survey of bfra-me/ha-addon-repository whose parent commit
+is exactly `88fa1be` - committed full-file blobs built from a pre-`88fa1be`
+read and reverted three files: this log (the entry below, 59 lines),
+`index.md`'s extend-vscode catalog line, and four sections of
+`wiki/topics/github-actions-ci.md`. The repo page and
+`wiki/topics/vscode-extensions.md` survived because that run never wrote them.
+
+No force-push, no ref race, no conflict: the Contents API's optimistic check is
+on the ref, not on the file contents being replaced, and it commits blobs rather
+than diffs. Mechanism and mitigations recorded in `wiki/topics/github-actions-ci.md`
+under *A Contents API Write Is Atomic Per Ref, Not Per File (2026-09-16)*.
+
+The original entry follows verbatim, out of chronological position because this
+file is append-only.
+
+> ## [2026-09-15 10:23] ingest | repo:marcusrbrown/extend-vscode
+>
+> Surveyed marcusrbrown/extend-vscode at HEAD `2c78b3d2` (17 commits from
+> `2a3ec002`, all `mrbro-bot[bot]` Renovate automerges, #536-#551). Tree
+> byte-identical for the third consecutive survey - 123 blobs at both SHAs, eight
+> files changed content, all version tokens. Seventeenth survey with no
+> structural, architectural, or source change; seventeenth with no Fro Bot agent
+> workflow (~21 weeks).
+>
+> Three long-carried readings corrected and four new findings recorded.
+>
+> 1. The release pipeline was never "unexercised." `publish.yaml` fires on every
+>    push to `main` and has run 233 times since 2025-08-17, failing 230 at
+>    `Pre-Release Validation (vulnerabilities)`; `fail-fast: true` reports the
+>    other seven matrix legs as `cancelled` and `Semantic Release` as `skipped`.
+>    The three successes are all on 2025-11-01 and are fully green including
+>    `Semantic Release`, so the pipeline is proven end-to-end and simply had no
+>    releasable commit. Zero tags is a red supply-chain gate, not missing wiring.
+>    It reached nobody because `Publish` is not a required status check while the
+>    required `Run Checks` contains no vulnerability scan.
+> 2. The 2026-09-04 `tar` outage reached this repo - third after
+>    marcusrbrown/.github and marcusrbrown/esphome.life - and the fix was blocked
+>    by the consumer's own update policy rather than the poisoned runner. v4.25.1
+>    is a patch; the repo's blanket patch kill-switch made it unreachable; escape
+>    came with the next minor. Exposure 2 d 8 h 37 m 59 s.
+> 3. Duration discriminates here: the two poisoned Renovate passes ran 39 s and
+>    40 s against a 63-72 s band over ten others. This qualifies rather than
+>    contradicts esphome.life's "duration does not discriminate" - the variable is
+>    band variance (workload uniformity), and it is per-repo.
+> 4. `renovate.yaml` carries no cron (100-run census: 0 `schedule` events), so the
+>    updater is merge-chained off `workflow_run: [Main]` with no heartbeat
+>    independent of its own success.
+> 5. `vitest` split 4.1.11 / 4.1.0 across its own monorepo by the patch rule, and
+>    invisible to the required gate. `@types/vscode` 1.137.0 against
+>    `engines.vscode` `^1.102.0` - 35 minors of drift on a two-sided contract with
+>    nothing comparing the halves.
+> 6. #508's 47-day stall explained (11 failing `Main` runs on a required context),
+>    and its title had already been retitled to `10.34.4` four weeks before the
+>    2026-08-02 survey read it as v11. TS v6 (#466) failed `Main` three times
+>    before Renovate autoclosed it.
+> 7. Blob-count correction: the prior "156 tracked blobs" counted directories; the
+>    same commit returns `{blob: 123, tree: 33}`.
+>
+> Pages touched: `wiki/repos/marcusrbrown--extend-vscode.md` (new 2026-09-15 delta
+> + Overview/Release-posture supersede notes + six Notable Patterns + survey-history
+> row), `wiki/topics/github-actions-ci.md` (four new dated sections + repo entry),
+> `wiki/topics/vscode-extensions.md` (2026-08-31 correction + engine-drift
+> section), `index.md` (three entries).
+>
+> Sources: https://github.com/marcusrbrown/extend-vscode@2c78b3d2b86a0f3dd09171131ae6e29916118fcc,
+> https://github.com/marcusrbrown/extend-vscode@2a3ec00223b951119cce53664dd8ce03ffa63d05,
+> https://github.com/bfra-me/.github/releases
+
+Sources: https://github.com/fro-bot/.github@88fa1be40e75b5598ab528bbe792e2db5d40c4a4,
+https://github.com/fro-bot/.github@ee3ff7bc9c9374f83767ab7642fa84c36879020c
+
+## [2026-09-16 11:20] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode. HEAD is `2c78b3d2` - unchanged from the
+2026-09-15 survey. Zero commits, zero open PRs, `pushed_at` unmoved at
+2026-09-15T08:37:20Z (`updated_at` moved to 2026-09-16T01:02:55Z, which is the
+settings-sync cron writing, not the repo changing). Open issues unchanged at 5
+(#142, #162, #317-#319). Eighteenth consecutive survey with no structural,
+architectural, or source change; eighteenth with no Fro Bot agent workflow.
+
+Reads limited to repo metadata, workflow files, workflow run/job history, and
+the open issue/PR lists, per the untrusted-input constraint. The `gh` CLI was
+unauthenticated this run (`gh auth status`: not logged in), so the survey used
+unauthenticated `api.github.com` reads at the 60 req/h anonymous limit. That
+foreclosed Dependabot alerts and code scanning, as the last two surveys' 401/403
+did for different reasons - no posture claim recorded, again.
+
+An unchanged tree usually means a one-line entry. Three things made this one
+worth writing.
+
+1. The clockless Renovate daemon reached its terminal state, ~31 h after the
+   prior survey described the mechanism. Last pass #6905 ran 2026-09-15T08:38:15Z
+   off `workflow_run: [Main]`, concluded `success`, and opened zero PRs. With no
+   merge pending, `Main` will not run on `main`, `workflow_run` will not fire,
+   and Renovate will not run. Nothing is red; the last pass genuinely had nothing
+   to do. That is the defect: for a merge-chained daemon, "correctly idle" and
+   "permanently stopped" are byte-identical evidence. A cron-driven updater
+   proves it looked by waking up; this one cannot emit that record. The
+   prediction was falsifiable and it fired inside a day.
+2. One push was delivered twice (PR #550, 2026-09-14T08:40:16Z, head
+   `05e986d6`), producing six runs in one second across three workflows as
+   matched pairs sharing `head_branch`, `head_sha`, `created_at`, and
+   `display_title`. Outcomes split by `concurrency` alone: `Main` cancelled its
+   duplicate (`cancel-in-progress: true`); `Publish` ran its full release
+   pipeline twice despite a correctly-written group, because
+   `cancel-in-progress: false`; `Update Repo Settings` ran twice with no block at
+   all. A concurrency group buys mutual exclusion, not deduplication - and
+   `cancel-in-progress: false` is the correct setting for a publish pipeline,
+   which makes a release workflow the one workflow a doubled trigger passes
+   straight through. Harmless here only because both runs died at the
+   vulnerability gate. Two riders: the nineteen-week `$${{ }}` typo in
+   `main.yaml`'s group is now settled cosmetic by behavior rather than by
+   reading, since the duplicate cancelled; and `Publish`'s 233 runs / 230
+   failures over-counts distinct merge events, so run counts measure deliveries,
+   not events.
+3. `Publish` #233 re-probed at job level rather than inferred from the run
+   conclusion: `failure` at `Pre-Release Validation (vulnerabilities)` -> step
+   `Scan vulnerabilities`, the seven sibling legs `cancelled`, `Semantic Release`
+   `skipped`. Identical to the shape sampled on 2025-10-09, 2026-03-13, and
+   2026-09-15.
+
+Also restored this run: the 2026-09-15 survey's log entry (above), its
+`index.md` catalog line, and its four `wiki/topics/github-actions-ci.md`
+sections, all deleted by a concurrent full-file write four minutes after they
+landed. Recorded as a new section rather than a footnote because the asymmetry
+generalizes - the same contention on the same ref in the same seconds returned a
+loud `409` on the metadata path and `200` with silent data loss on the wiki path.
+
+Pages touched: `wiki/repos/marcusrbrown--extend-vscode.md` (2026-09-16 delta,
+five Notable Patterns, Overview and Fro Bot Integration refresh, survey-history
+row), `wiki/topics/github-actions-ci.md` (four sections restored, two new
+sections, one amendment to *The Ingest Landed and the Scheduler Never Heard*,
+repo-inventory entry, source entries), `index.md` (extend-vscode line restored
+and refreshed, github-actions-ci line extended). `wiki/topics/vscode-extensions.md`
+deliberately untouched: it survived the clobber intact and this interval produced
+no new material for it.
+
+Carried forward: no Fro Bot agent workflow after eighteen surveys (~21 weeks) -
+a follow-up draft PR to onboard the agent should be proposed separately, and the
+case gained a point this interval, since both findings above sat in the run list
+for a day with no resident agent to read them.
+
+Sources: https://github.com/marcusrbrown/extend-vscode@2c78b3d2b86a0f3dd09171131ae6e29916118fcc,
+https://github.com/marcusrbrown/extend-vscode/actions/runs/34947972909,
+https://github.com/marcusrbrown/extend-vscode/actions/runs/34823900885,
+https://github.com/marcusrbrown/extend-vscode/actions/runs/34823901360
+
+## [2026-09-16 10:16] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode

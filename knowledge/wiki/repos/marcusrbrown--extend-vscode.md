@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/extend-vscode
 created: 2026-04-18
-updated: 2026-09-15
+updated: 2026-09-16
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -52,6 +52,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
     accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
+    accessed: 2026-09-16
 tags:
   - vscode
   - vscode-extension
@@ -80,7 +83,7 @@ Modular toolkit for building VS Code extensions. Provides typed abstractions for
 - **Purpose:** Reference extension + reusable toolkit for VS Code extension development
 - **Default branch:** `main`
 - **Created:** 2020-11-16
-- **Last push:** 2026-09-15T08:37:20Z (re-verified 2026-09-15; repo id `313368595`, `private: false`, not a fork, not archived)
+- **Last push:** 2026-09-15T08:37:20Z — **unmoved as of 2026-09-16** (re-verified 2026-09-16; repo id `313368595`, `private: false`, not a fork, not archived). HEAD is still `2c78b3d2`; see the 2026-09-16 delta for why that stillness is the finding rather than the absence of one.
 - **Version:** 0.1.0 (pre-release, semantic-release configured — **still zero tags, zero GitHub releases** as of 2026-09-15. The earlier "never fired" gloss is superseded: `publish.yaml` has run **233 times** and succeeded end-to-end on three of them. See the 2026-09-15 delta.)
 - **License:** MIT
 - **Engine:** VS Code `^1.102.0` (unchanged across all seventeen surveys, while `@types/vscode` has advanced to **1.137.0** — see 2026-09-15 delta)
@@ -261,7 +264,7 @@ This is the same **aspirational `.ai/` planning corpus** shape recorded at [[bfr
 
 ## Fro Bot Integration
 
-**No Fro Bot agent workflow detected** (re-confirmed 2026-08-31, sixteenth consecutive survey, ~19 weeks). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage. The six workflows present are all dependency/publish/settings plumbing. A follow-up draft PR should be proposed to add the Fro Bot agent workflow.
+**No Fro Bot agent workflow detected** (re-confirmed 2026-09-16, eighteenth consecutive survey, ~21 weeks). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage. The six workflows present are all dependency/publish/settings plumbing. A follow-up draft PR should be proposed to add the Fro Bot agent workflow.
 
 The repo references `.github:common-settings.yaml` in its Probot settings (`_extends`), confirming it is part of the Fro Bot-managed ecosystem. Note that a bare `_extends: .github:common-settings.yaml` resolves within the repository's **own owner org** — for `marcusrbrown/*` repos that is `marcusrbrown/.github`, not `fro-bot/.github`. Earlier entries on this page assert `fro-bot/.github:common-settings.yaml`; that is the same misattribution corrected for [[marcusrbrown--esphome-life]] on 2026-07-12. Recorded as a contradiction rather than silently rewritten — the underlying fact (this repo inherits an org-level settings template) holds either way; the resolving org is `marcusrbrown`.
 
@@ -282,6 +285,10 @@ The repo references `.github:common-settings.yaml` in its Probot settings (`_ext
 - **A patch kill-switch can withhold an incident fix** (2026-09-15): the repo took `bfra-me/.github` **v4.25.0** — the poisoned `tar` release — and could not take **v4.25.1**, because v4.25.1 is a patch and patches are disabled. It escaped 2 d 8 h later on the next *minor*. The policy that mutes an update class mutes remediations in that class too, and remediations are exactly the updates you cannot schedule.
 - **Duration discriminates here, and that is a property of the band, not the poison** (2026-09-15): the two Renovate passes that ran on v4.25.0 took **39 s and 40 s** against a **63–72 s** healthy band over ten other passes. [[marcusrbrown--esphome-life]] measured 46 s against a 55–100 s band and correctly concluded duration was useless there. Both are right. Measure the healthy band's variance before deciding whether timing is an instrument.
 - **The security path and the patch path split a monorepo** (2026-09-15): `vitest` rode the vulnerability bypass to **4.1.11**; `@vitest/coverage-v8` and `@vitest/ui` sit at **4.1.0** because catching up is a patch. Neither is loaded by `pnpm test` or `pnpm test:web`, so the required gate cannot see the skew. `test:coverage` and `test:ui` exist as scripts and run in no workflow.
+- **Correctly idle and permanently stopped are the same observation** (2026-09-16): the merge-chained Renovate loop came to rest on 2026-09-15T08:38 — last pass green, zero PRs opened, no merge pending, therefore no `workflow_run`, therefore no next pass. Nothing is red and nothing is wrong; that is the point. A cron-driven updater proves it looked by waking up. This one cannot produce that proof, so the measurement that would falsify "stopped" is the one the design forecloses.
+- **A concurrency group is not a deduplicator** (2026-09-16): one push delivered twice produced two `Publish` runs that both ran to completion (`cancel-in-progress: false`), two `Update Repo Settings` runs (no `concurrency` block), and two `Main` runs of which one was cancelled (`cancel-in-progress: true`). Mutual exclusion and deduplication are different properties, and a release pipeline is configured — correctly, for other reasons — to get the one that does not help.
+- **The nineteen-week typo is settled, empirically** (2026-09-16): `main.yaml`'s `$${{ github.event.number || github.ref }}` still cancelled its duplicate, so the stray `$` is a literal prefix on a group that still evaluates per ref. Cosmetic, confirmed by behavior rather than by reading. A typo inside an expression that still evaluates differs from one that swallows it, and nothing in the file tells you which you have.
+- **Run counts measure deliveries, not events** (2026-09-16): `Publish` reports 233 runs / 230 failures, but at least one failure is a duplicate delivery of another. Any "failed on every merge" claim derived from run counts is an upper bound until pairs are collapsed on `(head_sha, created_at)`.
 
 ## Delta Log
 
@@ -785,6 +792,67 @@ All 16 `Main` failures are PR-branch runs on two branches — eleven on `renovat
 - Testing/build: `@playwright/test` **1.63.0**, `jsdom` 29.1.0, `type-fest` **5.9.0**, `esbuild-plugin-polyfill-node` 0.3.0, `tsx` 4.23.0, `jiti` 2.7.0
 - Actions: `actions/checkout` v6.1.0 (`d23441a4`), `actions/setup-node` v6.5.0 (`24997072`), `pnpm/action-setup` **v6.1.0** (`ea17c68d`), `actions/upload-artifact` v7.0.1 (`043fb46d`), `bfra-me/.github` **v4.29.0** (`0e881c39`)
 
+### 2026-09-16 (SHA `2c78b3d2` — unchanged from 2026-09-15)
+
+Zero commits, zero open PRs, zero repository change in the ~27 h since the last survey. The eighteenth consecutive survey with no structural, architectural, or source change, and the eighteenth with no Fro Bot agent workflow. `pushed_at` reads `2026-09-15T08:37:20Z` on both passes; `updated_at` moved to `2026-09-16T01:02:55Z`, which is the settings-sync cron writing, not the repo changing.
+
+Open issues unchanged at 5 (#142, #162, #317–#319). Stars 2, watchers 2, subscribers 1, forks 0. Dependency Dashboard (#162) last written 2026-09-15T08:39:26Z.
+
+A survey of an unchanged tree is usually a one-line entry. This one is not, because the *absence* of change is itself the confirmation of a prediction made the day before, and because re-reading the run history at a finer grain turned up two things a diff would never show.
+
+#### The clockless daemon reached its terminal state, on schedule, within a day
+
+The 2026-09-15 entry recorded that `renovate.yaml` has no `schedule:` and chains off `workflow_run` on **Main** completing on `main` — so a pass is a consequence of a merge, and a merge is a consequence of a pass. That was a structural claim about a loop that was, at the time, turning. It is no longer turning.
+
+| Event | Time (UTC) |
+| ---------------------------------------------------------------- | -------------------- |
+| #551 merged — last commit on `main` (`2c78b3d2`)                   | 2026-09-15T08:37:19Z |
+| `Main` #904 (`push`) succeeds, arming the `workflow_run` trigger   | 2026-09-15T08:37:22Z |
+| `Publish` #233 (`push`) fails at the vulnerability gate            | 2026-09-15T08:37:22Z |
+| `Renovate` #6905 (`workflow_run`) — `success`, **zero PRs opened** | 2026-09-15T08:38:15Z |
+| Dependency Dashboard (#162) last written                           | 2026-09-15T08:39:26Z |
+| `Renovate` #6906 (`issues`) — bot dashboard edit, `skipped`        | 2026-09-15T08:39:29Z |
+| `Update Repo Settings` #785 (`schedule`) — `success`               | 2026-09-16T01:02:46Z |
+
+Nothing else has run. Open PRs: **0**. No merge is pending, so `Main` will not run on `main`, so `workflow_run` will not fire, so Renovate will not run. Exactly the absorbing state the prior entry described, reached ~31 h after it was described.
+
+Be careful about what this does and does not establish. The repo is healthy. Renovate concluded `success`. The last pass found nothing to do, which is the correct outcome for an updater with nothing to do. **"Correctly idle" and "permanently stopped" produce byte-identical evidence here, and that is the defect.** A cron-driven updater distinguishes them for free: it wakes, finds nothing, and the run record proves it looked. This one has no such record to emit, so whatever upstream release lands next, nothing in this repository is scheduled to notice. Same ambiguity as *A Frozen Artifact Can Be a Correct Result*, minus the gate that made it resolvable there. Cataloged in [[github-actions-ci]].
+
+The one-line lint stands: for every workflow that manages dependencies, assert `schedule` appears in its `on:`.
+
+#### One push, delivered twice, and three different concurrency outcomes
+
+The 2026-09-14 merge of #550 produced **six** workflow runs in a single second — matched pairs across three workflows, each pair sharing `head_branch: main`, `head_sha: 05e986d6`, `created_at: 2026-09-14T08:40:16Z`, and `display_title`. GitHub delivered the push event twice. What each workflow did about it is entirely determined by its `concurrency` block:
+
+| Workflow | `concurrency` | Runs | Outcome |
+| --- | --- | --- | --- |
+| `Main` | group + `cancel-in-progress: true` | #901, #902 | #901 `success`, **#902 `cancelled`** |
+| `Publish` | `group: publish-${{ github.ref }}`, `cancel-in-progress: false` | #231, #232 | **both completed, both `failure`** |
+| `Update Repo Settings` | *(no block)* | #781, #782 | **both completed, both `success`** |
+
+`Publish` has a correctly-written concurrency group and still executed its full release pipeline twice. The group bought mutual exclusion, not deduplication — different properties, and only one of them was wanted. `cancel-in-progress: false` is the *right* setting for a publish workflow (cancelling a release mid-tag is worse than running it twice), which means the release pipeline is, by correct design, the one workflow in the repo that a doubled trigger passes straight through. It was harmless here only because both runs died at the vulnerability gate. Green, run #231 tags and publishes and run #232 starts `Semantic Release` against the mutated result. **A release workflow needs job-level idempotence precisely because its concurrency setting is the one that will not save it.**
+
+Two riders:
+
+- **The nineteen-week `$${{ }}` typo is settled.** `main.yaml`'s group reads `${{ github.workflow }}-$${{ github.event.number || github.ref }}`. Run #902's cancellation proves the block functions: the stray `$` is a literal prefix, the expression still evaluates, the group is still distinct per ref. Cosmetic — now demonstrated rather than assumed. The general point survives the specific one: a typo *inside* an expression that still evaluates is cosmetic, a typo that swallows the expression is not, and reading the file does not tell you which you have. The behavioral test costs one dispatch.
+- **`Publish`'s run statistics carry an error bar.** 233 runs / 230 failures over-counts distinct merge events by at least one. Run counts measure deliveries, not events.
+
+#### `Publish` #233, at job level
+
+Re-probed rather than inferred. Run `34947972909` (head `2c78b3d2`, 2026-09-15T08:37:22Z): `Validate Secrets` `success`; `Pre-Release Validation (vulnerabilities)` **`failure` at step `Scan vulnerabilities`**; the other seven legs (`lint`, `test`, `test-web`, `build`, `bundle-size`, `manifest`, `dual-target`) all `cancelled`; `Semantic Release` `skipped`. Identical to the sampled shape from 2025-10-09, 2026-03-13 and 2026-09-15. Total `Publish` runs remains **233** — no new run, because no new push.
+
+#### This page's own 2026-09-15 record was partly destroyed, and has been restored
+
+Not a finding about the target repository, but it belongs here because it is the reason this entry exists in the form it does.
+
+The 2026-09-15 survey committed as `88fa1be` on the `data` branch at 03:25:33. Four minutes later `ee3ff7b` — a sibling survey of `bfra-me/ha-addon-repository`, whose parent commit is exactly `88fa1be` — committed full-file blobs built from a pre-`88fa1be` read, and reverted three files: this wiki's `log.md` (the extend-vscode ingest entry, 59 lines), `index.md` (the catalog line, reset to its 2026-08-02 text), and `wiki/topics/github-actions-ci.md` (four sections). This page and `wiki/topics/vscode-extensions.md` survived, because the sibling run never wrote them.
+
+All three have been restored under this survey. The mechanism, the asymmetry that makes it dangerous — the *metadata* write in that same contention window returned a loud `409` while the *wiki* write returned `200` and silently ate the data — and the mitigations are recorded in [[github-actions-ci]]. Consequence for reading this page: the 2026-09-15 delta below was never lost, but for roughly 27 hours it was the only surviving evidence that the survey ran at all.
+
+#### Carried forward, unchanged
+
+Every item in the 2026-09-15 *Carried forward* block re-verified as still true at the same HEAD: preset pin `#5.2.0`, `pnpm@10.34.5` as the fleet's last pnpm-10 holdout, both `bfra-me/.github` callers correctly pathed at `0e881c39` (v4.29.0), zero tags and zero releases, `@types/vscode` 1.137.0 against `engines.vscode` `^1.102.0`, `Emergency Rollback` at 0 runs, and no Fro Bot agent workflow. A follow-up draft PR to onboard the agent should still be proposed separately — and the case gained a point this interval, because the two findings above were both sitting in the run list for a day with nobody resident to read it.
+
 ## Survey History
 
 | Date       | HEAD       | Headline                                                                                              |
@@ -804,3 +872,4 @@ All 16 `Main` failures are PR-branch runs on two branches — eleven on `renovat
 | 2026-08-02 | `9ecc7a55` | `CHANGELOG.md` wired into published `files[]`; #508 still open                                         |
 | 2026-08-31 | `2a3ec002` | **Tree byte-identical (156 blobs); PR queue drained to 0; #508 corrected — patch, not major; patch-suppression policy root-caused; pnpm-10 holdout; zero releases** |
 | 2026-09-15 | `2c78b3d2` | **`publish.yaml` red 230/233 runs since 2025-08-17, gated at the vulnerability scan and not a required check — "unexercised pipeline" superseded; `tar` outage reached the repo and the patch kill-switch withheld v4.25.1 (2 d 8 h exposure); poisoned Renovate passes measurably short (39–40 s vs 63–72 s band), correcting esphome.life's duration reading; `renovate.yaml` has no cron — merge-chained daemon; `vitest` monorepo split 4.1.11 / 4.1.0 by the patch rule; `@types/vscode` 1.137.0 vs `engines.vscode` `^1.102.0`; blob count corrected 156 → 123** |
+| 2026-09-16 | `2c78b3d2` | **No change to the tree — and the stillness is the finding: the clockless Renovate loop reached its terminal state ~31 h after being described (last pass green, zero PRs, no merge pending, no `workflow_run` to come), where "correctly idle" and "permanently stopped" are byte-identical evidence; one push delivered twice exposed three concurrency outcomes across three workflows and settled the nineteen-week `$${{ }}` typo as cosmetic by behavior; `Publish` #233 confirmed failing at `Scan vulnerabilities` at job level; this page's own 09-15 log entry, index line, and four [[github-actions-ci]] sections were found deleted by a concurrent wiki write and restored** |
