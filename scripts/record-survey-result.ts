@@ -95,7 +95,32 @@ export function formatRecordSurveyResultError(error: unknown, env: NodeJS.Proces
       return `metadata/repos.yaml has no entry for ${target}`
     }
   }
-  return error instanceof Error ? error.message : String(error)
+  const detail = error instanceof Error ? error.message : String(error)
+  return detail.trim() === '' ? describeOpaqueError(error) : detail
+}
+
+/**
+ * Describe an error that carries no usable message.
+ *
+ * The Contents API returns 5xx responses with an empty body when writers contend
+ * on the same `data`-branch ref, and Octokit surfaces those as a `RequestError`
+ * whose `message` is the empty string. Printing that verbatim emitted a bare
+ * `record-survey-result: ` line with zero signal about what actually failed.
+ *
+ * The description is deliberately limited to the error name and HTTP status —
+ * never response bodies or request URLs — so a failure against a private survey
+ * target cannot leak its identity into workflow logs.
+ */
+function describeOpaqueError(error: unknown): string {
+  const name = error instanceof Error && error.name !== '' ? error.name : 'Error'
+  const status = extractErrorStatus(error)
+  return status === undefined ? `${name} with no message` : `${name} with no message (HTTP ${status})`
+}
+
+function extractErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return undefined
+  const {status} = error
+  return typeof status === 'number' ? status : undefined
 }
 
 export interface RecordSurveyResultNonFatalOutcome {
