@@ -2,8 +2,10 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-15
+updated: 2026-09-16
 sources:
+  - url: https://github.com/fro-bot/.github
+    accessed: 2026-09-16
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -2128,6 +2130,31 @@ The diagnostic value is the shape, not the instance. **A daemon that re-derives 
 This extends *An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing* (2026-09-08): that section established the agent can see the drop. This one establishes that **the repeat count is a fleet-lintable signal** — scan autoheal report bodies for an N-th-consecutive-occurrence phrase, or diff consecutive reports for identical findings, and every severed daemon in the fleet surfaces without reading a single workflow.
 
 Note the failure mode of the report format itself: categories 1–3 score ✅ every night because *reading* is intact, and only category 4 carries the ⚠️. A per-category status table cannot express "every conclusion I reached was correct and none of it shipped." A delivery-outcome field — *artifacts created this run: 0* — would.
+
+### The Ingest Landed and the Scheduler Never Heard (2026-09-16)
+
+A control-plane split-brain, found by comparing a failed run against the metadata snapshot it was supposed to write.
+
+Survey Repo run `34956322542` (2026-09-15, target [[marcusrbrown--extend-vscode]]) passed all seventeen steps through **Commit wiki ingest to data branch**. The wiki knowledge landed. Step 18, `Record survey result`, then failed — and so did step 20, the cancelled/timeout fallback. The log:
+
+```text
+PUT /repos/fro-bot/.github/contents/metadata%2Frepos.yaml - 409 ... in 8191ms
+PUT /repos/fro-bot/.github/contents/metadata%2Frepos.yaml - 500 ... in 432ms
+record-survey-result:
+```
+
+Two separate defects stacked:
+
+1. **`commitMetadata` retries 409 and only 409.** The Contents API returns an empty-bodied 5xx when writers contend on the same `data` ref, so a 409-then-500 sequence is one contention event wearing two status codes. The second one isn't recognized as retryable and the run dies with a retry budget still unspent.
+2. **Octokit builds `RequestError.message` from the response body,** so an empty-bodied 5xx produces `message: ''`. The handler printed it verbatim. That trailing colon is the entire error report.
+
+The durable part is what the snapshot shows a day later. `metadata/repos.yaml` still reads `last_survey_at: 2026-08-31`, `last_survey_status: success`, `next_survey_eligible_at: 2026-10-01` for that repo. **The wiki holds knowledge from a survey the control plane does not believe happened.** Two stores that are supposed to move together, moved apart, and nothing alarms — because from the scheduler's side the state is not corrupt, just old.
+
+Worth correcting a plausible-sounding overstatement: this is *not* a hot re-dispatch loop. The staleness gate is keyed on `next_survey_eligible_at`, which was never advanced either, so the repo simply gets re-surveyed on its normal monthly cadence and silently under-records again. Silent under-recording on a slow cadence is harder to notice than a loop, not easier.
+
+Generalizes past this one script. **A pipeline whose expensive work commits to one store and whose bookkeeping commits to another has a window where partial success is indistinguishable from staleness.** The cheap mitigation is not better retries — it is making the bookkeeping write's failure visible as something other than the absence of a change. A survey that ingested but did not record is a distinct outcome and should be reportable as one.
+
+The diagnostic half has fleet reach: `error instanceof Error ? error.message : String(error)` appears at 27 sites across `scripts/*.ts` in this repo alone, and every one of them degrades to a blank line against an empty-bodied 5xx. Related to *An Honest Red Signal Nobody Subscribes To* (2026-09-13) — there the signal existed and had no audience; here the signal was emitted, delivered, and carried no information.
 
 ### Convention Enforcement via Tests
 

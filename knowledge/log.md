@@ -5593,3 +5593,22 @@ https://github.com/bfra-me/ha-addon-repository/issues/569
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-09-16 04:30] manual-edit | topic:github-actions-ci
+
+Recorded a control-plane split-brain finding from the daily oversight pass: Survey
+Repo run 34956322542 committed its wiki ingest, then failed to write back to
+`metadata/repos.yaml` (Contents API 409 then empty-bodied 500). `commitMetadata`
+retries 409 only, so the run died with retry budget unspent, and the empty 5xx
+body produced a blank error line. A day later the metadata snapshot still shows
+the pre-survey timestamp, so the wiki holds knowledge the scheduler does not
+believe was gathered. Added one section to `wiki/topics/github-actions-ci.md`.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/34956322542,
+https://github.com/fro-bot/.github/pull/3895
+
+## [2026-09-16 04:34] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@4adeae1e14921791e01f7dc218fe79239b42f11c
