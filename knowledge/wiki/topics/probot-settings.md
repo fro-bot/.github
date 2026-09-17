@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-15
+updated: 2026-09-17
 sources:
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: e510e237f5ac65164d4c259c1205f6adef5ab2ba
+    accessed: 2026-09-17
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -34,6 +37,7 @@ tags:
   ]
 related:
   - marcusrbrown--github
+  - marcusrbrown--presentations
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--dev-like
   - marcusrbrown--marcusrbrown-com
@@ -155,6 +159,28 @@ So the duplicate pass is **unconditional on the cron** (the filter step is skipp
 **The new failure mode is in the one exception.** The single skip was the push of a PR that touched *only* `update-repo-settings.yaml` — which is not in `default_path_filters`, and the caller does not set the `path-filters` input upstream exposes. **The mislabeled workflow is invisible to the filter belonging to the workflow it wrongly calls.** The result inverts intuition: changing the broken file is free, while every Renovate PR that touches `renovate.yaml` or `renovate.json5` — which is what Renovate's PRs here almost always touch — fires the duplicate. The misconfiguration is self-triggering: the bot's own output is what makes it run.
 
 **And during a supply-chain incident the footgun is not merely wasteful.** On 2026-09-04 the upstream `renovate.yaml` briefly shipped a broken Renovate runtime (`bfra-me/renovate-action` 10.34.0, `tar` left a devDependency). Because of the mis-path, esphome.life had **two** callers of the poisoned tag instead of one. The operator's manual fix correctly touched only the load-bearing `renovate.yaml`, so the merge of the fix itself triggered `Update Repo Settings` on a ref still pinned to the bad tag and **ran the known-poisoned Renovate one more time**, 34 m 53 s before the second PR cleaned it up. Generalizable: **a wrong-but-valid `uses:` path silently widens the blast radius of any regression in the workflow it wrongly points at, and adds a step to every recovery.** Cost accounting for this defect class should include incident amplification, not just duplicated compute.
+
+#### Scope correction from the control repo (2026-09-17)
+
+The incident-amplification claim above is right about esphome.life and slightly too broad as a rule. [[marcusrbrown--presentations]] holds the same two callers of the same `bfra-me/.github` tag, took the same poisoned v4.25.0 in the same Renovate PR, and had the same minimal one-file fix applied by the same operator — but its `update-repo-settings.yaml` is **correctly** pathed. Consequence: its poisoned reference was **inert**. The settings-sync workflow does not invoke `renovate-action`, so the run at 16:28:02 on the bad tag concluded `success` in 18 seconds and did nothing harmful; Renovate self-healed the sibling pin **3 m 56 s** after the fix merged, against esphome.life's extra 34 m 53 s.
+
+So the sentence to carry is narrower and more useful: **a second reference to a poisoned shared tag is harmless; a second reference that is mis-pathed into the poisoned component is not.** The amplification belongs to the miswiring, not to the reference count. When triaging a bad tag across a fleet, enumerate consumers by the component they *invoke* rather than by grepping the tag — otherwise the mis-pathed caller hides inside a list of inert ones. Full analysis in [[github-actions-ci]].
+
+### `repository.archived` is dropped silently — third confirmation (2026-09-17)
+
+[[marcusrbrown--presentations]] is the fleet's standing evidence that the Probot Settings App accepts `repository.archived` and never applies it. At the third survey the file is **byte-identical at 733 bytes** (`archived: true` still declared, required contexts `['Build', 'Test', 'Renovate / Renovate']`, `enforce_admins: true`, `required_pull_request_reviews: null`), the live API still reports **`archived: false`**, and `Update Repo Settings` has concluded `success` **19 more times** in 12 days (12 on its `19 14` cron, 7 on push). Roughly six months and on the order of a hundred green runs now sit behind the conclusion.
+
+This completes a three-way contrast the page can now state cleanly, all from the same operator and the same reusable-workflow family:
+
+| Repo | Wiring | Run result | Applied? |
+| --- | --- | --- | --- |
+| [[marcusrbrown--esphome-life]] | wrong path (calls `renovate.yaml`) | `success` | never — syncs the wrong thing |
+| [[bfra-me--ha-addon-repository]] | correct path, correct name | `failure` (intermittent upstream 5xx) | no — fails inside the apply step |
+| [[marcusrbrown--presentations]] | correct path, correct name | `success` | **partially** — every key but `archived` |
+
+Which yields the fourth clause for the page's existing triad — *a declared manifest is not an applied one; an applied setting is not a recorded one; a correctly-wired sync is not a working one* — namely **a working sync is not a complete one.** Only a readback assertion distinguishes the third row from the fourth, because from the outside they produce the identical green check. The practical guidance for anyone writing `settings.yml`: treat unsupported keys as worse than absent keys. `archived: true` here is inert, but it reads as enforced to every future maintainer, and it misled this wiki's own first survey into flagging it as an imminent risk.
+
+Cosmetic observation from the same file, recorded because it is the second thing in it whose behavior is established by observation rather than by the document: the folded `topics:` block scalar ends with a trailing comma (`slidev,`), and the resulting empty element is dropped somewhere in the parse chain — the live topic list is exactly the 10 intended entries.
 
 ### The working reference wiring (2026-08-31)
 

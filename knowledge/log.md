@@ -5743,3 +5743,67 @@ https://github.com/users/fro-bot/projects/1
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
+
+## [2026-09-17 05:40] ingest | repo:marcusrbrown/Presentations
+
+Third survey of the slide-deck archive, at HEAD `e510e237` (prior `4613f997`). The content
+tree did not move: 53 entries / 42 blobs, zero files added or removed, all 14 commits touching
+only pins and lockfiles. The interval's value is entirely in the automation.
+
+1. **Third inside view of the 2026-09-04 `bfra-me/renovate-action` `tar` incident, and it
+   changes the failure's category.** `#81` installed the poisoned `bfra-me/.github` v4.25.0 at
+   16:27:58 — the earliest of the three known repos. Because `renovate.yaml` here carries **no
+   `schedule:`** and its only live trigger is `workflow_run` on a CI run of a merge it could no
+   longer produce, the outage produced **no runs at all for 6 h 27 m**, rather than the
+   false-green scheduled runs recorded at `marcusrbrown/.github`. That is a deadlock, not a
+   delay. Human `#82` at 22:58:51 (`renovate.yaml` only, `+1/-1`, commit body stating the loop
+   verbatim); repaired Renovate self-healed the sibling pin at 23:02:47. Inert window
+   6 h 30 m 53 s.
+
+2. **Scope correction to the "incident amplifier" rule.** This repo has the same two callers of
+   the same poisoned tag as `marcusrbrown/esphome.life` and the same minimal one-file fix, but
+   its `update-repo-settings.yaml` is correctly pathed — so the un-fixed second reference was
+   inert (18 s green settings sync on the bad tag) and close-out took 3 m 56 s against
+   esphome.life's extra 34 m 53 s. Blast radius is per-consumer, not per-reference; the
+   amplification belongs to the miswiring. With three data points the sweep is now measured:
+   ~8 minutes to propagate automatically, ~2.5 minutes per repo to repair by hand 6.5 hours later.
+
+3. **PR #54 is clean, green, and 45 days unmerged** — `mergeable_state: clean`, all three
+   required contexts green, `auto_merge: null`, `required_pull_request_reviews: null`. Renovate
+   rebases it onto every `main` commit, so it can never go stale, conflict, or fail, and every
+   backlog detector is structurally blind to it while it bills a CI cycle per commit. The prior
+   page's "pin PRs fall outside automerge" inference is falsified: sibling `#55` automerged on
+   09-05 after 33 days.
+
+4. **`archived: true` third confirmation** — `settings.yml` byte-identical at 733 B, 19 more
+   green `Update Repo Settings` runs, live `archived: false`. Yields a fourth clause for the
+   probot-settings triad: a working sync is not a complete one.
+
+Corrections recorded rather than silently applied: the prior page's tree blob count (33 → 42,
+an arithmetic error, unchanged by construction this interval), and the automerge inference in
+item 3. One contradiction is recorded **unresolved** — the Renovate job's `if:` guard reads as
+unconditionally true for bot `issues.edited` events yet skips 90 of 90 in practice; a read-only
+survey cannot close that gap, and the underivability is itself the reportable property.
+
+Still no Fro Bot workflow (third consecutive survey). The standing recommendation is kept but
+downgraded in priority: every hygiene finding from 2026-09-01 survived the interval untouched,
+yet a resident daily agent would not have caught the one incident that mattered — that needs an
+out-of-band delivery monitor, which is a fleet-level instrument, not a per-repo agent.
+
+Target repository treated as untrusted input; reads limited to repository metadata, directory
+listings, README/manifest/workflow files, and public Actions/PR/issue metadata. Repository
+re-confirmed public (`private: false`, `visibility: public`) before any page was written.
+
+Pages touched: `wiki/repos/marcusrbrown--presentations.md`, `wiki/topics/github-actions-ci.md`,
+`wiki/topics/probot-settings.md`, `wiki/topics/github-pages.md`, `index.md`.
+
+Sources: https://github.com/marcusrbrown/Presentations@e510e237f5ac65164d4c259c1205f6adef5ab2ba,
+https://github.com/marcusrbrown/Presentations/pull/82,
+https://github.com/marcusrbrown/Presentations/pull/54,
+https://github.com/marcusrbrown/Presentations/issues/41
+
+## [2026-09-17 10:16] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/Presentations
