@@ -5744,66 +5744,66 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
 
-## [2026-09-17 05:40] ingest | repo:marcusrbrown/Presentations
+## [2026-09-17 09:20] ingest | repo:bfra-me/renovate-action
 
-Third survey of the slide-deck archive, at HEAD `e510e237` (prior `4613f997`). The content
-tree did not move: 53 entries / 42 blobs, zero files added or removed, all 14 commits touching
-only pins and lockfiles. The interval's value is entirely in the automation.
+Seventh survey of `bfra-me/renovate-action` at HEAD `0c1bdac0`, release `10.43.0`. This is the
+first source-side pass since the 2026-09-04 `tar` regression, so the "a source-side pass is
+warranted" note this page has carried since 2026-09-11 is **discharged**. Target repo treated as
+untrusted input; reads limited to directory listings, README/manifest/workflow files, and public
+run/release metadata. `docs/solutions/` postmortem bodies were left unread under that policy —
+their filenames are recorded from the tree listing and are load-bearing on their own.
 
-1. **Third inside view of the 2026-09-04 `bfra-me/renovate-action` `tar` incident, and it
-   changes the failure's category.** `#81` installed the poisoned `bfra-me/.github` v4.25.0 at
-   16:27:58 — the earliest of the three known repos. Because `renovate.yaml` here carries **no
-   `schedule:`** and its only live trigger is `workflow_run` on a CI run of a merge it could no
-   longer produce, the outage produced **no runs at all for 6 h 27 m**, rather than the
-   false-green scheduled runs recorded at `marcusrbrown/.github`. That is a deadlock, not a
-   delay. Human `#82` at 22:58:51 (`renovate.yaml` only, `+1/-1`, commit body stating the loop
-   verbatim); repaired Renovate self-healed the sibling pin at 23:02:47. Inert window
-   6 h 30 m 53 s.
+Four findings, three of them generalizable.
 
-2. **Scope correction to the "incident amplifier" rule.** This repo has the same two callers of
-   the same poisoned tag as `marcusrbrown/esphome.life` and the same minimal one-file fix, but
-   its `update-repo-settings.yaml` is correctly pathed — so the un-fixed second reference was
-   inert (18 s green settings sync on the bad tag) and close-out took 3 m 56 s against
-   esphome.life's extra 34 m 53 s. Blast radius is per-consumer, not per-reference; the
-   amplification belongs to the miswiring. With three data points the sweep is now measured:
-   ~8 minutes to propagate automatically, ~2.5 minutes per repo to repair by hand 6.5 hours later.
+1. **The self-test ran against the poisoned engine and passed.** `Main` run `33877549289` shows
+   `Self-test success` at 13:22:26Z, 77 s before `10.34.0` published. `action-self-test-changed:
+   [action.yaml, docker/**]` plus `RENOVATE_VERSION` living in `action.yaml` means every engine
+   bump trips the filter by construction, and `release` transitively needs `test`, so a failing
+   self-test would have blocked the publish. Detection failed because `dry-run: true` maps to
+   `RENOVATE_DRY_RUN=extract` — the lightest mode, which never reaches the `tar` path. A test that
+   exercises the artifact is not one that exercises the failure; the safest invocation executes
+   the least code.
 
-3. **PR #54 is clean, green, and 45 days unmerged** — `mergeable_state: clean`, all three
-   required contexts green, `auto_merge: null`, `required_pull_request_reviews: null`. Renovate
-   rebases it onto every `main` commit, so it can never go stale, conflict, or fail, and every
-   backlog detector is structurally blind to it while it bills a CI cycle per commit. The prior
-   page's "pin PRs fall outside automerge" inference is falsified: sibling `#55` automerged on
-   09-05 after 33 days.
+2. **A push-based delivery channel already existed on incident day and made things worse, not
+   better.** `trigger-org-renovate` dispatches `bfra-me/.github`'s Renovate on every publish. It
+   delivered `10.34.0` in 4m28s fully automatically, then at 18:28 fired the antidote into a
+   runner it had already killed — 65 s, conclusion `success`, zero PRs — and `marcusrbrown`
+   hand-fixed at 18:36:06. A push channel inherits the liveness of the component that executes it,
+   and this one covers exactly one hop while the fleet lives on the second.
 
-4. **`archived: true` third confirmation** — `settings.yml` byte-identical at 733 B, 19 more
-   green `Update Repo Settings` runs, live `archived: false`. Yields a fourth clause for the
-   probot-settings triad: a working sync is not a complete one.
+3. **Correction to prior surveys:** `renovate.yaml` is not a direct self-invocation. It calls
+   `bfra-me/.github/.github/workflows/renovate.yaml@v4.30.0` like every other consumer, which is
+   why this repo was itself inert for 6h34m33s and was remediated *second* in a three-repo manual
+   sweep spanning 5m26s (`marcusrbrown/.github` 22:56 → here 22:58:11 → `marcusrbrown/esphome.life`
+   23:01:26). The repo that published the fix could not take it.
 
-Corrections recorded rather than silently applied: the prior page's tree blob count (33 → 42,
-an arithmetic error, unchanged by construction this interval), and the automerge inference in
-item 3. One contradiction is recorded **unresolved** — the Renovate job's `if:` guard reads as
-unconditionally true for bot `issues.edited` events yet skips 90 of 90 in practice; a read-only
-survey cannot close that gap, and the underivability is itself the reportable property.
+4. **Open issues 65 → 2, open PRs 0.** Not noise settling — the Fro Bot report model rotated to a
+   dated `Daily Fro Bot Report — YYYY-MM-DD (UTC)` whose close predicate enumerates the legacy
+   titles, sweeping a 59-issue dated backlog reaching to 2026-05-11 in 19 seconds on 2026-08-25.
+   That backfill path is what `marcusrbrown/infra`'s contract lacked, and rotation structurally
+   removes the body-size budget that failed at `marcusrbrown/cortexkit_anthropic-auth`.
 
-Still no Fro Bot workflow (third consecutive survey). The standing recommendation is kept but
-downgraded in priority: every hygiene finding from 2026-09-01 survived the interval untouched,
-yet a resident daily agent would not have caught the one incident that mattered — that needs an
-out-of-band delivery monitor, which is a fleet-level instrument, not a per-repo agent.
+Also recorded: `fro-bot.yaml` consolidated (crons 2 → 1, modes 3 → 2, `MAINTENANCE_PROMPT` deleted
+along with its selector option, autoheal categories 5 → 6, `PR_REVIEW_PROMPT` now forbids `ce:*`
+skills, agent v0.98.2 → v0.113.2); new `release-alert.yaml` that re-queries the job list and alerts
+only on `Release` job failure; a path-shaped entry in the org-wide `allowedCommands` base list
+present in no public `bfra-me` repository; dead analytics plumbing re-confirmed a seventh time with
+its audit instruction carried verbatim through a hand prompt rewrite; stale `v9`/`v10` deprecation
+copy re-confirmed ~32 minors deep. 150 commits since the prior survey — bot 128, `marcusrbrown` 21,
+`fro-bot` 1.
 
-Target repository treated as untrusted input; reads limited to repository metadata, directory
-listings, README/manifest/workflow files, and public Actions/PR/issue metadata. Repository
-re-confirmed public (`private: false`, `visibility: public`) before any page was written.
+Pages touched: `wiki/repos/bfra-me--renovate-action.md` (updated additively; prior readings retained
+and marked superseded or corrected in place), `wiki/topics/github-actions-ci.md` (three new sections
+plus an amendment block under *The Updater Ships Its Own Poison*), `index.md`, `log.md`. No private
+repository is named or implied. All surveyed repositories are public.
 
-Pages touched: `wiki/repos/marcusrbrown--presentations.md`, `wiki/topics/github-actions-ci.md`,
-`wiki/topics/probot-settings.md`, `wiki/topics/github-pages.md`, `index.md`.
+Sources: https://github.com/bfra-me/renovate-action@0c1bdac0d3f6f11638cda0a01d1e225ba4db78ac,
+https://github.com/bfra-me/renovate-action/actions/runs/33877549289,
+https://github.com/bfra-me/renovate-action/actions/runs/33905753453,
+https://github.com/bfra-me/.github
 
-Sources: https://github.com/marcusrbrown/Presentations@e510e237f5ac65164d4c259c1205f6adef5ab2ba,
-https://github.com/marcusrbrown/Presentations/pull/82,
-https://github.com/marcusrbrown/Presentations/pull/54,
-https://github.com/marcusrbrown/Presentations/issues/41
+## [2026-09-17 10:19] ingest | repo:bfra-me/renovate-action
 
-## [2026-09-17 10:16] ingest | repo:marcusrbrown/Presentations
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
-Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/Presentations
+Sources: https://github.com/bfra-me/renovate-action

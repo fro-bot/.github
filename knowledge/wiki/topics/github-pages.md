@@ -2,11 +2,8 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-17
+updated: 2026-09-09
 sources:
-  - url: https://github.com/marcusrbrown/Presentations
-    sha: e510e237f5ac65164d4c259c1205f6adef5ab2ba
-    accessed: 2026-09-17
   - url: https://github.com/fro-bot/systematic
     sha: 8e26a01
     accessed: 2026-09-04
@@ -216,17 +213,7 @@ Three properties that make this good rather than merely working:
 - **The assembly step is unguarded; the Pages steps are not.** `configure-pages`, `upload-pages-artifact`, and the whole `Deploy` job carry `if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'`, but the `mkdir`/`cp` runs on every PR. A PR that breaks the site layout fails in review, not at deploy.
 - **Each sub-artifact must know its own base path at build time.** The Slidev deck hard-codes `--base /Presentations/Deck-B/` in its build script. Static-site generators emit absolute asset URLs; the staging layout and the per-artifact base path are one coupled decision, and getting them out of sync produces a site that builds green and 404s every asset.
 
-**Migration note:** adopting the artifact API orphans the older `gh-pages`-branch path. In this case the CRA deck retained `gh-pages` as a dependency plus `predeploy`/`deploy` scripts that nothing invokes — and Renovate independently flagged `gh-pages` as abandoned upstream. Deleting the old deploy path is part of the migration, not a follow-up. *(2026-09-17: still not deleted, two surveys and six weeks later. The dead scripts and the abandoned dependency both survive verbatim — worth noting that "part of the migration" is advice the migration itself will not enforce.)*
-
-### The publish job cannot be a required check, so nothing gates it (2026-09-17)
-
-Follow-up on the same pipeline after six weeks of operation, and it generalizes to every repo that puts `Deploy` in the same workflow as its gate jobs.
-
-[[marcusrbrown--presentations]] requires `['Build', 'Test', 'Renovate / Renovate']` on `main`. `Deploy` is not and **cannot** be among them: it is guarded `if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'`, so on every pull request it resolves to `skipped` — confirmed on a live PR's check-run list. A context that is always skipped on PRs can never be satisfied as a required check, so **co-locating the publish job with the gate jobs permanently excludes publishing from branch protection.**
-
-That is usually the right call — gating merges on a production deploy is its own pathology — but it should be chosen, not inherited, because the consequence is concrete: a broken deploy blocks nothing and notifies no one. In this repo the entire observability surface for publishing is a **single shields.io badge** in a two-line `README.md`, pointed at `actions/workflow/status/.../ci.yaml?branch=main`. It does cover `Deploy` (it reflects the whole run conclusion on `main`), which makes it a real monitor — and also the only one, living in a file that nobody opens on a repository with one star.
-
-Two cheap improvements, neither requiring branch protection: subscribe the deploy path to the same out-of-band *delivery* monitoring the fleet already needs for its updaters (see [[github-actions-ci]]) — the GitHub Deployments API records every `github-pages` deployment with a status, so "no successful `github-pages` deployment in N days on a repo whose `main` moved" is a one-call check — or split `Deploy` into its own `workflow_run`-triggered workflow so it gets a distinct name, a distinct badge, and a distinct failure surface.
+**Migration note:** adopting the artifact API orphans the older `gh-pages`-branch path. In this case the CRA deck retained `gh-pages` as a dependency plus `predeploy`/`deploy` scripts that nothing invokes — and Renovate independently flagged `gh-pages` as abandoned upstream. Deleting the old deploy path is part of the migration, not a follow-up.
 
 ## Project Pages inherit the user site's custom domain
 

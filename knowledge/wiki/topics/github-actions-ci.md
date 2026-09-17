@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-17
 sources:
-  - url: https://github.com/marcusrbrown/Presentations
-    sha: e510e237f5ac65164d4c259c1205f6adef5ab2ba
+  - url: https://github.com/bfra-me/renovate-action
+    sha: 0c1bdac0d3f6f11638cda0a01d1e225ba4db78ac
     accessed: 2026-09-17
   - url: https://github.com/fro-bot/.github
     accessed: 2026-09-17
@@ -157,7 +157,6 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown
   - marcusrbrown--mothership
-  - marcusrbrown--presentations
   - marcusrbrown--renovate-config
   - marcusrbrown--sparkle
   - marcusrbrown--vbs
@@ -187,7 +186,6 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
 - [[marcusrbrown--dotfiles]] — 4 workflows (2026-09-10): `main.yaml` (Devcontainer CI → GHCR publish with `cacheFrom`; `Install mise` smoke test; `Script Tests` matrix on ubuntu + macOS running colocated Bun tests for the repo's operational agent scripts, collapsed into a stable aggregator status context so branch protection has one name to bind to), `fro-bot.yaml` (single-file three-mode, agent **v0.109.4** — ahead of the control plane's patch-frozen v0.109.0 pins), plus `renovate.yaml` and `update-repo-settings.yaml` as `bfra-me/.github` reusable callers. Required checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, Script Tests, with `enforce_admins: true`. **97 of its last 100 Fro Bot runs concluded `skipped`** (65 `pull_request`, 30 `issues`, 2 `issue_comment`) against a ~100% bot-authored trigger surface — a third instance of the no-op run storm after [[marcusrbrown--tokentoilet]] and [[bfra-me--ha-addon-repository]]. Source of the 2026-09-10 findings below on cache-versus-verification, cross-category prompt routing, and sibling pins.
 - [[bfra-me--ha-addon-repository]] — **7 workflows** as of 2026-09-15 (was 4): `main.yaml` (18.6 KB, nine jobs — `prepare` add-on discovery + matrix generation, `lint-addon`, `lint-prettier`, `release-integrity`, `release-integrity-tests`, `repository-metadata`, then `build-addon` / `publish-addon` / `publish-manifest` separated by permission, funnelled into status-**asserting** `Lint` and `Build` aggregators), `fro-bot.yaml` (single-job two-prompt, agent **v0.112.0**, daily `30 15`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.29.0**), and three new security gates — `scorecard.yaml`, `hadolint.yaml`, `workflow-lint.yaml` (zizmor + actionlint). Required contexts on `main` grew 5 → 8. Native `ubuntu-24.04-arm` for `aarch64` instead of QEMU; `defaults.run.shell` sets `-Eeuo pipefail` globally; two `.github/scripts/*.sh` validators, one with its own regression suite gated on `scripts_changed`. Source of the 2026-09-15 findings below on expected-`skipped` assertions, registry readback, green-by-design runs, suppression expiry, `total_count` saturation, storm bounds, and severed write paths.
-- [[marcusrbrown--presentations]] — 3 workflows (2026-09-17): `ci.yaml` (Build / Test / **Deploy**, where `Build` compiles two unrelated toolchains — Yarn/CRA on Node 20.20.2 and Bun/Slidev — assembles `_site/`, and uploads a Pages artifact; `Deploy` is `main`-only with job-scoped `pages: write` + `id-token: write`), plus `renovate.yaml` and `update-repo-settings.yaml` as `bfra-me/.github` reusable callers @ **v4.30.0**. Required contexts on `main`: `Build`, `Test`, `Renovate / Renovate`, `enforce_admins: true`, `required_pull_request_reviews: null`. **No Fro Bot workflow** (third survey). Two structural properties make it the fleet's cleanest control case: `renovate.yaml` carries **no `schedule:` trigger** (liveness is a `workflow_run` chain off its own merges), and `update-repo-settings.yaml` is **correctly** pathed where [[marcusrbrown--esphome-life]]'s is not. Source of the 2026-09-17 findings below on self-chained-updater deadlock, per-consumer blast radius, invisible auto-rebasing PRs, and underivable guards.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -1698,6 +1696,8 @@ This is the second independent confirmation of [A Run's Conclusion Measures the 
 
 Mitigations worth considering before the next occurrence, in increasing cost: an out-of-band delivery monitor (cheapest, and the only one that generalizes); a floating patch constraint on the runner ref so upstream patch fixes arrive without the bot's participation (trades SHA-pinning's supply-chain guarantee for self-recovery — a real trade, not a free win, and it argues against applying this to anything but the updater itself); or moving the runner pin out of the updater's own scope entirely, so a second, differently-powered channel owns it.
 
+> **Amended 2026-09-17 by a source-side pass on [[bfra-me--renovate-action]].** Everything above reproduces from the upstream side. Three additions, detailed in [A Push Channel Carried by the Component It Updates Is a Faster Fuse, Not a Recovery Path](#a-push-channel-carried-by-the-component-it-updates-is-a-faster-fuse-not-a-recovery-path-2026-09-17): (1) a **push-based delivery channel already existed** on the day of the incident and shipped the defect org-wide in 4m28s while delivering nothing for the fix, because the channel runs on the component it updates — so "push instead of pull" is *not* the mitigation and adopting it without an independent repair path increases blast radius per unit time; (2) the upstream repository was **itself deadlocked for 6h34m33s** and was fixed second in a three-repo manual sweep — it consumes its own action through the same shared tag its downstream does, so it is inside the blast radius rather than upstream of it; (3) the point-1 rule above ("enumerate which pins are load-bearing for recovery") should be read to include *the source repository's own pin*, which is the one nobody thinks to check.
+
 One adjacent measurement note from the same survey: that repo's `updated_at` never goes stale, because a `55 2 * * *` settings-sync job writes repository settings through the API on every pass. **A daily settings-sync workflow pins `updated_at` to its own cron**, so `updated_at` on any Probot-Settings-managed repo is a statement about the sync job, not about the tree. Use the HEAD commit date. Same family as the [[github-pages]] rule about probing a frozen deploy target with `pushed_at` and getting the diagnosis exactly backwards — a timestamp that has a second writer is not a content signal.
 
 ### An Honest Red Signal Nobody Subscribes To (2026-09-13)
@@ -2312,72 +2312,69 @@ Meanwhile GitHub Project 1 holds 21 items, 20 `Done` and 1 `Todo` (the tracker i
 
 The generalizable shape: **a tracker with write automation can drift precisely because the automation's write surface and the document's claim surface are disjoint.** The tracker workflow appends audit comments and recomputes a snapshot hash; nothing it does re-reads the version literals and issue-state words embedded in the body prose. A recent `updated_at` therefore certifies that the automation ran, not that the content is true — the same distinction as *A Settled Tracker Snapshot Is Not a Correctness Claim*, one level up: there the snapshot was mistaken for a correctness claim, here the *timestamp* is. Any claim worth tracking should be machine-derived at render time or fed through the status-truth drift loop, not hand-written into prose that only humans can invalidate.
 
-### A Self-Chained Updater Cannot Recover, Because the Trigger It Needs Is the Output It Lost (2026-09-17)
+### A Push Channel Carried by the Component It Updates Is a Faster Fuse, Not a Recovery Path (2026-09-17)
 
-Third inside view of the 2026-09-04 `tar` incident, from [[marcusrbrown--presentations]]. The first ([[marcusrbrown--github]]) showed the conclusion signal was inverted; the second ([[marcusrbrown--esphome-life]]) closed off duration as a proxy and priced the sweep. This one changes the failure's *category*.
+Source-side pass on [[bfra-me--renovate-action]], the repository at the center of the 2026-09-04 `tar` incident. It turns out the obvious mitigation for [The Updater Ships Its Own Poison](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11) **was already deployed when the incident happened**, and measuring what it did is more instructive than the deadlock itself.
 
-That repo's `renovate.yaml` has **no `schedule:` trigger**. It fires on `issues.edited`, `pull_request.edited`, push to non-`main` branches, `workflow_dispatch`, and `workflow_run` on CI completion — so the live loop is *merge → CI on `main` → `workflow_run` → next Renovate pass*. Under the `tar` defect Renovate opened no PRs, so nothing merged, so CI never ran on `main`, so **no `workflow_run` ever fired**. The run history is unambiguous: last Renovate run of any kind ends 16:30:30, next begins 22:57:39. **6 h 27 m with no run at all**, ended only when the human pushed the fix branch (which ran `renovate.yaml` *from that branch*, already on the repaired pin, a minute before the PR merged).
+`main.yaml` carries a terminal `trigger-org-renovate` job, gated on `needs.release.outputs.published == 'true'`, which dispatches the org Renovate workflow in `bfra-me/.github` on every publish. Push, not pull. The measured result:
 
-This is not the same failure as at the sibling repos and should not be filed as a repeat:
-
-| | Cron present ([[marcusrbrown--github]]) | No cron ([[marcusrbrown--presentations]]) |
+| Direction | Time | Actor |
 | --- | --- | --- |
-| What the outage produced | Scheduled runs concluding `success` with zero output | **No runs at all** |
-| What a conclusion-based monitor saw | Green — actively misleading | Nothing |
-| What a run-presence monitor saw | Healthy cadence | Nothing |
-| Category | Delay — the next cron tick could have delivered a fix | **Deadlock** — no tick exists |
+| Poison out (`10.34.0` published 13:23:43 → consumed by `bfra-me/.github` 13:28:11) | **4m28s** | fully automatic |
+| Antidote out (`10.34.1` published 18:27:48 → dispatch at 18:27:55 → run concludes `success` in **65 s** with zero PRs) | — | **delivered nothing** |
+| Antidote actually applied (`bfra-me/.github` 18:36:06) | 8m18s | **human** |
 
-The rule to carry: **an updater whose next execution is triggered by its own last successful delivery has no recovery path from a delivery failure.** It is a distinct hazard from the bootstrap-pin problem already recorded in [The Updater Ships Its Own Poison](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11) — that one says the *fix* cannot arrive; this one says the *attempt* cannot even be scheduled. A repo with both properties (self-managed runner pin **and** no cron) requires human intervention by construction, and the entire 6.5-hour window was detection latency with no automated floor under it.
+The dispatch fired into a runner it had already killed, because the workflow it dispatches is itself built on the action being updated. Three rules:
 
-This strengthens [A `workflow_run`-Chained Updater's Liveness Is Conditional on Its Own Last Success](#a-workflow_run-chained-updaters-liveness-is-conditional-on-its-own-last-success-2026-09-16) from [[marcusrbrown--marcusrbrown-com]], where the stall came from a red required check rather than a broken runner. Two unrelated causes, same structural consequence — which promotes *"dependency updater with no `schedule:` trigger"* from a lintable shape to one worth actually linting. The cheap mitigation is a low-frequency cron whose only job is to break the cycle; it costs one run a day and converts a deadlock back into a delay.
+1. **A push channel inherits the liveness of whatever executes it.** Push vs. pull changes *who initiates*, not *what runs*. If the executor is the component under update, the channel has exactly the availability of the thing it is supposed to repair — which is to say, none, precisely when it matters. The asymmetry is the finding: it is fully effective in the direction that spreads a defect and fully ineffective in the direction that fixes one.
+2. **This makes the healthy case faster and the bad case worse.** Under pull, a defect reaches consumers at cron granularity and the window to notice is hours. Under push it is minutes, org-wide, with no added recovery capability. Adopting a push channel without an independent repair path **strictly increases blast radius per unit time**. That is a real trade and it should be made deliberately, not as an obvious optimization.
+3. **Count the hops.** The channel here covers exactly one: `renovate-action → bfra-me/.github`. Every downstream repo pins `bfra-me/.github@v4.x` and advances that pin with its own Renovate — the broken component. The channel stops one hop short of everywhere recovery was needed. A push channel that is not transitive is a latency optimization for the first consumer and nothing for the fleet.
 
-### The Blast Radius of a Poisoned Shared Tag Is Per-Consumer, Not Per-Reference (2026-09-17)
+The corollary for surveys: **a repository that consumes its own artifact through a shared third-party tag is inside its own blast radius, not upstream of it.** Prior wiki records described this repo's `renovate.yaml` as a direct self-invocation; it is not — it calls `bfra-me/.github/.github/workflows/renovate.yaml` exactly like any other consumer, which is why it sat inert on its own defect for **6h34m33s** and needed the same manual one-line bump as its downstream. It was remediated *second* in a three-repo manual sweep spanning 5m26s ([[marcusrbrown--github]] 22:56 → [[bfra-me--renovate-action]] 22:58:11 → [[marcusrbrown--esphome-life]] 23:01:26). Publishing a fix and being able to take one are separate capabilities, and the repo that owns the bug does not automatically have the second.
 
-Scope correction to point 3 of [Duration Is Not a Delivery Signal Either](#duration-is-not-a-delivery-signal-either--and-recovery-cost-scales-with-fleet-size-2026-09-14), which recorded that a mis-pathed `uses:` "multiplies N within a single repo" and should be filed as an **incident amplifier**. That finding is correct. Its scope was too wide, and [[marcusrbrown--presentations]] is the control that narrows it.
+What the same repo built that *does* work: `release-alert.yaml`, a `workflow_run` listener that treats the workflow-level `failure` conclusion as a trigger and then **re-queries the run's job list**, exiting unless the `Release` job specifically failed. That is [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02) implemented as five lines of `gh api` + `jq`, and it is the cheapest correct form of the pattern recorded so far. It dedups on an immutable body marker rather than a mutable label, avoiding [[marcusrbrown--infra]]'s reconciliation failure. Its limit is worth stating: it detects release *failure*, not release *correctness* — the `10.34.0` case published green and was inert at runtime, which is exactly what it does not cover.
 
-Both repos have two `uses:` references to the same `bfra-me/.github` tag (`renovate.yaml` and `update-repo-settings.yaml`), both took the poisoned v4.25.0 in a single Renovate PR, and in both the operator fixed **only** `renovate.yaml`. The outcomes diverge:
+### A Self-Test That Exercises the Artifact Is Not a Self-Test That Exercises the Failure (2026-09-17)
 
-- **esphome.life** — `update-repo-settings.yaml` wrongly calls the upstream *Renovate* workflow. Merging the fix therefore executed the known-poisoned runner one more time; full remediation needed a second PR **34 m 53 s** later.
-- **Presentations** — `update-repo-settings.yaml` correctly calls the *settings-sync* workflow, which never invokes `renovate-action`. Its poisoned reference was **inert**: it ran at 16:28:02 on the bad tag and concluded `success` in 18 seconds. Renovate self-healed the sibling file **3 m 56 s** after the fix merged.
+The same survey closes a question this wiki carried for six days: does [[bfra-me--renovate-action]]'s CI self-test (`uses: ./` against itself) reach the code path that broke? **It ran and it passed.**
 
-So the amplification is a property of **the miswiring**, not of holding a second reference to a compromised tag. A shared monorepo tag is a bundle; a consumer only inherits the defect if it invokes the defective component. Two practical consequences:
+`Main` run `33877549289`, push to `main` on the commit bumping the engine to the defective version, step list in the `Test` job:
 
-1. **When triaging a poisoned shared tag, enumerate consumers by what they *invoke*, not by counting `uses:` lines.** A grep for the tag overstates exposure and sends you patching inert references while the clock runs.
-2. **A wrong-path `uses:` converts an inert reference into a live one.** That is the real reason it is an amplifier, and it is a second, independent argument for the [[probot-settings]] recommendation to differentiate reusable-workflow input surfaces so miswiring fails at `workflow_call` resolution instead of silently succeeding.
-
-Measurement addendum, now that the sweep has three points. Poisoning times: 16:27:58 (Presentations), ~16:28 ([[marcusrbrown--github]]), 16:35:43 (esphome.life) — **~8 minutes to propagate fleet-wide**, automated. Repair times: 22:56, 22:58:51, 23:01:26 — **~2.5 minutes per repo, serial, by hand, 6.5 hours later**. Propagation and remediation differ by roughly three orders of magnitude in elapsed time and completely in who pays. Any mitigation that lowers N is worth more than any mitigation that lowers per-repo cost, which is the same conclusion as the 2026-09-14 entry, now with the propagation side measured too.
-
-### A Clean, Green, Auto-Rebasing Pull Request Is Invisible to Every Detector (2026-09-17)
-
-From [[marcusrbrown--presentations]] `#54`, open **45 days** at survey time. Live state: `mergeable: true`, `mergeable_state: clean`, `auto_merge: null`, not a draft, all three required contexts green on the head SHA, and branch protection sets `required_pull_request_reviews: null`. Nothing blocks it. One click merges it.
-
-The interesting property is not the stall — [[marcusrbrown--tokentoilet]] already documented six green one-line PRs parked 29–48 days — but that this one is **structurally undetectable**:
-
-- It cannot go **stale**: Renovate rebases it onto every `main` commit (its title drifted `52.19.1` → `52.20.1` and its `updated_at` is always today).
-- It cannot **conflict**: same reason.
-- It cannot **fail**: the rebase re-runs CI and CI passes.
-
-Every standard backlog alarm keys on one of those three. All three are suppressed by the rebase loop, so the PR is simultaneously maximally healthy and completely stuck. **The only instrument that sees it is open-PR age** — `created_at`, never `updated_at`, which the rebase resets. That is the same class of mistake as reading a settings-sync-refreshed `updated_at` as a content signal (see the 2026-09-11 entry): a timestamp with a second writer is not a staleness signal.
-
-There is also a quiet recurring cost. Each rebase buys a full `Build` + `Test` + `Renovate` cycle, plus at least one `CI` run cancelled mid-rebase when commits land close together. Over a 14-commit interval that is 14 CI cycles spent on a change nobody merged, and none of it shows up as a failure, a warning, or a red badge. **Unmerged auto-rebasing PRs are a compute leak that bills itself as green.**
-
-Practical lint, cheap on any repo: list open PRs where `now - created_at > 30d` **and** `mergeable_state == "clean"`. A non-empty result is unambiguous — those PRs are not blocked by anything technical, so either the automerge matrix has a gap or nobody is being asked.
-
-### A Guard Whose Behavior You Cannot Derive From Its Text (2026-09-17)
-
-Recorded as an unresolved contradiction rather than a diagnosis, from [[marcusrbrown--presentations]]. The Renovate caller job carries:
-
-```yaml
-if: >
-  (github.event.action == 'edited' && !contains(github.actor, '[bot]')) ||
-  (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+```
+Run pnpm test   success
+Self-test       success     13:21:18Z → 13:22:26Z
 ```
 
-with the stated intent "only run Renovate if this isn't a bot edit or if the workflow run is successful." For a bot-authored `issues.edited` event the first disjunct is false, but the second disjunct's `github.event_name != 'workflow_run'` evaluates true, so a literal reading of the expression — with explicit parentheses, and `&&` binding tighter than `||` — makes the whole thing true and the job should run. **Observed behavior is the opposite and is unambiguous**: 90 of 90 such runs skipped at the job level with `started_at == completed_at`, 23 of them inside the last 100 runs.
+The release published 77 seconds later. The self-test was not skipped and not absent: `.github/filters.yaml` defines `action-self-test-changed: [action.yaml, docker/**]`, the engine version pin lives in `action.yaml`, so **every engine bump trips the filter by construction**, and `release` transitively needs `test`, so a failing self-test would have blocked the publish.
 
-A read-only survey cannot close that gap, and inventing a mechanism would be worse than recording the gap. The transferable point is the gap itself: **a condition whose outcome cannot be predicted by reading it is a condition nobody can safely edit.** It currently does the right thing; the next person who "simplifies" it has no way to know which disjunct is load-bearing. The remedy is structural, not analytical — split the expression into two named, single-purpose conditions (one scoped to `workflow_run` conclusions, one to edit events) so each is independently verifiable, and let a `workflow_dispatch` on a throwaway branch confirm the truth table rather than reasoning about it.
+The negative result is the useful one, and it generalizes past this repo:
 
-This is the benign end of a family the page already tracks at the malignant end: [A Green Run That Is Green By Design](#a-green-run-that-is-green-by-design-2026-09-15) and the `paths-filter`-skips-the-apply-step case in [[probot-settings]] both turn on a guard doing something other than what its reader assumes.
+- **"Does a self-test exist?" and "does it execute the failure mode?" are different audit questions, and only the first is cheap.** A reviewer checking for a self-test finds one, correctly wired, correctly gated, blocking the release. Every structural property is right. The test still cannot see the defect.
+- **The mechanism was the safety setting.** The self-test runs `dry-run: true`, which maps to the engine's lightest dry-run mode — extraction only, no lookup, no branch or PR work. The safest possible invocation is also the one that executes the least code. **A dry-run self-test validates startup, not capability**, and the gap between them is exactly where a missing runtime dependency lives.
+- **Bundle-integrity checks and dependency-classification checks are orthogonal, and only the first is usually instrumented.** A committed `dist/` with a CI drift check proves the bundle matches its source. It says nothing about whether the bundle's runtime needs are declared in `dependencies` rather than `devDependencies`. Both are "the artifact is correct" checks; they do not overlap.
+- **The cheap fix is a phase assertion, not a fuller run.** Assert that the installed binary reaches a phase past the safe one, or resolve the production dependency set against the bundle. Either separates *started* from *can work*. Widening the dry run reintroduces the cost and the side effects the dry run existed to avoid.
+
+Filed as a detection-design finding, not a negligence one: no plausible amount of "add a self-test" discipline produces a different outcome here, because the self-test was already there.
+
+### Rotating Dated Reports With an Explicit Legacy-Title Sweep — the Converging Form of the Single-Report Contract (2026-09-17)
+
+This page has recorded the single-perpetual-report contract failing in three distinct ways: [[marcusrbrown--infra]] at 10 open reports against a contract demanding exactly one (clause ANDed a *mutable label* onto an *immutable body marker*, so nine of the agent's own artifacts were permanently unreachable and no backfill path existed), [[marcusrbrown--cortexkit-anthropic-auth]] at a **54,813-character** body against a 50,000-character soft rotation directive the model had to reason about and never acted on, and `marcusrbrown/.dotfiles` at three simultaneous same-titled reports. [[bfra-me--renovate-action]] now supplies the version that converged, with a measurement: **open issues 65 → 2**, and the residual two are today's report plus a Dependency Dashboard that is supposed to stay open.
+
+The contract, from that repo's `AUTOHEAL_PROMPT`:
+
+1. **Rotate, don't append.** One dated issue per day, title fixed exactly as `Daily Fro Bot Report — YYYY-MM-DD (UTC)`. 23 exist over 23 elapsed days; exactly one is open. Rotation makes the body-size budget structurally unreachable — the failure at cortexkit cannot occur, rather than being prohibited by a number the model must track.
+2. **Key on exact title.** Not a label (mutable, racy, and the infra failure), not a body marker (works, but requires reading every candidate body). Titles are server-side and enumerable in one query.
+3. **Enumerate the legacy titles explicitly** — the two old perpetual titles, dated legacy variants strictly before today, and dated current-format titles strictly before today. **This is the backfill path, and it is the part every prior implementation lacked.** The receipt is dated: the first rotating report was created 2026-08-25 ~08:02 and the 59-issue dated backlog reaching back to 2026-05-11 was closed at **08:21:10 → 08:21:29**. Nineteen seconds of cleanup that had been structurally impossible for three months.
+4. **Order the write before the destroy.** "Confirm that today's report exists and is accessible before closing any prior reports." A crash between the two steps otherwise destroys the only copy.
+5. **Fail open on ambiguity.** Near-match titles and non-bot-authored issues stay open and are reported under Needs Human Attention. `Do not hardcode issue numbers.`
+6. **Name the exception and its postcondition.** The prompt's global rule is *do not close or reopen issues or PRs*; this lifecycle is the single named exception and it states what must be true afterwards ("exactly one daily report remains").
+
+The transferable rule is item 3, and it is a general one for self-cleanup contracts: **a close predicate written only for the format it introduces guarantees a permanent orphan set.** Every rename of a bot-authored artifact needs its predecessors enumerated in the same change, or the contract converges going forward while diverging backward forever — which is indistinguishable, in the open-issue count, from not converging at all. This is the constructive complement of [An Exact-Title Allowlist Is a Fleet's Rename History, Hard-Coded](#an-exact-title-allowlist-is-a-fleets-rename-history-hard-coded-2026-09-05): carrying the rename history is a maintenance cost, and it is also the only thing that makes the sweep complete.
+
+Two smaller items from the same workflow rewrite worth carrying:
+
+- **Deleting a mode means deleting its selector too.** That repo dropped its maintenance cron and deleted `MAINTENANCE_PROMPT` outright — *and* removed `maintenance` from the `workflow_dispatch` `mode` choice list. Leaving the option would have produced a selector offering a mode whose prompt no longer exists, silently resolving to autoheal through the fallback chain. Cheap to check on any mode-dispatch workflow: every `options:` entry must have a reachable prompt.
+- **A prompt rewrite is the one moment prompt text gets human attention, and it can still pass through unread.** The same rewrite restructured the autoheal prompt from five categories to six with five new preamble blocks — and carried forward, verbatim, an instruction to audit analytics plumbing that has been dead code for seven consecutive surveys (~120 days). The line was re-authored by hand into a new category and nobody re-read what it asserted. Strengthens *Prompt Text Is a Dependency With No Dependency Bot*: refactoring prompt text does not audit it.
 
 ### Convention Enforcement via Tests
 
