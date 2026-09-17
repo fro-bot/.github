@@ -5692,3 +5692,54 @@ https://github.com/advisories/GHSA-c83g-rgw3-j3cx
 Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-09-17 04:40] oversight | repo:fro-bot/.github
+
+Daily oversight pass (categories 5–8) for the control plane. Three generalizable findings
+added to `wiki/topics/github-actions-ci.md`; no repo page rewritten, no new page created.
+
+1. **Propose-without-merge, measured at fleet scale.** 110 open PRs across the three visible
+   owners, 66 `fro-bot`-authored, 54 of those older than 30 days (7 over 90d, oldest 172d).
+   `marcusrbrown/gpt` carries six separate open PRs for the same ollama-contrast defect
+   (#2664/#2665/#2672/#2673/#2674/#2692, 70d → 50d) — third and worst confirmation of the
+   DEDUPLICATION-clause failure, previously recorded at n=2. Durable point: unmerged work is
+   indistinguishable from unattempted work at the next run's input boundary, because the loop
+   reads the tree and the tree never changes. Dedup must key on a defect fingerprint, not a
+   title.
+
+2. **Orphan-page promotion block — corrects the remediation pass's inference.** The
+   `data → main` gate has been blocked since 2026-09-13 (47 commits stranded). The single
+   `unattributable-page` leak has **no `metadata/repos.yaml` entry at all** and its slug matches
+   no repository the token can enumerate — not, as inferred, an entry merely lacking
+   `private: false`. Content-identity grandfathering is a deferred failure: a page admitted by
+   hash-match alone blocks the whole promotion on the first self-initiated re-survey. The gate's
+   single `unattributable-page` reason code cannot distinguish subclasses whose smallest safe
+   fixes differ, which routes operators toward the wrong remedy.
+
+3. **Tracker drift with live write automation.** `fro-bot/.github#3512` was updated 2026-09-16
+   by its own scheduled tracker, yet four body claims are stale: agent releases `v0.85.0` vs live
+   `v0.113.2`; deployed gateway pin `v0.83.0` vs live `v0.93.1` in
+   `marcusrbrown/infra:apps/gateway/upstream.json`; `fro-bot/dashboard#179` marked Open but
+   CLOSED; `marcusrbrown/infra#711` filed-as-gap but CLOSED. GitHub Project 1 holds 21 items
+   (20 Done, 1 Todo) ending at `dashboard#81` while the body tracks ~15 later items with no
+   Project item, so the issue's own first acceptance criterion is unmet. A recent `updated_at`
+   certifies the automation ran, not that the content is true.
+
+Coverage caveats recorded in the daily report: Dependabot alerts were readable for 6 repos and
+returned 403 for 21, so org-wide security posture is partial; `OPERATOR_CONTRACT_VERSION` could
+not be read at either the deployed or latest agent tag.
+
+No private repository is named or implied anywhere in this entry. The blocked wiki page stays
+redacted precisely because its visibility could not be established.
+
+Sources: https://github.com/fro-bot/.github,
+https://github.com/fro-bot/.github/issues/3512,
+https://github.com/marcusrbrown/gpt,
+https://github.com/marcusrbrown/infra,
+https://github.com/users/fro-bot/projects/1
+
+## [2026-09-17 04:38] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33

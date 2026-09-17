@@ -2,8 +2,12 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-16
+updated: 2026-09-17
 sources:
+  - url: https://github.com/fro-bot/.github
+    accessed: 2026-09-17
+  - url: https://github.com/marcusrbrown/gpt
+    accessed: 2026-09-17
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 27ac09de578a72e9285e9fee26fe2b10e8745201
     accessed: 2026-09-16
@@ -2245,6 +2249,63 @@ Two durable consequences:
 
 - **A tool warning in CI logs has no reader.** It resolved a 71-day open question and had been doing so, unread, for the entire duration. Warnings surface only when something promotes them — a log grep in the gate, a `--strict` mode, or an autoheal category that reads step output rather than step conclusion. Otherwise a warning and a comment are the same object.
 - **Correction to the prior wiki framing.** Three surveys described "two ledgers drifting apart," implying divergence risk. The accurate description is **one live ledger and one inert vestige**: the `package.json` `fast-uri >=3.1.2` floor has never had effect, and only the `pnpm-workspace.yaml` pin does anything. The risk was never that the two would disagree. It was that a reader — or an agent proposing a fix — would trust the dead half, which is precisely what #471 and #478 did.
+
+### Propose-Without-Merge, Measured at Fleet Scale — and It Compounds Into Duplicates (2026-09-17)
+
+Individual repo pages have recorded the propose-without-merge class one repo at a time ([[marcusrbrown--tokentoilet]] 6 security PRs parked 29–48 days, [[marcusrbrown--sparkle]] 13-PR autoheal queue, [[marcusrbrown--marcusrbrown-com]] 6 PRs at 33–71 days). A fleet-wide sweep from the `fro-bot/.github` oversight pass puts a number on the aggregate, and the number reframes the class from "some repos have a backlog" to "the loop has no terminating condition."
+
+Across the three visible owners (`fro-bot/*`, `marcusrbrown/*`, `bfra-me/*`), **110 open PRs, of which 66 are `fro-bot`-authored**. Age distribution of the fro-bot half: 7 over 90 days, 17 at 60–90, 30 at 30–60, 12 under 30. **54 of 66 are older than 30 days.** Oldest is 172 days.
+
+The compounding failure is visible in one repo. `marcusrbrown/gpt` carries **six separate open PRs attacking the same defect**:
+
+| PR | Age | Title |
+| --- | --- | --- |
+| #2664 | 70d | `fix(a11y): improve ollama status contrast` |
+| #2665 | 69d | `fix(a11y): improve ollama settings contrast` |
+| #2672 | 66d | `fix(ui): restore ollama chip contrast` |
+| #2673 | 65d | `fix(accessibility): improve ollama status chip contrast` |
+| #2674 | 60d | `fix(accessibility): keep ollama status legible` |
+| #2692 | 50d | `fix(a11y): improve ollama settings contrast` |
+
+Roughly one new attempt every four days for twenty days, each on a differently-named branch, each renaming the same fix. This is the third and by far the worst confirmation of the DEDUPLICATION-clause failure previously recorded at n=2 ([[marcusrbrown--marcusrbrown-com]] #473/#523; [[marcusrbrown--mrbro-dev]] #283/#254).
+
+What the scale-up shows that the pairs did not:
+
+- **A prompt-level DEDUPLICATION clause is not a dedup mechanism.** It instructs the agent to search for an existing PR for the same root cause. That works only if the search is actually executed and the match is recognized across renamed titles. Six near-synonymous titles on six branches is the counterexample: every run judged "no existing PR for this" and was wrong.
+- **Unmerged work is indistinguishable from unattempted work at the next run's input boundary.** The agent reads a red or degraded surface, not its own PR list. The defect is still present in `main` — because the fix is sitting in an unmerged PR — so the defect is still detected, so a new PR is opened. The loop's input is the tree, and the tree never changes.
+- **Duplicate volume is a lagging indicator of merge latency, not of agent quality.** The same loop produces zero duplicates in a repo with automerge coverage. In this ecosystem, Renovate-authored PRs merge same-day under automerge; `fro-bot`-authored PRs have no equivalent policy and accumulate. Confirms *Adoption Latency Is a Property of the Merge Gate, Not the Update Policy* — merge governance, not the producer, sets the outcome.
+- **Dedup must be keyed on the defect, not the title.** The durable fix is a stable fingerprint (target file + symptom class) carried in a marker comment on the PR body, matched before opening — the same mechanism the control plane already uses for status-truth proposals and wiki-lint findings, applied to its own cross-repo output.
+
+A related hygiene variant appears in the same sweep: `marcusrbrown/.dotfiles` had **three open `Daily Maintenance Report` issues** (09-14, 09-15, 09-16) simultaneously. The single-perpetual-report contract converges only where the close predicate is a title prefix (as in [[marcusrbrown--mothership]], 61 reports ever / exactly 1 open) and diverges wherever the predicate is narrower.
+
+### An All-Or-Nothing Privacy Gate Fails Hardest on Metadata It Has No Entry For (2026-09-17)
+
+The `fro-bot/.github` `data → main` promotion has been blocked since 2026-09-13 at `scripts/check-wiki-private-presence.ts`, stranding 47 commits. The remediation pass classified the single leak as `unattributable-page` and inferred a repo whose `metadata/repos.yaml` entry merely lacked an explicit `private: false`. Re-running the detection primitives against the `data` tip narrowed it further and **corrects that inference**:
+
+- The blocking page has **no entry in `data`'s `metadata/repos.yaml` at all** — it is an orphan, not an under-annotated entry.
+- Its slug **matches no repository the `fro-bot` token can enumerate** (38 visible repos across three owners, all public), so visibility cannot be established from CI at all.
+- It is **already present on `main`**, and its content **changed on `data`**, which dissolved the content-identity grandfather in `detectPrivateWikiLeaks` step 3.
+
+Three generalizable points:
+
+- **Content-identity grandfathering is a deferred failure, not a stable state.** A page admitted only because its hash matches `main` carries no durable attribution. It passes indefinitely, then blocks on the first re-survey that rewrites it — and the survey is something the system performs on *itself*, automatically. The tripwire is armed by routine operation.
+- **The smallest safe fix differs by subclass, and the redacted output cannot distinguish them.** "Entry exists but lacks `private: false`" is a one-field metadata edit. "No entry exists and the repo is unenumerable" is a bookkeeping repair or a page removal, and requires establishing visibility out-of-band first. Both surface as the identical `unattributable-page` label, so the gate's own report routes an operator toward the wrong remedy. A reason code distinguishing *no-tracked-entry* from *tracked-but-unannotated* costs nothing and is still redaction-safe.
+- **Fail-safe redaction and operator triage are in genuine tension, and redaction should still win.** `formatLeakReport` refuses to echo `owner--repo` filenames into a public log precisely because a flagged page *might* be private; `--operator-report` hard-refuses under `GITHUB_ACTIONS`. That is correct — the whole reason the page is flagged is that its visibility is unproven. The cost is that a weekly-cron, all-or-nothing gate reports an opaque one-line failure and strands everything behind it. Mitigate by making the *class* observable (counts by reason code, a warning when a page passes only by hash-match) rather than by relaxing the redaction.
+
+### A Tracker Body That Automation Touches Is Not a Tracker Body Automation Verifies (2026-09-17)
+
+`fro-bot/.github#3512` tracks the Gateway operator control-surface rollout, has a dedicated scheduled tracker workflow, and was updated 2026-09-16 — yet four of its factual claims are stale against live state:
+
+| Claim in the issue body | Live value | Source |
+| --- | --- | --- |
+| "Agent releases have since advanced to `v0.85.0`" | `v0.113.2` | `fro-bot/agent` GitHub Releases |
+| "deployed gateway is pinned to `v0.83.0`" (cited to a specific commit) | `v0.93.1` | `marcusrbrown/infra:apps/gateway/upstream.json` |
+| `fro-bot/dashboard#179` — State: **Open** | `CLOSED` | issue state |
+| `marcusrbrown/infra#711` — filed gap | `CLOSED` | issue state |
+
+Meanwhile GitHub Project 1 holds 21 items, 20 `Done` and 1 `Todo` (the tracker issue itself), and its newest item is `fro-bot/dashboard#81` — while the issue body tracks roughly fifteen later items (`agent#1033`, `#1109`, `#1111`, the six-PR push cluster, `dashboard#108`, `#122`, `#179`) that **have no Project item at all**. The issue's own first acceptance criterion is "The Project matrix is current and reflects all shipped/closed rollout items." It is not.
+
+The generalizable shape: **a tracker with write automation can drift precisely because the automation's write surface and the document's claim surface are disjoint.** The tracker workflow appends audit comments and recomputes a snapshot hash; nothing it does re-reads the version literals and issue-state words embedded in the body prose. A recent `updated_at` therefore certifies that the automation ran, not that the content is true — the same distinction as *A Settled Tracker Snapshot Is Not a Correctness Claim*, one level up: there the snapshot was mistaken for a correctness claim, here the *timestamp* is. Any claim worth tracking should be machine-derived at render time or fed through the status-truth drift loop, not hand-written into prose that only humans can invalidate.
 
 ### Convention Enforcement via Tests
 
