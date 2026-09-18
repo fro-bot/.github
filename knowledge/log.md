@@ -5850,3 +5850,74 @@ https://github.com/marcusrbrown/infra
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
+
+## [2026-09-18 10:05] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Seventh re-survey of the fork. HEAD unchanged at `99fdbe9`; `pushed_at 2026-05-31T04:03:34Z`
+frozen **110 days**; tree re-verified byte-identical at 104 blobs / 28 trees, `truncated: false`.
+Both prior automation deaths persist unchanged: `Fro Bot` still `disabled_inactivity` with 141
+lifetime runs and workflow `updated_at` still identical to run #141 (dead 50 days), and issue #11
+still 19 comments / 54,813 chars / last written 2026-06-29 (silent 81 days). Both branches still
+`protected: false`; `archived: false`; 1 star / 0 forks unchanged across all seven surveys. The
+`mb` dist-tag still resolves to `1.2.2-mb.2` on both fork packages.
+
+Three additions, no prior claim overwritten.
+
+(1) **`state: active` measures enablement, not liveness.** Enumerating all four workflow files
+inverts this page's own `disabled_inactivity` finding: `ci.yml`, `release.yaml`, and
+`copilot-setup-steps.yml` all report `active` and all last ran 2026-05-31 — inert sixty days
+longer than the one workflow GitHub flagged. The inactivity policy only ever targets `schedule`,
+because event-triggered workflows cost nothing while idle, so a fleet lint scanning
+`state != "active"` is inversely correlated with dormancy and its silence is not evidence. The
+complementary check is last-run recency per workflow, one request each. General form: an
+event-triggered workflow's liveness is a property of its triggers, not of itself, which also makes
+a PR-only CI gate on a repo with no PRs a liveness gap rather than only a coverage gap.
+Generalized into `wiki/topics/github-actions-ci.md`.
+
+(2) **Two divergence instruments disagreed over the same interval.** `releases/latest` shows one
+release (`v1.22.0`, 2026-09-02) then a 15.6-day drought against an all-time maximum inter-release
+gap of 16.71 days, reading as upstream stalling; `compare` shows `behind_by` 334 -> 479, +145
+commits in 16 days (~9.1/day against a prior ~3.6/day), reading as a ~2.5x acceleration. Both are
+accurate about their own instrument. Recorded as: a release is a publishing decision, a commit is
+the work; prefer the instrument with no human decision in its production path. Practical
+consequence recorded on the repo page — the deferred resync grew 43% in sixteen days, widening the
+gap between the archive and resync costs at roughly nine commits a day. This sharpens rather than
+contradicts the 2026-09-02 "upstream is accelerating" reading, whose instrument would have produced
+the opposite conclusion this interval. Generalized into `wiki/topics/github-actions-ci.md`.
+
+(3) **The registry did not expire what GitHub expired.** Sixty quiet days got the scheduled
+workflow disabled; npm has served the producerless `mb` tag for 110 days and has no comparable
+policy, because serving a tag that points at an already-stored tarball costs approximately nothing.
+The abandonment signal is enforced where it is cheap (compute) and absent where it is consequential
+(the install surface). Recorded as a corollary to the existing three-deletions rule in
+`wiki/topics/opencode-plugins.md`, with the ordering guidance that the registry pointer should be
+deleted first because it is the only one of the three that nothing else will ever clean up.
+
+Also added a **Re-Survey Trigger Conditions** section to the repo page reducing the eighth pass to
+four unauthenticated GETs (`pushed_at`, `actions/workflows/fro-bot.yaml` -> `state`, `archived`,
+`registry.npmjs.org` -> `dist-tags.mb`), with the note that if all four hold the correct output is a
+log line rather than a page edit.
+
+Onboarding note re-confirmed: a Fro Bot workflow **is** present (switched off, not absent), so no
+follow-up draft PR proposing one is warranted.
+
+Upstream `cortexkit/anthropic-auth` re-verified: `pushed_at 2026-09-18T08:51:41Z`, 41 stars, 16
+forks, 6 open issues, latest release `v1.22.0`, npm `latest` 1.22.0 across 44 published versions.
+
+Pages touched: `wiki/repos/marcusrbrown--cortexkit-anthropic-auth.md` (updated additively; every
+prior survey block preserved in place), `wiki/topics/github-actions-ci.md` (two new sections),
+`wiki/topics/opencode-plugins.md` (one new corollary subsection), `index.md`, `log.md`. Reads were
+limited to repository and Actions metadata, branch/compare metadata, the recursive tree listing, and
+public npm registry documents. No private repository is named or implied; both surveyed
+repositories are public.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth@99fdbe906c5875893d363c904f6e6bc066d997b1,
+https://github.com/cortexkit/anthropic-auth (v1.22.0),
+https://registry.npmjs.org/@marcusrbrown/opencode-anthropic-auth,
+https://registry.npmjs.org/@marcusrbrown/anthropic-auth-core
+
+## [2026-09-18 09:58] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth

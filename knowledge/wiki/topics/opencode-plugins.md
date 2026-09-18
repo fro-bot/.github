@@ -2,8 +2,13 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-15
+updated: 2026-09-18
 sources:
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-09-18
+  - url: https://registry.npmjs.org/@marcusrbrown/opencode-anthropic-auth
+    accessed: 2026-09-18
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -402,6 +407,20 @@ The rule: retiring a distribution channel requires deleting the **CI job**, the 
 
 The same repo supplies the third-deletion instance in isolation: `README.md` still instructs `Pin @marcusrbrown/opencode-anthropic-auth@1.2.2-mb.2` and describes both packages as published "at `1.2.2-mb.2`", never updated across three subsequent tagged releases. So the registry metadata and the install docs are **two independent stale pointers that converge on the same abandoned version** while the pipeline moved on without either. For plugin repos specifically this matters more than usual: OpenCode resolves plugins by package specifier from user config, so a stale documented pin propagates into consumers' `opencode.json` and stays there — the namespace-pinning rationale that motivated the fork in the first place cuts both ways.
 
+### Corollary: the registry pointer is the deletion no platform will garbage-collect for you (2026-09-18)
+
+Re-verified sixteen days later: `dist-tags: { latest: 1.2.5-mb.3, mb: 1.2.2-mb.2 }` on **both** fork packages, unchanged, now **110 days** with no producer. Set that against what the other platform did over the same window — GitHub waited 60 quiet days and then reached in and switched off the repository's scheduled workflow.
+
+The asymmetry follows from what each platform pays for. An idle cron costs GitHub compute, so there is an aggressive expiry policy — aggressive enough to disable a watchdog whose entire purpose is watching idle repositories. A `dist-tag` pointing at an already-stored tarball costs npm approximately nothing, so there is no policy, there will not be one, and unpublishing is deliberately hard for reasons that have nothing to do with this case.
+
+**So the abandonment signal is enforced exactly where it is cheap and absent exactly where it is consequential.** A dormant workflow harms nobody. A dormant `dist-tag` is a live, resolving, silent-by-succeeding instruction to install a stale build, with a lifetime bounded by nothing.
+
+Three practical consequences for anyone shipping plugins:
+
+- **Order the three deletions by who else will clean up.** The CI job is the one your pipeline can verify and the one a future reader will notice; the docs are the one a human will eventually correct. The registry pointer has neither property. Do it first, not last.
+- **A registry read is not part of any default health check, and needs to be added deliberately.** One unauthenticated `GET https://registry.npmjs.org/<pkg>` returns the full `dist-tags` map. Asserting that the map contains exactly the tags the release contract permits is a two-line check that no amount of green CI substitutes for.
+- **Lifetime asymmetry makes registry state the durable record of a project's intentions, accurate or not.** A repository decays visibly — commits stop, workflows get disabled, issues go stale, and any survey can see it. The registry keeps serving the last thing anyone published with no decay signal at all, which means for an abandoned package **the registry is the most confident-looking and least current surface a consumer will touch**.
+
 ## App-Embedded Design-Gate Plugin (in-repo `.opencode/impeccable/`)
 
 Not every OpenCode plugin is published or general-purpose. A recurring **app-embedded** pattern: an application repo vendors an OpenCode plugin *in-tree* to run a design/quality gate against the agents that work on that same repo, rather than consuming the gate as a pinned CI action.
@@ -624,7 +643,7 @@ The instructive part is the history. The same drift was recorded on 2026-07-10 (
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
-- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
+- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and, as re-measured **2026-09-18**, **479 commits / 33 releases** behind upstream `cortexkit/anthropic-auth` (`v1.22.0`, actively maintained — `behind_by` grew 334 → 479 in sixteen days). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule and its 2026-09-18 corollary on registry-vs-compute expiry
 - [[marcusrbrown--dotfiles]] — The ecosystem's reference *consumer* config: `.agents/skills/` skill bus, seven pinned OpenCode plugins, six OMO-slim routing presets, and `.config/cortexkit/` per-harness plugin config. Source of the 2026-09-10 findings above on prompt-cache anchoring, per-harness model blocks, and unvalidated preset references
 - [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
