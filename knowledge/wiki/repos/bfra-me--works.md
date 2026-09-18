@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-09-03
+updated: 2026-09-18
 sources:
   - url: https://github.com/bfra-me/works
     sha: ef14b26085dab318fffad1b6c3062292f8ae60b8
@@ -28,6 +28,9 @@ sources:
   - url: https://github.com/bfra-me/works
     sha: b7d31380a88eb5d0c7b0c09c783f50ef13f1c4cf
     accessed: 2026-09-03
+  - url: https://github.com/bfra-me/works
+    sha: d44777684c6a773e38d7541068a8f4adf3258071
+    accessed: 2026-09-18
 tags:
   - bfra-me
   - monorepo
@@ -44,6 +47,8 @@ tags:
   - fro-bot
   - release-pipeline
   - propose-without-merge
+  - delivery-mode
+  - supply-chain
 related:
   - bfra-me--github
   - bfra-me--ha-addon-repository
@@ -51,6 +56,11 @@ related:
   - fro-bot--agent
   - marcusrbrown--renovate-config
   - marcusrbrown--marcusrbrown-com
+  - marcusrbrown--github
+  - marcusrbrown--esphome-life
+  - marcusrbrown--sparkle
+  - marcusrbrown--tokentoilet
+  - fro-bot--dashboard
   - github-actions-ci
   - probot-settings
 node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
@@ -77,17 +87,18 @@ automation actions), `bfra-me/works` is the **shared library plane**.
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2020-10-27
-- **Last push:** 2026-09-03 (HEAD `b7d3138`, `chore(dev): update dependency type-fest to v5.9.0 (#4475)`)
+- **Last push:** 2026-09-17 (HEAD `d447776`, `fix(deps): update dependency open to v11.0.4 (#4694)`)
 - **Topics:** `bfra-me`, `works`, `components`, `semantic-release`, `tools`, `tsconfig`
-- **Stars:** 4 (steady since 2026-06-22); watchers 4, forks 0; size ~15.1 MB
-- **Open issues / PRs (2026-09-03):** **5 total open** — 2 issues (#4477 `Daily Autohealing Report — 2026-09-03 (UTC)`, #4249 `Stale TODOs`) + 1 Renovate Dependency Dashboard (#9) + 2 PRs (#4476 publish PR opened today, #4459 zod). Down from **50** on 2026-08-12 (38 issues / 12 PRs). Search API: **45 issues closed** and **122 PRs closed unmerged** since 2026-08-12. The backlog did not drain through merges — it was closed. See _The 2026-08-21/22 unblock_ below.
-- **Latest release:** **`@bfra.me/eslint-config@0.52.1` (2026-08-26)** — the ~14-week publish drought **broke on 2026-08-22**. **Six publish commits in five days**: #4274 (2026-08-22), #4304 / #4316 / #4332 (2026-08-23), #4364 (2026-08-25 UTC), #4371 (2026-08-26). 134 of 157 queued `.changeset/renovate-*.md` files were consumed (157 → 23) — the single largest tree delta of this survey.
+- **Stars:** 4 (steady since 2026-06-22); watchers 4, forks 0; size ~15.2 MB
+- **Open issues / PRs (2026-09-18):** **6 total open** — 3 fro-bot issues (#4697 `Daily Autohealing Report — 2026-09-18 (UTC)`, **#4522** the delivery-mode diagnosis, #4249 `Stale TODOs`) + 1 Renovate Dependency Dashboard (#9) + 2 PRs (#4696 publish PR, #4593 `@clack/prompts` with a genuine `TS2322` build failure). Up from 5 on 2026-09-03; the queue is drained and stays drained.
+- **Latest release:** **2026-09-14 (#4643)** — `create` 0.8.1, `doc-sync` 0.1.12, `eslint-config` 0.52.2, `workspace-analyzer` 0.2.11. **One publish in the 15-day interval**, 19 days after the 08-26 burst ended. `#4696` has sat green, `CLEAN`, and `MERGEABLE` since 2026-09-17 — see _Publish cadence after the auto-merge deletion_.
 - **Primary language:** TypeScript (~99%)
-- **Node:** **24.20.0** (`.node-version`; 24.19.0 on 2026-08-12) — packages generally target ES2022+/Node 20+, but AGENTS.md now records two exceptions (see Conventions)
-- **Package manager:** **pnpm 11.25.0** (`packageManager` in root `package.json`; 11.20.0 on 2026-08-12, 11.9.0 on 2026-07-05) — steady v11 minor drift; no v12 on the horizon.
-- **TypeScript:** 6.0.3, strict (`noUncheckedIndexedAccess`) — held while `chore: prepare tsconfig surface for TypeScript 7 (#4312)` staged the next major
-- **Toolchain (root devDeps, 2026-09-03):** ESLint 10.9.1, Prettier 3.9.6, Vitest 4.1.11, tsup 8.5.1, tsx 4.23.13, zod 4.5.3, type-fest 5.9.0, typescript 6.0.3. **Four devDep majors crossed this window:** `@changesets/cli` 2.31.1 → **3.0.1** (#4300), `lint-staged` 16.4.0 → **17.4.1**, `execa` 9.6.1 → **10.0.1**, `@eslint/config-inspector` 1.5.0 → **3.3.0** (two majors in one step).
+- **Node:** **24.21.0** (`.node-version`; 24.20.0 on 2026-09-03) — packages generally target ES2022+/Node 20+, but AGENTS.md records two exceptions (see Conventions)
+- **Package manager:** **pnpm 11.27.0** (`packageManager` in root `package.json`; 11.25.0 on 2026-09-03, 11.9.0 on 2026-07-05) — steady v11 minor drift. **pnpm v12 now exists and is parked** under `Pending Approval` on the Dependency Dashboard; the "no v12 on the horizon" note from 2026-09-03 is superseded.
+- **TypeScript:** 6.0.3, strict (`noUncheckedIndexedAccess`) — held for a third straight survey. `typescript` v7 is the sole entry under `PR Closed (Blocked)` (#4297), i.e. it was proposed, closed, and is now awaiting a manual recreate.
+- **Toolchain (root devDeps, 2026-09-18):** ESLint 10.10.0, Prettier 3.9.6, Vitest 4.1.11, tsup 8.5.1, tsx 4.23.13, zod 4.6.5, type-fest 5.9.0, typescript 6.0.3, `@changesets/cli` 3.0.3, `lint-staged` 17.5.1, `@eslint/config-inspector` 3.4.1, `@types/node` 24.13.4, `execa` 10.0.1, `type-coverage` 2.30.1. **No devDep majors crossed this window** — pure minor/patch drift after the four-major window of 2026-08.
 - **Root package:** `@bfra.me/works` v0.0.0-development (private)
+- **Queued changesets:** **15** (14 `renovate-*`), down from 23 on 2026-09-03 — the 09-14 publish consumed the difference and Renovate refilled it.
 
 ## Layout
 
@@ -226,6 +237,50 @@ All packages ship to `lib/` via tsup, **except** `@bfra.me/create`
 which builds to `dist/`. Root exports two helper modules
 (`./eslint.config`, `./tsup.dts`) for downstream consumption.
 
+**2026-09-18 delta** (one publish, #4643 on 2026-09-14). Four of nine
+packages moved; the other five are byte-identical to the 2026-09-03
+snapshot:
+
+| Package | 2026-09-03 | 2026-09-18 |
+| --- | --- | --- |
+| `@bfra.me/create` | 0.8.0 | **0.8.1** |
+| `@bfra.me/doc-sync` | 0.1.11 | **0.1.12** |
+| `@bfra.me/eslint-config` | 0.52.1 | **0.52.2** |
+| `@bfra.me/workspace-analyzer` | 0.2.10 | **0.2.11** |
+| `badge-config` / `es` / `prettier-config` / `semantic-release` / `tsconfig` | 0.2.0 / 0.1.0 / 0.16.11 / 0.3.8 / 0.13.2 | unchanged |
+
+The `engines` split recorded in Conventions is unchanged and still
+covers exactly two packages: `@bfra.me/create` (`node >=22.0.0`) and
+`@bfra.me/eslint-config` (`node ^22.22.2 || >=24.15.0`).
+
+### Publish cadence after the auto-merge deletion
+
+The 2026-09-03 survey recorded that #4299/#4310 deleted the
+`Enable Auto-merge` step, and called it "a deliberate trade." Fifteen
+days of data now price the trade:
+
+| Window | Publishes |
+| --- | --- |
+| 2026-08-22 → 08-26 (operator actively working the repo) | **6** |
+| 2026-08-27 → 09-18 | **1** (2026-09-14, #4643) |
+
+The 19-day gap between the burst's end and #4643 is not a drought
+relapse — nothing is stuck, and `Verify expected publish` has not fired
+— it is the designed behavior of a pipeline whose final gate is a human
+merge. The current release PR **#4696** has been open since 2026-09-17
+with `mergeable: true`, `mergeStateStatus: CLEAN`, 27 files,
+`+101/-120`, and every required check green. The ~14-week drought that
+motivated the rebuild was a *silent* failure; this is a *visible* wait.
+That is a real improvement and a real rate limit, and the distinction is
+the point: **the fail-closed guard fixed the detection problem, not the
+throughput problem.** Watch item, not a finding.
+
+The publish-commit subject inconsistency persists and now has a seventh
+data point: #4643 used the changesets *commit message*
+(`chore(changesets): publish packages`), putting the split at
+#4274/#4304/#4316/#4332/#4643 (commit message) vs #4364/#4371 (PR
+title). Still not determinable from public metadata.
+
 ## Workflows (12 + 1 doc)
 
 ```
@@ -262,11 +317,33 @@ Surface area:
   when package READMEs, sources, or `package.json` files change. Has a
   `dry-run` dispatch input.
 - **`renovate.yaml`** — calls reusable
-  `bfra-me/.github/.github/workflows/renovate.yaml@v4.24.0` (v4.16.18
+  `bfra-me/.github/.github/workflows/renovate.yaml@v4.30.0` (v4.16.18
   → v4.16.21 → v4.16.25 → v4.16.28 → v4.16.33 → v4.16.37 → v4.16.45 →
-  **v4.24.0** across surveys) after the Release workflow succeeds, with
-  `log-level` and `print-config` dispatch inputs. `release.yaml`'s
-  `trigger-org-renovate.yaml` call rides the same v4.24.0 SHA.
+  v4.24.0 → **v4.30.0** across surveys) after the Release workflow
+  succeeds, with `log-level` and `print-config` dispatch inputs.
+  `release.yaml`'s `trigger-org-renovate.yaml` call rides the same
+  v4.30.0 SHA (`5486c68e`).
+
+  **Recorded 2026-09-18: this workflow has no `schedule:` trigger.**
+  Its triggers are `issues: [edited]`, `pull_request: [edited]`,
+  `push: branches-ignore: [main]`, `workflow_dispatch`, and
+  `workflow_run` after `Release`. Every periodic Renovate pass on this
+  repo therefore arrives as an **externally originated
+  `workflow_dispatch`**. On a representative day (2026-09-04) that
+  produced 68 Renovate runs. The practical consequence for surveys: a
+  repo whose updater has no cron of its own cannot be assessed by
+  reading its own crontab, and its liveness is coupled to a dispatcher
+  it does not own.
+- **`release.yaml` → `trigger-org-renovate`** — a second job
+  (`if: github.repository == 'bfra-me/works' && needs.manage-release.outputs.published == 'true'`)
+  that dispatches the org's Renovate on every successful publish.
+  **Recorded 2026-09-18, and it predates everything the wiki has said
+  about push channels**: it landed 2025-06-22 (#1417) and was simplified
+  2025-08-25 (#1726). [[github-actions-ci]]'s 2026-09-17 section on
+  push channels was written from [[bfra-me--renovate-action]]'s version
+  of the same job, which is ~15 months younger. `works` is the origin
+  instance, and it means the org has had **at least two independent
+  publishers** into the same hop-1 target for months.
 - **`renovate-changeset.yaml`** — auto-generates changesets for
   `bfra-me[bot]` / `renovate[bot]` PRs. Triggers on `merge_group`,
   `pull_request_target`, and `workflow_dispatch`. Uses
@@ -274,12 +351,12 @@ Surface area:
 - **`update-repo-settings.yaml`** — calls reusable
   `bfra-me/.github/.github/workflows/update-repo-settings.yaml@v4.16.0`
   (SHA `65caa6a0`). Push to main, daily `02 18 * * *`, and dispatch.
-  **Frozen at v4.16.0 across all eight surveys** while its two siblings
-  in this same repo (`renovate.yaml`, `trigger-org-renovate.yaml`) rode
-  the same upstream from v4.16.18 to v4.24.0. Three references to one
-  reusable-workflow family; Renovate advances two of them and has never
-  touched the third. The divergence is now ~8 minor series and has never
-  been explained. See [[probot-settings]] and Open Questions.
+  **Frozen at v4.16.0 across all nine surveys** while its siblings in
+  this same repo (`renovate.yaml`, `trigger-org-renovate.yaml`, and the
+  `internal.json5` preset ref) rode the same upstream from v4.16.18 to
+  **v4.30.0**. The divergence is now ~14 minor series. **The 2026-09-18
+  survey resolved what this is, and it is none of the things this page
+  hypothesized** — see _The frozen settings pin, diagnosed_ below.
 - **`cache-cleanup.yaml`** — deletes workflow caches for the closing PR
   ref (and Sunday `0 0 * * 0` housekeeping). Permissions narrowed to
   `actions: write`.
@@ -293,6 +370,124 @@ composite action for dependency hydration, which centralizes Node + pnpm
 setup and cache restoration (bumped this window to
 `actions/setup-node@v7.0.0` and `actions/cache@v6.1.0`;
 `actions/checkout` v6.1.0 → **v7.0.1** across every workflow, #4293).
+
+## The 2026-09-04 `tar` Incident — Fourth Repo in the Sweep
+
+`bfra-me/.github` v4.25.0 carried `bfra-me/renovate-action` 10.34.0,
+whose bundle left `tar` a devDependency; Renovate on that engine exits
+before servicing any dependency. The incident is documented from three
+other vantage points — [[bfra-me--renovate-action]] (the source),
+[[marcusrbrown--github]] and [[marcusrbrown--esphome-life]] (consumers).
+`bfra-me/works` is the fourth, and it is the most instrumented one,
+because this repo runs Renovate dozens of times a day.
+
+| UTC | Event |
+| --- | --- |
+| 16:23:09 | Renovate opens **#4493** `update dependency bfra-me/.github to v4.25.0` |
+| 16:25:51 | #4493 merges — the poisoned tag is now live on **two** callers (`renovate.yaml`, `release.yaml`) and the `internal.json5` preset ref |
+| 16:30 → 22:56 | **11 Renovate runs, every one `success`, zero dependency PRs opened** |
+| 22:56:16 | `marcusrbrown` opens **#4495** `chore(ci): bump bfra-me/.github to v4.25.1` — **`+1/-1`, `renovate.yaml` only** |
+| 22:59:19 | #4495 merges. **Inert window: 6 h 33 m 28 s** |
+| 23:04:17 | The restored Renovate fires on the merge |
+| 23:07:55 | It opens **#4497** for the remaining callers (`release.yaml` + `renovate.json5`) |
+| 23:11:11 | #4497 merges. **Full remediation 11 m 52 s after the human fix** |
+
+Four things this vantage point adds.
+
+**1. The manual sweep was four repos, not three.** The ordering is
+`marcusrbrown/github` 22:56 → **`bfra-me/works` #4495 opened 22:56:16,
+merged 22:59:19** → [[bfra-me--renovate-action]] 22:58:11 →
+[[marcusrbrown--esphome-life]] 23:01:26. The 5 m 26 s span recorded on
+[[bfra-me--renovate-action]] is unchanged; its **density** is not — one
+person hand-patched four repositories in five and a half minutes, which
+is the correct measure of how much manual surface an updater deadlock
+creates. Amend the three-repo claim wherever it appears; do not remove
+it, the span it measured was right.
+
+**2. Fixing the caller that restores the updater first is the correct
+tactic, and here it is measurable.** Every affected repo had more than
+one reference to the poisoned tag. Marcus patched exactly one file in
+each — the one carrying Renovate itself — and let the revived updater
+repair the rest. At `works` the remaining callers were fixed
+automatically in **8 m 36 s** (fix merged 22:59:19 → #4497 opened
+23:07:55). At [[marcusrbrown--esphome-life]], where the same one-file
+tactic was used, full remediation took **34 m 53 s** longer, because
+that repo's Renovate cadence is far slower. Same tactic, same operator,
+same night; the recovery time is set by **the updater's cadence, not the
+size of the remaining diff**. The prior "settings-sync footgun is an
+incident amplifier" framing from [[marcusrbrown--esphome-life]] holds,
+with the amendment that the amplification is time-denominated and
+self-clearing once the updater is alive.
+
+**3. Run duration discriminated here, and did not at
+[[marcusrbrown--esphome-life]].** That page recorded, correctly for its
+own data, that *run duration does not discriminate* — a 46 s poisoned
+step against a 55–100 s healthy band. At `works` the separation is
+unmissable: poisoned runs 52–62 s (17:25, 17:39, 18:17, 18:28, 18:38,
+20:25, 20:52, 20:55, 22:50), healthy runs **4 m 23 s – 8 m 24 s**. Both
+observations are true. The reconciliation is that a Renovate run's
+duration is dominated by the work it finds, so the proxy's discriminating
+power scales with the repo's healthy workload: a 17-blob config repo has
+almost nothing to do when healthy, and a monorepo with a 13-entry
+`github-actions` manager and a dashboard full of pending branches has a
+great deal. **Duration is a usable liveness proxy only where you can
+first establish a wide healthy band.** Neither page's claim should be
+generalized without that qualifier.
+
+**4. The health signal was inverted in the same way it was at
+[[marcusrbrown--github]].** All 11 runs inside the outage concluded
+`success`. `Renovate / Renovate` is one of this repo's 12 required
+status checks, and it was green throughout. Third independent
+confirmation of *a run's conclusion measures the harness, not the
+deliverable*.
+
+## The Frozen Settings Pin, Diagnosed
+
+`update-repo-settings.yaml@v4.16.0` has been flagged on this page since
+2026-05-20 and was named the "highest-value follow-up" on 2026-09-03,
+with two candidate explanations: the ref no longer resolves upstream
+(making this the [[probot-settings]] *declared-is-not-applied* case), or
+a package rule excludes it. **Both are wrong.** The 2026-09-18 survey
+checked all four layers:
+
+| Check | Result |
+| --- | --- |
+| Does tag `v4.16.0` still resolve? | Yes — `65caa6a021ae4a6597bd915f276e1ab9d75dc071` |
+| Does `update-repo-settings.yaml` still exist upstream at v4.30.0? | Yes — 2,883 bytes at `5486c68e` |
+| Does the workflow actually apply settings? | **Yes.** The latest `schedule` run's job steps are `Get Workflow Access Token` ✅ → `Resolve workflow ref` ✅ → `Checkout action` ✅ → **`Update Repository Settings (bfra-me/works)` ✅**. Only `Checkout Repository` / `Filter Changed Files` are `skipped`, which is the documented `paths-filter` behavior for non-`push` events. |
+| Does Renovate see the dependency? | **Yes.** Dependency Dashboard #9, under `.github/workflows/update-repo-settings.yaml (1)`: `bfra-me/.github v4.16.0@65caa6a021ae4a6597bd915f276e1ab9d75dc071` |
+
+So the sync is **live and working**; the dependency is **detected and
+correctly resolved**; and the update appears in **no** actionable
+dashboard section — not `Pending Approval`, not `Awaiting Schedule`, not
+`Pending Status Checks`, not `Open`, not `PR Closed (Blocked)`. It is
+detected and then silently produces nothing, for ~5.5 months and 14
+minor series, while three sibling references to the same `depName` in
+the same repository advance on the same day.
+
+Two durable lessons, both inversions of what this page assumed:
+
+1. **A frozen reusable-workflow pin is not evidence of a dead sync.**
+   The cheap, decisive check is the **apply step's conclusion inside a
+   `schedule` run** — not the run conclusion (green by design on `push`
+   because `paths-filter` skips the work), and not the pin's age. This
+   sharpens [[probot-settings]]'s existing triad: a declared manifest is
+   not an applied one, an applied setting is not a recorded one, a
+   correctly-wired sync is not a working one — and now, **a stale sync
+   is not a broken one**.
+2. **"Detected" and "actionable" are different dashboard facts.** The
+   [[esphome]] entity page's rule — *read the dashboard body before
+   concluding anything about detection* — got this repo halfway. The
+   remaining half is that `Detected Dependencies` proves only that the
+   manager matched the file. An entry can be detected, current-valued
+   correctly, and still generate no branch. The narrowed open question
+   is now mechanical and small: **why does one of four `bfra-me/.github`
+   references produce no update?**
+
+Note that this pin was *not* part of the 2026-09-04 blast radius, but
+not for any interesting reason: `update-repo-settings.yaml` does not
+invoke `bfra-me/renovate-action`, so its version was irrelevant to the
+`tar` defect. Staleness bought no immunity here.
 
 ## The 2026-08-21/22 Unblock
 
@@ -469,6 +664,121 @@ correlating agent activity windows with declared cron times. The
 2026-08-22/23/24 16:1x–16:2x runs are the old maintenance cron, which
 stops after 08-24 exactly as #4366 predicts.
 
+**Superseded 2026-09-18 — the drift is not drift, it is a new steady
+state.** The prior reading ("delays of 4.5 to 12 hours … drifted badly")
+described a transient. Over the 20 scheduled runs from 2026-08-30 to
+2026-09-18, start times sit in a **tight 08:02–09:10 UTC band** — a
+consistent 4 h 33 m to 5 h 40 m past the nominal 03:30, with no run
+outside it. Nineteen of twenty concluded `success`; one (2026-09-12) was
+`cancelled`. A cron slot that is reliably ~5 hours late is not a fault
+to diagnose, it is a scheduling fact to record, and the caution stands
+unchanged: **do not read a declared cron as an execution time.**
+
+### Delivery paralysis: fully permissioned, unable to write, and it wrote the report itself
+
+This is the most important finding of the 2026-09-18 survey, and it is
+the sequel to #4366. On 2026-08-25 the autoheal daemon was flipped from
+propose-only to commit-push-comment and given explicit job-level
+`contents: write` / `issues: write` / `pull-requests: write`. It has
+delivered **nothing** since.
+
+Hard evidence, all from public metadata:
+
+- **fro-bot has authored zero pull requests since 2026-08-10** (#4184,
+  `fix(security): override vulnerable fast-uri`). That is **39 days**,
+  and it spans the entire post-restore period. Every fro-bot artifact
+  created after the restore is an *issue*.
+- **`packages/semantic-release/src/types/plugin.d.ts:29` still reads
+  `WrapPlugin<T extends {[key: string]: any}>`** on current `main`. The
+  daemon has produced, validated, and staged that exact one-line fix on
+  at least eighteen consecutive runs.
+- **`.github/workflows/fro-bot.yaml` still has no `output-mode` input.**
+  The `Run Fro Bot` step at line 421 is the job's last step; nothing
+  follows it.
+
+The root cause is the **working-dir delivery break** — the fourth
+root-cause layer, after permissions, prompt boundaries, and credential
+scoping — already recorded at [[fro-bot--dashboard]],
+[[marcusrbrown--sparkle]], and [[marcusrbrown--tokentoilet]]. Omitting
+`output-mode` does not mean "the agent manages its own git"; for
+`schedule` events it resolves to `working-dir`, under which
+`git commit` / `git push` / `git branch` / `gh pr create` are all
+forbidden and the caller workflow is expected to own delivery. `works`
+never grew that half. This is the same shape as
+[[marcusrbrown--tokentoilet]]: a job holding every write permission it
+could want, running green, writing nothing.
+
+**What makes `works` the reference case is that the agent diagnosed it
+itself, correctly, in public.** Issue **#4522**
+(`Autoheal fixes still discarded: omitted output-mode resolves to
+working-dir for scheduled runs`, 2026-09-05) is the best self-diagnosis
+this wiki has recorded:
+
+- It fetched `fro-bot/agent`'s `action.yaml` **at the exact pinned SHA**
+  (`504e86ab`, v0.108.1) and quoted the documented behavior, rather than
+  reasoning from the input's name.
+- It named the falsifiable evidence: the `plugin.d.ts:29` `any`
+  constraint surviving on a fresh `main` checkout, and ~199 lines of
+  `pnpm-lock.yaml` regeneration noise per run consistent with a
+  discarded tree.
+- It explained **why the obvious fix is not a drop-in**: `branch-pr`
+  always opens a *new* branch, which serves autoheal categories 3–5 but
+  cannot serve categories 1–2, whose entire job is committing to an
+  existing PR's branch. One `output-mode` on one job cannot serve both.
+- It closed with a do-not-retry warning naming the assumption that must
+  not be made again, and a note that the action shipped three releases
+  in one day, so the conclusion must be re-verified against whatever tag
+  is pinned at the time.
+
+And then nothing happened. **13 days, zero comments, no labels, no
+assignee**, across six agent bumps (v0.107.1 → v0.113.2).
+
+The structural reason is the part worth carrying off this page. The
+`AUTOHEAL_PROMPT`'s hard boundaries include **"do not modify
+`.github/workflows/`, lint/test/build config, or automation prompt
+files"** — a correct rule, adopted for good reasons. But the file that
+carries the daemon's delivery path *is* a workflow file. So the one
+change that would restore delivery is, by construction, the one change
+the daemon may not make. It behaved perfectly: it detected the fault,
+refused to self-edit, escalated with a cold-start-readable writeup, and
+kept reporting honestly. The system still sits still, because the
+escalation channel terminates in a human inbox nobody drained.
+
+> **An autonomous system's repair boundary must not exclude its own
+> delivery path.** Excluding it converts every delivery defect from a
+> self-healing condition into a permanently blocked one, and does so
+> silently — the daemon keeps running green and keeps filing accurate
+> reports, which is precisely the signal an operator reads as health.
+
+The honesty machinery is what makes the paralysis visible rather than
+invisible. Today's report (#4697) contains, verbatim:
+
+> **Completed Fixes** — None with a verifiable PR number or commit SHA.
+> Three validated, minimal, mechanical fixes were staged directly in the
+> working tree under this run's `working-dir` Delivery Mode …
+
+That is the HONESTY CONTRACT (#4366) doing exactly the job it was
+written for. Contrast [[marcusrbrown--tokentoilet]], where the same
+underlying break produced a nightly report that read as routine, and
+[[marcusrbrown--sparkle]] (#2001/#2003), which shipped the fleet's
+strongest fix: a single `Resolve delivery mode` gate step feeding both
+the conditional credential restore and the agent's `output-mode`. That
+fix is directly portable here and would close #4522's first option;
+#4522's second option (asking upstream for a commit-to-an-existing-branch
+mode) is a genuine [[fro-bot--agent]] feature request that no other repo
+in the fleet has articulated.
+
+**The cross-project intelligence block is also, quietly, working.**
+#4697's `Fro Bot upstream` entry re-derives the `output-mode` gap from a
+direct read of `fro-bot.yaml:421-433`, notices that the Delivery Mode
+preamble's *wording* changed since #4522 was written ("the caller
+workflow owns diff detection, commit, push, and pull-request creation"
+rather than an implication of discard), declines to treat the reworded
+text as evidence either way, and converts the difference into a
+verification task instead of a second diagnosis. An agent noticing that
+its own operating contract was reworded, and refusing to infer a
+behavior change from prose alone, is the correct instinct.
+
 ### `PR_REVIEW_PROMPT`
 
 TypeScript-monorepo-specific. Enforces:
@@ -634,6 +944,29 @@ Two things this fixes that the old title-search convention did not:
 Confirmed working in production: #4477 (`Daily Autohealing Report —
 2026-09-03 (UTC)`) is the single open trusted report as of this survey.
 
+**Converged, 2026-09-18.** Three weeks and ~24 runs later the protocol
+still holds exactly one open trusted report (#4697) with a clean dated
+tail behind it — #4686, #4675, #4658, #4645, #4622, #4601, #4591, #4578,
+#4569, #4554 … all closed, in order, no strays, no duplicates, no
+re-created perpetual issue. Set against the fleet this is the strongest
+result on record for the single-report contract:
+[[marcusrbrown--infra]] runs a contract demanding exactly one report and
+has **10 open**, because its close predicate ANDs a mutable label onto
+an immutable body marker; `works` ANDs only immutable facts (exact
+author + body marker) and converges.
+
+**Chronology correction for [[github-actions-ci]]:** that page's
+*Rotating Dated Reports With an Explicit Legacy-Title Sweep* section was
+written on 2026-09-17 from [[bfra-me--renovate-action]]'s
+implementation. `works` shipped this design on **2026-08-25** (#4366),
+three weeks earlier, and is the origin instance in the fleet. The two
+differ in one respect worth keeping: renovate-action's close predicate
+**enumerates its own rename history** to sweep legacy titles, which
+`works` does not need because it never had a legacy title to sweep —
+`works` went from a perpetual issue straight to dated issues in a single
+change. Greenfield adopters can use the `works` form; anyone migrating a
+renamed report needs the renovate-action form.
+
 The old single-issue rolling convention still matches
 [[bfra-me--ha-addon-repository]]; **this repo has now diverged from it**,
 which supersedes the claim carried on this page since 2026-05-20.
@@ -675,11 +1008,11 @@ is the one mode that did *not* gain mutation authority in the rewrite.
 ## Renovate
 
 - `.github/renovate.json5` extends:
-  - `github>bfra-me/.github:internal.json5#v4.24.0` (org baseline;
+  - `github>bfra-me/.github:internal.json5#v4.30.0` (org baseline;
     `#v4.16.18` on 2026-05-20, `#v4.16.21` on 2026-05-31,
     `#v4.16.25` on 2026-06-11, `#v4.16.28` on 2026-06-22,
     `#v4.16.33` on 2026-07-05, `#v4.16.37` on 2026-07-19,
-    `#v4.16.45` on 2026-08-12)
+    `#v4.16.45` on 2026-08-12, `#v4.24.0` on 2026-09-03)
   - `github>sanity-io/renovate-config:semantic-commit-type`
   - `security:minimumReleaseAgeNpm`
 - `addLabels: ['{{{parentDir}}}']` auto-labels by directory (clean
@@ -706,6 +1039,51 @@ is the one mode that did *not* gain mutation authority in the rewrite.
 - Note: this repo extends `bfra-me/.github:internal.json5` directly,
   while the wiki's [[marcusrbrown--renovate-config]] is Marcus's
   parallel preset family. The two are organizationally distinct.
+
+### Dependency Dashboard #9 (2026-09-18)
+
+First survey to read the dashboard body in full. Config unchanged from
+2026-09-03 apart from the `extends` pin. What the body shows:
+
+- **`Pending Approval` (6):** `@astrojs/starlight ^0.42.0`,
+  `@scaleway/changesets-renovate v4`, **`pnpm v12`**, `vitest` monorepo
+  v5, `eslint-plugin-unicorn v74` — the org preset's
+  `:approveMajorUpdates` parking lot. Every pending major this repo has
+  is here, not in the PR list; an audit that counts open PRs sees none
+  of it. Same mechanism as [[marcusrbrown--esphome-life]]'s parked
+  ESPHome pin, on a much larger surface.
+- **`PR Closed (Blocked)` (1):** `typescript v7` (#4297). Proposed,
+  closed, now requiring a manual recreate — which is why TS has held at
+  6.0.3 for three surveys despite #4312 having "prepared the surface"
+  back in August.
+- **`Pending Status Checks` (12)** and **`Open` (1)** — #4593
+  `@clack/prompts v1.8.1`, whose `Build` failure is a *genuine*
+  `TS2322` in `packages/create/src/prompts/project-setup.ts:319-325`
+  (upstream narrowed `isCancel()`), not CI flake. It has been open since
+  2026-09-10 and the autoheal daemon correctly refuses it under
+  DEPENDENCY OWNERSHIP (no security label, no advisory) — a case where
+  the boundary is working and the consequence is that a real type
+  regression sits unrepaired.
+- **`Deprecations / Replacements` (1):**
+  `@svitejs/changesets-changelog-github-compact`, with replacement
+  `Unavailable`. It is a live devDependency of the release pipeline.
+- **`Abandoned Dependencies`** — a section this page has never recorded.
+  The summary reads `View abandoned dependencies (20)` while the table
+  lists **13** rows (`@manypkg/cli`, `ajv-draft-04`, `consola`,
+  `escape-html`, `eslint-merge-processors`, `eslint-plugin-jsx-a11y`,
+  `fast-glob`, `gray-matter`, `husky`, `is-in-ci`, `remark-mdx`,
+  `remark-parse`, `unified`). The count and the table disagree;
+  recorded as an observation, cause not determined. Two of the 13 —
+  `@manypkg/cli` and `eslint-plugin-jsx-a11y` — are load-bearing here
+  (`manypkg check` gates `pnpm lint`; the a11y plugin gets a
+  `packageExtensions` peer widening to reach ESLint 10). Abandonment by
+  release inactivity is a weak signal, but a linter this repo *patches
+  the peer range of* to keep alive is worth watching.
+- **`Vulnerabilities`:** none on osv.dev. Independently corroborated by
+  #4697, which reports 0 open Dependabot alerts. Both security surfaces
+  are clean — a genuine contrast with [[marcusrbrown--tokentoilet]]'s 19
+  open moderate+ alerts under a similarly stalled delivery channel. The
+  delivery break here is costing hygiene fixes, not security fixes.
 
 ## Conventions (from AGENTS.md)
 
@@ -773,14 +1151,25 @@ Release pipeline:
 
 - **[[bfra-me--github]]** — the org control plane. Provides the
   reusable workflows this repo calls (`renovate.yaml` and
-  `trigger-org-renovate.yaml` at **v4.24.0** as of 2026-09-03;
+  `trigger-org-renovate.yaml` at **v4.30.0** as of 2026-09-18;
   `update-repo-settings.yaml` still at **v4.16.0**), the
-  `internal.json5` Renovate baseline (**v4.24.0**), and the
+  `internal.json5` Renovate baseline (**v4.30.0**), and the
   `common-settings.yaml` Probot template. The upstream shipped six minor
-  series in ~11 days (v4.19.0 → v4.24.0, 2026-08-20 → 09-02) — the same
-  burst [[marcusrbrown--esphome-life]] recorded on 2026-08-30. The org
-  control plane itself has not been surveyed since 2026-07-16 and is
-  overdue.
+  series in ~11 days (v4.19.0 → v4.24.0, 2026-08-20 → 09-02) and **six
+  more in the following two weeks** (v4.25.0 → v4.30.0, 2026-09-04 →
+  09-16) — a sustained ~1-minor-every-2-days cadence, which is exactly
+  why one poisoned tag propagated so fast on 2026-09-04. The org control
+  plane itself has not been surveyed since 2026-07-16 and is now **over
+  two months** overdue; it is the upstream for every `bfra-me` repo on
+  this wiki and was the delivery vehicle for the `tar` incident.
+- **[[bfra-me--renovate-action]]** — the engine inside that control
+  plane, and the source of the 2026-09-04 defect. Its 2026-09-17 survey
+  left open whether consumers detected the poisoned publish; `works`
+  answers it directly for one consumer: **no** — 11 green runs, zero
+  PRs, a required status check green throughout, and a human noticing
+  ~6.5 hours later. `works` also predates it as the origin of the
+  `trigger-org-renovate` push channel (2025-06-22 vs 2026-09) and of the
+  dated-report protocol (2026-08-25 vs 2026-09-17).
 - **[[bfra-me--ha-addon-repository]]** — sibling `bfra-me` org repo,
   and now the **contrast case rather than the parallel**. It still uses
   the perpetual single-issue `Daily Autohealing Report`; `works` moved to
@@ -815,6 +1204,60 @@ Release pipeline:
   surface as devDependencies.
 
 ## Open Questions / Follow-Ups
+
+### Resolved 2026-09-18
+
+- **`update-repo-settings.yaml@v4.16.0` is not a dead sync.** The apply
+  step executes and succeeds on `schedule` runs; the tag resolves; the
+  upstream file exists at v4.30.0; Renovate detects the dependency at
+  the right version. The [[probot-settings]] *declared-is-not-applied*
+  hypothesis is refuted for this repo. See _The Frozen Settings Pin,
+  Diagnosed_. The residual question is narrower and purely mechanical:
+  why does exactly one of four `bfra-me/.github` references in this repo
+  produce no update branch?
+- **The scheduled-run "drift" is a steady state, not a fault.** 20 runs
+  2026-08-30 → 09-18 all start in an 08:02–09:10 UTC band (~4.5–5.7 h
+  past the `30 3` nominal). The 2026-09-03 "4.5 to 12 hours, cause not
+  determined" reading described a transient and is superseded.
+- **The dated + marker-authenticated + superseded report protocol
+  converged.** ~24 runs, exactly one open trusted report throughout, a
+  clean closed tail, no duplicates. `works` is the fleet's origin
+  instance (2026-08-25), predating [[bfra-me--renovate-action]]'s
+  version by three weeks.
+
+### Open — highest value first
+
+- **`output-mode` is still absent from `fro-bot.yaml`, 13 days after
+  the daemon diagnosed it in #4522.** Zero fro-bot PRs in 39 days;
+  `plugin.d.ts:29` still carries `any` after ~18 staged-and-discarded
+  fixes. The daemon cannot fix this itself — the `AUTOHEAL_PROMPT`
+  forbids editing `.github/workflows/`. [[marcusrbrown--sparkle]]
+  (#2001/#2003) has the portable fix: one `Resolve delivery mode` gate
+  step feeding both the credential restore and `output-mode`. The
+  second half of #4522 — a `fro-bot/agent` mode for
+  "commit to a caller-specified existing branch," needed for autoheal
+  categories 1–2 — is a genuine upstream feature request and should be
+  carried to [[fro-bot--agent]].
+- **Why does one of four `bfra-me/.github` refs produce no update?**
+  Detected, correctly valued, in no actionable dashboard section. A
+  Renovate debug log (`print-config: true` is already a dispatch input
+  on `renovate.yaml`) would settle it in one run.
+- **#4593 is a real type regression nobody owns.** `@clack/prompts`
+  1.8.1 narrowed `isCancel()`, breaking `handleCancel<T>` in
+  `packages/create/src/prompts/project-setup.ts:319-325` with a genuine
+  `TS2322`. Renovate owns the bump, autoheal correctly declines it
+  (non-security), and the human gate is where non-security dependency
+  breakage goes to wait. Open since 2026-09-10.
+- **`@svitejs/changesets-changelog-github-compact` is deprecated with
+  no replacement available**, and it is a live devDependency of the
+  release pipeline. Low urgency, no current impact, but the changelog
+  generator for every published package is on a package with no
+  successor.
+- **`Abandoned Dependencies` count/table mismatch** on dashboard #9 (20
+  vs 13). Cosmetic, but the two load-bearing entries
+  (`@manypkg/cli`, `eslint-plugin-jsx-a11y`) matter: `manypkg check`
+  gates `pnpm lint`, and the a11y plugin only reaches ESLint 10 via a
+  `packageExtensions` peer widening this repo maintains by hand.
 
 ### Resolved 2026-09-03
 
@@ -921,3 +1364,4 @@ Release pipeline:
 | 2026-07-19 | `cf8689a` | Sixth survey. **No structural change** — 13 workflow files (11 + fro-bot + doc), 9 published packages + docs, layout, workspace config, Probot settings, branch protection, conventions all confirmed durable. `fro-bot/agent` v0.83.0 → **v0.93.1** (10-minor automerge drift; now tied with [[marcusrbrown--tokentoilet]] at the fleet lead). pnpm 11.9.0 → **11.13.1** (11.12.0 → 11.13.1 within the window; HEAD is the 11.12.0 bump #3940). Node 24.18.0 unchanged. `bfra-me/.github` reusable renovate + `internal.json5` v4.16.33 → **v4.16.37** (`update-repo-settings` still v4.16.0). **Publish contradiction resolved:** prior PR #3854 was **closed unmerged** (never landed); fresh publish PR **#3972** opened 2026-07-19 — all nine package versions still byte-identical, ~9-week drought unbroken. Pending-v1 PR #3691 still untouched since 2026-06-14 (~5 weeks, ~31 minors behind live pin) — now a dead proposal. Fro Bot PR backlog 11 → 12: all prior stale/duplicate PRs still open; new docs-only PR #3973 (`AGENTS.md`) is a third live variant of the package-count churn class. Open issues flat at 38; stars 4. |
 | 2026-08-12 | `beea0a1` | Seventh survey. **No structural change** — 13 workflow files, 9 published packages + docs, layout, workspace config (same override surface + allowBuilds set), Probot settings (12 required checks), branch protection (`enforce_admins: true`, linear history), conventions all confirmed durable; HEAD is a pure `@anthropic-ai/sdk` deps bump (#4193) atop a run of Renovate churn. `fro-bot/agent` v0.93.1 → **v0.98.2** (via v0.98.1 #4180 → v0.98.2 #4183; open bump PR #4196 → v0.98.3 already queued). pnpm 11.13.1 → **11.20.0**; Node 24.18.0 → **24.19.0**. `bfra-me/.github` reusable renovate + `internal.json5` v4.16.37 → **v4.16.45** (`update-repo-settings` still v4.16.0). Toolchain drift: ESLint 10.8.1, Prettier 3.8.5, Vitest 4.1.10, tsup 8.5.1. **Publish drought at ~12 weeks (seventh survey, longest yet)** — all nine package versions byte-identical; publish-PR lineage #3972 → **#4195** (2026-08-10), still unmerged. Pending-v1 PR #3691 still untouched since 2026-06-14 (~8 weeks, ~54 minors behind live pin) — third consecutive dead-proposal flag. Fro Bot PR backlog flat at 12 but rotated: esbuild dupes #3704/#3713 + #3762/#3803/#3619 persist; new #4184 (fast-uri), #4084 (brace-expansion), #4162 (agent-guide docs, supersedes retired #3973); #3508/#3620/#3724 dropped off. Open issues flat at 38; stars 4. |
 | 2026-09-03 | `b7d3138` | Eighth survey. **First structural change since inception, and every long-running thread on this page closed.** (1) **Publish drought broken 2026-08-22** after ~14 weeks — six publish commits through 08-26, 7/9 packages shipped (`create` 0.7.14 → **0.8.0**, `eslint-config` 0.51.1 → **0.52.1**, `workspace-analyzer` 0.2.8 → **0.2.10**, `doc-sync` 0.1.11, `prettier-config` 0.16.11, `semantic-release` 0.3.8, `tsconfig` 0.13.2), 157 → 23 changesets. (2) **Backlog 50 → 5 open** (45 issues closed, 122 PRs closed-unmerged since 08-12) — but **closed, not merged**: #3691/#3704/#3713/#3762/#3803/#4084 all closed unmerged 2026-08-22 while their substance was re-authored by hand (#4264 esbuild); #3619/#4162/#4184 did merge 08-21. #3691 (v0 → v1 agent) **never crossed**; pin is still 0.x at v0.107.1. (3) **`fro-bot.yaml` rewritten** (#4321 diagnosis-only → #4323/#4328 plan + token-scope findings → #4366 restore delivery): modes 3 → 2 (`maintenance` dropped), crons 2 → 1 (`0 16` dropped), job-level `permissions: contents/issues/pull-requests: write` added, `persist-credentials: false`; autoheal flipped propose-only → commit-push-comment under new EXECUTION MODEL / MINIMALITY GATE / TRUSTED AUTHORS / **HONESTY CONTRACT** (every claimed fix must name a PR or SHA) / CROSS-PROJECT INTELLIGENCE preambles; report model changed from a perpetual rolling issue to **dated + marker-authenticated (`<!-- fro-bot:autoheal-report:v1 -->`, author must be exactly `fro-bot`) + idempotently superseded** — diverging from [[bfra-me--ha-addon-repository]]. (4) **`release.yaml` rebuilt** (#4285/#4289/#4299/#4310): `changesets/action` v1.9.0 → **v2.1.1** automerged by Renovate (#4296) with every input renamed, fixed 44 min later by #4299 which also added the fail-closed **`Verify expected publish`** guard + a `release-pr-merged` probe; `Enable Auto-merge` deleted; force-publish dispatch path added. (5) Deps: pnpm 11.20.0 → **11.25.0**, Node 24.19.0 → **24.20.0**, agent v0.98.2 → **v0.107.1**, `bfra-me/.github` reusable + `internal.json5` v4.16.45 → **v4.24.0** (`update-repo-settings` **still v4.16.0**, 8th survey), `actions/checkout` v6.1.0 → v7.0.1 everywhere; four devDep majors (`@changesets/cli` 3, `lint-staged` 17, `execa` 10, `@eslint/config-inspector` 3). (6) New `docs/plans/` Systematic plan corpus (#4263) + the autoheal-delivery plan; two new `eslint-config` tests; override ledger reunified into `pnpm-workspace.yaml` (`esbuild ^0.28.1`, `fast-uri ^4.1.2`, undici 7-lane → ^8, picomatch 2-lane → ^4). Page corrections: 12 workflows (not 11), 12 workspace entries / 9 packages (not 11 / 8). Open issues 38 → 2; stars 4. |
+| 2026-09-18 | `d447776` | Ninth survey. **No structural change — a measurement interval that resolves three standing questions and opens a sharper one.** 105 commits, **104 `bfra-me[bot]` / 1 `marcusrbrown`**; tree delta is 58 files, of which 35 are changesets and one is `pnpm-lock.yaml`. (1) **The 2026-09-04 `tar` incident, fourth repo in the sweep.** Poisoned v4.25.0 merged 16:25:51 (#4493); **11 Renovate runs, all `success`, zero PRs opened**; `marcusrbrown` hand-fixed with **`+1/-1` on `renovate.yaml` only** (#4495, opened 22:56:16, merged 22:59:19) — **inert window 6 h 33 m 28 s**. The sweep is **four repos, not three**: `marcusrbrown/github` 22:56 → **works 22:56:16/22:59:19** → [[bfra-me--renovate-action]] 22:58:11 → [[marcusrbrown--esphome-life]] 23:01:26. The revived updater repaired the remaining callers itself (#4497, opened 23:07:55, merged 23:11:11) — **full remediation 11 m 52 s** vs esphome-life's +34 m 53 s, same tactic, recovery time set by **updater cadence, not diff size**. **Run duration discriminated here (52–62 s poisoned vs 4 m 23 s–8 m 24 s healthy) and did not at esphome-life** — reconciled: the proxy's power scales with the healthy workload, so it is usable only where a wide healthy band is first established. Third confirmation of *a run's conclusion measures the harness, not the deliverable* (`Renovate / Renovate` is a required check and stayed green). (2) **`update-repo-settings.yaml@v4.16.0` diagnosed — both prior hypotheses wrong.** The apply step (`Update Repository Settings (bfra-me/works)`) **executes and succeeds** on `schedule` runs; tag `v4.16.0` resolves; the upstream file exists at v4.30.0; Renovate **detects** it on dashboard #9 at the correct version — and it appears in **no** actionable section. **A frozen pin is not evidence of a dead sync; check the apply step's conclusion in a `schedule` run.** (3) **Delivery paralysis: fully permissioned, unable to write, for 24 days.** Zero fro-bot-authored PRs since **2026-08-10 (39 days)**; `plugin.d.ts:29` still `any` after ~18 staged-and-discarded fixes; **`output-mode` still absent** from `fro-bot.yaml` across six agent bumps (v0.107.1 → **v0.113.2**). The daemon diagnosed it itself in **#4522** (2026-09-05) — quoting `action.yaml` at the exact pinned SHA, naming falsifiable evidence, and explaining why `branch-pr` is not a drop-in (categories 1–2 must commit to an *existing* PR branch) — then sat 13 days with zero comments. **The `AUTOHEAL_PROMPT` forbids editing `.github/workflows/`, so the one change that restores delivery is the one change the daemon may not make**: an autonomous system's repair boundary must not exclude its own delivery path. Fifth fleet instance of the working-dir break after [[fro-bot--dashboard]], [[marcusrbrown--sparkle]], [[marcusrbrown--tokentoilet]]; sparkle's `Resolve delivery mode` gate is the portable fix. HONESTY CONTRACT working perfectly throughout (#4697: "Completed Fixes — None with a verifiable PR number or commit SHA"). (4) **Dated-report protocol converged** — one open trusted report across ~24 runs with a clean closed tail; `works` is the fleet **origin instance** (2026-08-25), three weeks before [[bfra-me--renovate-action]]'s version, and needs no legacy-title sweep because it never had one. (5) **`trigger-org-renovate` predates the wiki's push-channel section by ~15 months** (landed 2025-06-22 #1417), so the org has had ≥2 independent publishers into hop 1; also recorded: `renovate.yaml` **has no cron of its own** — every periodic pass arrives as an external `workflow_dispatch` (68 runs on 2026-09-04). (6) **One publish** (#4643, 09-14: `create` 0.8.1, `doc-sync` 0.1.12, `eslint-config` 0.52.2, `workspace-analyzer` 0.2.11) — 19 days after the 08-26 burst; #4696 green/`CLEAN`/`MERGEABLE` since 09-17. The `Enable Auto-merge` deletion fixed *detection*, not *throughput*. (7) Deps: pnpm 11.25.0 → **11.27.0**, Node 24.20.0 → **24.21.0**, `bfra-me/.github` v4.24.0 → **v4.30.0** on three of four refs, eslint 10.9.1 → 10.10.0, zod 4.5.3 → 4.6.5; **no devDep majors**; TS held at 6.0.3 (v7 sits under `PR Closed (Blocked)`, #4297). (8) First full read of dashboard #9: pending majors are **parked under `Pending Approval`** (pnpm v12, vitest v5, starlight ^0.42.0, unicorn v74) and invisible to a PR-count audit; `@svitejs/changesets-changelog-github-compact` **deprecated with no replacement**; new `Abandoned Dependencies` section whose summary (20) disagrees with its table (13). Zero osv.dev CVEs and zero open Dependabot alerts — unlike [[marcusrbrown--tokentoilet]], the stalled delivery channel here is costing hygiene, not security. Changesets 23 → 15; open items 5 → 6; stars 4. |

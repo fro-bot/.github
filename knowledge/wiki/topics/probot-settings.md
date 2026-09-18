@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-15
+updated: 2026-09-18
 sources:
+  - url: https://github.com/bfra-me/works
+    sha: d44777684c6a773e38d7541068a8f4adf3258071
+    accessed: 2026-09-18
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -259,6 +262,53 @@ specifically the settings-sync one — which means the class of failure it
 produces is not "a stale action" but "a `settings.yml` nobody applies,"
 the same end state as the esphome.life case reached by a different
 route.
+
+#### Resolved 2026-09-18 — both hypotheses are wrong, and the sync works
+
+The 2026-09-18 [[bfra-me--works]] survey checked every layer with
+authenticated reads. The reference count is now **four** (the
+`renovate.json5` `extends` pin joined the list), three of which sit at
+**v4.30.0**, and the settings pin is still `65caa6a0` # v4.16.0 — ~14
+minor series behind.
+
+| Layer | Result |
+| --- | --- |
+| Tag `v4.16.0` resolves? | Yes — `65caa6a021ae4a6597bd915f276e1ab9d75dc071` |
+| `update-repo-settings.yaml` exists upstream at v4.30.0? | **Yes** — 2,883 bytes at `5486c68e`. Hypothesis 1 (renamed/moved path) is refuted. |
+| Does Renovate detect the dependency? | **Yes** — Dependency Dashboard #9 lists `bfra-me/.github v4.16.0@65caa6a0…` under `.github/workflows/update-repo-settings.yaml (1)` |
+| Is it parked or blocked? | **No** — it appears in **no** actionable section: not `Pending Approval`, not `Awaiting Schedule`, not `Pending Status Checks`, not `Open`, not `PR Closed (Blocked)`. Hypothesis 2 (a `packageRules` exclusion that would normally surface as a park) is not supported. |
+| **Does the sync actually apply settings?** | **Yes.** The latest `schedule` run's job steps: `Get Workflow Access Token` ✅ → `Resolve workflow ref` ✅ → `Checkout action` ✅ → **`Update Repository Settings (bfra-me/works)` ✅**. Only `Checkout Repository` / `Filter Changed Files` are `skipped`, which is the documented `paths-filter` behavior on non-`push` events. |
+
+Two rules come out of this, and both are corrections to reasoning this
+page was doing:
+
+1. **A frozen reusable-workflow pin is not evidence of a dead sync.**
+   The inference "stuck pin ⇒ probably mis-pathed ⇒ probably never
+   applied" is seductive and was wrong here. The decisive, cheap check
+   is the **apply step's conclusion inside a `schedule` run** — not the
+   run conclusion (green by design on `push`, because the path filter
+   skips the work — see the ha-addon-repository case below), and not the
+   pin's age. This extends the page's triad to four: *a declared
+   manifest is not an applied one; an applied setting is not a recorded
+   one; a correctly-wired sync is not a working one;* **and a stale sync
+   is not a broken one.**
+2. **"Detected" and "actionable" are different dashboard facts.** The
+   [[esphome]] rule — *read the dashboard body before concluding
+   anything about detection* — gets you halfway. `Detected Dependencies`
+   proves only that the manager matched the file and resolved a current
+   value. An entry can be detected, correctly valued, and still generate
+   no branch and appear in no queue. When auditing a suspicious pin,
+   check the actionable sections separately from the detected list.
+
+The residual question is now small, mechanical, and worth one debug run:
+**why does exactly one of four `bfra-me/.github` references produce no
+update?** `renovate.yaml` already exposes a `print-config` dispatch
+input, so a single dispatched run answers it. The *consequence* of the
+freeze has been downgraded from "settings have not been applied since
+April" to "the settings sync runs an old but working version of the
+reusable workflow" — a maintenance debt, not an outage. The
+repo-level-lint recommendation above still stands, because divergence
+that looks like stability is worth surfacing either way.
 
 ### Third instance: a bare, untagged SHA (marcusrbrown/opencode-copilot-delegate, 2026-09-10)
 

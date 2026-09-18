@@ -5851,73 +5851,95 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
 
-## [2026-09-18 10:05] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+## [2026-09-18 10:12] ingest | repo:bfra-me/works
 
-Seventh re-survey of the fork. HEAD unchanged at `99fdbe9`; `pushed_at 2026-05-31T04:03:34Z`
-frozen **110 days**; tree re-verified byte-identical at 104 blobs / 28 trees, `truncated: false`.
-Both prior automation deaths persist unchanged: `Fro Bot` still `disabled_inactivity` with 141
-lifetime runs and workflow `updated_at` still identical to run #141 (dead 50 days), and issue #11
-still 19 comments / 54,813 chars / last written 2026-06-29 (silent 81 days). Both branches still
-`protected: false`; `archived: false`; 1 star / 0 forks unchanged across all seven surveys. The
-`mb` dist-tag still resolves to `1.2.2-mb.2` on both fork packages.
+Ninth survey of `bfra-me/works` (HEAD `d447776`, 105 commits since
+`b7d3138`, 104 `bfra-me[bot]` / 1 `marcusrbrown`). **No structural
+change** — 12 workflows + 1 doc, 9 published packages + Astro Starlight
+docs, layout, workspace config, Probot settings, 12 required checks, and
+AGENTS.md conventions all confirmed durable. The interval's value is
+measurement: it closes three questions this page has carried for months
+and replaces them with narrower ones.
 
-Three additions, no prior claim overwritten.
+Findings ingested:
 
-(1) **`state: active` measures enablement, not liveness.** Enumerating all four workflow files
-inverts this page's own `disabled_inactivity` finding: `ci.yml`, `release.yaml`, and
-`copilot-setup-steps.yml` all report `active` and all last ran 2026-05-31 — inert sixty days
-longer than the one workflow GitHub flagged. The inactivity policy only ever targets `schedule`,
-because event-triggered workflows cost nothing while idle, so a fleet lint scanning
-`state != "active"` is inversely correlated with dormancy and its silence is not evidence. The
-complementary check is last-run recency per workflow, one request each. General form: an
-event-triggered workflow's liveness is a property of its triggers, not of itself, which also makes
-a PR-only CI gate on a repo with no PRs a liveness gap rather than only a coverage gap.
-Generalized into `wiki/topics/github-actions-ci.md`.
+1. **The 2026-09-04 `tar` incident, fourth vantage point.** Poisoned
+   `bfra-me/.github` v4.25.0 merged 16:25:51 (#4493); 11 Renovate runs
+   followed, every one `success`, **zero PRs opened**; `marcusrbrown`
+   hand-fixed with `+1/-1` on `renovate.yaml` only (#4495, merged
+   22:59:19) — **inert window 6h33m28s**. Corrects the sweep from three
+   repos to **four** (marcusrbrown/.github 22:56 → bfra-me/works
+   22:59:19 → bfra-me/renovate-action 22:58:11 →
+   marcusrbrown/esphome.life 23:01:26; span unchanged at 5m26s, density
+   doubled). The revived updater repaired the remaining callers itself
+   (#4497, merged 23:11:11, **+8m36s**) against esphome.life's
+   **+34m53s** for the identical tactic — so *fix the caller that
+   restores the updater first*, and recovery time is set by **updater
+   cadence, not diff size**. Also reconciles a direct contradiction:
+   **run duration discriminated here (52–62 s poisoned vs 4m23s–8m24s
+   healthy) and did not at esphome.life** — the proxy's power scales
+   with the healthy workload, so it must not be ported between repos.
+   Third confirmation of *a run's conclusion measures the harness, not
+   the deliverable*.
+2. **`update-repo-settings.yaml@v4.16.0` diagnosed; both prior
+   hypotheses refuted.** The tag resolves, the upstream file exists at
+   v4.30.0, Renovate detects the dependency at the correct version on
+   dashboard #9 — and the apply step
+   (`Update Repository Settings (bfra-me/works)`) **executes and
+   succeeds** on `schedule` runs. The sync is live; only the updater is
+   silent. New rules: *a frozen reusable-workflow pin is not evidence of
+   a dead sync* (check the apply step's conclusion in a `schedule` run),
+   and *"detected" and "actionable" are different dashboard facts*.
+3. **Delivery paralysis.** Zero fro-bot-authored PRs since 2026-08-10
+   (**39 days**); `plugin.d.ts:29` still carries `any` after ~18
+   staged-and-discarded nightly fixes; `output-mode` still absent from
+   `fro-bot.yaml` across six agent bumps (v0.107.1 → v0.113.2). The
+   daemon produced a complete public root-cause document (#4522,
+   2026-09-05) and could not act on it, because the `AUTOHEAL_PROMPT`
+   forbids editing `.github/workflows/` — **the one change that restores
+   delivery is the one change the daemon may not make.** Fifth fleet
+   instance of the working-dir break; generalized as *an autonomous
+   system's repair boundary must not exclude its own delivery path*.
+4. **Chronology corrections.** `works` is the fleet **origin instance**
+   for dated + marker-authenticated + superseded reports (2026-08-25,
+   three weeks before bfra-me/renovate-action) and for the
+   `trigger-org-renovate` push channel (**2025-06-22**, ~15 months
+   before). Both amend sections written last week from the
+   renovate-action vantage point.
+5. Deps and cadence: pnpm 11.25.0 → 11.27.0, Node 24.20.0 → 24.21.0,
+   `bfra-me/.github` v4.24.0 → v4.30.0 on three of four refs, agent
+   v0.107.1 → v0.113.2, no devDep majors, TS held at 6.0.3 (v7 sits
+   under `PR Closed (Blocked)`). One publish (#4643, 09-14) 19 days
+   after the 08-26 burst; #4696 green/`CLEAN`/`MERGEABLE` since 09-17 —
+   the `Enable Auto-merge` deletion fixed *detection*, not *throughput*.
+   First full Dependency Dashboard read: pending majors parked under
+   `Pending Approval` and invisible to a PR-count audit; zero osv.dev
+   CVEs and zero open Dependabot alerts.
+6. Superseded: the 2026-09-03 scheduled-run "drift" reading (it is a
+   stable 08:02–09:10 UTC band, ~5 h past the `30 3` nominal, not
+   worsening drift) and the "no pnpm v12 on the horizon" note (v12 is
+   parked under `Pending Approval`).
 
-(2) **Two divergence instruments disagreed over the same interval.** `releases/latest` shows one
-release (`v1.22.0`, 2026-09-02) then a 15.6-day drought against an all-time maximum inter-release
-gap of 16.71 days, reading as upstream stalling; `compare` shows `behind_by` 334 -> 479, +145
-commits in 16 days (~9.1/day against a prior ~3.6/day), reading as a ~2.5x acceleration. Both are
-accurate about their own instrument. Recorded as: a release is a publishing decision, a commit is
-the work; prefer the instrument with no human decision in its production path. Practical
-consequence recorded on the repo page — the deferred resync grew 43% in sixteen days, widening the
-gap between the archive and resync costs at roughly nine commits a day. This sharpens rather than
-contradicts the 2026-09-02 "upstream is accelerating" reading, whose instrument would have produced
-the opposite conclusion this interval. Generalized into `wiki/topics/github-actions-ci.md`.
+Pages touched: `wiki/repos/bfra-me--works.md` (updated),
+`wiki/topics/github-actions-ci.md` (two new sections + two amendments),
+`wiki/topics/probot-settings.md` (open question resolved),
+`index.md` (three entries refreshed).
 
-(3) **The registry did not expire what GitHub expired.** Sixty quiet days got the scheduled
-workflow disabled; npm has served the producerless `mb` tag for 110 days and has no comparable
-policy, because serving a tag that points at an already-stored tarball costs approximately nothing.
-The abandonment signal is enforced where it is cheap (compute) and absent where it is consequential
-(the install surface). Recorded as a corollary to the existing three-deletions rule in
-`wiki/topics/opencode-plugins.md`, with the ordering guidance that the registry pointer should be
-deleted first because it is the only one of the three that nothing else will ever clean up.
+A Fro Bot workflow is present and active (`.github/workflows/fro-bot.yaml`,
+`fro-bot/agent@43023e5b` # v0.113.2), so no follow-up onboarding draft is
+warranted; the outstanding gap is the missing `output-mode` input, tracked
+above and in the repo's own #4522.
 
-Also added a **Re-Survey Trigger Conditions** section to the repo page reducing the eighth pass to
-four unauthenticated GETs (`pushed_at`, `actions/workflows/fro-bot.yaml` -> `state`, `archived`,
-`registry.npmjs.org` -> `dist-tags.mb`), with the note that if all four hold the correct output is a
-log line rather than a page edit.
+Repository confirmed public (`private: false`). No private repository is
+named or implied.
 
-Onboarding note re-confirmed: a Fro Bot workflow **is** present (switched off, not absent), so no
-follow-up draft PR proposing one is warranted.
+Sources: https://github.com/bfra-me/works@d44777684c6a773e38d7541068a8f4adf3258071,
+https://github.com/bfra-me/works/pull/4495, https://github.com/bfra-me/works/pull/4497,
+https://github.com/bfra-me/works/issues/4522, https://github.com/bfra-me/works/issues/4697,
+https://github.com/bfra-me/works/issues/9
 
-Upstream `cortexkit/anthropic-auth` re-verified: `pushed_at 2026-09-18T08:51:41Z`, 41 stars, 16
-forks, 6 open issues, latest release `v1.22.0`, npm `latest` 1.22.0 across 44 published versions.
+## [2026-09-18 10:08] ingest | repo:bfra-me/works
 
-Pages touched: `wiki/repos/marcusrbrown--cortexkit-anthropic-auth.md` (updated additively; every
-prior survey block preserved in place), `wiki/topics/github-actions-ci.md` (two new sections),
-`wiki/topics/opencode-plugins.md` (one new corollary subsection), `index.md`, `log.md`. Reads were
-limited to repository and Actions metadata, branch/compare metadata, the recursive tree listing, and
-public npm registry documents. No private repository is named or implied; both surveyed
-repositories are public.
+Surveyed bfra-me/works and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth@99fdbe906c5875893d363c904f6e6bc066d997b1,
-https://github.com/cortexkit/anthropic-auth (v1.22.0),
-https://registry.npmjs.org/@marcusrbrown/opencode-anthropic-auth,
-https://registry.npmjs.org/@marcusrbrown/anthropic-auth-core
-
-## [2026-09-18 09:58] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
-
-Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+Sources: https://github.com/bfra-me/works
