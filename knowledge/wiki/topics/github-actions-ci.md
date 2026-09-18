@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-17
+updated: 2026-09-18
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    accessed: 2026-09-18
+  - url: https://github.com/bfra-me/github-action
+    accessed: 2026-09-18
+  - url: https://github.com/marcusrbrown/extend-vscode
+    accessed: 2026-09-18
   - url: https://github.com/bfra-me/renovate-action
     sha: 0c1bdac0d3f6f11638cda0a01d1e225ba4db78ac
     accessed: 2026-09-17
@@ -1957,6 +1963,12 @@ This is the third independent confirmation of the case for [[marcusrbrown--infra
 
 Worth pairing with [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02): that finding says a green run can hide a broken deliverable. This one is the mirror — a red run can hide *itself*, because redness is only a signal to something that is watching. An out-of-band consumer is what converts a run conclusion into a notification, and it is one file.
 
+**2026-09-18 follow-up — the gap was measured again, from outside, three days later.** A `fro-bot/.github` org-oversight pass enumerating default-branch check status across 34 non-archived repos found [[marcusrbrown--marcusrbrown-com]]'s `Fro Bot` check red on `main`, and the run history shows the scheduled mode failing **four consecutive times** — 2026-09-16 15:37, 2026-09-17 03:37, 2026-09-17 15:37, 2026-09-18 03:36 UTC — each terminating on the same two log lines above with `error: name=APIError; status=400` after three grace cycles. Every non-schedule trigger in the same window concluded `skipped`, so the workflow's run list reads as routine no-ops with a red `main` check nobody is subscribed to.
+
+Two things this adds beyond the 2026-09-15 entry. First, **the outage is now measured in days, not runs**: three days of a sibling repo's autoheal loop being dead, discovered incidentally by a different repo's oversight sweep rather than by anything in the failing repo. Second, and more useful, **the discovery path is itself the workaround**: a cross-repo pass that reads default-branch check conclusions detects exactly the class of failure a scheduled run cannot self-report. That is a real fallback, but it inherits the sweeping repo's cadence and it only works while the sweeping repo's own scheduled pass is alive — which is the same single point of failure one level up. An out-of-band `workflow_run` consumer in the failing repo remains the only version that does not depend on something else staying healthy.
+
+Same day, same control plane, same class from the opposite direction: `fro-bot/.github`'s `Merge Data Branch` failed its privacy gate on 2026-09-13 and, being a Sunday-only cron, had no unattended retry — 52 commits stranded on `data` by 2026-09-18, up from 47 the prior day. Nothing announced it between Sundays. The pairing is the generalization worth carrying: **a fail-closed guard's detection latency is its trigger period, not its failure time**, and that is true whether the period is 12 hours (a schedule-mode agent) or 7 days (a weekly promotion cron). Correctness of a guard and observability of its refusal are independent properties; this fleet currently has the first without the second in at least two places.
+
 ### A Settled Tracker Snapshot Is Not a Correctness Claim (2026-09-15)
 
 `fro-bot/.github#3512`'s Gateway rollout tracker has been running green, and its recorded snapshot hash has not moved. Meanwhile the issue body it tracks is wrong on three of four machine-checkable version claims, and has been for months:
@@ -2375,6 +2387,35 @@ Two smaller items from the same workflow rewrite worth carrying:
 
 - **Deleting a mode means deleting its selector too.** That repo dropped its maintenance cron and deleted `MAINTENANCE_PROMPT` outright — *and* removed `maintenance` from the `workflow_dispatch` `mode` choice list. Leaving the option would have produced a selector offering a mode whose prompt no longer exists, silently resolving to autoheal through the fallback chain. Cheap to check on any mode-dispatch workflow: every `options:` entry must have a reachable prompt.
 - **A prompt rewrite is the one moment prompt text gets human attention, and it can still pass through unread.** The same rewrite restructured the autoheal prompt from five categories to six with five new preamble blocks — and carried forward, verbatim, an instruction to audit analytics plumbing that has been dead code for seven consecutive surveys (~120 days). The line was re-authored by hand into a new category and nobody re-read what it asserted. Strengthens *Prompt Text Is a Dependency With No Dependency Bot*: refactoring prompt text does not audit it.
+
+### A Check-Run List Is an Append Log, Not a State Snapshot (2026-09-18)
+
+A `fro-bot/.github` oversight pass swept default-branch health across 34 non-archived repositories the `fro-bot` identity can read, asking the obvious question: which repos are red on their default branch? The obvious query gave the wrong answer.
+
+`GET /repos/{owner}/{repo}/commits/{ref}/check-runs` returned **15 repositories with at least one `failure` check run on the default-branch head**, across all three owners — a fleet-wide emergency, with `Renovate / Renovate` implicated nearly everywhere and several repos showing the same name two or three times in a row:
+
+```
+fro-bot/space-bus  | Renovate / Renovate, Renovate / Renovate, Renovate / Renovate
+```
+
+The duplication is the tell. Check runs are keyed by `(check_run id)`, not by `(name, head_sha)` — **every re-run against the same commit appends a new record instead of replacing the previous one**. The endpoint returns the full history for that SHA. On a long-lived default-branch head that accumulates repeated scheduled and dispatched runs, that history includes every transient failure the commit ever experienced, permanently, even after a later run of the same check succeeded on the same SHA.
+
+Reducing to the **latest record per check name** before evaluating conclusions collapsed the same data to **3 repositories** actually red:
+
+| Query | Repos reported red |
+| --- | --- |
+| any `failure` in `check_runs[]` | 15 |
+| latest-per-`name` `failure` | 3 |
+
+A 5× false-positive rate, and it fails in the most expensive direction: it manufactures a fleet-wide incident out of ordinary transient retry noise, and it does so *consistently*, so an oversight loop running this query nightly reports the same phantom emergency every night until a reader stops believing the report. The two false signals that survived longest here were both `Renovate / Renovate` — the highest-frequency scheduled workflow in the fleet, and therefore the one most likely to have failed at least once against any given `main` commit.
+
+The rule, and it generalizes past check runs: **an endpoint that returns history is not answering a question about current state, and the difference only becomes visible when the same subject appears more than once.** Duplicate names in a result set are the cheap detector. Concretely, for default-branch health:
+
+- Group by `name`, keep the record with the greatest `started_at` (fall back to `completed_at`), then evaluate `conclusion`. Do not evaluate `conclusion` across the raw array.
+- Do the same reduction on the legacy `/commits/{ref}/status` path, which has the mirror-image trap in the other direction — its `state` is a pre-computed rollup, so it *hides* per-context history rather than over-reporting it. Neither endpoint alone gives both the per-check granularity and the current-state semantics; the combined-status `state` was `pending` for all 34 repos here while three of them were genuinely broken.
+- Treat any "N repos are red" figure derived without this reduction as unverified. Sibling finding: [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02) — that one is about a single conclusion meaning less than it appears; this one is about a *set* of conclusions meaning less than it appears.
+
+The three genuine failures, for the record: `bfra-me/github-action` (`Update Repo Settings`), `marcusrbrown/extend-vscode` (`Pre-Release Validation (vulnerabilities)`), and `marcusrbrown/marcusrbrown.com` (`Fro Bot`, the schedule-mode outage above). All three would have been buried in a 15-row list that a reader learns to skim.
 
 ### Convention Enforcement via Tests
 

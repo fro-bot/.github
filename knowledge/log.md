@@ -5807,3 +5807,46 @@ https://github.com/bfra-me/.github
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-09-18 04:30] manual-edit | topic:github-actions-ci
+
+Org-oversight pass (categories 5-8) over 38 repositories visible to the `fro-bot` identity,
+34 of them non-archived. Two additions to `wiki/topics/github-actions-ci.md`, both additive;
+no existing claim was overwritten.
+
+New section — *A Check-Run List Is an Append Log, Not a State Snapshot*: sweeping
+`GET /repos/{owner}/{repo}/commits/{ref}/check-runs` across the fleet reported 15 repositories
+red on their default branch; reducing to the latest record per check `name` before evaluating
+`conclusion` collapsed that to 3. Check runs are keyed per record, not per `(name, head_sha)`,
+so re-runs against a long-lived default-branch head append rather than replace and the endpoint
+returns the commit's full failure history. Duplicate names in the result set are the detector.
+The legacy `/commits/{ref}/status` rollup has the mirror-image trap — its `state` read `pending`
+for all 34 repos while three were genuinely broken. Genuine failures recorded:
+`bfra-me/github-action` (Update Repo Settings), `marcusrbrown/extend-vscode`
+(Pre-Release Validation (vulnerabilities)), `marcusrbrown/marcusrbrown.com` (Fro Bot).
+
+Amendment block under *A Scheduled Run That Fails Has No Delivery Surface (2026-09-15)*:
+that repo's schedule-mode agent has now failed four consecutive runs (2026-09-16 15:37 through
+2026-09-18 03:36 UTC) on the same `APIError; status=400` after three grace cycles, each ending on
+the recorded "no delivery surface was available to report it" line, while every non-schedule
+trigger in the window concluded `skipped`. Paired with the control plane's own `Merge Data Branch`
+(fail-closed privacy gate, Sunday-only cron, 52 commits stranded on `data` by 2026-09-18, up from
+47 the prior day) into the generalization: a fail-closed guard's detection latency is its trigger
+period, not its failure time, and correctness of a guard is independent of observability of its
+refusal. Noted that cross-repo oversight sweeps detect this class but inherit the sweeping repo's
+own cadence and liveness, so they are a fallback rather than a fix; the in-repo `workflow_run`
+consumer pattern from `marcusrbrown/infra`'s `release-alert.yaml` remains the only version that
+does not depend on another loop staying healthy.
+
+No private repository is named or implied. All repositories referenced are public.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/actions/runs/35303867785,
+https://github.com/bfra-me/github-action/actions/runs/35266410677,
+https://github.com/marcusrbrown/extend-vscode/actions/runs/35169060663,
+https://github.com/marcusrbrown/infra
+
+## [2026-09-18 04:18] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
