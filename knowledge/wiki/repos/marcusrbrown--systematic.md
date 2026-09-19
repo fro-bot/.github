@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-09-05
+updated: 2026-09-19
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -28,6 +28,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
+  - url: https://github.com/fro-bot/systematic
+    sha: c5cbd2e
+    accessed: 2026-09-19
 tags:
   - opencode
   - plugin
@@ -88,6 +91,12 @@ Compound-engineering workflow system for AI coding harnesses. Published to npm a
 | npm             | `@fro.bot/systematic` — 207 versions, `dist-tags: {latest: 3.16.1}` (no `v2` tag) |
 | Default branch  | main (branches: `main`, `claude-code-plugin`, plus 2 in-flight) |
 | node_id         | `R_kgDORAJegA` (repo id `1141005952`)                |
+
+> **2026-09-19 downstream observation from the [[fro-bot--systematic]] deploy-target survey.** Not a source-side survey — three facts read off the published artifacts, recorded here because each one names a check the next direct survey should run against this tree.
+>
+> 1. **The release pipeline's internal ordering changed on 2026-09-15.** Across `3.15.1` → `3.18.3` the docs deploy commit landed **31–88 s after** the npm publish; from **`3.18.4` onward it lands 31–118 s before it**, twelve consecutive positives then seven consecutive negatives with no straddling value. The deploy is no longer downstream of `npm publish`. Read the release job graph (`docs.yaml` / the semantic-release wiring) and record whether the deploy became a parallel job or simply moved above the publish step — and whether the ordering is intentional, since it opens a ~1–2 minute window where `fro.bot/systematic/` advertises a version npm does not serve.
+> 2. **`disabled_skills` and `disabled_agents` still enumerate the v2-era roster pruned at the 3.0.0 boundary** — 50 skill names against 32 shipped skills, 102 agent names (51 bare + 51 qualified) against 37 shipped agents, including a retired `docs/` category prefix and a `generate_command` underscore spelling the registry never used. The lists are append-only and maintained (`disabled_skills` gained exactly `ce-review-cleanup` this interval) but were never pruned. The schema description claims *"Unknown skill names are rejected at parse time,"* which makes the enum the validation boundary. **Open question for the loader: does a retired-but-enumerated name produce a warning, or is it silently dropped?** If it warns, this is deliberate deprecation tolerance and only the description is incomplete. If it is silent, a user's `disabled_skills: ["proof"]` parses green and does nothing. Generalized in [[opencode-plugins]].
+> 3. **Catalog moved for the first time since the major**: component count 73 → 74 at **`3.17.0`** (2026-09-10T23:38Z), the addition being the skill `ce-review-cleanup`. Releases `3.15.1` → `3.18.10` shipped in the interval — 19 of them in 14.4 days, a markedly steadier train than the burst-and-drought pattern of August.
 
 ## 2026-09-05 survey — first direct source-side look at v3
 

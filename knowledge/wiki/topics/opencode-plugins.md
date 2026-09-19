@@ -4,6 +4,9 @@ title: OpenCode Plugin Development
 created: 2026-04-23
 updated: 2026-09-19
 sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: c5cbd2e
+    accessed: 2026-09-19
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -76,10 +79,7 @@ sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
-  - url: https://github.com/fro-bot/space-bus
-    sha: 47e32358040d9df0a9b897e17adefd70924ae55e
-    accessed: 2026-09-19
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement, peer-range-drift, coupled-constant, dependabot-coverage-gap, code-freeze]
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement]
 ---
 
 # OpenCode Plugin Development
@@ -509,6 +509,35 @@ The new `profiles` property carries this description, and it is the most securit
 
 A checked-out repository can *choose* a routing overlay but cannot *author* one. This is the correct direction for a plugin that merges configuration from multiple precedence sources: a cloned project cannot silently redirect the user's agents to a model of its choosing. It is the config-layer expression of the same untrusted-input posture the ecosystem's agent prompts take toward issue bodies — and notably it is enforced in the *schema*, where an IDE surfaces it, not only in the loader. Plugin authors merging user + project config should ask, for every property: **is this safe for a repository I just cloned to set?** Systematic answers it per-field.
 
+## Cross-Check Every Enumeration, Not One Representative Enumeration (2026-09-19)
+
+Two-week follow-up to the two sections above, from the [[fro-bot--systematic]] survey at registry `3.18.10`. Three results, in ascending order of usefulness.
+
+**The fingerprint earned its keep, and the probes came back.** `definitions` held at 100 and top-level properties held at 12 — both header metrics identical to 2026-09-05 — while the file moved **58,954 → 59,589 bytes** and `sha256[:16]` moved `1f9b7c48a4b6455c` → `a66df5f746c28d38`. The pre-2026-09-04 method (count the top-level properties) would have logged "schema unchanged" for a third consecutive interval and been wrong for a third consecutive interval. Separately, the 09-05 caution proved exactly right: the `$ref` + `allOf` indirection is still in place, and **dereferencing it recovers both 09-04 structural claims intact** — `agents` is still a closed 74-key enumeration with `additionalProperties: false`, `categories` is still open-keyed via `propertyNames: {type: string}`. *Treat an empty structural read as "instrument broken" until proven otherwise* held. Deref and the semantics were never gone.
+
+**The real finding: a generated schema can contain several enumerations of the same catalog, produced by different mechanisms, and only some of them track reality.** Systematic's schema names its bundled components in three places. One is derived from the live roster. Two are hand-maintained literals:
+
+| Surface | Entries | Live catalog | Stale |
+| --- | --- | --- | --- |
+| `properties.agents` (keys) | 74 (37 bare + 37 qualified) | 37 agents | 0 |
+| `disabled_agents` (`items.enum`) | 102 (51 bare + 51 qualified) | 37 agents | 28 |
+| `disabled_skills` (`items.enum`) | 50 | 32 skills | 18 |
+
+The surplus is the **v2-era roster pruned at the 2026-07-22 major** — retired skills (`proof`, `rclone`, `setup`, `test-xcode`, `todo-create`/`todo-resolve`/`todo-triage`, `orchestrating-swarms`, …), retired agents (`security-sentinel`, `performance-oracle`, `schema-drift-detector`, …), and a retired *category prefix* (`docs/`) that no longer exists in the live `agents` map. The lists are demonstrably maintained — `disabled_skills` went 49 → 50 in this interval, gaining exactly the one newly-shipped skill — so this is **append-only maintenance with no prune step**, not abandonment. One entry is spelled `generate_command` where the registry and docs used `generate-command`, which is the tell: a derived list cannot disagree with itself about a separator.
+
+The 2026-09-04 survey ran a cross-artifact check on this exact file, compared `agents` against the registry, got 37 = 37, and concluded "no drift." It was checking the one surface that cannot drift. **Re-reading the 09-04 tree shows `disabled_agents` was already 102 then** — the drift was in the file the whole time, one property over from the probe.
+
+**Why stale enums are worse than they look.** The field's own description reads *"Unknown skill names are rejected at parse time."* That makes the enum the validation boundary, and a stale enum turns it into a liar in the quiet direction: `disabled_skills: ["proof"]` parses clean, shows green in the editor, and **does nothing**. This is the same defect class as the `categories` footgun recorded on 2026-09-04, with the polarity reversed — `categories` accepts any string and silently no-ops the overlay; `disabled_skills` accepts a *specific* obsolete string and silently no-ops the disable. Stated generally: **a config schema fails its user whenever its verdict and the runtime's behavior disagree, and permissiveness is only one of the two ways that happens — an allowlist that outlives what it allowlists is the other.**
+
+Operational rules for anyone tracking or authoring a generated config schema:
+
+- **Enumerate the enumerations first.** Before cross-checking a schema against a catalog, list every place the schema names catalog members. Checking one and generalizing is how this was missed for two surveys.
+- **Ask which surfaces are derived and which are literals.** Derived surfaces cannot drift and are not worth re-checking; literals are the entire risk. Spelling inconsistencies between surfaces are a cheap detector.
+- **Prune enums at major boundaries, or document the tolerance.** If retired names are kept deliberately for back-compat, the description must say so and the loader should warn. Silence makes back-compat indistinguishable from neglect.
+- **A schema that validates a name should be able to say whether that name still does anything.**
+
+**Postscript — a `trust` boundary that got documented rather than standardized.** The non-standard `"trust"` keyword grew 16 → 30 occurrences (`project-or-higher` 23, `any` 7), and the 2026-09-04 *inference* about its meaning is now stated outright in `description` text that every draft-07 validator and IDE renders: "Trust-protected fields (model, variant, skills, permission, opencode, pi) are only valid in user config or `OPENCODE_CONFIG_DIR` config — a project config setting them has that field ignored with a warning; other fields in the same overlay still apply." The keyword is still inert to standard tooling. The fix was not to standardize the annotation but to **mirror its meaning into a field standard tooling already reads** — cheaper than a validator extension, portable to every consumer, and the right move for any plugin publishing a semantically load-bearing custom keyword. The cost is that two representations of one rule can now drift apart; the keyword remains the machine-readable one.
+
 ## An MCP Client Keyed by Server Name Cannot Carry a Session Principal (2026-09-08)
 
 From [[marcusrbrown--mothership]]'s `docs/architecture/planning-host-contract.md` — the first artifact in this wiki to trace the OpenCode MCP invocation path end-to-end and write down where agent identity is lost. The reading is against `@fro.bot/harness@1.18.29-harness.88b6b5fb` (runtime integration commit `88b6b5fb…` in `fro-bot/agent`, base OpenCode `1.18.29`).
@@ -632,56 +661,3 @@ The instructive part is the history. The same drift was recorded on 2026-07-10 (
 - [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy
-
-## A Finished Plugin Still Needs Its Automation to Land (2026-09-19)
-
-From the [[fro-bot--space-bus]] survey at HEAD `47e32358`. This is not a plugin-API pattern; it is what
-happens to a plugin repo **after** the surface is done, and it is the failure mode most likely to hit any
-of the repos in the table above.
-
-space-bus built its entire published surface in a 16-day burst (2026-07-03 → 07-19: `0.0.0` → `0.15.0`,
-22 npm versions, four → six tools, managed server, CLI, launchd, browser-safe lane, full automation) and
-has not changed `src/` since — **62 days**, npm `latest` unmoved, `.changeset/` empty, registry `modified`
-identical. That is a legitimate end state for a small plugin that reached its designed surface. The
-problem is what the surrounding automation does with it.
-
-**Three plugin-specific consequences of a code freeze:**
-
-1. **A frozen dev-pin widens the gap between the tested surface and the promised one.** `@opencode-ai/plugin`
-   is declared as a `peerDependency` at `>=1.17.13 <2` — the compatibility the package *promises* — while
-   the devDependency pin is the version CI actually exercises. space-bus's dev-pin sat at `1.18.2` for
-   weeks, then jumped to `1.18.26` in one merge, and `1.18.31` is already queued. The peer range is a claim
-   about 100+ releases; the test evidence covers whichever single one the lockfile names. For a plugin with
-   a wide peer range, **the dev-pin's staleness is the size of the untested region**, and it is the one
-   dependency worth bumping even on a frozen repo.
-2. **`biome.json`'s `$schema` is a second copy of the Biome version.** The Bun + Biome stack this cohort
-   standardized on encodes the toolchain version twice — once as a managed devDependency, once as a path
-   segment in `"$schema": "https://biomejs.dev/schemas/<version>/schema.json"` that no Renovate manager
-   parses. Every Biome bump is red by construction until someone edits the URL. space-bus PR #72 has been
-   red **70 days** on exactly this; [[marcusrbrown--opencode-copilot-delegate]] hit the same thing but
-   merges often enough that it reads as noise (#302 → #332 → #377). One `customManagers` rule over the
-   `$schema` URL closes it permanently — worth adding to any new plugin repo's `renovate.json5` on day one,
-   alongside the `skipArtifactsUpdate` + `postUpgradeTasks` Bun-lockfile workaround these repos already carry.
-3. **`bun.lock` is invisible to Dependabot.** space-bus's 2026-09-19 report puts 0 Dependabot alerts next to
-   22 OSV advisories that Scorecard's code-scanning path finds reachable through transitive deps of
-   `@modelcontextprotocol/sdk` and `@changesets/cli`. Agent-reported, not independently verified here, but
-   it applies to the whole Bun cohort: the alerting surface is the one reporting zero, so a Bun plugin repo
-   needs `bun audit` or an OSV scan wired into CI for the signal to exist — **and needs the result to reach
-   the repository**, which is the next point.
-
-**And the one that subsumes them.** space-bus's daily agent correctly found and fixed the `bun audit`
-findings (19 → 0, 2026-09-08) and later authored `package.json` `overrides` for three HIGH advisories
-(2026-09-19), verified both against the full `typecheck`/`lint`/`build`/`test` gate, and reported success.
-Neither patch exists in the repository: the workflow runs the agent under a `working-dir` delivery contract
-and has no commit/push/PR step to collect the result. A plugin repo in maintenance mode is exactly where
-this is hardest to notice — there are no human commits to contrast against, CI is green, the daily report
-is green, and the npm package is unchanged for reasons that look intentional. See
-[[github-actions-ci]] for the delivery-path analysis and the probe (`gh pr list --author <agent>` against
-the date the delivery half last changed).
-
-Documentation drift compounds the same way. The `@fro.bot/space-bus/registry` subpath — a real `exports`
-entry backing `bus_registry` — has been missing from the README's "Library surface" list since it shipped
-in `0.13.0`, and `README.md:139` still introduces that section as "the functions the **four** tools run
-on" seventy lines after correctly listing six. For a published plugin, **the README's export list is part
-of the public contract**: a subpath that exists in `package.json` and nowhere in the docs is, in practice,
-unshipped. The drift has been diagnosed and "fixed" in a working tree on roughly twenty consecutive nights.

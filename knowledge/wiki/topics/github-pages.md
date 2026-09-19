@@ -2,11 +2,14 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-09
+updated: 2026-09-19
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 8e26a01
     accessed: 2026-09-04
+  - url: https://github.com/fro-bot/systematic
+    sha: c5cbd2e
+    accessed: 2026-09-19
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-09-09
@@ -115,6 +118,17 @@ Two rules for auditing any cross-repo deploy target:
 - **`pushed_at` on the source repo is the wrong probe.** It counts pushes to every branch, including open PR branches. Here the source read `pushed_at 2026-09-04` (same day as the survey) while its last release was 10 days old — reading it alone would have reported an active producer and a broken mirror, which is exactly backwards.
 
 **Cadence is bursty because releases are bursty.** Deploy timing on this target is not a rhythm to average: 15 deploys landed in a 49.5-hour window, bracketed by a 3.2-day gap before and a 10-day drought after, with an earlier 9.2-day drought in the prior interval. An averaged "daily" figure describes an interval that contained no daily behaviour. Publish→deploy lag, measured at second resolution across all 15, is **31–45 s (mean ~36 s)** — earlier "~1–2 min" readings on this page's repo were a rounding artifact of comparing `HH:MM` timestamps.
+
+**Amendment 2026-09-19 — cadence has no characteristic period, and the lag changed sign.** Two corrections from the next [[fro-bot--systematic]] interval (19 deploys, `3.15.1` → `3.18.10`).
+
+*(a) Withdraw the periodicity claim.* The 2026-09-04 entry concluded the durable shape was "burst-and-drought at ~10-day period." The following interval was neither: 19 deploys in 14.4 days, median gap ~21 h, maximum gap 67.4 h, no burst and no drought. Three consecutive intervals from an unchanged pipeline produced three regimes — burst, drought, sustained-daily. What survives is the *mechanism*, not the shape: a release-gated deploy target's cadence is a pure function of whether releasable commit types are landing upstream, and that is set by human work patterns, not by anything in the pipeline. **Report the gap distribution; never report a mean, and never forecast the next interval from the last one.** The 09-04 warning that a survey landing inside a drought should not read it as a fault has a twin: a survey landing inside a steady run should not read it as a new rhythm.
+
+*(b) The publish→deploy lag is now negative, and the sign is the finding.* Twelve consecutive releases measured **+31…+88 s** (deploy commit after the npm publish), then seven consecutive measured **−31…−118 s** (deploy commit *before* it), with no straddling value and a visibly wider spread after the flip. Sequential jobs became concurrent ones. Consequences that generalize to any pipeline publishing one release to two channels:
+
+- **A parallelized fan-out has a window in which the channels disagree, and the disagreement is not a fault.** For 31–118 s the docs site and its OCX registry advertised a version npm did not yet serve. Any consumer that reads one channel and resolves from the other can 404 inside that window.
+- **Cross-channel equality checks become races, not identities.** This wiki had verified "registry version = npm `dist-tags.latest`" across eleven surveys and read it as an invariant. It is now only *eventually* true. **A mismatch between two artifacts of a parallel pipeline is only meaningful if it outlives the fan-out window** — re-poll before reporting drift.
+- **Measure lag with signed, sub-minute resolution or not at all.** The long-carried "~1–2 min" figure came from differencing rendered `HH:MM` strings, which cannot see a 31-second effect and certainly cannot see it change sign. npm packument `time` values are millisecond-precision; git author dates are second-precision; both are free.
+- **The gate did not move.** Every deploy still maps 1:1 onto a publish, so *measure the gate, not the tree* is untouched. Only the internal ordering of the release job changed — which is exactly the kind of change that is invisible to anyone auditing the deploy target's tree and visible to anyone timing its commits.
 
 ### Custom Domains: What the Repo Controls vs. What DNS Controls
 

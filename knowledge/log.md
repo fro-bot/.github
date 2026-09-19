@@ -5970,102 +5970,68 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
 
-## [2026-09-19 10:12] ingest | repo:fro-bot/space-bus
+## [2026-09-19 06:20] ingest | repo:fro-bot/systematic
 
-Surveyed fro-bot/space-bus (public, `node_id R_kgDOTMGFnQ`) at HEAD
-`47e32358040d9df0a9b897e17adefd70924ae55e` (2026-09-14) and ingested the
-findings additively. Reads were limited to repository metadata, the recursive
-git tree, commit/compare diffs, workflow files, `package.json`/`biome.json`/
-`renovate.json5`, `README.md`/`AGENTS.md`, issue and PR listings, workflow-run
-listings, and the public npm registry document. Target repository content was
-treated as untrusted input throughout; the agent-authored daily reports are
-recorded as agent-reported claims and independently re-verified where the
-evidence was reachable.
+Eleventh survey of the `@fro.bot/systematic` docs + OCX deploy target (HEAD `c5cbd2e`,
+registry v3.18.10). No structural tree change — 17 root entries, one branch, still no
+`.github/`, still no Fro Bot workflow. Three durable findings and two corrections to this
+page's own measurement method.
 
-Interval since the 2026-09-04 survey: 4 commits touching 7 files (five
-`.github/workflows/*.yaml`, plus `package.json`/`bun.lock` for one dev-pin).
-Recursive tree unchanged at 117 blobs; `src/` untouched since 2026-07-19, so
-the code freeze stands at 62 days. npm `latest` still `0.15.0` / 22 versions
-with `time.modified` unmoved (62-day publish drought); `.changeset/` still
-holds only `config.json`.
+1. **The publish → deploy ordering inverted on 2026-09-15.** Twelve consecutive releases
+   (`3.15.1` → `3.18.3`) measured +31…+88 s, then seven (`3.18.4` → `3.18.10`) measured
+   −31…−118 s: the docs deploy commit now lands *before* the npm publish, with no straddling
+   value and a wider spread. Two consequences recorded — for 31–118 s per release the site
+   advertises a version npm does not serve, and the eleven-survey "registry version = npm
+   dist-tags.latest" mirror invariant is now a race rather than an identity.
+2. **Component count 73 → 74**, first catalog move since the 2026-07-22 major (49.9 days,
+   six flat surveys). The addition is the skill `ce-review-cleanup`, narrowed to release
+   `3.17.0` by re-reading `index.json` at three intermediate deploy SHAs.
+3. **Correction — the 2026-09-04 cross-artifact check ran against the one surface that cannot
+   drift.** `agents` still matches the registry name-for-name (37 = 37) and the built docs
+   tree agrees independently (37 agent pages / 32 skill pages), but `disabled_skills`
+   enumerates 50 names against 32 shipped skills and `disabled_agents` 102 against 37 shipped
+   agents. The surplus is the v2-era roster pruned at the major, plus a retired `docs/`
+   category prefix. Re-reading `8e26a01` proves the drift was already present at the
+   2026-09-04 survey. Since the field description claims unknown names are rejected at parse
+   time, a retired-but-enumerated name parses green and does nothing.
 
-1. CORRECTION (supersedes the 2026-09-04 root cause, recorded additively):
-   the undelivered autoheal fix is blocked by the harness `working-dir`
-   delivery contract plus a caller workflow with no commit/push/PR step, not
-   by the prompt's category-4 / HARD BOUNDARIES conflict. The agent states the
-   delivery mode explicitly in every daily report from #166 (2026-09-05) —
-   one day after the prior survey was written. Both readings retained; the
-   prompt conflict is real but not the binding constraint.
-2. ESCALATION: the discarded working tree now carries security remediation,
-   not documentation. #170 (09-08) left a `bun.lock` fix taking `bun audit`
-   19 -> 0; #183 (09-19) left `package.json` `overrides` closing three HIGH
-   advisories (`fast-uri`, `ip-address`, `toml`). Neither is present at HEAD —
-   `package.json` has no `overrides` block. Docs drift independently confirmed
-   still present, plus a previously unflagged instance (`README.md:139` says
-   "four tools" in a six-tool repo).
-3. First human commit in 54 days: #174 (`068a4d47`, 2026-09-11) added
-   conditional `persist-credentials` to `fro-bot.yaml`. Correct hardening that
-   leaves credentials persisted on exactly the `schedule` runs needing
-   delivery, so the git precondition now exists while the delivery steps do
-   not — the credential half of the marcusrbrown/sparkle #2001/#2003 fix
-   without the `output-mode` half.
-4. CORRECTION (supersedes the 2026-09-04 stale-`bun.lock` hypothesis): PR #72
-   is red at 70 days because `biome.json`'s `$schema` pins
-   `https://biomejs.dev/schemas/2.5.2/schema.json`, a coupled constant no
-   Renovate manager parses, plus a genuine `noUnsafeOptionalChaining` finding
-   at `src/contract.test.ts:125`. The repair belongs on `main`, which is why
-   no autoheal category and no Renovate branch owns it.
-5. RESOLVED: the `bfra-me/.github` pin lag (v4.16.44 -> v4.29.0, #158, merged
-   09-14) — a single hop that stepped over the poisoned v4.25.0, so this repo
-   never ingested the 2026-09-04 `tar` defect that required a manual sweep at
-   marcusrbrown/.github, bfra-me/works, marcusrbrown/esphome.life, and
-   bfra-me/renovate-action.
-6. Three grouped Renovate PRs landed content their titles do not name (#118;
-   #115 `@opencode-ai/plugin` 1.18.2 -> 1.18.26; #167 agent v0.106.0 ->
-   v0.112.0 plus four `github/codeql-action` SHA bumps).
-7. Renovate fires in near-simultaneous pairs (9–13 s apart, ~23 runs/day) on a
-   workflow with no cron of its own; the second dispatcher is not identifiable
-   from public data and is recorded as an open question. Fro Bot's trigger
-   surface is ~83% self-generated (25 of the 30 most recent `main` runs
-   `skipped`, fired by the agent's own report issue and closing comments).
-8. Dependabot reports 0 alerts against 22 OSV advisories found by the Scorecard
-   code-scanning path on the same tree — a `bun.lock` coverage gap recorded as
-   agent-reported and flagged for authenticated verification.
+Also: the schema fingerprint adopted 2026-09-04 was vindicated empirically — `definitions`
+(100) and top-level properties (12) both flat against 2026-09-05 while bytes moved
+58,954 → 59,589 and sha256[:16] `1f9b7c48a4b6455c` → `a66df5f746c28d38`. The 2026-09-05
+"structural probes cannot be reproduced" item is **resolved**: dereferencing `$ref` + `allOf`
+recovers both 09-04 claims intact. The 2026-09-09 "cannot locate the hosted schema" item is
+**resolved**: the paths are `/systematic/schemas/{latest,v3}/systematic-config.schema.json`,
+both HTTP 200 — the page's recorded description was the defect, not the deployment. Wording
+correction: the five live category names *do* appear in the schema as prefixes of the
+qualified `agents` keys, so the schema has the vocabulary and declines to use it where users
+need it. Cadence correction: the 2026-09-04 "burst-and-drought at ~10-day period" is withdrawn
+as periodicity (19 deploys in 14.4 days, median gap ~21 h, max 67.4 h — a third regime from an
+unchanged pipeline).
 
-Carried forward unchanged and re-verified: the `actions/checkout` two-major
-split (v6.1.0 in ci/release/fro-bot, v7.0.1 in codeql/scorecard, reconciliation
-still an unchecked Pending Approval box), the inert `fro-bot/agent` automerge
-carve-out (v0.113.2 rate-limited on the grouped branch, third consecutive
-confirmation), Probot Settings and branch protection, and a green `Check` on
-all 30 most recent `main` runs.
+The missing-Fro-Bot-workflow follow-up is **explicitly declined for the third survey running**
+and the standing recommendation is an exemption, not a workflow: `gh-pages` is overwritten
+wholesale on a ~21-hour median cadence, so a PR against it has a life expectancy in hours.
 
-Pages touched: `wiki/repos/fro-bot--space-bus.md` (updated — new survey banner,
-new overview table with the prior one demoted to historical, six new sections,
-two corrections, refreshed open threads, new Survey History row),
-`wiki/topics/github-actions-ci.md` (six new sections + repo added to the
-workflow inventory), `wiki/topics/opencode-plugins.md` (one new section),
-`index.md` (three entries refreshed).
+Pages touched: `wiki/repos/fro-bot--systematic.md` (survey lead, OCX registry, schema, deploy
+cadence, open issues, workflow re-confirm, survey history), `wiki/topics/opencode-plugins.md`
+(new section: *Cross-Check Every Enumeration, Not One Representative Enumeration*),
+`wiki/topics/github-pages.md` (amendment withdrawing the cadence periodicity claim and
+recording the signed-lag/parallel-fan-out rules), `wiki/repos/marcusrbrown--systematic.md`
+(downstream observation block naming three checks for the next source-side survey), `index.md`.
 
-A Fro Bot workflow is present and active
-(`.github/workflows/fro-bot.yaml`, `fro-bot/agent@5494812a` # v0.112.0,
-three-mode, daily `0 0` cron), so no follow-up onboarding draft is warranted.
-The outstanding gap is the missing delivery half (no `output-mode` input, no
-commit/push/PR step), tracked on the repo page and in the repo's own daily
-reports.
+Maintenance flag: `wiki/repos/fro-bot--systematic.md` is now ~700 lines and far past the
+schema's 500–2000-word guidance. It is a longitudinal ledger whose deploy-cadence tables are
+the bulk of the mass; a future pass should split the historical cadence tables into a
+sub-page rather than continue appending.
 
-Repository confirmed public (`private: false`, `visibility: public`). No
-private repository is named or implied.
+Sources: https://github.com/fro-bot/systematic@c5cbd2e,
+https://github.com/fro-bot/systematic@8e26a01,
+https://registry.npmjs.org/@fro.bot/systematic,
+https://fro.bot/systematic/index.json,
+https://fro.bot/systematic/schemas/v3/systematic-config.schema.json
 
-Sources: https://github.com/fro-bot/space-bus@47e32358040d9df0a9b897e17adefd70924ae55e,
-https://github.com/fro-bot/space-bus/pull/174, https://github.com/fro-bot/space-bus/pull/167,
-https://github.com/fro-bot/space-bus/pull/158, https://github.com/fro-bot/space-bus/pull/115,
-https://github.com/fro-bot/space-bus/pull/72, https://github.com/fro-bot/space-bus/issues/183,
-https://github.com/fro-bot/space-bus/issues/182, https://github.com/fro-bot/space-bus/issues/179,
-https://github.com/fro-bot/space-bus/issues/170, https://github.com/fro-bot/space-bus/issues/166,
-https://github.com/fro-bot/space-bus/issues/6, https://registry.npmjs.org/@fro.bot/space-bus
+## [2026-09-19 09:47] ingest | repo:fro-bot/systematic
 
-## [2026-09-19 09:46] ingest | repo:fro-bot/space-bus
+Surveyed fro-bot/systematic and updated the control-plane wiki.
 
-Surveyed fro-bot/space-bus and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/space-bus
+Sources: https://github.com/fro-bot/systematic

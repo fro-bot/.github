@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-09-09
+updated: 2026-09-19
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -41,6 +41,9 @@ sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-09-09
+  - url: https://github.com/fro-bot/systematic
+    sha: c5cbd2e
+    accessed: 2026-09-19
 tags:
   - documentation
   - github-pages
@@ -62,6 +65,44 @@ related:
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+## 2026-09-19 survey — the deploy stopped following the publish, and the catalog moved for the first time since July
+
+HEAD `c5cbd2e`, 2026-09-19T02:32:36Z, source `da7165ec`, registry **v3.18.10**. Eleventh full survey. No structural change to the tree — same 17 root entries, still no `.github/`, still one branch, still zero Fro Bot workflows. Three durable findings, one of them a **correction to this page's own measurement**, plus one standing open item resolved.
+
+**(1) The publish → deploy ordering inverted on 2026-09-15, and the sign flip is clean.** This page has recorded a positive publish-to-deploy lag since 2026-06 and pinned it at **31–45 s** on 2026-09-04. It is now **negative**: the `gh-pages` deploy commit lands *before* npm has the version.
+
+| Boundary | Releases | Lag range | Reading |
+| -------- | -------- | --------- | ------- |
+| `3.15.1` … `3.18.3` (09-04 → 09-14) | 12 | **+31 s … +88 s** | deploy after publish |
+| `3.18.4` … `3.18.10` (09-15 → 09-19) | 7 | **−31 s … −118 s** | **deploy before publish** |
+
+Twelve consecutive positive, then seven consecutive negative, with no straddling value — that is a pipeline reordering, not jitter. The variance also widened (a ~57 s spread before, ~87 s after), which is what racing parallel jobs look like versus sequential ones. The docs deploy and the `npm publish` are no longer in a producer/consumer relationship; they are siblings under a common release job.
+
+Two consequences worth carrying forward:
+
+- **For 31–118 s after every release, `fro.bot/systematic/` advertises a version npm does not serve.** `index.json` names `3.18.10` while `dist-tags.latest` is still `3.18.9`. Small window, real hole: an `ocx`/npm consumer that reads the registry and then resolves from npm inside that window gets a 404 for a version the site says exists.
+- **The "mirror is provably faithful" invariant this page has checked eleven times is now a race, not an identity.** It still holds at survey time (registry `3.18.10` = npm `latest` `3.18.10`), but only because the survey landed ~4 minutes after the deploy. Generalized rule: *when comparing two artifacts emitted by a parallelized pipeline, a mismatch is only meaningful if it outlives the fan-out window.* A future survey landing inside that window should re-poll before reporting drift.
+
+**(2) Component count moved 73 → 74 — the first catalog change since the v3 major boundary, after 49.9 days flat.** The 74th component is the skill **`ce-review-cleanup`**, and it arrived precisely in **`3.17.0`** (published 2026-09-10T23:38:24Z, deploy `19e228f`): the registry at `3.16.5` still reads 73/31 skills, at `3.17.0` it reads 74/32. Breakdown is now **37 agents / 32 skills / 2 bundles / 2 profiles / 1 plugin**. Six consecutive surveys of "flat at 73" ended on a minor, not a major — so the earlier reading that the catalog only moves at major boundaries was an artifact of the sample, not a rule.
+
+**(3) Correction — the cross-artifact check passed on the wrong enumeration, and the drift it missed was already present on 2026-09-04.** The 2026-09-04 survey introduced a schema-vs-registry check, compared the `agents` map against the registry's `agent` components, found 37 = 37, and concluded "No drift." That check still passes this survey (verified name-for-name, not just by count). But the schema carries **three** component enumerations, and the other two disagree with the catalog:
+
+| Schema enumeration | Entries | Registry says | Stale entries |
+| ------------------ | ------- | ------------- | ------------- |
+| `properties.agents` (keys) | 74 (37 bare + 37 qualified) | 37 agents | **0** |
+| `disabled_agents` (enum) | 102 (51 bare + 51 qualified) | 37 agents | **14 bare + 14 qualified** |
+| `disabled_skills` (enum) | 50 | 32 skills | **18** |
+
+The stale names are the **v2-era roster pruned at the 2026-07-22 major**: `proof`, `rclone`, `setup`, `test-xcode`, `changelog`, `dspy-ruby`, `dhh-rails-style`, `gemini-imagegen`, `feature-video`, `orchestrating-swarms`, `every-style-editor`, `andrew-kane-gem-writer`, `claude-permissions-optimizer`, `writing-systematic-skills`, `todo-create`/`todo-resolve`/`todo-triage` (superseded by the single `todos` skill), and `generate_command` — the last spelled with an underscore where the docs and registry used `generate-command`, a tell that the list is a hand-maintained literal rather than a generated one. The agent side retains `security-sentinel`, `performance-oracle`, `schema-drift-detector`, `data-integrity-guardian`, `kieran-rails-reviewer`, `kieran-python-reviewer`, `dhh-rails-reviewer`, `figma-design-sync`, `lint`, and friends — **plus a retired category**: `disabled_agents` qualified keys carry six category prefixes (`design`, `docs`, `document-review`, `research`, `review`, `workflow`) against the live `agents` map's five. `docs/` no longer exists.
+
+Re-read against the 2026-09-04 tree (`8e26a01`, `3.15.0`): `disabled_agents` was **already 102** and `disabled_skills` **49**. So this is not new drift — it was in the file the whole time, one property away from the check that was run. The list is *maintained but never pruned*: `disabled_skills` went 49 → 50 this interval, gaining exactly `ce-review-cleanup`. Somebody appends on every skill addition; nobody removed anything at the major.
+
+Why it matters, and it is sharper than a cosmetic wart: the field's own description says **"Unknown skill names are rejected at parse time."** So the enum *is* the validation boundary. A user who writes `disabled_skills: ["proof"]` gets a green editor, a clean parse, and **no effect and no warning** — the config declares an intent the runtime cannot honor and nothing in the loop says so. That is the same failure shape as the 2026-09-04 `categories` footgun with the polarity flipped: `categories` is too permissive by design (any string validates, overlay silently no-ops), `disabled_skills` is nominally strict but its allowlist outlived the thing it allowlists. **In both cases the schema's verdict and the runtime's behavior disagree, and the user is told everything is fine.** Generalized in [[opencode-plugins]] as *cross-check every enumeration, not one representative enumeration* — surfaces in the same generated file can come from different mechanisms, and only the derived one tracks reality.
+
+Open, falsifiable, for the next source-side pass at [[marcusrbrown--systematic]]: does the loader warn on a retired-but-enumerated name, or silently drop it? If it warns, this is deliberate deprecation tolerance and the schema description is merely incomplete. If it is silent, it is a stale literal.
+
+**Resolved:** the 2026-09-09 open item ("the recorded description does not locate the hosted schema") is closed. The URLs are `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` and `.../schemas/v3/systematic-config.schema.json`, both HTTP 200 at 59,589 B. The 09-09 probes failed because they guessed `fro.bot/schemas/` and a bare `…/systematic.json`; the path was never `/schemas/v<major>/` at the domain root, it is under the `/systematic/` base. **The page's own prior description of the path was the defect, not the deployment.**
 
 > **2026-09-09 incidental observation from the [[fro-bot--fro-bot-github-io]] domain survey.** Not a survey of this repo — the `fro.bot` holder was surveyed and this deploy target was probed from the network side in passing. Three data points, all unauthenticated HTTP:
 >
@@ -87,12 +128,13 @@ Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Star
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-02-09                                           |
 | Repo id         | `1153202811` (`node_id` `R_kgDORLx6ew`)              |
-| Last push       | 2026-08-25T08:00:31Z — **10 days before the 2026-09-04 survey** (prior: 2026-08-20) |
+| Last push       | **2026-09-19T02:32:37Z — same day as the 2026-09-19 survey** (prior: 2026-08-25T08:00:31Z, which sat 10 days stale at the 2026-09-04 survey) |
 | Default branch  | `gh-pages`                                           |
 | Language        | HTML (static build output)                           |
 | License         | None specified                                       |
-| Stars           | 0 (forks 0)                                          |
-| Open issues     | 2 (#1, #3); 0 open PRs (unchanged 2026-09-04; #3 now ~10 weeks stale, #1 ~6 months) |
+| Stars           | 0 (forks 0) — unchanged 2026-09-19                   |
+| Open issues     | 2 (#1, #3); 0 open PRs (unchanged through 2026-09-19 — seventh consecutive survey; #3 now ~12 weeks stale, #1 ~6.3 months) |
+| Repo size       | 59,575 KB (2026-09-19)                               |
 | Pages URL       | https://fro.bot/systematic/                          |
 | Visibility      | Public                                               |
 | Description     | "Documentation site for @marcusrbrown/systematic" (added since the 2026-05-22 survey; the repo previously carried no description) |
@@ -137,6 +179,14 @@ The `gh-pages` branch contains the built Starlight/Astro static site:
 ## OCX Registry
 
 The `.well-known/ocx.json` file points to the OCX component registry at `/systematic/index.json`. This enables the `ocx` CLI to discover and install individual skills and agents from the documentation site URL. The registry uses V2 schema (since `@fro.bot/systematic` v2.6.0).
+
+### 2026-09-19 survey — v3.15.0 → v3.18.10; the catalog moved (73 → 74) and the mirror invariant became a race
+
+- **`index.json` advertises v3.18.10**, 24,269 B (was 23,900 B at the 2026-09-09 network probe), equal to npm `dist-tags.latest` = `3.18.10` (published 2026-09-19T02:33:40Z). **Eleventh consecutive survey where registry version = `latest`** — but see finding (1) in the [2026-09-19 survey](#2026-09-19-survey--the-deploy-stopped-following-the-publish-and-the-catalog-moved-for-the-first-time-since-july): the equality is now checked *after* a window in which the registry legitimately leads npm. The invariant holds eventually, not instantaneously.
+- **Component count 73 → 74** — first move since the v3 major boundary (2026-07-22), 49.9 days and six flat surveys. Breakdown **37 agents / 32 skills / 2 bundles / 2 profiles / 1 plugin**. Delta is exactly one addition and zero removals: skill **`ce-review-cleanup`**, landed in `3.17.0`. Namespace (`systematic`), name (`Systematic`), author (`Marcus R. Brown <human@fro.bot>`) stable; component ids still type-prefixed.
+- **Cross-artifact check, three ways this survey** (previously one): the schema's 37 bare `agents` keys match the registry's 37 `agent` components **name for name**, not merely by count — clean. The built docs tree agrees independently: `reference/agents/` holds 37 agent pages and `reference/skills/` holds 32. The third enumeration, `disabled_agents`/`disabled_skills`, **does not agree** — see finding (3) above.
+- `.well-known/ocx.json` unchanged (`{"version":1,"registry":"/systematic/index.json"}`). Root tree unchanged; still no `.github/` after 19 more deploys.
+- **Docs surface inventory (new baseline).** `guides/` now holds 14 pages — `agent-install`, `architecture`, `claude-code-harness`, `main-loop`, `model-defaults-migration`, `model-profiles`, `ocx-registry`, `philosophy`, `pi-harness`, `pi-subagents`, `review-artifact-cleanup`, `skills-as-commands`, `v3-migration`, `with-without-systematic`. Prior records described this tree only as "philosophy, main loop, agent install, conversion guides," so no delta can be computed; this is recorded as a fixed baseline. Note `claude-code-harness` and `pi-harness` as peers of the OpenCode path — the published docs now match the three-adapter architecture recorded at [[marcusrbrown--systematic]] and [[pi-coding-agent]], rather than the OpenCode-plugin framing this page carried through v2. `getting-started/` holds 3 (`installation`, `quick-start`, `configuration`).
 
 ### 2026-09-04 survey — registry current at v3.12.4 → v3.15.0; burst-then-drought, and the mirror is provably faithful
 
@@ -223,6 +273,43 @@ The `schemas/` tree appeared on `gh-pages` between the 2026-05-07 survey and now
 - `https://fro.bot/systematic/schemas/v3/systematic-config.schema.json`
 
 Both are draft-07 JSON Schemas matching the `systematic.json` config shape consumed by `marcusrbrown/systematic`'s `config-handler.ts`. `latest` remains byte-equivalent to `v3` (its `$id` points at the v3 URL).
+
+### Schema 2026-09-19 — the header held flat while the body moved 635 bytes, exactly as the fingerprint was built to catch
+
+Both `latest` and `v3` still serve (HTTP 200, byte-identical to each other, `$id` hard-pinned at the v3 URL). `schemas/v2/` and `schemas/v4/` both return **404** — **sixth consecutive confirmation** that this host is single-major and does not co-serve.
+
+Fingerprint movement since the baseline was adopted:
+
+| Metric | 2026-09-04 (v3.15.0) | 2026-09-05 source-side (v3.16.1) | **2026-09-19 (v3.18.10)** |
+| ------ | -------------------- | -------------------------------- | ------------------------- |
+| Bytes | 38,180 | 58,954 | **59,589** |
+| SHA-256[:16] | `0e82797b9f8f43ed` | `1f9b7c48a4b6455c` | **`a66df5f746c28d38`** |
+| `definitions` entries | 74 | 100 | **100** |
+| Top-level properties | 10 | 12 | **12** |
+| `"trust"` occurrences | 16 | — | **30** |
+
+**This is the first interval that vindicates the fingerprint empirically.** Both header metrics — definition count and top-level property count — are *identical* to 09-05, and the file still moved 635 bytes with a different hash. A survey using the old "count the top-level properties" method would have reported "schema unchanged" for a third time and been wrong for a third time. The 2026-09-04 refinement was not pedantry; it is the only instrument on this page that detected this interval's change.
+
+The 09-04 snapshot was re-read from `8e26a01` this survey and reproduces **38,180 B / `0e82797b9f8f43ed` / 74 defs / 10 props / 16 `trust`** exactly, so the recorded baseline is sound and the deltas above are real.
+
+**The 2026-09-05 "structural probes can no longer be reproduced" item is resolved — they reproduce, and both 09-04 claims hold.** The `$ref` indirection is still there (`properties.agents` is `{"$ref": "#/definitions/__schema2"}`, `categories` → `__schema42`, and the targets are `allOf` compositions), so a shallow read still returns empty. Dereferencing `$ref` and merging `allOf` recovers the structure:
+
+- **`agents`** — `type: object`, **74 explicit keys** (37 bare + 37 `category/name`), **`additionalProperties: false`**. Closed enumeration, unchanged from 09-04.
+- **`categories`** — `type: object`, `propertyNames: {type: string}`, no `enum`, overlay schema under `additionalProperties`. Open-keyed, unchanged from 09-04.
+
+So the asymmetric-strictness footgun stands: misspell an agent and the editor underlines it; misspell a category and the editor is silent and the overlay does nothing.
+
+**Correction to the 2026-09-04 wording.** That entry said the bundled categories "are real and finite … but none of them appear in the schema." Too strong. The five live category names — `design`, `document-review`, `research`, `review`, `workflow` — **do** appear in the schema, as prefixes of the 37 qualified `agents` keys (and of the `disabled_agents` enum, which additionally preserves a retired sixth, `docs`). The same was true of the 09-04 file when it was read, so this is a wording correction, not a change in the artifact. The accurate statement is sharper than the original: **the schema already contains the category vocabulary and declines to use it where a user would need it.** It is not missing data; it is unused data, and a generator that emits the qualified keys could emit the same set as a `propertyNames.enum` on `categories` for free.
+
+**The non-standard `trust` keyword nearly doubled, 16 → 30 occurrences** (`project-or-higher` 23, `any` 7) — and the 2026-09-04 *inference* about what it means is now **confirmed in prose**. The v3.16.x descriptions state the rule in plain language that every validator and IDE renders:
+
+> Trust-protected fields (model, variant, skills, permission, opencode, pi) are only valid in user config or `OPENCODE_CONFIG_DIR` config — a project config setting them has that field ignored with a warning; other fields in the same overlay still apply.
+
+`agents` adds the edge case (an unknown-key project entry is discarded *before* the unknown-key check if stripping trust-protected fields empties it); `profiles` is user-config-only outright, while `profile` may be *selected* by a project config. Worth naming the shape of the fix: the semantically load-bearing distinction is still published through a channel no standard tool reads, but it is now **also** published through `description`, which every tool reads. The gap was closed by documenting into a standard field rather than by standardizing the keyword — a cheaper and more portable move than inventing a validator extension.
+
+**`disabled_*` enumerations carry the retired v2 roster.** `disabled_skills` = 50 entries against 32 published skills; `disabled_agents` = 102 (51 bare + 51 qualified) against 37 published agents. Details and the reasoning in finding (3) of the [2026-09-19 survey](#2026-09-19-survey--the-deploy-stopped-following-the-publish-and-the-catalog-moved-for-the-first-time-since-july). Mechanically: the lists are append-only (`disabled_skills` 49 → 50 this interval, gaining exactly the new `ce-review-cleanup`) and were never pruned at the major.
+
+Top-level property set is unchanged at **twelve** since the v3.16.0 addition of `profile`/`profiles`: `$schema`, `agents`, `bootstrap`, `categories`, `disabled_agents`, `disabled_commands`, `disabled_skills`, `pi_subagents`, `profile`, `profiles`, `skills_as_commands`, `workflow_guard`. Root `additionalProperties: false`, draft-07, no top-level `title`, description unchanged, one top-level `examples` entry (`{"disabled_skills": ["ce:plan"], "bootstrap": {"enabled": false}}`). Note the example uses the `ce:plan` colon form while the registry component is `ce-plan` — both are accepted by the `disabled_skills` enum, which carries the colon spelling.
 
 ### Schema unchanged 2026-09-04
 
@@ -339,11 +426,15 @@ Issue #2 was a PR (now merged). Issue #3 is Renovate's standard config-error not
 
 **Update 2026-09-04:** still unchanged — both #1 and #3 **open**, untouched for a sixth consecutive survey (#3 last updated 2026-06-26, now ~10 weeks stale; #1 last updated 2026-03-09, ~6 months). The root tree at HEAD `8e26a01` confirms no `.github/` dir after 15 more deploys. `open_issues_count` reads 2, no open PRs, single branch. The queue is not a backlog — it is two items that no process is ever going to touch, because nothing in this repo runs on a schedule and nothing here can be fixed by a deploy. Six surveys of "unchanged" is enough evidence to call them **inert**: #3 references a config file that has not existed since 2026-06-26, and #1 asks for code scanning on a branch containing no source. Closing both is a one-time manual action with no automation path.
 
+**Update 2026-09-19:** still unchanged — both #1 and #3 **open**, untouched for a **seventh** consecutive survey (#3 last updated 2026-06-26, now ~12 weeks; #1 last updated 2026-03-09, ~6.3 months). `open_issues_count` reads 2, zero open PRs, single branch. The full issue ledger for this repo remains three items total across its entire life (#1, #2 merged, #3). Nineteen more deploys landed this interval and the root tree still has no `.github/`. The 2026-09-04 call stands: these are **inert**, not backlog. No automation here will ever touch them, and closing both is a one-time manual action.
+
 ## Fro Bot Workflow
 
 **No Fro Bot agent workflow detected.** This is expected — the repo contains only static build output. No PR review, autoheal, or maintenance workflows are present. Only GitHub's built-in `pages-build-deployment` and `Dependency Graph` dynamic workflows are active.
 
 A Fro Bot workflow is not recommended for this repo. The source repo ([[marcusrbrown--systematic]]) already has full Fro Bot integration covering the documentation source.
+
+**Re-confirmed 2026-09-19 (eleventh survey).** `actions/workflows` still returns `total_count: 2`, both GitHub-synthesised (`pages-build-deployment`, `Dependency Graph`), both `active`. No `.github/workflows/` exists on `gh-pages` and none can persist — the deploy overwrites the tree wholesale, which this page proved in 2026-07 when a merged Renovate config was erased two days after landing. `metadata/repos.yaml` should keep `has_fro_bot_workflow: false`. **The task instruction to note a missing Fro Bot workflow so a follow-up draft PR can be proposed is explicitly declined here, for the third survey running**, and this interval adds a new reason: the docs deploy now races the npm publish, so an agent operating on this branch would be writing into a tree that a release job replaces on a ~21-hour median cadence. A PR against `gh-pages` has a life expectancy measured in hours. The correct fleet resolution remains an **explicit exemption**, not a workflow.
 
 **Re-confirmed 2026-09-04 (tenth survey).** `actions/workflows` returns `total_count: 2`, both GitHub-synthesised: `pages-build-deployment` and `Dependency Graph`, both `active`. `metadata/repos.yaml` records `has_fro_bot_workflow: false` for this repo, which is accurate and should stay that way. The standing recommendation is unchanged and is now backed by the release-gating finding above: **any agent onboarded here would be reviewing build output it cannot change.** `gh-pages` is overwritten wholesale on every deploy (proven when the 2026-06 Renovate config was erased two days after merge), so an autoheal daemon could not land a durable fix even if it found one, and a PR-review daemon would be reviewing generated HTML. No follow-up draft PR is warranted; if fleet tooling flags this repo as un-onboarded, the correct resolution is an explicit exemption, not a workflow.
 
@@ -390,6 +481,42 @@ The documentation build pipeline flows: `marcusrbrown/systematic` → Astro buil
 ## Deploy Cadence
 
 Deployments track **releases** of `@fro.bot/systematic`, one deploy per npm publish. (Earlier text here read "fans out per merge rather than per release tag"; that was wrong and is corrected under [Purpose](#purpose) — 16 non-releasable source commits produced zero deploys.) Activity is markedly bursty, because the release train itself is bursty.
+
+### 2026-09-19 survey — 19 deploys, near-daily, and the ordering inverted mid-interval
+
+**19 deploys in 14.4 days**, all `fro-bot[bot]`, all `Deploy docs from marcusrbrown/systematic@<sha>`, 1:1 with npm publishes `3.15.1` → `3.18.10`. No deploy without a publish, no publish without a deploy.
+
+**Correction to the 2026-09-04 cadence conclusion.** That survey wrote: *"the durable shape of this pipeline is burst-and-drought at ~10-day period."* This interval refutes the periodicity half. After the 249.9 h (10.4-day) drought that ended on 09-04, the gap distribution is: one 67.4 h gap (09-08 → 09-10), one 41.0 h, and from 09-12 onward a steady band of **4.7–31.6 h with a median near 21 h**. No burst comparable to the 15-in-49.5 h cluster, and no drought over 2.8 days. Three consecutive intervals have now produced three different regimes — burst, drought, sustained-daily — from the same unchanged pipeline.
+
+The durable statement is narrower and survives all three: **this repo's cadence has no characteristic period; it is a pure function of the upstream release train, which is itself a function of whether `feat:`/`fix:` commits are landing.** Report the gap distribution, never a mean, and never forecast the next interval from the last one. The 2026-09-04 warning — *a survey landing inside a drought should not read it as a fault* — has an equally important twin: **a survey landing inside a steady run should not read it as a new rhythm.**
+
+**Publish-to-deploy lag: the sign flipped at `3.18.4` on 2026-09-15.** Full table, second resolution, negative = deploy commit precedes the npm publish:
+
+| Version | Publish (UTC) | Deploy | Source | Δ |
+| ------- | ------------- | ------ | ------ | --- |
+| `3.15.1` | 2026-09-04T17:52:50Z | `e7caf47` | `4e99f0e9` | +33 s |
+| `3.16.0` | 2026-09-05T08:15:22Z | `79fe72e` | `432a0149` | +47 s |
+| `3.16.1` | 2026-09-05T08:39:15Z | `4ff04d8` | `9bceff39` | +36 s |
+| `3.16.2` | 2026-09-05T15:54:13Z | `468e81d` | `d214d9aa` | +35 s |
+| `3.16.3` | 2026-09-06T02:03:51Z | `ca55aa6` | `690a7f16` | +88 s |
+| `3.16.4` | 2026-09-07T19:06:14Z | `9fd815c` | `dd29edda` | +33 s |
+| `3.16.5` | 2026-09-08T04:16:33Z | `d1536b9` | `2bce3906` | +32 s |
+| `3.17.0` | 2026-09-10T23:38:24Z | `19e228f` | `449934b3` | +35 s — **74th component** |
+| `3.18.0` | 2026-09-12T00:39:17Z | `aaa7b11` | `ca9053b6` | +31 s |
+| `3.18.1` | 2026-09-12T20:52:08Z | `fbd79cd` | `aad1547d` | +37 s |
+| `3.18.2` | 2026-09-13T01:33:22Z | `0c7a29c` | `849afdcb` | +37 s |
+| `3.18.3` | 2026-09-14T01:48:48Z | `231f541` | `23d1e36d` | +37 s |
+| `3.18.4` | 2026-09-15T05:00:15Z | `2dc4377` | `b86dbdd2` | **−59 s** |
+| `3.18.5` | 2026-09-16T01:49:04Z | `96a5d63` | `276cffe6` | **−87 s** |
+| `3.18.6` | 2026-09-17T01:32:13Z | `fd34fb5` | `7707bb38` | **−31 s** |
+| `3.18.7` | 2026-09-18T09:11:23Z | `57e19b1` | `3019c96e` | **−93 s** |
+| `3.18.8` | 2026-09-18T15:45:10Z | `52fb42b` | `9d45da3a` | **−118 s** |
+| `3.18.9` | 2026-09-19T01:34:36Z | `5e79706` | `cd504bc9` | **−65 s** |
+| `3.18.10` | 2026-09-19T02:33:40Z | `c5cbd2e` | `da7165ec` | **−65 s** |
+
+Twelve positive, then seven negative, no straddle. The **release is still the gate** — the 2026-09-04 correction under [Purpose](#purpose) stands untouched, since every deploy still maps 1:1 onto a publish. What changed is the *internal ordering* of the release job: the docs deploy is no longer downstream of `npm publish`. Cause is not observable from this repo (the workflow lives in [[marcusrbrown--systematic]]); a source-side survey should read `docs.yaml`/the release job graph and record whether the deploy became a parallel job or simply moved above the publish step.
+
+Method note for future passes: this measurement is only available because the npm packument's `time` map carries millisecond timestamps and the deploy commits carry second-resolution author dates. Comparing rendered `HH:MM` strings — the method that produced the long-carried "~1–2 min" figure — cannot see a 31-second effect at all, let alone its sign.
 
 ### 2026-09-04 survey — 15 deploys in a 49.5-hour window, then 10 days of silence
 
@@ -572,4 +699,5 @@ Earlier deploys remain documented from the prior survey:
 | 2026-07-22 | `8395976`  | **v2 → v3 major crossing propagated from source.** Registry advanced **v2.33.2 → v3.2.5** (matches latest source release v3.2.5, published 2026-07-22 01:01, deployed 01:03). **First-ever component contraction: 104 → 73** — agents 51 → 37 (−14), skills 48 → 31 (−17); bundles/profiles/plugin unchanged (2/2/1). **Breaking schema-host change: `schemas/v2/` now returns HTTP 404** — the `v2/` dir was dropped and replaced by `schemas/v3/`; `latest` `$id` now points at the v3 URL (latest ≡ v3). Property set stable at 8 (`skills_as_commands` retained); draft-07, no `title`, same `description`. **Confirms the 2026-07-08 prediction** that a v3 would reshape the pinned-URL contract — majors replace the path wholesale, they do not co-serve; any consumer pinned to `schemas/v2/` is now broken. `.well-known/ocx.json` unchanged. gh-pages tree otherwise stable (still no `.github/`). Issues #1 and #3 still open (#3 ~4 weeks stale). Deploy cadence intensified: 14 deploys 2026-07-14 → 2026-07-22 (7 on 2026-07-17 alone) tracking the v3 major + 3.x train. Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |
 | 2026-08-06 | `1938bb1`  | **No structural change — steady v3 minor train.** Registry advanced **v3.2.5 → v3.6.0** (matches latest source release v3.6.0, published 2026-08-04 16:40, deployed 16:41 — ~1 min lag). **Component count flat at 73** (37 agents / 31 skills / 2 bundles / 2 profiles / 1 plugin) — the v3 contraction settled at the major boundary and has not moved. **User-config schema grew 8 → 10 properties**: `pi_subagents` and `workflow_guard` added additively on both `latest` and `v3` (third consecutive interval the schema mutated in place under the current major URL). Schema host still v3-only (`schemas/v2/` and `schemas/v4/` both 404); `latest` ≡ v3, draft-07, no `title`, same `description`. `.well-known/ocx.json` unchanged. gh-pages tree stable (still no `.github/` after 17 more deploys). Issues #1 and #3 still open, neither touched (#3 ~6 weeks stale). Deploy cadence stayed active but steadied: 17 deploys 2026-07-22 → 2026-08-04 (sustained multi-per-day-to-daily, no single burst). Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |
 | 2026-09-04 | `8e26a01`  | **No structural change; the interval's value is measurement, not delta.** Registry advanced **v3.12.4 → v3.15.0** (= npm `dist-tags.latest`, published 2026-08-25T07:59:53Z, deployed +37 s). **Component count flat at 73** for the fourth straight survey (~6 weeks since the v3 boundary). **Schema top-level property set flat at 10** (second non-mutating interval) — but recorded a **refinement**: the served schema is 38,180 B / 74 `definitions`, and its `agents` object is a *closed enumeration of the whole agent roster* (74 keys = 37 bare + 37 qualified, `additionalProperties: false`), so "schema unchanged" as previously measured was a claim about a header, not content; a byte/definition fingerprint is now recorded. **New cross-artifact check:** schema's 37 bare agent names match the registry's 37 `agent` components exactly. **New footgun:** `agents` is closed while `categories` is open-keyed — an agent typo is caught in-editor, a category typo is silently accepted and does nothing. **New observation:** 16 occurrences of a non-standard `"trust"` keyword (`any` / `project-or-higher`) that draft-07 validators ignore entirely. **Correction:** the fan-out is **release-gated, not push-gated** — 16 source commits (1 `docs:`, 15 `chore:`) since the last deploy produced zero deploys and zero publishes; the 10-day frozen HEAD is correct pipeline output, not a dead daemon, and `pushed_at` on the source (2026-09-04, PR branches) would have misdiagnosed it. **Correction:** the 2026-08-21 "sustained daily rhythm" reading averaged across a 9.2-day drought; true shape is burst-and-drought (15 deploys in a 49.5 h window, then 10 days silent). Deploy lag re-measured at second resolution: **31–45 s, mean ~36 s**, not the "~1–2 min" carried since 2026-06. Schema host still v3-only (`v2`/`v4` 404, 5th confirm); `latest` ≡ v3. `.well-known/ocx.json` and gh-pages tree unchanged (still no `.github/`). Issues #1 and #3 open and untouched for a 6th survey (#3 ~10 weeks stale, #1 ~6 months) — now called **inert**, manual-close only. Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph`) — still correct |
+| 2026-09-19 | `c5cbd2e`  | **No structural tree change; three durable findings and two corrections to this page's own method.** Registry advanced **v3.15.0 → v3.18.10** (= npm `dist-tags.latest`). **(1) The publish → deploy ordering inverted on 2026-09-15**: 12 consecutive releases at **+31…+88 s** (deploy after publish) then 7 at **−31…−118 s** (deploy *before* publish), no straddling value — a pipeline reordering, not jitter. Consequences: for 31–118 s per release the site advertises a version npm does not serve, and the eleven-survey "registry = `latest`" mirror invariant is now a **race, not an identity** (re-poll before reporting drift). **(2) Component count 73 → 74** — first catalog move since the 2026-07-22 major, after 49.9 days and six flat surveys; the addition is skill **`ce-review-cleanup`**, landed precisely in `3.17.0`. So "the catalog only moves at majors" was a sampling artifact. **(3) Correction — the 2026-09-04 cross-artifact check passed on the wrong enumeration.** `agents` ↔ registry still matches name-for-name (37 = 37, verified by name not count), and the docs tree independently agrees (37 agent pages / 32 skill pages) — but `disabled_skills` enumerates **50** names against 32 published skills and `disabled_agents` **102** against 37, the surplus being the **v2-era roster pruned at the major** (`proof`, `rclone`, `setup`, `test-xcode`, `todo-create/resolve/triage`, `security-sentinel`, `performance-oracle`, …, plus a retired `docs/` category prefix). Re-read of `8e26a01` proves the drift was **already present on 2026-09-04**; the lists are append-only (`disabled_skills` 49 → 50, gaining exactly the new skill) and were never pruned. Since the field's description claims "unknown skill names are rejected at parse time," a retired-but-enumerated name parses clean and does nothing — the same schema-verdict-vs-runtime-behavior gap as the `categories` footgun, polarity flipped. **Schema fingerprint vindicated empirically**: `definitions` (100) and top-level properties (12) both flat vs 2026-09-05 while bytes moved 58,954 → **59,589** and SHA-256[:16] `1f9b7c48a4b6455c` → **`a66df5f746c28d38`** — the old property-count method would have reported "unchanged" a third time. **09-05 open item resolved:** the structural probes *do* reproduce once `$ref` + `allOf` are dereferenced, and both 09-04 claims hold (`agents` closed 74-key `additionalProperties: false`; `categories` open-keyed `propertyNames: {type: string}`). **Wording correction:** the 09-04 "none of the categories appear in the schema" is too strong — all five live category names appear as prefixes of the qualified `agents` keys, so the schema *has* the vocabulary and declines to use it where users need it. `"trust"` occurrences 16 → **30** (`project-or-higher` 23 / `any` 7) and the 09-04 *inference* about its meaning is now **confirmed in prose descriptions** — the gap was closed by documenting into a standard field rather than standardizing the keyword. **Cadence correction:** the 09-04 "burst-and-drought at ~10-day period" is refuted as periodicity — 19 deploys in 14.4 days, median gap ~21 h, max 67.4 h; three intervals have now produced three regimes, so report the gap distribution and never forecast. **09-09 open item resolved:** the hosted schema is at `/systematic/schemas/{latest,v3}/systematic-config.schema.json` (both 200, 59,589 B); the 09-09 404s came from guessed domain-root paths — the page's description was the defect, not the deployment. Schema host still v3-only (`v2`/`v4` 404, 6th confirm); `latest` ≡ `v3`. `.well-known/ocx.json` and root tree unchanged (still no `.github/` after 19 deploys). New baseline recorded: `guides/` holds 14 pages including `claude-code-harness` and `pi-harness` as peers of the OpenCode path. Issues #1/#3 open and untouched for a 7th survey. Still no Fro Bot workflow and still explicitly not recommended |
 | 2026-08-21 | `a40e544`  | **No structural change — steady v3 minor train, axes inverted.** Registry advanced **v3.6.0 → v3.12.4** (matches latest source release v3.12.4, published 2026-08-20 01:15, deployed 01:16 — ~1 min lag). **Component count flat at 73** (37 agents / 31 skills / 2 bundles / 2 profiles / 1 plugin) — unchanged since the v3 major boundary. **User-config schema held flat at 10 properties** — no additions or removals since 2026-08-06 (first non-mutating schema interval since 2026-06-25; breaks the three-in-a-row additive streak). This interval the two axes moved opposite to the prior three: catalog version grew while schema surface stayed frozen. Schema host still v3-only (`schemas/v2/` and `schemas/v4/` both 404, re-confirmed); `latest` ≡ v3, draft-07, no `title`, same `description`. **Off-branch:** npm `2.33.4` v2 backport published 2026-08-18 but `dist-tags.latest` stayed 3.12.4, so it never fanned out here and did not re-serve the v2 schema path. `.well-known/ocx.json` unchanged. gh-pages tree stable (still no `.github/` after 16 more deploys). Issues #1 and #3 still open, neither touched (#3 ~8 weeks stale). Deploy cadence held steady: 16 deploys 2026-08-04 → 2026-08-20 (daily-to-multi-per-day, four-deploy cluster on 2026-08-18). Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |
