@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-18
+updated: 2026-09-19
 sources:
+  - url: https://github.com/fro-bot/space-bus
+    sha: 47e32358040d9df0a9b897e17adefd70924ae55e
+    accessed: 2026-09-19
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
     accessed: 2026-09-18
@@ -143,8 +146,14 @@ tags:
     undelivered-fix,
     adoption-latency,
     event-chained-scheduling,
+    working-dir-delivery,
+    coupled-constant,
+    pin-lag,
+    duplicate-dispatch,
+    dependabot-coverage-gap,
   ]
 related:
+  - fro-bot--space-bus
   - marcusrbrown--sparkle
   - marcusrbrown--dotfiles
   - marcusrbrown--tokentoilet
@@ -195,6 +204,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
 - [[marcusrbrown--dotfiles]] — 4 workflows (2026-09-10): `main.yaml` (Devcontainer CI → GHCR publish with `cacheFrom`; `Install mise` smoke test; `Script Tests` matrix on ubuntu + macOS running colocated Bun tests for the repo's operational agent scripts, collapsed into a stable aggregator status context so branch protection has one name to bind to), `fro-bot.yaml` (single-file three-mode, agent **v0.109.4** — ahead of the control plane's patch-frozen v0.109.0 pins), plus `renovate.yaml` and `update-repo-settings.yaml` as `bfra-me/.github` reusable callers. Required checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renovate, Script Tests, with `enforce_admins: true`. **97 of its last 100 Fro Bot runs concluded `skipped`** (65 `pull_request`, 30 `issues`, 2 `issue_comment`) against a ~100% bot-authored trigger surface — a third instance of the no-op run storm after [[marcusrbrown--tokentoilet]] and [[bfra-me--ha-addon-repository]]. Source of the 2026-09-10 findings below on cache-versus-verification, cross-category prompt routing, and sibling pins.
 - [[bfra-me--ha-addon-repository]] — **7 workflows** as of 2026-09-15 (was 4): `main.yaml` (18.6 KB, nine jobs — `prepare` add-on discovery + matrix generation, `lint-addon`, `lint-prettier`, `release-integrity`, `release-integrity-tests`, `repository-metadata`, then `build-addon` / `publish-addon` / `publish-manifest` separated by permission, funnelled into status-**asserting** `Lint` and `Build` aggregators), `fro-bot.yaml` (single-job two-prompt, agent **v0.112.0**, daily `30 15`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.29.0**), and three new security gates — `scorecard.yaml`, `hadolint.yaml`, `workflow-lint.yaml` (zizmor + actionlint). Required contexts on `main` grew 5 → 8. Native `ubuntu-24.04-arm` for `aarch64` instead of QEMU; `defaults.run.shell` sets `-Eeuo pipefail` globally; two `.github/scripts/*.sh` validators, one with its own regression suite gated on `scripts_changed`. Source of the 2026-09-15 findings below on expected-`skipped` assertions, registry readback, green-by-design runs, suppression expiry, `total_count` saturation, storm bounds, and severed write paths.
+- [[fro-bot--space-bus]] — **7 workflows** (2026-09-19), all `active`: `ci.yaml` (single `Check` job — Bun frozen install → typecheck → lint → build → Node ESM export-shape smoke → `bun test`), `fro-bot.yaml` (single-job **three-mode** — PR review / daily `0 0` schedule oversight+autoheal / dispatch, agent **v0.112.0**), `release.yaml` (changesets/action + npm OIDC trusted publishing, no `NPM_TOKEN`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.29.0**), `codeql-analysis.yaml`, `scorecard.yaml`. Required contexts on `main`: `Analyze`, `CodeQL`, `Check`, `Fro Bot`, `Renovate / Renovate`, `enforce_admins: true`, 1 code-owner review with `require_last_push_approval`. **`fro-bot.yaml`'s job has four steps and no delivery half** (checkout → setup-bun → `bun install` → `Run Fro Bot`), with `permissions: contents: read` at workflow scope and no `output-mode` input — and since 2026-09-11 a conditional `persist-credentials` that withholds the PAT-backed git credential on `pull_request`/`issue_comment`/`issues` while persisting it on `schedule`. `renovate.yaml` has **no `schedule:` of its own**. Source of the 2026-09-19 findings below on severed write paths, pin lag as isolation, rebased-PR titles, duplicate dispatch, `bun.lock` alert coverage, and `$schema` coupled constants.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; **12 workflows + 1 sibling doc** (2026-09-18) including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle, plus a `trigger-org-renovate` job that has dispatched the org's Renovate on every publish **since 2025-06-22**), `fro-bot.yaml` (**two-mode** single-file at agent **v0.113.2**, single `30 3` cron that reliably executes ~5 h late), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers — **v4.30.0** and **v4.16.0** respectively), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow. **`renovate.yaml` has no `schedule:` of its own** — every periodic pass arrives as an externally originated `workflow_dispatch` (68 runs on 2026-09-04 alone), so this repo's updater liveness is coupled to a dispatcher it does not own. 12 required status checks on `main`, `enforce_admins: true`, `required_pull_request_reviews: null`. Source of the 2026-09-18 findings below on the four-repo sweep, duration as a liveness proxy, and self-sealing repair boundaries.
 
 ## Common Patterns
@@ -2522,3 +2532,166 @@ that no lockfile, SHA pin, or version pin in the consumer can prevent.** SHA-pin
 help, because the 404 is inside the vendored Renovate engine's own data fetch, two layers below anything
 this fleet pins. The only consumer-side mitigations are retry-on-404 in the engine (upstream's job) or
 treating this specific signature as a known-transient class in fleet reporting.
+
+### A Severed Write Path Is Bounded by the Agent's Best Work, Not Its Most Visible (2026-09-19)
+
+From the [[fro-bot--space-bus]] pass, which extends the 2026-09-15 "re-derives the same fix nightly"
+and 2026-09-18 "repair boundary must not exclude its own delivery path" sections with the part those
+two understate: **what a broken write path costs is not fixed at the time you discover it.**
+
+space-bus's delivery gap was discovered through its loudest symptom — a two-file documentation diff the
+daily autoheal re-applied and re-reported for three weeks without a single commit reaching `main`. Fifteen
+days later the same discarded working tree was carrying security remediation:
+
+| Date       | Written to the working tree, verified green, lost                                              |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| 2026-09-08 | A `bun.lock` fix taking `bun audit` from **19 vulnerabilities → 0**                               |
+| 2026-09-19 | `package.json` `overrides` closing **three HIGH advisories** (`fast-uri`, `ip-address`, `toml`)   |
+
+Both runs executed the repo's full `typecheck`/`lint`/`build`/`test` gate against their own change and
+reported success in a public issue. Neither patch exists in the repository.
+
+Three rules:
+
+1. **Severity of a delivery gap is set by the agent's capability, not by yesterday's output.** The symptom
+   you notice is chosen by whatever the daemon happened to find that night. A monitor asking "did the docs
+   drift close?" reports the cheap failure and misses the expensive one. Probe the *channel*, not a
+   representative artifact: `gh pr list --author <agent>` and `gh api repos/{o}/{r}/commits --author`
+   against the date the delivery half last changed.
+2. **Read the delivery-mode note before reading the prompt.** space-bus's 2026-09-04 diagnosis blamed a
+   prompt conflict (a category asking for a PR branch while HARD BOUNDARIES whitelisted direct pushes only
+   for other categories). It was superseded **the next day** by the agent's own report, which stated it was
+   running under a harness `working-dir` contract where delivery belongs to the caller. The harness contract
+   sits above the prompt in the resolution order — **a boundary clause cannot grant a capability the
+   delivery contract has already withdrawn**, so widening the prompt would have changed nothing. When an
+   agent explains its own inaction, the delivery-mode line is the load-bearing sentence.
+3. **A half-migration is worse than none, because it looks like progress.** On 2026-09-11 a human made the
+   first commit to that repo in 54 days and it touched `fro-bot.yaml` — adding conditional
+   `persist-credentials` so the `FRO_BOT_PAT`-backed git credential is withheld on contributor-reachable
+   triggers. Correct security work, and it leaves credentials *persisted* on precisely the `schedule` runs
+   that produce fixes. The git-level precondition for delivery now exists; the steps that would use it do
+   not, and the agent still receives no `output-mode` input. Contrast [[marcusrbrown--sparkle]] #2001/#2003,
+   the fleet's complete version: one `Resolve delivery mode` gate step is the single computed source for
+   **both** the conditional credential restore and the agent's `output-mode`. Where a repo has only the
+   credential half, the workflow file was edited by someone who did not know the other half was missing —
+   which means the next reader will assume it was considered.
+
+### During an Upstream Defect Window, Pin Lag Is Isolation (2026-09-19)
+
+[[fro-bot--space-bus]] carried a `bfra-me/.github` pin at `v4.16.44` while the fleet sat on v4.24.0+; the
+2026-09-04 survey filed that as maintenance debt. On 2026-09-04 upstream `v4.25.0` shipped
+`bfra-me/renovate-action` 10.34.0, whose bundle left `tar` a devDependency, and every repo that had ingested
+it ran Renovate to a green conclusion while servicing zero dependencies — [[marcusrbrown--github]],
+[[bfra-me--works]], [[marcusrbrown--esphome-life]], [[bfra-me--renovate-action]], each needing a hand-merged
+one-line fix in the 22:56–23:01 sweep. space-bus's pin never moved during the window. Its reconciliation PR
+(#158, open since 08-30) merged on **09-14** as a single `v4.16.44 → v4.29.0` hop, stepping over the poisoned
+tag entirely; Renovate automerged an unrelated dependency PR there at 09-05T07:52 on a pin that was never
+poisoned.
+
+State this carefully, because it inverts easily into bad advice:
+
+- **Lag is not a control.** Nobody chose it, it targets nothing, and it confers no protection against the
+  next defect. The same lag that skipped the poison would have delayed the antidote had the order been
+  reversed — which is exactly the 6h28m inert window [[marcusrbrown--github]] paid.
+- **What it does show is correlated risk.** A fleet-wide "everyone tracks the newest tag" posture makes the
+  blast radius of an upstream defect equal to the fleet, and the repos that happened to carry debt were the
+  repos that needed no manual sweep. Freshness and correlation are the same dial.
+- **Operationally:** when surveying a repo whose pin is stale across a known upstream incident, check
+  whether it *was ever resident* on the bad tag before assuming shared impact — a single-hop merge diff
+  (`v4.16.44 → v4.29.0`) is sufficient proof it was not.
+
+### A Renovate PR Title Records When the Branch Opened, Not What It Delivers (2026-09-19)
+
+Three instances on one repo ([[fro-bot--space-bus]]) make this a property, not an anecdote:
+
+| PR    | Title at merge                                                 | Content at merge                                                         |
+| ----- | --------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| #118  | `chore(deps): update GitHub Actions`                            | agent `v0.93.1 → v0.106.0` (~13 minors) + 4 other pins, 41 days open       |
+| #115  | `build(dev): update dependency @opencode-ai/plugin to v1.18.3`  | `1.18.2 → 1.18.26` — 23 patch releases                                     |
+| #167  | `chore(deps): update fro-bot/agent to v0.108.1`                 | `v0.106.0 → v0.112.0` **plus** four `github/codeql-action` SHA bumps        |
+
+The mechanism is ordinary: Renovate names the branch when it opens it and rebases the content without
+rewriting the title. The consequence is not. **On any repo with a slow merge gate, merged-PR titles are a
+record of queue latency, not a version ledger** — and every changelog, audit, and wiki survey that reads
+titles as "what landed" is wrong by the length of the queue. Read the merge commit's diff.
+
+The dev-pin case is the one with teeth: `@opencode-ai/plugin` is the version CI tests against while the
+published `peerDependencies` range promises `>=1.17.13 <2`. A 23-release jump arriving under a title
+claiming one patch means the tested surface moved a long way with no review signal proportional to the
+move. Related but distinct from [[marcusrbrown--sparkle]]'s stale autoheal title, where the *agent* widened
+its own diff mid-flight — that drift was authored, this one is emergent from rebasing.
+
+### Duplicate Dispatch, and an Agent Whose Own Artifacts Are Its Trigger Surface (2026-09-19)
+
+Two measurements from [[fro-bot--space-bus]], both about automation motion that corresponds to no
+repository motion.
+
+**The no-op run storm can be strictly self-inflicted.** Of the 30 most recent `Fro Bot` runs on `main`,
+**25 concluded `skipped`** (15 `issues`, 10 `issue_comment`) and 5 were `schedule success`. The skipped
+events are the daemon's own output: it opens a daily report issue, then posts closing comments on the
+previous ones, and each write fires a run that the `[bot]`-author guard immediately skips. This is the
+fourth instance after [[marcusrbrown--tokentoilet]], [[bfra-me--ha-addon-repository]], and
+[[marcusrbrown--dotfiles]], and the first where the noise is a closed loop rather than incidental bot
+traffic — which matters because it is the one variant that **cannot** be reduced by changing who else
+touches the repo.
+
+**Externally dispatched updaters can fire in duplicate, and nothing in the repo will say so.**
+space-bus's `renovate.yaml` has no `schedule:` of its own (triggers: `issues:edited`,
+`pull_request:edited`, `push` on non-default branches, `workflow_dispatch`, `workflow_run` on `Release`),
+the same external coupling recorded at [[bfra-me--works]]. Its run log shows 1,813 runs in 78 days (~23/day)
+arriving in **near-simultaneous pairs** — 9 s, 13 s, 12 s apart — every pair `workflow_dispatch`, actor
+`fro-bot[bot]`, both `success`, each 75–110 s. Two full Renovate passes therefore run concurrently against
+the same branches and the same Dependency Dashboard about a dozen times a day. That is a race on branch
+creation and dashboard rewrite, not merely doubled minutes. The survey could not identify the second
+dispatcher from public data; the check that would is a `print-config: true` dispatch or the org
+dispatcher's own run log. **A repo whose updater cadence is owned elsewhere cannot audit its own trigger
+count from its own files** — pair-spacing in the run list is the cheapest available signal.
+
+### Dependabot Cannot See `bun.lock` (2026-09-19)
+
+[[fro-bot--space-bus]]'s 2026-09-19 daily report puts three vulnerability surfaces side by side on the
+same tree: **0 open Dependabot alerts** (feature enabled, queried via API), **22 OSV advisories** found
+reachable by the Scorecard code-scanning path through transitive deps of `@modelcontextprotocol/sdk` and
+`@changesets/cli`, and Renovate's own dashboard reporting "has not found any CVEs on osv.dev." The agent
+attributes the split to a `bun.lock` dependency-graph parsing gap on GitHub's side.
+
+Recorded as agent-reported rather than independently verified (alert APIs need authentication), but the
+structural claim is checkable and applies fleet-wide to the Bun cohort — [[fro-bot--agent]],
+[[marcusrbrown--systematic]], [[marcusrbrown--infra]], [[marcusrbrown--mothership]],
+[[marcusrbrown--opencode-copilot-delegate]], [[marcusrbrown--dev-like]], [[marcusrbrown--cortexkit-anthropic-auth]]:
+**a green Dependabot on a `bun.lock` repo is an absence of coverage, not an absence of findings.** The
+practical consequence is that the only surface actually wired to alerting is the one reporting zero, so
+`bun audit` or an OSV scan has to be run in CI for the signal to exist at all — and where it *is* run,
+as here, its output has to reach the repository, which is the delivery problem in the first section.
+
+### A Coupled Constant in a `$schema` URL Freezes a Dependency PR Indefinitely (2026-09-19)
+
+[[fro-bot--space-bus]] PR #72 (`@biomejs/biome` 2.5.2 → 2.5.13) has been red for **70 days**. The cause is
+two lines in two files that no tool links:
+
+```jsonc
+// package.json — a dependency Renovate manages
+"@biomejs/biome": "2.5.2"
+// biome.json:2 — the same version as a URL path segment, invisible to every manager
+"$schema": "https://biomejs.dev/schemas/2.5.2/schema.json"
+```
+
+Every Biome bump is therefore red **by construction**: the new CLI validates a config declaring the old
+schema. Same class as the `repology` Alpine-branch footgun in [[docker-containers]] and the Renovate
+`separateMajorMinor` coupling in [[esphome]] — a constant duplicated into a position the dependency graph
+cannot reach.
+
+Two things make this instance instructive beyond the class:
+
+- **The repair is outside the branch that is failing.** Bumping the `$schema` URL (and, here, fixing a
+  genuine new `lint/correctness/noUnsafeOptionalChaining` finding the newer Biome introduced) has to land
+  on the default branch; the Renovate PR then goes green on its next rebase with nobody touching it. No
+  autoheal category in that repo's prompt owns "fix `main` so a dependency PR can pass," and Renovate's
+  ownership boundary stops at its own branch — so the PR belongs to nobody. Second instance of the
+  jurisdictional-gap shape already recorded for this repo.
+- **It is the second fleet sighting of the specific Biome variant**, after
+  [[marcusrbrown--opencode-copilot-delegate]]'s `$schema`-versus-CLI chase (#302 → #332 → #377). There it
+  was noisy and self-clearing because that repo merges often; here it has frozen a PR for ten weeks. The
+  defect is identical; **merge cadence is what decides whether a coupled constant reads as noise or as a
+  permanent block** — which means cadence, not severity, should set the priority for declaring the link
+  (a Renovate `regexManagers`/custom manager over the `$schema` URL closes it in one rule).

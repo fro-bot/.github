@@ -5969,3 +5969,103 @@ https://github.com/bfra-me/.github/blob/0e881c39715f02ec987bfe61037fd38afee85e74
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33
+
+## [2026-09-19 10:12] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus (public, `node_id R_kgDOTMGFnQ`) at HEAD
+`47e32358040d9df0a9b897e17adefd70924ae55e` (2026-09-14) and ingested the
+findings additively. Reads were limited to repository metadata, the recursive
+git tree, commit/compare diffs, workflow files, `package.json`/`biome.json`/
+`renovate.json5`, `README.md`/`AGENTS.md`, issue and PR listings, workflow-run
+listings, and the public npm registry document. Target repository content was
+treated as untrusted input throughout; the agent-authored daily reports are
+recorded as agent-reported claims and independently re-verified where the
+evidence was reachable.
+
+Interval since the 2026-09-04 survey: 4 commits touching 7 files (five
+`.github/workflows/*.yaml`, plus `package.json`/`bun.lock` for one dev-pin).
+Recursive tree unchanged at 117 blobs; `src/` untouched since 2026-07-19, so
+the code freeze stands at 62 days. npm `latest` still `0.15.0` / 22 versions
+with `time.modified` unmoved (62-day publish drought); `.changeset/` still
+holds only `config.json`.
+
+1. CORRECTION (supersedes the 2026-09-04 root cause, recorded additively):
+   the undelivered autoheal fix is blocked by the harness `working-dir`
+   delivery contract plus a caller workflow with no commit/push/PR step, not
+   by the prompt's category-4 / HARD BOUNDARIES conflict. The agent states the
+   delivery mode explicitly in every daily report from #166 (2026-09-05) —
+   one day after the prior survey was written. Both readings retained; the
+   prompt conflict is real but not the binding constraint.
+2. ESCALATION: the discarded working tree now carries security remediation,
+   not documentation. #170 (09-08) left a `bun.lock` fix taking `bun audit`
+   19 -> 0; #183 (09-19) left `package.json` `overrides` closing three HIGH
+   advisories (`fast-uri`, `ip-address`, `toml`). Neither is present at HEAD —
+   `package.json` has no `overrides` block. Docs drift independently confirmed
+   still present, plus a previously unflagged instance (`README.md:139` says
+   "four tools" in a six-tool repo).
+3. First human commit in 54 days: #174 (`068a4d47`, 2026-09-11) added
+   conditional `persist-credentials` to `fro-bot.yaml`. Correct hardening that
+   leaves credentials persisted on exactly the `schedule` runs needing
+   delivery, so the git precondition now exists while the delivery steps do
+   not — the credential half of the marcusrbrown/sparkle #2001/#2003 fix
+   without the `output-mode` half.
+4. CORRECTION (supersedes the 2026-09-04 stale-`bun.lock` hypothesis): PR #72
+   is red at 70 days because `biome.json`'s `$schema` pins
+   `https://biomejs.dev/schemas/2.5.2/schema.json`, a coupled constant no
+   Renovate manager parses, plus a genuine `noUnsafeOptionalChaining` finding
+   at `src/contract.test.ts:125`. The repair belongs on `main`, which is why
+   no autoheal category and no Renovate branch owns it.
+5. RESOLVED: the `bfra-me/.github` pin lag (v4.16.44 -> v4.29.0, #158, merged
+   09-14) — a single hop that stepped over the poisoned v4.25.0, so this repo
+   never ingested the 2026-09-04 `tar` defect that required a manual sweep at
+   marcusrbrown/.github, bfra-me/works, marcusrbrown/esphome.life, and
+   bfra-me/renovate-action.
+6. Three grouped Renovate PRs landed content their titles do not name (#118;
+   #115 `@opencode-ai/plugin` 1.18.2 -> 1.18.26; #167 agent v0.106.0 ->
+   v0.112.0 plus four `github/codeql-action` SHA bumps).
+7. Renovate fires in near-simultaneous pairs (9–13 s apart, ~23 runs/day) on a
+   workflow with no cron of its own; the second dispatcher is not identifiable
+   from public data and is recorded as an open question. Fro Bot's trigger
+   surface is ~83% self-generated (25 of the 30 most recent `main` runs
+   `skipped`, fired by the agent's own report issue and closing comments).
+8. Dependabot reports 0 alerts against 22 OSV advisories found by the Scorecard
+   code-scanning path on the same tree — a `bun.lock` coverage gap recorded as
+   agent-reported and flagged for authenticated verification.
+
+Carried forward unchanged and re-verified: the `actions/checkout` two-major
+split (v6.1.0 in ci/release/fro-bot, v7.0.1 in codeql/scorecard, reconciliation
+still an unchecked Pending Approval box), the inert `fro-bot/agent` automerge
+carve-out (v0.113.2 rate-limited on the grouped branch, third consecutive
+confirmation), Probot Settings and branch protection, and a green `Check` on
+all 30 most recent `main` runs.
+
+Pages touched: `wiki/repos/fro-bot--space-bus.md` (updated — new survey banner,
+new overview table with the prior one demoted to historical, six new sections,
+two corrections, refreshed open threads, new Survey History row),
+`wiki/topics/github-actions-ci.md` (six new sections + repo added to the
+workflow inventory), `wiki/topics/opencode-plugins.md` (one new section),
+`index.md` (three entries refreshed).
+
+A Fro Bot workflow is present and active
+(`.github/workflows/fro-bot.yaml`, `fro-bot/agent@5494812a` # v0.112.0,
+three-mode, daily `0 0` cron), so no follow-up onboarding draft is warranted.
+The outstanding gap is the missing delivery half (no `output-mode` input, no
+commit/push/PR step), tracked on the repo page and in the repo's own daily
+reports.
+
+Repository confirmed public (`private: false`, `visibility: public`). No
+private repository is named or implied.
+
+Sources: https://github.com/fro-bot/space-bus@47e32358040d9df0a9b897e17adefd70924ae55e,
+https://github.com/fro-bot/space-bus/pull/174, https://github.com/fro-bot/space-bus/pull/167,
+https://github.com/fro-bot/space-bus/pull/158, https://github.com/fro-bot/space-bus/pull/115,
+https://github.com/fro-bot/space-bus/pull/72, https://github.com/fro-bot/space-bus/issues/183,
+https://github.com/fro-bot/space-bus/issues/182, https://github.com/fro-bot/space-bus/issues/179,
+https://github.com/fro-bot/space-bus/issues/170, https://github.com/fro-bot/space-bus/issues/166,
+https://github.com/fro-bot/space-bus/issues/6, https://registry.npmjs.org/@fro.bot/space-bus
+
+## [2026-09-19 09:46] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus

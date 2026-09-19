@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-15
+updated: 2026-09-19
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
@@ -76,7 +76,10 @@ sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement]
+  - url: https://github.com/fro-bot/space-bus
+    sha: 47e32358040d9df0a9b897e17adefd70924ae55e
+    accessed: 2026-09-19
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement, peer-range-drift, coupled-constant, dependabot-coverage-gap, code-freeze]
 ---
 
 # OpenCode Plugin Development
@@ -629,3 +632,56 @@ The instructive part is the history. The same drift was recorded on 2026-07-10 (
 - [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy
+
+## A Finished Plugin Still Needs Its Automation to Land (2026-09-19)
+
+From the [[fro-bot--space-bus]] survey at HEAD `47e32358`. This is not a plugin-API pattern; it is what
+happens to a plugin repo **after** the surface is done, and it is the failure mode most likely to hit any
+of the repos in the table above.
+
+space-bus built its entire published surface in a 16-day burst (2026-07-03 → 07-19: `0.0.0` → `0.15.0`,
+22 npm versions, four → six tools, managed server, CLI, launchd, browser-safe lane, full automation) and
+has not changed `src/` since — **62 days**, npm `latest` unmoved, `.changeset/` empty, registry `modified`
+identical. That is a legitimate end state for a small plugin that reached its designed surface. The
+problem is what the surrounding automation does with it.
+
+**Three plugin-specific consequences of a code freeze:**
+
+1. **A frozen dev-pin widens the gap between the tested surface and the promised one.** `@opencode-ai/plugin`
+   is declared as a `peerDependency` at `>=1.17.13 <2` — the compatibility the package *promises* — while
+   the devDependency pin is the version CI actually exercises. space-bus's dev-pin sat at `1.18.2` for
+   weeks, then jumped to `1.18.26` in one merge, and `1.18.31` is already queued. The peer range is a claim
+   about 100+ releases; the test evidence covers whichever single one the lockfile names. For a plugin with
+   a wide peer range, **the dev-pin's staleness is the size of the untested region**, and it is the one
+   dependency worth bumping even on a frozen repo.
+2. **`biome.json`'s `$schema` is a second copy of the Biome version.** The Bun + Biome stack this cohort
+   standardized on encodes the toolchain version twice — once as a managed devDependency, once as a path
+   segment in `"$schema": "https://biomejs.dev/schemas/<version>/schema.json"` that no Renovate manager
+   parses. Every Biome bump is red by construction until someone edits the URL. space-bus PR #72 has been
+   red **70 days** on exactly this; [[marcusrbrown--opencode-copilot-delegate]] hit the same thing but
+   merges often enough that it reads as noise (#302 → #332 → #377). One `customManagers` rule over the
+   `$schema` URL closes it permanently — worth adding to any new plugin repo's `renovate.json5` on day one,
+   alongside the `skipArtifactsUpdate` + `postUpgradeTasks` Bun-lockfile workaround these repos already carry.
+3. **`bun.lock` is invisible to Dependabot.** space-bus's 2026-09-19 report puts 0 Dependabot alerts next to
+   22 OSV advisories that Scorecard's code-scanning path finds reachable through transitive deps of
+   `@modelcontextprotocol/sdk` and `@changesets/cli`. Agent-reported, not independently verified here, but
+   it applies to the whole Bun cohort: the alerting surface is the one reporting zero, so a Bun plugin repo
+   needs `bun audit` or an OSV scan wired into CI for the signal to exist — **and needs the result to reach
+   the repository**, which is the next point.
+
+**And the one that subsumes them.** space-bus's daily agent correctly found and fixed the `bun audit`
+findings (19 → 0, 2026-09-08) and later authored `package.json` `overrides` for three HIGH advisories
+(2026-09-19), verified both against the full `typecheck`/`lint`/`build`/`test` gate, and reported success.
+Neither patch exists in the repository: the workflow runs the agent under a `working-dir` delivery contract
+and has no commit/push/PR step to collect the result. A plugin repo in maintenance mode is exactly where
+this is hardest to notice — there are no human commits to contrast against, CI is green, the daily report
+is green, and the npm package is unchanged for reasons that look intentional. See
+[[github-actions-ci]] for the delivery-path analysis and the probe (`gh pr list --author <agent>` against
+the date the delivery half last changed).
+
+Documentation drift compounds the same way. The `@fro.bot/space-bus/registry` subpath — a real `exports`
+entry backing `bus_registry` — has been missing from the README's "Library surface" list since it shipped
+in `0.13.0`, and `README.md:139` still introduces that section as "the functions the **four** tools run
+on" seventy lines after correctly listing six. For a published plugin, **the README's export list is part
+of the public contract**: a subpath that exists in `package.json` and nowhere in the docs is, in practice,
+unshipped. The drift has been diagnosed and "fixed" in a working tree on roughly twenty consecutive nights.
