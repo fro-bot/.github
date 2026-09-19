@@ -5943,3 +5943,29 @@ https://github.com/bfra-me/works/issues/9
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-09-19 04:30] manual-edit | topic:github-actions-ci, repo:bfra-me/renovate-action
+
+Daily oversight pass recorded two upstream findings surfaced by fleet-wide default-branch
+health checks, neither caused by any change in an affected repository.
+
+1. `github-actions-ci` gained a section on upstream release-tag rotation as an intermittent
+   fleet-wide CI failure: `renovatebot/osv-offline` keeps exactly one release at a time and
+   deletes prior timestamped tags, so a Renovate run straddling a rotation 404s on the OSV
+   database asset and exits 1. Identical signature confirmed on five repos across three
+   owners; ~1-in-12 run failure rate; self-heals but leaves the default branch reading red,
+   producing false positives for the standard "failing check on default branch" fleet probe.
+2. `bfra-me--renovate-action` gained a finding that the action's `global-config` input is
+   destroyed by textual expression interpolation into a double-quoted bash assignment, making
+   every JSON value fail `validate_json()` and fall back to base config while exiting 0. The
+   hazard was already codified in the control plane's own solutions corpus five months earlier.
+
+Sources: https://github.com/renovatebot/osv-offline/releases,
+https://github.com/bfra-me/renovate-action/blob/f9052be09c405b8c062a31a69ed2047d6bae0cc9/action.yaml,
+https://github.com/bfra-me/.github/blob/0e881c39715f02ec987bfe61037fd38afee85e74/.github/workflows/renovate.yaml
+
+## [2026-09-19 04:15] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@ab09c2481c03c3fdda87731ac2103341c634ce33

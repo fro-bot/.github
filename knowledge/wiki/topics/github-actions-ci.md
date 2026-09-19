@@ -2476,3 +2476,49 @@ The portable fix already exists in the fleet: [[marcusrbrown--sparkle]]'s `Resol
 ### Shared Config Heritage
 
 Repos across the ecosystem use `@bfra.me/*` packages for formatting and linting configuration, suggesting a shared infrastructure baseline across Marcus's projects.
+
+### Upstream release-tag rotation as a fleet-wide intermittent CI failure (2026-09-19)
+
+Observed across five repositories in three owners on the same day, from a single upstream cause with no
+change in any of the affected repositories.
+
+`renovatebot/osv-offline` publishes Renovate's offline OSV vulnerability database as a **rolling GitHub
+release** whose tag encodes a timestamp (`1-YYYYMMDDHH`). Critically, the project keeps **exactly one
+release at a time** — `GET /repos/renovatebot/osv-offline/releases` with `--paginate` returned `1` on
+2026-09-19, with tag `1-2026091904` published at `04:06:10Z`. Previous tags are deleted, not retained.
+
+A Renovate run that resolved an older tag and then attempts the asset download gets a hard 404:
+
+```
+GET https://github.com/renovatebot/osv-offline/releases/download/1-2026091716/osv-offline.zip  → 404
+ERROR: Repository has unknown error
+Renovate execution failed with exit code 1
+```
+
+The failure signature is stable and identical everywhere: **8× `status code 404`, 2× `Repository has
+unknown error`, exit code 1**. Confirmed on [[bfra-me--github]]'s sibling `bfra-me/github-action` and
+`bfra-me/github-app`, on `fro-bot/space-bus`, and on this control plane's own `Renovate` run. Two further
+repos (`marcusrbrown/.github`, [[marcusrbrown--containers]]) failed in the same window with `exit code 1`
+but their logs no longer carried the redaction-free 404 line.
+
+Three properties make this worth recording as a pattern rather than an incident:
+
+- **It is a race, not a breakage.** Per-repo failure rate was ~1 in 12–15 runs (`{"failure":1,"success":11}`
+  across four repos). A run only fails if it straddles a rotation. `bfra-me/github-action` failed at
+  `04:07:36Z`, **86 seconds after** the new release published — the window is minutes wide.
+- **It self-heals but leaves a red default branch.** The next successful run fixes nothing and repairs
+  everything; no human action is required. But `GET /commits/{default_branch}/check-runs` keeps reporting
+  the failed conclusion until a *newer* run lands on that same commit. On a quiet default branch that can
+  be days. Five repos read red simultaneously on 2026-09-19 while nothing was actually wrong.
+- **It defeats the obvious oversight heuristic.** "Default branch has a failing check run" is the standard
+  fleet-health probe, and here it produced five false positives at once. Distinguishing this class requires
+  reading *run history* (does a later run of the same workflow succeed?), not *commit check state*. This is
+  the same shape as the conclusion-vs-deliverable inversion recorded for [[marcusrbrown--github]] and
+  [[marcusrbrown--cortexkit-anthropic-auth]], rotated one axis: there a green conclusion hid a dead
+  deliverable; here a red conclusion hides a healthy one.
+
+The general rule: **a dependency that resolves to a mutable, single-slot upstream tag has a failure mode
+that no lockfile, SHA pin, or version pin in the consumer can prevent.** SHA-pinning the *action* does not
+help, because the 404 is inside the vendored Renovate engine's own data fetch, two layers below anything
+this fleet pins. The only consumer-side mitigations are retry-on-404 in the engine (upstream's job) or
+treating this specific signature as a known-transient class in fleet reporting.
