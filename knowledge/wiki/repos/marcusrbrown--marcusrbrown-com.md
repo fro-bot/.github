@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.com
 created: 2026-07-13
-updated: 2026-09-16
+updated: 2026-09-20
 node_id: R_kgDOPOkk2A
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
@@ -402,6 +402,15 @@ For the fleet comparison this sharpens rather than reverses: [[bfra-me--ha-addon
 The single-file three-mode `fro-bot.yaml` (625 lines, 29 KB), `30 3` / `30 15` UTC crons, and `default: autoheal` dispatch are all unchanged. `fro-bot.yaml` changed by exactly **one line** across 32 commits — the agent pin.
 
 ### Daemon health
+
+**2026-09-20 — still dead, day 15. The "may heal on its own" hedge did not pay out.** An oversight pass from the `fro-bot/.github` control plane re-measured the full scheduled-run history: **326 `schedule` runs lifetime, 288 `success` / 38 `failure`**, last success unchanged at **2026-09-05T15:35:45Z**, and **29 consecutive failures** since — zero successes in the interval, both crons still firing on time. The failure signature is byte-identical to the one recorded on 09-16 (`APIError; status=400`, `"type":"configuration"`, ~11 s wall time, three grace cycles, terminating at `Agent execution failed with a recoverable LLM error, and no delivery surface was available to report it`).
+
+Two things this interval settles that 09-16 could not:
+
+- **The streak now spans agent `v0.107.0 → v0.113.2`.** Renovate landed `v0.113.2` on 2026-09-16 (`45029ad`, #551) and the very next scheduled run failed identically. Eight version bumps have now ridden over this without causing or fixing it, which removes the agent release line from the candidate-cause set with much more confidence than the six bumps available on 09-16.
+- **Non-recovery is now itself evidence.** The 09-16 entry below deliberately hedged that a streak beginning on unchanged HEAD might end on unchanged HEAD, citing [[bfra-me--ha-addon-repository]]. Four more days and eight more scheduled runs say this one is not that class. A persistent upstream 400 that survives a grace period is a **configuration** fault, not a transient — and configuration faults do not self-heal, they wait for someone to change the configuration.
+
+The remaining untested hypothesis is the model selector. `fro-bot.yaml:621` passes `model: ${{ vars.FRO_BOT_MODEL }}`, a **repository**-scoped Actions variable. The `fro-bot/.github` control plane uses the identical `vars.FRO_BOT_MODEL` expression in all three of its agent jobs and runs green daily, so the expression and the agent are both fine — which localizes the fault to this repo's *value* for that variable (or its absence, which would send an empty `model` and draw exactly a 400). Confirming it requires read access this survey did not have: `GET /repos/marcusrbrown/marcusrbrown.com/actions/variables/FRO_BOT_MODEL` returns `403 Resource not accessible by personal access token`. **Recorded as unverified**; the cheapest operator check is to print the variable's value in a `workflow_dispatch` run and compare it against a currently-served model id.
 
 **2026-09-16 — the daemon is dead, and this reverses the prior reading.** 318 `schedule`-triggered runs (2,578 total). The **21 most recent scheduled runs all concluded `failure`**, 2026-09-06T03:36 → 2026-09-16T03:37; last success 2026-09-05T15:35. Both crons still fire on time (03:3x / 15:3x UTC with the usual scheduler drift) — the trigger is healthy, the execution is not. Root cause, mechanism, and the missing error channel are in [Lane 2](#lane-2-the-daemon-has-been-dead-since-2026-09-06).
 

@@ -6035,3 +6035,30 @@ https://fro.bot/systematic/schemas/v3/systematic-config.schema.json
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-09-20 04:45] manual-edit | topic:github-actions-ci, repo:marcusrbrown/marcusrbrown.com
+
+Daily oversight pass (categories 5-8) re-measured two findings first recorded on 2026-09-18 and
+added persistence evidence to both, additively.
+
+- `topics/github-actions-ci.md` — extended "A Check-Run List Is an Append Log, Not a State Snapshot"
+  with a second independent sweep. Raw `failure`-present count fell 15 -> 8 across two days with no
+  remediation landed, while the latest-per-`name` reduced set held at exactly the same 3 repos. Records
+  the resulting validity test: re-run a fleet-health metric and diff the *set*, not the count; membership
+  churn without repair means the metric is measuring its own sampling window.
+- `repos/marcusrbrown--marcusrbrown-com.md` — daemon-health section updated for day 15 of the scheduled
+  agent outage. 326 lifetime scheduled runs (288 success / 38 failure), 29 consecutive failures, last
+  success still 2026-09-05T15:35:45Z. Streak now spans agent v0.107.0 -> v0.113.2, so eight version bumps
+  have ridden over it. Retires the prior "may heal on unchanged HEAD" hedge with evidence. Records the
+  untested model-selector hypothesis (`vars.FRO_BOT_MODEL`, repository-scoped) as explicitly unverified —
+  the variables API returned 403 to this survey's token.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/actions/workflows/fro-bot.yaml,
+https://api.github.com/repos/marcusrbrown/marcusrbrown.com/actions/workflows/fro-bot.yaml/runs?event=schedule,
+https://github.com/bfra-me/github-action, https://github.com/marcusrbrown/extend-vscode
+
+## [2026-09-20 04:42] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23

@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-18
+updated: 2026-09-20
 sources:
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
@@ -2430,6 +2430,17 @@ The rule, and it generalizes past check runs: **an endpoint that returns history
 - Treat any "N repos are red" figure derived without this reduction as unverified. Sibling finding: [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02) — that one is about a single conclusion meaning less than it appears; this one is about a *set* of conclusions meaning less than it appears.
 
 The three genuine failures, for the record: `bfra-me/github-action` (`Update Repo Settings`), `marcusrbrown/extend-vscode` (`Pre-Release Validation (vulnerabilities)`), and `marcusrbrown/marcusrbrown.com` (`Fro Bot`, the schedule-mode outage above). All three would have been buried in a 15-row list that a reader learns to skim.
+
+**Confirmed by re-measurement two days later (2026-09-20), and the stability is the point.** The same sweep over 34 non-archived repos returned **8 repos with at least one `failure`** in the raw array and, after latest-per-`name` reduction, **exactly the same 3 repos** — same names, same failing checks, no additions, no departures:
+
+| Date | Raw `failure` present | After latest-per-`name` | Genuine set |
+| --- | --- | --- | --- |
+| 2026-09-18 | 15 | 3 | `github-action`, `extend-vscode`, `marcusrbrown.com` |
+| 2026-09-20 | 8 | 3 | *identical* |
+
+This gives the reduction rule a property worth more than its false-positive ratio: **the reduced set is stable and the raw set is not.** The raw count fell 15 → 8 with nothing fixed — it tracks how recently each default-branch head was re-run, which is noise. The reduced set held perfectly across two independent sweeps, which is what a real fleet-health signal should do: genuinely broken things stay broken until someone fixes them, and a metric that churns 15 → 8 overnight without any repair is measuring its own sampling window.
+
+So the cheap validity test for any fleet-health metric is **re-run it and diff the set, not the count.** A metric whose membership churns between consecutive runs while no remediation landed is measuring an artifact. Here the two 09-18 false positives that decayed fastest (`Renovate / Renovate` on `marcusrbrown/.github` and [[marcusrbrown--containers]]) decayed for the least meaningful reason available — a newer scheduled run happened to land on the same head — which is exactly the upstream-tag-rotation transient described below, viewed through the append-log lens.
 
 ### Run Duration Is a Liveness Proxy Only Where the Healthy Band Is Wide (2026-09-18)
 
