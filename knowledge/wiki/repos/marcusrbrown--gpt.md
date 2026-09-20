@@ -3,8 +3,11 @@ type: repo
 title: marcusrbrown/gpt
 node_id: R_kgDOK0Z5CA
 created: 2026-04-18
-updated: 2026-09-03
+updated: 2026-09-20
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 9a2b6e142a875d84a1c1642bef1a043c07d67a0b
+    accessed: 2026-09-20
   - url: https://github.com/marcusrbrown/gpt
     sha: 556bc738e9c5af627c98621418f6b46cdbb3984c
     accessed: 2026-09-03
@@ -51,12 +54,17 @@ tags:
   - autoheal
   - working-dir-delivery
   - required-checks
+  - renovate
+  - dependency-dashboard
+  - blocked-branches
 aliases:
   - gpt
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--copiloting
   - marcusrbrown--marcusrbrown-com
+  - marcusrbrown--sparkle
+  - marcusrbrown--tokentoilet
   - fro-bot--agent
   - bfra-me--ha-addon-repository
 ---
@@ -71,14 +79,137 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Default branch:** `main`
 - **Created:** 2023-12-01
 - **Repo id / node_id:** `726038792` / `R_kgDOK0Z5CA`
-- **Last push:** 2026-09-03 (HEAD commit `556bc73`, `chore(deps): update fro-bot/agent to v0.107.1 (#2747)`)
+- **Last push:** 2026-09-19 (HEAD commit `9a2b6e14`, `chore(dev): update dependency prettier to v3.9.7 (#2775)`); prior 2026-09-03 `556bc73`
 - **Homepage:** https://gpt.mrbro.dev (GitHub Pages)
 - **License:** MIT
 - **Topics:** `chatgpt`, `gpt`, `gpt-4`, `nlp`, `transformers`
-- **Size / tree:** ~12.9 MB, **342 blobs / 66 trees** (2026-09-03)
-- **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30
-- **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`
-- **Counts (2026-09-03):** 1 star, 1 watcher, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** (see the measurement correction below)
+- **Size / tree:** ~13.1 MB, **342 blobs / 66 trees** (2026-09-20) — byte-for-byte the same blob/tree counts as 2026-09-03 and 2026-08-08
+- **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30, and now *explained*: `node` sits inside blocked Renovate PR #2662 (see the 2026-09-20 section). Renovate detects `24.21.0`
+- **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
+- **Counts (2026-09-20):** 1 star, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** — the identical queue to 2026-09-03, same numbers, same members (see the measurement correction below)
+
+## 2026-09-20 survey — a human touched the workflow, and the thing that froze the dependencies was the bot
+
+Seventeen days, 28 commits, **three files changed**: `.github/workflows/fro-bot.yaml` (+3/−1), `package.json`, `pnpm-lock.yaml`. The tree is 342 blobs / 66 trees, identical to 2026-09-03 and to 2026-08-08 — **43 days with zero blobs added or removed.** The open queue is the same 15 PRs and 23 issues, same numbers by the same members. `pnpm-workspace.yaml` was not touched; its last commit is still `d4dfd58` from 2026-08-24.
+
+Two things did move, and neither is in the tree.
+
+### The first human commit is adjacent to the break and is not the fix
+
+PR **#2762** — `fix(ci): set fro-bot checkout credentials posture`, authored by `marcusrbrown`, opened 2026-09-11T05:18, merged 18:58 — adds exactly two lines to the checkout step:
+
+```yaml
+persist-credentials: >-
+  ${{ !contains(fromJSON('["pull_request", "issue_comment", "issues"]'), github.event_name) }}
+```
+
+It withholds the token from the working tree on the three content-triggered events and leaves `schedule`/`workflow_dispatch` at the pre-existing default of `true`. The PR body cross-references `fro-bot/agent#1598`. That is a correct security narrowing: the attacker-reachable events are exactly the ones that no longer keep `FRO_BOT_PAT` in `.git/config`.
+
+It is not the delivery fix. `fro-bot.yaml` still **ends at `timeout: 0`**. There is no diff detection, no commit, no push, no `gh pr create` after `Run Fro Bot`. Every file the autoheal writes is still discarded at runner teardown.
+
+The fleet has three shapes of this now, and gpt is the middle one. [[marcusrbrown--sparkle]] (#2001/#2003) computes delivery mode **once** in a gate step and feeds that single value to *both* the conditional credential restore and the agent's `output-mode`. [[marcusrbrown--tokentoilet]] never grew either half. gpt landed the credential half and not the delivery half — **the two halves were separated, and only the one with an upstream tracking issue behind it got written.**
+
+### The daemon's diagnosis regressed, and the human's commit is the premise
+
+Four root causes in seventeen days, in the same rolling issue:
+
+| Date | Diagnosis | Correct? |
+| --- | --- | --- |
+| 2026-09-03 | "has no visible diff-detection/commit/push/PR-creation step" | **Yes** |
+| 2026-09-17 | "read `.github/workflows/fro-bot.yaml` and ruled out a bug in this repo's own workflow — the commit/push responsibility … appears to live inside the third-party `fro-bot/agent@v0.113.2` action, which cannot be modified from here" | **Inverted** |
+| 2026-09-19 | restates 09-17, citing "`contents: write` and `persist-credentials: true` for `schedule` events, so the missing commit/PR step lives inside the third-party action" | Inverted |
+| 2026-09-20 | "Root cause found and fixed for the 16-day … persistence gap": a real `.gitignore` negation gap — `.ai/*`/`RFCs/*` blanket rules with no `!.ai/AGENTS.md`/`!RFCs/AGENTS.md` | **True but not load-bearing** |
+
+The 09-19 run quotes `persist-credentials: true` as evidence the repo is configured correctly. Before 2026-09-11 that was an unwritten `actions/checkout` default; after #2762 it is a deliberate, conditional expression a reader can point at. **Making a default explicit hands a reasoning agent a stronger-looking premise — explicitness reads as intent, and intent reads as correctness.** A security hardening became the load-bearing evidence for a wrong conclusion about an unrelated failure.
+
+The 09-20 `.gitignore` finding is genuinely true — `.ai/AGENTS.md` written into that directory *is* silently re-ignored, so no caller-side commit could ever pick it up. It cannot explain `pnpm-workspace.yaml`, which is not ignored, which the daemon rewrites every night, and which still carries the same three overrides it carried on 2026-08-24. **A true sub-cause presented as the root cause of the broader failure is worse than no diagnosis, because it closes the investigation.**
+
+Durable form: **a rolling daily report has no ratchet.** Each run re-derives its diagnosis from scratch against a body it prepends to but does not reason over, and nothing prevents regression from a correct diagnosis to a wrong one. The regression is legible only to someone who diffs the stream — which is the same reader the 2026-09-03 envelope finding already said does not exist.
+
+Two second-order notes:
+
+- `AUTOHEAL_PROMPT`'s workflow ban has an escape hatch: *"Do not modify `.github/workflows/` … **unless the failing run is caused by a genuine bug in that file**, the change is narrowly scoped, and the summary explains why."* The hatch fits this case exactly. The 09-17 misdiagnosis closed it — and had it fired, the edit would have been discarded by `working-dir` anyway. **Self-sealing at two layers**, which is the [[bfra-me--works]] repair-boundary finding with an exception clause that the agent's own reasoning declined to use.
+- The `.gitignore` fix is subject to the gap it fixes. It was written into a working tree that no longer exists, so it will be rediscovered tomorrow. The remedy for a persistence failure cannot be delivered through the broken persistence path.
+
+### The autoheal disabled Renovate on three branches — and that is why this page's "unchanged" pins are unchanged
+
+Dependency Dashboard #279 carries a **`## PR Edited (Blocked)`** section: *"The following updates have been manually edited so Renovate will no longer make changes."* It lists #2440, #2662, #2320.
+
+The branch tips explain it. All three carry the same `fro-bot` commit — `fix(settings): restore ollama chip contrast`, one file, `src/components/settings/ollama-settings.tsx` +3/−4 — pushed on **2026-07-19 at 04:53:29, 04:53:30, and 04:53:31**. One 03:30 autoheal run, three pushes in two seconds, onto three unrelated dependency-update branches.
+
+The mechanism is coherent from the agent's side: `renovate.json5` sets `postUpgradeTasks` to run `pnpm run build` in branch mode, and the accessibility gate was failing on those PRs because of a defect on `main`. Category 1 says find open PRs with failing CI, diagnose the root cause, fix it, push to the PR branch. It did exactly that. Renovate's edited-branch guard exists to avoid clobbering a *human's* edits and has no way to tell a second bot from a person.
+
+**The blast radius is the group, not the PR.** #2662 is `renovate/all-minor-patch`, and the dashboard enumerates what rode in it: `node`, `pnpm`, `marcusrbrown/renovate-config`, `bfra-me/.github`, `@modelcontextprotocol/sdk`, `zod`, `openai`, `pdfjs-dist`, `dexie`, `uuid`, `lru-cache`, `mammoth`, `jszip`, `lighthouse`, `autoprefixer`, `simple-git-hooks`, `@typescript/native-preview`, `@axe-core/playwright`, `@langchain/langgraph`, `@vitest/eslint-plugin`, `actions/checkout`, `actions/deploy-pages`, `actions/setup-node`, `dorny/paths-filter`.
+
+Read that list against this page's own survey history. `@modelcontextprotocol/sdk` 1.29.0 "unchanged since the initial survey". `@typescript/native-preview` "**held since 2026-07-03**" — 79 days. `marcusrbrown/renovate-config#5.2.4` unchanged since 2026-07-14. Node 24.18.0 unchanged since 2026-06-30. `@langchain/langgraph` 1.4.7 while the rest of the LangChain line moves weekly. **Six surveys recorded twenty independent "stable" pins. There is one cause, and it has a timestamp.**
+
+And it is self-sealing: the preset that governs the grouping — `marcusrbrown/renovate-config` — is itself inside the frozen group, so the configuration change that would shrink the blast radius cannot be delivered by the mechanism it would fix.
+
+**Correction to this page's method.** Every prior survey read these frozen pins as stability. They are a suppression signal. This is the third dashboard-body case on the wiki, after `dependencyDashboardApproval` at [[marcusrbrown--esphome-life]] and *detected ≠ actionable* at [[bfra-me--works]], and it generalizes the rule the [[esphome]] entity already states: **read the Dependency Dashboard body before concluding anything from a version number.** A frozen pin under a hot updater is a question, never an answer.
+
+Rules worth carrying:
+
+- **Never let a second automation push to a first automation's branches.** Fix the defect against the default branch and let the updater rebase. A repair that lands on someone else's branch trades one green PR for a permanently dead update channel.
+- If a bot-branch push is unavoidable, it must be **in that PR's own scope** — a lockfile conflict, a generated file. A repo-wide UI defect is never in scope for a dependency bump.
+- **A grouped update's blast radius is the group.** Measure the cost of blocking a grouped PR by enumerating its members, not by its title.
+- Detection is cheap and nobody runs it: one read of the dashboard's `PR Edited (Blocked)` section.
+
+**Addendum to the Ollama contrast cluster.** This page has tracked six near-identical contrast PRs across four surveys as a DEDUPLICATION failure, and that reading stands. The 07-19 pushes add a cost nobody had priced: the *seventh* copy of that fix was not filed as a PR at all — it was pushed straight onto three dependency branches, and it is the only copy that changed anything. A defect the daemon could not land through its own channel cost three update channels instead. The cluster is no longer only a duplication story; it is the vector.
+
+### The freeze bought immunity to the 2026-09-04 `tar` outage
+
+`renovate.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@bd89695 # v4.16.34` — roughly 14 minor series behind the v4.30.0 the rest of the fleet runs, and inside blocked #2662. **v4.25.0, the release carrying `bfra-me/renovate-action` 10.34.0 with `tar` demoted to a devDependency, was never delivered here.**
+
+While [[marcusrbrown--github]] (6h28m), [[marcusrbrown--esphome-life]] (6h25m43s), [[bfra-me--works]] (6h33m28s) and [[bfra-me--renovate-action]] (6h34m33s) sat inert and needed a four-repo hand sweep, gpt merged #2748 on 09-04 and #2749–#2753 across 09-05 with no manual intervention and no human commit.
+
+Stated with its limit: this repo's Renovate has no cron — it triggers on `push`, `workflow_run`, `issues`, and `pull_request` — so there is no scheduled run *inside* the outage window to inspect. The evidence is the pin, not a run. That is structurally sufficient: the poisoned runner is reachable only through a version range this repo cannot enter.
+
+Durable form: **a stale pin freezes the attack surface along with the feature set.** Worth checking whenever a fleet-wide supply-chain event maps cleanly onto a version range — the repos that dodged it are usually the ones an audit would have flagged as neglected, and the reason they dodged it is the neglect.
+
+### `timeout: 0` delegates the timeout to GitHub's six-hour cap, and a hung run reports `cancelled`
+
+On **2026-09-12** both scheduled runs — 03:38 and 15:34 — ran for exactly **360 minutes** and concluded `cancelled`. Twelve hours of runner time in one day against a healthy band of **11–34 minutes**. The `Run Fro Bot` step passes `timeout: 0`, so nothing agent-side bounds the run and GitHub's hard job cap is the only backstop.
+
+The streak cleared on 09-13 with **no workflow change** — the only intervening commit was a LangChain bump — so it was transient. Applying the correction learned at [[bfra-me--ha-addon-repository]]: *a failure streak that ends without a change was never a compatibility problem.*
+
+Two operational points:
+
+- **`cancelled` is neither `success` nor `failure`.** A monitor keyed on `conclusion == 'failure'` sees nothing, and a monitor keyed on `!= 'success'` catches it. This is the third variant of *a run's conclusion measures the harness, not the deliverable* on the wiki, and the first where the conclusion is a third value rather than an inverted one.
+- **Duration discriminates here.** The healthy band is 11–34 min and the failure value pegs to a constant 360, which satisfies the conditional rule from [[bfra-me--works]]: duration is a usable liveness proxy exactly where the healthy band is wide.
+
+### Report envelope instability persists, and has now spread to the delivery surface
+
+#2431 holds **72 comments**. The last twelve open with, among others, `## Run Summary`, `<!-- fro-bot -->`, `<!-- bot: fro-bot -->`, `<!-- fro-bot:run-summary -->`, `## Daily Autohealing Report — 2026-09-19 (UTC)`, `## Fro Bot Autohealing Run Summary — 2026-09-15 (UTC)`. Markers observed across the stream: `fro-bot:autoheal-summary`, `fro-bot-run-summary`, `fro-bot:autoheal-comment`, `fro-bot:run-summary`, `fro-bot:autoheal-report`, `bot: fro-bot`, `fro-bot`. #2153 (118 comments) does the same.
+
+New this interval, and worse: **two successful autoheal runs (09-13, 09-16) produced no comment at all**, writing only into the issue body. The stream is not merely un-dedupable — it is incomplete, and a comment count undercounts runs. The 2026-09-03 finding stands and extends: **specify the envelope *and* the surface**, or the report channel is both unqueryable and lossy.
+
+The size directive is also breached. Both prompts say to archive "when the issue body approaches 50,000 characters". #2431's body is **60,332** characters with no archival note; #2153's is 48,192 and closing. Second confirmed instance after [[marcusrbrown--cortexkit-anthropic-auth]] #11 at 54,813 — **a prose size budget an LLM must self-enforce does not hold.**
+
+### The security posture is now numeric, and it is bad
+
+The 09-19 run reports `gh api .../dependabot/alerts?state=open` returning **79 open alerts — 0 critical, 24 high, 46 medium, 9 low** — unchanged since 2026-09-05.
+
+At HEAD, `pnpm-workspace.yaml` carries three overrides: `fast-uri: '>=3.1.2'`, `langsmith: '>=0.6.0'`, `path-to-regexp: '>=8.4.0'`. The eight the daemon re-derives nightly — `fast-uri`, `@xmldom/xmldom`, `browserslist`, `ip-address`, `undici`, `hono`, `ws@7`, `brace-expansion@2`/`@5` — have never existed on `main`.
+
+This also confirms the stale-floor defect flagged on 2026-09-03: `fast-uri: '>=3.1.2'` is committed, and the current advisory requires `>=3.1.6`. **A `>=` floor proves a past minimum, and nothing moves a lockfile that already satisfies it.**
+
+And the repo has **no audit gate at all** — no `pnpm audit` step in any workflow. The only thing measuring production-reachable advisories is the nightly script whose output is thrown away. That is strictly worse than [[marcusrbrown--tokentoilet]]'s pre-fix posture, where at least a PR-scoped `dependency-review-action` existed.
+
+### Cross-project intelligence works; only delivery is broken
+
+The 09-20 inbound table names [[marcusrbrown--tokentoilet]] PR **#1501** — merged 2026-09-20T03:16 by `marcusrbrown`, three files, a split audit gate (blocking `pnpm audit --prod --audit-level moderate` plus an advisory-only full-tree pass under `continue-on-error`) — recommends adopting it here, and correctly observes that gpt has no audit gate. That PR merged seven minutes after it opened, and the daemon had it in a report within the hour, with an accurate account of *why* the original single gate failed.
+
+**The read path and the write path fail independently.** Category 6 is producing same-day, correct, actionable portfolio intelligence. Category 4 cannot persist a byte. Any evaluation of "is the agent working" that samples only one of those halves gets the opposite answer from the other.
+
+### Prompt drift widened, and the edit excuse is gone
+
+All three prompt envs still open with "React 19, TypeScript 5.9, **Vite 7**, HeroUI, TailwindCSS 4". The repo is on **8.3.0** — the gap was one major and two minors on 2026-09-03; it is one major and three minors now.
+
+The 2026-09-03 reading was that this sits in a file the autoheal is forbidden to edit. That excuse expired on 2026-09-11: the file *was* edited, by a human, and the stack line was not touched. The same shape as the `tempio` note at [[bfra-me--ha-addon-repository]] — the line was revised and the defect beside it was not, which removes the stale-anyway defense.
+
+### Newly surfaced: four abandoned dependencies
+
+The dashboard's `Abandoned Dependencies` section (releases older than `abandonmentThreshold`) lists `clsx` (last release 2024-04-23), `file-saver` (**2020-11-19**), `playwright-lighthouse` (2024-01-15), `react-swipeable` (2024-11-04). `file-saver` is load-bearing for the backup/restore export path and has not shipped in nearly six years. Not previously recorded here; no action implied, but it belongs on the record for a local-first app whose export path is a user-data guarantee.
 
 ## 2026-09-03 survey — the daemon is green, the work is not landing
 
@@ -203,7 +334,11 @@ Neither is new; both were missed by prior surveys and are worth having on the re
 
 ## Tech Stack
 
-Versions below are as of the 2026-09-03 survey (HEAD `556bc73`).
+Versions below are as of the **2026-09-20** survey (HEAD `9a2b6e14`); rows not re-stated here are unchanged from 2026-09-03.
+
+**Moved 2026-09-03 → 2026-09-20:** Vite 8.2.2 → **8.3.0**; ESLint 10.9.1 → **10.10.0**; Prettier 3.9.6 → **3.9.7**; `@playwright/test` 1.62.1 → **1.63.0**; `react-router-dom` 7.18.3 → **7.18.4**; `@types/node` 24.13.3 → **24.13.4**; `@testing-library/user-event` → 14.6.7; `eslint-plugin-react-refresh` → 0.5.7; LangChain line → `langchain` **1.5.11**, `@langchain/core` **1.2.11**, `@langchain/openai` **1.5.13**, `@langchain/anthropic` **1.5.10**.
+
+**Frozen because they sit inside blocked PR #2662** (see the 2026-09-20 section — this is the explanation for pins this page has reported as "stable" for up to six surveys): Node 24.18.0, pnpm 11.11.0, `@modelcontextprotocol/sdk` 1.29.0, `zod` 4.4.3, `openai` 6.45.0, `pdfjs-dist` 6.2.108, `dexie` 4.4.4, `uuid` 14.0.1, `lru-cache` 11.5.1, `mammoth` 1.12.0, `jszip` 3.10.1, `lighthouse` 13.4.0, `autoprefixer` 10.5.2, `simple-git-hooks` 2.13.1, `@typescript/native-preview` 7.0.0-dev.20260703.1, `@axe-core/playwright` 4.12.1, `@langchain/langgraph` 1.4.7, `@vitest/eslint-plugin` 1.6.20, `actions/checkout` v6.0.3, `actions/setup-node` v6.4.0, `actions/deploy-pages` v5.0.0, `dorny/paths-filter`, `marcusrbrown/renovate-config#5.2.4`, `bfra-me/.github` v4.16.34. `@bfra.me/eslint-config` 0.50.1 is frozen by the separate blocked PR #2440; React 19.2.5 / `@types/react` by blocked #2320.
 
 | Layer | Technology | Notes |
 | --- | --- | --- |
@@ -363,7 +498,7 @@ Vite build injects a CSP `<meta>` tag restricting:
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.4` (bumped from `#5.2.3`) — crossed the v4 → v5 boundary on 2026-05-13 (PR #2435). Groups LangChain.js monorepo packages. Automerges unstable minor updates of `lucide-react` (monthly) and select LangChain/TailwindCSS packages via `bfra-me/renovate-config:automerge.json5#5.2.3`. Post-upgrade runs bootstrap, fix, and build. Package overrides — pinning `fast-uri>=3.1.2`, `langsmith>=0.6.0`, `path-to-regexp>=8.4.0` — now live under `overrides:` in `pnpm-workspace.yaml` (moved out of `package.json`'s `pnpm.overrides` as part of the pnpm v11 cutover).
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.4` (bumped from `#5.2.3`) — crossed the v4 → v5 boundary on 2026-05-13 (PR #2435). Groups LangChain.js monorepo packages. Automerges unstable minor updates of `lucide-react` (monthly) and select LangChain/TailwindCSS packages via `bfra-me/renovate-config:automerge.json5#5.2.3`. Post-upgrade runs bootstrap, fix, and build. Package overrides — pinning `fast-uri>=3.1.2`, `langsmith>=0.6.0`, `path-to-regexp>=8.4.0` — now live under `overrides:` in `pnpm-workspace.yaml` (moved out of `package.json`'s `pnpm.overrides` as part of the pnpm v11 cutover). `rebaseWhen: 'behind-base-branch'`; `postUpgradeTasks` runs `pnpm run bootstrap`, `pnpm run fix`, `pnpm run build` in `branch` execution mode — which is what made the Renovate branches fail the accessibility gate and drew the autoheal onto them in the first place. **Update (2026-09-20):** the preset is pinned at `#5.2.4` because `marcusrbrown/renovate-config` is itself inside blocked PR #2662; `renovate.yaml` calls `bfra-me/.github` at **v4.16.34** for the same reason. Dashboard #279 currently carries `Pending Approval` (16 gated majors incl. pnpm v12, TypeScript v7, Vitest v5, `openai` v7, `lucide-react` v1), `PR Edited (Blocked)` (#2440/#2662/#2320), `PR Closed (Blocked)` (HeroUI v3 via closed #2129, separate from open #2165), and an `Abandoned Dependencies` list of four.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **Git Hooks:** `simple-git-hooks` with `lint-staged` running ESLint with auto-fix on staged files.
 - **AGENTS.md hierarchy:** Root AGENTS.md plus directory-level guides in `src/`, `tests/`, `scripts/`, `notebooks/`, `docs/`, `.github/`, `RFCs/`, `.ai/`. Comprehensive conventions for AI-assisted development.
@@ -381,11 +516,15 @@ Vite build injects a CSP `<meta>` tag restricting:
 - **maintenance** (15:30 UTC cron) — daily maintenance → rolling "Daily Maintenance Report" issue. Includes an **Upstream Modernization Watch** (Sundays UTC only) that surveys OpenCode/Fro Bot runtime docs but MUST NOT bump pinned agent SHAs
 - **autoheal** (03:30 UTC cron) — fixes failing CI on open PRs, remediates critical/high security advisories, runs code-quality audits (build, coverage, accessibility, convention drift, AGENTS.md accuracy), lands lint/format fixes via PR, and verifies quality gates → "Daily Autohealing Report" issue
 
-Pins **`fro-bot/agent@v0.107.1`** (SHA `e6b620bd51ae76e18cfe660d3aab490d29390eda`) as of 2026-09-03 — bumped from v0.97.0 (12 minors, 20 consecutive Renovate commits, crosses the cosmetic v0.100 line, still 0.x). `actions/checkout` pinned at v6.0.3 (`df4cb1c`). Secrets/vars: `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`. Workflow file is 570 lines; body byte-identical to 2026-08-08 apart from the pin — same three-mode single file, dual crons (03:30 autoheal / 15:30 maintenance), `setup-pnpm` composite bootstrap, `contents/issues/pull-requests/discussions: write`, `concurrency` keyed on issue/PR/discussion number or schedule.
+Pins **`fro-bot/agent@v0.113.2`** (SHA `43023e5b9755fe307c03ede1067cc182564d30e3`) as of 2026-09-20 — bumped from v0.107.1 (12 more minors in 17 days; ~24 minors since 2026-08-08, still 0.x). `actions/checkout` pinned at v6.0.3 (`df4cb1c`), now two majors behind detected `v7.0.1` because the bump lives in blocked PR #2662. Secrets/vars: `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`; env `OPENCODE_PROMPT_ARTIFACT: 'true'`. Workflow file is **572 lines** — the first body change since 2026-08-08 is PR #2762's two-line conditional `persist-credentials` on the checkout step (2026-09-11). Otherwise unchanged: three-mode single file, dual crons (03:30 autoheal / 15:30 maintenance), `setup-pnpm` composite bootstrap, `contents/issues/pull-requests/discussions: write`, `concurrency` keyed on issue/PR/discussion number or schedule, and **no step after `Run Fro Bot`**.
+
+**Prior (2026-09-03):** pinned `fro-bot/agent@v0.107.1` (SHA `e6b620bd51ae76e18cfe660d3aab490d29390eda`), 570 lines, body byte-identical to 2026-08-08 apart from the pin.
 
 `AUTOHEAL_PROMPT` runs **7 categories**: 1 Errored PRs, 2 Security, 3 Code Quality & Repo Hygiene, 4 Developer Experience, 5 Quality Gates Verification, 6 Cross-Project Intelligence (inbound only), 7 Upstream Modernization Watch (Sundays UTC only, gated by an `IS_SUNDAY_UTC` env computed in a preceding step). It also declares an EXECUTION MODEL (serial writes, clean tree between mutations), a DEDUPLICATION clause, a SCOPE CAP, a DEPENDENCY OWNERSHIP boundary ceding routine bumps to Renovate, and a TRUSTED AUTHORS list (`renovate[bot]`, `dependabot[bot]`, `mrbro-bot[bot]`, `fro-bot`, Marcus). Both perpetual issues are managed by exact-title search with a 50,000-character body-rotation directive.
 
-**Daemon liveness (2026-09-03):** workflow has 3,750 lifetime runs; the last 13 scheduled runs are all `success`, contiguous daily on both crons. The perpetual issues are live — #2153 "Daily Maintenance Report" (104 comments, last 2026-09-02), #2431 "Daily Autohealing Report" (59 comments, last 2026-09-03). See the 2026-09-03 section: **green and live is not the same as effective here.**
+**Daemon liveness (2026-09-20):** workflow has **3,990** lifetime runs. Of the last 100, **86 concluded `skipped`** (62 `issues`, 12 `issue_comment`, 12 `pull_request`) against 14 `schedule` runs that executed — the trigger-economics figure from 2026-09-03 is durable to within a point. Scheduled conclusions: `success` on every day in the window **except 2026-09-12, when both runs hit GitHub's 360-minute job cap and concluded `cancelled`** (see the 2026-09-20 section). Perpetual issues live — #2153 "Daily Maintenance Report" (118 comments, body 48,192 chars), #2431 "Daily Autohealing Report" (72 comments, body **60,332** chars, over the prompt's own 50,000 archive threshold).
+
+**Prior (2026-09-03):** 3,750 lifetime runs; the last 13 scheduled runs all `success`, contiguous daily on both crons. The perpetual issues are live — #2153 "Daily Maintenance Report" (104 comments, last 2026-09-02), #2431 "Daily Autohealing Report" (59 comments, last 2026-09-03). See the 2026-09-03 section: **green and live is not the same as effective here.**
 
 **Trigger economics.** Of the last 100 workflow runs, 87 concluded `skipped` — 63 `issues`, 12 `issue_comment`, 12 `pull_request` — against 13 `schedule` runs that actually executed. The bot's own writes to its perpetual issues re-fire the `issues` trigger, and the job-level `if:` then rejects them because `github.event.issue.user.login == 'fro-bot'`. Skipped jobs bill nothing, so the cost is queue noise and a run history in which real executions are 13% of rows. Worth knowing before reading run-history statistics on any repo with a self-writing rolling-report daemon.
 
@@ -425,15 +564,37 @@ This is the first observed instance in the surveyed ecosystem of **repo-committe
 - **Repo-scoped named agents (2026-08):** `.github/agents/*.agent.md` externalizes review/test-authoring personas as frontmatter-tagged, version-controlled files the harness can select by name — a step beyond the AGENTS.md convention-doc hierarchy toward first-class, per-role agent definitions. The agent files defer to AGENTS.md for canonical conventions rather than duplicating them.
 - **Tiered test reporting as first-class code (observed 2026-09-03):** `scripts/lib/` mirrors the 5-tier test model in two parallel module families — `parsers/{accessibility,coverage,e2e,performance,visual}.ts` and `formatters/{same five}.ts` — behind `github-comments.ts` and `job-summary.ts`. Adding a test tier means adding one parser and one formatter, and the CI "Generate … Report" jobs need no new logic. A cleaner separation than most repos in the fleet manage, and it is the reason the report jobs are three-line `node scripts/report-test-results.ts --type X` invocations.
 - **Anti-pattern, delivery contract split across two documents (2026-09):** the workflow prompt grants push/PR authority, the job grants the write permissions to back it, and the harness resolves a delivery mode that forbids both. All three artifacts are internally consistent; the system is not. Failure is silent and the run is green. See the 2026-09-03 section.
+- **Anti-pattern, a second automation pushing to a first automation's branches (observed 2026-07-19, diagnosed 2026-09-20):** one autoheal run pushed the same repo-wide UI fix onto three Renovate branches in two seconds, tripping Renovate's `PR Edited (Blocked)` guard on all three. The guard is a correct safety feature — it refuses to clobber what looks like a human edit — and it cannot distinguish a second bot from a person. Because one of the three was a grouped `all-minor-patch` PR, ~24 dependencies froze at once, including the Renovate preset that governs the grouping. The effect is invisible in the tree, invisible in PR state, and visible in exactly one place: the Dependency Dashboard body.
+- **Anti-pattern, a rolling report with no diagnostic ratchet (2026-09):** four root causes for one failure in seventeen days, regressing from correct (09-03) to inverted (09-17/09-19) to true-but-not-load-bearing (09-20). Each run re-derives from scratch against a body it prepends to but does not reason over. A correct diagnosis, once recorded, has no mechanism protecting it from the next run.
+- **Accidental hardening by neglect (2026-09-04):** a Renovate reusable-workflow pin frozen at v4.16.34 by the blocked-branch defect is the reason this repo never received the poisoned v4.25.0 that took four sibling repos inert for ~6.5 hours. The same staleness that an audit would flag as debt was, that day, the control.
 
 ## Open Questions
 
-- **Why did `fro-bot` PR creation stop on 2026-07-29,** three weeks before `working-dir` delivery first appears in the report stream (2026-08-20)? The delivery break explains the file-write drought from 08-20 forward but not the preceding gap. Answering it likely needs the closed-PR history and the run logs for late July.
-- **Is the `working-dir` mode resolved by the harness or by operator configuration?** The workflow passes no delivery-mode input — `with:` carries only `auth-json`, `github-token`, `model`, `omo-providers`, `opencode-config`, `prompt`, `timeout` — so it is resolved inside `fro-bot/agent`, possibly via `OPENCODE_CONFIG`. Settling this decides whether the fix belongs in this repo's workflow or in [[fro-bot--agent]].
+### Opened 2026-09-20
+
+- **Can a Renovate branch blocked by `PR Edited` be recovered without a human clicking the dashboard checkbox?** Three branches (#2440, #2662, #2320) have been blocked since 2026-07-19 and no automation in this repo can un-block them — the autoheal is forbidden from merging or closing, and Renovate will not touch an edited branch. If the answer is no, this is a permanent human-only recovery step that a fleet lint should surface rather than wait for.
+- **Does the `.gitignore` negation gap reach beyond `.ai/` and `RFCs/`?** The 09-20 run found two files silently re-ignored by blanket `.ai/*`/`RFCs/*` rules. The same shape would hide any root-level file added to either directory. Worth one `git check-ignore -v` sweep.
+- **Does `fro-bot/agent` accept an `output-mode` input on this version line?** [[fro-bot--dashboard]] (#413) and [[marcusrbrown--sparkle]] (#2001/#2003) both pass one explicitly, so the input exists somewhere in the fleet's version range. If it is available at v0.113.2, the delivery fix here is one line rather than a new job — which changes who should own it.
+
+### Carried, with 2026-09-20 updates
+
+- **Why did `fro-bot` PR creation stop on 2026-07-29?** _Partially answered._ `fro-bot`'s last **write of any kind** to this repository was **2026-07-19 04:53**, the three pushes onto the Renovate branches. Its last *opened* PR was #2693 on 07-29. So the write channel and the PR channel stopped ten days apart, and the 07-19 pushes are the last successful agent writes on record — 63 days. Still open: what happened between 07-29 and the 08-20 arrival of `working-dir`.
+- **Is the `working-dir` mode resolved by the harness or by operator configuration?** _Still open, and now contested in the record._ The workflow passes no delivery-mode input — `with:` carries only `auth-json`, `github-token`, `model`, `omo-providers`, `opencode-config`, `prompt`, `timeout` — so it is resolved inside `fro-bot/agent`, possibly via `OPENCODE_CONFIG`. The daemon's 09-17/09-19 position is that the *commit step* also lives inside the action; the delivery contract says the caller owns it. Settling this decides whether the fix belongs in this repo's workflow or in [[fro-bot--agent]], and it is now the blocking question for four weeks of discarded work.
 - **How many other repos in the fleet pin a v0.10x agent and lack a caller-side commit job?** This is a one-query fleet lint (`fro-bot/agent@v0.10*` in `uses:` with no subsequent commit/push step) and it is the highest-value follow-up from this survey. A silent delivery break reproduces wherever the same workflow shape was copied.
 - **Does `pnpm audit` on `main` actually report clean?** The autoheal claims rest on a working tree that no longer exists. Nothing has verified the advisory state of the committed lockfile since the overrides stopped landing.
 
 ## Open Work Items
+
+### As of 2026-09-20
+
+- **Unblock the three Renovate branches.** #2662 alone freezes ~24 dependencies including Node, pnpm, the Renovate preset itself, and `bfra-me/.github`. One dashboard checkbox per branch (`rebase-branch=…`) discards the stray `fro-bot` commit and restarts the channel. This is the highest-leverage single action available on this repo and it takes about a minute.
+- **Stop the autoheal from pushing to updater-owned branches.** Category 1's trusted-author list includes `mrbro-bot[bot]` and `renovate[bot]`, which is precisely the set whose branches must not be edited. Either drop the updater bots from category 1 or restrict pushes to fixes scoped to that PR's own diff.
+- **Delivery is still broken and is still the only thing that matters.** 27 consecutive days of discarded work as of 2026-09-20 (the daemon counts 16 from its own first detection). The workflow needs a caller-side commit/push/PR job, or an explicit `output-mode`.
+- **24 HIGH Dependabot alerts are live on `main`** (79 open total: 0 critical / 24 high / 46 medium / 9 low, flat since 2026-09-05), and the repo has **no audit gate in CI at all**. Adopt [[marcusrbrown--tokentoilet]] PR #1501's split gate — the daemon already wrote the recommendation, correctly, on 2026-09-20.
+- **`fast-uri: '>=3.1.2'` is now a confirmed stale floor**, not a candidate: the current advisory requires `>=3.1.6`. Ships with the 2026-09-03 fleet-wide finding intact.
+- **`timeout: 0` has no bound.** Two runs burned 360 minutes each on 2026-09-12 and reported `cancelled`. Set a real timeout, or add a `cancelled`-aware alert.
+- **"Vite 7" in all three prompt envs** against an actual 8.3.0. The file was edited by a human on 2026-09-11 without touching it.
+- **#2431's body is 60,332 characters** against a 50,000-character archive directive the agent is supposed to self-enforce.
 
 ### As of 2026-09-03
 
@@ -459,6 +620,7 @@ This is the first observed instance in the surveyed ecosystem of **repo-committe
 
 | Date | SHA | Delta |
 | --- | --- | --- |
+| 2026-09-20 | `9a2b6e14` | 17-day, 28-commit delta; **3 files changed** (`fro-bot.yaml` +3/−1, `package.json`, `pnpm-lock.yaml`), tree still **342 blobs / 66 trees** — 43 days with zero blobs added or removed. Open queue byte-identical to 2026-09-03 (23 issues + 15 PRs, same members). **(1) First human commit: PR #2762** (`marcusrbrown`, merged 09-11) adds a two-line conditional `persist-credentials` to the checkout step, withholding the token on `pull_request`/`issue_comment`/`issues` — a correct security narrowing, tracked to `fro-bot/agent#1598`, and **not** the delivery fix; the workflow still ends at `timeout: 0`. gpt is the middle case between [[marcusrbrown--sparkle]] (one gate driving both halves) and [[marcusrbrown--tokentoilet]] (neither half). **(2) The daemon's diagnosis regressed** — 09-03 correct ("no visible commit/push step") → 09-17 inverted ("ruled out a bug in this repo's own workflow; the commit step lives inside the third-party action") → 09-19 restates it **quoting the human's new `persist-credentials: true` as proof the repo is configured correctly** → 09-20 a real-but-non-load-bearing `.gitignore` negation gap announced as "root cause found and fixed". Explicitness read as intent, and intent read as correctness. The prompt's workflow-edit ban has an escape hatch that the misdiagnosis closed, and a `working-dir` edit would have been discarded anyway — **self-sealing at two layers**. **(3) The headline: the autoheal disabled Renovate on three branches.** Dashboard #279's `PR Edited (Blocked)` lists #2440/#2662/#2320; all three branch tips carry the same `fro-bot` commit `fix(settings): restore ollama chip contrast` (`src/components/settings/ollama-settings.tsx` +3/−4) pushed **2026-07-19 at 04:53:29/:30/:31** — one autoheal run, three pushes, two seconds. #2662 is `renovate/all-minor-patch`, so **~24 dependencies froze at once** — `node`, `pnpm`, `marcusrbrown/renovate-config`, `bfra-me/.github`, `@modelcontextprotocol/sdk`, `zod`, `openai`, `pdfjs-dist`, `dexie`, `@typescript/native-preview`, `actions/checkout`, … — i.e. essentially every pin this page has recorded as "stable" across six surveys has **one** cause with a timestamp. Self-sealing: the preset governing the grouping is inside the frozen group. **Method correction: a frozen pin under a hot updater is a suppression signal**; third dashboard-body case after [[marcusrbrown--esphome-life]] and [[bfra-me--works]]. **(4) The freeze bought immunity to the 2026-09-04 `tar` outage** — `renovate.yaml` sits at `bfra-me/.github` **v4.16.34**, so v4.25.0 was never delivered; gpt merged PRs through 09-04/09-05 while four sibling repos were inert ~6.5 h (limit: no Renovate cron here, so the evidence is the pin, not an in-window run). **(5) `timeout: 0` + GitHub's 6-hour cap** — both 09-12 scheduled runs ran exactly **360 min** and concluded **`cancelled`** (healthy band 11–34 min), cleared 09-13 with no workflow change (transient). `cancelled` is a third conclusion value a `failure`-keyed monitor cannot see. **(6) Envelope instability spread to the delivery surface** — 72 comments on #2431, seven distinct markers, and **two successful runs (09-13, 09-16) posted no comment at all**; body **60,332** chars against a self-enforced 50,000 archive rule (second instance after [[marcusrbrown--cortexkit-anthropic-auth]]). **(7) 79 open Dependabot alerts (24 HIGH)**, flat since 09-05, with **no audit gate in CI**; the three committed overrides are unchanged since `d4dfd58` (2026-08-24) and `fast-uri >=3.1.2` is a confirmed stale floor (advisory now `>=3.1.6`). **(8) Category 6 works while category 4 cannot persist a byte** — the 09-20 report cites [[marcusrbrown--tokentoilet]] PR #1501 (merged that morning, split `pnpm audit --prod` gate) and correctly recommends adopting it. Prompt stack line still says "Vite 7" against **8.3.0**, in a file a human edited on 09-11. Deps: Vite 8.2.2 → 8.3.0, ESLint → 10.10.0, Prettier → 3.9.7, Playwright → 1.63.0, react-router-dom → 7.18.4, LangChain line → 1.5.11/1.2.11/1.5.13/1.5.10; agent **v0.107.1 → v0.113.2** (`43023e5b`). New: 4 Renovate-flagged abandoned deps (`clsx`, `file-saver` last released **2020-11-19**, `playwright-lighthouse`, `react-swipeable`). |
 | 2026-04-18 | `60bd62e` | Initial survey |
 | 2026-04-24 | `0bb8eed` | Dependency-only delta: `fro-bot/agent` v0.40.2→v0.41.4, `vite` 8.0.8→8.0.9, `@langchain/langgraph` 1.2.8→1.2.9, `eslint` 10.2.0→10.2.1, `uuid` v14 security patch, `@typescript/native-preview` 7.0.0-dev.20260419.1, `actions/setup-node` v6.4.0, `bfra-me/.github` v4.16.8. No structural or application code changes. |
 | 2026-05-27 | `aac0103` | Five-week delta. **Renovate preset crossed v4 → v5.2.0 boundary (#2435, 2026-05-13).** `fro-bot/agent` advanced through 8 versions: v0.41.4 → v0.42.5/.6/.7/.8/.9/.10 → v0.43.0/.1/.3 → v0.44.3 → v0.45.0. Workflow consolidation: `fro-bot-autoheal.yaml` folded into `fro-bot.yaml` as `autoheal` mode (three-mode single-file pattern). Vite 8.0.9 → 8.0.14; LangChain monorepo bumps (`langchain` → 1.4.2, `@langchain/core` → 1.1.48, `@langchain/openai` → 1.4.7, `@langchain/anthropic` → 1.4.0, `@langchain/langgraph` → 1.3.2); TailwindCSS 4.2.2 → 4.3.0; React Router 7.14.1 → 7.15.1; Zod 4.3.6 → 4.4.3; Vitest 4.1.4 → 4.1.7; `@vitest/eslint-plugin` 1.6.18 newly added; ESLint 10.2.1 → 10.4.0; `@bfra.me/prettier-config` → 0.16.9; `@bfra.me/tsconfig` → 0.13.1; Node 24.15.0 → 24.16.0; pnpm 10.33.0 → 10.33.4; `@typescript/native-preview` advanced to 7.0.0-dev.20260523.1; `bfra-me/.github` updated through v4.16.12 → v4.16.19. No structural or application-code changes — exclusively dependency hygiene and workflow consolidation. |

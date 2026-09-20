@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-20
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 9a2b6e142a875d84a1c1642bef1a043c07d67a0b
+    accessed: 2026-09-20
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
     accessed: 2026-09-18
@@ -186,6 +189,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
+- [[marcusrbrown--gpt]] — 10 active workflows + 1 fossil (`test-e2e.yaml.disabled`) as of 2026-09-20: `main.yaml` (Prepare → Lint/Run Tests/Build → Deploy), `fro-bot.yaml` (single-file **three-mode**, 572 lines, agent **v0.113.2**, dual crons 03:30 autoheal / 15:30 maintenance, `timeout: 0`, **and no step after `Run Fro Bot`**), `renovate.yaml` (`bfra-me/.github` reusable @ **v4.16.34** — frozen, see below), `update-repo-settings.yaml`, plus four test-tier workflows (`test-coverage` which actually runs E2E, `test-accessibility`, `visual-tests`, `test-performance`), `cache-cleanup.yaml`, `copilot-setup-steps.yaml`; local composite `.github/actions/setup-pnpm`. 13 required contexts on `main`, `enforce_admins: true`, `required_pull_request_reviews: null`. Three of the required contexts pass without executing their nominal work, and `Prepare` is a job name in five workflows. Source of the 2026-09-03 findings on required-checks-that-skip and rolling-report envelopes, and of the 2026-09-20 findings below on updater-branch poisoning, diagnostic regression, and `timeout: 0`.
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
@@ -2533,3 +2537,193 @@ that no lockfile, SHA pin, or version pin in the consumer can prevent.** SHA-pin
 help, because the 404 is inside the vendored Renovate engine's own data fetch, two layers below anything
 this fleet pins. The only consumer-side mitigations are retry-on-404 in the engine (upstream's job) or
 treating this specific signature as a known-transient class in fleet reporting.
+
+### A Second Automation Pushing to an Updater's Branches Disables the Updater (2026-09-20)
+
+From [[marcusrbrown--gpt]], and it is the cleanest single-cause explanation this wiki has produced for a
+set of findings it had been recording as twenty separate facts.
+
+Renovate's Dependency Dashboard carries a section titled **`PR Edited (Blocked)`**:
+
+> The following updates have been manually edited so Renovate will no longer make changes.
+
+At gpt it lists three PRs — `renovate/bfra.me-eslint-config-0.x` (#2440), `renovate/all-minor-patch`
+(#2662), and `renovate/react-monorepo` (#2320). All three branch tips carry the **same commit**, authored
+by `fro-bot`: `fix(settings): restore ollama chip contrast`, one file,
+`src/components/settings/ollama-settings.tsx` `+3/-4`, pushed at **04:53:29, 04:53:30 and 04:53:31 on
+2026-07-19** — one `30 3` autoheal run, three pushes, two seconds.
+
+**The agent's behavior was locally correct.** `renovate.json5` sets `postUpgradeTasks` to run
+`pnpm run bootstrap && pnpm run fix && pnpm run build` in `branch` execution mode, so Renovate branches
+execute the repo's own gates, and the accessibility gate was failing on a defect that lives on `main`.
+Category 1 of the autoheal prompt says: find open PRs with failing CI, read the logs, diagnose the root
+cause, fix it, push to the PR branch, comment. It did precisely that, on branches whose authors
+(`mrbro-bot[bot]`, `renovate[bot]`) are on its own TRUSTED AUTHORS list.
+
+**Renovate's guard was also correct.** Refusing to force-push over an edited branch is the behavior that
+protects a human's manual conflict resolution. It has no mechanism for distinguishing a second bot from a
+person, and it should not — the guard's premise is that *something other than me wrote here*, which is
+exactly true.
+
+Two correct behaviors, one dead update channel. Three, actually.
+
+**The blast radius is the group, not the PR.** #2662 is `renovate/all-minor-patch`, and the dashboard
+enumerates its members: `node`, `pnpm`, `marcusrbrown/renovate-config`, `bfra-me/.github`,
+`@modelcontextprotocol/sdk`, `zod`, `openai`, `pdfjs-dist`, `dexie`, `uuid`, `lru-cache`, `mammoth`,
+`jszip`, `lighthouse`, `autoprefixer`, `simple-git-hooks`, `@typescript/native-preview`,
+`@axe-core/playwright`, `@langchain/langgraph`, `@vitest/eslint-plugin`, `actions/checkout`,
+`actions/deploy-pages`, `actions/setup-node`, `dorny/paths-filter`. Roughly 24 dependencies frozen by one
+push.
+
+Read that against what this wiki had already written about the same repo, survey by survey:
+`@modelcontextprotocol/sdk` "unchanged since the initial survey"; `@typescript/native-preview` "held since
+2026-07-03"; `marcusrbrown/renovate-config#5.2.4` unchanged since 2026-07-14; Node 24.18.0 unchanged since
+2026-06-30; `@langchain/langgraph` 1.4.7 static while the rest of the LangChain line moved weekly. **Six
+surveys recorded twenty independent stable pins. There was one cause, and it had a timestamp.**
+
+And it is self-sealing in the now-familiar shape: the preset that governs the grouping —
+`marcusrbrown/renovate-config` — is *inside* the frozen group, so the configuration change that would
+shrink the blast radius cannot be delivered by the mechanism it would fix.
+
+Rules:
+
+1. **Never let a second automation push to a first automation's branches.** Fix the defect against the
+   default branch and let the updater rebase. A repair landed on someone else's branch trades one green PR
+   for a permanently dead update channel.
+2. If a bot-branch push is unavoidable, the change must be **in that PR's own scope** — a lockfile
+   conflict, a regenerated artifact. A repo-wide UI defect is never in scope for a dependency bump, and
+   "the gate is red on this branch" is not the same as "this branch caused it."
+3. **A grouped update's blast radius is its membership.** Price the cost of blocking a grouped PR by
+   enumerating members, not by reading the title. `all-minor-patch` groups are the worst case because they
+   are open-ended.
+4. **Audit the trusted-author list against the branch-push authority it grants.** gpt's list includes
+   `renovate[bot]` and `mrbro-bot[bot]` — the exact set whose branches must not be edited. Trust to *read
+   and diagnose* is not trust to *write*.
+5. **Detection is one API read**: the dashboard body's `PR Edited (Blocked)` section. Nobody runs it.
+
+This is the third dashboard-body case on the wiki and completes a set. [[marcusrbrown--esphome-life]]
+showed a freeze caused by `dependencyDashboardApproval` (detected, resolved, parked behind a checkbox).
+[[bfra-me--works]] showed *detected ≠ actionable* (present in `Detected Dependencies`, absent from every
+queue). This is the third mechanism: **detected, actionable, and refused.** The unifying rule the
+[[esphome]] entity already states in narrower form generalizes here: **a frozen pin under a hot updater is
+a question, never an answer — read the dashboard body before concluding anything from a version number.**
+
+#### Corollary: a stale pin freezes the attack surface along with the feature set
+
+The same freeze made gpt the only surveyed repo immune to the 2026-09-04 `tar` incident. Its
+`renovate.yaml` calls `bfra-me/.github` at **v4.16.34**, ~14 minor series behind, because that pin rides in
+blocked #2662 — so **v4.25.0, the release carrying `bfra-me/renovate-action` 10.34.0 with `tar` demoted to
+a devDependency, was never delivered.** While [[marcusrbrown--github]] (6h28m),
+[[marcusrbrown--esphome-life]] (6h25m43s), [[bfra-me--works]] (6h33m28s) and [[bfra-me--renovate-action]]
+(6h34m33s) went inert and needed a four-repo hand sweep, gpt merged dependency PRs through 09-04 and 09-05
+with no human intervention.
+
+Stated with its limit: gpt's Renovate has no cron — it triggers on `push`, `workflow_run`, `issues` and
+`pull_request` — so there is no scheduled run inside the outage window to inspect. The evidence is the
+pin, not a run; that is structurally sufficient, because the poisoned runner is reachable only through a
+version range the repo cannot enter.
+
+Worth checking whenever a fleet-wide supply-chain event maps cleanly onto a version range: **the repos
+that dodged it are usually the ones an audit would flag as neglected, and the neglect is the reason.** Do
+not read this as an argument for staleness. Read it as a reason to record *why* each frozen pin is frozen,
+because "we are behind" and "we are behind because our updater is disabled" have opposite remediations and
+identical version strings.
+
+### A Rolling Diagnosis Has No Ratchet, and an Explicit Default Is a Stronger-Looking Premise (2026-09-20)
+
+Also from [[marcusrbrown--gpt]], on the delivery break first recorded there on 2026-09-03.
+
+Four root causes for one failure in seventeen days, all in the same perpetual issue:
+
+| Date | Diagnosis | Verdict |
+| --- | --- | --- |
+| 2026-09-03 | "has no visible diff-detection/commit/push/PR-creation step" | **correct** |
+| 2026-09-17 | "read `.github/workflows/fro-bot.yaml` and ruled out a bug in this repo's own workflow — the commit/push responsibility … appears to live inside the third-party action" | **inverted** |
+| 2026-09-19 | restates 09-17, citing "`contents: write` and `persist-credentials: true` for `schedule` events" | inverted |
+| 2026-09-20 | a real `.gitignore` negation gap, announced as "root cause found and fixed for the 16-day persistence gap" | **true but not load-bearing** |
+
+Three things generalize.
+
+**1. A rolling report is a write surface, not a memory.** The agent prepends to a body it does not reason
+over, so every run re-derives the diagnosis from scratch. Nothing protects a correct conclusion from the
+next run's worse one. Where *A Title-Matched Rolling Issue Is a Public Write Surface* covers who can write
+to it, this covers what it fails to preserve for its own author. If a diagnosis matters, it needs a
+structured, re-read slot — a fixed `### Standing Diagnosis` section the prompt mandates reading *before*
+re-analysis — not a paragraph in the newest of seventy-two comments.
+
+**2. Explicitness reads as intent, and intent reads as correctness.** On 2026-09-11 a human landed PR
+#2762, adding a conditional `persist-credentials` to the checkout step — a correct security narrowing that
+withholds the token on `pull_request`/`issue_comment`/`issues` and leaves `schedule` at the pre-existing
+`actions/checkout` default of `true`. Eight days later the agent quoted `persist-credentials: true` as
+evidence the repo was configured correctly and the fault must be upstream. **Before the commit it was an
+unwritten default; after, it was a deliberate expression a reader could point at.** The behavior did not
+change for `schedule` runs; only its legibility did, and legibility is what a reasoning agent scores. When
+hardening makes a default explicit, expect it to be cited as a design decision — and check whether
+anything now depends on that reading.
+
+**3. A true sub-cause announced as *the* root cause closes the investigation.** The `.gitignore` finding is
+real: blanket `.ai/*` / `RFCs/*` rules with no root-level negation silently re-ignore any `AGENTS.md`
+written there, so `git status` never shows it and no caller-side commit could pick it up. It cannot
+explain `pnpm-workspace.yaml`, which is not ignored, is rewritten nightly, and has not changed since
+2026-08-24. **A diagnosis should be tested against the widest instance of the symptom, not the one it
+explains.**
+
+Two second-order notes worth carrying:
+
+- The autoheal prompt's workflow ban has an escape hatch — *"unless the failing run is caused by a genuine
+  bug in that file"* — that fits this case exactly. The 09-17 misdiagnosis closed it, and had it fired the
+  edit would have been discarded by `working-dir` anyway. This is
+  *An Agent's Repair Boundary Must Not Exclude Its Own Delivery Path* ([[bfra-me--works]]) with an
+  exception clause present and unused: **an escape hatch gated on the agent's own diagnosis is only as
+  good as the diagnosis, which is the thing that is broken.**
+- The remedy the agent wrote for the persistence failure was delivered through the broken persistence
+  path. The `.gitignore` negation exists only in a discarded working tree and will be rediscovered
+  tomorrow. **A fix for a delivery break cannot travel on the broken delivery channel**, and any agent
+  reporting one should be read as reporting a loop, not a repair.
+
+### `timeout: 0` Delegates the Timeout to GitHub's Six-Hour Cap (2026-09-20)
+
+A third instance for *A Cancelled Run Is Not a Failed Run*, and the first where the cancellation is a
+resource ceiling rather than an approval gate.
+
+[[marcusrbrown--gpt]] passes `timeout: 0` to `fro-bot/agent`, so nothing agent-side bounds the run. On
+**2026-09-12** both scheduled runs — 03:38 and 15:34 — ran for exactly **360 minutes** and concluded
+`cancelled`. That is GitHub's hard job cap, not a decision anyone made. Twelve hours of runner time in one
+day, against a healthy band of **11–34 minutes**.
+
+The streak cleared on 09-13 with **no workflow change** (the only intervening commit was a LangChain
+version bump), so it was transient — applying the correction from [[bfra-me--ha-addon-repository]]: *a
+failure streak that ends without a change was never a compatibility problem.*
+
+Three points:
+
+- **`cancelled` is a third value, not an inverted one.** The earlier instances of *a run's conclusion
+  measures the harness, not the deliverable* involved green runs hiding dead deliverables
+  ([[marcusrbrown--github]]) or red runs hiding healthy ones (the osv-offline rotation). This is neither:
+  a monitor keyed on `failure` sees nothing at all. `assert conclusion == "success"` catches it; the
+  weaker `!= "failure"` does not.
+- **Duration discriminates here, and the conditional rule from [[bfra-me--works]] explains why.** The
+  healthy band is wide (11–34 min) and the failure value pegs to a constant (360), so the proxy is clean.
+  Establish the band first; never port the threshold.
+- **`timeout: 0` is not "no timeout", it is "GitHub's timeout".** Six hours is the most expensive possible
+  default and produces the least informative conclusion. An explicit `timeout-minutes` on the job gives a
+  bounded cost and — because a job that exceeds `timeout-minutes` concludes `failure`, not `cancelled` —
+  a conclusion an ordinary monitor can already see.
+
+#### Amendment: *A Delivery Contract With Only One Half Implemented* now has a three-point spectrum
+
+The 2026-09-07 section root-caused the break at [[marcusrbrown--tokentoilet]] and listed the three layers
+to check (permissions → prompt boundaries → delivery mode). Three repos now sit at distinct points on the
+repair path, which makes the fix shape concrete:
+
+| Repo | Credential half | Delivery half | Shape |
+| --- | --- | --- | --- |
+| [[marcusrbrown--sparkle]] (#2001/#2003) | conditional, from a single `Resolve delivery mode` gate step | `output-mode` from the same gate | **complete** — one computed value drives both, with an inline comment naming the drift class |
+| [[marcusrbrown--gpt]] (#2762) | conditional `persist-credentials`, hand-written | absent — workflow still ends at `Run Fro Bot` | **half** |
+| [[marcusrbrown--tokentoilet]] | default | absent | **neither** |
+
+The gpt case adds the useful warning: **the two halves can be separated, and the one with an upstream
+tracking issue behind it will land alone.** A credential-posture change and a delivery-mode change are the
+same decision viewed from two sides; splitting them produces a workflow that is *more* correct about
+security and no more capable of writing anything. When reviewing a fix for this class, the test is not
+"did the credential handling improve" but **"is there exactly one expression that both jobs read."**
