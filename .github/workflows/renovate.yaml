@@ -50,8 +50,19 @@ jobs:
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
     uses: bfra-me/.github/.github/workflows/renovate.yaml@5486c68e013c25fb91790fab5cde3c89b8d6c350 # v4.30.0
     with:
-      # Disable autodiscover — cross-repo dispatch is handled by dispatch-renovate.yaml.
-      # This workflow should only run Renovate for this repository.
+      # INERT as of bfra-me/renovate-action 10.42.1 — this does NOT disable autodiscover.
+      # Kept to declare intent (cross-repo dispatch belongs to dispatch-renovate.yaml), not
+      # because it works. Two independent upstream reasons, both verified 2026-09-20:
+      #   1. action.yaml interpolates the value textually into a double-quoted shell
+      #      assignment (`user_global_config="${{ env.global_config }}"`), so the JSON's own
+      #      quotes are stripped, `jq` validation fails, and the step logs
+      #      `Invalid JSON syntax in user global-config` then falls back to base config at
+      #      exit 0. Any JSON value breaks identically; there is no quoting of ours that fixes it.
+      #   2. Even parsed, it would lose: the reusable workflow computes `autodiscover` from the
+      #      repository name and passes it as an explicit action input. This repo is named
+      #      `.github`, so autodiscover is forced on for schedule/dispatch runs against `main`.
+      # Net effect: sweeps reach org repos absent from `metadata/renovate.yaml` `with-renovate`.
+      # Do not "fix" by deleting this input or reshaping the JSON — the fix is upstream.
       global-config: '{"autodiscover": false}'
       log-level: ${{ inputs.log-level || 'debug' }}
       path-filters: >-
