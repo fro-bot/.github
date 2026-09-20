@@ -2,11 +2,9 @@
 type: repo
 title: marcusrbrown/tokentoilet
 created: 2026-04-18
-updated: 2026-09-20
+updated: 2026-09-07
 node_id: R_kgDOJ3rINw
 sources:
-  - url: https://github.com/marcusrbrown/tokentoilet/pull/1501
-    accessed: 2026-09-20
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
     accessed: 2026-04-18
@@ -71,33 +69,6 @@ related:
 # marcusrbrown/tokentoilet
 
 A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v2, and Reown AppKit. Deployed to Vercel.
-
-## 2026-09-20 downstream observation (not a source-side survey)
-
-Recorded from the [[marcusrbrown--gpt]] survey, whose autoheal cross-project-intelligence table cited this
-repo the morning it happened. **The page's top open item — "the security queue is undrained" and
-"`Security Audit` is `dependency-review-action` on PRs only and never audits `main`" — appears closed.**
-
-PR **#1501**, `fix(deps): refresh stale security overrides and gate on production advisories`, authored by
-`marcusrbrown` and **merged 2026-09-20T03:16:22, seven minutes after it opened**. Three files:
-`.github/workflows/ci.yaml` (+14/−0), `pnpm-workspace.yaml` (+5/−4), `pnpm-lock.yaml`. Per the gpt
-report's account, the shape is a **split gate**: a blocking `pnpm audit --prod --audit-level moderate`
-(zero production-reachable advisories) alongside an advisory-only full-tree `pnpm audit` under
-`continue-on-error`, so dev-toolchain noise is surfaced without red-lighting the merge train.
-
-That is the precise remedy for the two defects this page recorded on 2026-09-07 — a PR-scoped change gate
-that is not a posture monitor, and a `>=` override ledger with no mechanism proving its floors are still
-current — and it also sidesteps the repo-wide-merge-freeze failure mode recorded at
-[[marcusrbrown--marcusrbrown-com]], where a single hard `pnpm audit` gate inside a shared quality job
-turned one upstream advisory into a twelve-day freeze. **Splitting the gate by production-reachability is
-the first version on this wiki that gets both halves: blocking where it matters, advisory where it would
-otherwise hold the train hostage.**
-
-Two things this observation does *not* establish, and a direct survey should check both: whether the six
-stranded one-line `fix(security)` PRs (#1401 and siblings, parked 29–48 days as of 2026-09-07) were merged,
-closed as superseded, or left standing; and whether the 19 open moderate-or-higher Dependabot alerts
-actually fell. A gate that asserts zero production advisories tells you about `--prod` resolution, not
-about the alert count. **A direct survey is warranted.**
 
 ## Overview
 

@@ -6063,80 +6063,64 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
 
-## [2026-09-20 05:20] ingest | repo:marcusrbrown/gpt
+## [2026-09-20 09:05] ingest | repo:fro-bot/agent
 
-Surveyed `marcusrbrown/gpt` at HEAD `9a2b6e142a875d84a1c1642bef1a043c07d67a0b` (2026-09-19), 17 days and
-28 commits past the 2026-09-03 pass at `556bc73`. Reads limited to directory/tree listings, manifests,
-workflow files, and public issue/PR/run metadata.
+Surveyed `fro-bot/agent` at HEAD `c7622aa` (2026-09-20T02:37Z, `docs: capture three learnings from the
+background-subagent work (#1632)`), 56 commits since the 2026-09-05 pass at `096faf1` — authorship split
+exactly 28 `fro-bot[bot]` / 28 `marcusrbrown`. Latest release v0.113.2 (2026-09-16); v0.114.0 pending as
+PR #1626. No structural change: 5 workspace members, 12 workflows, 9 CI jobs, 12 required contexts, 19
+RFCs, `evals/`, and the four-layer hierarchy all durable.
 
-Interval shape: 3 files changed (`.github/workflows/fro-bot.yaml` +3/-1, `package.json`,
-`pnpm-lock.yaml`); tree unchanged at **342 blobs / 66 trees** for the third consecutive survey (43 days,
-zero blobs added or removed); open queue byte-identical at 23 issues + 15 PRs; agent pin v0.107.1 ->
-**v0.113.2**.
+Survey ran without a GitHub token (`gh` unauthenticated in this environment) and without filesystem write
+access outside the workspace, so clone and tarball paths were unavailable. Metadata came from the
+anonymous GitHub REST API under the 60 req/hr core quota (~16 calls); file reads came from
+`raw.githubusercontent.com`, which does not consume that quota. Reads were held to the survey contract —
+directory listings (`git/trees?recursive=1`), README files, manifests (`package.json` x6, `action.yaml`,
+`harness.config.json`, `.github/settings.yml`, `.github/renovate.json5`, `bun.lock`), and workflow files.
 
-Durable findings recorded:
+Pages touched:
 
-- **The autoheal disabled Renovate on three branches, and that is the single cause behind twenty pins this
-  wiki had recorded as independently "stable".** Dashboard #279's `PR Edited (Blocked)` lists #2440/#2662/
-  #2320; all three branch tips carry the same `fro-bot` commit `fix(settings): restore ollama chip
-  contrast` (`src/components/settings/ollama-settings.tsx` +3/-4) pushed at 04:53:29/:30/:31 on
-  2026-07-19 — one autoheal run, three pushes, two seconds. Both behaviors were locally correct: the agent
-  was repairing CI on branches whose authors are on its own TRUSTED AUTHORS list, and Renovate's guard
-  refuses to clobber edits it cannot attribute. #2662 is `renovate/all-minor-patch`, so ~24 dependencies
-  froze at once including `node`, `pnpm`, `marcusrbrown/renovate-config` and `bfra-me/.github`. Self-
-  sealing: the preset governing the grouping is inside the frozen group. Third dashboard-body case after
-  `dependencyDashboardApproval` and *detected != actionable* — this one is **detected, actionable, and
-  refused**.
-- **Corollary — a stale pin freezes the attack surface along with the feature set.** The same block left
-  `renovate.yaml` on `bfra-me/.github` v4.16.34, so the poisoned v4.25.0 was never delivered and gpt was
-  the only surveyed repo immune to the 2026-09-04 `tar` incident. Stated with its limit: no Renovate cron
-  here, so the evidence is the pin, not an in-window run.
-- **The first human commit is adjacent to the break and is not the fix.** PR #2762 (`marcusrbrown`, merged
-  2026-09-11) adds a two-line conditional `persist-credentials` withholding the token on content triggers;
-  the workflow still ends at `timeout: 0`. Places gpt between `marcusrbrown/sparkle` (one gate driving
-  both halves) and `marcusrbrown/tokentoilet` (neither) — the credential and delivery halves separated,
-  and only the one with an upstream tracking issue landed.
-- **A rolling diagnosis has no ratchet.** Four root causes in 17 days: 09-03 correct -> 09-17 inverted
-  ("ruled out a bug in this repo's own workflow") -> 09-19 restating it while quoting the human's new
-  `persist-credentials: true` as proof the repo is correct -> 09-20 a real-but-non-load-bearing
-  `.gitignore` negation gap announced as the root cause. Generalized: *explicitness reads as intent, and
-  intent reads as correctness*; *a true sub-cause announced as the root cause closes the investigation*;
-  *a fix for a delivery break cannot travel on the broken delivery channel*.
-- **`timeout: 0` delegates to GitHub's 360-minute job cap.** Both 2026-09-12 scheduled runs pegged to
-  exactly 360 min and concluded `cancelled` against an 11–34 min healthy band, clearing 09-13 with no
-  workflow change (transient, per the ha-addon-repository correction). A third conclusion value, invisible
-  to a `failure`-keyed monitor.
-- **Envelope instability spread to the delivery surface.** 72 comments on #2431 across seven distinct
-  markers, and two successful runs (09-13, 09-16) posted no comment at all. Body is 60,332 chars against
-  the prompt's own 50,000 archive threshold — second instance after cortexkit-anthropic-auth #11.
-- **Security posture is now numeric.** 79 open Dependabot alerts (0 crit / 24 high / 46 med / 9 low), flat
-  since 09-05, with no `pnpm audit` gate anywhere in CI; the three committed overrides are unchanged since
-  `d4dfd58` (2026-08-24) and `fast-uri >=3.1.2` is a confirmed stale floor against a `>=3.1.6` advisory.
-- **Category 6 works while category 4 cannot persist a byte** — the read path and the write path fail
-  independently.
+- `repos/fro-bot--agent.md` — re-survey. Seven new sections: **Background Subagents** (requirements
+  #1606 -> file-watcher disable #1608 -> ownership+drain #1624 -> completion-evidence-per-turn #1627 ->
+  enable #1629 -> learnings #1632; containment merged before the switch; entire arc **unreleased**);
+  **The Action Reports a Third State** (`invocation-outcome` = succeeded/incomplete/failed/skipped,
+  `cache-save-result` = durable/store-only/skipped/declined-for-safety/not-persisted, "reports a result,
+  not proof of durability", both main-step-only); **The Execution Budget Is Derived, Not Constant** (75 m
+  job cap as backstop, deadline = cap - measured pre-action elapsed - 15 m reserve, fails rather than
+  floors upward); **Fleet Runtime-Verification Sweep** (#1601/#1598, four-owner collector, own-output-as-
+  untrusted rule, validated marker pair, private repos out of scope); **The Bun Pin Two Managers Own**;
+  **Setup-Path Defect Cluster** (six same-day fixes for spawning an install directory as an executable);
+  plus two corrections. Harness base 1.18.29 -> 1.18.30, carries 13 -> 15 (#48267/#48268), two builds in
+  one day. Open issues 7 -> 12 (ten human-authored), PRs 5 -> 6, stars flat at 4.
+- `topics/github-actions-ci.md` — three new sections: *A Job-Level Timeout Is a Kill, Not a Deadline*;
+  *A Version Cap Binds a Dep Name, Not a File* (with the bot-branch/commit-message corollary); *Encode the
+  Third State in the Contract, Not the Log* (three new false-signal instances against the first fleet
+  remedy shipped as a type in a public interface).
+- `index.md` — catalog entries refreshed for both touched pages.
 
-Pages touched: `wiki/repos/marcusrbrown--gpt.md` (new 2026-09-20 section, tech-stack frozen-pin
-explanation, Fro Bot integration, open questions/work items, survey-history row, three new anti-patterns);
-`wiki/topics/github-actions-ci.md` (three new sections, one amendment turning *A Delivery Contract With
-Only One Half Implemented* into a three-point spectrum, plus a gpt entry in the repo inventory);
-`wiki/repos/marcusrbrown--tokentoilet.md` (2026-09-20 downstream observation on PR #1501's split audit
-gate, with an explicit direct-survey warrant); `index.md`; this log.
+Corrections recorded (additively, prior text preserved):
 
-Corrections issued against prior content on this wiki: the "frozen/stable pin" readings across six gpt
-surveys are superseded as stability and reclassified as a suppression signal; the 2026-09-03 reading that
-the "Vite 7" prompt drift persists because nobody edits the file is superseded (a human edited it on
-2026-09-11 without touching the line); the Ollama contrast cluster is extended from a duplication story to
-the vector for the blocked-branch defect.
+- This page's Action Interface tables had never recorded `trusted-head-sha`, `response-mode`,
+  `server-bootstrap-timeout`, `brokered-push-extra-paths`, `delivery-kind`, `output-mode-migration`, or
+  `brokered-push-allowlist` — all present at `096faf1`. The omission hid **brokered push** entirely: a
+  third delivery mode that commits directly to a trusted PR's head branch under a hard-denied path
+  allowlist, alongside `working-dir` and `branch-pr`.
+- `8e303ca`'s commit subject names Bun v1.4.1; PR #1576 and the committed diff both say 1.4.2. `git log`
+  is not a version ledger for bot-refreshed branches.
+- No contradiction with `repos/fro-bot--systematic.md`: npm `@fro.bot/systematic` latest is 3.20.0
+  (2026-09-20T01:10Z), and 3.19.0 published 2026-09-19T18:15Z, so that page's 3.18.10 reading was simply
+  upstream of two releases. Recorded as a consumer-pin observation.
 
-No Fro Bot workflow gap: `marcusrbrown/gpt` runs a full three-mode `fro-bot.yaml`. No follow-up draft PR
-is warranted on that basis.
+Fro Bot workflow: present and self-hosted (`fro-bot.yaml`, two jobs, unchanged trigger set). No follow-up
+draft PR is warranted.
 
-Sources: https://github.com/marcusrbrown/gpt@9a2b6e142a875d84a1c1642bef1a043c07d67a0b,
-https://github.com/marcusrbrown/gpt/pull/2762, https://github.com/marcusrbrown/gpt/issues/2431,
-https://github.com/marcusrbrown/gpt/issues/279, https://github.com/marcusrbrown/tokentoilet/pull/1501
+Sources: https://github.com/fro-bot/agent@c7622aae2acd681b5170cf0f14071bdb5cc93c14,
+https://api.github.com/repos/fro-bot/agent/compare/096faf1...main,
+https://api.github.com/repos/fro-bot/agent/issues/579,
+https://registry.npmjs.org/@fro.bot/systematic
 
-## [2026-09-20 10:05] ingest | repo:marcusrbrown/gpt
+## [2026-09-20 10:06] ingest | repo:fro-bot/agent
 
-Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/gpt
+Sources: https://github.com/fro-bot/agent
