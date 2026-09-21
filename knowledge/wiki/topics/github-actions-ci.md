@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-20
+updated: 2026-09-21
 sources:
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 35ed8b7920f1f0c14faafeff3c89e4eb74db649e
+    accessed: 2026-09-21
   - url: https://github.com/fro-bot/agent
     sha: c7622aae2acd681b5170cf0f14071bdb5cc93c14
     accessed: 2026-09-20
@@ -185,7 +188,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 - [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
-- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
+- [[marcusrbrown--ha-config]] — 3 workflows, unchanged in shape since 2023: `ci.yaml` (YAML lint → Remark lint → Prettier → Home Assistant config validation, all four job names emoji-prefixed and bound verbatim as required contexts), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.31.0**, both at correct upstream paths — the counter-example to [[marcusrbrown--esphome-life]]'s mis-pathed sync). No Fro Bot workflow after **eleven** surveys. **4,446 lifetime runs with zero failures in the last 60** on a repo with no test suite — the fleet's cleanest Actions record and, as of 2026-09-21, the reason it is instructive: every defect found there is silently correct-looking. Source of the 2026-09-21 findings below on package-rule name collisions, diff-versus-body authority, and parked PRs as moving targets
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
@@ -2763,3 +2766,113 @@ cause one step earlier. Re-checked 2026-09-21: the cluster has taken **no new me
 so the accretion recorded in the 2026-08-08 survey has **stopped** while the wreckage remains. That
 distinguishes *a daemon still duplicating* from *a daemon that stopped and left duplicates*, and only the
 second is fixed by closing PRs rather than by changing the dedup predicate.
+
+### A Package Rule Matches a String, Not a Dependency (2026-09-21)
+
+The exact inverse of _A Version Cap Binds a Dep Name, Not a File_ (2026-09-20), and it completes the pair.
+There, **one value was extracted under two identities**, so a cap bound one reader and not the other. Here,
+**two unrelated dependencies share one identity**, so a rule written for one governs both.
+
+[[marcusrbrown--ha-config]] carries this in `.github/renovate.json5`, unchanged since before the wiki's first
+survey of the repo:
+
+```json5
+{
+  matchPackageNames: ['esphome'],
+  separateMajorMinor: false,
+  separateMinorPatch: false,
+}
+```
+
+It was authored for `esphome` the **PyPI package** in `requirements.txt`, to collapse ESPHome's calendar-versioned
+releases into a single approval instead of a stream of false majors. But the same repo has a **git submodule at
+path `esphome`** pointing at a different repository, and Renovate's `git-submodules` manager derives `depName`
+from the submodule path. Two managers, two dependencies with nothing in common, one name.
+
+Measured consequence on 2026-09-21, inside a 6 m 42 s window:
+
+- PR #911, branch `renovate/all-minor-patch`, title and machine-generated update table declaring **one** row
+  (`bfra-me/.github` v4.30.0 → v4.31.0), merged a **three-file** diff that also moved the `esphome` submodule
+  `78d2a19` → `7f39a6f`.
+- PR #912, branch `renovate/esphome-digest`, opened four minutes *after* #911 targeting `7f39a6f` — a value that
+  was on `main` before #912 merged — re-resolved to `76ae044` and landed under the merge-commit subject
+  `chore(deps): update esphome digest to 7f39a6f`, naming the digest it **removed**.
+
+Two checks separate this from ordinary submodule pointer drift: the five preceding `renovate/all-minor-patch`
+merges in the same window are clean two-file diffs, and two CI runs were `cancelled` at `01:13:10Z` and
+`01:13:19Z` by the `cancel-in-progress` concurrency group — the nine-second fingerprint of both branches being
+rebuilt, which is when the undeclared hunk entered.
+
+Rules:
+
+- **Scope every package rule by `matchManagers` unless you have confirmed no other manager can produce that
+  name.** A submodule path, a directory name, and a Docker image tag are all `depName` sources you did not
+  choose deliberately. The ha-config file demonstrates the correct idiom **three times** on its `pip_requirements`
+  rules and omits it on the one rule whose name is ambiguous — the defect is not ignorance of the fix.
+- **Grouping settings written as an accommodation propagate to everything the selector matches.**
+  `separateMajorMinor: false` was a legibility fix for one calver dependency; applied to a submodule it means a
+  routine digest bump inherits the grouping and scheduling of an approval-gated major.
+- **A dependency that can be reached by two branches will eventually be written by both.** Renovate produced a
+  dedicated `renovate/<dep>-digest` branch *and* swept the same dep into the grouped branch. The ordering inside
+  one Renovate pass decides which wins, so the result is nondeterministic across runs.
+- **Probe:** list every manager's detected dependencies (the Dependency Dashboard's `Detected Dependencies`
+  section enumerates them by manager) and look for a `depName` appearing under two managers. One grep answers it;
+  nothing in CI will.
+
+### Only the Diff Is Authoritative — the PR Body Is a Statement of Intent (2026-09-21)
+
+This **corrects the closing rule of the 2026-09-20 entry above**, which concluded that "`git log` is not a version
+ledger for bot branches — only the diff *or the PR body* is authoritative." The second disjunct does not hold.
+
+[[marcusrbrown--ha-config]] PR #911's body is generated by Renovate, contains a structured
+`| Package | Type | Update | Change |` table, and that table has exactly one row. Its release-notes section covers
+exactly one dependency. Its diff changes three files. A reviewer who reads the body approves a two-line workflow
+version bump and merges a submodule pointer move into another repository.
+
+The table reports **what Renovate decided to update**. The branch contains **whatever the last reconstruction of
+that branch picked up**. Those are different facts, and nothing reconciles them.
+
+The same window produced the inverse failure: PR #912's live title reads `…to 76ae044` and is correct, while the
+squash subject that landed in `git log` reads `…to 7f39a6f` and is not. So in one repo, on one day: the commit
+subject was wrong in one direction, the PR body was wrong in another, and the PR title was right. **Only the diff
+agreed with the tree.**
+
+Third instance of the title-vs-diff class after [[marcusrbrown--sparkle]] (autoheal widened its own override
+mid-flight, leaving the title stale) and [[fro-bot--agent]] (single-commit squash took the stale branch subject
+over the refreshed PR title) — and the first where the durable record is the wrong one. The corrected rule:
+
+- **Only the diff is authoritative.** Title, subject, body table, and labels are each generated at a different
+  moment in a rolling branch's life and none of them is regenerated on every rebuild.
+- **For bot-merged history, search by content, not by subject.** `git log -S<sha> -- <path>` finds when a pin
+  actually moved; `git log --oneline -- <path>` finds what a bot *said* about it. On this repo the two disagree
+  for two of the last three movements of one file — one movement is invisible (buried in a commit whose subject
+  names a different dependency), one is inverted (names the value it removed).
+- **A wiki survey that reconstructs dependency history from commit subjects is reconstructing the intent log,
+  not the change log.** Recorded as a method correction against this wiki's own ha-config page, which did exactly
+  that for nine surveys.
+
+### A Parked PR Is a Moving Target, So Its Age Measures the Decision, Not the Change (2026-09-21)
+
+Approval gates — `dependencyDashboardApproval`, a `major` label with no automerge rule, a required review — exist
+so a human evaluates a risky change before it lands. But the bot does not freeze the PR while it waits. It rebases
+it, retargets it to the current upstream version, and regenerates its body.
+
+[[marcusrbrown--ha-config]] #777 has been open **129 days**. It is `mergeable: true`, `mergeable_state: clean`,
+green on all five required contexts, `+2/-2`, and rebased onto the current `main` hours before this survey. Its
+payload is `esphome==2026.9.0` — released **five days** earlier. And its diff is two files, not one, because the
+package-rule collision above reaches into the parked queue: it currently carries a submodule hunk that a sibling
+PR made redundant two minutes after it was written, and that hunk will disappear on the next rebase and return
+on the one after.
+
+- **The age of a parked bot PR is the age of an unmade decision, not the age of a stale change.** The usual
+  reading — "this PR is 129 days old, it must be rotten" — is backwards. Nothing inside is old. That is worse,
+  because there is no visible decay to prompt action.
+- **Whatever was reviewed on day 1 is not what merges on day N.** Any approval, any review comment, and any
+  risk assessment attached to a rolling bot branch expires silently at the next rebase. If a gate exists to get
+  a human verdict, the verdict must be re-taken against the diff at merge time.
+- **Parking is not free and the cost is asymmetric.** Holding #777 costs a rebase and a CI cycle every day,
+  forever; landing it costs two lines. A repo with no test suite accumulating 4,446 workflow runs is partly
+  paying that rent.
+- **A parked PR can silently gain cargo.** Combine with the package-rule finding: an approval-gated PR is
+  exactly the branch most likely to be rebuilt many times, so it is the branch most exposed to acquiring files
+  its title never mentioned.

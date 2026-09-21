@@ -2,12 +2,15 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-09-15
+updated: 2026-09-21
 sources:
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 35ed8b7920f1f0c14faafeff3c89e4eb74db649e
+    accessed: 2026-09-21
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
-tags: [home-assistant, iot, smart-home, yaml, automation, addon, supply-chain, tempio, builder, release-integrity]
+tags: [home-assistant, iot, smart-home, yaml, automation, addon, supply-chain, tempio, builder, release-integrity, vendored-dependencies]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
@@ -38,6 +41,10 @@ The preferred pattern splits configuration by domain into `packages/` directory 
 Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
 
 **Pin-drift footgun:** validating against a frozen `.HA_VERSION` only catches problems that exist in *that* version. Observed in [[marcusrbrown--ha-config]], where `.HA_VERSION` has remained at `2025.6.3` across nine surveys (2025-06 → 2026-08, ~14 months) while pip-resolved deps like `esphome` advance. The CI passes, but the config is not validated against current upstream HA. The Renovate PR bumping `esphome` to v2026 (#777) remains parked — the autopilot merges everything except the updates that would close this drift. Note (2026-08-19): the *other* long-parked dep PR (#766 asyncio-mqtt v0.16.2) finally merged, so the freeze is specifically around the version-gating upgrades (`.HA_VERSION` + esphome v2026), not a blanket refusal to merge — the pattern is a deliberate version-gate freeze, with Marcus running ha-config as a Renovate-only autopilot.
+
+Note (2026-09-21, eleventh survey): `.HA_VERSION` is still `2025.6.3` (~15.5 months) and the `ci.yaml` step that reads it is still byte-identical to the broken version described in [[marcusrbrown--ha-config]] — `echo '{value}={$HA_VERSION}'`, single-quoted and mis-keyed, writing a literal string and producing an empty output. The pin is nonetheless honoured, because `frenck/action-home-assistant` falls back to reading `.HA_VERSION` itself when the `version` input is empty. **State the causal chain correctly when repeating this pattern: the action reads the file; the workflow step does not feed it.** The day the action drops that fallback, CI silently begins validating against `stable`, i.e. a release ~15 months ahead of what is deployed, and the failure arrives as a wall of unrelated config errors rather than as a version error.
+
+Also refined (2026-09-21): PR #777, the parked `esphome` v2026 upgrade, is **not** a stale change — Renovate retargets it continuously, and it currently proposes `esphome==2026.9.0`, released five days before the survey. A version-gate freeze parks a *decision*, and the diff behind it keeps moving. Anyone reviewing it must review what it contains today, not what it contained when it was opened 129 days earlier.
 
 The add-on side uses a different tool: `frenck/action-addon-linter` validates the add-on contract (`config.yaml`, `build.yaml`, image references, arch lists, schema). Observed in [[bfra-me--ha-addon-repository]]. The two `frenck/*` actions are sibling validators serving the two sides of the HA development workflow.
 
@@ -108,9 +115,45 @@ The generalizable shape for any add-on repo: **treat the add-on version as the r
 
 Third-party integrations installed via HACS or manually into `custom_components/`. These are typically excluded from linting and pre-commit hooks since they are upstream-managed code.
 
+#### `custom_components/` is disclaimed by pre-commit and claimed by Renovate (2026-09-06, updated 2026-09-21)
+
+Excluding the directory from linting is the easy half. The hard half is that Renovate ships a
+**`homeassistant-manifest` manager enabled by default**, which reads exactly that tree and proposes bumps to the
+`requirements` arrays inside vendored `manifest.json` files. In [[marcusrbrown--ha-config]] that directory is
+**96.6% of the repository by file count** (2,125 of 2,200 blobs), `.pre-commit-config.yaml` explicitly declares it
+out of bounds, and six manifests are tracked by Renovate anyway.
+
+Two structural reasons this is wrong, not merely redundant:
+
+- **The edit has no owner.** HACS overwrites a component's manifest wholesale on update, so a merged Renovate
+  bump is reverted on the next integration update and re-proposed. The pin is a loop, not a state.
+- **A `manifest.json` `requirements` entry is a claim about what the integration author tested against**, not a
+  lockfile the consumer may tighten. Raising it makes Home Assistant install a version the author never
+  exercised, and the resulting breakage presents as an integration bug.
+
+**2026-09-21 follow-up — the remediation was not applied, and the cost is now legible.** `renovate.json5` is
+unchanged: still no `ignorePaths: ['custom_components/**']`, still no manager disable. Meanwhile Renovate's
+**Abandoned Dependencies** dashboard section lists 7 entries for that repo, and **6 are `homeassistant-manifest`
+transitives it cannot act on** (`pyric` last released **2016-12-04**, `aioblescan` 2023-01-07). The single
+actionable entry is `pre-commit/pre-commit-hooks`. The sharpest receipt: `asyncio-mqtt` is flagged abandoned
+(last release **2023-06-26**) — and it is the exact package a PR spent roughly three months in the approval queue
+to pin to `0.16.2`, landing 2026-08-15 into a HACS-owned file.
+
+Generalizable: **a manager that should not be enabled will dominate whatever risk-surfacing feature ships next.**
+The Abandoned Dependencies section is a good feature; in a config repo it is 86% noise because of one default.
+Disable `homeassistant-manifest` (or `ignorePaths` the directory) so the tool boundary matches the ownership
+boundary the repo has already written down once.
+
 ### ESPHome Integration
 
 ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config.
+
+**Name the submodule path something the config does not already depend on (2026-09-21).** In
+[[marcusrbrown--ha-config]] the submodule path is `esphome` and `requirements.txt` pins the PyPI package
+`esphome`. Renovate's `git-submodules` manager derives `depName` from the path, and `matchPackageNames` is not
+scoped by manager, so one package rule governs both — a toolchain pin frozen for fifteen months and a config
+digest that advances every other day, treated as one dependency. Details in [[esphome]] and
+[[github-actions-ci]]. The decoupling this pattern is supposed to buy is undone by the naming.
 
 ## Related Technologies
 

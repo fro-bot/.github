@@ -2,7 +2,7 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-09-14
+updated: 2026-09-21
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -38,7 +38,12 @@ sources:
     accessed: 2026-09-14
   - url: https://github.com/esphome/esp-web-tools/releases/latest
     accessed: 2026-09-14
-tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy, calendar-versioning]
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 35ed8b7920f1f0c14faafeff3c89e4eb74db649e
+    accessed: 2026-09-21
+  - url: https://pypi.org/pypi/esphome/json
+    accessed: 2026-09-21
+tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy, calendar-versioning, dependency-name-collision]
 aliases: [esphome, esphome-life]
 related:
   - marcusrbrown--esphome-life
@@ -147,6 +152,36 @@ So the two repos differ in **which surface the stall is parked on**, not in whet
 The untracked CDN pin has a number now. `static/index.md` still hand-writes `esp-web-tools@8.0.3`; upstream `esphome/esp-web-tools` latest is **10.4.0** (published 2026-07-15) — **two majors behind**, on the only artifact users' browsers execute.
 
 This is the genuinely invisible case, and worth contrasting with the ESPHome pin directly: ESPHome appears in the dashboard's `Detected Dependencies` with a resolved target and a waiting checkbox; `esp-web-tools` appears **nowhere**, because no manager claims a markdown `<script src>`. One is a decision nobody made; the other is a dependency nobody declared. Filing them together — as the 2026-08-30 survey did under "invisible to Renovate" — hides the fact that they need different repairs.
+
+### `esphome` names three different things in one repo (2026-09-21)
+
+The calver trap has been tracked on this page from two directions. A third one is not about versioning at all —
+it is about the **name**.
+
+In [[marcusrbrown--ha-config]], the token `esphome` denotes:
+
+1. **`esphome` the PyPI package** — the firmware toolchain, pinned `esphome==2025.12.7` in `requirements.txt`.
+2. **`esphome` the git submodule path** — resolving to [[marcusrbrown--esphome-life]], a repository of device
+   configurations, which has no version at all and is tracked by digest.
+3. **`esphome` as a Renovate `matchPackageNames` selector** — written for (1) and, because
+   `matchPackageNames` is not scoped by manager and `git-submodules` derives `depName` from the submodule path,
+   silently governing (2) as well.
+
+Consequences measured on 2026-09-21 are in [[marcusrbrown--ha-config]] finding 1 and generalized in
+[[github-actions-ci]]. The ESPHome-specific lesson is narrower and worth isolating:
+
+- **The toolchain and the device configs are separate dependencies with separate risk profiles, and they move
+  at wildly different rates.** The pip pin has been frozen for over fifteen months (upstream is now **2026.9.0**,
+  released 2026-09-16) while the submodule digest advances roughly every other day. A survey, a dashboard
+  reading, or a reviewer that does not disambiguate will report one repo's ESPHome posture as hot when it is
+  frozen, or frozen when it is hot. Both readings are available from the same word.
+- **A submodule pointing at a config repo creates a bot chain.** [[marcusrbrown--esphome-life]] is itself
+  Renovate-driven, so every dependency bump merged there produces a submodule-digest PR downstream in
+  ha-config. One bot's output is another bot's inbox, and neither has a notion of the pair.
+- **Naming a submodule path after a package you also depend on is the cheap mistake.** Renaming the path — or
+  adding `matchManagers: ['pip_requirements']` to the rule, as the same file already does three times
+  elsewhere — separates them permanently. The disconfirming test is stated: scope the rule and check whether
+  the submodule stops riding along in grouped branches.
 
 ## External Links
 

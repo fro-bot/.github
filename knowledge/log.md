@@ -6157,3 +6157,61 @@ https://github.com/marcusrbrown/infra/blob/main/apps/gateway/upstream.json
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
+
+## [2026-09-21 09:12] ingest | repo:marcusrbrown/ha-config
+
+Eleventh survey of `marcusrbrown/ha-config` (public), HEAD `35ed8b7920f1f0c14faafeff3c89e4eb74db649e`,
+15 commits since `150e059`, **100% `mrbro-bot[bot]`** — the 2026-09-04 break-glass human commit was a
+one-off and did not repeat. Zero structural change: 11 packages, 10 custom components, 3 workflows,
+2,200 blobs (96.6% under `custom_components/`), no root README or LICENSE, `.HA_VERSION` / `requirements.txt`
+/ `.pre-commit-config.yaml` / `settings.yml` byte-identical. Workflows all `active`; 4,446 lifetime runs
+with **zero failures in the last 60**.
+
+Five findings, three of them durable and generalizable:
+
+- **`matchPackageNames` matches a string, not a dependency.** `renovate.json5`'s `matchPackageNames: ['esphome']`
+  rule — written for the PyPI toolchain to collapse calver releases into one approval — also governs the **git
+  submodule at path `esphome`**, because Renovate's `git-submodules` manager derives `depName` from the path and
+  the rule is not scoped by `matchManagers` (three sibling rules in the same file are). Measured effect inside
+  6m42s on 2026-09-21: PR #911 (`renovate/all-minor-patch`, title *and* machine-generated update table declaring
+  only `bfra-me/.github` v4.30.0 → v4.31.0) merged a three-file diff carrying the submodule `78d2a19` → `7f39a6f`;
+  PR #912 then moved `7f39a6f` → `76ae044` under the merge subject `update esphome digest to 7f39a6f`, naming the
+  digest it removed. Corroborated by two CI runs `cancelled` at 01:13:10Z/01:13:19Z (concurrency group firing as
+  both branches were rebuilt) and by the five prior `all-minor-patch` merges being clean two-file diffs. Exact
+  mirror of the 2026-09-20 `fro-bot/agent` Bun cap (one value, two identities → two values, one identity).
+- **Only the diff is authoritative** — this **corrects** the 2026-09-20 `topics/github-actions-ci` rule that "the
+  diff *or the PR body*" is trustworthy. Renovate's update table states what it decided to update, not what the
+  last branch reconstruction picked up. Third title-vs-diff instance (after `marcusrbrown/sparkle` and
+  `fro-bot/agent`) and the first where the **durable record is the wrong one**. Includes a method correction
+  against this wiki's own nine prior ha-config surveys, which reconstructed dependency history from commit subjects.
+- **A parked PR is a moving target.** #777 (129 days) is `mergeable`/`clean`, `+2/-2`, rebased daily, and proposes
+  `esphome==2026.9.0` — released five days earlier — while carrying a submodule hunk a sibling PR made redundant
+  two minutes later. The age measures an unmade decision, not a stale change; any review from day 1 expired silently.
+- The `homeassistant-manifest` remediation proposed on 2026-09-06 was **not applied**; the dashboard now flags
+  `asyncio-mqtt` (last release 2023-06-26) as abandoned — the exact package #766 spent ~3 months landing into a
+  HACS-owned file. 6 of 7 Abandoned entries are un-actionable transitives from that manager.
+- New `renovate/lock-file-maintenance` pending branch in a repo with **no lockfile** (inherited preset; the same
+  job that unstuck `marcusrbrown/marcusrbrown.com`'s merge freeze on 2026-09-16).
+
+**Still no Fro Bot workflow (eleventh consecutive survey)** — noted on the repo page, with the onboarding argument
+restated: every defect in this interval is silently correct-looking and invisible to a status check, which is a
+stronger case than the 2026-09-06 outage-detection argument. A follow-up draft PR remains the open action item and
+was not opened here (delivery mode is `working-dir`).
+
+Pages updated (additive; no prior content replaced, contradictions recorded with dates):
+`wiki/repos/marcusrbrown--ha-config.md`, `wiki/topics/github-actions-ci.md` (3 new sections, one correcting a
+2026-09-20 rule), `wiki/topics/home-assistant.md` (2 new sections + 2 refinements),
+`wiki/entities/esphome.md` (1 new section), `index.md`. No pages created or removed. Target repository treated as
+untrusted input; reads limited to directory listings, manifests, workflow files, and the public API. `gh` was
+unauthenticated in this runner, so the survey used the public REST/raw endpoints.
+
+Sources: https://github.com/marcusrbrown/ha-config@35ed8b7920f1f0c14faafeff3c89e4eb74db649e,
+https://github.com/marcusrbrown/ha-config/pull/911, https://github.com/marcusrbrown/ha-config/pull/912,
+https://github.com/marcusrbrown/ha-config/pull/777, https://github.com/marcusrbrown/ha-config/issues/427,
+https://pypi.org/pypi/esphome/json
+
+## [2026-09-21 11:01] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
