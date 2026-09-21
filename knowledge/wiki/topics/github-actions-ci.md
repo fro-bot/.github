@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-21
 sources:
-  - url: https://github.com/marcusrbrown/ha-config
-    sha: 35ed8b7920f1f0c14faafeff3c89e4eb74db649e
+  - url: https://github.com/marcusrbrown/systematic
+    sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
   - url: https://github.com/fro-bot/agent
     sha: c7622aae2acd681b5170cf0f14071bdb5cc93c14
@@ -188,9 +188,9 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 - [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
-- [[marcusrbrown--ha-config]] — 3 workflows, unchanged in shape since 2023: `ci.yaml` (YAML lint → Remark lint → Prettier → Home Assistant config validation, all four job names emoji-prefixed and bound verbatim as required contexts), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.31.0**, both at correct upstream paths — the counter-example to [[marcusrbrown--esphome-life]]'s mis-pathed sync). No Fro Bot workflow after **eleven** surveys. **4,446 lifetime runs with zero failures in the last 60** on a repo with no test suite — the fleet's cleanest Actions record and, as of 2026-09-21, the reason it is instructive: every defect found there is silently correct-looking. Source of the 2026-09-21 findings below on package-rule name collisions, diff-versus-body authority, and parked PRs as moving targets
+- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
-- [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
+- [[marcusrbrown--systematic]] — **8 committed workflows** (2026-09-21), all `state: active`: `main.yaml` (521 lines — Build with **seven** generated-artifact drift gates, Typecheck with three required tsconfig scopes, Lint, Test, **Host Contract**, Registry, Docs Build, Release, Publish Claude Code Plugin), `docs.yaml` (`release: [published]` → Astro/Starlight build → cross-repo force-push to `fro-bot/systematic:gh-pages` under a `fro-bot`-scoped App token), `fro-bot.yaml` (732 lines / 38 KB, **two-mode**, single `30 3` cron with a day-gated Sunday category, agent **v0.113.2**, conditional `output-mode: branch-pr`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.31.0**), `codeql-analysis.yaml`, `scorecard.yaml`, `copilot-setup-steps.yaml`. Required contexts on `main`: `[Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Registry, Release, Analyze (typescript), CodeQL, Renovate / Renovate]`, `enforce_admins: true`, `required_linear_history: true`, `required_pull_request_reviews: null` — note `Host Contract` is absent from the list and binds only through `Release`'s `needs:`. Source of the 2026-09-21 findings below on non-lying required jobs, advisory-first gate promotion, and cross-channel lag measurement
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
@@ -2767,112 +2767,142 @@ so the accretion recorded in the 2026-08-08 survey has **stopped** while the wre
 distinguishes *a daemon still duplicating* from *a daemon that stopped and left duplicates*, and only the
 second is fixed by closing PRs rather than by changing the dedup predicate.
 
-### A Package Rule Matches a String, Not a Dependency (2026-09-21)
+### A Required Job Engineered So It Cannot Lie (2026-09-21)
 
-The exact inverse of _A Version Cap Binds a Dep Name, Not a File_ (2026-09-20), and it completes the pair.
-There, **one value was extracted under two identities**, so a cap bound one reader and not the other. Here,
-**two unrelated dependencies share one identity**, so a rule written for one governs both.
+Source: [[marcusrbrown--systematic]] `main.yaml`'s new `Host Contract` job (#931, HEAD `f903dc6d`),
+which runs the integration suite against a real OpenCode host. It is the densest single implementation
+of this page's own false-signal findings turned into enforced machinery, and every non-obvious choice
+carries an inline comment naming the failure it prevents. Five patterns, each independently stealable:
 
-[[marcusrbrown--ha-config]] carries this in `.github/renovate.json5`, unchanged since before the wiki's first
-survey of the repo:
+**1. Path-gate at step level, never with a top-level `if:`.** The job has no job-level condition, so it
+always runs to completion and reports a status. `dorny/paths-filter` runs as a step and its verdict is
+consumed by later steps' `if:`. The reason is stated in the workflow: `release` carries this job in
+`needs:`, and *"a `needs` dependency that were skipped would skip `release` too, silently publishing
+nothing on a docs-only PR."* This is the concrete remedy for *A Required Check That Cannot Fail Loudly*
+(2026-08-31) and for the expected-`skipped` assertion problem in [[bfra-me--ha-addon-repository]] — the
+job that must be believed is the job that always reports.
 
-```json5
-{
-  matchPackageNames: ['esphome'],
-  separateMajorMinor: false,
-  separateMinorPatch: false,
-}
-```
+**2. Normalise the gate input in a dedicated step, and fail closed on anything unexpected.** The filter
+output is mapped to a single `run=true|false` output; a value that is neither `'true'` nor `'false'`
+emits `::error::` and `exit 1`, because *"a malformed or empty paths-filter output must never be treated
+as 'skip and report success', since that would silently satisfy release's needs on this job."* Every
+later step reads the one normalised output instead of re-deriving the push-vs-PR branch, so the branch
+logic exists once and is auditable.
 
-It was authored for `esphome` the **PyPI package** in `requirements.txt`, to collapse ESPHome's calendar-versioned
-releases into a single approval instead of a stream of false majors. But the same repo has a **git submodule at
-path `esphome`** pointing at a different repository, and Renovate's `git-submodules` manager derives `depName`
-from the submodule path. Two managers, two dependencies with nothing in common, one name.
+**3. `!cancelled()` is load-bearing, and the mechanism is not obvious.** A step `if:` that contains **no
+status-check function** gets an implicit `success()` ANDed in by GitHub Actions. A diagnostic step
+written as `if: steps.gate.outputs.run == 'true'` therefore **skips on exactly the failing run it exists
+to diagnose**, because `success()` is job-scoped and goes false the moment the suite step fails. Any
+status-check function in the expression overrides that default; `!cancelled()` is the one that stays
+true on both a passing and a failing run and false only on cancellation. Pair it with an explicit
+`steps.<id>.outcome == 'success' || steps.<id>.outcome == 'failure'` check, which additionally excludes
+`skipped` (what the outcome is when an *earlier* step died first) and `cancelled`. **Probe:** grep every
+`if:` on a diagnostic, summary, or artifact-upload step; if it has no status-check function, it is
+silently gated on the job having succeeded so far.
 
-Measured consequence on 2026-09-21, inside a 6 m 42 s window:
+**4. Assert on the result's contents, not the step's conclusion.** `SYSTEMATIC_REQUIRE_OPENCODE=1`
+converts a missing or mismatched host into a module-scope throw, and then a separate guard script reads
+the JUnit XML plus the console log and enforces (a) a **skipped-test exempt set**, (b) an
+**expected-file list**, and (c) a **pass floor** — covering *"a per-test gate such as
+`test.skipIf(!DIST_LOCAL_AVAILABLE)` skipping for an unexpected reason while the job stays green, or a
+whole-file collapse (a crash or an early exit) that still leaves the console summary and pass floor
+looking plausible."* This is *A Run's Conclusion Measures the Harness, Not the Deliverable*
+(2026-09-02, [[marcusrbrown--cortexkit-anthropic-auth]]) implemented as a control rather than observed
+as a postmortem. All three lists live in the guard script *"so widening any of them is a reviewed
+change"* — a threshold in a script diff is reviewable; a threshold in a runner's memory is not.
 
-- PR #911, branch `renovate/all-minor-patch`, title and machine-generated update table declaring **one** row
-  (`bfra-me/.github` v4.30.0 → v4.31.0), merged a **three-file** diff that also moved the `esphome` submodule
-  `78d2a19` → `7f39a6f`.
-- PR #912, branch `renovate/esphome-digest`, opened four minutes *after* #911 targeting `7f39a6f` — a value that
-  was on `main` before #912 merged — re-resolved to `76ae044` and landed under the merge-commit subject
-  `chore(deps): update esphome digest to 7f39a6f`, naming the digest it **removed**.
+**5. Order build steps so the self-gating assertions can actually fire.** `dist/` is gitignored and the
+test computes its availability flag at **module scope**, before the `beforeAll` that would build it —
+so the job builds first, *"making the dist-local assertion run for real and turning the in-beforeAll
+build into a warm no-op."* A test that decides whether to run itself based on the filesystem is a test
+whose CI step ordering is part of its correctness.
 
-Two checks separate this from ordinary submodule pointer drift: the five preceding `renovate/all-minor-patch`
-merges in the same window are clean two-file diffs, and two CI runs were `cancelled` at `01:13:10Z` and
-`01:13:19Z` by the `cancel-in-progress` concurrency group — the nine-second fingerprint of both branches being
-rebuilt, which is when the undeclared hunk entered.
+Sixth, smaller: `timeout-minutes: 30` is annotated *"Measured on the first real CI run; not summed from
+per-test ceilings… Re-tune once this job has actually run against a live OpenCode host."* Compare
+*A Job-Level Timeout Is a Kill, Not a Deadline* (2026-09-20) — a measured backstop with a stated
+re-tune trigger is the honest form.
 
-Rules:
+**The gap in the same repo, which is the transferable warning.** `Host Contract` is **not** in
+`.github/settings.yml`'s required contexts. It still binds, transitively: `Release` *is* required and
+`needs:` it, so a red host-contract skips `Release`, whose required context never reports and blocks the
+merge. The gate holds by topology. But **a branch-protection context list is an incomplete map of what
+blocks a merge** whenever required jobs have `needs:` — reading the list alone would report the repo's
+newest and most carefully engineered gate as optional, and a later refactor that drops `host-contract`
+from `release`'s `needs:` would silently remove it with nothing failing. **Probe:** for every required
+context, expand its `needs:` closure; anything in that closure is load-bearing and should be named in
+the protection list too, or the coupling should be documented where the `needs:` lives.
 
-- **Scope every package rule by `matchManagers` unless you have confirmed no other manager can produce that
-  name.** A submodule path, a directory name, and a Docker image tag are all `depName` sources you did not
-  choose deliberately. The ha-config file demonstrates the correct idiom **three times** on its `pip_requirements`
-  rules and omits it on the one rule whose name is ambiguous — the defect is not ignorance of the fix.
-- **Grouping settings written as an accommodation propagate to everything the selector matches.**
-  `separateMajorMinor: false` was a legibility fix for one calver dependency; applied to a submodule it means a
-  routine digest bump inherits the grouping and scheduling of an approval-gated major.
-- **A dependency that can be reached by two branches will eventually be written by both.** Renovate produced a
-  dedicated `renovate/<dep>-digest` branch *and* swept the same dep into the grouped branch. The ordering inside
-  one Renovate pass decides which wins, so the result is nondeterministic across runs.
-- **Probe:** list every manager's detected dependencies (the Dependency Dashboard's `Detected Dependencies`
-  section enumerates them by manager) and look for a `depName` appearing under two managers. One grep answers it;
-  nothing in CI will.
+### Promote a Type/Lint Gate Advisory-First, Then Record Which State It Is In (2026-09-21)
 
-### Only the Diff Is Authoritative — the PR Body Is a Statement of Intent (2026-09-21)
+Source: [[marcusrbrown--systematic]] closing #897 ("Typecheck never covers tests/ or scripts/"). The
+2026-09-05 survey confirmed ~400 KB of TypeScript — including `content-integrity.ts`, the script that
+enforces the repo's own conventions — sitting outside a **required** `Typecheck` check because
+`tsconfig.json` scoped `include` to `src/**/*`. The repair is a reusable sequence:
 
-This **corrects the closing rule of the 2026-09-20 entry above**, which concluded that "`git log` is not a version
-ledger for bot branches — only the diff *or the PR body* is authoritative." The second disjunct does not hold.
+1. Add the wider config (`tsconfig.scripts.json`, `tsconfig.tests.json` extending it) and the matching
+   scripts, and land the CI step **advisory** (#914, `ci(typecheck): add an advisory type check for
+   tests and scripts`).
+2. Burn the backlog down in separate, reviewable commits (#919, #922, #923, #924, #926 — each scoped to
+   one suite or one family of type errors).
+3. Promote the step to required, and **annotate in the workflow which state each step is in**:
+   *"src/, scripts/, and docs/scripts/ are clean today, so this gate has no backlog to work through"*
+   versus *"#897's burn-down cleared the tests/ error backlog (see PR #914, PR #926), so this is a
+   required gate keeping tests + scripts type-clean going forward."*
 
-[[marcusrbrown--ha-config]] PR #911's body is generated by Renovate, contains a structured
-`| Package | Type | Update | Change |` table, and that table has exactly one row. Its release-notes section covers
-exactly one dependency. Its diff changes three files. A reviewer who reads the body approves a two-line workflow
-version bump and merges a submodule pointer move into another repository.
+Step 3's annotation is what stops the next person from reading a green advisory step as a required one,
+or a required one as a formality.
 
-The table reports **what Renovate decided to update**. The branch contains **whatever the last reconstruction of
-that branch picked up**. Those are different facts, and nothing reconciles them.
+Two config-level lessons from the same change, both about comments doing work no tool does:
 
-The same window produced the inverse failure: PR #912's live title reads `…to 76ae044` and is correct, while the
-squash subject that landed in `git log` reads `…to 7f39a6f` and is not. So in one repo, on one day: the commit
-subject was wrong in one direction, the PR body was wrong in another, and the PR title was right. **Only the diff
-agreed with the tree.**
+- **A flag added for two reasons, one temporary and one permanent, will be deleted when the temporary
+  reason expires.** `allowImportingTsExtensions` was needed both by 4 permanent `scripts/` files and by
+  ~44 `tests/` files during the burn-down. The config says so explicitly — *"Required, not temporary…
+  Do not remove this when that burn-down completes — it would break this required gate"* — and the child
+  config restates the inverse for its own inherited copy. Write down which reason outlives the other, at
+  the site of the flag, or the cleanup that closes the issue breaks the gate that closed it.
+- **Two tsconfigs covering one directory disagree silently until CI.** `docs/scripts/**` is covered by
+  both the repo's `tsconfig.scripts.json` and `docs/tsconfig.json`, which extends
+  `astro/tsconfigs/strict` and defines a `@/*` path alias the former does not. Result, recorded in the
+  config itself: *"A docs script that starts using that alias or an Astro-specific type will pass
+  `docs:build` and fail this required gate."* Overlapping type-check scopes need either identical
+  `paths`/`lib` settings or an explicit note naming the divergence; otherwise the failure surfaces in a
+  job the author was not editing.
 
-Third instance of the title-vs-diff class after [[marcusrbrown--sparkle]] (autoheal widened its own override
-mid-flight, leaving the title stale) and [[fro-bot--agent]] (single-commit squash took the stale branch subject
-over the refreshed PR title) — and the first where the durable record is the wrong one. The corrected rule:
+### A Cross-Channel Lag Is Only a Pipeline Measurement If It Exceeds the Work (2026-09-21)
 
-- **Only the diff is authoritative.** Title, subject, body table, and labels are each generated at a different
-  moment in a rolling branch's life and none of them is regenerated on every rebuild.
-- **For bot-merged history, search by content, not by subject.** `git log -S<sha> -- <path>` finds when a pin
-  actually moved; `git log --oneline -- <path>` finds what a bot *said* about it. On this repo the two disagree
-  for two of the last three movements of one file — one movement is invisible (buried in a commit whose subject
-  names a different dependency), one is inverted (names the value it removed).
-- **A wiki survey that reconstructs dependency history from commit subjects is reconstructing the intent log,
-  not the change log.** Recorded as a method correction against this wiki's own ha-config page, which did exactly
-  that for nine surveys.
+Source: [[marcusrbrown--systematic]] / [[fro-bot--systematic]]. A twelve-sample series showed the docs
+deploy commit landing **31–88 s after** the npm publish, then flipped to **31–120 s before** it starting
+at release `3.18.4` on 2026-09-15 — a clean sign change with no straddling value, which is exactly the
+shape of a real pipeline reordering. The conclusion drawn at the time (the deploy became a parallel job,
+or moved above the publish step) was wrong, and the source-side check refutes it three ways:
 
-### A Parked PR Is a Moving Target, So Its Age Measures the Decision, Not the Change (2026-09-21)
+- `.releaserc.yaml` has been **byte-stable since 2026-05-23**, with `@semantic-release/npm` still ahead
+  of `@semantic-release/github` in the plugin list.
+- The deploy is a **separate workflow** triggered by `release: [published]`, not a job in the release
+  workflow. There is no job graph to reorder.
+- Every deploy run in **both** regimes is a `release`-event run of ~35–45 s. Differencing the run's own
+  `created_at` against the npm timestamp shows the GitHub release firing **1.7 s after** npm for the
+  last pre-flip release and **93 s before** it for the first post-flip release.
 
-Approval gates — `dependencyDashboardApproval`, a `major` label with no automerge rule, a required review — exist
-so a human evaluates a risky change before it lands. But the bot does not freeze the PR while it waits. It rebases
-it, retargets it to the current upstream version, and regenerates its body.
+The offset that moved is between the publish call and the **registry's own `time` entry** — upstream of
+the repository entirely.
 
-[[marcusrbrown--ha-config]] #777 has been open **129 days**. It is `mergeable: true`, `mergeable_state: clean`,
-green on all five required contexts, `+2/-2`, and rebased onto the current `main` hours before this survey. Its
-payload is `esphome==2026.9.0` — released **five days** earlier. And its diff is two files, not one, because the
-package-rule collision above reaches into the parked queue: it currently carries a submodule hunk that a sibling
-PR made redundant two minutes after it was written, and that hunk will disappear on the next rebase and return
-on the one after.
+The rule that would have caught it a survey earlier: **a lag between two channels measures the pipeline
+only when it is larger than the work the pipeline must do between them.** The original "+34 s" regime
+was already impossible as a causal chain — 34 s does not cover a dependency install, a browser install,
+content generation, a static-site build, a clone of another repository, and a force-push. When the
+measured lag is smaller than the known floor for the work, you are differencing two clocks, not timing
+one process; stop reading artifact timestamps and read the run's `created_at`, which is the only
+timestamp the pipeline itself emits.
 
-- **The age of a parked bot PR is the age of an unmade decision, not the age of a stale change.** The usual
-  reading — "this PR is 129 days old, it must be rotten" — is backwards. Nothing inside is old. That is worse,
-  because there is no visible decay to prompt action.
-- **Whatever was reviewed on day 1 is not what merges on day N.** Any approval, any review comment, and any
-  risk assessment attached to a rolling bot branch expires silently at the next rebase. If a gate exists to get
-  a human verdict, the verdict must be re-taken against the diff at merge time.
-- **Parking is not free and the cost is asymmetric.** Holding #777 costs a rebase and a CI cycle every day,
-  forever; landing it costs two lines. A repo with no test suite accumulating 4,446 workflow runs is partly
-  paying that rent.
-- **A parked PR can silently gain cargo.** Combine with the package-rule finding: an approval-gated PR is
-  exactly the branch most likely to be rebuilt many times, so it is the branch most exposed to acquiring files
-  its title never mentioned.
+Two corollaries: **a registry `time` field is not an availability signal** (it records when a row was
+written, not when a tarball became resolvable), so it cannot support "the site advertises a version the
+registry does not serve" in either direction; and a long-carried cross-channel *invariant* that appears
+to degrade into a *race* deserves one check of whether the instrument moved before the invariant is
+rewritten.
+
+Related, from the same deploy step: it ends with `git add -A; if ! git diff-index --quiet HEAD --; then
+commit && push --force; fi`. **A release whose rendered output is byte-identical produces no deploy
+commit at all**, so "deploy count equals release count" is a contingent observation, not a structural
+guarantee — and an index-paired timing series shifts permanently on the first skip. It held 18/18 here;
+it is the first thing to check whenever such a pairing looks off by one.

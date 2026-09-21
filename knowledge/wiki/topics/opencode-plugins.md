@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-19
+updated: 2026-09-21
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
+    accessed: 2026-09-21
   - url: https://github.com/fro-bot/systematic
     sha: c5cbd2e
     accessed: 2026-09-19
@@ -537,6 +540,72 @@ Operational rules for anyone tracking or authoring a generated config schema:
 - **A schema that validates a name should be able to say whether that name still does anything.**
 
 **Postscript — a `trust` boundary that got documented rather than standardized.** The non-standard `"trust"` keyword grew 16 → 30 occurrences (`project-or-higher` 23, `any` 7), and the 2026-09-04 *inference* about its meaning is now stated outright in `description` text that every draft-07 validator and IDE renders: "Trust-protected fields (model, variant, skills, permission, opencode, pi) are only valid in user config or `OPENCODE_CONFIG_DIR` config — a project config setting them has that field ignored with a warning; other fields in the same overlay still apply." The keyword is still inert to standard tooling. The fix was not to standardize the annotation but to **mirror its meaning into a field standard tooling already reads** — cheaper than a validator extension, portable to every consumer, and the right move for any plugin publishing a semantically load-bearing custom keyword. The cost is that two representations of one rule can now drift apart; the keyword remains the machine-readable one.
+
+## The Stale-Enum Finding, Resolved in the Benign Direction (2026-09-21)
+
+Source-side follow-up from the [[marcusrbrown--systematic]] survey at HEAD `f903dc6d`. Two of the section
+above's claims survive; one needs its severity corrected.
+
+**Survives, unchanged.** Across 97 commits and four releases the literals did not move: `disabled_skills`
+still enumerates **50** names against **32** shipped skill directories, `disabled_agents` still **102**
+against **37** shipped agents. Append-only with no prune step, now measured across a second interval.
+The fingerprint moved again (58,954 → **60,253 B**, `definitions` 100 → **101**, top-level properties
+12 → **13**, `sha256[:16]` `1f9b7c48a4b6455c` → **`f7cd9984739a7fab`**) — a third consecutive interval
+where the byte/definitions/hash triple detects a change, and this time the *property order* changed too
+(`profiles`/`profile` now precede the `disabled_*` block), so positional probes remain as brittle as the
+2026-09-05 caution said.
+
+**Corrected: the loader is not silent.** The open question — *does a retired-but-enumerated name warn, or
+is it silently dropped?* — resolves from the repo's own v2 history. **v2.32.0 (#534) made removed bundled
+names in `disabled_skills`/`disabled_agents` warn-and-ignore rather than reject**, specifically so that
+cleaning up a skill upstream would not brick configs that had disabled it. So `disabled_skills:
+["proof"]` parses clean **and emits a warning**. The severity drops from *silently no-ops* to a
+**documentation defect**, and the rule needs one clause added:
+
+> The field description reads *"Unknown skill names are rejected at parse time."* That conflates two
+> populations the implementation treats differently — a **never-bundled** name is rejected, a
+> **retired-but-enumerated** name is accepted and warned. When a loader deliberately tolerates retired
+> names, the schema description must distinguish the two, or readers will infer that the enum answers a
+> question it does not answer.
+
+The general rule stands with its polarity fixed: *a schema that validates a name should be able to say
+whether that name still does anything*. Here the **runtime** can say it and the **schema** cannot, which
+is a strictly better failure than the reverse — but it also means the enum validates spelling, not
+effect, and no reader can tell that from the artifact alone. The 2026-09-19 operational rules are
+otherwise unchanged; add: **before escalating a stale allowlist, check whether the loader already
+tolerates it deliberately** — back-compat and neglect look identical in the schema and differ entirely in
+the log.
+
+## A Trust Boundary Relaxed With an Un-Self-Grantable Permission (2026-09-21)
+
+Supersedes the *"a project config may select a profile but may not define this field"* claim recorded on
+2026-09-05 (see [A schema that encodes a trust boundary](#a-schema-that-encodes-a-trust-boundary)). The
+absolute ban was a real constraint on legitimate use — [[marcusrbrown--systematic]] issue **#993**
+argued repository-specific routing was impossible under it — and **#1011** relaxed it. The direction is
+unchanged and the mechanism is stronger than the ban was. Three interlocking layers, all expressed in
+the schema:
+
+1. **A new `allow_project_profiles` boolean**, default `false`, described as *"User-owned only — only
+   valid in user config or `OPENCODE_CONFIG_DIR` config; a project config setting this field has it
+   ignored (**a project cannot grant itself a permission it does not already have**). Defaults to
+   false."*
+2. **`profiles` now reads** *"A project config may always select a profile, but may only define this
+   field when the user sets `allow_project_profiles`."*
+3. **Even when granted, the project's bundle is advisory** — it *"fills only routing the user has not
+   set,"* so it loses every conflict rather than winning by precedence.
+
+This is the shape to copy for any plugin that merges configuration across trust tiers and needs to
+loosen a restriction: **make the permission a separate field, make that field un-self-grantable, and
+make the granted capability lose ties.** Each layer fails safe independently — a cloned repository with
+a hostile `profiles` map does nothing without the flag, cannot set the flag, and cannot override a
+routing decision the user has actually made. Compare the all-or-nothing alternatives: dropping the ban
+outright hands a cloned repo full routing control, and keeping it forces users to fork or hand-copy a
+repo's routing.
+
+The custom `"trust"` keyword continues (31 occurrences, `allow_project_profiles` carrying
+`"trust": "project-or-higher"`), and so does the 2026-09-19 practice of mirroring its meaning into
+`description` text that standard draft-07 tooling renders. The two representations have not drifted yet;
+they remain two representations of one rule.
 
 ## An MCP Client Keyed by Server Name Cannot Carry a Session Principal (2026-09-08)
 

@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-19
+updated: 2026-09-21
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
+    accessed: 2026-09-21
   - url: https://github.com/fro-bot/systematic
     sha: 8e26a01
     accessed: 2026-09-04
@@ -129,6 +132,22 @@ Two rules for auditing any cross-repo deploy target:
 - **Cross-channel equality checks become races, not identities.** This wiki had verified "registry version = npm `dist-tags.latest`" across eleven surveys and read it as an invariant. It is now only *eventually* true. **A mismatch between two artifacts of a parallel pipeline is only meaningful if it outlives the fan-out window** — re-poll before reporting drift.
 - **Measure lag with signed, sub-minute resolution or not at all.** The long-carried "~1–2 min" figure came from differencing rendered `HH:MM` strings, which cannot see a 31-second effect and certainly cannot see it change sign. npm packument `time` values are millisecond-precision; git author dates are second-precision; both are free.
 - **The gate did not move.** Every deploy still maps 1:1 onto a publish, so *measure the gate, not the tree* is untouched. Only the internal ordering of the release job changed — which is exactly the kind of change that is invisible to anyone auditing the deploy target's tree and visible to anyone timing its commits.
+
+**Amendment 2026-09-21 — amendment (b) above is withdrawn. The pipeline did not change; the instrument did.** The first source-side look at [[marcusrbrown--systematic]] since the flip (HEAD `f903dc6d`) reproduces the measurement exactly — 18 releases, 18 deploy commits, 1:1, `+37 s` at `3.18.3` and `−59 s` at `3.18.4`, clean flip, no straddle — and refutes the diagnosis three ways:
+
+- **`.releaserc.yaml` has been byte-stable since 2026-05-23** (seven touches ever, the last one #432). `@semantic-release/npm` still precedes `@semantic-release/github`, so the publish call still happens before the GitHub-release creation that fires the deploy.
+- **`docs.yaml` is a separate workflow triggered by `release: [published]`**, not a job inside the release workflow. There was never a job graph to parallelize, and there is no "sequential jobs became concurrent" event to point at.
+- **Every Docs run in both regimes is a `release`-event run of ~35–45 s.** Differencing each run's own `created_at` against the npm `time` entry shows the GitHub release firing **1.7 s after** npm for `v3.18.3` and **93 s before** it for `v3.18.4`. The offset that moved is between the publish call and the **registry's own `time` row** — upstream of the repository entirely.
+
+The rule that should have caught it, and that now supersedes bullet (b): **a cross-channel lag measures the pipeline only when it exceeds the work the pipeline must do between the channels.** The original `+34 s` regime was already impossible as a causal chain — 34 s does not cover `bun install`, a Playwright Chromium install, `docs:generate`, an Astro build, a clone of another repository, and a force-push. When a measured lag is smaller than the known floor for the work, you are differencing two clocks rather than timing one process. Read the **run's `created_at`**, which is the only timestamp the pipeline itself emits.
+
+Three consequences for this page:
+
+- **Withdrawn: "for 31–118 s the docs site advertised a version npm did not serve."** A registry `time` field records when a row was written, not when a tarball became resolvable; it cannot support an availability claim in either direction. The real exposure, if any, needs a resolution probe.
+- **Withdrawn: "cross-channel equality checks become races, not identities."** The eleven-survey registry ↔ `dist-tags.latest` mirror is still an identity with a ~40 s propagation delay, which is what it always was. The advice to *re-poll before reporting drift* survives on its own merits; the reasoning behind it does not.
+- **Kept and strengthened: measure with signed, sub-minute resolution.** Doing so is what made the anomaly visible. What was missing was the second step — checking whether the measured magnitude was even physically possible for the process being inferred.
+
+**New, and structural: the 1:1 deploy↔release mapping is contingent, not guaranteed.** The deploy step ends with `git add -A; if ! git diff-index --quiet HEAD --; then commit && push --force; else echo "No changes to commit"; fi`. A release whose rendered docs tree is byte-identical produces **no deploy commit at all**. It held 18/18 this interval, but an index-paired timing series would shift permanently on the first skip — which is the *other* mechanism that produces a clean sign flip with no straddling value, and the first thing to check whenever such a pairing looks off by one. Related deploy-step facts worth recording for any cross-repo Pages target: the push is a `git push --force` into another org's repo under a scoped App token, preceded by `find . -mindepth 1 -not -path './.git' -not -path './.git/*' -delete` (full wipe-and-replace, so anything hand-added to the branch dies on the next deploy — the 2026-06-24 footgun above, now confirmed mechanically); it is guarded by `if: github.repository == '<source>'` so a fork cannot reach the token; prereleases are excluded via `!github.event.release.prerelease`; and `concurrency: {group: docs-deploy, cancel-in-progress: true}` means two releases inside one ~40 s deploy would cost the earlier one its deploy entirely.
 
 ### Custom Domains: What the Repo Controls vs. What DNS Controls
 

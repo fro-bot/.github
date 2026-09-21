@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-09-19
+updated: 2026-09-21
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: c5cbd2e
     accessed: 2026-09-19
+  - url: https://github.com/marcusrbrown/systematic
+    sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
+    accessed: 2026-09-21
 tags:
   - opencode
   - plugin
@@ -54,6 +57,8 @@ tags:
   - model-profiles
   - tree-sitter
   - evals
+  - host-contract
+  - trust-boundaries
 related:
   - fro-bot--systematic
   - opencode-plugins
@@ -79,20 +84,160 @@ Compound-engineering workflow system for AI coding harnesses. Published to npm a
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-01-24                                           |
-| Surveyed        | 2026-09-05 (HEAD `9bceff39`, 2026-09-05T08:37:47Z, `fix(deps): update dependency web-tree-sitter to v0.27.0` #877, `mrbro-bot[bot]`) |
+| Surveyed        | **2026-09-21** (HEAD `f903dc6d`, 2026-09-21T01:20:06Z, `chore(deps): update bfra-me/.github action to v4.31.0` #1015, `mrbro-bot[bot]`); prior 2026-09-05 (HEAD `9bceff39`) |
 | Description     | "Compound-engineering loops for OpenCode, Pi, and Claude Code" (was OpenCode-only through v2) |
-| Latest release  | **v3.16.1** (2026-09-05T08:39:16Z) — cut from the surveyed HEAD ~90 s before this survey read it |
+| Latest release  | **v3.20.0** (2026-09-20T01:10:00Z); v3.16.1 at the prior survey |
 | Language        | TypeScript (strict, ESM, zero classes by convention) |
 | Runtime         | Bun (plugin/CLI build); `src/pi.ts` builds `--target node` |
 | License         | MIT                                                  |
 | Stars / forks   | 24 / 2                                               |
 | Open items      | 10 — 8 issues + 2 PRs (see [Open Issues / PRs](#open-issues--prs)) |
 | Homepage        | https://fro.bot/systematic                           |
-| npm             | `@fro.bot/systematic` — 207 versions, `dist-tags: {latest: 3.16.1}` (no `v2` tag) |
+| npm             | `@fro.bot/systematic` — **225 versions**, `dist-tags: {latest: 3.20.0}` (no `v2` tag) |
 | Default branch  | main (branches: `main`, `claude-code-plugin`, plus 2 in-flight) |
 | node_id         | `R_kgDORAJegA` (repo id `1141005952`)                |
 
-> **2026-09-19 downstream observation from the [[fro-bot--systematic]] deploy-target survey.** Not a source-side survey — three facts read off the published artifacts, recorded here because each one names a check the next direct survey should run against this tree.
+## 2026-09-21 survey — the interval the CI learned to tell "ran and passed" from "never ran"
+
+**HEAD `f903dc6d`** (2026-09-21T01:20:06Z, `chore(deps): update bfra-me/.github action to v4.31.0` #1015, `mrbro-bot[bot]`). **97 commits** since `9bceff39`. Latest release **`3.20.0`** (2026-09-20T01:10:00Z); npm at 225 versions, `dist-tags: {latest: 3.20.0}`, no `v2` tag. Tree **686 blobs** / 158 trees. Stars 24, forks 2, open items 10 (8 issues + 2 PRs). Agent pin **v0.113.2** (`43023e5b`), `bfra-me/.github` reusable workflows at **v4.31.0**.
+
+**Authorship inverts the fleet again, harder.** `marcusrbrown` **50** / `mrbro-bot[bot]` 43 / `fro-bot` 4 — a human majority (51.5%), up from 46% last interval. Commit types: 34 `chore`, 15 `fix`, **14 `test`**, 14 `docs`, 6 `refactor`, 5 `build`, 5 `ci`, 4 `feat`. The `test`/`refactor` mass is not maintenance noise; it is the interval's entire thesis.
+
+All three standing checks queued by the 2026-09-19 downstream observation are answered below. Two of them are answered in the negative.
+
+### 1. The publish → deploy sign flip is real, reproduced exactly, and the pipeline did not change
+
+The sibling page measured the docs deploy landing 31–88 s **after** the npm publish through `3.18.3`, then 31–118 s **before** it from `3.18.4` on, twelve positives then seven negatives with no straddling value, and concluded the release job's internal ordering changed. Re-measured here against all 18 releases and all 18 `gh-pages` deploy commits in the window, paired 1:1 (`3.16.2` → `3.20.0`):
+
+| Version | npm `time` | deploy commit | Δ |
+| --- | --- | --- | --- |
+| `3.18.2` | 01:33:22.474 | 01:33:59 | **+37 s** |
+| `3.18.3` | 01:48:48.336 | 01:49:25 | **+37 s** |
+| `3.18.4` | 05:00:15.950 | 04:59:17 | **−59 s** |
+| `3.18.5` | 01:49:04.721 | 01:47:38 | **−87 s** |
+| `3.20.0` | 01:10:00.011 | 01:08:00 | **−120 s** |
+
+The measurement replicates. The diagnosis does not survive:
+
+- **`.releaserc.yaml` has been byte-stable since 2026-05-23** (`d0c64867`, #432 — five months, seven touches ever). `@semantic-release/npm` is still listed ahead of `@semantic-release/github`, so the publish call still precedes the GitHub-release creation that fires the deploy.
+- **`docs.yaml` still triggers on `release: [published]`** and is a separate workflow, not a job in `main.yaml`. It never was downstream of the publish *step*; it was always downstream of the release *event*. There is no job graph to reorder.
+- **Every Docs run in both regimes is a `release`-event run of ~35–45 s.** Run 214 (`v3.18.3`): created `01:48:50`, npm `time` `01:48:48.336` — the release event fired **1.7 s after** npm. Run 215 (`v3.18.4`): created `04:58:42`, npm `time` `05:00:15.950` — the release event fired **93 s before** it.
+
+So the thing that moved is the offset between the publish call and **npm's registry-side `time` entry**, which drifted from roughly simultaneous to ~60–120 s late. Nothing in this repository changed. **Corrections: (a) "the deploy is no longer downstream of `npm publish`" is withdrawn; (b) "a ~1–2 minute window where the site advertises a version npm does not serve" is withdrawn** — a registry `time` field records when the registry wrote a row, not when a tarball became resolvable, so it cannot support an availability claim in either direction; **(c) the eleven-survey registry ↔ `dist-tags.latest` mirror invariant is not a race.** It is an identity with a ~40 s propagation delay, which is what it always was.
+
+The transferable rule, and the tell that should have caught this a survey earlier: **a cross-channel lag is a measurement of the pipeline only when it exceeds the work the pipeline must do.** The "deploy 34 s after publish" regime was already impossible as a causal chain — 34 s does not cover `bun install`, a Playwright Chromium install, `docs:generate`, an Astro build, a clone of another repository, and a force-push. Both regimes were timing two clocks against each other, and neither clock is the one that matters. When a lag is smaller than the known floor for the work, stop differencing artifacts and read the **run's own `created_at`**, which is the only timestamp the pipeline actually emits.
+
+**One structural fact the sibling page's 1:1 mapping rests on, now stated explicitly:** the deploy step ends with `git add -A; if ! git diff-index --quiet HEAD -- ; then commit && push --force; else echo "No changes to commit"; fi`. A release whose rendered docs tree is byte-identical produces **no deploy commit at all**. 18/18 held this interval, but *deploy count equals release count* is a contingent observation, not a structural guarantee — and an index-paired lag series would shift permanently on the first skip. It did not happen here; it is the first thing to check if the pairing ever looks off by one.
+
+### 2. The stale `disabled_*` enums did not move — and the open question resolves benignly, from this page's own record
+
+Unchanged across 97 commits and four releases: `disabled_skills` enumerates **50** names against **32** shipped skill directories; `disabled_agents` enumerates **102** against **37** shipped agents (38 `agents/**.md` minus `agents/review/README.md`). Append-only, still never pruned.
+
+The open question — *does a retired-but-enumerated name warn, or is it silently dropped?* — is answered by the v2-era record further down this page: **v2.32.0 (#534) made removed bundled names in `disabled_skills`/`disabled_agents` warn-and-ignore rather than reject**, specifically so that cleaning up a skill upstream would not brick configs that had disabled it. So `disabled_skills: ["proof"]` parses clean *and produces a warning*; it is not silent. **Severity downgrades from a silent no-op to a documentation defect.**
+
+What is still wrong is the field description, which reads *"Unknown skill names are rejected at parse time."* That conflates two populations the implementation treats differently: a **never-bundled** name is rejected, a **retired-but-enumerated** name is accepted then warned. The residual cost is real but narrow — the enum no longer tells you which names still do anything, so it validates spelling rather than effect. The general rule recorded in [[opencode-plugins]] stands with its polarity corrected: *a schema that validates a name should be able to say whether that name still does anything*, and here the runtime says it even though the schema does not.
+
+### 3. Catalog: 37 agents / 32 skills — and the README's count went stale the first time it moved
+
+Confirmed source-side. Agents flat at 37 (`design/` 1, `document-review/` 7, `research/` 7, `review/` 18, `workflow/` 4). Skills at 32, up one from the 31 recorded on 2026-09-05 — the `ce-review-cleanup` addition the sibling page narrowed to `3.17.0`.
+
+**The README still advertises "31 bundled skills and 37 specialized agents."** The 2026-09-05 survey praised that line as "a claim that is true, which is rarer than it should be." It stopped being true at `3.17.0` and nothing noticed. The repo runs **seven** generated-artifact drift gates in the `Build` job — content integrity, Claude Code plugin build + integrity, agent-browser skill drift, registry drift, config schema drift, review artifact schema drift, and the new `ce:review validator bundle drift` — and none of them looks at the one number a human typed. *A count in prose is an unmanaged dependency on the catalog;* the fix is to generate it (the docs site already does, via `docs/scripts/generate-stats.ts`) or to gate it, and the repo has the machinery for both.
+
+### The headline: a required job engineered specifically so it cannot lie
+
+`main.yaml` gained a **`Host Contract`** job (#931, 521 lines total workflow now) that runs the integration suite against a real OpenCode host. It is the densest concentration of this wiki's own false-signal findings turned into enforced machinery that the fleet has produced, and every non-obvious choice carries an inline comment naming the failure it prevents:
+
+- **No top-level `if:`.** Path gating is applied at *step* level, so the job always runs to completion and reports a status. The comment states why: `release` has this job in `needs:`, and *"a `needs` dependency that were skipped would skip `release` too, silently publishing nothing on a docs-only PR."* This is the direct remedy for the required-check-that-silently-skips class ([[bfra-me--ha-addon-repository]], [[bfra-me--works]]).
+- **Fail closed on a malformed gate input.** `dorny/paths-filter`'s output is normalised in a dedicated step that accepts exactly `true` or `false` and `exit 1`s on anything else, because *"a malformed or empty paths-filter output must never be treated as 'skip and report success', since that would silently satisfy release's needs on this job."*
+- **`SYSTEMATIC_REQUIRE_OPENCODE=1`** makes a missing or mismatched host a module-scope throw rather than a skip.
+- **A guard that asserts on the result's contents, not its conclusion.** `scripts/host-contract-guard.ts` reads the JUnit XML and the console log and enforces a skipped-test exempt set, an expected-file list, and a pass floor — covering *"a per-test gate such as `test.skipIf(!DIST_LOCAL_AVAILABLE)` skipping for an unexpected reason while the job stays green, or a whole-file collapse (a crash or an early exit) that still leaves the console summary and pass floor looking plausible."* All three lists live next to the guard *"so widening any of them is a reviewed change."* This is [[marcusrbrown--cortexkit-anthropic-auth]]'s *a run's conclusion measures the harness, not the deliverable* shipped as a control.
+- **`!cancelled()` documented as load-bearing, with the mechanism.** An `if:` containing no status-check function gets an **implicit `success()` ANDed in** by GitHub Actions, which would skip the diagnostic step on exactly the failing run it exists to diagnose (`success()` is job-scoped and goes false the moment the suite step fails). `!cancelled()` overrides that default while staying true on both a passing and a failing suite. The step also checks `steps.suite.outcome` is `success` or `failure` — excluding `skipped`, which is what the outcome is when an *earlier* step died first. New to [[github-actions-ci]].
+- **`timeout-minutes: 30` "measured on the first real CI run; not summed from per-test ceilings."**
+- **Load-bearing build ordering**: `dist/` is gitignored and `opencode.test.ts` computes `DIST_LOCAL_AVAILABLE` at module scope, before `packTarballOnce()` runs in a `beforeAll` — so the job builds first to make the dist-local assertion *run for real* instead of skipping itself green.
+
+The supporting commit arc is the whole story in titles: `refactor(evals): derive the OpenCode host pin from package.json` (#916) → `launch OpenCode hosts through bunx and add an availability gate` (#928) → `drive the host model test from a scripted provider` (#930) → `make the scripted-provider host run work against a real OpenCode host` (#932) → `isolate the CLI-interruption test signal from the test runner` (#933) → `stop asserting the host launcher pid equals the in-process pid` (#936) → **#931 the required job** → `guard against bare opencode launches and in-process terminal signal emits` (#939) → `harden the OpenCode host fixture's spawn, stdio, and signal handling` (#941) → `treat an unsignalable process group as alive when pruning` (#943) → `move the host-contract guard into a tested script` (#949) → `re-prove the fixture scanner's coverage on every run` (#958). Fifteen commits whose common subject is making a test *actually execute*.
+
+**The one gap, stated precisely.** `.github/settings.yml`'s required contexts are `[Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Registry, Release, Analyze (typescript), CodeQL, Renovate / Renovate]` — **`Host Contract` is not among them.** It still binds, transitively: `Release` is required and `needs: [build, typecheck, lint, test, host-contract]`, so a red host-contract skips `Release`, whose required context then never reports and blocks the merge. The gate holds; the *declared* protection list is an incomplete map of what actually blocks a merge, and reading it alone would tell you the newest and most carefully built gate is optional. Same repo, opposite direction from the `Publish Claude Code Plugin` finding below — there a critical job is genuinely ungated, here a critical job is gated by accident of topology.
+
+### #897 is closed: the ~400 KB of unchecked TypeScript is now a required gate
+
+The 2026-09-05 survey confirmed from the manifest that `tsconfig.json` scoped `include` to `src/**/*`, leaving `tests/` and `scripts/` — including `content-integrity.ts`, the gate enforcing the repo's own conventions — outside a required `Typecheck` check. **Resolved this interval.** Two new configs and two new scripts:
+
+| Config | Covers | Script | CI |
+| --- | --- | --- | --- |
+| `tsconfig.json` | `src/**/*` | `typecheck` | required step |
+| `tsconfig.scripts.json` | `src/`, `scripts/`, `docs/scripts/` | `typecheck:scripts` | required step |
+| `tsconfig.tests.json` | + `tests/**/*` | `typecheck:all` | required step |
+
+The burn-down shape is worth stealing: **#914 landed it advisory, the backlog cleared across #919 / #922 / #923 / #924 / #926, then it became required** — and the workflow comments record which state each step is in (*"src/, scripts/, and docs/scripts/ are clean today, so this gate has no backlog to work through"* / *"#897's burn-down cleared the tests/ error backlog (see PR #914, PR #926), so this is a required gate keeping tests + scripts type-clean going forward"*).
+
+Two comments in the configs are better than the gate itself, because they defend it against its own cleanup:
+
+- `tsconfig.scripts.json`: *"Required, not temporary: 4 files under `scripts/` use `.ts`-suffixed relative imports independent of the tests/ burn-down tracked in #897. **Do not remove this when that burn-down completes — it would break this required gate.**"* A flag introduced for two reasons, one temporary and one permanent, is a flag someone will delete when the temporary reason expires. Writing down *which* reason outlives the other is the cheapest possible defense.
+- `tsconfig.scripts.json` also names a cross-config hazard nothing detects: `docs/scripts/**` is covered here *and* by `docs/tsconfig.json`, which extends `astro/tsconfigs/strict` and defines a `@/*` path alias this config does not — so **"a docs script that starts using that alias or an Astro-specific type will pass `docs:build` and fail this required gate."** Two configs over one directory, disagreeing only on a path alias, is a defect that surfaces as a mysterious CI failure in an unrelated job.
+
+### The `profiles` trust boundary was relaxed on purpose, with the right interlock
+
+The 2026-09-05 survey recorded the schema's strongest security line: *"a project config may select a profile but may not define this field."* Issue **#993** argued that made repository-specific routing impossible, and **#1011** shipped the relaxation. The prior claim is **superseded**; the direction is unchanged and the mechanism is stronger than the absolute ban was.
+
+A **13th top-level property, `allow_project_profiles`**, defaults to `false` and is described as:
+
+> User-owned only — only valid in user config or `OPENCODE_CONFIG_DIR` config; **a project config setting this field has it ignored (a project cannot grant itself a permission it does not already have).**
+
+And `profiles` now reads: *"A project config may always select a profile, but may only define this field when the user sets `allow_project_profiles`; a **project-defined bundle is advisory** and fills only routing the user has not set."* Three layers — the permission is user-owned, the permission cannot be self-granted, and even when granted the project's bundle loses every conflict. A cloned repository still cannot redirect your agents to a model of its choosing; it can now suggest one into slots you left empty.
+
+The schema also grew a **custom `trust` annotation** (`"trust": "project-or-higher"`), 31 occurrences across the document. Encoding the trust tier as machine-readable metadata beside the description — rather than only in prose a human must read — is the generalizable move; see [[opencode-plugins]].
+
+Config schema fingerprint, re-measured at `https://fro.bot/systematic/schemas/v3/systematic-config.schema.json`:
+
+| Metric | 2026-09-04 | 2026-09-05 | 2026-09-21 |
+| --- | --- | --- | --- |
+| Bytes | 38,180 | 58,954 | **60,253** |
+| `definitions` | 74 | 100 | **101** |
+| Top-level properties | 10 | 12 | **13** |
+| `sha256[:16]` | `0e82797b9f8f43ed` | `1f9b7c48a4b6455c` | **`f7cd9984739a7fab`** |
+
+Full surface: `$schema`, `agents`, `categories`, `profiles`, `profile`, **`allow_project_profiles`**, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, `workflow_guard`, `pi_subagents`, `skills_as_commands`. Note the ordering changed too — `profiles`/`profile` now precede the `disabled_*` block, so any positional probe against this document is as brittle as the 09-04 structural probes were.
+
+### The autoheal daemon writes again — and it is draining this wiki's own backlog
+
+**#912** (`ci(fro-bot): request branch-pr delivery for autoheal runs and check all four drift gates`) wired a conditional `output-mode`:
+
+```yaml
+output-mode: ${{ ((github.event_name == 'schedule' && github.event.schedule == '30 3 * * *')
+  || (github.event_name == 'workflow_dispatch' && inputs.prompt == '' && inputs.mode == 'autoheal'))
+  && 'branch-pr' || '' }}
+```
+
+The comment names the failure directly — *"so the agent's file changes land on a branch instead of being discarded"* — and reuses the same `inputs.prompt == ''` guard and cron predicate as the `PROMPT` ternary, because prompt-only dispatches (the release-notes-narrative contract, now driven by `scripts/dispatch-release-notes.sh` via `@semantic-release/exec`) must stay comment-only. It is the fourth fleet instance of the delivery-mode repair after [[marcusrbrown--sparkle]] (#2001/#2003, computed gate step), [[fro-bot--dashboard]] (#413), and the still-unrepaired [[marcusrbrown--tokentoilet]]. **This is the cleanest evidence yet that tokentoilet's daemon is not broken but unwired:** same action, same version family, same prompt architecture — the only difference is this line.
+
+It works. Two open `fro-bot`-authored PRs, both recent, both real:
+
+- **#1006 `chore(lint): align Biome schema version`** — the Biome `$schema`-vs-package drift this wiki has tracked across three surveys, now remediated by the bot rather than by hand. The gap narrowed from ten patches (`2.5.1` vs `2.5.11`) to two (`2.5.12` vs `2.5.14`), which is the signature of a chase, not a fix: nothing asserts the two agree, so each Biome bump reopens it. Fourth occurrence; see also [[marcusrbrown--opencode-copilot-delegate]].
+- **#1016 `docs(solutions): qualify four abbreviated skill citation paths`** — filed one day after `marcusrbrown` opened **#1014** (`content-integrity does not verify path:line citations in docs/solutions`), alongside **#1000** which extended `content-integrity.ts` to validate solution-doc frontmatter against the compound schema.
+
+**Daemon health: still the fleet's control case.** 4,100 → **4,584** `Fro Bot` runs; the last five scheduled runs are `success`, unbroken daily through 2026-09-21T03:42. All 8 committed workflows report `state: active` — none `disabled_inactivity`. Unlike [[marcusrbrown--tokentoilet]]'s 98-of-100 `skipped`, **33 of the last 100 runs here are `pull_request` + `success`**: both halves of the daemon execute. The `issues: [edited]` Dependency-Dashboard run storm persists (27 `skipped` `issues` runs in the same window) — Nth confirmation, no new information.
+
+One footgun against the current direction of [[fro-bot--agent]]: the agent step passes **`timeout: 0`**, disabling the action's own deadline, in the same month the action shipped a derived execution budget (`cap − measured pre-action elapsed − 15 m teardown reserve`) precisely because a job-level kill cannot drain, summarise, or publish. With `timeout: 0` there is no inner deadline to derive, so a hung run rides to whatever the runner's outer limit is. The prior survey's dead ternary branch 4 (`workflow_dispatch && mode == 'autoheal'`, subsumed by the unqualified branch 5) survives verbatim at 732 lines.
+
+**And the repo fails closed in CI while failing open in the guard.** Open issue **#1005**: *"A transient remote-scope probe timeout disables the workflow guard for the whole session."* One flaky probe downgrades a control for the rest of the session — the exact inverse of the `paths-filter` normalisation that `exit 1`s on an unexpected value. Same repo, same month, opposite defaults. Filed on itself, which is the part that matters.
+
+### Other durable structure
+
+- **`src/lib/review-pipeline.ts` is now the largest file in the repository at 182 KB**, past `opencode-workflow-guard.ts` (144 KB, grown from 130 KB) and `workflow-guard.ts` (117 KB, unchanged). Shipped by `feat(review): add offline cleanup and ignore protection` (#965) and `feat(review): validate returns and select reviewers by risk` (#974), with a **seventh drift gate** (`ce-review-validator:drift`, from `scripts/generate-ce-review-validator.ts`). `config.ts` also crossed 100 KB.
+- **`tests/manual/` is new** (35 files). Test tree 211 blobs: `unit/` 67 → **91**, `integration/` 12 → **13**, `fixtures/` 71, plus the new manual tier.
+- **`docs/` is an npm workspace** (`"workspaces": ["docs"]`). 206 blobs: `solutions/` 84 → **93**, `plans/` **72**, `promotion/` 5, `src/` 24.
+- **`.slim/` added** — an `oh-my-opencode-slim clonedeps` vendored-clone area with a single committed manifest (`.slim/clonedeps.json`); `.ignore`, `biome.json`, and `tsconfig.scripts.json` all exclude it explicitly. Three exclusion lists to keep in step for one directory.
+- **`@types/bun: "latest"`** is the only floating version in an otherwise exactly-pinned `devDependencies` block (26 entries). Renovate has nothing to pin and no PR to open, so the repo's ambient type surface can change between two CI runs on the same commit — the same class as the declared-but-unread pin in [[github-actions-ci]], reached by omission rather than by a naming mismatch.
+- **The docs site ships Umami, fail-closed.** `docs.yaml` passes `UMAMI_WEBSITE_ID: ${{ vars.UMAMI_WEBSITE_ID }}` with the comment *"Public website id (ships in the client HTML), so a repo variable, not a secret. When unset, `astro.config.mjs` omits the analytics script entirely."* Third adopter of the self-hosted, disabled-by-default pattern after [[marcusrbrown--mrbro-dev]] and the collector in [[marcusrbrown--infra]].
+- **The deploy is a cross-repo force-push.** `docs.yaml` mints a Fro Bot App token scoped `owner: fro-bot`, clones `fro-bot/systematic`, runs `find . -mindepth 1 -not -path './.git' -not -path './.git/*' -delete`, copies `docs/dist/`, and `git push --force origin gh-pages`. Guarded by `if: github.repository == 'marcusrbrown/systematic'` so a fork cannot reach the token, and by `if: ... || !github.event.release.prerelease` so prereleases do not deploy. Concurrency `group: docs-deploy, cancel-in-progress: true` — a second release inside a ~40 s window would cancel the first deploy; the tightest observed release pair this interval is 59 minutes, so it has not bitten.
+- **Branches 4**: `main`, `claude-code-plugin` (`979b0398`, advanced from `958d4227`), and two in-flight (`chore/autoheal-biome-schema-2026-09-19`, `docs/qualify-skill-citation-paths-2026-09-21`). The `docs/model-profiles-guide` and `renovate/opencode` branches from the last survey are gone.
+- **Open items steady at 10, composition changed.** Closed since 2026-09-05: **#897** (typecheck coverage) and **#796** (eval-artifact retention). Still open: #153 (the perpetual Daily Autohealing Report), #15 (Dependency Dashboard), #854 (guard is OpenCode-only), #740 (receipt guard hardening), **#951** (land the positional blind-spot probe as a test — note `test(evals): re-prove the fixture scanner's coverage on every run` #958 landed and the issue did not close), #993, #1005, #1014.
+- **Dependency deltas** (`9bceff39` → `f903dc6d`): `@biomejs/biome` 2.5.11 → **2.5.14** (`$schema` 2.5.1 → 2.5.12), `zod` 4.5.4 → **4.6.5**, `@types/node` 26.4.1 → **26.6.1**, `typebox` 1.3.25 → **1.3.33**, `@opencode-ai/plugin`/`sdk` 1.18.21 → **1.18.31** (peer range still `^1.1.30`), new **`@semantic-release/exec` 7.1.0**; `fro-bot/agent` v0.108.1 → **v0.113.2**; `bfra-me/.github` → **v4.31.0** (current, against [[marcusrbrown--github]]'s v4.27.0). `tree-sitter-bash` 0.25.1 / `web-tree-sitter` 0.27.0 / `@earendil-works/pi-coding-agent` 0.83.0 / `agent-browser` 0.34.0 unchanged.
+
+---
+
+> **2026-09-19 downstream observation from the [[fro-bot--systematic]] deploy-target survey.** Superseded in part by the 2026-09-21 survey above: check (a) resolved in the negative (the pipeline did not change), check (b) resolved benignly (the loader warns), check (c) confirmed. Retained as the record of what was asked. Not a source-side survey — three facts read off the published artifacts, recorded here because each one names a check the next direct survey should run against this tree.
 >
 > 1. **The release pipeline's internal ordering changed on 2026-09-15.** Across `3.15.1` → `3.18.3` the docs deploy commit landed **31–88 s after** the npm publish; from **`3.18.4` onward it lands 31–118 s before it**, twelve consecutive positives then seven consecutive negatives with no straddling value. The deploy is no longer downstream of `npm publish`. Read the release job graph (`docs.yaml` / the semantic-release wiring) and record whether the deploy became a parallel job or simply moved above the publish step — and whether the ordering is intentional, since it opens a ~1–2 minute window where `fro.bot/systematic/` advertises a version npm does not serve.
 > 2. **`disabled_skills` and `disabled_agents` still enumerate the v2-era roster pruned at the 3.0.0 boundary** — 50 skill names against 32 shipped skills, 102 agent names (51 bare + 51 qualified) against 37 shipped agents, including a retired `docs/` category prefix and a `generate_command` underscore spelling the registry never used. The lists are append-only and maintained (`disabled_skills` gained exactly `ce-review-cleanup` this interval) but were never pruned. The schema description claims *"Unknown skill names are rejected at parse time,"* which makes the enum the validation boundary. **Open question for the loader: does a retired-but-enumerated name produce a warning, or is it silently dropped?** If it warns, this is deliberate deprecation tolerance and only the description is incomplete. If it is silent, a user's `disabled_skills: ["proof"]` parses green and does nothing. Generalized in [[opencode-plugins]].
@@ -591,6 +736,25 @@ Gathered incidentally while surveying the deploy target [[fro-bot--systematic]];
 
 ## Open Issues / PRs
 
+### 2026-09-21 — 10 open items (8 issues, 2 PRs)
+
+Count steady, composition turned over. **Closed since 2026-09-05: #897** (typecheck coverage — see the survey above), **#796** (`ce:review` artifacts retain verbatim private source with no retention policy — the privacy-baseline defect), **#834** and **#795**. Four new, all `marcusrbrown`-authored self-critique, and two `fro-bot`-authored PRs — the first agent-delivered PRs this page has recorded for this repo.
+
+| # | Opened | Author | Title | Reading |
+| --- | --- | --- | --- | --- |
+| #1016 (PR) | 2026-09-21 | `fro-bot` | `docs(solutions): qualify four abbreviated skill citation paths` | Filed one day after #1014. The autoheal daemon's `branch-pr` delivery, working. |
+| #1014 | 2026-09-20 | `marcusrbrown` | `content-integrity does not verify path:line citations in docs/solutions` | A gate that validates frontmatter but not the citations the docs assert. |
+| #1006 (PR) | 2026-09-19 | `fro-bot` | `chore(lint): align Biome schema version` | The `$schema`-vs-package drift tracked across three surveys, now bot-remediated. Open 2 days. |
+| #1005 | 2026-09-19 | `marcusrbrown` | `A transient remote-scope probe timeout disables the workflow guard for the whole session` | **Fails open.** One flaky probe downgrades a control for the session — the inverse of the fail-closed `paths-filter` normalisation shipped the same month. |
+| #993 | 2026-09-17 | `marcusrbrown` | `Project config can select a profile but cannot define one, so repository-specific routing has to…` | Drove #1011 / `allow_project_profiles`. **Still open after the feature landed** — worth re-checking whether it is tracking a remaining gap or simply unclosed. |
+| #951 | 2026-09-07 | `marcusrbrown` | `Land the positional blind-spot probe as a test so scanner coverage is re-proven, not asserted` | Same theme as the `Host Contract` work. `test(evals): re-prove the fixture scanner's coverage on every run` (#958) landed and the issue did not close. |
+| #854 | 2026-08-24 | `marcusrbrown` | The workflow guard is OpenCode-only because of its state model, not because other harnesses can[not] | Carried. Still the sharpest qualifier on the tri-harness claim. |
+| #740 | 2026-08-03 | `marcusrbrown` | Harden receipt guard: marker v1 read shim + observer worktree-registry refresh | Carried. |
+| #153 | 2026-03-09 | `fro-bot` | Daily Autohealing Report | Rolling. The arithmetically-impossible retention policy recorded on 2026-09-05 is unaddressed. |
+| #15 | 2026-01-26 | `mrbro-bot[bot]` | Dependency Dashboard | Renovate. Still the source of the `issues: [edited]` no-op run storm. |
+
+Both prior open PRs (#906 model-profiles guide, #880 OpenCode v1.18.26) are gone from the queue; the `docs/model-profiles-guide` branch no longer exists.
+
 ### 2026-09-05 — 10 open items (8 issues, 2 PRs)
 
 The queue changed character completely. v2 ran with three rolling automation issues and zero PRs; v3 carries **six substantive, human-authored engineering issues filed by `marcusrbrown` against his own new subsystems**. Every one is a precise self-critique, and together they are the best available map of where v3 is unfinished:
@@ -624,6 +788,7 @@ Open PRs: **#906** (`docs(guide): add the model profiles and per-harness routing
 
 | Date       | SHA        | Delta                    |
 | ---------- | ---------- | ------------------------ |
+| 2026-09-21 | `f903dc6d` | **The interval the CI learned to tell "ran and passed" from "never ran."** 97 commits; authorship `marcusrbrown` **50** / `mrbro-bot[bot]` 43 / `fro-bot` 4 — human-majority again, now >50%, with 14 `test` and 6 `refactor` commits forming a single arc. v3.16.1 → **v3.20.0** (npm 225 versions). **(1) New `Host Contract` job (#931)** runs the integration suite against a real OpenCode host with no top-level `if:` (step-level path gating so a skipped `needs` cannot silently skip `release`), fail-closed `paths-filter` normalisation, `SYSTEMATIC_REQUIRE_OPENCODE=1`, a `host-contract-guard.ts` asserting on the JUnit XML's skipped-test set / expected-file list / pass floor, and **`!cancelled()` documented as load-bearing** against the implicit `success()` GitHub ANDs into any status-check-free `if:`. Gap: the job is **absent from the declared required contexts** and binds only through `Release`'s `needs:`. **(2) The 2026-09-15 publish→deploy sign flip reproduces exactly (18/18 pairs, `+37 s` → `−59 s`, no straddle) and the pipeline never changed** — `.releaserc.yaml` byte-stable since 2026-05-23, `docs.yaml` a separate `release: [published]` workflow, ~35–45 s runs in both regimes; the offset moved in npm's registry-side `time` row. *A cross-channel lag measures the pipeline only when it exceeds the work the pipeline must do.* **(3) #897 closed** via `tsconfig.scripts.json`/`tsconfig.tests.json` + required `typecheck:scripts`/`typecheck:all`, landed advisory-first (#914) and promoted after the burn-down (#919/#922/#923/#924/#926). **(4) The `profiles` trust boundary relaxed on purpose** (#993 → #1011): 13th property `allow_project_profiles`, default `false`, **un-self-grantable**, granted bundles **advisory**; schema 58,954 → **60,253 B**, 100 → **101** defs, `sha256[:16]` **`f7cd9984739a7fab`**; `trust` keyword 31 occurrences. **(5) Stale `disabled_*` enums unmoved** (50 vs 32, 102 vs 37) but the open question resolves benignly — v2.32.0 #534 warn-and-ignores retired names. **(6) Autoheal writes again** (#912 conditional `output-mode: branch-pr`) — two live `fro-bot` PRs incl. #1006 against the Biome `$schema` drift; daemon at 4,584 runs, scheduled unbroken, 33/100 `pull_request` + `success`; but `timeout: 0` and #1005 (guard fails open on a transient probe). **(7) README still claims "31 bundled skills"** against 32 shipped since `3.17.0` — seven generated drift gates, none on the one hand-typed number. Also: `review-pipeline.ts` **182 KB** now the largest module, new `tests/manual/`, `docs/solutions` 84 → 93, `.slim/` clonedeps, `docs` an npm workspace, fail-closed Umami on the docs site, `@types/bun: "latest"` the lone floating pin, agent **v0.113.2**, `bfra-me/.github` **v4.31.0** |
 | 2026-04-24 | `ef02119`  | Initial survey           |
 | 2026-05-06 | `420ef65`  | 28 commits, v2.5.1→v2.7.3, skills 45→46, agent v0.41.4→v0.42.7, `plugin-singleton.ts` added, OCX V2, content-integrity gate, skill guardrails, model field removal |
 | 2026-05-28 | `9b75707`  | ~80 commits, v2.7.3→v2.24.0, skills 46→47, agents 50→51, agent v0.42.7→v0.45.0, `fro-bot.yaml` + `fro-bot-autoheal.yaml` consolidated (#446), `plugin-singleton.ts` removed, Zod config schema arc (v2.14–v2.17), `release-notes-narrative` skill + semantic-release-driven dispatch, launch-surface cleanup, docs modernization, deprecation surface, overlay hardening, project-local override fix |

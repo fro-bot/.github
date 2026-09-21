@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-09-19
+updated: 2026-09-21
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -65,6 +65,12 @@ related:
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+> **2026-09-21 correction from the [[marcusrbrown--systematic]] source-side survey (HEAD `f903dc6d`).** Finding (1) below — "the publish → deploy ordering inverted on 2026-09-15" — **is withdrawn as a diagnosis.** The measurement reproduces exactly (18 releases / 18 deploy commits, `+37 s` at `3.18.3`, `−59 s` at `3.18.4`, clean flip, no straddle), but nothing in the producer changed: `.releaserc.yaml` has been **byte-stable since 2026-05-23** with `@semantic-release/npm` still ahead of `@semantic-release/github`; `docs.yaml` is a **separate workflow** triggered by `release: [published]`, never a job in the release workflow, so there is no job graph to parallelize; and every Docs run in **both** regimes is a `release`-event run of ~35–45 s. Differencing each run's own `created_at` against the npm `time` entry shows the GitHub release firing **1.7 s after** npm for `v3.18.3` and **93 s before** it for `v3.18.4` — the offset moved between the publish call and the **registry's own `time` row**, upstream of both repositories.
+>
+> Consequently: **the "docs site advertises a version npm does not serve" window is withdrawn** (a registry `time` field is not an availability signal), and **the eleven-survey registry ↔ `dist-tags.latest` mirror is still an identity**, not a race — with a ~40 s propagation delay it always had. The rule that catches this class: *a cross-channel lag measures the pipeline only when it exceeds the work the pipeline must do between the channels* — `+34 s` never covered an install, a Playwright install, an Astro build, a clone, and a force-push, so **both** regimes were timing two clocks. Generalized in [[github-pages]] and [[github-actions-ci]].
+>
+> One structural addition: the deploy step commits only `if ! git diff-index --quiet HEAD --`, so a release with byte-identical rendered output produces **no deploy commit at all**. 1:1 deploy↔release is a contingent observation, not a guarantee — and a single skip shifts an index-paired lag series permanently, which is the *other* way to manufacture a clean sign flip. Findings (2) and (3) below are unaffected; the `disabled_skills`/`disabled_agents` open question resolves benignly (the loader warn-and-ignores retired names per v2.32.0 #534 — see [[marcusrbrown--systematic]] and [[opencode-plugins]]).
 
 ## 2026-09-19 survey — the deploy stopped following the publish, and the catalog moved for the first time since July
 
