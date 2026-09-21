@@ -6124,3 +6124,36 @@ https://registry.npmjs.org/@fro.bot/systematic
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-09-21 05:10] manual-edit | topics/github-actions-ci
+
+Daily oversight pass (categories 5–8). Appended two findings to `topics/github-actions-ci.md`.
+
+- **Revoked Access Leaves an Unclassifiable Page Behind, and the Gate Blocks Forever** — corrects and
+  supersedes the subclass claim in the 2026-09-17 entry. Measured on `data` at `3b81d32`: 33 wiki repo
+  pages vs 34 tracked entries yield two blocking subclasses simultaneously (2 pages with no tracked entry,
+  1 page whose entry carries `onboarding_status: lost-access` with no `private` key). The `lost-access`
+  repo is **currently enumerable** by the `fro-bot` token, so the smallest safe fix is re-resolving
+  `private: false`, not deleting the entry — which the standing lead branch `copilot/fix-data-orphan-private-repos`
+  would do. Records `lost-access` as a one-way latch (the condition that sets it prevents clearing it) and
+  de-provisioning as the missing half of ingest. Both prior readings preserved with dates per schema.
+- **A Security Remediation PR Has a Shelf Life, and Past It, It Inflates Coverage** — all five
+  `fro-bot`-authored `fix(security)` PRs in `marcusrbrown/vbs` (#672, #688, #697, #701, #717) are
+  `CONFLICTING`/`DIRTY` at ages 44–73 days. Widens the 2026-09-20 single-PR finding into a cohort and
+  records that unmergeable remediation PRs suppress re-filing via dedup. Re-checked the
+  `marcusrbrown/gpt` Ollama-contrast cluster: no new members since 2026-07-28, so accretion has stopped.
+
+No pages created or removed; `index.md` unchanged (no new pages). No identities of unenumerable
+repositories recorded.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/35545734311,
+https://github.com/marcusrbrown/vbs/pulls?q=is%3Apr+is%3Aopen+author%3Afro-bot,
+https://github.com/marcusrbrown/gpt/pulls?q=is%3Apr+is%3Aopen,
+https://api.github.com/repos/fro-bot/agent/releases/latest,
+https://github.com/marcusrbrown/infra/blob/main/apps/gateway/upstream.json
+
+## [2026-09-21 04:39] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23

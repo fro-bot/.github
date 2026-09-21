@@ -2662,3 +2662,104 @@ Generalizations:
 4. **A signal with no subscriber is still an unhandled failure.** #1580 is the counter-example inside the
    same repo: accurate reporting, zero requeue. Pair every new honest state with the question *who acts on
    it?*
+
+### Revoked Access Leaves an Unclassifiable Page Behind, and the Gate Blocks Forever (2026-09-21)
+
+The `fro-bot/.github` `data → main` promotion has now failed **two consecutive Sunday crons** (2026-09-13,
+2026-09-20), stranding **67 commits** against 47 at the 2026-09-17 reading. Re-deriving the gate's inputs
+against the current `data` tip **corrects the subclass claim** in
+[An All-Or-Nothing Privacy Gate Fails Hardest on Metadata It Has No Entry For](#an-all-or-nothing-privacy-gate-fails-hardest-on-metadata-it-has-no-entry-for-2026-09-17).
+That entry concluded the blocker was a single orphan page with *no* `metadata/repos.yaml` entry, superseding
+an earlier inference that an entry merely lacked `private: false`. Both readings are now partial: measured
+on `data` at `3b81d32`, **33 wiki repo pages against 34 tracked entries** yield **two distinct blocking
+subclasses at once**:
+
+- **2 pages with no tracked entry at all** — the orphan class the 09-17 entry described.
+- **1 page whose entry exists, carries `onboarding_status: lost-access`, and has no `private` key** — a
+  third subclass neither prior reading recorded. Its `last_survey_status` is `success`, dated 2026-04-23.
+
+The third subclass is the interesting one, because the sequence that produces it is entirely routine:
+
+1. Fro Bot is added as a collaborator on a repo; reconcile records it (`discovery_channel: collab`).
+2. A survey succeeds and **writes a wiki page**.
+3. Access is later revoked. Reconcile can no longer read the repo, so it writes `lost-access` — and
+   **cannot write a `private` value**, because determining visibility is exactly the capability that was
+   revoked.
+4. The promotion gate requires proof that every `wiki/repos/` page maps to a **public** repo. Absent the
+   key, it fails closed. Correctly. Forever.
+
+Nothing here is a bug. Survey is right to write the page, reconcile is right to refuse to guess visibility,
+and the gate is right to fail closed on unproven visibility. The defect is that **no step owns the
+page's fate when access disappears** — write and classify are coupled at survey time, then decoupled
+permanently by an event neither controls.
+
+The sharp, non-obvious part: **the current visibility of that repo is `true`.** The `fro-bot` token
+enumerates 38 repositories and the `lost-access` entry's slug is among them. Access came *back* — or was
+never lost in the way the April snapshot recorded — and nothing re-resolves a terminal-looking status.
+So the smallest safe fix is to **re-resolve `private` to an explicit `false` on `data`**, not to delete the
+entry. This matters operationally: the standing lead branch `copilot/fix-data-orphan-private-repos`
+(head `8ea9588`) **deletes two `repos.yaml` entries**, which for this subclass would remove the very row
+that makes the page attributable and convert a one-field repair into a fresh orphan.
+
+Generalizations:
+
+1. **A lifecycle status that can only be written while a capability exists becomes permanently stale when
+   that capability is revoked.** `lost-access` is terminal-by-construction: the condition that sets it also
+   prevents clearing it. Any status whose refresh requires the access it records as missing needs an
+   out-of-band re-resolution pass, or it is a one-way latch. Re-check such rows against plain enumeration —
+   which costs nothing and is exactly what detected the recovery here.
+2. **Fail-closed gates convert transient access loss into permanent blockage of an unrelated pipeline.**
+   A five-month-old collaborator removal now blocks a weekly promotion carrying 67 commits of unrelated
+   knowledge and metadata work. Blast radius ran through a shared gate, not a shared dependency.
+3. **De-provisioning is a missing half of ingest.** Survey has a write path and no symmetric retract path.
+   When a repo leaves the trust boundary, something must decide whether its page is removed, retained with
+   a frozen public attribution, or quarantined — and that decision must be reachable *without* the access
+   that was lost.
+4. **A redacted gate report cannot rank its own subclasses, so remediation guidance drifts across
+   readings.** Three passes produced three different root-cause claims (under-annotated entry → orphan →
+   both, plus a recovered-access row) because each inferred from the same opaque `unattributable-page`
+   label. The 09-17 recommendation stands and is now concretely priced: emit **counts by reason code**,
+   distinguishing *no-tracked-entry* from *tracked-but-unannotated*. Both are redaction-safe — they leak a
+   count and a class, never a slug — and they are the difference between a one-field edit and a page
+   removal.
+
+Verification for whoever acts on this, none of which requires operator credentials: compare
+`git ls-tree --name-only origin/data knowledge/wiki/repos/` against the slugs derived from
+`metadata/repos.yaml` via `computeRepoSlug`, and cross-check any entry lacking a `private` key against the
+authenticated account's repository listing. That reproduces the three-page, two-subclass split above
+without ever calling `--operator-report`, which hard-refuses under `GITHUB_ACTIONS` by design.
+
+### A Security Remediation PR Has a Shelf Life, and Past It, It Inflates Coverage (2026-09-21)
+
+Fleet oversight of [[marcusrbrown--vbs]] found **five `fro-bot`-authored `fix(security)` PRs open
+simultaneously — #672, #688, #697, #701, #717 — aged 44 to 73 days, and every one of them
+`CONFLICTING`/`DIRTY`.** Not one can merge without rework. Each was mergeable when filed; each targets a
+lockfile or manifest, which is precisely the surface that routine dependency churn rewrites.
+
+The failure mode is not that the PRs are stale. It is that **an open remediation PR reads as coverage**.
+Anyone auditing the repo sees five advisories with fixes "in flight" and concludes the work is done bar a
+merge. The live state is the opposite: the advisories are unremediated *and* the fixes now need manual
+conflict resolution before they can even be evaluated. The 2026-09-20 report flagged #672 alone as "a
+high-severity remediation PR unmerged 71 days"; widening the query shows it is not an outlier but a cohort.
+
+Generalizations:
+
+1. **Remediation PRs decay faster than feature PRs and should be measured on a different clock.** They
+   concentrate in lockfiles — the highest-churn files in the repo — so time-to-merge is effectively a
+   deadline, not a preference. A security PR that misses its window silently converts from *fix available*
+   to *fix needs rework*.
+2. **Count unmergeable security PRs as exposure, not as progress.** A dashboard that counts open
+   `fix(security)` PRs as mitigation is measuring intent. The honest metric partitions by
+   `mergeStateStatus`: a `CONFLICTING` remediation PR is worth strictly less than none, because it also
+   suppresses re-filing — a dedup check keyed on root cause will find the dead PR and decline to open a
+   live one.
+3. **This is the propose-without-merge pattern with a consequence.** The fleet has recorded
+   propose-without-merge repeatedly as backlog. Here it crosses into a security posture claim: the gap
+   between "Fro Bot filed a fix" and "the repo is fixed" is 73 days wide and pointed the wrong way.
+
+Related: the six-PR Ollama-contrast cluster in [[marcusrbrown--gpt]] (#2664, #2665, #2672, #2673, #2674,
+#2692 — all six touching the single file `src/components/settings/ollama-settings.tsx`) is the same root
+cause one step earlier. Re-checked 2026-09-21: the cluster has taken **no new members since 2026-07-28**,
+so the accretion recorded in the 2026-08-08 survey has **stopped** while the wreckage remains. That
+distinguishes *a daemon still duplicating* from *a daemon that stopped and left duplicates*, and only the
+second is fixed by closing PRs rather than by changing the dedup predicate.
