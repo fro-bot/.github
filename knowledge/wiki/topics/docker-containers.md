@@ -2,21 +2,17 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-22
+updated: 2026-09-15
 sources:
-  - url: https://github.com/marcusrbrown/infra
-    sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
-    accessed: 2026-09-22
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
   - url: https://github.com/fro-bot/dashboard
     sha: a11f1b7dc5c3cf2ae021eb6c147b0d8fca0684f0
     accessed: 2026-09-09
-tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine, trivy, sarif, multi-stage, non-root, ignore-unfixed, manifest-verification, native-arm-runners, reproducible-builds, source-date-epoch, buildkit-pinning, ghcr-pruning]
+tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine, trivy, sarif, multi-stage, non-root, ignore-unfixed, manifest-verification, native-arm-runners]
 related:
   - marcusrbrown--containers
-  - marcusrbrown--infra
   - bfra-me--ha-addon-repository
   - fro-bot--dashboard
   - github-actions-ci
@@ -31,7 +27,6 @@ Docker container build patterns, security practices, and CI/CD integration obser
 
 - [[marcusrbrown--containers]] — Primary container collection with multi-arch builds, Python automation, and template system
 - [[bfra-me--ha-addon-repository]] — HA add-on template; four-arch (`aarch64`/`amd64`/`armhf`/`armv7`) builds via `home-assistant/builder` with cosign signing to GHCR, digest-pinned `ARG BUILD_FROM`, `repology` custom manager for apk pins
-- [[marcusrbrown--infra]] (added 2026-09-22) — gateway moved from on-droplet `git clone`+build to CI-built GHCR images (`infra-gateway`, `infra-workspace`) with fixed `SOURCE_DATE_EPOCH` + `rewrite-timestamp=true`, a pinned BuildKit image, report-only Trivy, and a dispatch-only fail-closed pruner for the untagged versions the tagging scheme generates
 - [[fro-bot--dashboard]] (added 2026-09-09) — single-arch `node:24-slim` app image, three-stage (`builder` → `prod-deps` → runtime), digest-pinned, CalVer-tagged to GHCR, smoke-tested by digest before promotion, two-phase Trivy scan on the release path
 
 ## Dockerfile Patterns Observed
@@ -176,80 +171,3 @@ Corollary for surveys: a value that is correct on inspection tells you nothing a
 - **Hadolint** — Dockerfile linter
 - **tini** — Minimal init system for containers
 - **OCI Image Spec** — Standard for container image metadata
-
-## Reproducible Image Builds Are Engineered, Not Inherited (2026-09-22)
-
-From [[marcusrbrown--infra]], whose gateway deploy stopped building on the target host and became a
-three-job CI pipeline (`build-images` → `scan-images` → `deploy-gateway`) pushing
-`ghcr.io/marcusrbrown/infra-{gateway,workspace}` and injecting the resulting digests into the deploy.
-The app README states the new invariant plainly: *"the droplet only pulls prebuilt artifacts — it never
-builds images"*, with `docker compose up --build` on the host listed as an anti-pattern.
-
-Three mechanics worth copying, each with the rationale committed next to it:
-
-- **`SOURCE_DATE_EPOCH` must be a fixed constant, not commit-derived.** The comment in the workflow says
-  why: a per-commit value changes the build argument on every run and destroys layer cache hits — you
-  get determinism *within* a build and non-determinism *across* them, which is the opposite of the
-  goal. The repo uses `'0'`.
-- **`SOURCE_DATE_EPOCH` alone is not enough.** It rewrites config, history, and index timestamps but
-  **not layer tar-entry timestamps**; those require `rewrite-timestamp=true` on the exporter
-  (`outputs: type=registry,rewrite-timestamp=true`, BuildKit ≥ v0.13). Setting only the env var
-  produces images that look reproducible in the config blob and differ in the layers.
-- **Pin BuildKit itself.** `docker/setup-buildx-action` with
-  `driver-opts: image=moby/buildkit:v0.33.0`, on the stated grounds that *"the preinstalled buildx on
-  ubuntu-latest is an uncontrolled input otherwise."* This is the gap most repos leave open: the action
-  is SHA-pinned, the base image is digest-pinned, and the builder that turns one into the other is
-  whatever the runner image shipped this week. **A builder is a build input.**
-
-Also: `outputs: type=registry` is used instead of `push: true`, with the note that it is shorthand for
-`type=image,push=true` — the export declares the push rather than relying on the flag merging into it.
-When you need exporter options at all, declaring the whole export in one place avoids a flag/exporter
-disagreement.
-
-### Report-Only Scanning Behind a `needs:` Edge
-
-The same pipeline's `scan-images` job is `continue-on-error: true` **and** runs Trivy with
-`--exit-code 0`, writing a table into `$GITHUB_STEP_SUMMARY`. `deploy-gateway` declares
-`needs: [build-images, scan-images]`.
-
-That edge reads as a security gate in every summary view and is not one — the job cannot fail, and if
-it somehow did, `continue-on-error` would absorb it. Compare the **two-phase Trivy scan** recorded from
-[[fro-bot--dashboard]] (2026-09-09), which deliberately splits visibility from enforcement: a
-report-everything SARIF pass at `exit-code: 0` *plus* a second pass that actually fails the build on the
-severities you have decided to block. Here only the first phase exists.
-
-The rule: **a `needs:` edge to a job that cannot fail is documentation, not a dependency.** If the scan
-is intentionally advisory — and for a freshly-adopted scan on an upstream-authored Dockerfile it
-reasonably is — say so, and drop the edge or add the enforcing phase. Advisory-first gate promotion is
-a legitimate pattern (see [[github-actions-ci]], 2026-09-21); what is not legitimate is an advisory gate
-wearing the shape of a blocking one. Trivy being digest-pinned here
-(`ghcr.io/aquasecurity/trivy:0.74.0@sha256:62b1e65e…`) is the right call and unrelated to the gap.
-
-### A Commit-Derived Tag on a Commit-Independent Image Manufactures Garbage
-
-The images are tagged `${upstream_ref}-${github.sha}`. The image content is a pure function of the
-upstream ref and the two Dockerfiles, so any repository commit touching the deploy path republishes
-byte-identical content under a fresh tag — which the repo has already filed against itself
-(*"Gateway image rebuilds fire on commits that cannot change the image"*). Each rebuild also detaches
-the prior digest from its tag, and untagged GHCR versions accumulate.
-
-The collector shipped before the fix: a dispatch-only `prune-packages.yaml` running a fail-closed
-pruner over a fixed two-package target set, dry-run by default, aborting on incomplete pagination, on a
-tagged manifest that is itself an index, on any untagged digest referenced as a child manifest, on an
-untagged count above a cap, and on a package with zero tagged versions. Full gate list and the
-generalized destructive-automation shape are in [[github-actions-ci]].
-
-Two container-specific notes from that design:
-
-- **Refuse to prune what you do not model.** The pruner aborts on any tagged manifest that is a
-  manifest list / image index rather than attempting to walk it. For a multi-arch repo that means the
-  pruner simply never runs — which is the correct answer for a delete path operating on a data model it
-  cannot verify.
-- **An untagged version is not the same as an orphan.** A multi-arch index's per-platform children are
-  untagged by construction and load-bearing. Any "delete untagged versions" automation that does not
-  resolve tagged manifests and collect their child digests will eventually delete a live architecture
-  out from under a tag that still resolves.
-
-The upstream lesson is about the tag, though: derive the tag from the inputs that determine the image.
-A content-addressed or upstream-ref-only tag removes both the rebuild churn and the pruning problem it
-creates.

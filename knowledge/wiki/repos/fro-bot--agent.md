@@ -2,9 +2,11 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-09-20
+updated: 2026-09-22
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.114.0
+    accessed: 2026-09-22
   - url: https://github.com/fro-bot/agent
     sha: c7622aae2acd681b5170cf0f14071bdb5cc93c14
     accessed: 2026-09-20
@@ -103,6 +105,8 @@ related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--tokentoilet
   - marcusrbrown--renovate-config
+  - marcusrbrown--marcusrbrown
+  - marcusrbrown--marcusrbrown-com
 ---
 
 # fro-bot/agent
@@ -116,7 +120,7 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | Created                | 2026-01-02                                                         |
 | Repo `node_id`         | `R_kgDOQyTMEw`                                                     |
 | Last push              | 2026-09-20T02:48Z (survey 2026-09-20, HEAD `c7622aa`, `docs: capture three learnings from the background-subagent work (#1632)`) |
-| Latest release         | **v0.113.2** (2026-09-16T09:15Z; was v0.108.1 @ 2026-09-05) — 5 minors + patches in 11 days; **v0.114.0 pending as PR #1626**, and the entire background-subagent arc (#1624/#1627/#1629) sits on `main` **unreleased** — no consumer pin carries it yet |
+| Latest release         | **v0.114.0** (published 2026-09-21T16:26:18Z). **Correction 2026-09-22, from the [[marcusrbrown--marcusrbrown]] survey:** the 2026-09-20 reading — "v0.114.0 pending as PR #1626, and the entire background-subagent arc (#1624/#1627/#1629) sits on `main` **unreleased** — no consumer pin carries it yet" — is **superseded**. #1626 shipped the day after that survey, and [[marcusrbrown--marcusrbrown]] merged the pin at 2026-09-21T16:32:05Z (#1228), **5 m 47 s after publish** — the fastest consumer adoption measured in the fleet, ahead of [[marcusrbrown--marcusrbrown-com]]'s previously-recorded 20 minutes. The background-subagent arc plus the `invocation-outcome` / `cache-save-result` three-valued contract are therefore live on at least one consumer as of 2026-09-21. Prior: v0.113.2 (2026-09-16T09:15Z), v0.108.1 (2026-09-05) — 5 minors + patches in 11 days |
 | Language               | TypeScript (strict, ESM-only)                                      |
 | Node.js                | **24.21.0** (`.node-version`, both deploy Dockerfiles digest-pinned to `node:24.21.0-alpine`); `node24` action runtime |
 | Package manager        | **Bun `1.4.2` in `packageManager` — and `1.3.14` on every surface that actually installs** (runner default, `.github/actions/setup` default, `HARNESS_BUN_VERSION`, both Dockerfile `ARG BUN_VERSION`). See "The Bun Pin Two Managers Own". Bun cutover otherwise holds; `pnpm-lock.yaml`/`pnpm-workspace.yaml` remain removed |

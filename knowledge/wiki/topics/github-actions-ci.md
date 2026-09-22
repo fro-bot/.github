@@ -4,13 +4,15 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-22
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 39ce599af41cd1358d238ffd69cc7048c904e8ca
+    accessed: 2026-09-22
   - url: https://github.com/fro-bot/.github
     sha: 9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
     accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/infra
-    sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
     accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
@@ -157,6 +159,11 @@ tags:
     undelivered-fix,
     adoption-latency,
     event-chained-scheduling,
+    agent-self-diagnosis,
+    cross-project-intelligence,
+    generated-content-riders,
+    lockfile-vs-ledger,
+    detection-mapping,
   ]
 related:
   - marcusrbrown--sparkle
@@ -199,7 +206,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — **8 committed workflows** (2026-09-21), all `state: active`: `main.yaml` (521 lines — Build with **seven** generated-artifact drift gates, Typecheck with three required tsconfig scopes, Lint, Test, **Host Contract**, Registry, Docs Build, Release, Publish Claude Code Plugin), `docs.yaml` (`release: [published]` → Astro/Starlight build → cross-repo force-push to `fro-bot/systematic:gh-pages` under a `fro-bot`-scoped App token), `fro-bot.yaml` (732 lines / 38 KB, **two-mode**, single `30 3` cron with a day-gated Sunday category, agent **v0.113.2**, conditional `output-mode: branch-pr`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.31.0**), `codeql-analysis.yaml`, `scorecard.yaml`, `copilot-setup-steps.yaml`. Required contexts on `main`: `[Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Registry, Release, Analyze (typescript), CodeQL, Renovate / Renovate]`, `enforce_admins: true`, `required_linear_history: true`, `required_pull_request_reviews: null` — note `Host Contract` is absent from the list and binds only through `Release`'s `needs:`. Source of the 2026-09-21 findings below on non-lying required jobs, advisory-first gate promotion, and cross-channel lag measurement
-- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **20 workflows** as of 2026-09-22 (added `prune-packages.yaml`, dispatch-only destructive GHCR pruning with `apply` defaulting false). 2026-09-22: `deploy-gateway.yaml` became a three-job build-then-pull pipeline (`build-images` → `scan-images` → `deploy-gateway`) publishing reproducible GHCR images with a pinned BuildKit, where the scan job is `continue-on-error` **and** `--exit-code 0`, making its `needs:` edge decorative; `fro-bot.yaml` (1076 lines, agent **v0.114.0**) gained a deterministic post-agent reconciler step with the job's AWS credentials blanked per-step; `ARCHITECTURE.md` grew 15 numbered invariants, several enforced by `conventions.test.ts`. Source of the 2026-09-22 findings below on label write-wars, reusable-workflow permission parity, coarse-exit-code probes, and dry-run-by-default destructive automation. Prior: **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
+- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
@@ -3003,138 +3010,205 @@ against the `owner`/`name` pairs in `metadata/repos.yaml` on `data`, ignoring en
 `private: true`. Any repo on the left and not the right that also returns open `author:fro-bot` PRs is an
 instance of this class.
 
-### Two Automations, One Label: a Trust Anchor With a Daily Deletion Policy (2026-09-22)
+### An Agent's Self-Diagnosis Is Evidence About Its Prompt, Not About Its Runtime (2026-09-22)
 
-From the [[marcusrbrown--infra]] survey, and the sharpest instance of proof-versus-durability the fleet
-has produced.
+Source: [[marcusrbrown--marcusrbrown]] at HEAD `39ce599a`. Three consecutive daily autoheal reports on
+perpetual issue #926 state that the repo's agent cannot write:
 
-The setup is exemplary. Issue-identity reconciliation was moved out of the agent prompt into a 957-line
-deterministic post-agent step (`packages/cli/scripts/reconcile-autoheal-reports.ts`), codified as an
-architecture invariant: identity-anchored on exact title/date plus numeric actor plus a line-1 body
-marker, fully paginated, re-reading every mutation target by numeric ID immediately before writing,
-**readback-proving every write**, and aborting rather than mutating on any ambiguity. The agent is
-explicitly forbidden from creating labels, posting supersession comments, closing reports, or proving
-final state. It works: exactly one open daily report for fourteen consecutive days, each predecessor
-closed `not_planned` with a machine-readable supersession marker.
+> **Delivery mode:** `working-dir` … Existing remediation PR #1094 is `CONFLICTING` and needs a
+> conflict-resolution push — **blocked this run by delivery-mode constraints (no branch checkout/push
+> permitted).** — 2026-09-20
 
-And the `autoheal-report` label does not exist in the repository.
+> `.github/workflows/fro-bot.yaml` never sets `output-mode` on the "Run Fro Bot" step and never persists
+> a push credential for autoheal runs — any future working-dir-mode autoheal fix with no caller to
+> commit/push/PR would be **silently discarded**. Two sibling repos (`tokentoilet`, `mrbro.dev`) have
+> independently shipped fixes for this exact bug class; recommend a human port one. — 2026-09-22
 
-The issue timeline names both actors on the same day:
+The workflow-level premise is verifiable and true: the job's last step is `Run Fro Bot`, there is no
+`output-mode` input, checkout is `persist-credentials: false`, and there is no caller-side commit/push/PR
+half. That is the same defect recorded on [[marcusrbrown--tokentoilet]] and repaired on
+[[marcusrbrown--sparkle]] (#2001/#2003, the `Resolve delivery mode` gate) and [[fro-bot--dashboard]] (#413).
 
-| Time (UTC) | Event | Actor |
-| --- | --- | --- |
-| 03:51:14 | `labeled` `autoheal-report` | `fro-bot` (the reconciler) |
-| 06:47:34 | `unlabeled` `autoheal-report` | `mrbro-bot[bot]` (`Update Repo Settings`) |
+The conclusion drawn from it is false. On **2026-09-21T04:40:56Z** — between the two reports above, on a
+workflow unchanged apart from an agent pin — `fro-bot` pushed `b7deb08a chore: merge main into
+security/js-yaml-brace-expansion-overrides` to PR #1094's branch, and reported it accurately that
+morning. It is the **20th of 20** `fro-bot`-authored commits on that branch, spread over 2026-08-22 →
+2026-09-21. The agent pushes using `FRO_BOT_PAT`, handed to it directly as the action's `github-token`
+input — a path the missing caller-side half was never on.
 
-`Update Repo Settings` fires on **every push to `main`** — eight runs before 07:00 that morning — and
-syncs a `settings.yml` that `_extends` an org-wide 48-label manifest which does not contain
-`autoheal-report`. The agent mints a trust anchor; the settings sync reconciles it away hours later;
-both report success.
+What is actually true, and what the reports never say, is narrower: the daemon has **not created a new
+pull request since 2026-07-25 and not opened a new issue since 2026-07-19**, while pushing to existing
+branches, commenting, and prepending to two perpetual reports throughout. Whether PR *creation* is
+blocked or merely never attempted is not observable from outside the run; the stated reason is refuted
+either way.
 
-Three rules:
+Generalizations:
 
-1. **Proof at write time is not proof of durability.** The reconciler does the harder, rarer thing and
-   it still does not help, because the adversary is a *later* writer, not a failed one. Any readback
-   proof is valid only until the next actor with write access runs. Independently confirms
-   [[fro-bot--agent]]'s `cache-save-result` framing ("reports a result, not proof of durability") at a
-   different layer.
-2. **A converged outcome metric can mask a non-converging work metric.** The step's summary line is
-   byte-identical on every run: `{"eligible":2,"adopted":2,"commented":1,"closed":1,"final_open_managed":1,"status":"succeeded"}`.
-   `final_open_managed: 1` is the goal and it is met. `adopted: 2` never decays — if adoption persisted,
-   the previous day's issue would already be labelled and the count would fall. **A repeated mutation
-   count that never decreases is the signature of a write that does not stick**, and it sits directly
-   beside `"succeeded"`, which is why nobody reads it. Assert on the work counter, not just the outcome
-   counter.
-3. **Read the timeline before inferring the mechanism.** The wiki's prior pass inferred that issue
-   creation with a not-yet-existing label silently drops the label — plausible, consistent with every
-   observable, and wrong. `GET /issues/{n}/timeline` distinguishes *never applied* from *applied then
-   removed* and names the removing actor, in one call. Inference about creation order cannot.
+1. **A daemon is an unreliable narrator of its own permissions.** It reasons from the artifact it can
+   read — the workflow YAML — and the artifact is not the environment. The same property that makes it a
+   good reader of configuration makes it confidently wrong about runtime capability, because runtime
+   capability is the *intersection* of workflow wiring, token scopes, harness defaults, and whatever the
+   agent actually attempted. Only the first is in the file.
+2. **The check is one query.** Before accepting a daemon's account of why it could not act, read
+   `git log --author` on the branch it says it could not touch. In this case the refutation is a single
+   API call and it is dated one day either side of the claim.
+3. **A green run that produces an honest-sounding failure report is a third failure mode.** The fleet has
+   already recorded runs that conclude `success` while producing nothing
+   ([[marcusrbrown--cortexkit-anthropic-auth]]) and runs that conclude `success` while shipping a defect
+   ([[marcusrbrown--github]]). This is a run that concludes `success`, does real work, and files an
+   accurate-looking postmortem asserting it could not. Report text is an artifact to audit, not a
+   measurement to trust.
+4. **Latent defects escalated as active causes displace real work.** The delivery gap is genuine and
+   should be fixed — it will bite the first time an autoheal fix has no existing branch to push to. But
+   it now sits at the top of a human-attention queue ahead of a live security PR and two obsolete ones
+   that need closing, and the ranking was produced by the misdiagnosis.
 
-Detection for any repo: for a label your automation mints, fetch the issue timeline and look for an
-`unlabeled` event by a different actor; or compare the label against the settings manifest that governs
-the repo. Remediation is usually one line in the manifest — the harder question is whether an org-wide
-label manifest should be authoritative over repo-local automation labels at all. Cataloged from the
-settings-sync side in [[probot-settings]].
+### Cross-Project Intelligence Transmits Conclusions Faster Than It Transmits Fixes (2026-09-22)
 
-### A Callee Cannot Out-Request Its Caller, and the Failure Is Zero Jobs (2026-09-22)
+The companion finding to the section above, and the more consequential one for the fleet, because the
+Fro Bot autoheal prompt's Category 6 (Cross-Project Intelligence, inbound-only) is deployed across every
+managed repo.
 
-[[marcusrbrown--infra]] codified this as an architecture invariant after being bitten, and
-`conventions.test.ts` now asserts permission parity between `deploy.yaml`'s router jobs and the
-`deploy-<app>.yaml` callees they `uses`.
+Category 6 worked exactly as designed at [[marcusrbrown--marcusrbrown]]: it found a genuine sibling
+defect, identified the two repos that had shipped fixes, cited their PR numbers
+(`tokentoilet#1515`, `mrbro.dev#425`), and checked the local workflow for the same shape. The local
+workflow *does* have the same shape. Every step of the transfer is correct.
 
-The rule, in the repo's own words: *"A callee job cannot request a `GITHUB_TOKEN` scope its caller job
-does not grant; job-level `permissions:` replaces the workflow-level block, so callers must restate
-`contents: read` alongside added scopes or GitHub rejects the run at startup with zero jobs created."*
+What crossed the repo boundary was a **diagnosis**, not a measurement — and a diagnosis that is true at
+the source can be false at the destination while remaining superficially verifiable there. At the source
+repos the missing `output-mode` was load-bearing: those daemons had no other write path and genuinely
+produced nothing. Here the daemon holds a PAT it uses directly, so the same missing line has no such
+consequence. The pattern matched; the predicate did not.
 
-Two things make this worth a section rather than a footnote:
+This is the first observed case in the fleet of a correct finding propagating intact into a repo where it
+does not hold. It is worth separating from ordinary false positives because the propagation channel is
+one the ecosystem deliberately built and is actively expanding.
 
-- **`permissions:` at job level replaces, it does not merge.** Adding `packages: write` to a job that
-  needed `contents: read` silently removes `contents: read`. This is the same replace-not-merge trap as
-  a job-level `env:` block, but the consequence lands on a *different* workflow — the callee's.
-- **The failure mode has no artifact.** The run exists and creates **zero jobs**. There is no failed
-  job to open, no step to expand, no log to grep. In a required-check list the context simply never
-  reports, which reads as "still running" until it times out. This belongs with *Silence Is the Failure
-  Mode* (2026-09-16) and *An Event-Triggered Publisher Starved by a Blocked Gate* (2026-09-22): the
-  observable state space of a reusable-workflow call does not include "rejected before scheduling."
+Generalizations:
 
-Enforcement is cheap and static: a test that parses each router job's `permissions:` block and each
-`uses:`-target's job-level block and asserts the callee's set is a subset. Do that instead of waiting
-for a deploy to not happen.
+1. **An inbound cross-repo pattern needs a local falsification step, not a local pattern match.** "Does
+   this repo have the same shape?" is the cheap question and the wrong one. "Does this repo exhibit the
+   same *consequence*?" is the question that discriminates, and here it was answerable from the repo's
+   own commit history.
+2. **Transfer the observable, not the conclusion.** A Category-6 finding that says *"sibling X lost N days
+   of autoheal output; here is the query that detects the outcome"* survives a context mismatch. One that
+   says *"sibling X was missing `output-mode`; you are too"* does not. Prefer inbound intelligence phrased
+   as a test over inbound intelligence phrased as a verdict.
+3. **Shared prompt lineage correlates the errors.** Every repo in the fleet runs a variant of the same
+   autoheal prompt against the same sibling set, so a mis-transferred conclusion is likely to be
+   mis-transferred everywhere at once, and to look like independent corroboration when several reports
+   agree. Agreement between instances of one prompt is not independent evidence.
 
-### Never Read a Coarse Exit Code as Proof of a Specific Remote State (2026-09-22)
+### The Generated-Content-on-PR-Head Trigger Is a Merge-Conflict Factory (2026-09-22)
 
-The fleet has been accumulating one half of this rule from the CI side since 2026-09-02 — *a run's
-conclusion measures the harness, not the deliverable* ([[marcusrbrown--cortexkit-anthropic-auth]],
-[[marcusrbrown--github]]). [[marcusrbrown--infra]] arrived at the same rule from the **remote-probe**
-side and wrote it down as an invariant: *"A probe that cannot confidently distinguish its target states
-must throw, not fall back to the branch that looks safe."*
+Source: [[marcusrbrown--marcusrbrown]], where `update-profile.yaml` runs on `pull_request` and commits
+regenerated artifacts to the PR head via `EndBug/add-and-commit`.
 
-It is backed by six retrofitted call sites across five apps, each of which had collapsed an ambiguous
-signal onto a convenient branch:
+Measured across the entire life of PR #1094 (a three-file `fix(security)` override change, `+15/-7`):
+**20 of 20 `fro-bot` pushes are followed by a `mrbro-bot[bot]` `build: update generated profile content`
+commit 78–94 seconds later.** No exceptions. The PR now carries **43 commits, 23 of them generated-content
+riders**, and has been open 62 days.
 
-| Probe | Old reading | Fix |
-| --- | --- | --- |
-| `remoteGitExists`, `remoteFileExists` | any non-zero exit ⇒ "absent" | emit an explicit `EXISTS`/`MISSING` sentinel over SSH; require exit 0 **and** a recognized sentinel |
-| `readRemoteChecksum` | failed read ⇒ empty checksum | throw on non-zero |
-| `removeStaleGatewayNet` | error ⇒ network absent | require Docker's literal `No such network` stderr marker |
-| Umami admin-login probe | `curl --fail-with-body` exit code | parse the real status via `-w '%{http_code}'`; 401 = already rotated, anything else fails closed |
-| VPN wipe-guard | non-zero or empty `wg show wg0 dump` ⇒ zero live peers | throw on either |
-| Broker `reconcile` | swallowed `listApiKeys` exception ⇒ success | opt-in `throwOnListFailure` so the bounded startup retry actually retries |
+The loop closes on itself. The rider content is the same content the sibling dependency bot carries to
+`main` on its own PRs, so the branch diverges on generated files, goes `CONFLICTING`, and the agent's next
+scheduled run spends itself resolving the conflict — which pushes, which draws another rider. The repo's
+autoheal daemon's single most-repeated task is repairing damage produced by another workflow's trigger
+surface.
 
-The sharper generalization, and the reason this is not just "handle errors": **a coarse signal does not
-fail randomly — it fails toward whichever branch the author found convenient, and the convenient branch
-is almost always the destructive one.** "Absent" means clone anyway. "Empty checksum" means
-force-recreate anyway. "No live peers" means the wipe-guard does not guard. When a probe has two
-outcomes and one bit of evidence, the ambiguity resolves in favor of *action*, not abstention — so the
-only safe default is to make the ambiguous case throw.
+Generalizations:
 
-Practical form: every remote probe should emit a positive token for each outcome it claims to
-distinguish (`EXISTS`/`MISSING`, an HTTP status, a documented stderr marker) and treat the absence of
-any recognized token as an error, not as the negative case.
+1. **A workflow that writes generated artifacts onto every PR head converts every long-lived PR into a
+   recurring conflict generator.** The cost is invisible while PRs merge same-day and compounds precisely
+   on the PRs that most need to survive review latency — security remediation, which targets lockfiles
+   and manifests, the highest-churn files in the tree.
+2. **`updated_at` and commit count stop being signals.** A three-file change showing 43 commits and daily
+   activity reads as contested or complex. It is neither.
+3. **Scope the generator to the events that need it.** Regenerating on `push`/`schedule` and leaving PR
+   heads alone costs one stale-artifact check in CI and removes the whole class. If PR-head regeneration
+   is genuinely wanted, gate it on the same paths-filter that gates the rest of the job so it fires only
+   where the generated output could actually differ.
+4. **The delivery path and the conflict source can be the same workflow.** Here the sibling half of the
+   same pipeline also cannibalizes its own `build/update-readme` PR — 13 consecutive non-merges, one
+   closing with `commits: 0` — because regenerated content reaches `main` as a rider on dependency merges
+   before the dedicated PR can carry it. One trigger surface produces both the starvation and the
+   conflicts.
 
-### Destructive Automation: Dry-Run as the Default Argument, Not a Documented Convention (2026-09-22)
+### Amendment: a Stranded Remediation PR Is Indeterminate, and the Lockfile Is the Discriminator (2026-09-22)
 
-Both destructive paths added to [[marcusrbrown--infra]] in this window — GHCR untagged-version deletion
-and 13-month analytics row deletion — share a shape worth copying:
+Amends *A Security Remediation PR Has a Shelf Life, and Past It, It Inflates Coverage* (2026-09-21),
+which was sourced from [[marcusrbrown--vbs]] and concluded that stranded `fix(security)` PRs decay into
+rework and should be counted as exposure.
 
-- **The non-destructive mode is the default value**, not a flag you are told to remember. The workflow
-  input `apply` is `type: boolean, default: false`; the shell script's `mode` initializes to `check`.
-  Forgetting an argument produces a count, never a delete.
-- **Dispatch-only, never event-triggered.** No schedule, no push, no `workflow_run`.
-- **Named gates with coded aborts.** The pruner has six (`pagination_incomplete`, `manifest_is_index`,
-  `untagged_referenced_as_child`, `candidate_cap_exceeded`, `no_tagged_versions`, plus per-request
-  failure codes), each returning a **body-free** summary and a non-zero exit. Body-free matters: an
-  abort summary that echoes API content is a log-injection surface.
-- **A candidate cap.** Deleting 500 "orphans" is far more likely to mean the API shape changed than
-  that 500 orphans exist. Cap the blast radius on the count, not just on the predicate.
-- **Deterministic ordering for auditability** — deletes run in ascending ID order *"so the delete
-  sequence is auditable against the run log."*
-- **Pagination is a safety gate, not a convenience.** A partial version list makes every "untagged"
-  classification unsound, so incomplete pagination aborts rather than acting on what it has. This is
-  invariant 14 applied to list endpoints.
+[[marcusrbrown--marcusrbrown]] supplies the other outcome. Three `fro-bot` `fix(security)` PRs have sat
+58–62 days against a `pnpm-workspace.yaml` override block that is byte-identical across three surveys —
+which the 2026-09-07 survey read as three unpatched transitive advisories. The lockfile at HEAD says
+otherwise:
 
-One structural note for anyone copying it: the pruner's index-shape gate (`manifest_is_index`) aborts
-before its child-reference gate can run for any tagged manifest that declares a list media type, so in
-practice the abort *is* the protection and the child scan is the backstop. That ordering is correct for
-a delete path — refuse the case you do not model — but it means "provably orphaned" describes the
-rarer branch.
+| PR | Proposed floor | Resolved in `pnpm-lock.yaml` | Verdict |
+| --- | --- | --- | --- |
+| #1107 | `postcss >=8.5.23` | `postcss@8.5.28` | obsolete |
+| #1100 | `fast-uri >=3.1.5` | `fast-uri@4.1.4` | obsolete |
+| #1094 | `js-yaml >=4.3.2` | `js-yaml@4.1.1` | live |
+
+Routine lockfile maintenance walked two of the three floors past the versions the PRs proposed, while the
+PRs sat. The repo's own daemon reached the same verdict independently and recommended closing them.
+
+The amendment:
+
+1. **A stranded remediation PR is *indeterminate*, not automatically exposure.** It can decay into rework
+   (the [[marcusrbrown--vbs]] cohort, five PRs all `CONFLICTING`) or into redundancy (here, two of three).
+   Both look identical from a PR list — open, `fix(security)`, aged two months — and they demand opposite
+   responses: resolve-and-merge versus close-and-stop-counting.
+2. **The discriminator is the resolved version, not the PR's age or its mergeability.** Compare the
+   proposed floor against the lockfile entry on the default branch. Age and `mergeStateStatus` describe
+   the PR; only the lockfile describes the repository.
+3. **An override ledger declares a floor; a lockfile records a fact.** Inferring posture from an unchanged
+   override block is wrong in both directions — it reports exposure that upstream drift has already
+   closed, and it would equally miss a regression under an unchanged ledger. Same failure family as
+   *detected ≠ actionable* on [[probot-settings]] and *a run's conclusion measures the harness, not the
+   deliverable* on [[marcusrbrown--github]]: a declared artifact standing in for a resolved fact.
+4. **The cost is asymmetric and the triage order follows from it.** Obsolete remediation PRs cost noise
+   and suppress re-filing. A live one costs exposure. A queue that cannot tell them apart will burn its
+   human attention at the same rate on both, and the observed outcome here is that the live one got none.
+
+### A Detection Map With Unanchored Substring Matching Produces Wrong Values That Update Correctly (2026-09-22)
+
+Source: [[marcusrbrown--marcusrbrown]]'s badge pipeline, root-caused this survey after two surveys of
+recording the symptom.
+
+`utils/badge-detector.ts` resolves a package name to a technology with
+`dependencyName.includes(pattern)` over a map that contains `'@types/': ['typescript']`,
+`eslint: ['eslint']`, `prettier: ['prettier']`, and `node: ['nodejs']`, then merges last-write-wins over
+`{...dependencies, ...devDependencies}` declaration order. Consequences on the live public profile:
+
+- `@types/node@24.13.4` **is** the TypeScript badge (and simultaneously the Node.js badge). TypeScript is
+  not a direct dependency at all — it arrives transitively — so the badge has no correct carrier available.
+- `eslint-plugin-prettier@5.5.6` **is** the ESLint badge, beating two other substring matches only by
+  sorting last. ESLint is not a direct dependency either.
+- The Prettier badge is correct, **by accident**: `prettier` happens to be the last `*prettier*` key in
+  `devDependencies`. Adding one more `*prettier*` dev dependency silently changes it.
+
+The finding that makes this durable rather than a local bug report: **the wrong values track their wrong
+sources faithfully.** The TypeScript badge moved `24.13.3 → 24.13.4` in lockstep with the `@types/node`
+bump that produced it. The output is not stale; it is precisely wrong, and the precision is the
+camouflage — a number that updates on schedule is indistinguishable at a glance from a number that is
+right. Category assignment is unstable for the same last-write-wins reason: across three surveys one
+technology moved *Languages* → *Development Tools* → absent entirely.
+
+Generalizations:
+
+1. **Smoke-testing a generator tests generation, not truth.** The repo's autoheal Category 5 runs
+   `pnpm badges:update` and asserts it succeeds; it has reported ✅ on every run for three months. Only an
+   assertion of the form *the badge labelled X reports the version of the package named X* catches this,
+   and that assertion is only writable if the mapping has a canonical direction.
+2. **Anchor identifier matching, and give canonical names precedence.** `includes()` over a name table is
+   a footgun anywhere package names share prefixes — which in the npm ecosystem is everywhere
+   (`@types/*`, `eslint-*`, `*-plugin-*`, `@scope/tool-config`). Prefer exact match, then an explicit
+   alias table, and make multiple matches an error rather than a silent last-wins.
+3. **A value that cannot be right should fail, not fall back.** TypeScript and ESLint are not direct
+   dependencies of this repo, so no correct value exists to report. Emitting the nearest substring match
+   is strictly worse than emitting nothing, because it manufactures a plausible artifact that no
+   downstream check questions.
+4. **Freshness and correctness are independent axes, and freshness is the one that gets monitored.** Every
+   available signal here — the run conclusion, the smoke test, the artifact's own timestamp caption, the
+   fact that the number changed this week — reports on freshness. None reports on correctness.

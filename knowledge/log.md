@@ -6270,66 +6270,92 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
 
-## [2026-09-22 07:30] ingest | repo:marcusrbrown/infra
+## [2026-09-22 10:20] ingest | repo:marcusrbrown/marcusrbrown
 
-Seventh survey of `marcusrbrown/infra` (HEAD `3e4d76d`, `node_id R_kgDOR4g8TA`). Reads scoped to
-directory listings, README/AGENTS/ARCHITECTURE docs, manifests, workflow files, and public API
-metadata; the target repository was treated as untrusted input throughout. `knowledge/corrections.yaml`
-carries no records and `.github/corrections-context.json` declares an empty corrections array, so no
-operator correction span applied to this ingest.
+Surveyed marcusrbrown/marcusrbrown at `main` HEAD `39ce599a` (2026-09-21T16:32:05Z) as untrusted input.
+22 commits since the 2026-09-07 pass, **100% `mrbro-bot[bot]`** — zero human and zero `fro-bot` commits
+on `main`. `fro-bot.yaml` is `+1/-1` (agent pin only); prompts, crons, branch-protection contexts, the
+composite `setup` action and the GHSA override ledger are byte-stable. Structurally the quietest window
+this page has recorded, and the one that produced its sharpest finding.
 
-Interval: 109 commits since the 2026-09-06 pass (`mrbro-bot[bot]` 69 / `marcusrbrown` 40). Still 8 apps
-and 2 packages; workflows 19 → 20 (`prune-packages.yaml`); open issues 17 → 9; zero open PRs for a
-seventh consecutive survey. Agent pin v0.109.3 → v0.114.0, CLI v0.22.0 → v0.23.0.
+Pages touched: `wiki/repos/marcusrbrown--marcusrbrown.md` (new 2026-09-22 section, new open-work-items and
+version snapshots, two corrections, survey-history row), `wiki/topics/github-actions-ci.md` (five new
+sections + frontmatter), `wiki/repos/fro-bot--agent.md` (release correction), `index.md`.
 
-Seven findings recorded on the repo page:
+Findings:
 
-1. The SINGLE-REPORT RECONCILIATION CONTRACT converged — one open `Daily Autohealing Report` for 14+
-   consecutive days — via a 957-line deterministic post-agent reconciler that readback-proves every
-   mutation. Its `autoheal-report` trust anchor is nonetheless applied at 03:51:14 by `fro-bot` and
-   removed at 06:47:34 by `mrbro-bot[bot]` running `Update Repo Settings` against a 48-label manifest
-   that omits it. `adopted: 2` is byte-identical on every run inspected. **Corrects** the prior page's
-   inference that creation with a not-yet-existing label dropped it; the mechanism is a competing
-   automation, established from the issue timeline rather than from creation order.
-2. The gateway stopped building on the droplet: `deploy-gateway.yaml` became a three-job build-then-pull
-   pipeline publishing reproducible GHCR images (fixed `SOURCE_DATE_EPOCH`, `rewrite-timestamp=true`,
-   pinned BuildKit), with a Trivy job that is `continue-on-error` and `--exit-code 0` behind a
-   decorative `needs:` edge.
-3. New `prune-packages.yaml` — dispatch-only, `apply` defaults false, six named fail-closed gates.
-4. `ARCHITECTURE.md` grew 15 numbered invariants; 11 (reusable-workflow permission parity, failing with
-   zero jobs created), 14 (never read a coarse exit code as proof of remote state, six retrofitted call
-   sites), and 2 (Bash allowlist widened to two scripts) are new knowledge.
-5. The Umami 13-month retention control and its `evidence/retention/` attestations landed 2026-07-31,
-   satisfying the [[marcusrbrown--mrbro-dev]] Go/No-Go dependency this wiki had carried as unmet.
-6. Findings ledger: one version ceiling lifted by an executed verification pass (`fro-bot/agent`
-   `<0.94.0` → `<0.114.0`), README app-table drift closed; `release-alert.yaml`'s `failure`-only gate,
-   the nonexistent `autoheal-upstream-watch` label, and `required_reviewers` deploy stranding all hold.
-7. Capability narrowing moved inside the privileged job — the reconcile step blanks all five AWS
-   credential variables so it cannot inherit the job's STS session.
+- **The daemon published a diagnosis of its own paralysis and its own commit log refutes it.** Three
+  consecutive autoheal reports (09-20, 09-21, 09-22) assert that `working-dir` delivery mode bars
+  "branch checkout/push," escalating it to the top human-attention item and citing shipped sibling fixes
+  in `tokentoilet`#1515 and `mrbro.dev`#425. The workflow-level premise is true and verified (last step is
+  `Run Fro Bot`, no `output-mode`, `persist-credentials: false`). The inability is false: `fro-bot` pushed
+  `b7deb08a` to PR #1094 at 2026-09-21T04:40:56Z — the 20th of 20 such pushes on that branch — using
+  `FRO_BOT_PAT` as the action's `github-token`. What is true and unreported: no new PR since 2026-07-25
+  (58 d) and no new issue since 2026-07-19 (64 d). Rules: a daemon's self-reported capability boundary is
+  a claim about its prompt context, not a measurement of its runtime; and the refutation is one query
+  (`git log --author` on the branch it says it cannot touch).
+- **Cross-project intelligence transmits conclusions faster than fixes.** Category 6 executed correctly,
+  found a genuine sibling defect, cited the fixing PRs, and matched the local shape — and carried a
+  *diagnosis* rather than a *measurement* into a repo where the predicate fails. First fleet case of a
+  correct finding propagating intact to where it does not hold. Prefer inbound intelligence phrased as a
+  test over a verdict; agreement between instances of one shared prompt is not independent evidence.
+- **The prior survey's findings 2 and 3 are one mechanism.** `update-profile.yaml` fires on
+  `pull_request` and commits to the head, so 20 of 20 `fro-bot` pushes to #1094 draw a `mrbro-bot[bot]`
+  `build: update generated profile content` rider 78–94 s later. A 3-file `+15/-7` PR carries 43 commits,
+  23 of them riders; the riders are what conflict the branch, and conflict resolution is the daemon's
+  most-repeated task.
+- **`build/update-readme` cannibalization is now measured.** 13 consecutive non-merges since #1129
+  (2026-08-10, 43 d); #1216 closed with `commits: 0` / `changed_files: 0`; closes land ~20–60 s after a
+  manifest-touching Renovate merge (#1189/#1206, #1207/#1213, #1216/#1225). `README.md` unchanged on
+  `main` for 121 days. Refinement: freshness tracks manifest-touching Renovate PRs only — the
+  paths-filter ignores the eight agent-pin bumps in this window.
+- **Correction — two of the three stranded security PRs were already obsolete.** The 2026-09-07 page read
+  the byte-identical override ledger as unpatched exposure. `pnpm-lock.yaml` at HEAD resolves
+  `postcss@8.5.28` and `fast-uri@4.1.4`, above the floors #1107 and #1100 propose, while `js-yaml@4.1.1`
+  sits below #1094's `>=4.3.2`. An override ledger declares a floor; the lockfile records the resolved
+  fact. Amends the 2026-09-21 shelf-life section — stranded remediation decays into rework *or* into
+  redundancy, identical from a PR list, opposite responses.
+- **The badge generator is root-caused.** `utils/badge-detector.ts:791` matches with unanchored
+  `dependencyName.includes(pattern)` against a map containing `'@types/': ['typescript']`, merged
+  last-write-wins over manifest order. `@types/node` *is* the TypeScript badge and tracked 24.13.3 →
+  24.13.4 this window; `eslint-plugin-prettier@5.5.6` *is* the ESLint badge; Prettier 3.9.8 is correct
+  only by alphabetical accident. The generator is not stale, it is precisely wrong, and the precision is
+  the camouflage.
+- **The required `Fro Bot` check evaluated zero PRs in 15 days.** Of the last 100 runs, 38
+  `pull_request` + 35 `issues` + 15 `issue_comment` are all `skipped`; only 12 `schedule` runs executed
+  and all 12 are `success`. `Fro Bot: skipped` re-verified alongside four green contexts on #1094 head
+  `f1769b46`. The trigger surface is largely self-generated — the daemon's own report comments trip its
+  own name guard.
+- **Retention equilibrium drifted 6 → 5.** #936 is 39,631 chars / 5 daily sections / 118 comments (was
+  47,849 / 6 / 103); #926 is 44,030 / 6 / 112. The 2026-09-07 arithmetic was right on magnitude and wrong
+  on precision; the prompt's 14-day and 30-section targets remain unreachable.
+- **Correction — `README.md` is not generated by `muesli/readme-scribe`.** The step is
+  `cp templates/README.tpl.md README.md`, and has been for at least two surveys while the page's
+  architecture section said otherwise.
+- **Correction to [[fro-bot--agent]]** — v0.114.0 published 2026-09-21T16:26:18Z and was merged here at
+  16:32:05Z, 5 m 47 s later. Supersedes the 2026-09-20 claim that the background-subagent arc was
+  unreleased and carried by no consumer pin.
+- Carried unchanged: #1087 (64 d, line 577 jq bug verbatim), #1056 (75 d — and `@bfra.me/badge-config` is
+  now a direct dependency, so its stated precondition is satisfied), #1039 (81 d), #925, #1055/#1095.
+- Minor drift: `fro-bot.yaml`'s schedule-stagger comment cites `update-repo-settings: 02:55`; the actual
+  cron is `32 21 * * *`.
 
-Pages touched: `wiki/repos/marcusrbrown--infra.md` (2026-09-22 findings section, frontmatter, overview,
-workflow table, gateway/Umami/ceiling sections, new Architecture Invariants section, notable patterns,
-survey-history row); `wiki/repos/marcusrbrown--mrbro-dev.md` (dated producer-side note resolving the
-analytics activation gate, additively, with its caveats stated); `wiki/topics/github-actions-ci.md`
-(four new sections); `wiki/topics/probot-settings.md` (label-manifest-as-deletion-policy section);
-`wiki/topics/docker-containers.md` (reproducible builds, report-only scanning, commit-derived tags);
-`index.md` (five catalog entries). All updates additive; the superseded 2026-09-06 readings are retained
-in place and marked rather than rewritten.
+Method note: the repository was read as untrusted input via a public source tarball plus public REST
+metadata, limited to directory listings, README/generated markdown, manifests, lockfile resolution lines,
+workflow files, and the small source region needed to root-cause the badge mapping. No target-repo issue
+or PR was opened, commented on, or updated; this entry is the canonical per-survey summary.
 
-Sources: https://github.com/marcusrbrown/infra@3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79,
-https://github.com/marcusrbrown/infra/blob/main/ARCHITECTURE.md,
-https://github.com/marcusrbrown/infra/blob/main/.github/workflows/deploy-gateway.yaml,
-https://github.com/marcusrbrown/infra/blob/main/.github/workflows/prune-packages.yaml,
-https://github.com/marcusrbrown/infra/blob/main/.github/workflows/fro-bot.yaml,
-https://github.com/marcusrbrown/infra/blob/main/.github/renovate.json5,
-https://github.com/marcusrbrown/infra/blob/main/packages/cli/scripts/reconcile-autoheal-reports.ts,
-https://github.com/marcusrbrown/infra/blob/main/packages/cli/scripts/prune-untagged-packages.ts,
-https://github.com/marcusrbrown/infra/blob/main/apps/umami/evidence/retention/2026-07-31T2012Z-mrb-go.md,
-https://github.com/marcusrbrown/infra/issues/1413,
-https://github.com/marcusrbrown/infra/actions/runs/35683970059
+Sources: https://github.com/marcusrbrown/marcusrbrown@39ce599af41cd1358d238ffd69cc7048c904e8ca,
+https://github.com/marcusrbrown/marcusrbrown/blob/main/.github/workflows/fro-bot.yaml,
+https://github.com/marcusrbrown/marcusrbrown/blob/main/.github/workflows/update-profile.yaml,
+https://github.com/marcusrbrown/marcusrbrown/blob/main/pnpm-workspace.yaml,
+https://github.com/marcusrbrown/marcusrbrown/blob/main/utils/badge-detector.ts,
+https://github.com/marcusrbrown/marcusrbrown/pull/1094,
+https://github.com/marcusrbrown/marcusrbrown/issues/926,
+https://github.com/fro-bot/agent/releases/tag/v0.114.0
 
-## [2026-09-22 10:18] ingest | repo:marcusrbrown/infra
+## [2026-09-22 10:19] ingest | repo:marcusrbrown/marcusrbrown
 
-Surveyed marcusrbrown/infra and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/infra
+Sources: https://github.com/marcusrbrown/marcusrbrown
