@@ -22,6 +22,7 @@ interface WorkflowStep {
   if?: string
   run?: string
   uses?: string
+  shell?: string
   env?: Record<string, unknown>
   with?: Record<string, unknown>
 }
@@ -409,6 +410,14 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
   )
   const runScript = String(syncStep?.run ?? '')
 
+  it('finds the Sync wiki from data branch step in the action file', () => {
+    expect(syncStep).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
+  })
+
+  it('pins shell: bash on the composite step (composite run steps have no default shell)', () => {
+    expect(syncStep?.shell).toBe('bash')
+  })
+
   // Bounded, single-purpose fake `git`: only the three subcommands this step calls
   // are recognized, each exits per an env var the test controls, and each appends its
   // own name to a trace file so tests can assert which subcommands actually ran.
@@ -492,6 +501,18 @@ describe('fro-bot.yaml: all three jobs delegate wiki sync to the hardened compos
     jobName => {
       const syncStep = froBotParsed.jobs[jobName]?.steps?.find(step => step.name === 'Sync wiki from data branch')
       expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+    },
+  )
+
+  it.each(['fro-bot', 'fro-bot-observe'])(
+    '%s: Sync wiki from data branch precedes Capture wiki baseline (baseline must hash post-sync content)',
+    jobName => {
+      const job = froBotParsed.jobs[jobName]
+      const syncIndex = findStepIndex(job, step => step.name === 'Sync wiki from data branch')
+      const baselineIndex = findStepIndex(job, step => step.name === 'Capture wiki baseline')
+
+      expect(syncIndex).toBeGreaterThanOrEqual(0)
+      expect(baselineIndex).toBeGreaterThan(syncIndex)
     },
   )
 })
