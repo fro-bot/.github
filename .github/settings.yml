@@ -216,35 +216,35 @@ labels:
     color: '#0e8a16'
     description: Improvement-metric loop report tracking event -> codified-class edges
   - name: needs-review
-    color: '#5319e7'
+    color: '#3d5a91'
     description: Data promotion PR needs human review before merge
   - name: reconcile:pending-review
-    color: '#5319e7'
+    color: '#2d718c'
     description: Unsolicited collaborator grant awaiting operator review
   - name: reconcile:rollup-pending-review
-    color: '#5319e7'
+    color: '#356b73'
     description: Rollup of multiple pending-review grants from one owner
   - name: status-truth
-    color: '#5319e7'
+    color: '#5146a5'
     description: Status-truth proposal awaiting operator review
   - name: status-truth:accepted
-    color: '#0e8a16'
+    color: '#2e8b8b'
     description: Status-truth finding accepted as accurate
   - name: status-truth:rejected
-    color: '#b60205'
+    color: '#8b3a62'
     description: Status-truth finding rejected as inaccurate
   - name: status-truth:false-positive
-    color: '#b60205'
+    color: '#a85d2a'
     description: Status-truth finding confirmed as a false positive
   - name: status-truth:superseded
-    color: '#cfd3d7'
+    color: '#697386'
     description: Status-truth finding superseded by a newer proposal
   - name: status-truth:manually-fixed
-    color: '#0e8a16'
+    color: '#3f8f72'
     description: Status-truth finding resolved by a manual fix
   - name: status-truth:resolved
-    color: '#0e8a16'
+    color: '#3678a8'
     description: Status-truth finding resolved
   - name: status-truth:recurring
-    color: '#fbca04'
+    color: '#9a7b22'
     description: Status-truth finding recurring after resolution
