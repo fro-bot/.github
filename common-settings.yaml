@@ -192,7 +192,7 @@ labels:
 
   - name: renovate
     color: '#1e90ff'
-    description: Renovate bot updates
+    description: Renovate bot updates <https://mend.io/renovate>
 
   - name: security
     color: '#ff0000'
@@ -221,10 +221,6 @@ labels:
   - name: deployment
     color: '#d93f0b'
     description: Deployment related changes
-
-  - name: ci/cd
-    color: '#0052cc'
-    description: Continuous Integration and Deployment
 
   - name: ci-cd
     color: '#0052cc'
@@ -310,12 +306,8 @@ labels:
     color: '#2088ff'
     description: GitHub Action related
 
-  - name: a11y
-    color: '#7057ff'
-    description: Accessibility improvements
-
   - name: accessibility
-    color: '#7057ff'
+    color: '#da57ff'
     description: Accessibility improvements
 
   - name: maintainability
