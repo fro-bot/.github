@@ -3212,3 +3212,76 @@ Generalizations:
 4. **Freshness and correctness are independent axes, and freshness is the one that gets monitored.** Every
    available signal here — the run conclusion, the smoke test, the artifact's own timestamp caption, the
    fact that the number changed this week — reports on freshness. None reports on correctness.
+
+### A Deploy Gate Asserting Equality on a Quantity Guaranteed to Move (2026-09-22)
+
+Source: [[marcusrbrown--infra]] `Deploy Dashboard`, run
+[35567856440](https://github.com/marcusrbrown/infra/actions/runs/35567856440) (failure 2026-09-21T06:20:26Z)
+through run [35627405677](https://github.com/marcusrbrown/infra/actions/runs/35627405677) (recovery
+2026-09-21T16:56:07Z); fix in `marcusrbrown/infra#1406`. Narrated on the `fro-bot/.github#3512` Gateway
+rollout tracker.
+
+`capture_storage_records` in `apps/dashboard/src/remote-deploy.ts` probed `/var/lib/docker` and
+`/var/lib/containerd`. On the droplet both resolve to the same `mount|source|fstype` key, so the loop ran
+a separate `stat -f -c "%a:%S"` per probe and required the two free-byte readings to be **byte-identical**:
+
+```bash
+[ "${storage_bytes[$found]}" = "$available_bytes" ] || fail "storage-evidence-malformed" ...
+```
+
+Measured under load on the same host: 27 of 40 sample pairs differed. Idle they agree, which is why the
+check passed seven consecutive deploys. It failed on the eighth at `post-acquisition-capacity` — the one
+stage that runs immediately after a multi-hundred-megabyte image lands, while layer extraction and fsync
+are still settling. The gate demanded exact equality of a moving quantity at the single moment in the
+deploy it moves most.
+
+Findings:
+
+1. **Separate the invariant from the sample.** Two probes disagreeing about *mount identity* is a genuine
+   inconsistency. Two probes disagreeing about *free space* is the filesystem working. The fix samples once
+   per mount key and appends the second probe's path to the existing record; the contradictory-mount check
+   is untouched. That distinction — not a tolerance threshold — is the repair. A tolerance narrows the
+   window and leaves a number to argue about; removing the second sample removes the race.
+2. **Price a safety gate's false-positive rate against what it strands, not against what it prevents.** The
+   check exists to stop a deploy from filling the disk. Its false positive held a *consent* fix out of
+   production for 10 h 35 m while the ledger stayed honest and nobody was paged. Gates guarding cheap
+   failures can strand expensive fixes; the two costs are set independently and neither is visible from
+   inside the gate.
+3. **This is the inverse signature of the surrounding family.** The supersession guard behind its own gate,
+   the positional Caddyfile structure test, and the VAPID validator that was a strict subset of the daemon's
+   all failed by *passing*. This one fails by *failing*, on a premise that is simply untrue. Same modeling
+   defect — the check encodes a belief about the system rather than a property of it — opposite signature,
+   and only this one is self-announcing.
+4. **Prove a gate repair on a deploy whose cargo is the gate.** `#1406` shipped through the ordinary
+   dashboard deploy path *carrying the unchanged image pin*, exercising the same host and the same
+   post-acquisition stage that produced the false positive, 34 minutes before the real payload was
+   redispatched. The gate survived its own stage before anything was asked to ride through it.
+
+### A Ledger Commit Excluded From the Pipeline It Records (2026-09-22)
+
+Source: [[marcusrbrown--infra]] `.github/workflows/deploy.yaml` `deploy-dashboard`, observed on
+`#1409` (2026-09-21T18:35:12Z) and `#1410` (2026-09-21T22:10:58Z).
+
+`chore(dashboard): pin image to <CalVer>` PRs write the live image tag into
+`apps/dashboard/docker-compose.yaml` — a path squarely inside the `dashboard` paths-filter. The filter says
+`true`; the job declines anyway, on the commit message:
+
+```yaml
+needs.detect-changes.outputs.dashboard == 'true' &&
+!startsWith(github.event.head_commit.message, 'chore(dashboard): pin image to ')
+```
+
+Both pin runs completed in ~10 s with every deploy job skipped. The pattern generalizes past this repo:
+
+- **A path filter answers "did the bytes change", not "should this run".** When a repo records deployment
+  outcomes *in the same tree* that triggers deployments, the two questions diverge and the filter alone
+  will loop. The pin is a record of a deploy that already happened; a ledger entry that re-executes the
+  transaction it describes is a worse system than no ledger.
+- **The exclusion is legible because it is stated as an exclusion.** A prefix match on a
+  machine-generated commit message is brittle in general, but here the producer of the message and the
+  consumer of the rule are the same pipeline, and the rule reads as the sentence it means. Compare the
+  alternative — moving the pin outside the watched path — which buys the same behavior by hiding the
+  file from the filter, and leaves no artifact saying why.
+- **Cross-check the ledger against the releases, not against itself.** The pin on `main` and the latest
+  `fro-bot/dashboard` release are independently observable; drift between them is the signal that a deploy
+  failed or was skipped. Reading the pin alone tells you what is live and nothing about what should be.

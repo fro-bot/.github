@@ -6359,3 +6359,30 @@ https://github.com/fro-bot/agent/releases/tag/v0.114.0
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-09-22 11:05] ingest | repo:marcusrbrown/infra
+
+Gateway rollout tracker pass on fro-bot/.github#3512. The Project snapshot was unchanged (preflight hash
+identical to the prior marker, 21 items, 20 `Done`); the gating transition was deployment evidence. The
+`storage-evidence-malformed` capacity gate that stranded `fro-bot/dashboard#511` was repaired in
+`marcusrbrown/infra#1406` (merged 2026-09-21T16:08:49Z) and the consent fix reached production at
+2026-09-21T16:56:07Z — 10 h 35 m 41 s after the gate fired. Pin ledger caught up via `#1409`/`#1410`
+without redeploying.
+
+Pages touched: `wiki/topics/github-actions-ci.md` (two new 2026-09-22 pattern sections — the
+equality-on-a-moving-quantity deploy gate, and the ledger commit excluded from its own pipeline by
+commit-message prefix). Additive only; no prior claims superseded.
+
+Unresolved and recorded on the tracker, not the wiki: the privacy-policy consent clause is now true in the
+serving build and guarded behaviorally in `web/src/push/*`, but has no entry in `web/src/privacy/claims.ts`
+— the sentence and the behavior are guarded in different places, linked by hand.
+
+Sources: https://github.com/marcusrbrown/infra/pull/1406,
+https://github.com/marcusrbrown/infra/actions/runs/35627405677,
+https://github.com/fro-bot/dashboard/pull/511, https://github.com/fro-bot/.github/issues/3512
+
+## [2026-09-22 11:22] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@d1867f7c26d4f498732850185363ebe2de92b541
