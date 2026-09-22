@@ -493,23 +493,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
-        run: |
-          set -euo pipefail
-          ls_remote_status=0
-          git ls-remote --exit-code origin data >/dev/null 2>&1 || ls_remote_status=$?
-          if [ "$ls_remote_status" -eq 0 ]; then
-            if git fetch origin data; then
-              git restore --source FETCH_HEAD --worktree -- knowledge
-            else
-              echo "::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot."
-              exit 1
-            fi
-          elif [ "$ls_remote_status" -eq 2 ]; then
-            echo "data branch not yet established; skipping wiki sync."
-          else
-            echo "::error::data branch probe failed (exit $ls_remote_status); refusing to run on a possibly stale knowledge/ snapshot."
-            exit 1
-          fi
+        uses: ./.github/actions/sync-wiki
 
       - name: Capture wiki baseline
         id: wiki-baseline
@@ -707,11 +691,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
-        run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data
-            git restore --source FETCH_HEAD --worktree -- knowledge
-          fi
+        uses: ./.github/actions/sync-wiki
 
       - name: 🎭 Load Persona
         id: persona
@@ -857,11 +837,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
-        run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data
-            git restore --source FETCH_HEAD --worktree -- knowledge
-          fi
+        uses: ./.github/actions/sync-wiki
 
       - name: Capture wiki baseline
         id: wiki-baseline

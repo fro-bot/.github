@@ -401,8 +401,12 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   })
 })
 
-describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
-  const syncStep = froBotParsed.jobs['fro-bot']?.steps?.find(step => step.name === 'Sync wiki from data branch')
+describe('sync-wiki composite action: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
+  const syncWikiActionPath = resolve(import.meta.dirname, '../.github/actions/sync-wiki/action.yaml')
+  const syncWikiAction: unknown = parse(readFileSync(syncWikiActionPath, 'utf8'))
+  const syncStep = (syncWikiAction as {runs?: {steps?: WorkflowStep[]}}).runs?.steps?.find(
+    step => step.name === 'Sync wiki from data branch',
+  )
   const runScript = String(syncStep?.run ?? '')
 
   // Bounded, single-purpose fake `git`: only the three subcommands this step calls
@@ -480,4 +484,14 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
     expect(result.status).not.toBe(0)
   })
+})
+
+describe('fro-bot.yaml: all three jobs delegate wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
+  it.each(['fro-bot', 'fro-bot-remediate', 'fro-bot-observe'])(
+    '%s has a Sync wiki from data branch step using ./.github/actions/sync-wiki',
+    jobName => {
+      const syncStep = froBotParsed.jobs[jobName]?.steps?.find(step => step.name === 'Sync wiki from data branch')
+      expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+    },
+  )
 })

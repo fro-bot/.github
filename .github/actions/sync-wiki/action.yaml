@@ -1,0 +1,27 @@
+---
+name: Sync Wiki
+description: Sync knowledge/ from the data branch, failing closed on any probe or fetch error
+
+runs:
+  steps:
+    - name: Sync wiki from data branch
+      run: |
+        set -euo pipefail
+        ls_remote_status=0
+        git ls-remote --exit-code origin data >/dev/null 2>&1 || ls_remote_status=$?
+        if [ "$ls_remote_status" -eq 0 ]; then
+          if git fetch origin data; then
+            git restore --source FETCH_HEAD --worktree -- knowledge
+          else
+            echo "::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot."
+            exit 1
+          fi
+        elif [ "$ls_remote_status" -eq 2 ]; then
+          echo "data branch not yet established; skipping wiki sync."
+        else
+          echo "::error::data branch probe failed (exit $ls_remote_status); refusing to run on a possibly stale knowledge/ snapshot."
+          exit 1
+        fi
+      shell: bash
+
+  using: composite
