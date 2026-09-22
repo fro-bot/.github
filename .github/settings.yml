@@ -226,25 +226,25 @@ labels:
     description: Rollup of multiple pending-review grants from one owner
   - name: status-truth
     color: '#5146a5'
-    description: Status-truth proposal awaiting operator review
+    description: Status-truth drift proposal requiring operator review
   - name: status-truth:accepted
     color: '#2e8b8b'
-    description: Status-truth finding accepted as accurate
+    description: Status-truth proposal accepted as valid drift
   - name: status-truth:rejected
     color: '#8b3a62'
-    description: Status-truth finding rejected as inaccurate
+    description: Status-truth proposal rejected (claim was correct)
   - name: status-truth:false-positive
     color: '#702f1e'
-    description: Status-truth finding confirmed as a false positive
+    description: Status-truth proposal marked as false positive
   - name: status-truth:superseded
     color: '#c5c9cf'
-    description: Status-truth finding superseded by a newer proposal
+    description: Status-truth proposal superseded by a newer finding
   - name: status-truth:manually-fixed
     color: '#3f8f72'
-    description: Status-truth finding resolved by a manual fix
+    description: Status-truth drift manually corrected
   - name: status-truth:resolved
     color: '#3678a8'
-    description: Status-truth finding resolved
+    description: Status-truth drift resolved (auto-closed on clear)
   - name: status-truth:recurring
     color: '#9a7b22'
-    description: Status-truth finding recurring after resolution
+    description: Status-truth drift recurred after previous resolution

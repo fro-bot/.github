@@ -235,7 +235,7 @@ Each proposal is labeled `learning-proposal` and carries an immutable body marke
 
 **Privacy:** the harvest digest identifies candidates by merge commit SHA only — no owner, repo name, PR number, or title reaches the agent or the proposal body. The agent authors proposal bodies referencing the source by merge SHA only. Before any issue is created, the body is scanned against the private-repo token set from `metadata/repos.yaml` (fail-closed: a missing or unreadable overlay aborts the open step with no issues posted).
 
-**Human review:** proposals are human-reviewed. There is no automerge or auto-promotion path. A human authors the final learning into `docs/solutions/` via `ce:compound` when a proposal is accepted.
+**Human review:** proposals are human-reviewed. There is no auto-merge or auto-promotion path. A human authors the final learning into `docs/solutions/` via `ce:compound` when a proposal is accepted.
 
 **Cadence and cost:** weekly, capped at `MAX_LEARNINGS_PER_RUN` candidates, with a bounded lookback window. The step summary reports counts only (PRs examined, candidates after dedup, learnings opened, blocked on privacy).
 

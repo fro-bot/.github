@@ -3077,6 +3077,7 @@ async function runIssueQueue(params: {
   // change mid-run; calling it per-issue wastes 2 round-trips × N issues. We call it lazily
   // on the first visibility-transition issue and reuse when the result is confirmed (non-empty).
   let cachedConfirmedLabels: Set<string> | null = null
+  // Colors match .github/settings.yml (hex without '#', as GitHub createLabel requires)
   const TRANSITION_LABELS = [
     {
       name: VISIBILITY_TRANSITION_LABEL,
@@ -3085,8 +3086,8 @@ async function runIssueQueue(params: {
     },
     {
       name: INTEGRITY_ALERT_LABEL,
-      color: 'b60205',
-      description: 'Reconcile integrity alert requiring operator action',
+      color: 'e11d48',
+      description: 'Integrity alert requiring manual operator review',
     },
   ] as const
 

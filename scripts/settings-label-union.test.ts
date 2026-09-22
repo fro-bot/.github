@@ -11,6 +11,7 @@ import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
+import {REQUIRED_LABELS} from './status-truth-proposals.ts'
 
 interface Label {
   name: string
@@ -44,6 +45,21 @@ describe('.github/settings.yml labels: union with common-settings.yaml (interim 
     expect(baseLabels.length).toBeGreaterThan(0)
   })
 
+  it('has no duplicate label names in .github/settings.yml, compared case-insensitively (the settings plugin keys labels by name.toLowerCase())', () => {
+    const seen = new Map<string, string[]>()
+    for (const label of repoSettingsParsed.labels) {
+      const key = label.name.toLowerCase()
+      const names = seen.get(key) ?? []
+      names.push(label.name)
+      seen.set(key, names)
+    }
+
+    const duplicates = [...seen.values()].filter(names => names.length > 1).map(names => `"${names.join('", "')}"`)
+
+    expect(duplicates).toEqual([])
+  })
+
+  // This only checks common-settings.yaml is a subset of .github/settings.yml; a label removed from the base leaves a stale copy here that must be removed by hand.
   it('carries every common-settings.yaml label into .github/settings.yml with an identical color and description', () => {
     const mismatches: string[] = []
 
@@ -61,6 +77,30 @@ describe('.github/settings.yml labels: union with common-settings.yaml (interim 
       if (repoLabel.description !== baseLabel.description) {
         mismatches.push(
           `"${baseLabel.name}": description mismatch (common-settings.yaml="${baseLabel.description}", settings.yml="${repoLabel.description}")`,
+        )
+      }
+    }
+
+    expect(mismatches).toEqual([])
+  })
+
+  it('keeps the status-truth REQUIRED_LABELS descriptors in sync with .github/settings.yml', () => {
+    const mismatches: string[] = []
+
+    for (const requiredLabel of REQUIRED_LABELS) {
+      const repoLabel = repoLabelsByName.get(requiredLabel.name)
+      if (!repoLabel) {
+        mismatches.push(`"${requiredLabel.name}": missing from .github/settings.yml`)
+        continue
+      }
+      if (repoLabel.color.replace(/^#/, '').toLowerCase() !== requiredLabel.color.toLowerCase()) {
+        mismatches.push(
+          `"${requiredLabel.name}": color mismatch (REQUIRED_LABELS=${requiredLabel.color}, settings.yml=${repoLabel.color})`,
+        )
+      }
+      if (repoLabel.description !== requiredLabel.description) {
+        mismatches.push(
+          `"${requiredLabel.name}": description mismatch (REQUIRED_LABELS="${requiredLabel.description}", settings.yml="${repoLabel.description}")`,
         )
       }
     }
