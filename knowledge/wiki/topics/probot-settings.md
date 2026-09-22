@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-18
+updated: 2026-09-22
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
+    accessed: 2026-09-22
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
     accessed: 2026-09-18
@@ -34,9 +37,12 @@ tags:
     reusable-workflows,
     sha-pinning,
     updated-at,
+    labels,
+    label-manifest,
   ]
 related:
   - marcusrbrown--github
+  - marcusrbrown--infra
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--dev-like
   - marcusrbrown--marcusrbrown-com
@@ -413,3 +419,43 @@ Both templates require linear history and enforce admin restrictions. The key di
 | Org repos      | push           | admin     |
 
 This dual-permission model ensures the appropriate entity has administrative control based on repo ownership.
+
+## A Label Manifest Is a Deletion Policy (2026-09-22)
+
+From the [[marcusrbrown--infra]] survey. This page has accumulated a triad about sync fidelity — *a
+declared manifest is not an applied one; an applied setting is not a recorded one; a correctly-wired
+sync is not a working one* — plus a fourth from [[bfra-me--works]], *a stale sync is not a broken one*.
+Every one of those is about the sync **failing to apply** something. This is the inverse: a sync
+applying something it should not, correctly, on schedule, forever.
+
+`marcusrbrown/infra` runs two automations that disagree about one label:
+
+- The daily Fro Bot autoheal ends with a deterministic reconciler that stamps its report issue with
+  `autoheal-report`, the identity token its trust predicate is built on. It readback-proves the write.
+- `Update Repo Settings` runs the `bfra-me/.github` reusable Probot Settings caller **on every push to
+  `main`** — eight times before 07:00 on the surveyed morning — against a `settings.yml` that
+  `_extends: .github:common-settings.yaml`, whose 48-label manifest does not list `autoheal-report`.
+
+Issue timeline, same day: `03:51:14 labeled autoheal-report by fro-bot` → `06:47:34 unlabeled
+autoheal-report by mrbro-bot[bot]`. The reconciler re-applies it the next morning and reports
+`adopted: 2` — the same number every single run, which is exactly what a non-persisting write looks
+like in a counter.
+
+The rule: **wherever a settings manifest governs labels, that manifest is authoritative and every
+unlisted label is a deletion candidate on the sync's cadence.** Two corollaries that matter more than
+the incident:
+
+- **The sync's cadence sets the lifetime of every repo-local label.** Push-triggered means minutes.
+  This is not a race you can win by re-applying — the sync runs more often than anything else in the
+  repository.
+- **Never use a settings-governed label as an identity or trust token.** Labels look attractive for
+  this because they are write-gated by triage permission, which is a real security property. But the
+  permission that protects a label from a third party does not protect it from your own settings sync.
+  Prefer an immutable body marker; if you need the write-gating property, put the label in the manifest
+  first, and treat "is this label in the manifest?" as a precondition of the design.
+
+Open question worth carrying: whether an org-wide label manifest should be authoritative at all, or
+whether it should declare a managed *prefix* and leave repo-local labels outside it alone. The
+inheritance model (`_extends`) makes the org manifest the natural place to add one line, which is the
+cheap fix — but it also means every repo-local automation label becomes an org-level governance
+decision. Cataloged from the CI side in [[github-actions-ci]].

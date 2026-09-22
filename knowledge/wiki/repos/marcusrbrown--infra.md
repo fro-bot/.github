@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/infra
 created: 2026-04-18
-updated: 2026-09-06
+updated: 2026-09-22
 node_id: R_kgDOR4g8TA
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
+    accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/infra
     sha: ac34a60e53bf0f6c5871116488978385896f7cd0
     accessed: 2026-09-06
@@ -79,6 +82,15 @@ tags:
   - rolling-issue
   - package-smoke
   - release-alert
+  - ghcr
+  - reproducible-builds
+  - buildkit
+  - trivy
+  - retention
+  - systemd-timer
+  - label-war
+  - reconciler
+  - invariants
 aliases:
   - infra
 related:
@@ -86,6 +98,7 @@ related:
   - marcusrbrown--systematic
   - fro-bot--agent
   - fro-bot--dashboard
+  - marcusrbrown--mrbro-dev
 ---
 
 # marcusrbrown/infra
@@ -97,15 +110,155 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-09-06 (`ac34a60`, `chore(deps): update fro-bot/agent to v0.109.3 (#1282)`); prior surveys 2026-08-16 (`d276d93`), 2026-07-15 (`e0e3252`)
+- **Last push:** 2026-09-22 (`3e4d76d`, `fix(deps): update aws-sdk-js-v3 monorepo to v3.1136.0 (#1420)`); prior surveys 2026-09-06 (`ac34a60`), 2026-08-16 (`d276d93`), 2026-07-15 (`e0e3252`)
 - **Runtime:** Bun v1.0+
 - **Workspace package:** root is `@marcusrbrown/infra-workspace` (private); the published CLI is `@marcusrbrown/infra` (in `packages/cli/`)
-- **Published package:** `@marcusrbrown/infra` **v0.22.0** on npm (published 2026-08-28; up from v0.15.4 at the prior survey — 0.19.0/0.20.0/0.21.0/0.22.0 all shipped in the 08-23 → 08-28 window)
-- **Open items (2026-09-06):** **17** — 16 `fro-bot`-authored issues + the `mrbro-bot[bot]` Dependency Dashboard, and **zero open PRs**
-- **Stars:** 3 (steady across five surveys) · forks 0
+- **Published package:** `@marcusrbrown/infra` **v0.23.0** on npm (2026-09-22; v0.22.0 at the prior survey)
+- **Open items (2026-09-22):** **9** — down from 17. 4 `fro-bot`-authored (#1413 daily report, #1412 deploy-approval, #1374 + #1162 Upstream Modernization Watch), 4 `marcusrbrown`-authored (#1386, #1385, #1383, #729), + the `mrbro-bot[bot]` Dependency Dashboard. **Zero open PRs** (seventh consecutive survey)
+- **Stars:** 3 (steady across six surveys) · forks 0
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 - **License:** MIT
 - **Visibility:** public · `node_id` `R_kgDOR4g8TA` · repo id `1200110668`
+
+## 2026-09-22 Survey — Findings
+
+Seventh survey (HEAD `3e4d76d`). Still **8 apps / 2 packages**; workflows **19 → 20** (new `prune-packages.yaml`). 109 commits since the prior survey — `mrbro-bot[bot]` 69 / **`marcusrbrown` 40**, the most human-heavy interval this page has recorded. The theme: **every open finding from 2026-09-06 was acted on, and the one that "converged" converged only halfway.**
+
+### 1. The single-report contract converged — and its trust anchor is deleted every morning by the repo's own settings sync
+
+The 2026-09-06 page recorded ten open `Daily Autohealing Report` issues against a contract demanding exactly one, and diagnosed the identity predicate: clause (b) ANDed a *mutable label* onto an *immutable body marker*. That diagnosis held; the remedy landed; **the issue population is now converged and has been for at least fourteen consecutive days** — exactly one open report (#1413), each day's predecessor closed `not_planned` with a machine-readable supersession comment (`<!-- fro-bot:autoheal-supersession:v1 canonical-issue-number=1413 -->`).
+
+The remedy is structural, not prompt-level: reconciliation moved **out of the model and into deterministic repo-local code**. `packages/cli/scripts/reconcile-autoheal-reports.ts` (957 lines) runs as a post-agent workflow step gated on `steps.classify.outputs.mode == 'daily-equivalent'`, and the prompt now explicitly forbids the agent from doing any of it (*"Do not create labels, post supersession comments, close reports…"*). The reconciler is codified as ARCHITECTURE.md **invariant 13** — identity-anchored (exact title/date, numeric `fro-bot` actor, line-1 managed marker), fully paginated, re-reads every mutation target by numeric ID immediately before writing, proves each write by readback, and aborts rather than mutating on any ambiguity. It also **adds the missing backfill path**: a candidate carrying the marker but lacking the label is `adoptable`, and the reconciler adopts it.
+
+And the label still does not exist in the repository.
+
+The reconciler's own summary line is identical on every run inspected (09-14, 09-18, 09-19, 09-20, 09-21, 09-22):
+
+```json
+{"eligible":2,"adopted":2,"commented":1,"closed":1,"untrusted_collisions":0,"final_open_managed":1,"status":"succeeded"}
+```
+
+`adopted` never decays. If adoption persisted, yesterday's report would already be labelled and today's count would fall. It does not, because the label is removed between runs — and the timeline names the actor:
+
+| Time (2026-09-22 UTC) | Event | Actor | Label |
+| --- | --- | --- | --- |
+| 03:51:14 | `labeled` | `fro-bot` | `autoheal-report` |
+| 06:47:34 | `unlabeled` | `mrbro-bot[bot]` | `autoheal-report` |
+
+06:47:34 sits inside the `Update Repo Settings` push-triggered run at 06:47:22–06:47:45. That workflow fires on **every push to `main`** (eight runs before 07:00 that morning) and syncs `.github/settings.yml`, which `_extends: .github:common-settings.yaml` — whose 48-label manifest **does not contain `autoheal-report`**. The agent mints a trust anchor at 03:51; the settings sync strips it hours later because it is not in the org-wide manifest. Every day. Both writes report success.
+
+Three durable lessons, all generalizable:
+
+- **A label manifest is a deletion policy.** Any automation in the same repository that mints its own labels as identity tokens is in a write-war with the settings sync, and the sync runs far more often. Generalized in [[probot-settings]].
+- **Proof at write time is not proof of durability.** The reconciler does the harder, rarer thing — it readback-proves every mutation before reporting success — and the proof is still worthless here, because the adversary is a *later* writer. Same shape as [[fro-bot--agent]]'s `cache-save-result`, which states in its own description that it "reports a result, not proof of durability." Independently rediscovered at the issue-label layer.
+- **The tell was in the output the whole time.** `adopted=2` on every run is a monotone signal that a mutation is not sticking, and nothing reads it because `status: "succeeded"` is right there next to it. A converged *outcome* metric (`final_open_managed: 1`) masked a non-converging *work* metric.
+
+**This also corrects the prior page's inference.** 2026-09-06 guessed the mechanism was *"issue creation with a not-yet-existing label drops the label"* — plausible, and wrong. The label was created and applied correctly every time; a second automation removed it. The observable (nine marker-carrying, label-lacking reports) was identical under both hypotheses, which is precisely why a timeline read beats an inference about creation order.
+
+Residual: the reconciliation contract now converges *despite* its label key rather than because of it — the closure path carries the whole result. The cheapest fix is a one-line addition to `common-settings.yaml`; the more interesting question is whether an org-wide label manifest should ever be authoritative over repo-local automation labels.
+
+### 2. The gateway stopped building on the droplet
+
+The largest structural change since `apps/agent`. The gateway deploy was an on-droplet `git clone || git fetch && git reset --hard` against the `upstream.json` SHA. It is now a **three-stage CI pipeline that ships prebuilt images**, and `apps/gateway/README.md` states the new invariant directly: *"the droplet only pulls prebuilt artifacts — it never builds images."*
+
+`deploy-gateway.yaml` grew two jobs ahead of `deploy-gateway`:
+
+- **`build-images`** (`packages: write`) checks out `fro-bot/agent` at the `upstream.json` ref into `upstream-agent/`, then builds `deploy/gateway.Dockerfile` and `deploy/workspace.Dockerfile` and pushes `ghcr.io/marcusrbrown/infra-gateway` and `ghcr.io/marcusrbrown/infra-workspace`, tagged `${upstream_ref}-${github.sha}`. Digests are job outputs consumed by the deploy as `GATEWAY_IMAGE_DIGEST` / `WORKSPACE_IMAGE_DIGEST`.
+- **`scan-images`** runs digest-pinned Trivy (`0.74.0@sha256:62b1e65e…`) against both images.
+
+Two details worth keeping, both with the rationale written into the file:
+
+- **The build is made reproducible on purpose.** `SOURCE_DATE_EPOCH: '0'` is set as a *fixed constant, not commit-derived* — the comment says why: a commit-derived value changes every build and destroys cache hits. It is paired with `outputs: type=registry,rewrite-timestamp=true`, because `SOURCE_DATE_EPOCH` alone rewrites config/history/index timestamps but **not layer tar-entry timestamps**; only the exporter flag does that (BuildKit ≥ v0.13).
+- **BuildKit itself is pinned.** `driver-opts: image=moby/buildkit:v0.33.0`, with the comment *"the preinstalled buildx on ubuntu-latest is an uncontrolled input otherwise."* That is the right frame: a builder is a build input. Most repos SHA-pin the action and let the runner supply whatever BuildKit it ships.
+
+The scan is the weak half. `scan-images` is `continue-on-error: true` **and** invokes Trivy with `--exit-code 0`, writing a table into `$GITHUB_STEP_SUMMARY`. `deploy-gateway` declares `needs: [build-images, scan-images]`, which looks like a gate and is not one — the job cannot fail, and even if it could, `continue-on-error` would absorb it. Compare the two-phase pattern from [[fro-bot--dashboard]] catalogued in [[docker-containers]], which splits *visibility* (report-everything SARIF at `exit-code: 0`) from *enforcement* (a second scan that actually fails). Here only the visibility phase exists. **A `needs:` edge to a job that cannot fail is documentation, not a dependency** — and it reads as enforcement in every summary view.
+
+The repo already knows the tag is wrong. Open issue **#1383** (`marcusrbrown`, `technical-debt`): *"Gateway image rebuilds fire on commits that cannot change the image"* — the tag embeds `github.sha` while the image content is a pure function of the `upstream.json` ref and the two Dockerfiles, so any infra commit that touches the deploy path rebuilds and republishes byte-identical content under a new tag. That is also what created the GHCR untagged-version accumulation that `prune-packages.yaml` now exists to clean up (issue #1327). A self-inflicted garbage problem with the collector shipped before the fix.
+
+### 3. `prune-packages.yaml` — destructive registry automation done with the safety written down
+
+New 20th workflow, `workflow_dispatch` only, with an `apply` boolean **defaulting to false**. It runs `packages/cli/scripts/prune-untagged-packages.ts`, which deletes untagged GHCR versions of the fixed `TARGET_PACKAGES = ['infra-gateway', 'infra-workspace']` set only after six named gates pass for that package:
+
+| Gate | Abort code | Guards against |
+| --- | --- | --- |
+| a | `pagination_incomplete` / `pagination_failed` / `pagination_invalid` | acting on a partial version list |
+| b/c | `manifest_is_index` | reasoning about a multi-arch index it does not model |
+| d | `untagged_referenced_as_child` | deleting a child manifest of a tagged image |
+| e | `candidate_cap_exceeded` | an unexpected API shape producing 500 "orphans" |
+| f | `no_tagged_versions` | a package that looks empty because the *read* failed |
+
+Every abort returns a coded, **body-free** summary and a non-zero exit; nothing is deleted for that package. Pagination links are re-validated against the API origin before being followed. Deletes run in ascending-id order *"so the delete sequence is auditable against the run log."* This is codified as **invariant 15**, whose closing clause is the whole design: *"it never degrades an inconclusive probe into 'safe to delete.'"*
+
+One shape worth noting: gates b/c and d are nearly mutually exclusive. A tagged version whose `mediaType` is a known index type aborts the run before child digests are collected, so the child-reference gate only ever engages for manifests that omit `mediaType`. In practice the abort *is* the protection and the child scan is the belt to its suspenders — which is the correct ordering for a delete path, but means the "provably orphaned" language in the header comment describes the rarer branch.
+
+Both this script and the reconciler are covered by **invariant 12**: *"workflow-internal scripts stay outside the published surface"* — repo-local operational code in `packages/cli/scripts/`, invoked only by their owning workflows, never CLI commands, MCP tools, package exports, or published files. That invariant is enforceable because `Package smoke` (finding 6, 2026-09-06) already asserts the tarball contains nothing from `src/` beyond one intentional export.
+
+### 4. ARCHITECTURE.md grew a numbered invariant list, and invariant 14 is the fleet's own lesson found from the other side
+
+`ARCHITECTURE.md` now carries **15 numbered invariants** under an `## Invariants` heading, several of them mechanically enforced by `packages/cli/src/conventions.test.ts`. Three are new knowledge rather than restated conventions:
+
+**Invariant 11 — reusable-workflow permission parity.** *"A callee job cannot request a `GITHUB_TOKEN` scope its caller job does not grant; job-level `permissions:` replaces the workflow-level block, so callers must restate `contents: read` alongside added scopes or GitHub rejects the run at startup with zero jobs created."* The failure mode is the interesting part: **zero jobs created** — no failed job to read, no step to inspect, a run that exists and did nothing. `conventions.test.ts` now asserts permission parity between `deploy.yaml`'s router jobs and the `deploy-<app>.yaml` callees they `uses`. Generalized in [[github-actions-ci]].
+
+**Invariant 14 — never read a coarse exit code or HTTP status as proof of a specific remote state.** *"A probe that cannot confidently distinguish its target states must throw, not fall back to the branch that looks safe."* This is not abstract: it enumerates **six** retrofitted call sites across five apps, each of which had mapped an ambiguous signal onto the convenient branch —
+
+- `remoteGitExists` / `remoteFileExists` now emit an explicit `EXISTS`/`MISSING` sentinel over SSH and require *both* exit 0 and a recognized sentinel, instead of reading any non-zero exit as "absent" (which risked an unnecessary clone, or overwriting `config.yaml`'s live runtime API keys);
+- `readRemoteChecksum` throws on non-zero instead of reading a failed read as an empty checksum;
+- `removeStaleGatewayNet` requires Docker's literal `No such network` stderr marker;
+- the Umami admin-login probe parses `curl -w '%{http_code}'` (401 = already rotated, anything else fails closed) instead of trusting `--fail-with-body`'s exit code;
+- the VPN wipe-guard throws on a non-zero `wg show wg0 dump` or empty output instead of reading either as "zero live peers";
+- `broker/src/sweeper.ts`'s `reconcile` takes `throwOnListFailure` so `startupReconcile`'s bounded retry actually retries a failed `listApiKeys` instead of swallowing the exception as success.
+
+The wiki has been accumulating the same rule from the CI side for months — *a run's conclusion measures the harness, not the deliverable* ([[marcusrbrown--cortexkit-anthropic-auth]], [[marcusrbrown--github]]). Invariant 14 is that rule discovered **at the remote-probe layer** by a repo that kept getting bitten, and it is sharper than the CI version in one respect: it names the *direction* of the bias. A coarse signal does not fail randomly — it fails toward whichever branch the author found convenient, and "the branch that looks safe" is almost always the destructive one (clone anyway, overwrite anyway, treat the peer list as empty). **The generalization: when a probe has two outcomes and one coarse signal, the ambiguity resolves in favor of the action, not the abstention.**
+
+**Invariant 2 changed** — *"Exactly two approved Bash scripts"*. The long-standing "only bash script is `apps/keeweb/deploy.sh`" convention now admits `apps/umami/retention.sh` as a narrow host-native systemd/Docker exception, and the allowlist is enforced in `conventions.test.ts`. A convention that survived nine surveys was widened by exactly one entry, with the exception named in the invariant rather than silently tolerated.
+
+### 5. The Umami retention control landed — the [[marcusrbrown--mrbro-dev]] analytics gate is satisfied, and was already satisfied at the prior survey
+
+This page has carried a cross-repo dependency since 2026-08-01: [[marcusrbrown--mrbro-dev]]'s privacy-preserving Umami subsystem is **activation-gated** on a version-controlled `marcusrbrown/infra` evidence artifact — pinned to an exact infra commit and Umami version — proving ≤13-month retention. The page recorded it as "not yet observed in the infra tree."
+
+It is there, and the earliest artifact predates the 2026-09-06 survey. `apps/umami/` now holds `retention.sh`, `retention.sql`, `retention-check.sql`, `retention.test.ts`, `retention.integration.test.ts` (23 KB), `systemd/{umami-retention.service,umami-retention.timer}`, `systemd.test.ts`, and **`evidence/retention/`** containing `README.md`, `TEMPLATE.md`, and `2026-07-31T2012Z-mrb-go.md`.
+
+`retention.sh` uses the same destructive-default discipline as the pruner: `--check`/`--dry-run` counts rows older than 13 calendar months, `--apply` deletes transactionally, and **check is the default**. `set -Eeuo pipefail` with `IFS=$'\n\t'`; failures emit a structured `RETENTION|mode=…|status=failure|exit=…|reason=psql` line.
+
+The evidence artifact is the notable object. It pins the infra commit (`aa01b493`), a content-addressed retention release hash matched against `/opt/umami/retention/current`'s readlink, both image digests, SHA-256 of both installed systemd unit files, and the mrbro.dev plan revision it satisfies — cross-repo, by SHA, in both directions. The recovery drill is captured in full: a `pg_restore --list` validation in a pinned disposable container with `--network none`, tmpfs data dir, no published ports, and an **exact `diff` of source vs restored manifests** (empty, PASS).
+
+What makes it credible is what it refuses to claim. Status is `GO (operator override)` and says so — *"the calendar/catch-up timer edge remains explicitly unobserved"* — and the backup section records `Daily automated backup present: NO`. **An attestation that enumerates its own unverified edges is worth more than one that reports PASS across the board**, and the distinction between "verified" and "accepted under override" is written into the status field rather than the prose. This is the first artifact in the fleet built to be *consumed* by another repo's Go/No-Go matrix, and the shape is reusable.
+
+Correction of scope, not of fact: the prior page's "not yet observed" was carrying a stale 2026-07-15 caveat forward. Survey reads are scoped to listings, READMEs, manifests, and workflows, and this landed as app-internal source — a reminder that a cross-repo dependency tracked from the *consumer* side will not surface in a producer-side survey unless the producer's app directory is listed.
+
+### 6. Findings closed, findings that held
+
+| 2026-09-06 finding | 2026-09-22 state |
+| --- | --- |
+| Ten unconverged daily reports | **Closed** — one open report, 14+ days (finding 1; label half still broken) |
+| `autoheal-upstream-watch` label does not exist | **Still true, still unlabelled**, and now **two** open Watch issues (#1162 08-23, #1374 09-20). Category 10 has no reconciler; only the daily report got one |
+| Four stalled version ceilings | **One lifted.** `fro-bot/agent` moved `<0.94.0` → **`<0.114.0`** after an actual verification pass, recorded in the config: *"v0.113.2 verified the gateway startup config parser byte-identical to v0.93.1, so no new boot-required secrets; v0.114+ stays gated pending the next verification pass."* `caddy <2.12.0` still cites a **2026-07-13** verification (~10 weeks); `postgres <16` runbook still unexecuted (~3.7 months); `typescript <7` still waiting on `typescript-eslint#10940` |
+| README lists six apps, repo has eight | **Closed** — the table lists all eight, `apps/agent` described as "not deployable" (issue #1316, closed 09-12) |
+| `release-alert.yaml` gated on `conclusion == 'failure'` only | **Unchanged.** Still blind to `cancelled` / `timed_out` / `action_required`, still no self-test, still never fired |
+| Stranded deploys behind `required_reviewers` | **Structural, unchanged.** #1412 open today (gateway awaiting approval since 09-21T20:02Z); #1365 on 09-18 reported gateway + vpn + cliproxy all stalled since 09-14. Now consistently `deployment`-labelled, so the class is at least countable |
+| `fro-bot-storage` is the only environment without `required_reviewers` | **Confirmed by API.** All seven deploy environments carry `[required_reviewers, branch_policy]`; `fro-bot-storage` carries `[branch_policy]` alone. A new `copilot` environment has **no protection rules at all** |
+
+### 7. Capability narrowing moved inside the job
+
+The 2026-09-06 survey recorded the `fro-bot.yaml` split into two jobs with disjoint capabilities. The reconcile step extends that discipline **within** the privileged job:
+
+```yaml
+- name: Reconcile daily autoheal reports
+  if: steps.classify.outputs.mode == 'daily-equivalent'
+  env:
+    GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+    AWS_ACCESS_KEY_ID: ''
+    AWS_SECRET_ACCESS_KEY: ''
+    AWS_SESSION_TOKEN: ''
+    AWS_REGION: ''
+    AWS_DEFAULT_REGION: ''
+```
+
+`aws-actions/configure-aws-credentials` exports STS credentials into the **job** environment, so every subsequent step inherits them by default. Blanking them per-step is the only way to keep a GitHub-API-only step out of the AWS blast radius without splitting the job again. Job-scoped credentials are the default and step-scoped ones require explicit effort — worth remembering whenever an OIDC credential step precedes anything that does not need it.
+
+### Daemon health
+
+Fro Bot daily schedule: **14/15 success** over the last 15 scheduled runs (sole failure 2026-09-13); the last nine are green. The reconcile step succeeds on every run inspected. All 20 workflows `active` — no `disabled_inactivity`. Zero open PRs; every Renovate PR automerges.
 
 ## 2026-09-06 Survey — Findings
 
@@ -178,8 +331,8 @@ The repo already knows this the hard way. The autoheal prompt's **STRANDED-DEPLO
 | --- | --- | --- | --- |
 | `caddy` | `<2.12.0` | manual `linux/amd64` manifest verification, last done **2026-07-13** | ~8 weeks, deployed at `2.11.4-alpine` |
 | `postgres` | `<16` | executed cutover per `docs/plans/2026-06-01-001-feat-umami-postgres-major-upgrade-plan.md` (PG18 refuses a PG15 data dir; password baked into the named volume) | ~3 months, runbook unexecuted |
-| `fro-bot/agent` (gateway `upstream.json`) | `<0.94.0` | source-contract verification pass — "verify no new boot-required secrets before the ceiling moves" | pin **v0.93.1**, upstream **v0.109.3** — ~16 minor series |
-| `typescript` | `<7` | `typescript-eslint#10940` lands TS 7 support | external unblock; legitimately waiting |
+| `fro-bot/agent` (gateway `upstream.json`) | `<0.94.0` | source-contract verification pass — "verify no new boot-required secrets before the ceiling moves" | pin **v0.93.1**, upstream **v0.109.3** — ~16 minor series. **Lifted to `<0.114.0` by 2026-09-22** after an executed pass (pin now v0.113.2) |
+| `typescript` | `<7` | `typescript-eslint#10940` lands TS 7 support | external unblock; legitimately waiting (still, 2026-09-22) |
 
 Three of the four wait on a **human verification pass with no recurring trigger**. And the ownership is circular: Renovate is ceiling-gated by policy, and category 10 (Upstream Modernization Watch) is instructed it *"MUST NOT bump pinned versions (Renovate-owned)."* Nothing in the repo is responsible for lifting a ceiling.
 
@@ -238,7 +391,7 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | `apps/keeweb/`        | KeeWeb v1.18.7 static site deploy automation (`kw.igg.ms`)             |
 | `apps/cliproxy/`      | CLIProxyAPI Docker Compose stack behind Caddy (`cliproxy.fro.bot`)     |
 | `apps/gateway/`       | Fro Bot Discord gateway + workspace runner + mitmproxy (`gateway.fro.bot`) |
-| `apps/umami/`         | Umami analytics Docker Compose stack (umami + postgres + caddy) at `metrics.fro.bot` |
+| `apps/umami/`         | Umami analytics Docker Compose stack (umami + postgres + caddy) at `metrics.fro.bot`; plus the 13-month retention subsystem (`retention.sh`/`.sql`, systemd timer, `evidence/retention/` attestations) added by 2026-07-31 |
 | `apps/dashboard/`     | Fro Bot operator dashboard deploy (2-service compose, digest-pinned upstream image) at `dashboard.fro.bot` |
 | `apps/vpn/`           | WireGuard VPN egress box on AWS Lightsail (`eu-west-1`); native `wg-quick`/systemd, no Docker |
 | `apps/broker/`        | OIDC-authenticated credential broker (`broker.fro.bot`); mints short-lived cliproxy keys for CI runs |
@@ -304,7 +457,9 @@ Key operational properties:
 - DNS preflight before deploy (validates `UMAMI_DOMAIN` resolves before touching droplet)
 - `umami` environment in GitHub Actions with required reviewer gate
 
-**First observed consumer + pending retention-boundary dependency (noted 2026-08-01 via the [[marcusrbrown--mrbro-dev]] survey):** the mrbro.dev portfolio added a privacy-preserving analytics subsystem (#256/#257) that points at this `metrics.fro.bot` instance as its collector. That work is **activation-gated on an infra-side retention control**: mrbro.dev's `docs/analytics.md` runbook states this Umami instance currently "retains data indefinitely," and its Go/No-Go matrix forbids production activation until a **version-controlled `marcusrbrown/infra` evidence artifact** — pinned to the exact deployed infra commit and Umami version — proves pageview/custom-interaction records are retained ≤13 months and that monthly session parent records are deleted after their last retained child expires. This implies a future infra deliverable (a retention policy in the `apps/umami` compose/config layer plus version-controlled evidence) that is not yet observed in the infra tree as of the last infra survey (2026-07-15, `e0e3252`, Umami steady `3.2.0`). Recorded here so the cross-repo dependency is discoverable from the processor side; a direct infra re-survey should confirm whether the retention control has landed.
+**Retention control — LANDED (confirmed 2026-09-22; earliest evidence artifact 2026-07-31).** `apps/umami/` now carries a full 13-calendar-month retention subsystem: `retention.sh` (check/dry-run default, `--apply` opt-in, `set -Eeuo pipefail`, structured `RETENTION|…` failure line), `retention.sql` + `retention-check.sql`, unit + integration tests (`retention.test.ts`, `retention.integration.test.ts`, `systemd.test.ts`), host-native `systemd/{umami-retention.service,umami-retention.timer}`, and **`evidence/retention/`** (`README.md`, `TEMPLATE.md`, `2026-07-31T2012Z-mrb-go.md`). `retention.sh` is the second entry in ARCHITECTURE.md invariant 2's two-script Bash allowlist. The attestation pins infra commit `aa01b493`, a content-addressed release hash matched against `/opt/umami/retention/current`, both image digests, SHA-256 of both installed systemd units, and the mrbro.dev plan revision it satisfies — and records its own gaps honestly (`GO (operator override)`, *"the calendar/catch-up timer edge remains explicitly unobserved"*, `Daily automated backup present: NO`). See 2026-09-22 finding 5. **This satisfies the blocking dependency below.**
+
+**First observed consumer + retention-boundary dependency (noted 2026-08-01 via the [[marcusrbrown--mrbro-dev]] survey; satisfied as described above):** the mrbro.dev portfolio added a privacy-preserving analytics subsystem (#256/#257) that points at this `metrics.fro.bot` instance as its collector. That work is **activation-gated on an infra-side retention control**: mrbro.dev's `docs/analytics.md` runbook states this Umami instance currently "retains data indefinitely," and its Go/No-Go matrix forbids production activation until a **version-controlled `marcusrbrown/infra` evidence artifact** — pinned to the exact deployed infra commit and Umami version — proves pageview/custom-interaction records are retained ≤13 months and that monthly session parent records are deleted after their last retained child expires. This implies a future infra deliverable (a retention policy in the `apps/umami` compose/config layer plus version-controlled evidence) that is not yet observed in the infra tree as of the last infra survey (2026-07-15, `e0e3252`, Umami steady `3.2.0`). Recorded here so the cross-repo dependency is discoverable from the processor side; a direct infra re-survey should confirm whether the retention control has landed.
 
 #### Fro Bot Dashboard (`apps/dashboard`)
 
@@ -422,7 +577,7 @@ The `.slim/clonedeps.json` manifest pins upstream repositories cloned for local 
 | Deploy | `deploy.yaml` | Dispatch only | Thin orchestrator — calls all per-app deploy workflows via `workflow_call` |
 | Deploy KeeWeb | `deploy-keeweb.yaml` | Push to `main`, dispatch, `workflow_call` | Build and deploy KeeWeb (path-filtered, `keeweb` environment) |
 | Deploy CLIProxy | `deploy-cliproxy.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy CLIProxyAPI (path-filtered, `cliproxy` environment) |
-| Deploy Gateway | `deploy-gateway.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot gateway stack (path-filtered, `gateway` environment) |
+| Deploy Gateway | `deploy-gateway.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot gateway stack (path-filtered, `gateway` environment). **Three jobs as of 2026-09-22:** `build-images` (`packages: write`; checks out `fro-bot/agent` at the `upstream.json` ref, builds `deploy/{gateway,workspace}.Dockerfile`, pushes `ghcr.io/marcusrbrown/infra-{gateway,workspace}:${ref}-${sha}`, reproducible via `SOURCE_DATE_EPOCH: '0'` + `rewrite-timestamp=true`, BuildKit pinned `moby/buildkit:v0.33.0`) → `scan-images` (digest-pinned Trivy 0.74.0, **`continue-on-error: true` + `--exit-code 0`** — report-only) → `deploy-gateway` (SSH pull by digest). See 2026-09-22 finding 2 |
 | Deploy Umami | `deploy-umami.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Umami analytics stack (path-filtered, `umami` environment) |
 | Deploy Dashboard | `deploy-dashboard.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot dashboard stack (path-filtered, `dashboard` environment) |
 | Deploy VPN | `deploy-vpn.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy WireGuard VPN box (path-filtered, `vpn` environment) |
@@ -436,7 +591,8 @@ The `.slim/clonedeps.json` manifest pins upstream repositories cloned for local 
 | Copilot Setup Steps | `copilot-setup-steps.yaml` | Dispatch, changes to workflow file | Prepare environment for Copilot coding agent |
 | Scorecard | `scorecard.yaml` | Weekly, push to `main` | OpenSSF security analysis |
 | CodeQL | `codeql.yaml` | Push to `main`, PR, weekly (Wed 05:30 UTC) | CodeQL static analysis (`javascript-typescript` matrix); added post-2026-06-09 |
-| Update Repo Settings | `update-repo-settings.yaml` | Daily, push to `main` | Sync repo settings from `.github/settings.yml` |
+| Prune Untagged Packages | `prune-packages.yaml` | Dispatch only | **Added 2026-09-22 survey window** (issue #1327). Runs `packages/cli/scripts/prune-untagged-packages.ts` against the fixed `TARGET_PACKAGES` set (`infra-gateway`, `infra-workspace`). `apply` input **defaults to false** (dry-run); six named fail-closed gates; coded body-free summaries; `permissions: contents: read` + `packages: write`; `concurrency: prune-packages`, `cancel-in-progress: false`. See 2026-09-22 finding 3 and invariant 15 |
+| Update Repo Settings | `update-repo-settings.yaml` | **Every push to `main`**, daily `02 18` cron, dispatch | Calls `bfra-me/.github/.github/workflows/update-repo-settings.yaml@v4.31.0` to sync repo settings from `.github/settings.yml` (`_extends: .github:common-settings.yaml`). **Also reconciles issue labels against the 48-label manifest** — the mechanism that strips `autoheal-report` from the daily report issue hours after the reconciler applies it (2026-09-22 finding 1) |
 
 ### CI Jobs (ci.yaml)
 
@@ -499,7 +655,9 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`, ~50 KB / 971 lines). Uses **`fro-bot/agent@v0.109.3`** (SHA `9d45b92e7c9f95f3e9d9d32cc0b361b4a59e79d7`) as of 2026-09-06; prior surveys v0.99.0 (`2167bb8`, 2026-08-16) and v0.90.0 (`42db56d`, 2026-07-15).
+**Fro Bot workflow is present** (`fro-bot.yaml`, ~56 KB / **1076 lines**). Uses **`fro-bot/agent@v0.114.0`** (SHA `b711f08e4049ff0add1ec06859743b2dcb7764ce`) as of 2026-09-22 — both jobs pinned to the same SHA; prior surveys v0.109.3 (`9d45b92`, 2026-09-06), v0.99.0 (`2167bb8`, 2026-08-16), v0.90.0 (`42db56d`, 2026-07-15).
+
+**Post-agent deterministic gate (2026-09-22).** The storage job's final step, `Reconcile daily autoheal reports`, runs `bun run packages/cli/scripts/reconcile-autoheal-reports.ts` under `if: steps.classify.outputs.mode == 'daily-equivalent'`, authenticated with `FRO_BOT_PAT` in step-local env and with all five AWS credential variables blanked so it cannot inherit the job's STS session. Codified as ARCHITECTURE.md invariant 13. The prompt now forbids the agent from creating labels, posting supersession comments, closing reports, or proving final state — issue-identity mechanics moved out of the model entirely. See 2026-09-22 findings 1 and 7.
 
 **As of the 2026-09-06 survey the workflow is split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment, no OIDC) and `fro-bot-storage` (schedule / main-branch dispatch only, `fro-bot-storage` environment, `id-token: write`, AWS STS, `s3-backup: true`, `harden-runner` egress block). The daily autoheal now runs exclusively in the privileged storage job; PR review runs unprivileged. See 2026-09-06 finding 1.
 
@@ -551,6 +709,28 @@ The autohealing schedule monitors:
 **Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`, `CLIPROXY_API_KEY`, `CLIPROXY_AUTH_MONITOR_DISCORD_WEBHOOK` (the last two consumed by `cliproxy-auth-monitor.yaml`)
 
 **Repository variables:** `FRO_BOT_MODEL`, plus the five non-secret `FRO_BOT_S3_*` variables written by `infra agent storage` (2026-08-16; consumed by the `fro-bot-storage` job and its egress allowlist as of 2026-09-06)
+
+## Architecture Invariants (`ARCHITECTURE.md`)
+
+Observed 2026-09-22: `ARCHITECTURE.md` carries a numbered `## Invariants` list of **15** entries, several enforced by `packages/cli/src/conventions.test.ts`. Condensed:
+
+| # | Invariant |
+| --- | --- |
+| 1 | `apps/` are deployable units, `packages/` are reusable libraries; `packages/` never imports from `apps/`; `apps/agent` is the sole non-deployable exception |
+| 2 | **Exactly two approved Bash scripts:** `apps/keeweb/deploy.sh` and `apps/umami/retention.sh` (the narrow host-native systemd/Docker exception); allowlist enforced in tests |
+| 3 | Never pass secret bytes via argv — SSH stdin (`writeRemoteFile`) only; `--body <value>` banned |
+| 4 | Host validation before SSH (`host.ts` rejects `-`-prefixed and invalid values) |
+| 5 | Actions SHA-pinned with `# vX.Y.Z` (or `# name@X.Y.Z` for a scoped release tag); `.yaml` not `.yml` |
+| 6 | No `as any` / `@ts-ignore` / `@ts-expect-error`; no TS files excluded from type checking |
+| 7 | Tracked files never contain secret values |
+| 8 | Deploy workflows use `dorny/paths-filter` with `predicate-quantifier: every` so `!` negations work |
+| 9 | Never `ssh-keyscan` in CI — host keys pinned in `.github/known_hosts` |
+| 10 | MCP exposes read commands only (`MCP_ALLOWLIST`); mutating commands are source-gated out |
+| 11 | **Reusable-workflow permissions must match caller grants.** A callee cannot request a scope its caller does not grant; job-level `permissions:` *replaces* the workflow-level block, so callers must restate `contents: read` alongside added scopes — otherwise GitHub rejects the run at startup **with zero jobs created** |
+| 12 | Workflow-internal scripts stay outside the published surface (`reconcile-autoheal-reports.ts`, `prune-untagged-packages.ts` are repo-local only) |
+| 13 | **Autoheal reconciliation is identity-anchored and fail-closed** — exact title/date + numeric `fro-bot` actor + line-1 managed marker; excludes PR-shaped records; fully paginates; re-reads every target by numeric ID immediately before writing; aborts on any ambiguity, candidate-cap overflow, incomplete pagination, or failed readback; never creates or rewrites report prose |
+| 14 | **Never read a coarse exit code or HTTP status as proof of a specific remote state** — a probe that cannot confidently distinguish its target states must throw, not fall back to the branch that looks safe (six enumerated call sites across five apps) |
+| 15 | **Destructive registry automation is dry-run by default**, manually dispatched, gated per target, and never degrades an inconclusive probe into "safe to delete" |
 
 ## Conventions
 
@@ -613,6 +793,9 @@ This approach avoids relying solely on human review or agent-driven linting for 
 - **Multi-cloud:** Most apps run on DigitalOcean droplets, but the VPN egress box runs on **AWS Lightsail** (`eu-west-1`) — the first AWS-backed deployable, provisioned via the AWS SDK with credentials kept operator-local (deploy/status remain SSH-only).
 - **One workflow, two capability tiers (2026-09-06):** `fro-bot.yaml` splits into `fro-bot-content` and `fro-bot-storage` so that the agent's *privileged* run (OIDC → STS, S3 session persistence, egress-blocked runner) is reachable only from `schedule` or a main-branch dispatch, while every content-triggered path runs with read-only permissions and no environment. The privileged job is the mutating autoheal; the attacker-reachable job is the read-only reviewer. Fork-PR head resolution is server-verified in a dedicated step rather than trusted from the event payload, closing the `issue_comment`-on-fork-PR gap where the job-level fork guard does not apply.
 - **The publish contract asserted before the merge, and alerted after it (2026-09-06):** `ci.yaml`'s `Package smoke` job packs the CLI tarball and clean-room-installs it as a *required* check — catching a broken `files` field, a leaked `workspace:` specifier, or a missing runtime asset at PR time rather than at publish time — while `release-alert.yaml` covers the post-merge half that no merge gate can observe. Both halves are needed because a merge gate can only see jobs that run before the merge. The caveat is recorded in finding 5: the post-merge half currently only fires on `failure`.
+- **Build in CI, pull on the host (2026-09-22):** the gateway's droplet-side `git clone`+build was replaced by a `build-images` → `scan-images` → `deploy-gateway` pipeline pushing `ghcr.io/marcusrbrown/infra-{gateway,workspace}` and injecting the digests into the deploy. Reproducibility is engineered, not assumed — a *fixed* `SOURCE_DATE_EPOCH: '0'` (commit-derived values destroy cache hits) paired with `rewrite-timestamp=true` on the registry exporter, because the env var alone does not reach layer tar-entry timestamps — and the builder itself is pinned (`moby/buildkit:v0.33.0`) on the stated grounds that the runner's preinstalled buildx is otherwise an uncontrolled input. The scan half is report-only (`continue-on-error: true` **and** `--exit-code 0`), so the deploy's `needs: [build-images, scan-images]` edge reads as a gate and cannot act as one.
+- **Destructive automation defaults to observation (2026-09-22):** both new destructive paths — `prune-untagged-packages.ts` (GHCR version deletion) and `apps/umami/retention.sh` (row deletion) — default to counting and require an explicit `--apply`, with the non-destructive mode as the *default argument value*, not a documented convention. The pruner adds six named gates, coded body-free abort summaries, an origin check on every pagination link, and deletion in ascending-id order so the sequence is auditable against the run log.
+- **Evidence as a cross-repo artifact (2026-07-31, observed 2026-09-22):** `apps/umami/evidence/retention/` holds version-controlled attestations pinned to an infra commit, image digests, installed-unit SHA-256s, and the *consuming* repo's plan revision — built specifically to satisfy [[marcusrbrown--mrbro-dev]]'s Go/No-Go matrix. Its credibility comes from naming its own unverified edges (`GO (operator override)`, timer catch-up edge unobserved, no daily automated backup) rather than reporting uniform PASS.
 - **Two-layer MCP tool gating with vendored-source provenance:** Sensitive infra commands are gated twice — an `MCP_ALLOWLIST` that never registers them as tools (primary), and an `opencode.jsonc` `permission: deny` backstop (secondary). Both layers are asserted by `conventions.test.ts`. The design is grounded in a **vendored upstream clone** (`.slim/clonedeps.json` pinning `anomalyco/opencode@v1.15.13`) because empirically neither `tools:false` nor `permission:deny` alone fully suppressed the tools — reading the upstream registration/permission code was the way to get the gating right. Vendoring the exact upstream you must reason about, rather than trusting docs, is the pattern.
 
 ## Infrastructure Components
@@ -622,7 +805,7 @@ This approach avoids relying solely on human review or agent-driven linting for 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (`5f5c8640…`, shared across cliproxy/umami/dashboard/broker). **Renovate-ceilinged at `<2.12.0`** pending a manual `linux/amd64` manifest verification (last done 2026-07-13) |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.152` | Digest-pinned (2026-09-06; up from v7.2.133 → v7.2.77) |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v7.3.12` | Digest-pinned (`cba3af35…`, 2026-09-22; up from v7.2.152 → v7.2.133 → v7.2.77) |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
@@ -635,8 +818,8 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy) |
-| Umami analytics | `umamisoftware/umami:3.3.1` | Digest-pinned (2026-09-06; up from 3.3.0 → 3.2.0) |
-| Postgres | `postgres:15-alpine` | Digest-pinned. **Renovate-ceilinged at `<16`** with `dependencyDashboardApproval` — PG18 refuses to start against a PG15 data directory and the password is baked into the named volume; the cutover runbook is `docs/plans/2026-06-01-001-feat-umami-postgres-major-upgrade-plan.md` (unexecuted as of 2026-09-06) |
+| Umami analytics | `umamisoftware/umami:3.4.0` | Digest-pinned (`89b79efa…`, 2026-09-22; up from 3.3.1 → 3.3.0 → 3.2.0) |
+| Postgres | `postgres:15-alpine` | Digest-pinned (`fe0737ba…`, rotated by 2026-09-22). **Renovate-ceilinged at `<16`** with `dependencyDashboardApproval` — PG18 refuses to start against a PG15 data directory and the password is baked into the named volume; the cutover runbook is `docs/plans/2026-06-01-001-feat-umami-postgres-major-upgrade-plan.md` (unexecuted as of 2026-09-06) |
 
 Digest-pinned images managed by Renovate. Postgres port 5432 is never published to the host — DB is only accessible on the internal compose network.
 
@@ -645,7 +828,7 @@ Digest-pinned images managed by Renovate. Postgres port 5432 is never published 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy/umami/broker) |
-| Dashboard | `ghcr.io/fro-bot/dashboard:2026.09.5` | Tag + digest-pinned (2026-09-06; up from `2026.08.17` → `2026.07.21`). Renovate rule requires `dependencyDashboardApproval` before a bump PR is even created, matching the cliproxy/umami gating pattern |
+| Dashboard | `ghcr.io/fro-bot/dashboard:2026.09.19` | Tag + digest-pinned (`fe177d57…`, 2026-09-22; up from `2026.09.5` → `2026.08.17` → `2026.07.21`). Renovate rule requires `dependencyDashboardApproval` before a bump PR is even created, matching the cliproxy/umami gating pattern |
 
 The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed here by digest — no on-droplet build. Deploy verifies the running container's `RepoDigests` matches the compose-pinned digest before fronting it with Caddy.
 
@@ -653,11 +836,17 @@ The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed her
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| Gateway daemon | `fro-bot/agent@v0.93.1` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
-| Workspace executor | Same source | Runs inside the same Compose stack |
+| Gateway daemon | `ghcr.io/marcusrbrown/infra-gateway:<ref>-<sha>` built in CI from `fro-bot/agent@v0.113.2` (pinned in `apps/gateway/upstream.json`) | **Changed 2026-09-22:** built and pushed by the `build-images` job, pulled by digest on the droplet. The droplet no longer clones or builds |
+| Workspace executor | `ghcr.io/marcusrbrown/infra-workspace:<ref>-<sha>`, same source | Runs inside the same Compose stack; digest injected as `WORKSPACE_IMAGE_DIGEST` |
 | mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
 
-**Upstream pin note (corrected 2026-09-06).** The gateway `upstream.json` pin is **still v0.93.1**, unmoved since the 2026-08-16 survey, while the `fro-bot.yaml` action pin advanced to v0.109.3 — a gap of ~16 minor series. The 2026-08-16 page attributed this to the two being "versioned independently," which understated it. The real cause is an explicit Renovate policy in `.github/renovate.json5`:
+**Build-then-pull (2026-09-22).** `apps/gateway/README.md`: *"The deploy builds Docker images in CI and pushes them to GHCR; the droplet only pulls prebuilt artifacts — it never builds images."* `GATEWAY_IMAGE_DIGEST` / `WORKSPACE_IMAGE_DIGEST` are CI-injected from the `build-images` job outputs. Operational anti-pattern now stated in the README: *"Never run `docker compose up --build` on the droplet."* The old `git clone || git fetch && git reset --hard && git clean -xfd` materialization described below is **superseded** for image content; the `/opt/gateway/.secrets-checksum` isolation rationale no longer applies to a clean step that no longer exists.
+
+**Upstream pin note (2026-09-06, updated 2026-09-22).** The `upstream.json` pin moved **v0.93.1 → v0.113.2** and the Renovate ceiling moved **`<0.94.0` → `<0.114.0`** — the first ceiling in this repo observed to be lifted by an executed verification pass. The `fro-bot.yaml` action pin is v0.114.0, so the two-pin gap is now one minor series rather than ~16; the structure that produces the gap is unchanged (the action SHA is tracked by the `github-actions` manager, which carries no ceiling; the daemon ref is tracked by a `github-releases` custom manager, which does). The rule's comment now records the executed check: *"v0.113.2 verified the gateway startup config parser byte-identical to v0.93.1, so no new boot-required secrets; v0.114+ stays gated pending the next verification pass."*
+
+The 2026-09-06 text below describes the state at that survey, and is retained because it explains the mechanism:
+
+The 2026-08-16 page attributed this to the two being "versioned independently," which understated it. The real cause is an explicit Renovate policy in `.github/renovate.json5`:
 
 ```json5
 matchDatasources: ['github-releases'],
@@ -670,7 +859,9 @@ allowedVersions: '<0.94.0',
 
 with the comment: *"verify no new boot-required secrets before the ceiling moves; v0.93.1 verified deploy-consumed contract identical to v0.88.0, so patch releases in the v0.93.x line may surface but v0.94+ stays gated pending the next verification pass."* A `github-releases` custom manager tracks the `repo`/`ref` pair in any `apps/*/upstream.json`, so the pin *is* watched — the ceiling is what holds it. The verification pass that would lift it has no scheduled owner (see 2026-09-06 finding 4).
 
-Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
+Compose stack lives at `/opt/gateway/` on the droplet. Source materialization was `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so the checksum survived `git clean -xfd` — **superseded 2026-09-22** by the build-then-pull pipeline.
+
+**Operator surface (new 2026-09-22).** `deploy-gateway.yaml`'s secret contract grew a `GATEWAY_OPERATOR_*` family — `BIND_HOST`, `BIND_PORT`, `PUBLIC_ORIGIN`, `GITHUB_CLIENT_ID`/`CLIENT_SECRET`, `CSRF_SECRET`, `ALLOWLIST`, `OAUTH_ALLOWED_RETURN_PATHS`, `OAUTH_STATE_TTL_MS`, `OAUTH_MAX_OUTSTANDING_ATTEMPTS`, `PUSH_VAPID_PRIVATE_KEY` — all optional, indicating an upstream-side authenticated operator console with GitHub OAuth, CSRF protection, an allowlist, bounded outstanding-attempt state, and Web Push. Also new: optional `GATEWAY_VPC_IP` and `DASHBOARD_VPC_IP`, suggesting private-network addressing between the gateway and dashboard droplets rather than public hairpin. Both surfaces live in [[fro-bot--agent]]; only their secret contract is observable here. Open issue **#1386** (`marcusrbrown`, `technical-debt`) asks how dashboard public routes survive the Caddy catch-all, which is the consuming half of the same change.
 
 ### Credential Broker Stack
 
@@ -685,6 +876,7 @@ Compose stack lives at `/opt/broker/` on the droplet. No source bind-mount and n
 
 | Date | SHA | Key Changes |
 | --- | --- | --- |
+| 2026-09-22 | `3e4d76d` | **Every open 09-06 finding acted on; the gateway stopped building on the droplet.** 8 apps / 2 packages unchanged; workflows **19 → 20** (`prune-packages.yaml`). 109 commits, `mrbro-bot[bot]` 69 / **`marcusrbrown` 40**. Open issues **17 → 9**, still 0 open PRs. **(1) The single-report contract converged** — 14+ days at exactly one open `Daily Autohealing Report`, via a 957-line deterministic post-agent reconciler (`reconcile-autoheal-reports.ts`, invariant 13) that readback-proves every mutation, with the agent explicitly forbidden from touching issue identity — **but the `autoheal-report` label is applied at 03:51 and stripped at 06:47 by `mrbro-bot[bot]` running `Update Repo Settings`**, because the label is not in `common-settings.yaml`'s 48-label manifest; `adopted=2` on every single run is the tell, and `status: "succeeded"` sits next to it. Corrects the 09-06 inference (label was never "dropped at creation"; a second automation removes it). **(2) Gateway build-then-pull** — `deploy-gateway.yaml` gained `build-images` (GHCR `infra-gateway`/`infra-workspace`, fixed `SOURCE_DATE_EPOCH: '0'` + `rewrite-timestamp=true`, BuildKit pinned `moby/buildkit:v0.33.0` because "the preinstalled buildx on ubuntu-latest is an uncontrolled input") and `scan-images` (Trivy, **`continue-on-error` + `--exit-code 0`** — a `needs:` edge that cannot fail); issue #1383 already flags that the `${ref}-${sha}` tag rebuilds byte-identical images. **(3) `prune-packages.yaml`** — dispatch-only, `apply` defaults false, six named fail-closed gates (invariant 15). **(4) ARCHITECTURE.md grew 15 numbered invariants**, notably **11** (reusable-workflow permission parity; violation ⇒ *zero jobs created*), **14** (never read a coarse exit code or HTTP status as proof of remote state — six retrofitted call sites across five apps), and **2** (Bash allowlist widened to two scripts). **(5) The Umami 13-month retention control landed** (earliest evidence artifact 2026-07-31, infra `aa01b493`) with `retention.sh`/`.sql`, systemd timer, integration tests, and `evidence/retention/` attestations — **satisfying [[marcusrbrown--mrbro-dev]]'s blocking Go/No-Go dependency**, and missed by the prior survey because it landed as app-internal source. **(6) One version ceiling lifted** — `fro-bot/agent` `<0.94.0` → `<0.114.0` after an executed verification pass (pin v0.93.1 → v0.113.2); `caddy` still cites 2026-07-13, `postgres <16` runbook still unexecuted. README app-table drift closed (all 8 listed). Agent pin **v0.109.3 → v0.114.0**; CLI **v0.22.0 → v0.23.0**; CLIProxyAPI v7.2.152 → **v7.3.12**; Umami 3.3.1 → **3.4.0**; dashboard `2026.09.5` → **`2026.09.19`**. Still unfixed: `release-alert.yaml` `failure`-only gate with no self-test; `autoheal-upstream-watch` label still nonexistent with **two** open Watch issues; stranded deploys behind `required_reviewers` (#1412, #1365) |
 | 2026-04-18 | `20de047` | Initial survey — workspace structure, 9 workflows, CLI v0.4.3, Fro Bot v0.40.2 |
 | 2026-04-24 | `9306b9b` | Deploy pipeline split (#165), convention enforcement tests (#161, #167), Fro Bot v0.41.4, CLI v0.4.5, CLIProxy autohealing (#155), 11 workflows |
 | 2026-04-25 | `9306b9b` | No code changes; open issues 4→5 (new autohealing report #178) |

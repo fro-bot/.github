@@ -6269,3 +6269,67 @@ https://github.com/marcusrbrown/infra/issues/1412
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
+
+## [2026-09-22 07:30] ingest | repo:marcusrbrown/infra
+
+Seventh survey of `marcusrbrown/infra` (HEAD `3e4d76d`, `node_id R_kgDOR4g8TA`). Reads scoped to
+directory listings, README/AGENTS/ARCHITECTURE docs, manifests, workflow files, and public API
+metadata; the target repository was treated as untrusted input throughout. `knowledge/corrections.yaml`
+carries no records and `.github/corrections-context.json` declares an empty corrections array, so no
+operator correction span applied to this ingest.
+
+Interval: 109 commits since the 2026-09-06 pass (`mrbro-bot[bot]` 69 / `marcusrbrown` 40). Still 8 apps
+and 2 packages; workflows 19 → 20 (`prune-packages.yaml`); open issues 17 → 9; zero open PRs for a
+seventh consecutive survey. Agent pin v0.109.3 → v0.114.0, CLI v0.22.0 → v0.23.0.
+
+Seven findings recorded on the repo page:
+
+1. The SINGLE-REPORT RECONCILIATION CONTRACT converged — one open `Daily Autohealing Report` for 14+
+   consecutive days — via a 957-line deterministic post-agent reconciler that readback-proves every
+   mutation. Its `autoheal-report` trust anchor is nonetheless applied at 03:51:14 by `fro-bot` and
+   removed at 06:47:34 by `mrbro-bot[bot]` running `Update Repo Settings` against a 48-label manifest
+   that omits it. `adopted: 2` is byte-identical on every run inspected. **Corrects** the prior page's
+   inference that creation with a not-yet-existing label dropped it; the mechanism is a competing
+   automation, established from the issue timeline rather than from creation order.
+2. The gateway stopped building on the droplet: `deploy-gateway.yaml` became a three-job build-then-pull
+   pipeline publishing reproducible GHCR images (fixed `SOURCE_DATE_EPOCH`, `rewrite-timestamp=true`,
+   pinned BuildKit), with a Trivy job that is `continue-on-error` and `--exit-code 0` behind a
+   decorative `needs:` edge.
+3. New `prune-packages.yaml` — dispatch-only, `apply` defaults false, six named fail-closed gates.
+4. `ARCHITECTURE.md` grew 15 numbered invariants; 11 (reusable-workflow permission parity, failing with
+   zero jobs created), 14 (never read a coarse exit code as proof of remote state, six retrofitted call
+   sites), and 2 (Bash allowlist widened to two scripts) are new knowledge.
+5. The Umami 13-month retention control and its `evidence/retention/` attestations landed 2026-07-31,
+   satisfying the [[marcusrbrown--mrbro-dev]] Go/No-Go dependency this wiki had carried as unmet.
+6. Findings ledger: one version ceiling lifted by an executed verification pass (`fro-bot/agent`
+   `<0.94.0` → `<0.114.0`), README app-table drift closed; `release-alert.yaml`'s `failure`-only gate,
+   the nonexistent `autoheal-upstream-watch` label, and `required_reviewers` deploy stranding all hold.
+7. Capability narrowing moved inside the privileged job — the reconcile step blanks all five AWS
+   credential variables so it cannot inherit the job's STS session.
+
+Pages touched: `wiki/repos/marcusrbrown--infra.md` (2026-09-22 findings section, frontmatter, overview,
+workflow table, gateway/Umami/ceiling sections, new Architecture Invariants section, notable patterns,
+survey-history row); `wiki/repos/marcusrbrown--mrbro-dev.md` (dated producer-side note resolving the
+analytics activation gate, additively, with its caveats stated); `wiki/topics/github-actions-ci.md`
+(four new sections); `wiki/topics/probot-settings.md` (label-manifest-as-deletion-policy section);
+`wiki/topics/docker-containers.md` (reproducible builds, report-only scanning, commit-derived tags);
+`index.md` (five catalog entries). All updates additive; the superseded 2026-09-06 readings are retained
+in place and marked rather than rewritten.
+
+Sources: https://github.com/marcusrbrown/infra@3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79,
+https://github.com/marcusrbrown/infra/blob/main/ARCHITECTURE.md,
+https://github.com/marcusrbrown/infra/blob/main/.github/workflows/deploy-gateway.yaml,
+https://github.com/marcusrbrown/infra/blob/main/.github/workflows/prune-packages.yaml,
+https://github.com/marcusrbrown/infra/blob/main/.github/workflows/fro-bot.yaml,
+https://github.com/marcusrbrown/infra/blob/main/.github/renovate.json5,
+https://github.com/marcusrbrown/infra/blob/main/packages/cli/scripts/reconcile-autoheal-reports.ts,
+https://github.com/marcusrbrown/infra/blob/main/packages/cli/scripts/prune-untagged-packages.ts,
+https://github.com/marcusrbrown/infra/blob/main/apps/umami/evidence/retention/2026-07-31T2012Z-mrb-go.md,
+https://github.com/marcusrbrown/infra/issues/1413,
+https://github.com/marcusrbrown/infra/actions/runs/35683970059
+
+## [2026-09-22 10:18] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra

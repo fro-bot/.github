@@ -10,6 +10,7 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/infra
+    sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
     accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
@@ -198,7 +199,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — **8 committed workflows** (2026-09-21), all `state: active`: `main.yaml` (521 lines — Build with **seven** generated-artifact drift gates, Typecheck with three required tsconfig scopes, Lint, Test, **Host Contract**, Registry, Docs Build, Release, Publish Claude Code Plugin), `docs.yaml` (`release: [published]` → Astro/Starlight build → cross-repo force-push to `fro-bot/systematic:gh-pages` under a `fro-bot`-scoped App token), `fro-bot.yaml` (732 lines / 38 KB, **two-mode**, single `30 3` cron with a day-gated Sunday category, agent **v0.113.2**, conditional `output-mode: branch-pr`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ **v4.31.0**), `codeql-analysis.yaml`, `scorecard.yaml`, `copilot-setup-steps.yaml`. Required contexts on `main`: `[Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Registry, Release, Analyze (typescript), CodeQL, Renovate / Renovate]`, `enforce_admins: true`, `required_linear_history: true`, `required_pull_request_reviews: null` — note `Host Contract` is absent from the list and binds only through `Release`'s `needs:`. Source of the 2026-09-21 findings below on non-lying required jobs, advisory-first gate promotion, and cross-channel lag measurement
-- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
+- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **20 workflows** as of 2026-09-22 (added `prune-packages.yaml`, dispatch-only destructive GHCR pruning with `apply` defaulting false). 2026-09-22: `deploy-gateway.yaml` became a three-job build-then-pull pipeline (`build-images` → `scan-images` → `deploy-gateway`) publishing reproducible GHCR images with a pinned BuildKit, where the scan job is `continue-on-error` **and** `--exit-code 0`, making its `needs:` edge decorative; `fro-bot.yaml` (1076 lines, agent **v0.114.0**) gained a deterministic post-agent reconciler step with the job's AWS credentials blanked per-step; `ARCHITECTURE.md` grew 15 numbered invariants, several enforced by `conventions.test.ts`. Source of the 2026-09-22 findings below on label write-wars, reusable-workflow permission parity, coarse-exit-code probes, and dry-run-by-default destructive automation. Prior: **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
@@ -3001,3 +3002,139 @@ Verification, no operator credentials required: diff
 against the `owner`/`name` pairs in `metadata/repos.yaml` on `data`, ignoring entries marked
 `private: true`. Any repo on the left and not the right that also returns open `author:fro-bot` PRs is an
 instance of this class.
+
+### Two Automations, One Label: a Trust Anchor With a Daily Deletion Policy (2026-09-22)
+
+From the [[marcusrbrown--infra]] survey, and the sharpest instance of proof-versus-durability the fleet
+has produced.
+
+The setup is exemplary. Issue-identity reconciliation was moved out of the agent prompt into a 957-line
+deterministic post-agent step (`packages/cli/scripts/reconcile-autoheal-reports.ts`), codified as an
+architecture invariant: identity-anchored on exact title/date plus numeric actor plus a line-1 body
+marker, fully paginated, re-reading every mutation target by numeric ID immediately before writing,
+**readback-proving every write**, and aborting rather than mutating on any ambiguity. The agent is
+explicitly forbidden from creating labels, posting supersession comments, closing reports, or proving
+final state. It works: exactly one open daily report for fourteen consecutive days, each predecessor
+closed `not_planned` with a machine-readable supersession marker.
+
+And the `autoheal-report` label does not exist in the repository.
+
+The issue timeline names both actors on the same day:
+
+| Time (UTC) | Event | Actor |
+| --- | --- | --- |
+| 03:51:14 | `labeled` `autoheal-report` | `fro-bot` (the reconciler) |
+| 06:47:34 | `unlabeled` `autoheal-report` | `mrbro-bot[bot]` (`Update Repo Settings`) |
+
+`Update Repo Settings` fires on **every push to `main`** — eight runs before 07:00 that morning — and
+syncs a `settings.yml` that `_extends` an org-wide 48-label manifest which does not contain
+`autoheal-report`. The agent mints a trust anchor; the settings sync reconciles it away hours later;
+both report success.
+
+Three rules:
+
+1. **Proof at write time is not proof of durability.** The reconciler does the harder, rarer thing and
+   it still does not help, because the adversary is a *later* writer, not a failed one. Any readback
+   proof is valid only until the next actor with write access runs. Independently confirms
+   [[fro-bot--agent]]'s `cache-save-result` framing ("reports a result, not proof of durability") at a
+   different layer.
+2. **A converged outcome metric can mask a non-converging work metric.** The step's summary line is
+   byte-identical on every run: `{"eligible":2,"adopted":2,"commented":1,"closed":1,"final_open_managed":1,"status":"succeeded"}`.
+   `final_open_managed: 1` is the goal and it is met. `adopted: 2` never decays — if adoption persisted,
+   the previous day's issue would already be labelled and the count would fall. **A repeated mutation
+   count that never decreases is the signature of a write that does not stick**, and it sits directly
+   beside `"succeeded"`, which is why nobody reads it. Assert on the work counter, not just the outcome
+   counter.
+3. **Read the timeline before inferring the mechanism.** The wiki's prior pass inferred that issue
+   creation with a not-yet-existing label silently drops the label — plausible, consistent with every
+   observable, and wrong. `GET /issues/{n}/timeline` distinguishes *never applied* from *applied then
+   removed* and names the removing actor, in one call. Inference about creation order cannot.
+
+Detection for any repo: for a label your automation mints, fetch the issue timeline and look for an
+`unlabeled` event by a different actor; or compare the label against the settings manifest that governs
+the repo. Remediation is usually one line in the manifest — the harder question is whether an org-wide
+label manifest should be authoritative over repo-local automation labels at all. Cataloged from the
+settings-sync side in [[probot-settings]].
+
+### A Callee Cannot Out-Request Its Caller, and the Failure Is Zero Jobs (2026-09-22)
+
+[[marcusrbrown--infra]] codified this as an architecture invariant after being bitten, and
+`conventions.test.ts` now asserts permission parity between `deploy.yaml`'s router jobs and the
+`deploy-<app>.yaml` callees they `uses`.
+
+The rule, in the repo's own words: *"A callee job cannot request a `GITHUB_TOKEN` scope its caller job
+does not grant; job-level `permissions:` replaces the workflow-level block, so callers must restate
+`contents: read` alongside added scopes or GitHub rejects the run at startup with zero jobs created."*
+
+Two things make this worth a section rather than a footnote:
+
+- **`permissions:` at job level replaces, it does not merge.** Adding `packages: write` to a job that
+  needed `contents: read` silently removes `contents: read`. This is the same replace-not-merge trap as
+  a job-level `env:` block, but the consequence lands on a *different* workflow — the callee's.
+- **The failure mode has no artifact.** The run exists and creates **zero jobs**. There is no failed
+  job to open, no step to expand, no log to grep. In a required-check list the context simply never
+  reports, which reads as "still running" until it times out. This belongs with *Silence Is the Failure
+  Mode* (2026-09-16) and *An Event-Triggered Publisher Starved by a Blocked Gate* (2026-09-22): the
+  observable state space of a reusable-workflow call does not include "rejected before scheduling."
+
+Enforcement is cheap and static: a test that parses each router job's `permissions:` block and each
+`uses:`-target's job-level block and asserts the callee's set is a subset. Do that instead of waiting
+for a deploy to not happen.
+
+### Never Read a Coarse Exit Code as Proof of a Specific Remote State (2026-09-22)
+
+The fleet has been accumulating one half of this rule from the CI side since 2026-09-02 — *a run's
+conclusion measures the harness, not the deliverable* ([[marcusrbrown--cortexkit-anthropic-auth]],
+[[marcusrbrown--github]]). [[marcusrbrown--infra]] arrived at the same rule from the **remote-probe**
+side and wrote it down as an invariant: *"A probe that cannot confidently distinguish its target states
+must throw, not fall back to the branch that looks safe."*
+
+It is backed by six retrofitted call sites across five apps, each of which had collapsed an ambiguous
+signal onto a convenient branch:
+
+| Probe | Old reading | Fix |
+| --- | --- | --- |
+| `remoteGitExists`, `remoteFileExists` | any non-zero exit ⇒ "absent" | emit an explicit `EXISTS`/`MISSING` sentinel over SSH; require exit 0 **and** a recognized sentinel |
+| `readRemoteChecksum` | failed read ⇒ empty checksum | throw on non-zero |
+| `removeStaleGatewayNet` | error ⇒ network absent | require Docker's literal `No such network` stderr marker |
+| Umami admin-login probe | `curl --fail-with-body` exit code | parse the real status via `-w '%{http_code}'`; 401 = already rotated, anything else fails closed |
+| VPN wipe-guard | non-zero or empty `wg show wg0 dump` ⇒ zero live peers | throw on either |
+| Broker `reconcile` | swallowed `listApiKeys` exception ⇒ success | opt-in `throwOnListFailure` so the bounded startup retry actually retries |
+
+The sharper generalization, and the reason this is not just "handle errors": **a coarse signal does not
+fail randomly — it fails toward whichever branch the author found convenient, and the convenient branch
+is almost always the destructive one.** "Absent" means clone anyway. "Empty checksum" means
+force-recreate anyway. "No live peers" means the wipe-guard does not guard. When a probe has two
+outcomes and one bit of evidence, the ambiguity resolves in favor of *action*, not abstention — so the
+only safe default is to make the ambiguous case throw.
+
+Practical form: every remote probe should emit a positive token for each outcome it claims to
+distinguish (`EXISTS`/`MISSING`, an HTTP status, a documented stderr marker) and treat the absence of
+any recognized token as an error, not as the negative case.
+
+### Destructive Automation: Dry-Run as the Default Argument, Not a Documented Convention (2026-09-22)
+
+Both destructive paths added to [[marcusrbrown--infra]] in this window — GHCR untagged-version deletion
+and 13-month analytics row deletion — share a shape worth copying:
+
+- **The non-destructive mode is the default value**, not a flag you are told to remember. The workflow
+  input `apply` is `type: boolean, default: false`; the shell script's `mode` initializes to `check`.
+  Forgetting an argument produces a count, never a delete.
+- **Dispatch-only, never event-triggered.** No schedule, no push, no `workflow_run`.
+- **Named gates with coded aborts.** The pruner has six (`pagination_incomplete`, `manifest_is_index`,
+  `untagged_referenced_as_child`, `candidate_cap_exceeded`, `no_tagged_versions`, plus per-request
+  failure codes), each returning a **body-free** summary and a non-zero exit. Body-free matters: an
+  abort summary that echoes API content is a log-injection surface.
+- **A candidate cap.** Deleting 500 "orphans" is far more likely to mean the API shape changed than
+  that 500 orphans exist. Cap the blast radius on the count, not just on the predicate.
+- **Deterministic ordering for auditability** — deletes run in ascending ID order *"so the delete
+  sequence is auditable against the run log."*
+- **Pagination is a safety gate, not a convenience.** A partial version list makes every "untagged"
+  classification unsound, so incomplete pagination aborts rather than acting on what it has. This is
+  invariant 14 applied to list endpoints.
+
+One structural note for anyone copying it: the pruner's index-shape gate (`manifest_is_index`) aborts
+before its child-reference gate can run for any tagged manifest that declares a list media type, so in
+practice the abort *is* the protection and the child scan is the backstop. That ordering is correct for
+a delete path — refuse the case you do not model — but it means "provably orphaned" describes the
+rarer branch.
