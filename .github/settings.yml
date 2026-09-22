@@ -234,10 +234,10 @@ labels:
     color: '#8b3a62'
     description: Status-truth finding rejected as inaccurate
   - name: status-truth:false-positive
-    color: '#a85d2a'
+    color: '#702f1e'
     description: Status-truth finding confirmed as a false positive
   - name: status-truth:superseded
-    color: '#697386'
+    color: '#c5c9cf'
     description: Status-truth finding superseded by a newer proposal
   - name: status-truth:manually-fixed
     color: '#3f8f72'
