@@ -27,7 +27,152 @@ branches:
           - Test
           - Test Scripts Load
 
+# Base set inlined here because _extends replaces (not merges) arrays; see bfra-me/.github#2767
 labels:
+  - name: automerge
+    color: '#8f4fbc'
+    description: Automated merge approved
+  - name: bug
+    color: '#d73a4a'
+    description: Something isn't working
+  - name: dependencies
+    color: '#A0BB41'
+    description: Dependency updates or security alerts
+  - name: devDependencies
+    color: '#f9d0c4'
+    description: Development dependency updates
+  - name: documentation
+    color: '#0075ca'
+    description: Improvements or additions to documentation
+  - name: duplicate
+    color: '#cfd3d7'
+    description: This issue or pull request already exists
+  - name: enhancement
+    color: '#a2eeef'
+    description: New feature or request
+  - name: good first issue
+    color: '#7057ff'
+    description: Good for newcomers
+  - name: help wanted
+    color: '#008672'
+    description: Extra attention is needed
+  - name: invalid
+    color: '#e4e669'
+    description: This doesn't seem right
+  - name: major
+    color: '#b60205'
+    description: Major version changes
+  - name: minor
+    color: '#2729A8'
+    description: Minor version changes
+  - name: patch
+    color: '#27A89F'
+    description: Patch version changes
+  - name: question
+    color: '#d876e3'
+    description: Further information is requested
+  - name: renovate
+    color: '#1e90ff'
+    description: Renovate bot updates <https://mend.io/renovate>
+  - name: security
+    color: '#ff0000'
+    description: Security vulnerability
+  - name: wontfix
+    color: '#ffffff'
+    description: This will not be worked on
+  - name: implementation-plan
+    color: '#1d76db'
+    description: Planning and design phase for implementation
+  - name: feature
+    color: '#0e8a16'
+    description: New feature implementation
+  - name: automation
+    color: '#5319e7'
+    description: Automation scripts and workflows
+  - name: refactor
+    color: '#fbca04'
+    description: Code refactoring and improvements
+  - name: deployment
+    color: '#d93f0b'
+    description: Deployment related changes
+  - name: ci-cd
+    color: '#0052cc'
+    description: Continuous Integration and Deployment
+  - name: testing
+    color: '#c5def5'
+    description: Testing related changes
+  - name: integration
+    color: '#1d76db'
+    description: Integration with external services
+  - name: validation
+    color: '#bfdadc'
+    description: Data and input validation
+  - name: sponsors
+    color: '#ea4aaa'
+    description: GitHub Sponsors related
+  - name: cta
+    color: '#f9d0c4'
+    description: Call-to-action elements
+  - name: engagement
+    color: '#d4c5f9'
+    description: User engagement features
+  - name: github-actions
+    color: '#2088ff'
+    description: GitHub Actions
+  - name: workflow
+    color: '#2088ff'
+    description: Workflow related changes
+  - name: content-transformation
+    color: '#bfd4f2'
+    description: Content transformation and processing
+  - name: data-generation
+    color: '#c2e0c6'
+    description: Data generation utilities
+  - name: infrastructure
+    color: '#006b75'
+    description: Infrastructure and configuration
+  - name: production
+    color: '#b60205'
+    description: Production environment changes
+  - name: metadata
+    color: '#ededed'
+    description: Metadata and configuration changes
+  - name: technical-debt
+    color: '#cc317c'
+    description: Technical debt that needs to be addressed
+  - name: code-quality
+    color: '#e99695'
+    description: Code quality improvements
+  - name: cli-tools
+    color: '#0e8a16'
+    description: Command line tools and utilities
+  - name: cleanup
+    color: '#fef2c0'
+    description: Code cleanup and organization
+  - name: architecture
+    color: '#1d76db'
+    description: Architecture and design changes
+  - name: e2e
+    color: '#c5def5'
+    description: End-to-end testing
+  - name: action
+    color: '#2088ff'
+    description: GitHub Action related
+  - name: accessibility
+    color: '#da57ff'
+    description: Accessibility improvements
+  - name: maintainability
+    color: '#bfdadc'
+    description: Code maintainability improvements
+  - name: lighthouse
+    color: '#f44b21'
+    description: Lighthouse performance and quality
+  - name: packageManager
+    color: '#84b6eb'
+    description: Package manager changes
+  - name: performance
+    color: '#ff6f00'
+    description: Performance improvements
   - name: wiki-lint
     color: '#5319e7'
     description: Applied to every wiki-lint issue
