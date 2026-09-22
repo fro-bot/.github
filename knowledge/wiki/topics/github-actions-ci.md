@@ -2,8 +2,15 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-21
+updated: 2026-09-22
 sources:
+  - url: https://github.com/fro-bot/.github
+    sha: 9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
+    accessed: 2026-09-22
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    accessed: 2026-09-22
+  - url: https://github.com/marcusrbrown/infra
+    accessed: 2026-09-22
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
@@ -2906,3 +2913,91 @@ commit && push --force; fi`. **A release whose rendered output is byte-identical
 commit at all**, so "deploy count equals release count" is a contingent observation, not a structural
 guarantee — and an index-paired timing series shifts permanently on the first skip. It held 18/18 here;
 it is the first thing to check whenever such a pairing looks off by one.
+
+### An Event-Triggered Publisher Starved by a Blocked Gate Reports Perfect Health (2026-09-22)
+
+Source: `fro-bot/.github` oversight pass at `main` `9b9635b`. This is the **downstream half** of
+[Revoked Access Leaves an Unclassifiable Page Behind, and the Gate Blocks Forever](#revoked-access-leaves-an-unclassifiable-page-behind-and-the-gate-blocks-forever-2026-09-21),
+and it is the part no signal in the repository reports.
+
+`Publish Wiki` (`publish-wiki.yaml`) builds the Quartz site and deploys it to Pages. Its trigger is
+`push` to `main` filtered on `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, and
+`quartz-site/**`. Wiki content only reaches `main` through the weekly `data → main` promotion. That
+promotion has failed at the privacy gate on 2026-09-13 and 2026-09-20, so:
+
+- `Merge Data Branch` last succeeded **2026-09-06**.
+- `origin/main..origin/data` is **72 commits**, oldest 2026-09-06, newest 2026-09-21 (against 67 at the
+  09-21 reading and 47 at 09-17 — the stranded set grows ~5 commits/day).
+- `Publish Wiki`'s last run is **2026-09-06, `push`, `success`**. Its five most recent runs are all
+  `success`.
+- The published site at `fro-bot.github.io/.github` has therefore served **16-day-old content**, and
+  every health signal attached to the publisher is green.
+
+The generalization: **an event-triggered deploy cannot distinguish "nothing to publish" from "the thing
+that would have triggered me is blocked upstream."** Its observable state space is `{last run
+succeeded, last run failed, no runs}` — freshness of the *deployed artifact* is not in that set. A
+schedule-triggered job at least produces a dated run you can age; a path-filtered `push` job produces
+nothing at all, which is indistinguishable from a quiet week.
+
+This is a distinct failure shape from
+[Silence Is the Failure Mode: Presence-Based Monitoring Cannot Detect Its Own Absence](#silence-is-the-failure-mode-presence-based-monitoring-cannot-detect-its-own-absence-2026-09-16).
+There, the monitor could not see its own non-execution. Here the publisher *correctly* did not execute —
+the starvation is entirely legitimate, which is why no fail-closed gate anywhere in the chain fires. The
+gate that blocked promotion is doing its job; the publisher that never ran is doing its job; and the
+public artifact is stale. Correctness at every step composes into a wrong outcome.
+
+Two rules:
+
+1. **A fail-closed gate needs its downstream consumers enumerated, because blast radius travels through
+   the shared gate and lands on surfaces the gate has never heard of.** The 09-21 entry priced this
+   blockage in stranded commits. The real price also includes a public, search-indexed site frozen at a
+   known-old snapshot, and nothing in either the gate's report or the publisher's history connects those
+   two facts.
+2. **Measure artifact freshness at the artifact, not at the pipeline that produces it.** The honest probe
+   is a content-age comparison — deployed commit SHA versus `origin/data` wiki tip — not a run
+   conclusion. A publisher's run history answers "did my last attempt work," never "is what I published
+   current."
+
+The cheap instrumentation, stated so it is actionable without operator credentials: the same
+`workflow_run`-on-non-success alarm the fleet already runs in
+[The Fleet Already Built the Liveness Alarm and Installed It Once](#the-fleet-already-built-the-liveness-alarm-and-installed-it-once-2026-09-14)
+covers the *gate* failing, but not the *publisher* starving. Those need different instruments: a run
+alarm for the first, a staleness assertion for the second.
+
+### Write Reach Exceeds Tracked Scope (2026-09-22)
+
+Source: `fro-bot/.github` oversight pass, cross-referencing the `fro-bot` token's repository enumeration
+against `metadata/repos.yaml` on `data`.
+
+The token enumerates **34 non-archived repositories with write access**. `metadata/repos.yaml` carries
+**34 entries** — a coincidence, not a correspondence. The set difference is the finding:
+
+- **Accessible with write, absent from `repos.yaml`:** `bfra-me/github-action`, `bfra-me/github-app`,
+  `bfra-me/renovate-config` (plus `fro-bot/.github` itself, which is expected — the control plane does
+  not survey itself).
+- **In `repos.yaml`, absent from enumeration:** `marcusrbrown/copiloting` (archived, `lost-access`,
+  expected).
+
+The three `bfra-me/*` repos are not idle bystanders. Fro Bot has **nine open PRs** across them, six of
+them `fix(security)` override PRs aged 98–99 days (`github-action#1463`/`#1466`/`#1467`,
+`github-app#840`/`#842`/`#843`/`#950`). So the account **writes into repositories it does not track**,
+which means:
+
+- They receive no survey, so no wiki page exists and no cross-project intelligence is ever extracted
+  from them. Category-6 coverage silently excludes exactly the repos where Fro Bot's unmerged output has
+  accumulated longest.
+- They are invisible to every metadata-driven loop — cadence, reconcile, `cross_repo_receipts`
+  capability declaration — while remaining fully visible to the write-tier PAT.
+
+The rule: **a bot's tracked scope and its write scope are separate sets, and the dangerous asymmetry is
+write-without-tracking, not tracking-without-write.** Tracking a repo you cannot write is a harmless
+no-op. Writing into a repo you do not track means the oversight loops that would notice your output
+rotting have no entry for it. Reconcile derives `repos.yaml` from collaborator *invitations*; write
+access acquired by other means (org membership, pre-existing collaborator grants) never enters the
+ledger.
+
+Verification, no operator credentials required: diff
+`gh api --paginate "user/repos?affiliation=owner,collaborator,organization_member" --jq '.[]|select(.archived==false)|.full_name'`
+against the `owner`/`name` pairs in `metadata/repos.yaml` on `data`, ignoring entries marked
+`private: true`. Any repo on the left and not the right that also returns open `author:fro-bot` PRs is an
+instance of this class.

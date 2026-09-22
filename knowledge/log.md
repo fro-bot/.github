@@ -6233,3 +6233,39 @@ https://github.com/fro-bot/systematic/commits/gh-pages
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-09-22 04:30] manual-edit | topic:github-actions-ci
+
+Control-plane oversight pass (categories 5–8) at `fro-bot/.github` `main` `9b9635b`. Appended two
+sections to [[github-actions-ci]] and refreshed its `updated` date and `sources`.
+
+- **An Event-Triggered Publisher Starved by a Blocked Gate Reports Perfect Health** — the downstream
+  half of the 2026-09-21 revoked-access gate block. `Merge Data Branch` last succeeded 2026-09-06;
+  `origin/main..origin/data` is 72 commits (67 at the 09-21 reading, 47 at 09-17). `Publish Wiki` is
+  `push`-on-`main` path-filtered to `knowledge/wiki/**`, so it has not run since 2026-09-06 and its five
+  most recent runs are all `success` — the public site has served 16-day-old content behind green
+  signals. Distinct from presence-based monitoring blindness: the publisher *correctly* did not execute,
+  so nothing fails closed. Rules: enumerate a fail-closed gate's downstream consumers; measure artifact
+  freshness at the artifact, not at the producing pipeline.
+- **Write Reach Exceeds Tracked Scope** — the `fro-bot` token enumerates 34 non-archived write-access
+  repos and `metadata/repos.yaml` carries 34 entries, which is a coincidence rather than a
+  correspondence. `bfra-me/github-action`, `bfra-me/github-app`, and `bfra-me/renovate-config` are
+  writable and absent from the ledger while holding nine open `fro-bot` PRs (six `fix(security)`, aged
+  98–99 days). Reconcile derives the ledger from collaborator invitations, so write access acquired by
+  other means never enters it. Rule: tracked scope and write scope are separate sets; write-without-
+  tracking is the dangerous asymmetry.
+
+No repo page was surveyed in this pass and no `metadata/**` file was written. Private tracked entries
+were counted only; no private identifier appears in this entry or in the appended sections.
+
+Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23,
+https://github.com/fro-bot/.github/blob/main/.github/workflows/publish-wiki.yaml,
+https://github.com/fro-bot/.github/actions/runs/35545734311,
+https://github.com/marcusrbrown/marcusrbrown.github.io/issues/431,
+https://github.com/marcusrbrown/infra/issues/1412
+
+## [2026-09-22 04:33] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9b9635bab28216733b4d98f3bfdd06c3c6e8ea23
