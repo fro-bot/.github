@@ -124,11 +124,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Sync wiki from data branch
-        run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data
-            git restore --source FETCH_HEAD --worktree -- knowledge
-          fi
+        uses: ./.github/actions/sync-wiki
 
       # Gate: only repos already tracked in metadata/repos.yaml may have a wiki page
       # written to the data branch. A page for an un-onboarded repo would be

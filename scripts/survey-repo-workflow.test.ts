@@ -67,4 +67,9 @@ describe('survey-repo correction injection contract', () => {
     expect(run).toContain("grep '^wiki-ingest:finding:'")
     expect(run).toContain("echo '### Wiki ingest findings'")
   })
+
+  it('delegates wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
+    const syncStep = steps.find(step => step.name === 'Sync wiki from data branch')
+    expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+  })
 })
