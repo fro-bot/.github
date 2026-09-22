@@ -14,7 +14,7 @@ const REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS = 1000
 const CONFLICT_ALERT_TITLE_PREFIX = 'Conflicted data promotion PR:'
 
 type OctokitConstructor = new (params: {auth: string}) => OctokitClient
-type MergeLabel = 'auto-merge' | 'needs-review'
+type MergeLabel = 'automerge' | 'needs-review'
 
 export interface MergeDataPrParams {
   owner?: string
@@ -622,7 +622,7 @@ async function addLabel(params: {
 
 function selectLabel(files: {filename: string}[]): MergeLabel {
   return files.every(file => AUTO_MERGE_PATH_PREFIXES.some(prefix => file.filename.startsWith(prefix)))
-    ? 'auto-merge'
+    ? 'automerge'
     : 'needs-review'
 }
 
