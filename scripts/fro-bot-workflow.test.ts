@@ -427,6 +427,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
   const fakeGit = [
     '#!/bin/sh',
     'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
+    'if [ -n "$FAKE_GIT_ECHO" ]; then echo "fake-git-output:$1" >&2; fi',
     'next_from_sequence() {',
     '  seq_var="$1"; counter_file="$2"; fallback_var="$3"',
     String.raw`  eval "sequence=\$$seq_var"`,
@@ -447,7 +448,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     'esac',
   ].join('\n')
 
-  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; trace: string[]} {
+  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; stderr: string; trace: string[]} {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
       const gitPath = join(dir, 'git')
@@ -463,16 +464,22 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
         PATH: `${dir}:${process.env.PATH ?? ''}`,
         FAKE_GIT_TRACE_FILE: traceFile,
       }
+      const stderrFile = join(dir, 'stderr')
       let result: {status: number; stdout: string}
       try {
-        const stdout = execFileSync('bash', [scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+        const stdout = execFileSync('bash', ['-c', 'bash "$0" 2>"$1"', scriptPath, stderrFile], {
+          cwd: dir,
+          env: runEnv,
+          encoding: 'utf8',
+        })
         result = {status: 0, stdout}
       } catch (error) {
         const failure = error as {status?: number; stdout?: string}
         result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
       }
+      const stderr = readFileSync(stderrFile, 'utf8')
       const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
-      return {...result, trace}
+      return {...result, stderr, trace}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -546,6 +553,18 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.status).toBe(0)
     expect(result.stdout).not.toContain('::warning::')
     expect(result.trace).toEqual(['ls-remote'])
+  })
+
+  it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
+    const result = runSyncStep({
+      FAKE_GIT_ECHO: '1',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stderr.match(/fake-git-output:fetch/g)).toHaveLength(2)
+    expect(result.stderr).not.toContain('fake-git-output:ls-remote')
   })
 })
 

@@ -10,13 +10,17 @@ runs:
         retry_delay="${SYNC_WIKI_RETRY_DELAY_SECONDS:-5}"
         max_attempts=3
 
-        # Runs a network git operation with bounded retry; skip_exit (if non-empty) returns immediately on that exit code without retrying.
+        # Runs a network git operation with bounded retry; skip_exit (if non-empty) returns immediately on that exit code; quiet=1 discards output.
         run_with_retry() {
-          local op_name="$1" skip_exit="$2" attempt=1 status delay
-          shift 2
+          local op_name="$1" skip_exit="$2" quiet="$3" attempt=1 status delay
+          shift 3
           while true; do
             status=0
-            "$@" >/dev/null 2>&1 || status=$?
+            if [ "$quiet" = 1 ]; then
+              "$@" >/dev/null 2>&1 || status=$?
+            else
+              "$@" || status=$?
+            fi
             if [ "$status" -eq 0 ]; then
               return 0
             fi
@@ -34,9 +38,9 @@ runs:
         }
 
         ls_remote_status=0
-        run_with_retry "data branch probe" 2 git ls-remote --exit-code origin data || ls_remote_status=$?
+        run_with_retry "data branch probe" 2 1 git ls-remote --exit-code origin data || ls_remote_status=$?
         if [ "$ls_remote_status" -eq 0 ]; then
-          if run_with_retry "data branch fetch" "" git fetch origin data; then
+          if run_with_retry "data branch fetch" "" 0 git fetch origin data; then
             git restore --source FETCH_HEAD --worktree -- knowledge
           else
             echo "::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot."
