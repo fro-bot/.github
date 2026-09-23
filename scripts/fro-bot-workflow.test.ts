@@ -599,6 +599,17 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     },
   )
 
+  it('backs off linearly at the production default: 5s, then 10s (15s worst case)', () => {
+    const result = runSyncStep({
+      SYNC_WIKI_RETRY_DELAY_SECONDS: '',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 1 1',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(1)
+    expect(result.sleeps).toEqual(['5', '10'])
+  })
+
   it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
     const result = runSyncStep({
       FAKE_GIT_ECHO: '1',
