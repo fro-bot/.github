@@ -9,7 +9,7 @@
  */
 
 import {execFileSync} from 'node:child_process'
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -448,12 +448,25 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     'esac',
   ].join('\n')
 
-  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; stderr: string; trace: string[]} {
+  function runSyncStep(env: Record<string, string>): {
+    status: number
+    stdout: string
+    stderr: string
+    trace: string[]
+    sleeps: string[]
+    pwned: boolean
+  } {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
       const gitPath = join(dir, 'git')
       writeFileSync(gitPath, fakeGit)
       chmodSync(gitPath, 0o755)
+      // Fake `sleep` records the requested delay instead of waiting, so backoff assertions cost no wall time.
+      const sleepLog = join(dir, 'sleeps')
+      writeFileSync(sleepLog, '')
+      const sleepPath = join(dir, 'sleep')
+      writeFileSync(sleepPath, `#!/bin/sh\necho "$1" >> "${sleepLog}"\n`)
+      chmodSync(sleepPath, 0o755)
       const scriptPath = join(dir, 'step.sh')
       writeFileSync(scriptPath, runScript)
       const traceFile = join(dir, 'trace')
@@ -479,7 +492,8 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
       }
       const stderr = readFileSync(stderrFile, 'utf8')
       const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
-      return {...result, stderr, trace}
+      const sleeps = readFileSync(sleepLog, 'utf8').split('\n').filter(Boolean)
+      return {...result, stderr, trace, sleeps, pwned: existsSync(join(dir, 'pwned'))}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -580,8 +594,9 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
       })
       expect(result.status).toBe(0)
       expect(result.stdout).toContain('retrying in 5s')
+      expect(result.sleeps).toEqual(['5'])
+      expect(result.pwned).toBe(false)
     },
-    15_000,
   )
 
   it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
