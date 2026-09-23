@@ -104,7 +104,7 @@ describe('.github/settings.yml labels: union with common-settings.yaml (interim 
     }
 
     const total = codeLabelSources.reduce((sum, {descriptors}) => sum + descriptors.length, 0)
-    expect(total).toBe(16)
+    expect(total, 'update this count when adding or removing a code-declared label').toBe(16)
   })
 
   it('keeps every code-declared label descriptor set in sync with .github/settings.yml', () => {
