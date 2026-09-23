@@ -7,10 +7,44 @@ runs:
     - name: Sync wiki from data branch
       run: |
         set -euo pipefail
+        retry_delay="${SYNC_WIKI_RETRY_DELAY_SECONDS:-5}"
+        case "$retry_delay" in ''|*[!0-9]*) retry_delay=5 ;; esac
+        max_attempts=3
+
+        # Runs a network git operation with bounded retry; skip_exit (if non-empty) returns immediately on that exit code; quiet=1 discards output.
+        run_with_retry() {
+          local op_name="$1" skip_exit="$2" quiet="$3" attempt=1 status delay
+          shift 3
+          while true; do
+            status=0
+            if [ "$quiet" = 1 ]; then
+              "$@" >/dev/null 2>&1 || status=$?
+            else
+              "$@" || status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+            if [ -n "$skip_exit" ] && [ "$status" -eq "$skip_exit" ]; then
+              if [ "$attempt" -gt 1 ]; then
+                echo "::warning::${op_name} returned exit ${status} on attempt ${attempt}/${max_attempts} after earlier failures"
+              fi
+              return "$status"
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              return "$status"
+            fi
+            delay=$((retry_delay * attempt))
+            echo "::warning::${op_name} failed (attempt ${attempt}/${max_attempts}); retrying in ${delay}s"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
+        }
+
         ls_remote_status=0
-        git ls-remote --exit-code origin data >/dev/null 2>&1 || ls_remote_status=$?
+        run_with_retry "data branch probe" 2 1 git ls-remote --exit-code origin data || ls_remote_status=$?
         if [ "$ls_remote_status" -eq 0 ]; then
-          if git fetch origin data; then
+          if run_with_retry "data branch fetch" "" 0 git fetch origin data; then
             git restore --source FETCH_HEAD --worktree -- knowledge
           else
             echo "::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot."

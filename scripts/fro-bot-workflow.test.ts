@@ -9,7 +9,7 @@
  */
 
 import {execFileSync} from 'node:child_process'
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -421,39 +421,79 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
   // Bounded, single-purpose fake `git`: only the three subcommands this step calls
   // are recognized, each exits per an env var the test controls, and each appends its
   // own name to a trace file so tests can assert which subcommands actually ran.
+  // ls-remote/fetch also accept a space-separated exit sequence (e.g. FAKE_GIT_FETCH_EXITS="128 128 0")
+  // consumed one value per call via a counter file, falling back to the fixed single-value var.
   // Not a git reimplementation.
   const fakeGit = [
     '#!/bin/sh',
     'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
+    'if [ -n "$FAKE_GIT_ECHO" ]; then echo "fake-git-output:$1" >&2; fi',
+    'next_from_sequence() {',
+    '  seq_var="$1"; counter_file="$2"; fallback_var="$3"',
+    String.raw`  eval "sequence=\$$seq_var"`,
+    '  if [ -z "$sequence" ]; then',
+    String.raw`    eval "exit \$$fallback_var"`,
+    '  fi',
+    '  count=$(cat "$counter_file" 2>/dev/null || echo 0)',
+    '  # shellcheck disable=SC2086',
+    '  value=$(echo $sequence | cut -d" " -f$((count + 1)))',
+    '  echo $((count + 1)) > "$counter_file"',
+    '  exit "$value"',
+    '}',
     'case "$1" in',
-    '  ls-remote) exit "$FAKE_GIT_LS_REMOTE_EXIT" ;;',
-    '  fetch) exit "$FAKE_GIT_FETCH_EXIT" ;;',
+    '  ls-remote) next_from_sequence FAKE_GIT_LS_REMOTE_EXITS "$FAKE_GIT_TRACE_FILE.ls-remote-count" FAKE_GIT_LS_REMOTE_EXIT ;;',
+    '  fetch) next_from_sequence FAKE_GIT_FETCH_EXITS "$FAKE_GIT_TRACE_FILE.fetch-count" FAKE_GIT_FETCH_EXIT ;;',
     '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
     '  *) exit 0 ;;',
     'esac',
   ].join('\n')
 
-  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; trace: string[]} {
+  function runSyncStep(env: Record<string, string>): {
+    status: number
+    stdout: string
+    stderr: string
+    trace: string[]
+    sleeps: string[]
+    pwned: boolean
+  } {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
       const gitPath = join(dir, 'git')
       writeFileSync(gitPath, fakeGit)
       chmodSync(gitPath, 0o755)
+      // Fake `sleep` records the requested delay instead of waiting, so backoff assertions cost no wall time.
+      const sleepLog = join(dir, 'sleeps')
+      writeFileSync(sleepLog, '')
+      const sleepPath = join(dir, 'sleep')
+      writeFileSync(sleepPath, `#!/bin/sh\necho "$1" >> "${sleepLog}"\n`)
+      chmodSync(sleepPath, 0o755)
       const scriptPath = join(dir, 'step.sh')
       writeFileSync(scriptPath, runScript)
       const traceFile = join(dir, 'trace')
       writeFileSync(traceFile, '')
-      const runEnv = {...env, PATH: `${dir}:${process.env.PATH ?? ''}`, FAKE_GIT_TRACE_FILE: traceFile}
+      const runEnv = {
+        SYNC_WIKI_RETRY_DELAY_SECONDS: '0',
+        ...env,
+        PATH: `${dir}:${process.env.PATH ?? ''}`,
+        FAKE_GIT_TRACE_FILE: traceFile,
+      }
+      const stderrFile = join(dir, 'stderr')
       let result: {status: number; stdout: string}
       try {
-        const stdout = execFileSync('bash', [scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+        const stdout = execFileSync('bash', ['-c', 'bash "$0" 2>"$1"', scriptPath, stderrFile], {
+          cwd: dir,
+          env: runEnv,
+          encoding: 'utf8',
+        })
         result = {status: 0, stdout}
       } catch (error) {
         const failure = error as {status?: number; stdout?: string}
         result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
       }
+      const stderr = readFileSync(stderrFile, 'utf8')
       const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
-      return {...result, trace}
+      const sleeps = readFileSync(sleepLog, 'utf8').split('\n').filter(Boolean)
+      return {...result, stderr, trace, sleeps, pwned: existsSync(join(dir, 'pwned'))}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -473,25 +513,113 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.stdout.toLowerCase()).toContain('not yet established')
   })
 
-  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed with ::error::, no fetch/restore attempted', () => {
+  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed after 3 attempts with a byte-identical ::error::, no fetch/restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
     expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain('::error::')
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.trace).toEqual(['ls-remote'])
+    expect(result.stdout).toContain(
+      '::error::data branch probe failed (exit 128); refusing to run on a possibly stale knowledge/ snapshot.',
+    )
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'ls-remote'])
   })
 
-  it('fetch fails after a successful probe: fails closed with ::error::, no restore attempted', () => {
+  it('fetch fails after a successful probe: fails closed after 3 attempts with a byte-identical ::error::, no restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
     expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain('::error::')
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.trace).toEqual(['ls-remote', 'fetch'])
+    expect(result.stdout).toContain(
+      '::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot.',
+    )
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch'])
   })
 
   it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
     expect(result.status).not.toBe(0)
+  })
+
+  it('probe fails once, then succeeds: fetch and restore run, exits clean, exactly one ::warning::, no ::error::', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXITS: '128 0',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::error::')
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(1)
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'fetch', 'restore'])
+  })
+
+  it('fetch fails twice, then succeeds: restore runs, exits clean, exactly two ::warning:: lines', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 1 0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::error::')
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch', 'restore'])
+  })
+
+  it('probe exit 2 (branch absent) is never retried: exactly one ls-remote call, no ::warning::', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote'])
+  })
+
+  it('probe fails transiently, then reports branch absent: skips the sync but warns that absence followed a failure', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXITS: '128 2',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(
+      '::warning::data branch probe returned exit 2 on attempt 2/3 after earlier failures',
+    )
+    expect(result.stdout.toLowerCase()).toContain('not yet established')
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote'])
+  })
+
+  it.each(['', '5s', 'a[$(touch pwned)]'])(
+    'falls back to the default delay when SYNC_WIKI_RETRY_DELAY_SECONDS is %j',
+    delay => {
+      const result = runSyncStep({
+        SYNC_WIKI_RETRY_DELAY_SECONDS: delay,
+        FAKE_GIT_LS_REMOTE_EXIT: '0',
+        FAKE_GIT_FETCH_EXITS: '1 0',
+        FAKE_GIT_RESTORE_EXIT: '0',
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('retrying in 5s')
+      expect(result.sleeps).toEqual(['5'])
+      expect(result.pwned).toBe(false)
+    },
+  )
+
+  it('backs off linearly at the production default: 5s, then 10s (15s worst case)', () => {
+    const result = runSyncStep({
+      SYNC_WIKI_RETRY_DELAY_SECONDS: '',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 1 1',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(1)
+    expect(result.sleeps).toEqual(['5', '10'])
+  })
+
+  it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
+    const result = runSyncStep({
+      FAKE_GIT_ECHO: '1',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stderr.match(/fake-git-output:fetch/g)).toHaveLength(2)
+    expect(result.stderr).not.toContain('fake-git-output:ls-remote')
   })
 })
 
