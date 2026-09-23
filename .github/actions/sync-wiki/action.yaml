@@ -8,6 +8,7 @@ runs:
       run: |
         set -euo pipefail
         retry_delay="${SYNC_WIKI_RETRY_DELAY_SECONDS:-5}"
+        case "$retry_delay" in ''|*[!0-9]*) retry_delay=5 ;; esac
         max_attempts=3
 
         # Runs a network git operation with bounded retry; skip_exit (if non-empty) returns immediately on that exit code; quiet=1 discards output.
@@ -25,6 +26,9 @@ runs:
               return 0
             fi
             if [ -n "$skip_exit" ] && [ "$status" -eq "$skip_exit" ]; then
+              if [ "$attempt" -gt 1 ]; then
+                echo "::warning::${op_name} returned exit ${status} on attempt ${attempt}/${max_attempts} after earlier failures"
+              fi
               return "$status"
             fi
             if [ "$attempt" -ge "$max_attempts" ]; then

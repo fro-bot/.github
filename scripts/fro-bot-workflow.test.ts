@@ -555,6 +555,35 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.trace).toEqual(['ls-remote'])
   })
 
+  it('probe fails transiently, then reports branch absent: skips the sync but warns that absence followed a failure', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXITS: '128 2',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(
+      '::warning::data branch probe returned exit 2 on attempt 2/3 after earlier failures',
+    )
+    expect(result.stdout.toLowerCase()).toContain('not yet established')
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote'])
+  })
+
+  it.each(['', '5s', 'a[$(touch pwned)]'])(
+    'falls back to the default delay when SYNC_WIKI_RETRY_DELAY_SECONDS is %j',
+    delay => {
+      const result = runSyncStep({
+        SYNC_WIKI_RETRY_DELAY_SECONDS: delay,
+        FAKE_GIT_LS_REMOTE_EXIT: '0',
+        FAKE_GIT_FETCH_EXITS: '1 0',
+        FAKE_GIT_RESTORE_EXIT: '0',
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('retrying in 5s')
+    },
+    15_000,
+  )
+
   it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
     const result = runSyncStep({
       FAKE_GIT_ECHO: '1',
