@@ -1561,45 +1561,46 @@ export interface StatusTruthLabelDescriptor {
  * Must be confirmed before any proposal issue is opened.
  * Fail-closed: if any required label cannot be confirmed, no proposals open.
  */
+// Colors match .github/settings.yml (hex without '#', as GitHub createLabel requires)
 export const REQUIRED_LABELS: readonly StatusTruthLabelDescriptor[] = [
   {
     name: PROPOSAL_LABEL,
-    color: '0075ca',
+    color: '5146a5',
     description: 'Status-truth drift proposal requiring operator review',
   },
   {
     name: OUTCOME_LABELS.accepted,
-    color: '0e8a16',
+    color: '2e8b8b',
     description: 'Status-truth proposal accepted as valid drift',
   },
   {
     name: OUTCOME_LABELS.rejected,
-    color: 'e4e669',
+    color: '8b3a62',
     description: 'Status-truth proposal rejected (claim was correct)',
   },
   {
     name: OUTCOME_LABELS.falsePositive,
-    color: 'e4e669',
+    color: '702f1e',
     description: 'Status-truth proposal marked as false positive',
   },
   {
     name: OUTCOME_LABELS.superseded,
-    color: 'cfd3d7',
+    color: 'c5c9cf',
     description: 'Status-truth proposal superseded by a newer finding',
   },
   {
     name: OUTCOME_LABELS.manuallyFixed,
-    color: '0e8a16',
+    color: '3f8f72',
     description: 'Status-truth drift manually corrected',
   },
   {
     name: OUTCOME_LABELS.resolved,
-    color: '0e8a16',
+    color: '3678a8',
     description: 'Status-truth drift resolved (auto-closed on clear)',
   },
   {
     name: OUTCOME_LABELS.recurring,
-    color: 'd93f0b',
+    color: '9a7b22',
     description: 'Status-truth drift recurred after previous resolution',
   },
 ]

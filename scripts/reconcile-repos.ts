@@ -1518,6 +1518,20 @@ const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
 const INTEGRITY_ALERT_LABEL = 'reconcile:integrity-alert'
 const VISIBILITY_TRANSITION_LABEL = 'reconcile:visibility-transition'
+
+// Colors match .github/settings.yml (hex without '#', as GitHub createLabel requires)
+export const TRANSITION_LABELS = [
+  {
+    name: VISIBILITY_TRANSITION_LABEL,
+    color: 'f97316',
+    description: 'Tracked repo transitioned from public to private',
+  },
+  {
+    name: INTEGRITY_ALERT_LABEL,
+    color: 'e11d48',
+    description: 'Integrity alert requiring manual operator review',
+  },
+] as const
 // Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
 // (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
 // Both have identical access to this repo and represent the same autonomous operator,
@@ -3077,18 +3091,6 @@ async function runIssueQueue(params: {
   // change mid-run; calling it per-issue wastes 2 round-trips × N issues. We call it lazily
   // on the first visibility-transition issue and reuse when the result is confirmed (non-empty).
   let cachedConfirmedLabels: Set<string> | null = null
-  const TRANSITION_LABELS = [
-    {
-      name: VISIBILITY_TRANSITION_LABEL,
-      color: 'f97316',
-      description: 'Tracked repo transitioned from public to private',
-    },
-    {
-      name: INTEGRITY_ALERT_LABEL,
-      color: 'b60205',
-      description: 'Reconcile integrity alert requiring operator action',
-    },
-  ] as const
 
   for (const issue of params.issues) {
     try {

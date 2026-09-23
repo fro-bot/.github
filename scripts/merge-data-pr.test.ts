@@ -100,7 +100,7 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
         updateBranch: overrides?.updateBranch ?? (async () => ({data: {}})),
       },
       issues: {
-        addLabels: overrides?.addLabels ?? (async () => ({data: {labels: [{name: 'auto-merge'}]}})),
+        addLabels: overrides?.addLabels ?? (async () => ({data: {labels: [{name: 'automerge'}]}})),
         create:
           overrides?.createIssue ??
           (async () => ({
@@ -119,7 +119,7 @@ function mockLogger(): MergeDataPrLogger {
 }
 
 describe('mergeDataPr', () => {
-  it('opens PR with auto-merge label when only knowledge and metadata files changed', async () => {
+  it('opens PR with automerge label when only knowledge and metadata files changed', async () => {
     let createPullRequestParams: CreatePullRequestParams | undefined
     const createPullRequest = vi.fn(async (params: CreatePullRequestParams) => {
       createPullRequestParams = params
@@ -128,15 +128,15 @@ describe('mergeDataPr', () => {
         data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
       }
     })
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const octokit = mockOctokit({createPullRequest, addLabels})
 
     // #when the merge PR script runs for docs-only changes
     const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
 
-    // #then it opens and labels the PR for auto-merge
+    // #then it opens and labels the PR for automerge
     expect(result.createdPullRequest).toBe(true)
-    expect(result.label).toBe('auto-merge')
+    expect(result.label).toBe('automerge')
     expect(result.pullRequestNumber).toBe(42)
     expect(createPullRequestParams?.body).toContain('Automated data merge from data into main.')
     expect(createPullRequestParams?.body).not.toContain('weekly')
@@ -144,7 +144,7 @@ describe('mergeDataPr', () => {
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 42,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
   })
 
@@ -281,7 +281,7 @@ describe('mergeDataPr', () => {
   })
 
   it('reuses existing PR and applies label when one already exists for data branch', async () => {
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const createPullRequest = vi.fn(async () => ({
       data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
     }))
@@ -313,7 +313,7 @@ describe('mergeDataPr', () => {
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 55,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
   })
 
@@ -517,7 +517,7 @@ describe('mergeDataPr', () => {
 
   it('warns and continues when updateBranch fails transiently', async () => {
     const logger = mockLogger()
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const updateBranch = vi.fn(async () => {
       throw Object.assign(new Error('Branch update failed'), {status: 503})
     })
@@ -538,7 +538,7 @@ describe('mergeDataPr', () => {
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 42,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
     expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1)
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(expect.stringContaining('updating PR #42 branch'))
@@ -549,7 +549,7 @@ describe('mergeDataPr', () => {
 
   it('warns and continues when fetching a newly created PR fails', async () => {
     const logger = mockLogger()
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const octokit = mockOctokit({
       addLabels,
       getPullRequest: async () => {
@@ -560,13 +560,13 @@ describe('mergeDataPr', () => {
     const result = await mergeDataPr({octokit, logger, now: new Date('2026-04-16T00:00:00.000Z')})
 
     expect(result.createdPullRequest).toBe(true)
-    expect(result.label).toBe('auto-merge')
+    expect(result.label).toBe('automerge')
     expect(result.pullRequestNumber).toBe(42)
     expect(addLabels).toHaveBeenCalledWith({
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 42,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
       'GitHub API error while fetching PR #42: PR lookup failed; continuing because the PR already exists and a later run can retry the branch update.',
@@ -657,7 +657,7 @@ describe('mergeDataPr', () => {
 
   it('warns and continues when fetching an existing PR fails', async () => {
     const logger = mockLogger()
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const octokit = mockOctokit({
       listPullRequestsAssociatedWithCommit: async () => ({
         data: [
@@ -683,7 +683,7 @@ describe('mergeDataPr', () => {
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 55,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
       'GitHub API error while fetching PR #55: PR lookup failed; continuing because the PR already exists and a later run can retry the branch update.',
@@ -691,7 +691,7 @@ describe('mergeDataPr', () => {
   })
 
   it('reuses the existing PR when createPullRequest returns a duplicate-PR 422', async () => {
-    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'automerge'}]}}))
     const listPullRequests = async () => {
       return {
         data: [
@@ -732,7 +732,7 @@ describe('mergeDataPr', () => {
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 88,
-      labels: ['auto-merge'],
+      labels: ['automerge'],
     })
   })
 
