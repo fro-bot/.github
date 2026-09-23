@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-23
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: 0c7489de29fd6f430468a021ebd1178088d16f03
+    accessed: 2026-09-23
   - url: https://github.com/bfra-me/.github/issues/2770
     accessed: 2026-09-23
   - url: https://github.com/marcusrbrown/marcusrbrown
@@ -3313,3 +3316,20 @@ has 8 workflows, three of them reusable (`renovate.yaml`, `renovate-changeset.ya
   the major that removes the input, delivered by Renovate as a routine bump. Tracking it as an
   issue before that PR exists is what keeps the eventual bump from reading as a regression.
 
+
+### A Drift Check Proves the Consumer Matches the Pin, Not That the Pin Matches the Gate (2026-09-23)
+
+[[fro-bot--dashboard]]'s `wiki-writer` pins the shared gate package `@fro-bot/wiki-write-core` by git SHA (`github:fro-bot/.github#37abb495&path:packages/wiki-write-core`, committed 2026-09-02). Its PR #425 added a contract-drift check alongside the pin. Four days after the pin, the control-plane package shipped two **private-leak scanner fixes**:
+
+- `#3839` (2026-09-06) stopped parsing `++`-prefixed added lines as `+++` file headers.
+- `#3867` (2026-09-07) started scanning the context git appends after a hunk header.
+
+Both change `dist/private-leak.js` and `dist/gate-contract.json`. Three weeks on, the pin has not moved. The consumer therefore enforces the public-only invariant with a scanner that has two known misparses.
+
+What makes this a CI pattern rather than a one-off:
+
+- **Two different questions.** A drift check answers "does my code agree with the artifact I pinned?". A staleness alarm answers "is the artifact I pinned still the current gate?". A drift check that reads the pinned package's own `gate-contract.json` is self-consistent by construction and stays green while upstream moves. For a *security* gate, only the second question protects anything.
+- **No updater is watching.** Renovate does not detect `github:…&path:` dependency specs (recorded 2026-09-09). The refresh mechanism is a person noticing, the same failure as the untracked bare-SHA action pins and CDN URLs elsewhere on this page.
+- **Deployment state is the only mitigation.** The writer has no deploy path (the repo's own issue #504), so nothing is exposed yet. That turns the finding into a **deploy precondition**: do not ship the writer until the pin is either Renovate-tracked (a `customManagers` regex on the git ref) or checked in CI against the control-plane `main` copy of `gate-contract.json`.
+
+Generalization: **any vendored or SHA-pinned copy of an enforcement primitive (leak scanner, redaction list, policy engine) needs an alarm keyed to the upstream's head, not to the pin.** Pinning buys reproducibility. For a gate, reproducibility of an old verdict is a liability.

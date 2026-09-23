@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-15
+updated: 2026-09-23
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: 0c7489de29fd6f430468a021ebd1178088d16f03
+    accessed: 2026-09-23
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
@@ -54,6 +57,7 @@ Labels follow the [OCI Image Spec annotations](https://github.com/opencontainers
 - Minimal package installation (`--no-install-recommends`, `apk add --no-cache`)
 - Health checks defined in the Dockerfile
 - Entrypoint scripts with explicit `--chmod=755`
+- **Strip package managers from the runtime stage** (2026-09-23, [[fro-bot--dashboard]]): before `USER node`, the final stage runs `rm -rf` on `npm`/`npx`/`pnpm`/`pnpx`/`corepack`/`yarn`/`yarnpkg`, their `lib/node_modules` trees, and root caches. It copies only `node_modules/` from a `prod-deps` stage, with no manifests and no lockfile. The `node:*` base images ship all of these, so a runtime image that "only runs `node src/server.ts`" still carries a working fetch-and-install toolchain unless someone removes it. The cost is one layer. The payoff is that a compromised process cannot `npx` its way to a second-stage payload.
 
 **Hadolint DL3025 (`HEALTHCHECK`/`CMD`/`ENTRYPOINT` shell vs. JSON form):** [[marcusrbrown--containers]] carries open code-scanning alerts (#283/#285) for shell-form `HEALTHCHECK CMD` in both `node/*` Dockerfiles. Shell form wraps the command in `/bin/sh -c`, which reintroduces a shell process between the init system and the probe — undercutting the `tini`-as-PID-1 signal-handling discipline the same Dockerfiles otherwise enforce. JSON exec notation (`HEALTHCHECK CMD ["curl", "-f", "http://localhost:3000/health"]`) is the fix; the proposed patch (PR #723) has been green and unmerged since 2026-07-30.
 
@@ -162,6 +166,14 @@ Extra weight when the file lives in a **template repository**: a wrong default p
 Recording the correction is worth less than recording what it teaches: **fixing a coupled-constant defect by editing the constant leaves the coupling undeclared, so the fix has the lifetime of the next bump.** The durable repairs are unchanged from above — couple the two edits in one PR, template the branch off the base tag, or add a lint asserting `depNameTemplate`'s branch equals the base image's tag. The last is the only one that survives an inattentive maintainer, and it is a three-line check.
 
 Corollary for surveys: a value that is correct on inspection tells you nothing about whether the mechanism that made it wrong was addressed. Check whether the *link* was established, not whether the *number* matches.
+
+#### The package-manager version declared twice (2026-09-23)
+
+A second instance of the coupled-constant class, in an application image rather than an add-on template. [[fro-bot--dashboard]]'s `Dockerfile` runs `corepack prepare pnpm@11.8.0 --activate` in both build stages, while `package.json` declares `packageManager: pnpm@11.27.0`. Renovate has bumped `packageManager` repeatedly (11.8.0 → … → 11.25.0 → 11.26.0 → 11.27.0) and never touched the Dockerfile line. The regex for `corepack prepare <pm>@<ver>` is not a default manager, so the second copy is invisible to the bot.
+
+Corepack's documented precedence gives the project's `packageManager` field priority inside the project directory. The `prepare --activate` version is then only a global fallback, so the build most likely runs 11.27.0 and the stale line is dead code that *looks* authoritative. That is inferred from corepack semantics, not read from a build log. Either reading is a defect. If the field wins, the Dockerfile documents a version the build does not use. If the fallback ever wins (for example, after a `WORKDIR` or `COPY` reorder that runs `pnpm` before `package.json` lands), a frozen-lockfile install runs under a pnpm 19 minor versions older than the one that wrote the lockfile.
+
+Repair options, best first: drop the version from `prepare` (`corepack enable` alone honors `packageManager`); or derive it at build time from `package.json`; or add a Renovate `customManagers` regex that couples the two. Survey check: **`grep` every `Dockerfile` for `corepack prepare` and diff the version against `packageManager`.**
 
 ## Related Technologies
 

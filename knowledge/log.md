@@ -6402,3 +6402,25 @@ Sources: https://github.com/bfra-me/.github/issues/2770, https://github.com/fro-
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b8f7ff032c122401d5958a81fd651144d9f633c9
+
+## [2026-09-23 12:00] ingest | repo:fro-bot/dashboard
+
+Seventh survey of fro-bot/dashboard (HEAD `0c7489d`, 49 commits since `a11f1b7`). Read scope: git log/diff-stat plus a recursive tree listing. Content reads were limited to README files, manifests, the `Dockerfile`, and workflows. Issue and run metadata came from the unauthenticated REST API, because `gh` had no credentials in this run.
+
+- **Web Push unblocked:** #238 closed `completed` via #496. It added a public `/privacy` page bound to structured `web/src/privacy/claims.ts` by three test suites. The policy was sourced from the Gateway, not the issue (the in-repo README lists five inaccuracies in #238). The owner self-corrected the plan and policy three times (#499, #501, #502), and consent hardening landed in code (#508, #511).
+- **New risk:** the `wiki-writer` gate pin `37abb495` is two `private-leak.ts` fixes behind the control-plane `packages/wiki-write-core` (#3839, #3867; verified against this repo's history). Nothing is exposed today only because the writer is undeployed (README corrected by #498; #504 filed). Generalized into [[github-actions-ci]] as a drift-check-vs-staleness-alarm rule.
+- **Dockerfile:** `corepack prepare pnpm@11.8.0` vs `packageManager` 11.27.0, a second pnpm pin Renovate never updates (effective version inferred from corepack precedence, not verified). Runtime-stage package-manager stripping is recorded for the first time. Both went to [[docker-containers]].
+- **Agent-authored #481** (redaction-logger fix) merged, the second agent merge after #414. `Fro Bot` skips fell from 27/30 to 20/30, with 7 PR-review successes on owner branches.
+- **`clonedeps` removed** (#493). The vendored operator contract stays frozen at agent v0.78.0 against action pin v0.114.1. Contract README still reads `1.5.0` (5th survey).
+- Carried: the strip-only Test Scripts Load job and `SCHEDULE_PROMPT` 4b are still `src`-only. The Renovate dashboard (#8) body was not re-read. The Fro Bot workflow is present, so no follow-up draft is needed.
+- Housekeeping: the repo page is now ~11.9k words, well past the schema's 2000-word guidance. It is a candidate for splitting (for example, survey history and corrections into sub-pages) in a dedicated edit.
+
+Pages touched: [[fro-bot--dashboard]], [[docker-containers]], [[github-actions-ci]]; index entries for all three.
+
+Sources: https://github.com/fro-bot/dashboard@0c7489de29fd6f430468a021ebd1178088d16f03
+
+## [2026-09-23 10:07] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard
