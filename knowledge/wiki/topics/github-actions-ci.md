@@ -2,8 +2,10 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-22
+updated: 2026-09-23
 sources:
+  - url: https://github.com/bfra-me/.github/issues/2770
+    accessed: 2026-09-23
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: 39ce599af41cd1358d238ffd69cc7048c904e8ca
     accessed: 2026-09-22
@@ -3285,3 +3287,29 @@ Both pin runs completed in ~10 s with every deploy job skipped. The pattern gene
 - **Cross-check the ledger against the releases, not against itself.** The pin on `main` and the latest
   `fro-bot/dashboard` release are independently observable; drift between them is the signal that a deploy
   failed or was skipped. Reading the pin alone tells you what is live and nothing about what should be.
+
+### A Deprecated Input Whose Replacement Takes a Different Value (2026-09-23)
+
+`actions/create-github-app-token` **v3.2.0** deprecates `app-id` in favor of `client-id` and logs
+`Input 'app-id' has been deprecated with message: Use 'client-id' instead.` on every run.
+[`bfra-me/.github#2770`](https://github.com/bfra-me/.github/issues/2770) (opened 2026-09-23) records
+the trap: **this is not a rename.** `client-id` takes the GitHub App's *Client ID* (`Iv…`), while
+every consumer in the ecosystem stores the *numeric App ID* in `secrets.APPLICATION_ID`. A
+find-and-replace of the key yields a workflow that parses, passes actionlint, and fails at token
+mint time.
+
+Blast radius observed 2026-09-23: `fro-bot/.github` passes `app-id: ${{ secrets.APPLICATION_ID }}`
+**24 times across 14 workflows**, all at the same pin (`bcd2ba49…  # v3.2.0`); `bfra-me/.github`
+has 8 workflows, three of them reusable (`renovate.yaml`, `renovate-changeset.yaml`,
+`update-repo-settings.yaml`), so every downstream caller inherits the warning.
+
+- **The migration is a provisioning change first and an edit second.** The Client ID must exist
+  somewhere a workflow can read (it is not sensitive — an org/repo variable is sufficient) before
+  any `uses:` block changes. Ordering it the other way breaks every App-token job at once.
+- **Reusable workflows need a dual-input window.** Accept an optional Client ID alongside the
+  existing secret and fall back to `app-id` when unset, so callers migrate independently. Confirm
+  that an empty `client-id` is treated as unset by the action rather than as an invalid value.
+- **A deprecation warning is a schedule, not a bug.** Nothing is red today; the failure arrives on
+  the major that removes the input, delivered by Renovate as a routine bump. Tracking it as an
+  issue before that PR exists is what keeps the eventual bump from reading as a regression.
+

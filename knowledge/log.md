@@ -6386,3 +6386,19 @@ https://github.com/fro-bot/dashboard/pull/511, https://github.com/fro-bot/.githu
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@d1867f7c26d4f498732850185363ebe2de92b541
+
+## [2026-09-23 04:30] ingest | repo:fro-bot/.github
+
+Daily oversight pass (schedule run 35817043360). Added one section to `wiki/topics/github-actions-ci.md`:
+*A Deprecated Input Whose Replacement Takes a Different Value* — `actions/create-github-app-token` v3.2.0
+deprecates `app-id` for `client-id`, which takes the App's Client ID rather than the numeric App ID stored in
+`secrets.APPLICATION_ID`. Observed blast radius: 24 uses across 14 workflows in `fro-bot/.github`, 8 workflows
+(3 reusable) in `bfra-me/.github`. Additive only; no prior claims superseded.
+
+Sources: https://github.com/bfra-me/.github/issues/2770, https://github.com/fro-bot/.github@b8f7ff0
+
+## [2026-09-23 04:16] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b8f7ff032c122401d5958a81fd651144d9f633c9
