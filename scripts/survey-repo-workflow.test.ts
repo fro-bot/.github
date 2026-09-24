@@ -111,9 +111,18 @@ describe('survey-repo.yaml App-token persistence migration', () => {
     expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
   })
 
-  it('survey-persist mints its own App token, distinct from the recheck/gate tokens minted in survey-repo', () => {
+  it('survey-persist mints its own App token, distinct from the initial gate token minted in survey-repo', () => {
     const mintStep = persistJob?.steps.find(step => step.id === 'app-token')
     expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+  })
+
+  it('survey-repo mints no App token after its agent step (trusted-writer invariant)', () => {
+    const agentIndex = surveyJob?.steps.findIndex(step => step.id === 'survey-agent') ?? -1
+    expect(agentIndex).toBeGreaterThanOrEqual(0)
+    const mintIndicesAfterAgent = (surveyJob?.steps ?? [])
+      .slice(agentIndex + 1)
+      .filter(step => (step.uses ?? '').startsWith('actions/create-github-app-token@'))
+    expect(mintIndicesAfterAgent).toStrictEqual([])
   })
 
   it.each([
@@ -141,25 +150,16 @@ describe('survey-repo.yaml App-token persistence migration', () => {
     expect(leftoverStep).toBeUndefined()
   })
 
-  it('preserves visibility-recheck-before-persistence ordering: recheck runs in survey-repo, gates the handoff build', () => {
-    const names = (surveyJob?.steps ?? []).map(step => step.name ?? '')
-    const recheckIndex = names.indexOf('🔒 Recheck visibility')
-    const buildIndex = names.indexOf('Build wiki handoff artifact')
-
-    expect(recheckIndex).toBeGreaterThanOrEqual(0)
-    expect(buildIndex).toBeGreaterThan(recheckIndex)
-
-    const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
-    expect(String(buildStep?.if ?? '')).toContain("steps.recheck.conclusion == 'success'")
+  it('survey-repo has no visibility recheck step at all — it moved to survey-persist', () => {
+    expect(surveyJob?.steps.find(step => step.name === '🔒 Recheck visibility')).toBeUndefined()
+    expect(surveyJob?.steps.find(step => step.id === 'recheck-token')).toBeUndefined()
   })
 
-  it('exposes the job outputs survey-persist depends on for gating', () => {
+  it('exposes the job outputs survey-persist depends on for gating (no recheck outputs — those are local to survey-persist now)', () => {
     const outputs = surveyJob?.outputs ?? {}
     for (const key of [
       'wiki-artifact-ready',
       'agent-conclusion',
-      'recheck-conclusion',
-      'recheck-private',
       'resolve-outcome',
       'resolve-owner',
       'resolve-repo',
@@ -169,5 +169,91 @@ describe('survey-repo.yaml App-token persistence migration', () => {
     ]) {
       expect(outputs[key], `missing job output: ${key}`).toBeDefined()
     }
+    expect(outputs['recheck-conclusion']).toBeUndefined()
+    expect(outputs['recheck-private']).toBeUndefined()
+    expect(outputs['ts-now']).toBeUndefined()
+  })
+})
+
+describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+
+  it('survey-persist mints its App token, then rechecks visibility, before any sync/download/apply/commit/record/announce step', () => {
+    const names = (persistJob?.steps ?? []).map(step => step.name ?? '')
+    const mintIndex = names.indexOf('🔑 Mint App token for data writes')
+    const recheckIndex = names.indexOf('🔒 Recheck visibility')
+    const persistenceStepNames = [
+      'Sync wiki from data branch',
+      'Download wiki handoff artifact',
+      'Validate and apply wiki handoff',
+      'Commit wiki ingest to data branch',
+      'Record survey result',
+      '📣 Announce survey to gateway',
+      'Record survey result (cancelled/timeout fallback)',
+    ]
+
+    expect(mintIndex).toBeGreaterThanOrEqual(0)
+    expect(recheckIndex).toBeGreaterThan(mintIndex)
+    for (const stepName of persistenceStepNames) {
+      const index = names.indexOf(stepName)
+      expect(index, `missing persistence step: ${stepName}`).toBeGreaterThanOrEqual(0)
+      expect(index, `${stepName} must run after the trusted recheck`).toBeGreaterThan(recheckIndex)
+    }
+  })
+
+  it("every persistence step gates on this job's own steps.recheck, not a needs.survey-repo recheck output", () => {
+    const persistenceStepNames = [
+      'Sync wiki from data branch',
+      'Download wiki handoff artifact',
+      'Validate and apply wiki handoff',
+      'Commit wiki ingest to data branch',
+      'Record survey result',
+      '📣 Announce survey to gateway',
+    ]
+    for (const stepName of persistenceStepNames) {
+      const step = persistJob?.steps.find(s => s.name === stepName)
+      const condition = String(step?.if ?? '')
+      expect(condition, `${stepName} if: must reference steps.recheck`).toContain('steps.recheck.')
+      expect(condition, `${stepName} if: must not reference a needs.survey-repo recheck output`).not.toContain(
+        'needs.survey-repo.outputs.recheck',
+      )
+    }
+  })
+
+  it('the recheck step uses the locally-minted app-token, and REPO_PRIVATE downstream reads the local recheck output', () => {
+    const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
+    expect(String(recheckStep?.env?.GH_TOKEN ?? '')).toContain('steps.app-token.outputs.token')
+    expect(String(recheckStep?.env?.NODE_ID ?? '')).toContain('inputs.node_id')
+
+    for (const stepName of ['Record survey result', 'Record survey result (cancelled/timeout fallback)']) {
+      const step = persistJob?.steps.find(s => s.name === stepName)
+      expect(String(step?.env?.REPO_PRIVATE ?? '')).toContain('steps.recheck.outputs.private')
+    }
+  })
+
+  it('WIKI_* env in the trusted commit step is sourced from needs.survey-repo pre-agent outputs and inputs.*, never metadata.json', () => {
+    const commitStep = persistJob?.steps.find(step => step.name === 'Commit wiki ingest to data branch')
+    const run = String(commitStep?.run ?? '')
+    expect(run).not.toContain('metadata.json')
+    expect(run).not.toContain('jq')
+
+    const env = commitStep?.env ?? {}
+    expect(String(env.WIKI_TARGET ?? '')).toContain('needs.survey-repo.outputs.target-repository')
+    expect(String(env.WIKI_SUMMARY ?? '')).toContain('needs.survey-repo.outputs.target-repository')
+    expect(String(env.WIKI_COMMIT_MESSAGE ?? '')).toContain('needs.survey-repo.outputs.target-repository')
+    expect(String(env.WIKI_SOURCES ?? '')).toContain('needs.survey-repo.outputs.target-repository')
+    expect(String(env.WIKI_SOURCES ?? '')).toContain('steps.ts.outputs.now')
+    expect(String(env.REPO_NODE_ID ?? '')).toContain('inputs.node_id')
+  })
+
+  it('survey-repo builds the artifact without recheck gating (privacy is enforced entirely in survey-persist now)', () => {
+    const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
+    const condition = String(buildStep?.if ?? '')
+    expect(condition).toContain("steps.wiki-changes.outputs.changed == 'true'")
+    expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
+    expect(condition).not.toContain('recheck')
+    expect(Object.keys(buildStep?.env ?? {})).toStrictEqual(['WIKI_HANDOFF_DIR'])
+    expect(String(buildStep?.env?.WIKI_HANDOFF_DIR ?? '')).toContain('runner.temp')
   })
 })
