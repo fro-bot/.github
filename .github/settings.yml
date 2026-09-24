@@ -27,7 +27,7 @@ branches:
           - Test
           - Test Scripts Load
 
-# Base labels come from common-settings.yaml via _extends, merged by name.
+# Base labels come from common-settings.yaml via _extends, merged by name (requires bfra-me/.github >= v4.32.0; older pins replace the base list and delete it).
 labels:
   - name: wiki-lint
     color: '#5319e7'
@@ -104,6 +104,7 @@ labels:
   - name: status-truth:recurring
     color: '#9a7b22'
     description: Status-truth drift recurred after previous resolution
+  # Mirrors WORKING_LABEL_COLOR/DESCRIPTION in fro-bot/agent packages/runtime/src/agent/types.ts.
   - name: 'agent: working'
     color: '#fcf2e1'
     description: Agent is currently working on this

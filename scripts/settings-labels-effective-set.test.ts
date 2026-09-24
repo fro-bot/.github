@@ -53,7 +53,6 @@ const baseLabels = commonSettingsParsed.labels
 const repoSettingsPath = resolve(import.meta.dirname, '../.github/settings.yml')
 const repoSettingsParsed: unknown = parse(readFileSync(repoSettingsPath, 'utf8'))
 assertLabelsShape(repoSettingsParsed, '.github/settings.yml')
-const repoLabelsByName = new Map(repoSettingsParsed.labels.map(label => [label.name, label]))
 
 const effectiveLabelsByName = computeEffectiveLabels(baseLabels, repoSettingsParsed.labels)
 
@@ -113,44 +112,29 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     expect(total, 'update this count when adding or removing a code-declared label').toBe(16)
   })
 
-  it('keeps every code-declared label descriptor set in sync with .github/settings.yml', () => {
+  it('keeps every code-declared label descriptor in sync with the effective merged label set (base + .github/settings.yml, merged by name)', () => {
     const mismatches: string[] = []
 
     for (const {source, descriptors} of codeLabelSources) {
       for (const requiredLabel of descriptors) {
-        const repoLabel = repoLabelsByName.get(requiredLabel.name)
+        const repoLabel = effectiveLabelsByName.get(requiredLabel.name.toLowerCase())
         if (!repoLabel) {
-          mismatches.push(`${source} "${requiredLabel.name}": missing from .github/settings.yml`)
+          mismatches.push(`${source} "${requiredLabel.name}": missing from the effective merged label set`)
           continue
         }
         if (repoLabel.color.replace(/^#/, '').toLowerCase() !== requiredLabel.color.toLowerCase()) {
           mismatches.push(
-            `${source} "${requiredLabel.name}": color mismatch (${source}=${requiredLabel.color}, settings.yml=${repoLabel.color})`,
+            `${source} "${requiredLabel.name}": color mismatch (${source}=${requiredLabel.color}, effective=${repoLabel.color})`,
           )
         }
         if (repoLabel.description !== requiredLabel.description) {
           mismatches.push(
-            `${source} "${requiredLabel.name}": description mismatch (${source}="${requiredLabel.description}", settings.yml="${repoLabel.description}")`,
+            `${source} "${requiredLabel.name}": description mismatch (${source}="${requiredLabel.description}", effective="${repoLabel.description}")`,
           )
         }
       }
     }
 
     expect(mismatches).toEqual([])
-  })
-
-  it('resolves every code-declared label descriptor in the effective merged label set (base + .github/settings.yml, merged by name)', () => {
-    const missing: string[] = []
-
-    for (const {source, descriptors} of codeLabelSources) {
-      for (const requiredLabel of descriptors) {
-        const effectiveLabel = effectiveLabelsByName.get(requiredLabel.name.toLowerCase())
-        if (!effectiveLabel) {
-          missing.push(`${source} "${requiredLabel.name}": missing from the effective merged label set`)
-        }
-      }
-    }
-
-    expect(missing).toEqual([])
   })
 })
