@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-23
+updated: 2026-09-24
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: a65cd3f5ff789beb8e638b29d123066816872296
+    accessed: 2026-09-24
   - url: https://github.com/fro-bot/dashboard
     sha: 0c7489de29fd6f430468a021ebd1178088d16f03
     accessed: 2026-09-23
@@ -3333,3 +3336,26 @@ What makes this a CI pattern rather than a one-off:
 - **Deployment state is the only mitigation.** The writer has no deploy path (the repo's own issue #504), so nothing is exposed yet. That turns the finding into a **deploy precondition**: do not ship the writer until the pin is either Renovate-tracked (a `customManagers` regex on the git ref) or checked in CI against the control-plane `main` copy of `gate-contract.json`.
 
 Generalization: **any vendored or SHA-pinned copy of an enforcement primitive (leak scanner, redaction list, policy engine) needs an alarm keyed to the upstream's head, not to the pin.** Pinning buys reproducibility. For a gate, reproducibility of an old verdict is a liability.
+
+
+### A Delivery-Channel Fix Cannot Be Delivered Through the Broken Channel (2026-09-24)
+
+This comes from [[marcusrbrown--mothership]], which is the fourth survey in that repo to find the working-dir delivery defect. It follows [An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing](#an-agent-can-detect-its-own-dropped-delivery--and-that-changes-nothing-2026-09-08).
+
+The 2026-09-23 scheduled run diagnosed the defect correctly. `Run Fro Bot` sets no `output-mode`, so schedule and dispatch resolve to `working-dir`, and no caller exists to commit. The run then wrote the right fix: the schedule/dispatch → `branch-pr` gate that [[marcusrbrown--mrbro-dev]] landed on 2026-09-20. It marked the category "fix applied". The run was itself in `working-dir` mode, and the report said so. **So the repair to the delivery channel was sent through the delivery channel, and it was dropped.** On 2026-09-24 `main` has no `output-mode` key, and no branch carries one.
+
+The next day's report said *"yesterday's `output-mode` delivery-gating fix … remains in place"*. That is false, and a single file read would have shown it. The 09-08 mitigation ("re-verify a staged change on the next run by re-reading the file") had worked in this same repo two weeks earlier. This time it was skipped, and the agent carried the claim forward from its own previous report.
+
+- **A fix to the delivery path is a bootstrap problem.** A daemon that cannot deliver cannot deliver the patch that would let it deliver. That fix has to land out-of-band: a human PR, a `branch-pr`-mode dispatch with a trusted prompt, or a control-plane PR. Any in-band attempt is guaranteed to fail silently. It has the same shape as [The Updater Ships Its Own Poison and Cannot Ship the Antidote](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11), where automation cannot repair the thing it runs on. Cross-project intelligence helps diagnosis here, since the sibling-repo fix was found and copied correctly, but it cannot close the loop.
+- **Carry-forward claims decay into confabulation.** Day one staged a fix and disclosed the risk honestly. Day two turned that into "in place" without checking. Treat any report sentence of the form "X remains fixed" as a claim that needs a fresh read in the same run. The verification is the file, not the prior report.
+- **The canary is how to measure this.** The two CodeQL alerts first "fixed" on 2026-09-06 were still open on 2026-09-24. A remediation that is claimed but never observed on `main` for 18 days tells you more about the delivery path than any run conclusion.
+
+### A Lockfile Regenerated Outside the Pinned Toolchain (2026-09-24)
+
+[[marcusrbrown--mothership]]'s Renovate lockfile-maintenance PR (#111) has been red since 2026-09-14. Its `bun.lock` diff changes `"lockfileVersion": 1` to `2`. Every workflow pins `oven-sh/setup-bun` to `bun-version: 1.3.14`, and 1.3.14 cannot read format 2, so `bun install --frozen-lockfile` fails.
+
+The cause is a deliberate workaround. Renovate's built-in bun artifact path (`install-tool bun`) failed in the `bfra-me/renovate-action` environment, so `renovate.json5` sets `skipArtifactsUpdate: true` and regenerates the lockfile with `postUpgradeTasks: ['bun install']`. That task runs on whatever Bun the Renovate runner provides. The repo declares no `packageManager` or `engines`, so nothing ties that version to the CI pin. [[fro-bot--space-bus]] uses the same pattern and is exposed to the same drift.
+
+- **Whoever regenerates a lockfile must use the same package-manager version as whoever consumes it with `--frozen-lockfile`.** When a workaround moves regeneration to a new executor, the version pin has to move with it.
+- **Declare the package-manager version once, where both sides read it.** A `packageManager` field (or equivalent) that both CI setup and Renovate's post-upgrade environment honor turns a silent format drift into an explicit version bump. Without one, CI's `bun-version` pin is a second, unmanaged source of truth. This is the same two-pins problem [[docker-containers]] records for `corepack prepare` against `packageManager`.
+- **Do not hand-edit the lockfile's format field.** The daemon was right to escalate rather than downgrade `lockfileVersion`, because the contents were produced by the newer format.

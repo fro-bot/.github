@@ -6424,3 +6424,24 @@ Sources: https://github.com/fro-bot/dashboard@0c7489de29fd6f430468a021ebd1178088
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-09-24 10:10] ingest | repo:marcusrbrown/mothership
+
+Fifth survey of marcusrbrown/mothership (HEAD `a65cd3f`, 1 commit since `8895732`: agent pin `v0.109.4 → v0.112.0`, #106). `gh` was unauthenticated in this run, so reads went through the public REST API only. Scope was the commit compare, branches, PR and issue listings, `fro-bot.yaml`, `renovate.json5`, `package.json`, the PR #111 file diff, the Dependency Dashboard #9, and daily reports #123 and #124. Security counts are declared by the repo's own report, not verified.
+
+- **Delivery fix lost through the broken channel:** #123 wrote the correct `output-mode` gate (copied from mrbro.dev `76dea82`) while running in `working-dir` mode. `main` and all branches lack it. #124 then claimed it "remains in place", which is false. The 09-08 canary alerts are still open. Generalized into [[github-actions-ci]].
+- **Lockfile format drift:** Renovate #111 has been red for 10 days. `bun.lock` `lockfileVersion 1 → 2` (confirmed in the diff) against CI Bun 1.3.14. The cause is the repo's own `skipArtifactsUpdate` + `postUpgradeTasks: bun install` workaround with no `packageManager` anchor. Generalized into [[github-actions-ci]]. [[fro-bot--space-bus]] is flagged as sharing the pattern.
+- **Qualified a 09-08 claim:** "0 open PRs means blocked" no longer holds by itself. Four approval-exempt Renovate PRs are open (#108/#111/#112/#122), and the same 11 branches are still gated.
+- Renovate replacement PR #119 (`attest-build-provenance` → `actions/attest`) was autoclosed. Declared RUSTSEC count went 17 → 7 with an unchanged `Cargo.lock`. Both figures are recorded; neither is treated as a fix.
+- Tags/releases are still 0/0 (fourth survey). The Fro Bot workflow is present, but the delivery half is still missing, so a follow-up draft PR adding the `output-mode` gate is still justified. It must land out-of-band.
+- Housekeeping: the repo page is ~9.5k words, well past the schema guidance, and is a split candidate (survey-history and dated-survey sections).
+
+Pages touched: [[marcusrbrown--mothership]], [[github-actions-ci]]; index entries for both.
+
+Sources: https://github.com/marcusrbrown/mothership@a65cd3f5ff789beb8e638b29d123066816872296
+
+## [2026-09-24 10:08] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership
