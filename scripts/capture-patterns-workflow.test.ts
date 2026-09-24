@@ -2,6 +2,11 @@
  * Contract tests for .github/workflows/capture-patterns.yaml: dry-run default,
  * live-write token boundary, digest/body-file env wiring, and agent prompt
  * write contract. Style mirrors fro-bot-workflow-wiki-handoff.test.ts.
+ *
+ * The `open` job (agent, drafts proposal bodies) and `open-publish` job (trusted,
+ * mints the write token and opens issues) are split so a prompt-injected agent
+ * never shares a runner with a freshly-minted `issues: write` App token — see
+ * scripts/agent-token-mint-order-guard.test.ts for the repo-wide invariant.
  */
 
 import {readFileSync} from 'node:fs'
@@ -12,6 +17,7 @@ import {parse} from 'yaml'
 interface WorkflowStep {
   name?: string
   id?: string
+  uses?: string
   if?: string
   run?: string
   env?: Record<string, unknown>
@@ -21,6 +27,7 @@ interface WorkflowStep {
 interface WorkflowJob {
   steps: WorkflowStep[]
   permissions?: Record<string, string>
+  needs?: string | string[]
 }
 
 function assertCapturePatternsWorkflow(value: unknown): asserts value is {
@@ -46,6 +53,7 @@ describe('capture-patterns.yaml workflow contract', () => {
 
   const detectJob = parsed.jobs.detect
   const openJob = parsed.jobs.open
+  const publishJob = parsed.jobs['open-publish']
 
   it('has a manual dispatch trigger with dry_run defaulting to true', () => {
     const dryRunInput = parsed.on.workflow_dispatch?.inputs?.dry_run
@@ -67,39 +75,60 @@ describe('capture-patterns.yaml workflow contract', () => {
     expect(detectJob?.permissions).toEqual({contents: 'read', issues: 'read'})
   })
 
-  it('open job carries only read-only contents permission on the job token; no issues:read grant is needed since it only reads via the minted app token, and writes come from that same minted token', () => {
+  it('open (draft) job carries only read-only contents permission and mints no App token', () => {
     expect(openJob).toBeDefined()
     expect(openJob?.permissions).toEqual({contents: 'read'})
+    expect(
+      openJob?.steps.find(step => (step.uses ?? '').startsWith('actions/create-github-app-token@')),
+    ).toBeUndefined()
   })
 
-  it('the open job itself is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
+  it('open-publish job carries only read-only contents permission on the job token; writes come from the minted app token', () => {
+    expect(publishJob).toBeDefined()
+    expect(publishJob?.permissions).toEqual({contents: 'read'})
+  })
+
+  it('open-publish has no fro-bot/agent step (trusted-writer invariant)', () => {
+    expect(publishJob?.steps.find(step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBeUndefined()
+  })
+
+  it('open-publish checks out the default branch with persist-credentials: false', () => {
+    const checkoutStep = publishJob?.steps.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('the open (draft) job is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
     const openJobRaw = (parsed.jobs.open as unknown as {if?: string}).if
     expect(openJobRaw).toBeDefined()
     expect(String(openJobRaw)).toContain("github.event_name == 'workflow_dispatch'")
     expect(String(openJobRaw)).toContain("github.event.inputs.dry_run == 'false'")
   })
 
-  it('the write-scoped app token is minted only for an explicit live (dry_run=false) manual dispatch', () => {
-    const mintStep = openJob?.steps.find(step => step.id === 'app-token')
+  it('the open-publish job is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
+    const publishJobRaw = (parsed.jobs['open-publish'] as unknown as {if?: string}).if
+    expect(publishJobRaw).toBeDefined()
+    expect(String(publishJobRaw)).toContain("github.event_name == 'workflow_dispatch'")
+    expect(String(publishJobRaw)).toContain("github.event.inputs.dry_run == 'false'")
+  })
+
+  it('the write-scoped app token is minted in open-publish (unconditionally within that already-gated job)', () => {
+    const mintStep = publishJob?.steps.find(step => step.id === 'app-token')
     expect(mintStep).toBeDefined()
-    expect(mintStep?.if).toContain("github.event_name == 'workflow_dispatch'")
-    expect(mintStep?.if).toContain("github.event.inputs.dry_run == 'false'")
   })
 
   it('the app token is scoped to this repository only', () => {
-    const mintStep = openJob?.steps.find(step => step.id === 'app-token')
+    const mintStep = publishJob?.steps.find(step => step.id === 'app-token')
     const withBlock = mintStep?.with
     expect(String(withBlock?.repositories ?? '')).toContain('github.event.repository.name')
   })
 
-  it('the open (issue-write) step itself only runs on an explicit live dispatch', () => {
-    const openStep = openJob?.steps.find(step => step.id === 'open')
+  it('the open (issue-write) step lives in open-publish and requires no additional if — the job-level if already gates it', () => {
+    const openStep = publishJob?.steps.find(step => step.id === 'open')
     expect(openStep).toBeDefined()
-    expect(openStep?.if).toContain("github.event_name == 'workflow_dispatch'")
-    expect(openStep?.if).toContain("github.event.inputs.dry_run == 'false'")
   })
 
-  it('the agent drafting step only runs on an explicit live dispatch', () => {
+  it('the agent drafting step only runs on an explicit live dispatch (redundant with, but independent of, the job-level if)', () => {
     const agentStep = openJob?.steps.find(step => step.id === 'agent')
     expect(agentStep).toBeDefined()
     expect(agentStep?.if).toContain("github.event_name == 'workflow_dispatch'")
@@ -117,7 +146,7 @@ describe('capture-patterns.yaml workflow contract', () => {
 
   it('the agent step and the open step receive the same digest path env var', () => {
     const agentStep = openJob?.steps.find(step => step.id === 'agent')
-    const openStep = openJob?.steps.find(step => step.id === 'open')
+    const openStep = publishJob?.steps.find(step => step.id === 'open')
     expect(agentStep).toBeDefined()
     expect(openStep).toBeDefined()
 
@@ -128,7 +157,7 @@ describe('capture-patterns.yaml workflow contract', () => {
   })
 
   it('the open step wires CAPTURE_PATTERNS_BODIES_PATH and CAPTURE_PATTERNS_RESULT_PATH under runner.temp', () => {
-    const openStep = openJob?.steps.find(step => step.id === 'open')
+    const openStep = publishJob?.steps.find(step => step.id === 'open')
     const bodiesPath = openStep?.env?.CAPTURE_PATTERNS_BODIES_PATH
     const resultPath = openStep?.env?.CAPTURE_PATTERNS_RESULT_PATH
     expect(String(bodiesPath ?? '')).toContain('runner.temp')
@@ -141,13 +170,13 @@ describe('capture-patterns.yaml workflow contract', () => {
   })
 
   it('the open step uses only the minted app token and does not fall back to the job token', () => {
-    const openStep = openJob?.steps.find(step => step.id === 'open')
+    const openStep = publishJob?.steps.find(step => step.id === 'open')
     const token = String(openStep?.env?.GITHUB_TOKEN ?? '')
     expect(token).toContain('steps.app-token.outputs.token')
     expect(token).not.toContain('github.token')
   })
 
-  it('the agent step uses the read-only workflow GITHUB_TOKEN, not the minted write token', () => {
+  it('the agent step uses the read-only workflow GITHUB_TOKEN, not any write token', () => {
     const agentStep = openJob?.steps.find(step => step.id === 'agent')
     const withBlock = agentStep?.with
     expect(String(withBlock?.['github-token'] ?? '')).toContain('github.token')
@@ -165,6 +194,7 @@ describe('capture-patterns.yaml workflow contract', () => {
 
   it('the digest → open sequence depends on the detect job completing first', () => {
     expect((parsed.jobs.open as unknown as {needs?: string}).needs).toBe('detect')
+    expect((parsed.jobs['open-publish'] as unknown as {needs?: string[]}).needs).toStrictEqual(['detect', 'open'])
   })
 
   it('the workflow file uses plain operator-facing vocabulary, not internal plan taxonomy', () => {
@@ -176,7 +206,7 @@ describe('capture-patterns.yaml workflow contract', () => {
 
   it('the detect and open node|tee pipelines run under pipefail so a node failure fails the step', () => {
     const detectStep = detectJob?.steps.find(step => step.id === 'detect')
-    const openStep = openJob?.steps.find(step => step.id === 'open')
+    const openStep = publishJob?.steps.find(step => step.id === 'open')
     expect(String(detectStep?.run ?? '')).toContain('| tee')
     expect(String((detectStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
     expect(String(openStep?.run ?? '')).toContain('| tee')
@@ -188,6 +218,14 @@ describe('capture-patterns.yaml workflow contract', () => {
       step => typeof step.name === 'string' && step.name.includes('Upload digest artifact'),
     )
     expect(uploadStep?.with?.['retention-days']).toBe(1)
+  })
+
+  it('the bodies artifact also retains for 1 day and tolerates a missing file (agent produced nothing)', () => {
+    const uploadStep = openJob?.steps.find(
+      step => typeof step.name === 'string' && step.name.includes('Upload bodies artifact'),
+    )
+    expect(uploadStep?.with?.['retention-days']).toBe(1)
+    expect(uploadStep?.with?.['if-no-files-found']).toBe('warn')
   })
 
   it('the detect summary reports candidate quality suppression separately from low-signal skips', () => {
