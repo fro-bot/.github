@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-09-08
+updated: 2026-09-24
 node_id: R_kgDOPOixzg
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 2ba4e405713e576d9a1a09887b22b276c2771599
+    accessed: 2026-09-24
   - url: https://github.com/marcusrbrown/vbs
     sha: 986b1c296c782dc2fb5acce19f5d594388619faf
     accessed: 2026-09-08
@@ -58,6 +61,8 @@ related:
   - marcusrbrown--infra
   - marcusrbrown--cortexkit-anthropic-auth
   - bfra-me--ha-addon-repository
+  - bfra-me--works
+  - marcusrbrown--marcusrbrown
 ---
 
 # marcusrbrown/vbs
@@ -207,6 +212,8 @@ Required status checks on `main`: Build, Fro Bot, Renovate / Renovate, Test. Lin
 
 > **2026-09-08 — the daemon has no file-delivery channel.** `fro-bot.yaml` contains exactly three `uses:` steps — `actions/checkout@d23441a` (v6.1.0), `./.github/actions/setup-pnpm`, and `fro-bot/agent@335e4f8` (v0.105.0) — and **nothing follows the agent step**. Under the harness's `working-dir` delivery mode the caller workflow owns commit, push, and PR creation; this workflow never grew that half. The result is a clean split by channel: **API writes land, filesystem writes evaporate.** The agent still comments daily on #563 and #429 (75 and 89 comments, current through 2026-09-08), but it has opened **no PR since 2026-08-08 (#717)** and **no issue since 2026-07-22 (#694)**. The `AUTOHEAL_PROMPT` still explicitly mandates the forbidden path — category 1 says *"Commit with a clear conventional-commit message and push to the PR branch"*, category 2 *"create a new PR with the remediation"*, category 4 *"Open a PR for all fixes"* — so prompt intent and workflow capability are in direct, undetected contradiction. Third confirmation of the class after [[marcusrbrown--tokentoilet]] and the control plane itself; see [[github-actions-ci]]. What is **new here**: the agent detected the gap itself and escalated on the streak (see 2026-09-08 Delta).
 
+> **2026-09-24 — still no delivery channel; the fix for it is now stuck in the same channel.** Workflow unchanged at HEAD `2ba4e40` (609 lines, three `uses:` steps, no `output-mode` input, checkout `persist-credentials: false`). On 2026-09-19 the autoheal named the root cause precisely (schedule → `output-mode` unset → `working-dir`, no post-agent step) and on 2026-09-23 wrote the repair — an explicit `output-mode: branch-pr` plus a gated git-credential step, ported from [[marcusrbrown--tokentoilet]] PR #1515 — **into the working tree**, where it was discarded at teardown like every other fix. Unlike [[bfra-me--works]], VBS's prompt does *not* seal the agent out of its own workflow (category 7 explicitly invites a PR "updating this workflow prompt"); the carve-out exists, but it routes through PR creation, which is the missing half. The repair can only land by hand. See 2026-09-24 Delta and [[github-actions-ci]].
+
 **Fro Bot workflow is present and active** (`fro-bot.yaml`, pinned `fro-bot/agent@335e4f8…` # v0.105.0 as of 2026-09-08; was `7b9a281…` # v0.100.0 at 2026-08-19). As of 2026-08-19 survey: agent `v0.100.0` (was `v0.93.1` at 2026-07-19, `v0.83.0` at 2026-07-05, `v0.73.0` at 2026-06-21, `v0.55.4` at 2026-06-10, `v0.46.0` at 2026-05-29 — see Survey History for the version trail). The **v0.99 → v0.100 minor boundary** crossed via #727 (2026-08). Modes unchanged (`review` | `maintenance` | `autoheal`, default `autoheal`); dual cron schedules steady (`30 3 * * *` autoheal, `30 15 * * *` maintenance).
 
 **Review-mode input guard (new at 2026-08-19):** `fro-bot.yaml` now carries a `Validate review mode inputs` step that hard-fails a `workflow_dispatch` with `mode == 'review'` but no custom `prompt` (`::error::Review mode requires a custom prompt…`). This is the same fail-closed guard first cataloged on [[bfra-me--renovate-action]]'s `fro-bot.yaml` — the guard has now propagated to VBS, confirming it is spreading across the unified single-job workflow shape. It is the enforcement counterpart to the 2026-07-04 bare-prompt-dispatch fix (#662): #662 made a bare-prompt dispatch route correctly; the new guard rejects the inverse footgun (review mode with an empty prompt). As of 2026-05-14 (PR #564) the separate `fro-bot-autoheal.yaml` was folded into a single `fro-bot.yaml` with operating modes routed by `workflow_dispatch.inputs.mode` and dual cron schedules (`30 3 * * *` autoheal, `30 15 * * *` maintenance). PR #594 (2026-05-30, Fro Bot-authored) completed the consolidation into a **unified single-job workflow**: the separate `fro-bot-autoheal` job was removed, the `both` mode was dropped (modes are now `review` | `maintenance` | `autoheal`, default `autoheal`), concurrency for schedule triggers now keys on `github.event.schedule` (the actual cron string) instead of a hardcoded string, and a fork-PR-head guard was added at the job `if` level (skips fork PRs and bot-authored PRs). PR #593 (2026-05-30, Marcus-authored) added `opencode-config` to job secrets. This mirrors the consolidation pattern landed in [[marcusrbrown--systematic]] (#446), [[marcusrbrown--marcusrbrown-github-io]], and `marcusrbrown/marcusrbrown` / [[marcusrbrown--tokentoilet]], and is the dominant Fro Bot workflow shape across the ecosystem now.
@@ -251,7 +258,7 @@ A `workflow_dispatch` carrying only a custom `prompt` (no `mode`) previously had
 ## Developer Tooling
 
 - **pnpm supply-chain cooldown exclusions (new 2026-08-23):** `pnpm-workspace.yaml` gained a `minimumReleaseAgeExclude:` list (`'@bfra.me/eslint-config@0.51.2'`, `'@bfra.me/prettier-config@0.16.10 || 0.16.11'`), written by Renovate in #738/#739. This is Renovate reconciling its own release-age cooldown policy with pnpm 11's install-time `minimumReleaseAge` gate by emitting per-version escape hatches into the workspace manifest — the first instance of the pattern observed in the ecosystem. **Coherence caveat:** no `minimumReleaseAge` value is declared anywhere in the repo (not in `pnpm-workspace.yaml`, and there is no `.npmrc`), so either the cooldown is inherited from a non-repo source or the exclusion list is inert configuration. Recorded as observed, not resolved.
-- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.12` + `group:allNonMajor`; `postUpgradeTasks` runs `pnpm install` + `pnpm fix` in `branch` execution mode, `rebaseWhen: 'behind-base-branch'`. Pin unchanged at 2026-09-08 (`#5.2.13` is stranded inside blocked PR #740). Was `#5.2.12` at 2026-08-19, `#5.2.7` at 2026-07-19, `#5.2.4` at 2026-07-05, `#5.2.3` at 2026-06-21, `#5.2.1` at 2026-06-10, `#5.2.0` at 2026-05-29, `#4.5.9` before that. Config lives in `.github/renovate.json5`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.12` + `group:allNonMajor`; `postUpgradeTasks` runs `pnpm install` + `pnpm fix` in `branch` execution mode, `rebaseWhen: 'behind-base-branch'`. Pin unchanged at 2026-09-08 (`#5.2.13` is stranded inside blocked PR #740) and still unchanged at 2026-09-24 (same PR, still blocked). Was `#5.2.12` at 2026-08-19, `#5.2.7` at 2026-07-19, `#5.2.4` at 2026-07-05, `#5.2.3` at 2026-06-21, `#5.2.1` at 2026-06-10, `#5.2.0` at 2026-05-29, `#4.5.9` before that. Config lives in `.github/renovate.json5`.
 - **pnpm overrides for security remediation:** `pnpm-workspace.yaml` now carries an `overrides` block (`fast-uri: ^3.1.3`) — added by Fro Bot in PR #655 (2026-07-04) to remediate two High-severity `fast-uri` Dependabot alerts (path traversal GHSA-q3j6-qgpj-74h6, host confusion GHSA-v39h-62p7-jpjc) in a transitive devDependency chain (`ajv` ← `eslint-plugin-json-schema-validator` ← `@bfra.me/eslint-config`). This mirrors the `fro-bot`-authored override-remediation pattern seen across the ecosystem ([[marcusrbrown--tokentoilet]], [[marcusrbrown--mrbro-dev]], [[bfra-me--works]]). **2026-09-08 correction:** this override is the only one that ever landed. The five later `fix(security)` PRs are all `CONFLICTING` and — per the 2026-09-08 autoheal report, cross-checked against 0 open Dependabot alerts (44 historical, all `fixed`) — **redundant**: every advisory they target was resolved on `main` by ordinary Renovate bumps while the PRs sat. #697 in particular re-remediates GHSA-v39h-62p7-jpjc, which #655 had already fixed 19 days earlier. This **supersedes** the 2026-08-19 reading of "5 open High-severity remediations stacking" as a risk signal: the backlog is stale, not pending.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirms membership in the Fro Bot-managed ecosystem.
 - **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML files.
@@ -284,7 +291,61 @@ A `workflow_dispatch` carrying only a custom `prompt` (no `mode`) previously had
 | 2026-07-19 | `9465b61` | 14 commits, **all Renovate** (`mrbro-bot[bot]`). Pure dependency autopilot — no structural, workflow, or application-code changes. Agent v0.83.0 → v0.93.1, pnpm 11.9.0 → 11.13.1, Renovate preset v5.2.4 → v5.2.7, prettier 3.9.4 → 3.9.5, vitest stack 4.1.9 → 4.1.10, `@types/node` 24.13.2 → 24.13.3. New observation (not new state): pnpm 11 `allowBuilds:` block in `pnpm-workspace.yaml`. Open PRs 0 → 3 (all Fro Bot autoheal), open issues 15 → 18 |
 | 2026-08-19 | `c368b1c` | 41 commits, **all Renovate** (`mrbro-bot[bot]`) — only 10 files touched, all dep-bump line edits (7 workflows + `renovate.json5` + `package.json` + lockfile). Pure dependency autopilot, no structural/application-code change. But two **workflow-prompt** deltas surfaced (shipped inline in `fro-bot.yaml`, so they ride the SHA-pin bumps): (1) new `Validate review mode inputs` guard — same fail-closed guard as [[bfra-me--renovate-action]]; (2) **autoheal sweep 5 → 8 categories** (added Quality-Gates-Verification, Cross-Project-Intelligence, Sunday-gated Upstream-Modernization-Watch), mirroring the [[marcusrbrown--infra]] category expansion. Agent **v0.93.1 → v0.100.0** (v0.99 → v0.100 boundary, #727), pnpm 11.13.1 → **11.22.0**, Renovate preset v5.2.7 → **v5.2.12**, `bfra-me/.github` → **v4.18.0**, prettier 3.9.5 → 3.9.6, `actions/checkout` → v6.1.0. Maintenance/autoheal reports now split (#429 / #563). Open PRs 3 → 9 (8 Fro Bot autoheal/security + 1 perpetual data PR), open issues 18 → 19 |
 | 2026-09-08 | `986b1c2` | **11 commits in 20 days, all Renovate — the quietest window on this page, and the quiet is a symptom.** One grouped PR (#740, `renovate/all-minor-patch`, 2026-08-24) is `BLOCKED` on a failing `Test` job caused by a new `unicorn/prefer-array-some` violation that arrived with `@bfra.me/eslint-config` 0.51.2 → 0.52.1; because the repo extends `group:allNonMajor`, that one lint rule froze **the entire non-major queue** — pnpm 11.22.0 → 11.25.0, `bfra-me/.github` v4.20.0 → v4.26.0, `fro-bot/agent` **v0.105.0 → v0.109.4**, renovate-config #5.2.12 → #5.2.13, simple-git-hooks. VBS fell off the ecosystem agent-version front for the first time. The autoheal knows the fix and **cannot deliver it**: `fro-bot.yaml` has no commit/push/PR step after `Run Fro Bot`, so under `working-dir` delivery mode every file change is discarded at job teardown. Third confirmation of the delivery-mode class — and the **first where the agent self-diagnosed it**, flagging a "⚠️ Confirmed recurring persistence gap … third consecutive daily run" after re-reading `git log` at run start. No fro-bot PR since 2026-08-08, no fro-bot issue since 2026-07-22; comments still land daily. Other findings: 85/100 workflow runs `skipped` (53 from `issues` alone); #429's body reached **65,526 of GitHub's 65,536-char limit** before emergency archival; 5 stale security PRs confirmed redundant against 0 open Dependabot alerts; new `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. Open PRs 9 → 10, open issues flat at 19 |
+| 2026-09-24 | `2ba4e40` | **1 commit in 16 days** (#744, Renovate lockfile maintenance). Workflow, manifests, and prompts byte-identical to `986b1c2`. #740 is **31 days blocked** on the same `Test` failure (`unicorn/prefer-array-some`, `src/modules/episodes.ts:291`), and Renovate keeps rebasing more into it: agent pin **v0.105.0 → v0.115.0** (10 minors), `bfra-me/.github` v4.20.0 → **v4.33.0**, pnpm 11.22.0 → **11.27.1**, `@bfra.me/eslint-config` → 0.52.2. The autoheal root-caused the delivery gap (09-19), stopped re-applying convention fixes (09-21, citing 8 discarded runs), then wrote the workflow fix itself (09-23), which was discarded too. It also self-corrected a prior false "fixed" claim on #676. New contradiction: the 09-23 report says the agent pin has "no open Renovate PR", but the bump is in #740. #429 body is back to **56,073** chars (27,751 after the 09-06 archival), and #563 is at 45,069 against its 50k rotation directive. Open PRs flat at 10, open issues 19 → 17 |
 
+### 2026-09-24 Delta (SHA `986b1c2` → `2ba4e40`)
+
+One commit in 16 days: `2ba4e40` (#744, 2026-09-14, `mrbro-bot[bot]`, `pnpm-lock.yaml` +269/−269). There were no workflow, manifest, prompt, or application-code changes. Nothing that would advance the repo has landed. Everything interesting is in the autoheal reports on #563 and #676.
+
+#### The grouped queue keeps growing behind one lint rule
+
+PR #740 (`renovate/all-minor-patch`) is **31 days old**. On 2026-09-24 it was still `Test` → `failure`, with `Build`, both `Renovate / Renovate` contexts → `success` and `Fro Bot` → `skipped`. REST `mergeable_state` reads `unstable`; the 2026-09-08 GraphQL reading was `BLOCKED`, and the two are different API surfaces, not a state change. Renovate keeps folding new releases into it: the PR now carries 6 files, and its non-lockfile diff is:
+
+| Pin | `main` | stranded in #740 |
+| --- | --- | --- |
+| `fro-bot/agent` (`fro-bot.yaml`) | v0.105.0 `335e4f8` | **v0.115.0** `8e6494e` |
+| `bfra-me/.github` (`renovate.yaml`, `update-repo-settings.yaml`) | v4.20.0 `a122dd0` | **v4.33.0** `6f33c67` |
+| `marcusrbrown/renovate-config` | #5.2.12 | #5.2.13 |
+| `packageManager` | pnpm@11.22.0 | pnpm@11.27.1 |
+| `@bfra.me/eslint-config` / `tsconfig` | 0.51.2 / 0.13.1 | 0.52.2 / 0.13.2 |
+| prettier / `simple-git-hooks` / `@types/node` | 3.9.6 / 2.13.1 / 24.13.3 | 3.9.8 / 2.14.0 / 24.13.6 |
+
+VBS is now **10 agent minors** off `main`'s pin, the widest gap recorded on this page. The fleet front is v0.114–v0.115 ([[marcusrbrown--marcusrbrown]] v0.114.0). Every day the grouped PR stays red, the next unblock carries more changes at once.
+
+#### The delivery arc: diagnose → abstain → self-repair → discarded
+
+The autoheal comments on #563 give a dated sequence. They are quoted as data, not verified runtime claims:
+
+1. **2026-09-14 (#676):** *"`migration-progress.ts` is now actually fixed … the 2026-08-25 entry above was inaccurate — `git log`/`grep` … confirmed `destroy()` was never present."* This is an honest correction of an earlier false "fixed" claim. The same comment still says *"caller workflow will commit/push/PR"*, and that is false for this workflow.
+2. **2026-09-19:** *"Root cause found … `schedule` trigger resolves to `output-mode: auto` → `working-dir`, but the workflow has no post-agent step to commit/push/PR."* This matches the workflow as read at `2ba4e40`.
+3. **2026-09-21:** the run *"deliberately did not repeat working-tree edits … since 8 consecutive prior daily runs' edits were confirmed not to land on `main`,"* and it cited [[marcusrbrown--tokentoilet]] PR #1515 (merged that day) as the fix template. The agent stopped doing work it had measured as wasted.
+4. **2026-09-23:** *"`.github/workflows/fro-bot.yaml` — root-cause fix: added a gated git-credential step and explicit `output-mode: branch-pr` for the autoheal schedule/dispatch triggers."* The fix was validated (`js-yaml`, lint/tsc/1299 tests/build green) and **left in the working tree**. At HEAD `2ba4e40` the workflow has no `output-mode` line. The repair was discarded through the same gap it was meant to close.
+
+**Local falsification passes here.** On [[marcusrbrown--marcusrbrown]] the same inbound diagnosis was refuted by the daemon's own pushes to an existing PR branch (see [[github-actions-ci]] → *Cross-Project Intelligence Transmits Conclusions Faster Than It Transmits Fixes*). VBS shows the consequence as well as the shape. No fro-bot-authored PR has been created or updated since **2026-08-05/08** (#701/#697 last updated 08-05, #717 created 08-08). The five `CONFLICTING` security PRs were never rebased. The fro-bot issue set has not grown since 2026-07-22. VBS is the case where the transferred conclusion holds.
+
+**Why this is not the [[bfra-me--works]] self-seal.** VBS's category-1 repair rule forbids editing `.github/workflows/` *while repairing an errored PR*. Category 7, by contrast, says *"If you identify a recurring pattern that could be prevented by updating this workflow prompt … open a PR with the proposed improvement."* So the agent *is* permitted to edit its own delivery configuration. The permission is delivered as a PR, though, and PR creation is the half that does not exist. The carve-out and the defect share one channel. See [[github-actions-ci]] → *A Delivery Fix Delivered Over the Channel It Repairs Is Discarded by It*.
+
+#### Contradictions and report quality
+
+- **Agent pin "no open Renovate PR" is false.** The 2026-09-23 summary says *"cross-project intelligence found `fro-bot/agent` pin is 9+ releases stale with no open Renovate PR."* The pin bump (v0.105.0 → v0.115.0) is in #740's `fro-bot.yaml` diff. The staleness figure is right, but the attribution is wrong: the pin is stale because Renovate's grouped PR is blocked, not because Renovate is missing. Recorded as a report-accuracy defect. The page's own finding stands.
+- **"2 merge-ready PRs (#674, #693) flagged for a human"** (09-23). Both are fro-bot PRs from July with no updates since creation. This survey did not verify merge readiness.
+- **Security posture unchanged in the reports:** *"0 open Dependabot alerts"* on every run 09-18 → 09-23. This survey could not verify it (unauthenticated API, no `gh` credentials in this run), so it is recorded as agent-reported.
+
+#### Perpetual-issue budgets
+
+- **#429 (maintenance):** body **56,073** chars, 101 comments. The 2026-09-06 emergency archival cut it to 27,751, and it regrew about 28k in 18 days (~1.6k/day). At that rate it reaches the 65,536 hard limit around **2026-09-30**, unless the maintenance prompt rotates it first, which it did not do last time.
+- **#563 (autoheal):** body **45,069** chars, 84 comments, against the prompt's prose rotation threshold of 50,000.
+- The autoheal skipped comments on 09-03, 09-09, 09-12, and 09-14 through 09-16, and on 09-22 (7 of 23 days in the window). Scheduled runs still conclude `success` (7/7 in the sampled 100). The gaps went unexplained in the reports and are not diagnosed here.
+
+#### Run surface
+
+Last 100 runs across all workflows: `Fro Bot` 7 `schedule` success, 36 skipped (`issues` 25, `pull_request` 7, `issue_comment` 4). `Renovate` 26 `issues`-skipped, 17 success. `CI` 6 failure / 1 success on `pull_request`, all failures on #740. `Update Repo Settings` 6 success, `Update Star Trek Data` 1 success. The bot-edit skip storm from 2026-09-08 persists at the same shape.
+
+#### Activity shape (as of 2026-09-24)
+
+- **Open PRs:** 10 (flat). Same set as 2026-09-08. #705 (perpetual data PR) was refreshed 2026-09-21; #740 was refreshed 2026-09-24.
+- **Open issues:** 17 (down from 19). Six fro-bot convention/data/coverage issues (#656, #657, #670, #675, #676, #694), the two perpetual reports (#429, #563), eight Marcus roadmap issues (#150, #152–#155, #157–#161), and the Dependency Dashboard (#25). The 2026-09-08 count of "ten Marcus roadmap issues" does not match the eight open now. No roadmap issue shows a recent update, so the earlier count may have been off by two. Recorded as unresolved.
+- **Stars:** 2. **Visibility:** public. **Fro Bot workflow:** present and active. No follow-up draft PR is needed for *presence*, but the delivery half is still missing (see above).
 ### 2026-09-08 Delta (SHA `c368b1c` → `986b1c2`)
 
 11 commits over 20 days, **every one `mrbro-bot[bot]`** — six files touched (three workflow pin lines, `package.json`, `pnpm-workspace.yaml`, the lockfile). By commit volume this is the quietest window ever recorded here. The volume is the finding: VBS did not go quiet because there was nothing to do.

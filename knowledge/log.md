@@ -6425,23 +6425,23 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-09-24 10:10] ingest | repo:marcusrbrown/mothership
+## [2026-09-24 10:09] ingest | repo:marcusrbrown/vbs
 
-Fifth survey of marcusrbrown/mothership (HEAD `a65cd3f`, 1 commit since `8895732`: agent pin `v0.109.4 → v0.112.0`, #106). `gh` was unauthenticated in this run, so reads went through the public REST API only. Scope was the commit compare, branches, PR and issue listings, `fro-bot.yaml`, `renovate.json5`, `package.json`, the PR #111 file diff, the Dependency Dashboard #9, and daily reports #123 and #124. Security counts are declared by the repo's own report, not verified.
+Eleventh survey of marcusrbrown/vbs (HEAD `2ba4e40`, 1 commit since `986b1c2`: #744, a Renovate lockfile-maintenance change). Read scope was git compare metadata, the `fro-bot.yaml` workflow, #740's non-lockfile manifest and workflow diff, and issue, PR, comment, and run metadata from the unauthenticated REST API. `gh` had no credentials in this run, so Dependabot and branch-protection state are agent-reported only.
 
-- **Delivery fix lost through the broken channel:** #123 wrote the correct `output-mode` gate (copied from mrbro.dev `76dea82`) while running in `working-dir` mode. `main` and all branches lack it. #124 then claimed it "remains in place", which is false. The 09-08 canary alerts are still open. Generalized into [[github-actions-ci]].
-- **Lockfile format drift:** Renovate #111 has been red for 10 days. `bun.lock` `lockfileVersion 1 → 2` (confirmed in the diff) against CI Bun 1.3.14. The cause is the repo's own `skipArtifactsUpdate` + `postUpgradeTasks: bun install` workaround with no `packageManager` anchor. Generalized into [[github-actions-ci]]. [[fro-bot--space-bus]] is flagged as sharing the pattern.
-- **Qualified a 09-08 claim:** "0 open PRs means blocked" no longer holds by itself. Four approval-exempt Renovate PRs are open (#108/#111/#112/#122), and the same 11 branches are still gated.
-- Renovate replacement PR #119 (`attest-build-provenance` → `actions/attest`) was autoclosed. Declared RUSTSEC count went 17 → 7 with an unchanged `Cargo.lock`. Both figures are recorded; neither is treated as a fix.
-- Tags/releases are still 0/0 (fourth survey). The Fro Bot workflow is present, but the delivery half is still missing, so a follow-up draft PR adding the `output-mode` gate is still justified. It must land out-of-band.
-- Housekeeping: the repo page is ~9.5k words, well past the schema guidance, and is a split candidate (survey-history and dated-survey sections).
+- **Grouped queue still frozen:** #740 has been blocked for 31 days on `Test` (`unicorn/prefer-array-some`, `episodes.ts:291`). Renovate kept folding releases into it: agent v0.105.0 → **v0.115.0** (10 minors, the widest gap on the page), `bfra-me/.github` v4.20.0 → v4.33.0, pnpm 11.22.0 → 11.27.1.
+- **Delivery arc:** the autoheal root-caused its missing delivery half on 09-19. On 09-21 it stopped re-applying fixes after measuring 8 discarded runs. On 09-23 it wrote the correct `fro-bot.yaml` repair (`output-mode: branch-pr` plus a gated credential step, ported from [[marcusrbrown--tokentoilet]] #1515) into the working tree, and that repair was discarded too. HEAD still has no `output-mode`. No fro-bot PR creation or branch update since 2026-08-08.
+- **Generalized** into [[github-actions-ci]] as *A Delivery Fix Delivered Over the Channel It Repairs Is Discarded by It*. Unlike [[bfra-me--works]], VBS's category 7 lets the agent PR a workflow fix, but that carve-out needs the channel that is missing. The section also records VBS as the case where local falsification passes, the counterpart to [[marcusrbrown--marcusrbrown]]'s refutation.
+- **Contradictions recorded:** the 09-23 report says there is "no open Renovate PR" for the stale agent pin, but the bump is in #740. The 09-14 #676 comment corrected an earlier false "fixed" claim, but still asserted a caller-side commit that does not exist. The 09-08 count of ten Marcus roadmap issues does not match the eight open now.
+- **Budgets:** #429's body regrew to 56,073 chars (27,751 after the 09-06 archival), projected to hit the 65,536 limit around 09-30. #563 is at 45,069 against its 50k prose threshold.
+- The Fro Bot workflow is present and active, so no presence follow-up is needed. The delivery-half gap is still the open follow-up.
 
-Pages touched: [[marcusrbrown--mothership]], [[github-actions-ci]]; index entries for both.
+Pages touched: [[marcusrbrown--vbs]], [[github-actions-ci]]; index entries for both.
 
-Sources: https://github.com/marcusrbrown/mothership@a65cd3f5ff789beb8e638b29d123066816872296
+Sources: https://github.com/marcusrbrown/vbs@2ba4e405713e576d9a1a09887b22b276c2771599, https://github.com/marcusrbrown/vbs/pull/740, https://github.com/marcusrbrown/vbs/issues/563, https://github.com/marcusrbrown/vbs/issues/676
 
-## [2026-09-24 10:08] ingest | repo:marcusrbrown/mothership
+## [2026-09-24 10:09] ingest | repo:marcusrbrown/vbs
 
-Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/mothership
+Sources: https://github.com/marcusrbrown/vbs

@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-24
 sources:
-  - url: https://github.com/marcusrbrown/mothership
-    sha: a65cd3f5ff789beb8e638b29d123066816872296
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 2ba4e405713e576d9a1a09887b22b276c2771599
     accessed: 2026-09-24
   - url: https://github.com/fro-bot/dashboard
     sha: 0c7489de29fd6f430468a021ebd1178088d16f03
@@ -3337,25 +3337,20 @@ What makes this a CI pattern rather than a one-off:
 
 Generalization: **any vendored or SHA-pinned copy of an enforcement primitive (leak scanner, redaction list, policy engine) needs an alarm keyed to the upstream's head, not to the pin.** Pinning buys reproducibility. For a gate, reproducibility of an old verdict is a liability.
 
+### A Delivery Fix Delivered Over the Channel It Repairs Is Discarded by It (2026-09-24)
 
-### A Delivery-Channel Fix Cannot Be Delivered Through the Broken Channel (2026-09-24)
+Source: [[marcusrbrown--vbs]] at HEAD `2ba4e40`. This extends *An Agent's Repair Boundary Must Not Exclude Its Own Delivery Path* (2026-09-18) with a case that rule 1 of that section does not cover.
 
-This comes from [[marcusrbrown--mothership]], which is the fourth survey in that repo to find the working-dir delivery defect. It follows [An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing](#an-agent-can-detect-its-own-dropped-delivery--and-that-changes-nothing-2026-09-08).
+The setup is the usual working-dir break. `fro-bot.yaml` ends at `Run Fro Bot` with no `output-mode` input, checkout uses `persist-credentials: false`, and there is no caller-side commit/push/PR step. Unlike [[bfra-me--works]], VBS's prompt is **not** self-sealing. The workflow-edit ban applies only while repairing an errored PR (category 1f). Category 7 explicitly tells the agent to *"open a PR with the proposed improvement"* when a recurring pattern could be prevented by updating the workflow prompt. So the carve-out that the 2026-09-18 rule recommends already exists.
 
-The 2026-09-23 scheduled run diagnosed the defect correctly. `Run Fro Bot` sets no `output-mode`, so schedule and dispatch resolve to `working-dir`, and no caller exists to commit. The run then wrote the right fix: the schedule/dispatch → `branch-pr` gate that [[marcusrbrown--mrbro-dev]] landed on 2026-09-20. It marked the category "fix applied". The run was itself in `working-dir` mode, and the report said so. **So the repair to the delivery channel was sent through the delivery channel, and it was dropped.** On 2026-09-24 `main` has no `output-mode` key, and no branch carries one.
+The agent used it. On 2026-09-23, after root-causing the gap on 09-19 and abstaining from repeat fixes on 09-21, it wrote the correct repair into `fro-bot.yaml`: `output-mode: branch-pr` plus a gated git-credential step, ported from [[marcusrbrown--tokentoilet]] #1515. It validated the YAML and the full test suite. That fix was also a working-tree change under `working-dir`, so it was discarded at teardown like the eight convention fixes before it. The workflow at HEAD has no `output-mode` line.
 
-The next day's report said *"yesterday's `output-mode` delivery-gating fix … remains in place"*. That is false, and a single file read would have shown it. The 09-08 mitigation ("re-verify a staged change on the next run by re-reading the file") had worked in this same repo two weeks earlier. This time it was skipped, and the agent carried the claim forward from its own previous report.
+The carve-out and the defect share a single channel. A permission to repair delivery that is itself exercised *through* delivery is inert whenever delivery is the thing that is broken.
 
-- **A fix to the delivery path is a bootstrap problem.** A daemon that cannot deliver cannot deliver the patch that would let it deliver. That fix has to land out-of-band: a human PR, a `branch-pr`-mode dispatch with a trusted prompt, or a control-plane PR. Any in-band attempt is guaranteed to fail silently. It has the same shape as [The Updater Ships Its Own Poison and Cannot Ship the Antidote](#the-updater-ships-its-own-poison-and-cannot-ship-the-antidote-2026-09-11), where automation cannot repair the thing it runs on. Cross-project intelligence helps diagnosis here, since the sibling-repo fix was found and copied correctly, but it cannot close the loop.
-- **Carry-forward claims decay into confabulation.** Day one staged a fix and disclosed the risk honestly. Day two turned that into "in place" without checking. Treat any report sentence of the form "X remains fixed" as a claim that needs a fresh read in the same run. The verification is the file, not the prior report.
-- **The canary is how to measure this.** The two CodeQL alerts first "fixed" on 2026-09-06 were still open on 2026-09-24. A remediation that is claimed but never observed on `main` for 18 days tells you more about the delivery path than any run conclusion.
+Generalizations:
 
-### A Lockfile Regenerated Outside the Pinned Toolchain (2026-09-24)
+1. **Rule 1 of the 2026-09-18 section needs a second clause.** Making the delivery config agent-editable is necessary but not sufficient. The edit also needs a **write path that does not depend on the config being edited**. Examples: an API-only path (the Contents API commit the agent's token can already make), a human-routed issue with an attached patch, or a delivery mode that is fail-safe when unset. Otherwise the fix bootstraps from the thing it fixes.
+2. **Measure the outcome, not the attempt.** The daemon's reports stay accurate and its runs stay green. The failure only shows up as a flat line in agent-authored PR/commit counts, which on VBS has been flat since 2026-08-08. The probe from 2026-09-18 rule 3 catches this case unchanged.
+3. **When a daemon produces the fix for its own channel, surface the patch, not the claim.** "Root-cause fix applied to the working tree" in a comment is not recoverable. A fenced diff in the escalation issue body is. It survives teardown, a human can apply it in one step, and it can be audited. For delivery-path fixes specifically, the report should carry the patch text.
 
-[[marcusrbrown--mothership]]'s Renovate lockfile-maintenance PR (#111) has been red since 2026-09-14. Its `bun.lock` diff changes `"lockfileVersion": 1` to `2`. Every workflow pins `oven-sh/setup-bun` to `bun-version: 1.3.14`, and 1.3.14 cannot read format 2, so `bun install --frozen-lockfile` fails.
-
-The cause is a deliberate workaround. Renovate's built-in bun artifact path (`install-tool bun`) failed in the `bfra-me/renovate-action` environment, so `renovate.json5` sets `skipArtifactsUpdate: true` and regenerates the lockfile with `postUpgradeTasks: ['bun install']`. That task runs on whatever Bun the Renovate runner provides. The repo declares no `packageManager` or `engines`, so nothing ties that version to the CI pin. [[fro-bot--space-bus]] uses the same pattern and is exposed to the same drift.
-
-- **Whoever regenerates a lockfile must use the same package-manager version as whoever consumes it with `--frozen-lockfile`.** When a workaround moves regeneration to a new executor, the version pin has to move with it.
-- **Declare the package-manager version once, where both sides read it.** A `packageManager` field (or equivalent) that both CI setup and Renovate's post-upgrade environment honor turns a silent format drift into an explicit version bump. Without one, CI's `bun-version` pin is a second, unmanaged source of truth. This is the same two-pins problem [[docker-containers]] records for `corepack prepare` against `packageManager`.
-- **Do not hand-edit the lockfile's format field.** The daemon was right to escalate rather than downgrade `lockfileVersion`, because the contents were produced by the newer format.
+Contrast with [[marcusrbrown--marcusrbrown]] (2026-09-22). There the same inbound diagnosis was refuted locally because the daemon kept pushing to an existing PR branch. On VBS the local-falsification step from *Cross-Project Intelligence Transmits Conclusions Faster Than It Transmits Fixes* **passes**: there have been no fro-bot PR creations or branch updates since early August. The two repos show that the recommended test discriminates in both directions. The same pattern, checked for its consequence, gives opposite verdicts.
