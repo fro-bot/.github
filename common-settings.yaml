@@ -335,10 +335,8 @@ labels:
 
 # Collaborators: give specific users access to this repository.
 # See https://docs.github.com/en/rest/collaborators/collaborators#add-a-repository-collaborator for available options
+# Don't list fro-bot: it owns every repo that inherits this file, and the owner can't be a collaborator.
 collaborators:
-  - username: fro-bot
-    permission: admin
-
   - username: marcusrbrown
     permission: push
 
