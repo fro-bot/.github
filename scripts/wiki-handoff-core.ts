@@ -15,6 +15,16 @@ import path from 'node:path'
  * script can at most smuggle bad *content* into the artifact — never exfiltrate a token or
  * write outside the allowed scope — because every path is re-validated in the trusted job
  * before touching disk there.
+ *
+ * The artifact carries ONLY `manifest.json` (the changed/deleted path lists) and a
+ * `files/` directory holding the changed files' contents — nothing else. In particular it
+ * never carries ingest metadata (commit message, target, sources): a tampered build
+ * script could otherwise forge those values (e.g. smuggle a private repo name into
+ * `WIKI_TARGET`) and have the trusted job commit them unvalidated. Every trusted job
+ * derives `WIKI_*` env from its own trusted sources (`github.*` context, `inputs.*`, or
+ * pre-agent `needs.*` job outputs) instead. {@link validateAndApplyWikiHandoff} rejects
+ * any unexpected top-level entry in the artifact, so even a compromised build script
+ * cannot resurrect a metadata file.
  */
 
 /**
@@ -73,7 +83,6 @@ export function parseGitStatusPorcelain(output: string): GitStatusChanges {
 export interface BuildWikiHandoffParams {
   cwd: string
   outDir: string
-  metadata: Record<string, string>
   runGitStatus: () => Promise<string>
   readFileImpl?: typeof fs.readFile
   writeFileImpl?: typeof fs.writeFile
@@ -88,7 +97,8 @@ export interface BuildWikiHandoffResult {
 
 /**
  * Build the handoff artifact directory: `files/<path>` for each changed/added path plus
- * `manifest.json` (`{changed, deleted}`) and `metadata.json` (caller-supplied ingest env).
+ * `manifest.json` (`{changed, deleted}`). Never writes anything else — no ingest metadata
+ * of any kind — so the artifact carries no forgeable commit message, target, or sources.
  *
  * Throws if git reports any path outside the allowed wiki scope — this should be
  * unreachable in practice (the workflow scopes `git status` to the same paths), but a
@@ -117,11 +127,6 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
   await writeFileImpl(
     path.join(params.outDir, 'manifest.json'),
     `${JSON.stringify({changed: rawChanged, deleted: rawDeleted}, null, 2)}\n`,
-    'utf8',
-  )
-  await writeFileImpl(
-    path.join(params.outDir, 'metadata.json'),
-    `${JSON.stringify(params.metadata, null, 2)}\n`,
     'utf8',
   )
 
@@ -185,7 +190,15 @@ export interface ApplyWikiHandoffParams {
   writeFileImpl?: typeof fs.writeFile
   mkdirImpl?: typeof fs.mkdir
   rmImpl?: typeof fs.rm
+  readdirImpl?: typeof fs.readdir
 }
+
+/**
+ * The only entries a valid handoff artifact may contain. `files/` is required even for an
+ * empty (no-op) manifest — {@link buildWikiHandoff} always creates it. Anything else
+ * (notably a resurrected `metadata.json`) is rejected before any file is read.
+ */
+const ALLOWED_TOP_LEVEL_ENTRIES = new Set(['manifest.json', 'files'])
 
 export interface ApplyWikiHandoffResult {
   applied: string[]
@@ -207,6 +220,15 @@ export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams
   const writeFileImpl = params.writeFileImpl ?? fs.writeFile
   const mkdirImpl = params.mkdirImpl ?? fs.mkdir
   const rmImpl = params.rmImpl ?? fs.rm
+  const readdirImpl = params.readdirImpl ?? fs.readdir
+
+  const topLevelEntries = await readdirImpl(params.handoffDir)
+  const unexpectedEntries = topLevelEntries.filter(entry => !ALLOWED_TOP_LEVEL_ENTRIES.has(entry))
+  if (unexpectedEntries.length > 0) {
+    throw new WikiHandoffValidationError(
+      `wiki handoff artifact contains unexpected top-level entries: ${unexpectedEntries.join(', ')}`,
+    )
+  }
 
   const manifestPath = path.join(params.handoffDir, 'manifest.json')
   let manifestRaw: string

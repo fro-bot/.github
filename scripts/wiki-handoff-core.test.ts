@@ -66,13 +66,12 @@ describe('parseGitStatusPorcelain', () => {
 })
 
 describe('buildWikiHandoff', () => {
-  it('writes manifest.json and metadata.json and copies changed files', async () => {
+  it('writes only manifest.json and copies changed files — no ingest metadata of any kind', async () => {
     const writes: Record<string, string> = {}
     const copies: [string, string][] = []
     const result = await buildWikiHandoff({
       cwd: '/repo',
       outDir: '/tmp/handoff',
-      metadata: {WIKI_OPERATION: 'event', WIKI_TARGET: 'repo:fro-bot/.github'},
       runGitStatus: async () => '?? knowledge/wiki/repos/new.md\n D knowledge/log.md\n',
       mkdirImpl: vi.fn(async () => undefined),
       copyFileImpl: vi.fn(async (src: unknown, dest: unknown) => {
@@ -91,10 +90,8 @@ describe('buildWikiHandoff', () => {
       changed: ['knowledge/wiki/repos/new.md'],
       deleted: ['knowledge/log.md'],
     })
-    expect(JSON.parse(writes['/tmp/handoff/metadata.json'] ?? '')).toStrictEqual({
-      WIKI_OPERATION: 'event',
-      WIKI_TARGET: 'repo:fro-bot/.github',
-    })
+    // The build side must never write anything else — no metadata.json, no other file.
+    expect(Object.keys(writes)).toStrictEqual(['/tmp/handoff/manifest.json'])
   })
 
   it('throws when git reports a path outside the wiki scope (defense in depth)', async () => {
@@ -102,7 +99,6 @@ describe('buildWikiHandoff', () => {
       buildWikiHandoff({
         cwd: '/repo',
         outDir: '/tmp/handoff',
-        metadata: {},
         runGitStatus: async () => '?? metadata/repos.yaml\n',
       }),
     ).rejects.toThrow('out-of-scope paths')
@@ -126,12 +122,16 @@ describe('assertSafeWikiHandoffPath', () => {
   })
 })
 
-function makeFsMocks(files: Record<string, {size: number; symlink?: boolean; isDir?: boolean}>) {
+function makeFsMocks(
+  files: Record<string, {size: number; symlink?: boolean; isDir?: boolean}>,
+  topLevelEntries: string[] = ['manifest.json', 'files'],
+) {
   const written: Record<string, Buffer> = {}
   const removed: string[] = []
   let manifestJson = '{"changed":[],"deleted":[]}'
 
   const mkdirImpl = vi.fn(async () => undefined) as unknown as typeof fs.mkdir
+  const readdirImpl = vi.fn(async () => topLevelEntries) as unknown as typeof fs.readdir
   const lstatImpl = vi.fn(async (target: unknown) => {
     const entry = files[String(target)]
     if (entry === undefined) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
@@ -154,6 +154,7 @@ function makeFsMocks(files: Record<string, {size: number; symlink?: boolean; isD
 
   return {
     mkdirImpl,
+    readdirImpl,
     lstatImpl,
     readFileImpl,
     writeFileImpl,
@@ -173,6 +174,7 @@ describe('validateAndApplyWikiHandoff', () => {
       handoffDir: '/handoff',
       workspaceDir: '/workspace',
       mkdirImpl: mocks.mkdirImpl,
+      readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
       readFileImpl: mocks.readFileImpl,
       writeFileImpl: mocks.writeFileImpl,
@@ -192,6 +194,7 @@ describe('validateAndApplyWikiHandoff', () => {
       handoffDir: '/handoff',
       workspaceDir: '/workspace',
       mkdirImpl: mocks.mkdirImpl,
+      readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
       readFileImpl: mocks.readFileImpl,
       writeFileImpl: mocks.writeFileImpl,
@@ -199,6 +202,65 @@ describe('validateAndApplyWikiHandoff', () => {
     })
 
     expect(result).toStrictEqual({applied: [], deleted: []})
+  })
+
+  it('rejects an artifact containing a resurrected metadata.json', async () => {
+    const mocks = makeFsMocks({}, ['manifest.json', 'files', 'metadata.json'])
+
+    await expect(
+      validateAndApplyWikiHandoff({
+        handoffDir: '/handoff',
+        workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
+        readFileImpl: mocks.readFileImpl,
+        lstatImpl: mocks.lstatImpl,
+        writeFileImpl: mocks.writeFileImpl,
+        mkdirImpl: mocks.mkdirImpl,
+        rmImpl: mocks.rmImpl,
+      }),
+    ).rejects.toThrow(/unexpected top-level entries/)
+  })
+
+  it('rejects an artifact containing any other unexpected top-level entry', async () => {
+    const mocks = makeFsMocks({}, ['manifest.json', 'files', '.git'])
+
+    await expect(
+      validateAndApplyWikiHandoff({
+        handoffDir: '/handoff',
+        workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
+        readFileImpl: mocks.readFileImpl,
+        lstatImpl: mocks.lstatImpl,
+        writeFileImpl: mocks.writeFileImpl,
+        mkdirImpl: mocks.mkdirImpl,
+        rmImpl: mocks.rmImpl,
+      }),
+    ).rejects.toThrow(WikiHandoffValidationError)
+  })
+
+  it('never reads a metadata.json even if one is present alongside a valid manifest (defense in depth)', async () => {
+    // Simulate a compromised build script that both resurrects metadata.json AND keeps a
+    // valid manifest — the top-level allowlist check must fire before manifest reading.
+    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 1}}, [
+      'manifest.json',
+      'files',
+      'metadata.json',
+    ])
+    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: []}))
+
+    await expect(
+      validateAndApplyWikiHandoff({
+        handoffDir: '/handoff',
+        workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
+        readFileImpl: mocks.readFileImpl,
+        lstatImpl: mocks.lstatImpl,
+        writeFileImpl: mocks.writeFileImpl,
+        mkdirImpl: mocks.mkdirImpl,
+        rmImpl: mocks.rmImpl,
+      }),
+    ).rejects.toThrow(/unexpected top-level entries/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
   })
 
   it('rejects a manifest that is not valid JSON', async () => {
@@ -209,6 +271,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -226,6 +289,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -243,6 +307,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -260,6 +325,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -277,6 +343,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -294,6 +361,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -311,6 +379,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -330,6 +399,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
@@ -347,6 +417,7 @@ describe('validateAndApplyWikiHandoff', () => {
       validateAndApplyWikiHandoff({
         handoffDir: '/handoff',
         workspaceDir: '/workspace',
+        readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
         writeFileImpl: mocks.writeFileImpl,
