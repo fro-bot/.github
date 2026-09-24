@@ -1,8 +1,9 @@
 // Import types from the module under test
 import type {CommentDecision, IssueState, MarkerData, ProjectItem, RolloutSnapshot} from './rollout-tracker-snapshot.ts'
 import {execFileSync} from 'node:child_process'
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
+import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
@@ -559,6 +560,86 @@ describe('rollout-tracker-snapshot CLI fixture path', () => {
       items: [existingItem, makeProjectItem({content_number: 25, content_repo: 'fro-bot/dashboard'})],
     })
     expect(addedItemTransition.should_comment).toBe(true)
+  })
+})
+
+// ─── Live comment fetch through gh ────────────────────────────────────────────────────
+
+// Fake `gh` that enforces the real CLI's rule rejecting `--comments` with `--json`, then
+// serves a fixture file. Everything else about the preflight runs for real.
+const FAKE_GH = [
+  '#!/bin/sh',
+  'case " $* " in *" --comments "*" --json "*|*" --json "*" --comments "*)',
+  '  echo "specify only one of --comments or --json" >&2; exit 1 ;;',
+  'esac',
+  '[ -n "$FAKE_GH_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
+  'cat "$FAKE_GH_COMMENTS_FILE"',
+].join('\n')
+
+function runCliWithFakeGh(params: {items: ProjectItem[]; issues: IssueState[]; commentsJson: string; fail?: boolean}): {
+  status: number
+  stdout: string
+  stderr: string
+} {
+  const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-gh-'))
+  try {
+    writeFileSync(join(dir, 'gh'), FAKE_GH)
+    chmodSync(join(dir, 'gh'), 0o755)
+    const commentsFile = join(dir, 'comments.json')
+    writeFileSync(commentsFile, params.commentsJson)
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH ?? ''}`,
+      FAKE_GH_COMMENTS_FILE: commentsFile,
+      FAKE_GH_FAIL: params.fail === true ? '1' : '',
+      ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(params.issues),
+      ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
+    }
+    delete env.ROLLOUT_TRACKER_COMMENT_BODY
+    try {
+      const stdout = execFileSync('node', [resolve(import.meta.dirname, './rollout-tracker-snapshot.ts')], {
+        encoding: 'utf8',
+        env,
+        maxBuffer: 16 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      return {status: 0, stdout, stderr: ''}
+    } catch (error) {
+      const failure = error as {status?: number; stdout?: string; stderr?: string}
+      return {status: failure.status ?? 1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? '')}
+    }
+  } finally {
+    rmSync(dir, {recursive: true, force: true})
+  }
+}
+
+describe('rollout-tracker-snapshot live comment fetch', () => {
+  const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
+  const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
+
+  it('finds the prior marker in a comment payload over 1 MiB and skips when nothing moved', () => {
+    const seeded = runCliFixture({items, issues})
+    const marker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
+    const padding = {author: {login: 'fro-bot'}, body: 'x'.repeat(1_200_000)}
+    const commentsJson = JSON.stringify({
+      comments: [padding, {author: {login: 'fro-bot'}, body: `@fro-bot seeded\n${marker}`}],
+    })
+    expect(commentsJson.length).toBeGreaterThan(1024 * 1024)
+
+    const result = runCliWithFakeGh({items, issues, commentsJson})
+
+    expect(result.status).toBe(0)
+    const decision = JSON.parse(result.stdout) as CommentDecision
+    expect(decision.should_comment).toBe(false)
+    expect(decision.reason).toContain('no gating transition')
+  })
+
+  it('exits non-zero instead of treating a failed comment fetch as a cold start', () => {
+    const result = runCliWithFakeGh({items, issues, commentsJson: '{"comments":[]}', fail: true})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('failed to fetch tracker comments')
   })
 })
 

@@ -448,17 +448,21 @@ async function main(): Promise<void> {
     }
     try {
       const {execFileSync} = await import('node:child_process')
-      const raw = execFileSync(
-        'gh',
-        ['issue', 'view', trackerNumStr, '--repo', trackerRepo, '--comments', '--json', 'comments'],
-        {encoding: 'utf8'},
-      )
+      // `--json comments` alone returns every comment; current gh rejects it combined with `--comments`.
+      const raw = execFileSync('gh', ['issue', 'view', trackerNumStr, '--repo', trackerRepo, '--json', 'comments'], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 60_000,
+      })
       const parsed = JSON.parse(raw) as {comments: TrackerComment[]}
       latestCommentBody = selectLatestMarkerCommentBody(parsed.comments)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
-      process.stderr.write(`rollout-tracker-snapshot: warning — failed to fetch tracker comments: ${detail}\n`)
-      latestCommentBody = ''
+      process.stderr.write(`rollout-tracker-snapshot: FATAL — failed to fetch tracker comments: ${detail}\n`)
+      process.stderr.write(
+        'rollout-tracker-snapshot: refusing to treat a comment-fetch failure as a cold start; exiting 1\n',
+      )
+      process.exit(1)
     }
   } else {
     latestCommentBody = process.env.ROLLOUT_TRACKER_COMMENT_BODY
