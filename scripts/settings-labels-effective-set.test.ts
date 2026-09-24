@@ -1,10 +1,10 @@
 /**
- * Drift guard for the local interim around bfra-me/.github#2767: the
- * update-repository-settings action's deepMerge assigns arrays wholesale, so
- * `.github/settings.yml`'s local `labels:` replaces (rather than extends)
- * `common-settings.yaml`'s base set instead of merging with it. Until that's
- * fixed upstream, `.github/settings.yml` inlines the full union by hand, and
- * this test keeps the two in sync.
+ * Guards `.github/settings.yml`'s labels against the pre-v4.32.0 workaround
+ * regrowing: bfra-me/.github's update-repository-settings action now merges
+ * `_extends` labels with the child's by name (case-insensitively, child
+ * entry wins whole), so `.github/settings.yml` should only declare
+ * control-plane labels that either aren't in common-settings.yaml or
+ * intentionally diverge from it. This test keeps that contract honest.
  */
 
 import {readFileSync} from 'node:fs'
@@ -33,6 +33,18 @@ function assertLabelsShape(value: unknown, filename: string): asserts value is {
   }
 }
 
+/** Mirrors update-repository-settings' v4.32.0 `_extends` label merge: base and child merged by lowercase name, child entry replacing base entry whole. */
+function computeEffectiveLabels(base: Label[], child: Label[]): Map<string, Label> {
+  const effective = new Map<string, Label>()
+  for (const label of base) {
+    effective.set(label.name.toLowerCase(), label)
+  }
+  for (const label of child) {
+    effective.set(label.name.toLowerCase(), label)
+  }
+  return effective
+}
+
 const commonSettingsPath = resolve(import.meta.dirname, '../common-settings.yaml')
 const commonSettingsParsed: unknown = parse(readFileSync(commonSettingsPath, 'utf8'))
 assertLabelsShape(commonSettingsParsed, 'common-settings.yaml')
@@ -41,9 +53,10 @@ const baseLabels = commonSettingsParsed.labels
 const repoSettingsPath = resolve(import.meta.dirname, '../.github/settings.yml')
 const repoSettingsParsed: unknown = parse(readFileSync(repoSettingsPath, 'utf8'))
 assertLabelsShape(repoSettingsParsed, '.github/settings.yml')
-const repoLabelsByName = new Map(repoSettingsParsed.labels.map(label => [label.name, label]))
 
-describe('.github/settings.yml labels: union with common-settings.yaml (interim for bfra-me/.github#2767)', () => {
+const effectiveLabelsByName = computeEffectiveLabels(baseLabels, repoSettingsParsed.labels)
+
+describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _extends merge', () => {
   it('parses a non-empty base label list from common-settings.yaml (guards against a silent parse regression)', () => {
     expect(baseLabels.length).toBeGreaterThan(0)
   })
@@ -62,29 +75,21 @@ describe('.github/settings.yml labels: union with common-settings.yaml (interim 
     expect(duplicates).toEqual([])
   })
 
-  // This only checks common-settings.yaml is a subset of .github/settings.yml; a label removed from the base leaves a stale copy here that must be removed by hand.
-  it('carries every common-settings.yaml label into .github/settings.yml with an identical color and description', () => {
-    const mismatches: string[] = []
+  it('has no .github/settings.yml label that exactly duplicates a common-settings.yaml label (name, color, and description all identical)', () => {
+    const redundant: string[] = []
 
-    for (const baseLabel of baseLabels) {
-      const repoLabel = repoLabelsByName.get(baseLabel.name)
-      if (!repoLabel) {
-        mismatches.push(`"${baseLabel.name}": missing from .github/settings.yml`)
-        continue
-      }
-      if (repoLabel.color !== baseLabel.color) {
-        mismatches.push(
-          `"${baseLabel.name}": color mismatch (common-settings.yaml=${baseLabel.color}, settings.yml=${repoLabel.color})`,
-        )
-      }
-      if (repoLabel.description !== baseLabel.description) {
-        mismatches.push(
-          `"${baseLabel.name}": description mismatch (common-settings.yaml="${baseLabel.description}", settings.yml="${repoLabel.description}")`,
-        )
+    for (const repoLabel of repoSettingsParsed.labels) {
+      const baseLabel = baseLabels.find(label => label.name.toLowerCase() === repoLabel.name.toLowerCase())
+      if (
+        baseLabel &&
+        baseLabel.color === repoLabel.color &&
+        (baseLabel.description ?? undefined) === (repoLabel.description ?? undefined)
+      ) {
+        redundant.push(`"${repoLabel.name}": identical to common-settings.yaml, remove from .github/settings.yml`)
       }
     }
 
-    expect(mismatches).toEqual([])
+    expect(redundant).toEqual([])
   })
 
   // Table-driven: add a fifth code-declared descriptor set by appending one entry here.
@@ -107,24 +112,24 @@ describe('.github/settings.yml labels: union with common-settings.yaml (interim 
     expect(total, 'update this count when adding or removing a code-declared label').toBe(16)
   })
 
-  it('keeps every code-declared label descriptor set in sync with .github/settings.yml', () => {
+  it('keeps every code-declared label descriptor in sync with the effective merged label set (base + .github/settings.yml, merged by name)', () => {
     const mismatches: string[] = []
 
     for (const {source, descriptors} of codeLabelSources) {
       for (const requiredLabel of descriptors) {
-        const repoLabel = repoLabelsByName.get(requiredLabel.name)
+        const repoLabel = effectiveLabelsByName.get(requiredLabel.name.toLowerCase())
         if (!repoLabel) {
-          mismatches.push(`${source} "${requiredLabel.name}": missing from .github/settings.yml`)
+          mismatches.push(`${source} "${requiredLabel.name}": missing from the effective merged label set`)
           continue
         }
         if (repoLabel.color.replace(/^#/, '').toLowerCase() !== requiredLabel.color.toLowerCase()) {
           mismatches.push(
-            `${source} "${requiredLabel.name}": color mismatch (${source}=${requiredLabel.color}, settings.yml=${repoLabel.color})`,
+            `${source} "${requiredLabel.name}": color mismatch (${source}=${requiredLabel.color}, effective=${repoLabel.color})`,
           )
         }
         if (repoLabel.description !== requiredLabel.description) {
           mismatches.push(
-            `${source} "${requiredLabel.name}": description mismatch (${source}="${requiredLabel.description}", settings.yml="${repoLabel.description}")`,
+            `${source} "${requiredLabel.name}": description mismatch (${source}="${requiredLabel.description}", effective="${repoLabel.description}")`,
           )
         }
       }
