@@ -713,4 +713,48 @@ describe('fro-bot.yaml App-token wiki ingest migration', () => {
     const mintStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'app-token')
     expect(mintStep?.uses).toContain('actions/create-github-app-token@')
   })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s mints no App token after any fro-bot/agent step (there is none in this job at all)', (_name, job) => {
+    const mintSteps = ((job as WorkflowJob)?.steps ?? []).filter(step =>
+      (step.uses ?? '').startsWith('actions/create-github-app-token@'),
+    )
+    expect(mintSteps).toHaveLength(1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])(
+    "%s sources WIKI_* env from github.* context and this job's own trusted timestamp — never from an artifact-carried metadata.json",
+    (_name, job) => {
+      const ingestStep = (job as WorkflowJob)?.steps?.find(
+        step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'),
+      )
+      const run = String(ingestStep?.run ?? '')
+      expect(run).not.toContain('metadata.json')
+      expect(run).not.toContain('jq')
+
+      const env = ingestStep?.env ?? {}
+      expect(String(env.WIKI_TARGET ?? '')).toContain('github.repository')
+      expect(String(env.WIKI_SUMMARY ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_COMMIT_MESSAGE ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('github.sha')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('steps.ingest-ts.outputs.now')
+
+      const timestampStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'ingest-ts')
+      expect(timestampStep?.run).toContain('date -u')
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])('%s (agent job): the build step writes no WIKI_* metadata into the handoff artifact', (_name, job) => {
+    const buildStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Build wiki handoff artifact')
+    const env = buildStep?.env ?? {}
+    expect(Object.keys(env)).toStrictEqual(['WIKI_HANDOFF_DIR'])
+  })
 })
