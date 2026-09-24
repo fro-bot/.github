@@ -53,6 +53,18 @@ jobs:
     name: Survey Repo
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      wiki-artifact-ready: ${{ steps.wiki-handoff-upload.outcome }}
+      agent-conclusion: ${{ steps.survey-agent.conclusion }}
+      recheck-conclusion: ${{ steps.recheck.conclusion }}
+      recheck-private: ${{ steps.recheck.outputs.private }}
+      resolve-outcome: ${{ steps.resolve.outcome }}
+      resolve-owner: ${{ steps.resolve.outputs.owner }}
+      resolve-repo: ${{ steps.resolve.outputs.repo }}
+      onboarded: ${{ steps.onboarded.outputs.onboarded }}
+      target-repository: ${{ steps.ingest-prompt.outputs.target-repository }}
+      target-slug: ${{ steps.ingest-prompt.outputs.target-slug }}
+      ts-now: ${{ steps.ts.outputs.now }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -304,19 +316,96 @@ jobs:
 
           echo "private=false" >> "$GITHUB_OUTPUT"
 
-      - name: Commit wiki ingest to data branch
-        id: wiki-commit
+      # Build a data-only handoff artifact instead of writing `data` from this job
+      # directly — this job just ran the survey agent, whose shell can rewrite any file
+      # in the checkout (including this script). The artifact holds no write credential;
+      # the trusted survey-persist job validates it before ever touching a privileged
+      # token. See scripts/wiki-handoff-core.ts for the property this relies on.
+      - name: Build wiki handoff artifact
+        id: wiki-handoff-build
         if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success' &&
           steps.onboarded.outputs.onboarded == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-survey
           WIKI_OPERATION: survey
           WIKI_TARGET: 'repo:${{ steps.ingest-prompt.outputs.target-repository }}'
-          REPO_NODE_ID: ${{ inputs.node_id }}
           WIKI_SUMMARY: Surveyed ${{ steps.ingest-prompt.outputs.target-repository }} and updated the control-plane wiki.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ steps.ingest-prompt.outputs.target-repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
+        run: node scripts/wiki-handoff-build.ts
+
+      - name: Upload wiki handoff artifact
+        id: wiki-handoff-upload
+        if: steps.wiki-handoff-build.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wiki-handoff-survey-${{ github.run_id }}
+          path: ${{ runner.temp }}/wiki-handoff-survey
+          retention-days: 1
+
+  # ─── Trusted writer: commits the survey's wiki handoff and records the outcome ───
+  # Fresh default-branch checkout, no agent step — the only job in this workflow
+  # allowed to run wiki-ingest.ts / record-survey-result.ts with an App write token.
+  # `if: always()` so this still runs (and records a failure result) when survey-repo
+  # was cancelled or timed out — mirrors the old same-job cancelled/timeout fallback.
+  survey-persist:
+    name: Persist survey results
+    needs: survey-repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted code (default branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔑 Mint App token for data writes
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Sync wiki from data branch
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success'
+        uses: ./.github/actions/sync-wiki
+
+      - name: Download wiki handoff artifact
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wiki-handoff-survey-${{ github.run_id }}
+          path: ${{ runner.temp }}/wiki-handoff
+
+      - name: Validate and apply wiki handoff
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success'
+        env:
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
+        run: node scripts/wiki-handoff-apply.ts
+
+      - name: Commit wiki ingest to data branch
+        id: wiki-commit
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_NODE_ID: ${{ inputs.node_id }}
         run: |
+          meta="${{ runner.temp }}/wiki-handoff/metadata.json"
+          WIKI_OPERATION="$(jq -r '.WIKI_OPERATION' "$meta")"
+          WIKI_TARGET="$(jq -r '.WIKI_TARGET' "$meta")"
+          WIKI_SUMMARY="$(jq -r '.WIKI_SUMMARY' "$meta")"
+          WIKI_COMMIT_MESSAGE="$(jq -r '.WIKI_COMMIT_MESSAGE' "$meta")"
+          WIKI_SOURCES="$(jq -c '.WIKI_SOURCES' "$meta")"
+          export WIKI_OPERATION WIKI_TARGET WIKI_SUMMARY WIKI_COMMIT_MESSAGE WIKI_SOURCES
           warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
           if node scripts/wiki-ingest.ts 2>"$warning_file"; then
             status=0
@@ -349,8 +438,7 @@ jobs:
       # - Any failure upstream of metadata write — agent error, wiki commit ENOENT,
       #   wiki commit conflict-exhaustion — records 'failure' so the reconcile
       #   staleness gate re-dispatches the repo tomorrow instead of waiting 30 days.
-      # - 'cancelled' is excluded by the outer `!cancelled()` guard. The
-      #   `!= 'skipped'` guard on the agent step skips metadata writes entirely
+      # - The `!= 'skipped'` guard on the agent step skips metadata writes entirely
       #   when an upstream step kept the agent from running at all.
       #
       # A wiki-commit conclusion of 'skipped' (its step `if:` returned false because
@@ -358,15 +446,15 @@ jobs:
       # completed cleanly.
       - name: Record survey result
         id: record-result
-        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success' }}
+        if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' && needs.survey-repo.outputs.recheck-conclusion == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
-          REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
+          REPO_PRIVATE: ${{ needs.survey-repo.outputs.recheck-private }}
           SURVEY_STATUS:
-            ${{ (steps.survey-agent.conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
+            ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
             steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
@@ -377,15 +465,15 @@ jobs:
       # any error and this step is excluded from the job's success aggregation.
       - name: 📣 Announce survey to gateway
         if: >-
-          ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
-          steps.survey-agent.conclusion == 'success' &&
-          steps.onboarded.outputs.onboarded == 'true' &&
+          ${{ !cancelled() && needs.survey-repo.outputs.recheck-conclusion == 'success' &&
+          needs.survey-repo.outputs.agent-conclusion == 'success' &&
+          needs.survey-repo.outputs.onboarded == 'true' &&
           (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
         env:
           EVENT_TYPE: survey_completed
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
-          REPO_SLUG: ${{ steps.ingest-prompt.outputs.target-slug }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
+          REPO_SLUG: ${{ needs.survey-repo.outputs.target-slug }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
@@ -407,13 +495,14 @@ jobs:
       # The `outcome != 'success'` guard makes this idempotent: it never fires when the
       # normal record step already wrote a result.
       - name: Record survey result (cancelled/timeout fallback)
-        if: ${{ (cancelled() || failure()) && steps.record-result.outcome != 'success' && steps.resolve.outcome == 'success' }}
-        shell: bash
+        if: >-
+          ${{ (needs.survey-repo.result == 'cancelled' || needs.survey-repo.result == 'failure' || cancelled() || failure()) &&
+          steps.record-result.outcome != 'success' && needs.survey-repo.outputs.resolve-outcome == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
-          REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
+          REPO_PRIVATE: ${{ needs.survey-repo.outputs.recheck-private }}
           SURVEY_STATUS: failure
         run: node scripts/record-survey-result.ts

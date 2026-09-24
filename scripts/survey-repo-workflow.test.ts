@@ -9,10 +9,16 @@ interface WorkflowStep {
   run?: string
   uses?: string
   with?: Record<string, unknown>
+  env?: Record<string, unknown>
+  if?: string
 }
 
 interface WorkflowJob {
   steps: WorkflowStep[]
+  needs?: string
+  if?: string
+  permissions?: Record<string, string>
+  outputs?: Record<string, string>
 }
 
 function assertWorkflowShape(value: unknown): asserts value is {jobs: Record<string, WorkflowJob>} {
@@ -60,8 +66,9 @@ describe('survey-repo correction injection contract', () => {
     expect(prompt).toContain('.github/corrections-context.json')
   })
 
-  it('surfaces ingest findings in the workflow step summary', () => {
-    const commitStep = steps.find(step => step.name === 'Commit wiki ingest to data branch')
+  it('surfaces ingest findings in the survey-persist job step summary', () => {
+    const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+    const commitStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
     const run = commitStep?.run ?? ''
 
     expect(run).toContain("grep '^wiki-ingest:finding:'")
@@ -80,5 +87,87 @@ describe('survey-repo correction injection contract', () => {
 
     expect(syncIndex).toBeGreaterThanOrEqual(0)
     expect(baselineIndex).toBeGreaterThan(syncIndex)
+  })
+})
+
+describe('survey-repo.yaml App-token persistence migration', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+
+  it('declares survey-persist needing survey-repo, running with if: always()', () => {
+    expect(persistJob).toBeDefined()
+    expect(persistJob?.needs).toBe('survey-repo')
+    expect(String(persistJob?.if ?? '')).toContain('always()')
+  })
+
+  it('survey-persist has no fro-bot/agent step (trusted-writer invariant)', () => {
+    const agentStep = persistJob?.steps.find(step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    expect(agentStep).toBeUndefined()
+  })
+
+  it('survey-persist checks out the default branch with persist-credentials: false', () => {
+    const checkoutStep = persistJob?.steps.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('survey-persist mints its own App token, distinct from the recheck/gate tokens minted in survey-repo', () => {
+    const mintStep = persistJob?.steps.find(step => step.id === 'app-token')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+  })
+
+  it.each([
+    'Commit wiki ingest to data branch',
+    'Record survey result',
+    'Record survey result (cancelled/timeout fallback)',
+  ])('%s uses the minted App token, never FRO_BOT_PAT', stepName => {
+    const step = persistJob?.steps.find(s => s.name === stepName)
+    const token = String(step?.env?.GITHUB_TOKEN ?? '')
+    expect(token).toContain('steps.app-token.outputs.token')
+  })
+
+  it('survey-repo builds a wiki handoff artifact instead of committing to data directly', () => {
+    const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
+    const uploadStep = surveyJob?.steps.find(step => step.name === 'Upload wiki handoff artifact')
+    expect(buildStep?.run).toBe('node scripts/wiki-handoff-build.ts')
+    expect(uploadStep?.uses).toContain('actions/upload-artifact@')
+    expect(surveyJob?.steps.find(step => step.name === 'Commit wiki ingest to data branch')).toBeUndefined()
+  })
+
+  it('survey-repo has no record-survey-result.ts invocation left (moved to survey-persist)', () => {
+    const leftoverStep = surveyJob?.steps.find(
+      step => typeof step.run === 'string' && step.run.includes('record-survey-result.ts'),
+    )
+    expect(leftoverStep).toBeUndefined()
+  })
+
+  it('preserves visibility-recheck-before-persistence ordering: recheck runs in survey-repo, gates the handoff build', () => {
+    const names = (surveyJob?.steps ?? []).map(step => step.name ?? '')
+    const recheckIndex = names.indexOf('🔒 Recheck visibility')
+    const buildIndex = names.indexOf('Build wiki handoff artifact')
+
+    expect(recheckIndex).toBeGreaterThanOrEqual(0)
+    expect(buildIndex).toBeGreaterThan(recheckIndex)
+
+    const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
+    expect(String(buildStep?.if ?? '')).toContain("steps.recheck.conclusion == 'success'")
+  })
+
+  it('exposes the job outputs survey-persist depends on for gating', () => {
+    const outputs = surveyJob?.outputs ?? {}
+    for (const key of [
+      'wiki-artifact-ready',
+      'agent-conclusion',
+      'recheck-conclusion',
+      'recheck-private',
+      'resolve-outcome',
+      'resolve-owner',
+      'resolve-repo',
+      'onboarded',
+      'target-repository',
+      'target-slug',
+    ]) {
+      expect(outputs[key], `missing job output: ${key}`).toBeDefined()
+    }
   })
 })
