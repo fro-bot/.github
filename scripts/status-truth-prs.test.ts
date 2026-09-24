@@ -2650,6 +2650,18 @@ describe('workflow contract: PR job app-token permissions', () => {
   })
 })
 
+describe('workflow contract: rollout snapshot step', () => {
+  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  assertStatusTruthWorkflow(parsed)
+
+  it('passes an empty tracker comment body so the snapshot never depends on fetching tracker comments', () => {
+    const snapshotStep = parsed.jobs.detect?.steps.find(s => s.name?.includes('Load rollout snapshot'))
+    expect(snapshotStep).toBeDefined()
+    expect(snapshotStep?.env?.ROLLOUT_TRACKER_COMMENT_BODY).toBe('')
+  })
+})
+
 describe('workflow contract: separate read-only fetch token', () => {
   const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
   const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
