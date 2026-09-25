@@ -1130,11 +1130,23 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
+      # This job has no agent step, so minting here is safe (see
+      # scripts/agent-post-step-credential-guard.test.ts). Repo-scoped, read-only —
+      # narrower than the FRO_BOT_PAT this step used to borrow from the observe agent.
+      - name: 🔑 Mint App token for report discovery
+        id: report-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: read
+
       # Same query/title-match logic as fro-bot-observe's old inline step, run trusted-side.
       - name: 🔍 Discover daily report URL
         id: report-url
         env:
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ steps.report-token.outputs.token }}
         run: |
           set -euo pipefail
           TODAY_UTC="$(date -u +%Y-%m-%d)"

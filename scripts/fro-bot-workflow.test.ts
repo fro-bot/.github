@@ -842,9 +842,13 @@ describe('fro-bot.yaml daily-digest announce isolation (agent post-step credenti
     expect(countsIndex).toBeGreaterThan(overlayIndex)
   })
 
-  it('discovers the report URL trusted-side with FRO_BOT_PAT (acceptable here — this job has no agent step)', () => {
+  it('discovers the report URL trusted-side with an App token minted in this job (no agent step here, so minting is safe)', () => {
+    const mintStep = announceJob?.steps?.find(step => step.id === 'report-token')
     const discoverStep = announceJob?.steps?.find(step => step.name === '🔍 Discover daily report URL')
-    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).toContain('secrets.FRO_BOT_PAT')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+    expect(mintStep?.with?.['permission-issues']).toBe('read')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).toContain('steps.report-token.outputs.token')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).not.toContain('FRO_BOT_PAT')
     const run = String(discoverStep?.run ?? '')
     expect(run).toContain('Daily Fro Bot Report')
     expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
