@@ -78,6 +78,8 @@ jobs:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          # Only used for a public-node GraphQL visibility read — narrow to metadata.
+          permission-metadata: read
 
       - name: 🔒 Resolve and verify
         id: resolve
@@ -377,6 +379,8 @@ jobs:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          # Only used for a public-node GraphQL visibility read — narrow to metadata.
+          permission-metadata: read
 
       # The privacy gate, run trusted-side. Same GraphQL query and fail-closed
       # behavior as before A2; only the execution context moved. See the mint step

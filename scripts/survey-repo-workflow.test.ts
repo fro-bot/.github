@@ -204,6 +204,14 @@ describe('survey-repo.yaml: survey-resolve — pre-agent App-token mint isolated
     expect(String(ingestPromptStep?.env?.TARGET_OWNER ?? '')).toContain('needs.survey-resolve.outputs.resolve-owner')
     expect(String(ingestPromptStep?.env?.TARGET_REPO ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
   })
+
+  it('the gate-token mint is narrowed to permission-metadata: read — it is only used for a public-node GraphQL visibility read', () => {
+    const gateTokenStep = resolveJob?.steps.find(step => step.id === 'gate-token')
+    expect(gateTokenStep).toBeDefined()
+    expect(String(gateTokenStep?.with?.owner ?? '')).toContain('github.repository_owner')
+    expect(gateTokenStep?.with?.['permission-metadata']).toBe('read')
+    expect(gateTokenStep?.with?.repositories).toBeUndefined()
+  })
 })
 
 describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck', () => {
@@ -263,13 +271,14 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     }
   })
 
-  it("the recheck token is a dedicated mint scoped like main's pre-A2 recheck token: owner:, no repositories:/permission-contents:write", () => {
+  it("the recheck token is a dedicated mint scoped like main's pre-A2 recheck token: owner:, no repositories:/permission-contents:write, narrowed to permission-metadata: read", () => {
     const recheckTokenStep = persistJob?.steps.find(step => step.id === 'recheck-token')
     expect(recheckTokenStep).toBeDefined()
     expect(recheckTokenStep?.uses).toContain('actions/create-github-app-token@')
     expect(String(recheckTokenStep?.with?.owner ?? '')).toContain('github.repository_owner')
     expect(recheckTokenStep?.with?.repositories).toBeUndefined()
     expect(recheckTokenStep?.with?.['permission-contents']).toBeUndefined()
+    expect(recheckTokenStep?.with?.['permission-metadata']).toBe('read')
   })
 
   it('the recheck token is a distinct step from the repo-scoped data-write app-token', () => {
