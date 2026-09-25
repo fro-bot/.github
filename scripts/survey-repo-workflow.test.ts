@@ -214,6 +214,42 @@ describe('survey-repo.yaml: survey-resolve — pre-agent App-token mint isolated
   })
 })
 
+describe('survey-repo.yaml wiki change detection: shared script, no inline git-diff hashing', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+
+  it('Capture wiki baseline and Detect wiki survey changes both invoke wiki-change-detect.ts', () => {
+    const baselineStep = surveyJob?.steps.find(step => step.id === 'wiki-baseline')
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+
+    expect(String(baselineStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts baseline')
+    expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
+  })
+
+  it('Detect wiki survey changes feeds the baseline hash through env, not a re-read of the diff', () => {
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+    expect(String(detectStep?.env?.WIKI_CHANGE_BASELINE_HASH ?? '')).toContain('steps.wiki-baseline.outputs.hash')
+  })
+
+  it('preserves the wiki-baseline/wiki-changes step ids and the wiki-changes !cancelled() condition', () => {
+    const baselineStep = surveyJob?.steps.find(step => step.id === 'wiki-baseline')
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+    expect(baselineStep).toBeDefined()
+    expect(detectStep).toBeDefined()
+    expect(String(detectStep?.if ?? '')).toContain('!cancelled()')
+  })
+
+  it('leaves no inline git diff hashing in survey-repo.yaml (moved to scripts/wiki-change-detect.ts)', () => {
+    for (const step of surveyJob?.steps ?? []) {
+      const run = String(step.run ?? '')
+      expect(run, `${step.name ?? step.id ?? '<unnamed step>'} must not inline-hash a git diff`).not.toMatch(
+        /git diff .*shasum/s,
+      )
+      expect(run).not.toContain('wiki-baseline.diff')
+      expect(run).not.toContain('wiki-current.diff')
+    }
+  })
+})
+
 describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck', () => {
   const surveyJob = workflowParsed.jobs['survey-repo']
   const persistJob = workflowParsed.jobs['survey-persist']

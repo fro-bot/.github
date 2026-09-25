@@ -179,11 +179,12 @@ jobs:
           fi
           node scripts/check-repo-onboarded.ts
 
+      # Hashes the scoped tracked diff plus untracked files under the same paths, so a
+      # first survey's brand-new repo page (never tracked, so invisible to `git diff` alone)
+      # still registers as a change. See scripts/wiki-change-detect-core.ts.
       - name: Capture wiki baseline
         id: wiki-baseline
-        run: |
-          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
-          echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: node scripts/wiki-change-detect.ts baseline
 
       # Content-hash snapshot of every wiki-scoped path as it stands right after
       # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
@@ -276,14 +277,9 @@ jobs:
       - name: Detect wiki survey changes
         id: wiki-changes
         if: ${{ !cancelled() }}
-        run: |
-          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-current.diff"
-          current_hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-current.diff" | cut -d ' ' -f1)
-          if [ "$current_hash" = "${{ steps.wiki-baseline.outputs.hash }}" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          WIKI_CHANGE_BASELINE_HASH: ${{ steps.wiki-baseline.outputs.hash }}
+        run: node scripts/wiki-change-detect.ts detect
 
       # Build a data-only handoff artifact instead of writing `data` from this job
       # directly — this job just ran the survey agent, whose shell can rewrite any file
