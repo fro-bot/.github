@@ -17,29 +17,25 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Draft job: harvests candidates, runs the agent to author proposal bodies,
-  # and hands both off as artifacts. Holds no App token after its agent step —
-  # capture-learnings-publish (a separate job, no agent step) mints its own
-  # token and opens the issues. See scripts/agent-post-step-credential-guard.test.ts
-  # for the invariant this enforces.
+  # Harvest job: read-only GitHub API calls, no App token, no agent step. Uses the
+  # workflow's own auto-provisioned GITHUB_TOKEN, scoped by this job's own
+  # permissions: block to exactly what scripts/capture-learnings-harvest.ts calls
+  # (repos.compareCommits, actions.list*/downloadJobLogs, pulls.list/listReviews/
+  # listReviewComments, issues.listForRepo). getBranchProtection is best-effort
+  # (try/catch, degrades to an empty required-checks set) so it needs no
+  # administration permission. No App token means never needing
+  # APPLICATION_ID/APPLICATION_PRIVATE_KEY for this job at all.
   # ---------------------------------------------------------------------------
-  capture-learnings:
-    name: Capture learning proposals from multi-round-review PRs
+  capture-learnings-harvest:
+    name: Harvest learning-proposal candidates
     runs-on: ubuntu-latest
-    # Agent step is the long pole; 30 minutes provides headroom without
-    # permitting a truly-stuck run.
-    timeout-minutes: 30
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      issues: read
     steps:
-      - id: get-workflow-app-token
-        name: Get Workflow Access Token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.APPLICATION_ID }}
-          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          # Scope to this repo only — harvest and issue-create are same-repo.
-          # Smaller blast radius than owner-scoped token.
-          repositories: ${{ github.event.repository.name }}
-
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -56,7 +52,7 @@ jobs:
       - name: 🌾 Harvest candidates
         id: harvest
         env:
-          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
         run: node scripts/capture-learnings-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
         shell: bash
@@ -67,6 +63,64 @@ jobs:
           name: capture-learnings-digest
           path: ${{ runner.temp }}/capture-learnings-digest.json
           retention-days: 1
+
+      - if: always()
+        name: 📋 Write harvest summary
+        run: |
+          set -euo pipefail
+          harvest="$RUNNER_TEMP/harvest-result.json"
+
+          {
+            echo "## Capture Learnings Harvest Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$harvest" ]]; then
+              echo "| Closed PRs fetched | $(jq '.telemetry.closedPrsFetched // 0' "$harvest") |"
+              echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
+              echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
+              echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
+              echo "| CI fail-then-pass examined | $(jq '.telemetry.ciFixPrsExamined // 0' "$harvest") |"
+              echo "| CI fail-then-pass candidates | $(jq '.telemetry.ciFixCandidates // 0' "$harvest") |"
+              echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
+              echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
+              echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
+              echo "| Dual-trigger candidates | $(jq '.telemetry.dualTriggerCandidates // 0' "$harvest") |"
+              echo "| Enrichment blocked by privacy | $(jq '.telemetry.enrichmentBlocked // 0' "$harvest") |"
+              echo "| Enrichment blocked by secret | $(jq '.telemetry.enrichmentBlockedBySecret // 0' "$harvest") |"
+            else
+              echo "| Closed PRs fetched | (harvest result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
+
+  # ---------------------------------------------------------------------------
+  # Draft job: downloads the harvest digest, runs the agent to author proposal
+  # bodies, and hands the bodies off as an artifact. Mints no App token —
+  # capture-learnings-publish (a separate job, no agent step) mints its own
+  # token and opens the issues. See scripts/agent-post-step-credential-guard.test.ts
+  # for the invariant this enforces.
+  # ---------------------------------------------------------------------------
+  capture-learnings:
+    name: Capture learning proposals from multi-round-review PRs
+    needs: capture-learnings-harvest
+    runs-on: ubuntu-latest
+    # Agent step is the long pole; 30 minutes provides headroom without
+    # permitting a truly-stuck run.
+    timeout-minutes: 30
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 📥 Download digest artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: capture-learnings-digest
+          path: ${{ runner.temp }}
 
       # The agent's ONLY job: read the digest (merge_sha + signals, no private
       # identifiers), author a concise learning-proposal body for each candidate
@@ -199,37 +253,6 @@ jobs:
           retention-days: 1
           if-no-files-found: warn
 
-      - if: always()
-        name: 📋 Write harvest summary
-        run: |
-          set -euo pipefail
-          harvest="$RUNNER_TEMP/harvest-result.json"
-
-          {
-            echo "## Capture Learnings Harvest Summary"
-            echo ""
-            echo "| Field | Value |"
-            echo "| --- | --- |"
-
-            if [[ -s "$harvest" ]]; then
-              echo "| Closed PRs fetched | $(jq '.telemetry.closedPrsFetched // 0' "$harvest") |"
-              echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
-              echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
-              echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
-              echo "| CI fail-then-pass examined | $(jq '.telemetry.ciFixPrsExamined // 0' "$harvest") |"
-              echo "| CI fail-then-pass candidates | $(jq '.telemetry.ciFixCandidates // 0' "$harvest") |"
-              echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
-              echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
-              echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
-              echo "| Dual-trigger candidates | $(jq '.telemetry.dualTriggerCandidates // 0' "$harvest") |"
-              echo "| Enrichment blocked by privacy | $(jq '.telemetry.enrichmentBlocked // 0' "$harvest") |"
-              echo "| Enrichment blocked by secret | $(jq '.telemetry.enrichmentBlockedBySecret // 0' "$harvest") |"
-            else
-              echo "| Closed PRs fetched | (harvest result unavailable) |"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-        shell: bash
-
   # ---------------------------------------------------------------------------
   # Publish job: trusted, deterministic step that reads the harvest digest and
   # the agent-authored bodies, runs the privacy gate (fail-closed against
@@ -295,6 +318,10 @@ jobs:
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           # Scope to this repo only — smallest blast radius.
           repositories: ${{ github.event.repository.name }}
+          # capture-learnings-open.ts only calls octokit.rest.issues.* (getLabel,
+          # createLabel, create). Matches capture-patterns.yaml's open-publish mint.
+          permission-issues: write
+          permission-contents: read
 
       # Deterministic open step: reads the harvest digest and the
       # agent-authored bodies, runs the privacy gate (fail-closed against

@@ -37,27 +37,49 @@ const raw = readFileSync(workflowPath, 'utf8')
 const parsed: unknown = parse(raw)
 assertWorkflowShape(parsed)
 
-describe('capture-learnings.yaml draft/publish split', () => {
+describe('capture-learnings.yaml harvest/draft/publish split', () => {
+  const harvestJob = parsed.jobs['capture-learnings-harvest']
   const draftJob = parsed.jobs['capture-learnings']
   const publishJob = parsed.jobs['capture-learnings-publish']
 
-  it('declares both jobs, publish needing draft', () => {
+  it('declares all three jobs: harvest -> draft -> publish', () => {
+    expect(harvestJob).toBeDefined()
     expect(draftJob).toBeDefined()
     expect(publishJob).toBeDefined()
+    expect(draftJob?.needs).toBe('capture-learnings-harvest')
     expect(publishJob?.needs).toBe('capture-learnings')
   })
 
-  it('draft job has no App token step after its agent step', () => {
+  it('the harvest job (no agent step) mints no App token; the draft (agent) job mints no App token at all', () => {
+    expect(harvestJob?.steps.find(step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBeUndefined()
+    expect(
+      harvestJob?.steps.find(step => (step.uses ?? '').startsWith('actions/create-github-app-token@')),
+    ).toBeUndefined()
+
     const agentIndex = draftJob?.steps.findIndex(step => (step.uses ?? '').startsWith('fro-bot/agent@')) ?? -1
     expect(agentIndex).toBeGreaterThanOrEqual(0)
-    const mintAfterAgent = draftJob?.steps
-      .slice(agentIndex + 1)
-      .filter(step => (step.uses ?? '').startsWith('actions/create-github-app-token@'))
-    expect(mintAfterAgent).toStrictEqual([])
+    expect(
+      draftJob?.steps.find(step => (step.uses ?? '').startsWith('actions/create-github-app-token@')),
+    ).toBeUndefined()
   })
 
-  it('draft job uploads digest and bodies artifacts instead of opening issues itself', () => {
-    expect(draftJob?.steps.find(step => step.name === '📤 Upload digest artifact')).toBeDefined()
+  it('the harvest job uses the workflow GITHUB_TOKEN, scoped by its own permissions block, to call scripts/capture-learnings-harvest.ts', () => {
+    const harvestStep = harvestJob?.steps.find(step => step.id === 'harvest')
+    expect(String(harvestStep?.env?.GITHUB_TOKEN ?? '')).toContain('secrets.GITHUB_TOKEN')
+    expect(harvestStep?.run).toContain('scripts/capture-learnings-harvest.ts')
+    expect(harvestJob?.permissions).toStrictEqual({
+      contents: 'read',
+      actions: 'read',
+      'pull-requests': 'read',
+      issues: 'read',
+    })
+  })
+
+  it('the harvest job uploads the digest artifact; the draft job downloads it and uploads only the bodies artifact', () => {
+    expect(harvestJob?.steps.find(step => step.name === '📤 Upload digest artifact')).toBeDefined()
+    expect(draftJob?.steps.find(step => step.name === '📥 Download digest artifact')).toBeDefined()
+    expect(draftJob?.steps.find(step => step.name === '📤 Upload digest artifact')).toBeUndefined()
+
     const bodiesUpload = draftJob?.steps.find(step => step.name === '📤 Upload bodies artifact')
     expect(bodiesUpload).toBeDefined()
     expect(bodiesUpload?.with?.['if-no-files-found']).toBe('warn')
