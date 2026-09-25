@@ -123,7 +123,7 @@ jobs:
   # write token, validate bodies, open issues) lives in open-publish: a separate
   # job with no agent step, so a prompt-injected agent's shell never shares a
   # runner with a freshly-minted `issues: write` App token. See the
-  # agent-token-mint-order guard test for the invariant this enforces.
+  # scripts/agent-post-step-credential-guard.test.ts for the invariant this enforces.
   # ---------------------------------------------------------------------------
   open:
     name: Draft pattern proposals

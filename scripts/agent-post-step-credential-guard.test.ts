@@ -25,6 +25,15 @@
  *   (c) a post-agent step whose `uses:` is a local composite action
  *       (`./.github/actions/<name>`) whose `action.y*ml` itself references a credential
  *       in its `inputs` defaults or `steps`.
+ *   (d) ANY `actions/create-github-app-token` step in the job, before or after the agent.
+ *       That action declares a `post:` phase which re-reads its own `with:` inputs
+ *       (app-id, private-key) and `core.getState('token')` from runner state after every
+ *       main step in the job — including the agent step. Its compiled `post.cjs` lives in
+ *       the runner's `_actions` tree, which the agent's shell can tamper with as the same
+ *       user, so a PRE-agent mint is exposed exactly like a post-agent one would be.
+ *   (e) a PRE-agent `uses:` step whose `with:`/`env:` carries a credential other than the
+ *       agent's own — the same `post:`-phase re-exposure mechanism as (d), generalized to
+ *       any action (not just create-github-app-token) that has one.
  *
  * Supersedes the narrower `agent-token-mint-order-guard.test.ts` (which only caught a
  * token MINTED after the agent step, not one minted before and merely reused after).
@@ -65,6 +74,7 @@ function assertWorkflowShape(value: unknown): asserts value is WorkflowRoot {
 }
 
 const AGENT_USES_PREFIX = 'fro-bot/agent@'
+const APP_TOKEN_USES_PREFIX = 'actions/create-github-app-token@'
 const LOCAL_ACTION_USES_PATTERN = /^\.\/\.github\/actions\/([\w-]+)\/?$/
 const REUSABLE_WORKFLOW_USES_PATTERN = /\.github\/workflows\/[\w-]+\.ya?ml/
 
@@ -183,6 +193,27 @@ export function scanAgentJob(params: ScanAgentJobParams): ScanAgentJobResult {
       continue
     }
     pushIfForeign(label, findRefs(actionContent, COMPOSITE_ACTION_CREDENTIAL_PATTERNS))
+  }
+
+  // Rule (d): actions/create-github-app-token declares a `post:` phase that re-reads its
+  // own `with:` inputs (app-id, private-key) and `core.getState('token')` from runner
+  // state AFTER every main step in the job completes — including the agent step. The
+  // action's compiled post.cjs lives in the runner's _actions tree, which the agent's
+  // shell can tamper with. A pre-agent mint is therefore just as exposed as a post-agent
+  // one: fail on ANY create-github-app-token step anywhere in an agent job.
+  for (const step of steps) {
+    if ((step.uses ?? '').startsWith(APP_TOKEN_USES_PREFIX)) {
+      violations.push({step: step.name ?? step.id ?? '(unnamed step)', ref: 'actions/create-github-app-token'})
+    }
+  }
+
+  // Rule (e): a PRE-agent uses: step whose with:/env: carries a credential other than the
+  // agent's own. Its post: phase (if any) re-exposes those inputs after the agent runs,
+  // same mechanism as rule (d) but for third-party/other actions in general, not just
+  // create-github-app-token specifically.
+  for (const step of steps.slice(0, agentStepIndex)) {
+    if (typeof step.uses !== 'string' || step.uses === '') continue
+    pushIfForeign(step.name ?? step.id ?? '(unnamed step)', findCredentialRefs(stepText(step)))
   }
 
   return {agentCredential, violations}
@@ -434,6 +465,105 @@ describe('scanAgentJob (fixture-driven unit tests for each new rule)', () => {
       expect(result.violations).toStrictEqual([
         {step: 'run missing', ref: 'unresolved composite action: does-not-exist'},
       ])
+    })
+  })
+
+  describe('rule (d): any actions/create-github-app-token step in the job, before or after the agent', () => {
+    it('fails on a PRE-agent App-token mint', () => {
+      const mintStep: WorkflowStep = {
+        name: 'Mint App token',
+        uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
+      }
+      const result = scanAgentJob({
+        job: {steps: [mintStep, agentStep]},
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([{step: 'Mint App token', ref: 'actions/create-github-app-token'}])
+    })
+
+    it('fails on a POST-agent App-token mint', () => {
+      const mintStep: WorkflowStep = {
+        name: 'Mint App token',
+        uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
+      }
+      const result = scanAgentJob({
+        job: {steps: [agentStep, mintStep]},
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([{step: 'Mint App token', ref: 'actions/create-github-app-token'}])
+    })
+
+    it('passes for an agent job with no create-github-app-token step anywhere', () => {
+      const result = scanAgentJob({
+        job: {steps: [{name: 'checkout', uses: 'actions/checkout@abc'}, agentStep]},
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([])
+    })
+  })
+
+  describe("rule (e): a PRE-agent uses: step whose with:/env: carries a credential other than the agent's own", () => {
+    it('fails on a pre-agent uses: step whose with: carries a foreign secret', () => {
+      const result = scanAgentJob({
+        job: {
+          steps: [
+            {
+              name: 'pre-agent fetch',
+              uses: 'some-org/some-action@abc',
+              with: {token: `${EXPR} secrets.GATEWAY_WEBHOOK_SECRET }}`},
+            },
+            agentStep,
+          ],
+        },
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([{step: 'pre-agent fetch', ref: 'secrets.GATEWAY_WEBHOOK_SECRET'}])
+    })
+
+    it('fails on a pre-agent uses: step whose env: carries a steps.*.outputs.token reference', () => {
+      const result = scanAgentJob({
+        job: {
+          steps: [
+            {name: 'mint', id: 'mint', uses: 'actions/create-github-app-token@abc'},
+            {
+              name: 'pre-agent use',
+              uses: 'some-org/some-action@abc',
+              env: {GH_TOKEN: `${EXPR} steps.mint.outputs.token }}`},
+            },
+            agentStep,
+          ],
+        },
+        resolveCompositeAction: noOpResolver,
+      })
+      // Two violations expected: rule (d) on the mint step itself, and rule (e) on the
+      // step that consumes its token before the agent runs.
+      expect(result.violations).toStrictEqual([
+        {step: 'mint', ref: 'actions/create-github-app-token'},
+        {step: 'pre-agent use', ref: 'steps.mint.outputs.token'},
+      ])
+    })
+
+    it("does not flag a pre-agent uses: step (e.g. checkout) that carries the agent's own credential", () => {
+      const result = scanAgentJob({
+        job: {
+          steps: [
+            {name: 'checkout', uses: 'actions/checkout@abc', with: {token: `${EXPR} secrets.FRO_BOT_PAT }}`}},
+            agentStep,
+          ],
+        },
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([])
+    })
+
+    it('does not flag a pre-agent uses: step with no with:/env: at all', () => {
+      const result = scanAgentJob({
+        job: {
+          steps: [{name: 'setup', uses: './.github/actions/setup'}, agentStep],
+        },
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([])
     })
   })
 })
