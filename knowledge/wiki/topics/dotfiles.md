@@ -2,15 +2,18 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-09-10
+updated: 2026-09-25
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 5a890eef0d2ecb0b9310c3ccf87c29059c86733a
+    accessed: 2026-09-25
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 347958930a27f22f630996c1d0d65e02416218f0
     accessed: 2026-08-26
-tags: [dotfiles, shell, configuration, bare-git-repo, xdg, dormant-config, excludes-file, git-dir-leak, entry-point, dead-code, curl-pipe-sh]
+tags: [dotfiles, shell, configuration, bare-git-repo, xdg, dormant-config, excludes-file, git-dir-leak, entry-point, dead-code, curl-pipe-sh, allowlist-audit, check-ignore, settings-template]
 related:
   - marcusrbrown--dotfiles
   - mise
@@ -139,6 +142,26 @@ Dotfiles and devcontainer features routinely bootstrap tools with `curl … | sh
 - **`set -e` is not enough; use `set -eo pipefail`.** A *pinned* installer URL that 404s pipes an empty script into `sh`, which exits `0`. Pinning without `pipefail` converts a loud 404 into a silent no-op install — strictly worse than not pinning, because the pin creates false confidence.
 - **Different installers take their version differently.** mise reads `MISE_VERSION` from the environment; uv bakes its version into the script, so it must be pinned via a versioned URL (`https://astral.sh/uv/${UV_VERSION}/install.sh`); starship takes `-v`. Verify which, per installer.
 - **A `# renovate:` comment does not make a version managed.** Confirm a manager's file pattern actually covers the file — an unmatched marker looks managed during review while drifting in practice. Same wrong-target class as the mis-pathed `uses:` case in [[marcusrbrown--esphome-life]].
+
+**2026-09-25 addendum, the second instance:** [[marcusrbrown--dotfiles]] hit the same failure again with keychain. Upstream rewrote 3.x as a Python zipapp and dropped the `keychain` make target. The feature resolved `latest` from git tags at build time, so the devcontainer broke with no repository change (#2633). The fix applied the same three rules and added a fourth: **verify the artifact against the upstream's published `SHA256SUMS` before installing it** (#2636). Two identical breaks in three weeks is the argument for pinning *every* network-fetched installer up front, rather than each one after it breaks.
+
+### Allowlist negations that die silently (bare repo)
+
+An allowlist ignore file (`/*`, then `!/path`) has failure modes that ordinary git use never exposes. From [[marcusrbrown--dotfiles]] (#2615, #2625, 2026-09-15/16), in addition to the 2026-08-26 read-twice `.gitignore` naming bug above:
+
+- **A leading space makes the pattern literal.** ` !/.editorconfig` negates a file whose name starts with a space. An indentation "tidy-up" of an ignore file therefore silently removes entries.
+- **A tracked path with no negation at all** is swallowed by a parent rule such as `/.dotfiles/*`.
+- **Neither shows up in normal use**, because gitignore does not apply to already-tracked paths. The index protects the file, not the allowlist. The damage lands only when a file is untracked, and then it cannot be re-added.
+- **`git check-ignore` hides it as well**, because it consults the index and reports "not ignored" for tracked paths regardless of the rules. **Use `git check-ignore --no-index`**, which is the only form that reports what the rules actually say.
+- **The invariant to assert:** every path in `git ls-files` must be re-addable, meaning `check-ignore --no-index` reports not-ignored for all of them. Also flag leading-whitespace negations by line.
+- **In CI, bind the rules explicitly.** A normal checkout has no `core.excludesFile` pointing at the bare repo's allowlist, because that binding is set by the local bootstrap only. Pass `-c core.excludesFile=<path>` per invocation, or the audit passes vacuously.
+- **A per-directory `.gitignore` always beats the excludesFile allowlist.** A subtree that ignores `package.json` (as `.config/opencode/` does, for OpenCode's own install) can never have a manifest tracked there, whatever negations the allowlist adds. Put tracked project files where no subtree rule reaches them. Here that meant a `.dotfiles/package.json` toolchain manifest.
+
+### Tracked templates for tool-owned settings files
+
+When a tool writes machine-local state into the settings file you want to share (Claude Code's `~/.claude/settings.json` gains `enabledPlugins`, marketplaces, and permission grants), tracking the file both dirties the repo on every local action and carries one machine's state to all the others. [[marcusrbrown--dotfiles]] (#2610/#2611) tracks a **template** instead and merges it into the local file with a sync task: template keys win, keys only in the target survive, and arrays union. Two implementation rules came out of that work:
+- **Write atomically.** Write a temp file in the destination directory, then rename it over the target, preserving the mode.
+- **Validate numeric flags before any destructive path.** `--keep abc` became `NaN`, which slipped past `keep <= 0` and reached `slice(NaN)` → `slice(0)`. That deleted every backup and exited 0.
 
 ### Privacy Defaults
 

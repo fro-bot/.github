@@ -2,11 +2,14 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-09-10
+updated: 2026-09-25
 sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
     accessed: 2026-09-10
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 5a890eef0d2ecb0b9310c3ccf87c29059c86733a
+    accessed: 2026-09-25
 tags: [mise, tool-management, runtime-versions, asdf, dev-tools, pyenv, git-dir-leak, installer-pinning, devcontainer]
 aliases: [rtx]
 related:
@@ -56,7 +59,20 @@ Two operational consequences for anyone running mise in a container:
 
 If a job exists to prove that a mise config installs cleanly, a cache hit skips the install and the job passes without testing anything. The cache is also large — [[marcusrbrown--dotfiles]] measured **~993 MB per entry**, and keyed on mise version × config hash × ref it consumed 8.9 GB of a 10 GB Actions budget across nine entries, LRU-evicting every other cache in the repository. Detail in [[github-actions-ci]].
 
+### pnpm 12 needs the `aqua:` backend, not the legacy asdf plugin (2026-09-11)
+
+A bare `pnpm = "12.x"` resolves through the legacy asdf plugin. That plugin does not discover pnpm 12's `.mjs` entry points and fails with an unset `BIN_PATH`. [[marcusrbrown--dotfiles]] (#2582) switched to the explicit backend, `"aqua:pnpm/pnpm" = "12.6.0"`, which behaves the same on every machine. Renovate then tracks the package under the `aqua:pnpm/pnpm` name (#2583 onward). **Rule:** when a tool's major version changes its packaging layout, name the backend explicitly instead of relying on shorthand resolution.
+
 ## Usage Across Repos
+
+### [[marcusrbrown--dotfiles]] — delta (SHA `5a890ee`, 2026-09-25)
+
+These are changes since the `fe0144c` snapshot below, which is kept as the baseline:
+- **pnpm → `aqua:pnpm/pnpm` 12.6.0**, per the section above.
+- Prettier 3.9.8, biome 2.5.14, tsx 4.23.15, agent-browser 0.38.1, skills 1.7.0, `@github/copilot` 1.0.87, claude-code 2.1.270, `@fro.bot/harness` 1.18.30-harness.7c479429, pyright 1.1.414, pipx 1.17.6, `pipx:poetry` 2.5.1, deno 2.9.7. node, npm, bun, rust, and typescript are unchanged.
+- **New tasks:** `typecheck`, `format-check`, `ignore:audit`, `opencode:cache-plateau`, `claude:settings`.
+- **`MISE_VERSION` 2026.9.13** in both the `jdx/mise-action` pin and the devcontainer feature pin, which are still bumped in lockstep by Renovate.
+- **Machine-wide tools pinned twice:** TypeScript and Prettier are pinned in `config.toml` and also in the repo's `.dotfiles/package.json` script toolchain, which is what CI actually runs. A Renovate `script toolchain` group matches both files so the two copies cannot drift apart. This is the same separate-pins lesson as the `jdx/mise-action` note above, applied to npm tools.
 
 ### [[marcusrbrown--dotfiles]] — current state (SHA `fe0144c`, 2026-09-10)
 

@@ -6480,18 +6480,35 @@ Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.g
 
 Sources: https://github.com/fro-bot/.github@5d8f66b0cbffd54e0384525283caf79d40d1ba70
 
-## [2026-09-25 10:15] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-09-25 13:05] ingest | repo:marcusrbrown/.dotfiles
 
-Re-survey with no tree delta. HEAD is still `3e44653`, which is 228 days frozen and the ninth survey at the same SHA. Raw probes are unchanged: `CNAME` = `fro.bot`, and README / `index.html` / `fro-bot.yaml` / `settings.yml` / `LICENSE.md` / `.nojekyll` all return 404. There was no API token, so the 2026-09-09 live probes were re-run instead of carried forward, and every finding still holds. The `github.io` → `http://fro.bot/` downgrade is live with no HSTS. The TLS leaf is unchanged (LE `YR1`, 2026-08-08 → 2026-11-06). DNS still has no `AAAA`, no `CAA`, and no `_github-pages-challenge-fro-bot` TXT. None of the seven follow-up actions has happened. The page records a renewal forecast (~2026-10-07) as a measurement to take, with an explicit escalation threshold.
+Re-survey of marcusrbrown/.dotfiles (HEAD `5a890ee`, 125 commits since `fe0144c`: about 80 from `mrbro-bot[bot]` Renovate and 45 from `marcusrbrown`). All reads came from the unauthenticated REST API (`gh` had no token): the compare API (commit subjects and bodies, the file list, and patches for workflows, manifests, READMEs, `.dotfiles/ignore`, and the OpenCode, cortexkit, systematic, and OMO-slim configs), open issues, and workflow-run metadata. TypeScript sources were not read.
 
-Two cross-page updates, both additive. The 09-09 schema-path open item is marked resolved: it was resolved source-side on 2026-09-19 and re-confirmed here with a 200 at `/systematic/schemas/v3/systematic-config.schema.json`. The "components flat at 73" reading is marked superseded by 74 at `3.20.0`. Fro Bot workflow still absent (ninth survey); a follow-up draft PR is still recommended, to be proposed separately.
+- **The 2026-09-10 postmortems became CI gates.**
+  - `ignore-audit.ts` (#2615/#2625) catches dead allowlist negations: leading-space patterns are literal, and five git-dir files had no negation. It runs `check-ignore --no-index` with an explicit `--ignore-file` so the check cannot pass vacuously.
+  - `tsc` type-checking (#2626) runs from a pinned `.dotfiles/package.json` toolchain. It exposed types that resolved from OpenCode's untracked `node_modules`, and showed that a per-directory `.gitignore` overrides the allowlist.
+  - `prettier --check` (#2629) uses the pinned binary, with a Renovate `script toolchain` group (#2630).
+  - Generalized in [[dotfiles]].
+- **Second unpinned-upstream devcontainer break.** keychain 3.x's zipapp rewrite removed the make target. It is now a pinned, SHA256-verified, Renovate-managed `.pyz` (#2636). Fro Bot-filed #2633 is still open after the fix.
+- **`fro-bot.yaml`:** trigger-scoped `persist-credentials` (#2576), the dashboard's expression, now in two repos (noted in [[github-actions-ci]]). Agent v0.109.4 → v0.115.1. Prompts unchanged. The Fro Bot workflow is present, so no follow-up draft is needed.
+- **Contradiction recorded:** `AGENTS.md` moved from the root to `.dotfiles/AGENTS.md` and was rewritten around failure modes (#2627). Prior surveys described it as the root "canonical knowledge base".
+- **Also recorded:**
+  - Claude `settings.json` is untracked in favor of a template plus atomic `settings-sync`; the `--keep NaN` backup-wipe bug was caught (#2610/#2611).
+  - New `cache-plateau.ts` detector (#2568).
+  - OMO-slim 2.2.22 (the Renovate hold at 2.2.19 is stale), `gpt-6-sol/luna`, `claude-opus-5-5`, `clonedeps` removed.
+  - Magic Context 0.42.6: deepseek fallbacks, `anthropic/*` cache TTL `never`.
+  - systematic 3.20.0 with `workflow_guard` disabled (#2708).
+  - pnpm on the `aqua:` backend (#2582, recorded in [[mise]]). MISE_VERSION 2026.9.13.
+  - Stale `librarian.mcps` references persist for a third survey.
+  - Fro Bot: 15/15 scheduled runs green; 16 of the last 100 runs did work (was 3/100).
+  - License is still null (seventh survey).
 
-Pages touched: [[fro-bot--fro-bot-github-io]], [[github-pages]] (forecast-as-measurement rule); index entries for both. The repo index entry had been stale since 2026-06-15 and is now refreshed.
+Pages touched: [[marcusrbrown--dotfiles]], [[dotfiles]], [[mise]], [[github-actions-ci]]; index entries for all four.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io@3e44653c4d185b239b44b3af12255d18c86463ab, https://fro.bot/, https://fro.bot/systematic/index.json
+Sources: https://github.com/marcusrbrown/.dotfiles@5a890eef0d2ecb0b9310c3ccf87c29059c86733a, https://github.com/marcusrbrown/.dotfiles/compare/fe0144c0e9fc0168fc4ed9aa9fa0492df4846599...5a890eef0d2ecb0b9310c3ccf87c29059c86733a
 
-## [2026-09-25 10:17] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-09-25 10:20] ingest | repo:marcusrbrown/.dotfiles
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/marcusrbrown/.dotfiles
