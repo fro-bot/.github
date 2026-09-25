@@ -116,16 +116,24 @@ describe('fro-bot.yaml wiki baseline/detect/ingest ordering', () => {
   const observeJob = froBotParsed.jobs['fro-bot-observe']
   const remediateJob = froBotParsed.jobs['fro-bot-remediate']
 
-  it('within fro-bot-observe: Capture wiki baseline precedes the agent step, which precedes Detect/Ingest', () => {
+  it('within fro-bot-observe: Capture wiki baseline precedes the agent step, which precedes Detect/Build handoff', () => {
     const baselineIndex = findStepIndex(observeJob, step => step.name === 'Capture wiki baseline')
     const agentIndex = findStepIndex(observeJob, step => step.id === 'fro-bot-agent')
     const detectIndex = findStepIndex(observeJob, step => step.name === 'Detect wiki insight changes')
-    const ingestIndex = findStepIndex(observeJob, step => step.name === 'Ingest wiki insight changes')
+    const buildIndex = findStepIndex(observeJob, step => step.name === 'Build wiki handoff artifact')
+    const uploadIndex = findStepIndex(observeJob, step => step.name === 'Upload wiki handoff artifact')
 
     expect(baselineIndex).toBeGreaterThanOrEqual(0)
     expect(agentIndex).toBeGreaterThan(baselineIndex)
     expect(detectIndex).toBeGreaterThan(agentIndex)
-    expect(ingestIndex).toBeGreaterThan(detectIndex)
+    expect(buildIndex).toBeGreaterThan(detectIndex)
+    expect(uploadIndex).toBeGreaterThan(buildIndex)
+  })
+
+  it('fro-bot-observe never runs wiki-ingest.ts itself — that only happens in the trusted follow-on job', () => {
+    expect(findStepIndex(observeJob, step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'))).toBe(
+      -1,
+    )
   })
 
   it('fro-bot-remediate has no wiki baseline/detect/ingest steps — it cannot commit knowledge/**', () => {
@@ -641,6 +649,147 @@ describe('fro-bot.yaml: all three jobs delegate wiki sync to the hardened compos
 
       expect(syncIndex).toBeGreaterThanOrEqual(0)
       expect(baselineIndex).toBeGreaterThan(syncIndex)
+    },
+  )
+})
+
+describe('fro-bot.yaml App-token wiki ingest migration', () => {
+  const froBotJob = froBotParsed.jobs['fro-bot']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const wikiIngestJob = froBotParsed.jobs['fro-bot-wiki-ingest']
+  const observeWikiIngestJob = froBotParsed.jobs['fro-bot-observe-wiki-ingest']
+
+  it('declares both trusted writer jobs, each needing its agent job', () => {
+    expect(wikiIngestJob).toBeDefined()
+    expect(observeWikiIngestJob).toBeDefined()
+    expect((wikiIngestJob as {needs?: string}).needs).toBe('fro-bot')
+    expect((observeWikiIngestJob as {needs?: string}).needs).toBe('fro-bot-observe')
+  })
+
+  it("gates each trusted writer job on the agent job's wiki-changed output", () => {
+    expect(String((wikiIngestJob as {if?: string}).if ?? '')).toContain("needs.fro-bot.outputs.wiki-changed == 'true'")
+    expect(String((observeWikiIngestJob as {if?: string}).if ?? '')).toContain(
+      "needs.fro-bot-observe.outputs.wiki-changed == 'true'",
+    )
+  })
+
+  it('exposes wiki-changed as a job output on both agent jobs', () => {
+    expect((froBotJob as {outputs?: Record<string, string>}).outputs?.['wiki-changed']).toContain(
+      'steps.wiki-changes.outputs.changed',
+    )
+    expect((observeJob as {outputs?: Record<string, string>}).outputs?.['wiki-changed']).toContain(
+      'steps.wiki-changes.outputs.changed',
+    )
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s has no fro-bot/agent step (trusted-writer invariant)', (_name, job) => {
+    const agentStep = findStepIndex(job, step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    expect(agentStep).toBe(-1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s checks out the default branch with persist-credentials: false', (_name, job) => {
+    const checkoutStep = (job as WorkflowJob)?.steps?.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s runs wiki-ingest.ts with a minted App token, never FRO_BOT_PAT', (_name, job) => {
+    const ingestStep = (job as WorkflowJob)?.steps?.find(
+      step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'),
+    )
+    const token = String(ingestStep?.env?.GITHUB_TOKEN ?? '')
+    expect(token).toContain('steps.app-token.outputs.token')
+    expect(token).not.toContain('secrets.FRO_BOT_PAT')
+
+    const mintStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'app-token')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s mints no App token after any fro-bot/agent step (there is none in this job at all)', (_name, job) => {
+    const mintSteps = ((job as WorkflowJob)?.steps ?? []).filter(step =>
+      (step.uses ?? '').startsWith('actions/create-github-app-token@'),
+    )
+    expect(mintSteps).toHaveLength(1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])(
+    "%s sources WIKI_* env from github.* context and this job's own trusted timestamp — never from an artifact-carried metadata.json",
+    (_name, job) => {
+      const ingestStep = (job as WorkflowJob)?.steps?.find(
+        step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'),
+      )
+      const run = String(ingestStep?.run ?? '')
+      expect(run).not.toContain('metadata.json')
+      expect(run).not.toContain('jq')
+
+      const env = ingestStep?.env ?? {}
+      expect(String(env.WIKI_TARGET ?? '')).toContain('github.repository')
+      expect(String(env.WIKI_SUMMARY ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_COMMIT_MESSAGE ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('github.sha')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('steps.ingest-ts.outputs.now')
+
+      const timestampStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'ingest-ts')
+      expect(timestampStep?.run).toContain('date -u')
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])('%s (agent job): the build step writes no WIKI_* metadata into the handoff artifact', (_name, job) => {
+    const buildStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Build wiki handoff artifact')
+    const env = buildStep?.env ?? {}
+    expect(Object.keys(env).sort()).toStrictEqual(['WIKI_HANDOFF_BASELINE_PATH', 'WIKI_HANDOFF_DIR'])
+  })
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    '%s (agent job): captures a wiki content baseline before the agent step, wired to the build step',
+    (_name, job) => {
+      const steps = (job as WorkflowJob)?.steps ?? []
+      const baselineIndex = steps.findIndex(step => step.name === 'Capture wiki content baseline')
+      const agentIndex = steps.findIndex(step => step.id === 'fro-bot-agent')
+      const buildIndex = steps.findIndex(step => step.name === 'Build wiki handoff artifact')
+
+      expect(baselineIndex).toBeGreaterThanOrEqual(0)
+      expect(agentIndex).toBeGreaterThan(baselineIndex)
+      expect(buildIndex).toBeGreaterThan(agentIndex)
+
+      const baselineStep = steps[baselineIndex]
+      const buildStep = steps[buildIndex]
+      expect(String(baselineStep?.run ?? '')).toContain('wiki-handoff-baseline.ts')
+      expect(baselineStep?.env?.WIKI_HANDOFF_BASELINE_PATH).toBe(buildStep?.env?.WIKI_HANDOFF_BASELINE_PATH)
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    "%s (agent job): the upload step requires the build step's own non-empty-manifest signal, not just success",
+    (_name, job) => {
+      const uploadStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Upload wiki handoff artifact')
+      const condition = String(uploadStep?.if ?? '')
+      expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+      expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
     },
   )
 })

@@ -22,7 +22,7 @@ import {
  *   REPO_NODE_ID      — optional GitHub GraphQL node ID; required when REPO_PRIVATE=true
  *   SURVEY_STATUS     — "success" | "failure"
  *   SURVEY_AT         — ISO 8601 timestamp; defaults to "now" if absent
- *   GITHUB_TOKEN      — FRO_BOT_PAT (writes to `data`; classic PAT with repo scope)
+ *   GITHUB_TOKEN      — fro-bot App installation token, minted in the trusted survey-persist job
  *   GITHUB_REPOSITORY — caller-supplied "owner/name" of the control-plane repo hosting
  *                       metadata/repos.yaml (GitHub Actions sets this automatically).
  *

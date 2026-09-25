@@ -53,6 +53,15 @@ jobs:
     name: Survey Repo
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      wiki-artifact-ready: ${{ steps.wiki-handoff-upload.outcome }}
+      agent-conclusion: ${{ steps.survey-agent.conclusion }}
+      resolve-outcome: ${{ steps.resolve.outcome }}
+      resolve-owner: ${{ steps.resolve.outputs.owner }}
+      resolve-repo: ${{ steps.resolve.outputs.repo }}
+      onboarded: ${{ steps.onboarded.outputs.onboarded }}
+      target-repository: ${{ steps.ingest-prompt.outputs.target-repository }}
+      target-slug: ${{ steps.ingest-prompt.outputs.target-slug }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -159,6 +168,15 @@ jobs:
           git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
           echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
+      # Content-hash snapshot of every wiki-scoped path as it stands right after
+      # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
+      # the handoff only carries what the agent actually changed — not every path
+      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      - name: Capture wiki content baseline
+        env:
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-survey.json
+        run: node scripts/wiki-handoff-baseline.ts
+
       - name: 🎭 Load Persona
         id: persona
         run: |
@@ -250,27 +268,107 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Capture timestamp
-        if: steps.wiki-changes.outputs.changed == 'true'
+      # Build a data-only handoff artifact instead of writing `data` from this job
+      # directly — this job just ran the survey agent, whose shell can rewrite any file
+      # in the checkout (including this script). The artifact carries only
+      # manifest.json + changed files, never ingest metadata: WIKI_OPERATION/WIKI_TARGET/
+      # etc. are set from trusted needs.*/inputs.* values directly in survey-persist, and
+      # the privacy recheck itself also runs there — this job mints no App token after
+      # the agent step. See scripts/wiki-handoff-core.ts for the artifact's guarantees.
+      - name: Build wiki handoff artifact
+        id: wiki-handoff-build
+        if: steps.wiki-changes.outputs.changed == 'true' && steps.onboarded.outputs.onboarded == 'true'
+        env:
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-survey
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-survey.json
+        run: node scripts/wiki-handoff-build.ts
+
+      # Baseline scoping (see the build step's env) can legitimately narrow a manifest
+      # to empty even when the outer wiki-changes diff-hash flagged something — e.g. an
+      # edit reverted before the run ended. An empty manifest must mean no artifact and
+      # no downstream ingest, matching the pre-scoping no-op contract exactly.
+      - name: Upload wiki handoff artifact
+        id: wiki-handoff-upload
+        if: steps.wiki-handoff-build.outcome == 'success' && steps.wiki-handoff-build.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wiki-handoff-survey-${{ github.run_id }}
+          path: ${{ runner.temp }}/wiki-handoff-survey
+          retention-days: 1
+
+  # ─── Trusted writer: privacy recheck + wiki/metadata persistence ───
+  # Fresh default-branch checkout, no agent step — the only job in this workflow
+  # allowed to mint an App token or run wiki-ingest.ts / record-survey-result.ts.
+  # The public-visibility recheck also lives here now (not in survey-repo): it used
+  # to run after the agent step on the agent's own runner, where a prompt-injected
+  # shell could shadow `gh`/`jq` on PATH or leave behind tampered state. Every
+  # persistence step below gates on this job's OWN `steps.recheck` conclusion/
+  # outputs, never on anything survey-repo produced after its agent step ran.
+  # `if: always()` so this still runs (and records a failure result) when survey-repo
+  # was cancelled or timed out — mirrors the old same-job cancelled/timeout fallback.
+  survey-persist:
+    name: Persist survey results
+    needs: survey-repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted code (default branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Recomputed here (not reused from survey-repo) so the ingest metadata is
+      # entirely trusted-job-sourced: needs.*/inputs.* plus this job's own clock.
+      - name: Capture ingest timestamp
         id: ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      # Re-mint the gate token immediately before the visibility recheck. The initial
-      # gate-token is minted at job start, but the survey agent can run for up to the job
-      # timeout before this point; a fresh token here keeps the recheck well clear of the
-      # ~1h installation-token lifetime even if survey durations grow.
-      - name: Re-mint App token for recheck
+      - name: 🔑 Mint App token for data writes
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      # Dedicated recheck token, mirroring main's pre-A2 "Re-mint App token for recheck"
+      # exactly: owner-scoped, no repositories:/permission-contents:write. The privacy
+      # gate only needs public-read GraphQL against any repo the owner's installation
+      # covers — the repo-scoped data-write token above cannot resolve a survey target
+      # outside this repo, so the recheck must not reuse it.
+      #
+      # Gated on `always() && resolve-outcome == 'success'`, NOT on agent-conclusion:
+      # the fallback "Record survey result (cancelled/timeout fallback)" must still be
+      # able to run (with a trusted recheck result) when survey-repo fails or is
+      # cancelled between `resolve` and the agent step (sync-wiki/persona/setup), or
+      # this job itself is cancelled. The recheck is a read-only GraphQL call under its
+      # own owner-scoped token, so widening its gate carries no write-credential risk;
+      # every actual write step downstream keeps its own existing conditions
+      # (wiki-artifact-ready == 'success', agent-conclusion == 'success', etc.) — only
+      # the recheck itself runs more often.
+      - name: 🔑 Mint App token for recheck
         id: recheck-token
-        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
+        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
+      # The privacy gate, run trusted-side. Same GraphQL query and fail-closed
+      # behavior as before A2; only the execution context moved. See the mint step
+      # above for why this runs on resolve-outcome, not agent-conclusion.
       - name: 🔒 Recheck visibility
         id: recheck
-        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
+        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
           GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
@@ -304,18 +402,34 @@ jobs:
 
           echo "private=false" >> "$GITHUB_OUTPUT"
 
+      - name: Sync wiki from data branch
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        uses: ./.github/actions/sync-wiki
+
+      - name: Download wiki handoff artifact
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wiki-handoff-survey-${{ github.run_id }}
+          path: ${{ runner.temp }}/wiki-handoff
+
+      - name: Validate and apply wiki handoff
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        env:
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
+        run: node scripts/wiki-handoff-apply.ts
+
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success' &&
-          steps.onboarded.outputs.onboarded == 'true'
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_OPERATION: survey
-          WIKI_TARGET: 'repo:${{ steps.ingest-prompt.outputs.target-repository }}'
+          WIKI_TARGET: 'repo:${{ needs.survey-repo.outputs.target-repository }}'
           REPO_NODE_ID: ${{ inputs.node_id }}
-          WIKI_SUMMARY: Surveyed ${{ steps.ingest-prompt.outputs.target-repository }} and updated the control-plane wiki.
-          WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ steps.ingest-prompt.outputs.target-repository }}'
-          WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
+          WIKI_SUMMARY: Surveyed ${{ needs.survey-repo.outputs.target-repository }} and updated the control-plane wiki.
+          WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ needs.survey-repo.outputs.target-repository }}'
+          WIKI_SOURCES: '[{"url":"https://github.com/${{ needs.survey-repo.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
         run: |
           warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
           if node scripts/wiki-ingest.ts 2>"$warning_file"; then
@@ -349,24 +463,29 @@ jobs:
       # - Any failure upstream of metadata write — agent error, wiki commit ENOENT,
       #   wiki commit conflict-exhaustion — records 'failure' so the reconcile
       #   staleness gate re-dispatches the repo tomorrow instead of waiting 30 days.
-      # - 'cancelled' is excluded by the outer `!cancelled()` guard. The
-      #   `!= 'skipped'` guard on the agent step skips metadata writes entirely
+      # - The `!= 'skipped'` guard on the agent step skips metadata writes entirely
       #   when an upstream step kept the agent from running at all.
+      # - `resolve-outcome == 'success'` guards against an empty REPO_OWNER/REPO_NAME:
+      #   if survey-repo ended before the agent step ran at all (e.g. sync-wiki/persona/
+      #   setup failure), agent-conclusion is empty (not 'skipped'), which would
+      #   otherwise let this step run with nothing to identify the target repo.
       #
       # A wiki-commit conclusion of 'skipped' (its step `if:` returned false because
-      # the agent made no changes) counts as success, not failure, because the agent
-      # completed cleanly.
+      # the agent made no changes, or the trusted recheck failed) counts as success,
+      # not failure, because the agent itself completed cleanly.
       - name: Record survey result
         id: record-result
-        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success' }}
+        if: >-
+          ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' &&
+          needs.survey-repo.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS:
-            ${{ (steps.survey-agent.conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
+            ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
             steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
@@ -378,14 +497,14 @@ jobs:
       - name: 📣 Announce survey to gateway
         if: >-
           ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
-          steps.survey-agent.conclusion == 'success' &&
-          steps.onboarded.outputs.onboarded == 'true' &&
+          needs.survey-repo.outputs.agent-conclusion == 'success' &&
+          needs.survey-repo.outputs.onboarded == 'true' &&
           (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
         env:
           EVENT_TYPE: survey_completed
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
-          REPO_SLUG: ${{ steps.ingest-prompt.outputs.target-slug }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
+          REPO_SLUG: ${{ needs.survey-repo.outputs.target-slug }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
@@ -403,16 +522,30 @@ jobs:
       # Cadence-advance safety net: if the normal "Record survey result" step did not
       # run or did not succeed (cancelled run, hard timeout, upstream failure before
       # recheck, etc.) record a failure result so last_survey_at / next_survey_eligible_at
-      # advance and the minimum-floor stops retargeting this repo every day.
+      # advance and the minimum-floor stops retargeting this repo every day. The local
+      # recheck above still runs regardless of survey-repo's own outcome or cancellation
+      # (it only depends on this job's own `if: always()` and `resolve-outcome ==
+      # 'success'`), so it covers cancellation and upstream failure before the agent step
+      # too — exactly the coverage this safety net promises.
       # The `outcome != 'success'` guard makes this idempotent: it never fires when the
       # normal record step already wrote a result.
+      #
+      # Fail-closed: `steps.recheck.conclusion == 'success'` is required here too, not
+      # just on the primary record step. Without it, a skipped or failed recheck (e.g.
+      # this job itself got cancelled before the recheck ran) would still let this
+      # fallback fire with an empty REPO_PRIVATE — record-survey-result.ts treats a
+      # missing REPO_PRIVATE as merely optional, so an unverified visibility would
+      # otherwise reach metadata/repos.yaml on the public `data` branch. If the recheck
+      # couldn't run, skip the write entirely rather than loosen the recheck's own `if:`.
       - name: Record survey result (cancelled/timeout fallback)
-        if: ${{ (cancelled() || failure()) && steps.record-result.outcome != 'success' && steps.resolve.outcome == 'success' }}
-        shell: bash
+        if: >-
+          ${{ (needs.survey-repo.result == 'cancelled' || needs.survey-repo.result == 'failure' || cancelled() || failure()) &&
+          steps.record-result.outcome != 'success' && needs.survey-repo.outputs.resolve-outcome == 'success' &&
+          steps.recheck.conclusion == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS: failure
