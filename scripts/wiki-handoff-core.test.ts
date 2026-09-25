@@ -229,30 +229,6 @@ describe('buildWikiHandoff', () => {
       expect(result).toStrictEqual({changed: ['knowledge/wiki/repos/edited.md'], deleted: []})
     })
 
-    it("includes a page the agent reverted back to exactly main's content, even though that produces no git-status entry", async () => {
-      // No git-status entry (content now matches HEAD), but still differs from the baseline hash.
-      const mocks = makeBaselineMocks({
-        baselineFiles: {'knowledge/wiki/repos/reverted.md': 'data-only-content'},
-        currentContents: {'knowledge/wiki/repos/reverted.md': 'mains-content'},
-        existingPaths: new Set(['knowledge/wiki/repos/reverted.md']),
-      })
-
-      const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
-        runGitStatus: async () => nulRecords(), // no diff against HEAD — the agent matched main exactly
-        readFileImpl: mocks.readFileImpl,
-        existsImpl: mocks.existsImpl,
-        hashImpl: mocks.hashImpl,
-        mkdirImpl: vi.fn(async () => undefined),
-        copyFileImpl: vi.fn(async () => undefined),
-        writeFileImpl: vi.fn(async () => undefined),
-      })
-
-      expect(result).toStrictEqual({changed: ['knowledge/wiki/repos/reverted.md'], deleted: []})
-    })
-
     it('includes a page the agent created in a brand-new directory (no baseline entry)', async () => {
       const mocks = makeBaselineMocks({
         baselineFiles: {},

@@ -171,9 +171,10 @@ async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFi
  * Scopes raw git-status changed/deleted to only what the agent did: a baseline-hash match
  * is excluded (pre-existing data-vs-main diff); a deletion already in `baseline.deleted` is
  * sync-wiki-caused, not agent-caused, and excluded; a baseline path missing from disk with
- * no git-status entry is a deletion (untracked-file removals produce none); a baseline path
- * still on disk with a changed hash but no git-status entry means the agent reverted it to
- * exactly HEAD's content, which still differs from `data` — included as changed.
+ * no git-status entry is a deletion (untracked-file removals produce none).
+ *
+ * An agent edit that restores `main`'s exact content isn't propagated: it produces no
+ * git-status entry, and wiki-ingest's changed-path detection diffs against `HEAD` (`main`).
  */
 async function scopeToBaseline(params: {
   cwd: string
@@ -206,12 +207,6 @@ async function scopeToBaseline(params: {
     const exists = await existsImpl(path.join(cwd, relativePath))
     if (!exists) {
       deleted.push(relativePath)
-      continue
-    }
-    const contents = await readFileImpl(path.join(cwd, relativePath))
-    const currentHash = hashImpl(contents)
-    if (baseline.files[relativePath] !== currentHash) {
-      changed.push(relativePath)
     }
   }
 
