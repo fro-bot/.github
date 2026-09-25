@@ -1,3 +1,6 @@
+import type {Buffer} from 'node:buffer'
+
+import {createHash} from 'node:crypto'
 import {promises as fs} from 'node:fs'
 import path from 'node:path'
 
@@ -25,6 +28,16 @@ import path from 'node:path'
  * pre-agent `needs.*` job outputs) instead. {@link validateAndApplyWikiHandoff} rejects
  * any unexpected top-level entry in the artifact, so even a compromised build script
  * cannot resurrect a metadata file.
+ *
+ * Baseline scoping: `sync-wiki` restores `knowledge/` from the `data` branch into the
+ * `main` checkout before the agent runs, so a plain `git status` diffed against `HEAD`
+ * (main's committed content) reports every path where `data` differs from `main` — not
+ * just what the agent touched. Left unfiltered, the handoff would carry a stale snapshot
+ * of `data` wide enough to revert a concurrent writer's update. {@link captureWikiBaseline}
+ * (run before the agent, right after sync) records a content hash for every candidate path
+ * at that moment; {@link buildWikiHandoff}, given that baseline, includes only paths whose
+ * hash changed, are new since the baseline, or vanished since the baseline — i.e. only what
+ * happened during the agent step itself.
  */
 
 /**
@@ -44,55 +57,196 @@ export interface GitStatusChanges {
 }
 
 /**
- * Parse `git status --porcelain=v1` output (expected to be scoped to the wiki paths via
- * `git status --porcelain=v1 -- knowledge/wiki knowledge/index.md knowledge/log.md`) into
- * changed (added/modified) and deleted path lists. A rename (`R  old -> new`) splits into
- * a deletion of `old` and a change of `new`.
+ * Parse `git status --porcelain=v1 -z --untracked-files=all` output (NUL-record format;
+ * expected to be scoped to the wiki paths via `-- knowledge/wiki knowledge/index.md
+ * knowledge/log.md`) into changed (added/modified/untracked) and deleted path lists.
+ *
+ * `-z` disables the quoting/escaping `git status` otherwise applies to paths containing
+ * spaces or non-ASCII characters, and separates records with NUL instead of newline —
+ * required because a bare newline-delimited parse cannot distinguish a literal `\n` inside
+ * a quoted path from a record separator. `--untracked-files=all` expands a new untracked
+ * directory into its individual files instead of collapsing it to one `?? dir/` entry that
+ * would otherwise fail {@link isAllowedWikiHandoffPath}'s exact-file-extension check.
+ *
+ * A rename/copy record (`R`/`C` status) is followed, per `-z`'s contract, by a second
+ * NUL-terminated field holding the original path — not `old -> new` inline. That field is
+ * consumed as the deletion; the record's own path is the change.
  */
-export function parseGitStatusPorcelain(output: string): GitStatusChanges {
+export function parseGitStatusPorcelainZ(output: string): GitStatusChanges {
   const changed: string[] = []
   const deleted: string[] = []
 
-  for (const rawLine of output.split('\n')) {
-    if (rawLine.trim() === '') continue
-    const status = rawLine.slice(0, 2)
-    const rest = rawLine.slice(3)
+  const records = output.split('\0')
+  // A trailing NUL (the normal case for well-formed `-z` output) produces one empty
+  // trailing element after split; drop it so it isn't misread as a record.
+  if (records.at(-1) === '') records.pop()
 
-    if (status.includes('R')) {
-      const arrowIndex = rest.indexOf(' -> ')
-      if (arrowIndex === -1) {
-        changed.push(rest)
-        continue
-      }
-      deleted.push(rest.slice(0, arrowIndex))
-      changed.push(rest.slice(arrowIndex + 4))
+  let index = 0
+  while (index < records.length) {
+    const record = records[index]
+    index += 1
+    if (record === undefined || record.length < 3) continue
+
+    const status = record.slice(0, 2)
+    const currentPath = record.slice(3)
+    const isRenameOrCopy = status.includes('R') || status.includes('C')
+
+    if (isRenameOrCopy) {
+      // The original path is the NEXT NUL-terminated field, not part of this record.
+      const originalPath = records[index]
+      index += 1
+      if (originalPath !== undefined) deleted.push(originalPath)
+      changed.push(currentPath)
       continue
     }
 
     if (status.includes('D')) {
-      deleted.push(rest)
+      deleted.push(currentPath)
       continue
     }
 
-    changed.push(rest)
+    changed.push(currentPath)
   }
 
   return {changed, deleted}
+}
+
+/** Default content-hash implementation: sha256, hex-encoded. */
+function defaultHashContents(contents: Buffer): string {
+  return createHash('sha256').update(contents).digest('hex')
+}
+
+export interface WikiBaselineManifest {
+  /** Map of allowlisted relative path → sha256 hex digest, as it existed at baseline time. */
+  files: Record<string, string>
+}
+
+export interface CaptureWikiBaselineParams {
+  cwd: string
+  baselinePath: string
+  runGitStatus: () => Promise<string>
+  readFileImpl?: typeof fs.readFile
+  writeFileImpl?: typeof fs.writeFile
+  hashImpl?: (contents: Buffer) => string
+}
+
+/**
+ * Capture a content-hash snapshot of every wiki-scoped path that currently differs from
+ * `HEAD` (i.e. every path `git status` would report — untracked or modified). Run this
+ * BEFORE the agent step, immediately after `sync-wiki` restores `data`'s content, so the
+ * snapshot reflects "what `data` looks like right now", before any agent edits.
+ *
+ * Deleted-from-HEAD paths carry no content to hash and are irrelevant to a pre-agent
+ * baseline (a tracked-in-HEAD deletion is inherently agent-caused later — see
+ * {@link buildWikiHandoff}), so only `changed` (added/modified/untracked) entries are
+ * captured.
+ */
+export async function captureWikiBaseline(params: CaptureWikiBaselineParams): Promise<WikiBaselineManifest> {
+  const readFileImpl = params.readFileImpl ?? fs.readFile
+  const writeFileImpl = params.writeFileImpl ?? fs.writeFile
+  const hashImpl = params.hashImpl ?? defaultHashContents
+
+  const statusOutput = await params.runGitStatus()
+  const {changed} = parseGitStatusPorcelainZ(statusOutput)
+
+  const files: Record<string, string> = {}
+  for (const relativePath of changed) {
+    if (!isAllowedWikiHandoffPath(relativePath)) continue
+    const contents = await readFileImpl(path.join(params.cwd, relativePath))
+    files[relativePath] = hashImpl(contents)
+  }
+
+  const manifest: WikiBaselineManifest = {files}
+  await writeFileImpl(params.baselinePath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  return manifest
 }
 
 export interface BuildWikiHandoffParams {
   cwd: string
   outDir: string
   runGitStatus: () => Promise<string>
+  /**
+   * Path to a {@link WikiBaselineManifest} written by {@link captureWikiBaseline} before
+   * the agent ran. When provided, the manifest is scoped to only what changed since that
+   * baseline (see the module doc's "Baseline scoping" section). When omitted, every path
+   * `git status` reports is included, unscoped — the pre-baseline-support behavior.
+   */
+  baselinePath?: string
   readFileImpl?: typeof fs.readFile
   writeFileImpl?: typeof fs.writeFile
   mkdirImpl?: typeof fs.mkdir
   copyFileImpl?: typeof fs.copyFile
+  existsImpl?: (absolutePath: string) => Promise<boolean>
+  hashImpl?: (contents: Buffer) => string
 }
 
 export interface BuildWikiHandoffResult {
   changed: string[]
   deleted: string[]
+}
+
+async function defaultExists(absolutePath: string): Promise<boolean> {
+  try {
+    await fs.access(absolutePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFile): Promise<WikiBaselineManifest> {
+  const raw = await readFileImpl(baselinePath, 'utf8')
+  const parsed: unknown = JSON.parse(raw)
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    typeof (parsed as {files?: unknown}).files !== 'object' ||
+    (parsed as {files?: unknown}).files === null
+  ) {
+    throw new Error(`wiki-handoff-build: baseline at ${baselinePath} has unexpected shape`)
+  }
+  return parsed as WikiBaselineManifest
+}
+
+/**
+ * Scope raw git-status changed/deleted lists to only what changed since `baseline`:
+ * - a changed path whose content hash matches the baseline is a pre-existing data-vs-main
+ *   difference the agent never touched — excluded.
+ * - a changed path with no baseline entry, or a different hash, is agent-caused — included.
+ * - every git-reported deletion (always tracked-in-HEAD, since untracked deletions produce
+ *   no git-status entry at all — see below) is inherently agent-caused — included as-is.
+ * - a baseline path absent from BOTH the current changed and deleted lists must have been
+ *   removed from disk since baseline (an untracked file's removal produces no git-status
+ *   entry of its own) — included as an additional deletion.
+ */
+async function scopeToBaseline(params: {
+  cwd: string
+  rawChanged: string[]
+  rawDeleted: string[]
+  baseline: WikiBaselineManifest
+  readFileImpl: typeof fs.readFile
+  existsImpl: (absolutePath: string) => Promise<boolean>
+  hashImpl: (contents: Buffer) => string
+}): Promise<GitStatusChanges> {
+  const {cwd, rawChanged, rawDeleted, baseline, readFileImpl, existsImpl, hashImpl} = params
+
+  const changed: string[] = []
+  for (const relativePath of rawChanged) {
+    const contents = await readFileImpl(path.join(cwd, relativePath))
+    const currentHash = hashImpl(contents)
+    if (baseline.files[relativePath] !== currentHash) {
+      changed.push(relativePath)
+    }
+  }
+
+  const additionalDeleted: string[] = []
+  for (const relativePath of Object.keys(baseline.files)) {
+    if (rawChanged.includes(relativePath) || rawDeleted.includes(relativePath)) continue
+    const exists = await existsImpl(path.join(cwd, relativePath))
+    if (!exists) additionalDeleted.push(relativePath)
+  }
+
+  return {changed, deleted: [...new Set([...rawDeleted, ...additionalDeleted])]}
 }
 
 /**
@@ -108,17 +262,38 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
   const mkdirImpl = params.mkdirImpl ?? fs.mkdir
   const copyFileImpl = params.copyFileImpl ?? fs.copyFile
   const writeFileImpl = params.writeFileImpl ?? fs.writeFile
+  const readFileImpl = params.readFileImpl ?? fs.readFile
+  const existsImpl = params.existsImpl ?? defaultExists
+  const hashImpl = params.hashImpl ?? defaultHashContents
 
   const statusOutput = await params.runGitStatus()
-  const {changed: rawChanged, deleted: rawDeleted} = parseGitStatusPorcelain(statusOutput)
+  const {changed: rawChanged, deleted: rawDeleted} = parseGitStatusPorcelainZ(statusOutput)
 
   const outOfScope = [...rawChanged, ...rawDeleted].filter(p => !isAllowedWikiHandoffPath(p))
   if (outOfScope.length > 0) {
     throw new Error(`wiki-handoff-build: git status reported out-of-scope paths: ${outOfScope.join(', ')}`)
   }
 
+  let changed = rawChanged
+  let deleted = rawDeleted
+
+  if (params.baselinePath !== undefined) {
+    const baseline = await loadBaseline(params.baselinePath, readFileImpl)
+    const scoped = await scopeToBaseline({
+      cwd: params.cwd,
+      rawChanged,
+      rawDeleted,
+      baseline,
+      readFileImpl,
+      existsImpl,
+      hashImpl,
+    })
+    changed = scoped.changed
+    deleted = scoped.deleted
+  }
+
   await mkdirImpl(path.join(params.outDir, 'files'), {recursive: true})
-  for (const relativePath of rawChanged) {
+  for (const relativePath of changed) {
     const dest = path.join(params.outDir, 'files', relativePath)
     await mkdirImpl(path.dirname(dest), {recursive: true})
     await copyFileImpl(path.join(params.cwd, relativePath), dest)
@@ -126,11 +301,11 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
 
   await writeFileImpl(
     path.join(params.outDir, 'manifest.json'),
-    `${JSON.stringify({changed: rawChanged, deleted: rawDeleted}, null, 2)}\n`,
+    `${JSON.stringify({changed, deleted}, null, 2)}\n`,
     'utf8',
   )
 
-  return {changed: rawChanged, deleted: rawDeleted}
+  return {changed, deleted}
 }
 
 export interface WikiHandoffManifest {

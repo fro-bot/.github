@@ -755,6 +755,41 @@ describe('fro-bot.yaml App-token wiki ingest migration', () => {
   ])('%s (agent job): the build step writes no WIKI_* metadata into the handoff artifact', (_name, job) => {
     const buildStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Build wiki handoff artifact')
     const env = buildStep?.env ?? {}
-    expect(Object.keys(env)).toStrictEqual(['WIKI_HANDOFF_DIR'])
+    expect(Object.keys(env).sort()).toStrictEqual(['WIKI_HANDOFF_BASELINE_PATH', 'WIKI_HANDOFF_DIR'])
   })
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    '%s (agent job): captures a wiki content baseline before the agent step, wired to the build step',
+    (_name, job) => {
+      const steps = (job as WorkflowJob)?.steps ?? []
+      const baselineIndex = steps.findIndex(step => step.name === 'Capture wiki content baseline')
+      const agentIndex = steps.findIndex(step => step.id === 'fro-bot-agent')
+      const buildIndex = steps.findIndex(step => step.name === 'Build wiki handoff artifact')
+
+      expect(baselineIndex).toBeGreaterThanOrEqual(0)
+      expect(agentIndex).toBeGreaterThan(baselineIndex)
+      expect(buildIndex).toBeGreaterThan(agentIndex)
+
+      const baselineStep = steps[baselineIndex]
+      const buildStep = steps[buildIndex]
+      expect(String(baselineStep?.run ?? '')).toContain('wiki-handoff-baseline.ts')
+      expect(baselineStep?.env?.WIKI_HANDOFF_BASELINE_PATH).toBe(buildStep?.env?.WIKI_HANDOFF_BASELINE_PATH)
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    "%s (agent job): the upload step requires the build step's own non-empty-manifest signal, not just success",
+    (_name, job) => {
+      const uploadStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Upload wiki handoff artifact')
+      const condition = String(uploadStep?.if ?? '')
+      expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+      expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
+    },
+  )
 })

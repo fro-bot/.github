@@ -301,7 +301,30 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     expect(condition).toContain("steps.wiki-changes.outputs.changed == 'true'")
     expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
     expect(condition).not.toContain('recheck')
-    expect(Object.keys(buildStep?.env ?? {})).toStrictEqual(['WIKI_HANDOFF_DIR'])
+    expect(Object.keys(buildStep?.env ?? {}).sort()).toStrictEqual(['WIKI_HANDOFF_BASELINE_PATH', 'WIKI_HANDOFF_DIR'])
     expect(String(buildStep?.env?.WIKI_HANDOFF_DIR ?? '')).toContain('runner.temp')
+  })
+
+  it('survey-repo captures a wiki content baseline before the agent step, wired to the build step', () => {
+    const steps = surveyJob?.steps ?? []
+    const baselineIndex = steps.findIndex(step => step.name === 'Capture wiki content baseline')
+    const agentIndex = steps.findIndex(step => step.id === 'survey-agent')
+    const buildIndex = steps.findIndex(step => step.name === 'Build wiki handoff artifact')
+
+    expect(baselineIndex).toBeGreaterThanOrEqual(0)
+    expect(agentIndex).toBeGreaterThan(baselineIndex)
+    expect(buildIndex).toBeGreaterThan(agentIndex)
+
+    const baselineStep = steps[baselineIndex]
+    const buildStep = steps[buildIndex]
+    expect(String(baselineStep?.run ?? '')).toContain('wiki-handoff-baseline.ts')
+    expect(baselineStep?.env?.WIKI_HANDOFF_BASELINE_PATH).toBe(buildStep?.env?.WIKI_HANDOFF_BASELINE_PATH)
+  })
+
+  it("survey-repo's upload step requires the build step's own non-empty-manifest signal, not just success", () => {
+    const uploadStep = surveyJob?.steps.find(step => step.name === 'Upload wiki handoff artifact')
+    const condition = String(uploadStep?.if ?? '')
+    expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+    expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
   })
 })

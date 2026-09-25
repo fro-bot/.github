@@ -511,6 +511,15 @@ jobs:
           git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
           echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
+      # Content-hash snapshot of every wiki-scoped path as it stands right after
+      # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
+      # the handoff only carries what the agent actually changed — not every path
+      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      - name: Capture wiki content baseline
+        env:
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-fro-bot.json
+        run: node scripts/wiki-handoff-baseline.ts
+
       - name: 🎭 Load Persona
         id: persona
         run: |
@@ -656,10 +665,15 @@ jobs:
           contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request"]'), github.event_name)
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-fro-bot
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-fro-bot.json
         run: node scripts/wiki-handoff-build.ts
 
+      # Baseline scoping (see the build step's env) can legitimately narrow a manifest
+      # to empty even when the outer wiki-changes diff-hash flagged something — e.g. an
+      # edit reverted before the run ended. An empty manifest must mean no artifact and
+      # no downstream ingest, matching the pre-scoping no-op contract exactly.
       - name: Upload wiki handoff artifact
-        if: steps.wiki-handoff-build.outcome == 'success'
+        if: steps.wiki-handoff-build.outcome == 'success' && steps.wiki-handoff-build.outputs.changed == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wiki-handoff-fro-bot-${{ github.run_id }}
@@ -920,6 +934,15 @@ jobs:
           git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
           echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
 
+      # Content-hash snapshot of every wiki-scoped path as it stands right after
+      # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
+      # the handoff only carries what the agent actually changed — not every path
+      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      - name: Capture wiki content baseline
+        env:
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-observe.json
+        run: node scripts/wiki-handoff-baseline.ts
+
       - name: 🎭 Load Persona
         id: persona
         run: |
@@ -1156,10 +1179,15 @@ jobs:
           contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name)
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-observe
+          WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-observe.json
         run: node scripts/wiki-handoff-build.ts
 
+      # Baseline scoping (see the build step's env) can legitimately narrow a manifest
+      # to empty even when the outer wiki-changes diff-hash flagged something — e.g. an
+      # edit reverted before the run ended. An empty manifest must mean no artifact and
+      # no downstream ingest, matching the pre-scoping no-op contract exactly.
       - name: Upload wiki handoff artifact
-        if: steps.wiki-handoff-build.outcome == 'success'
+        if: steps.wiki-handoff-build.outcome == 'success' && steps.wiki-handoff-build.outputs.changed == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wiki-handoff-observe-${{ github.run_id }}

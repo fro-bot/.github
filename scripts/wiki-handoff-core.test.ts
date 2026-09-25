@@ -7,12 +7,46 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   assertSafeWikiHandoffPath,
   buildWikiHandoff,
+  captureWikiBaseline,
   isAllowedWikiHandoffPath,
-  parseGitStatusPorcelain,
+  parseGitStatusPorcelainZ,
   validateAndApplyWikiHandoff,
   WIKI_HANDOFF_MAX_TOTAL_BYTES,
   WikiHandoffValidationError,
 } from './wiki-handoff-core.ts'
+
+/** Join porcelain -z records with NUL separators, plus a trailing NUL (git's actual output shape). */
+function nulRecords(...records: string[]): string {
+  return records.length === 0 ? '' : `${records.join('\0')}\0`
+}
+
+function makeBaselineMocks(params: {
+  baselineFiles: Record<string, string>
+  currentContents: Record<string, string>
+  existingPaths: Set<string>
+}): {
+  readFileImpl: typeof fs.readFile
+  existsImpl: (target: string) => Promise<boolean>
+  hashImpl: (contents: Buffer) => string
+} {
+  const readFileImplMock = vi.fn(async (target: unknown, encoding?: unknown) => {
+    const key = String(target)
+    if (key === '/baseline.json') {
+      return JSON.stringify({files: params.baselineFiles})
+    }
+    const relative = key.replace('/repo/', '')
+    const content = params.currentContents[relative]
+    if (content === undefined) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    return encoding === 'utf8' ? content : Buffer.from(content)
+  })
+  const existsImpl = vi.fn(async (target: string) => {
+    const relative = target.replace('/repo/', '')
+    return params.existingPaths.has(relative)
+  })
+  const hashImpl = (contents: Buffer) => contents.toString('utf8')
+
+  return {readFileImpl: readFileImplMock as unknown as typeof fs.readFile, existsImpl, hashImpl}
+}
 
 describe('isAllowedWikiHandoffPath', () => {
   it('allows knowledge/index.md and knowledge/log.md exactly', () => {
@@ -35,33 +69,74 @@ describe('isAllowedWikiHandoffPath', () => {
   })
 })
 
-describe('parseGitStatusPorcelain', () => {
+describe('parseGitStatusPorcelainZ', () => {
   it('classifies untracked and modified paths as changed', () => {
-    const output = '?? knowledge/wiki/repos/new.md\n M knowledge/index.md\n'
-    expect(parseGitStatusPorcelain(output)).toStrictEqual({
+    const output = nulRecords('?? knowledge/wiki/repos/new.md', ' M knowledge/index.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
       changed: ['knowledge/wiki/repos/new.md', 'knowledge/index.md'],
       deleted: [],
     })
   })
 
   it('classifies deleted paths', () => {
-    const output = ' D knowledge/wiki/repos/gone.md\n'
-    expect(parseGitStatusPorcelain(output)).toStrictEqual({
+    const output = nulRecords(' D knowledge/wiki/repos/gone.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
       changed: [],
       deleted: ['knowledge/wiki/repos/gone.md'],
     })
   })
 
-  it('splits a rename into a deletion of the old path and a change of the new path', () => {
-    const output = 'R  knowledge/wiki/repos/old.md -> knowledge/wiki/repos/new.md\n'
-    expect(parseGitStatusPorcelain(output)).toStrictEqual({
+  it('splits a rename into a deletion of the old path (the following NUL field) and a change of the new path', () => {
+    // -z rename shape: "R  <new-path>\0<old-path>\0" — no "->" separator.
+    const output = nulRecords('R  knowledge/wiki/repos/new.md', 'knowledge/wiki/repos/old.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
       changed: ['knowledge/wiki/repos/new.md'],
       deleted: ['knowledge/wiki/repos/old.md'],
     })
   })
 
-  it('ignores blank lines', () => {
-    expect(parseGitStatusPorcelain('\n\n')).toStrictEqual({changed: [], deleted: []})
+  it('handles a copy record the same way as a rename', () => {
+    const output = nulRecords('C  knowledge/wiki/repos/copy.md', 'knowledge/wiki/repos/source.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
+      changed: ['knowledge/wiki/repos/copy.md'],
+      deleted: ['knowledge/wiki/repos/source.md'],
+    })
+  })
+
+  it('expands every file inside a new untracked directory (via --untracked-files=all), not a single dir/ entry', () => {
+    const output = nulRecords(
+      '?? knowledge/wiki/newcat/one.md',
+      '?? knowledge/wiki/newcat/two.md',
+      '?? knowledge/wiki/newcat/nested/three.md',
+    )
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
+      changed: [
+        'knowledge/wiki/newcat/one.md',
+        'knowledge/wiki/newcat/two.md',
+        'knowledge/wiki/newcat/nested/three.md',
+      ],
+      deleted: [],
+    })
+  })
+
+  it('handles a path containing a space without quoting corruption (the -z guarantee)', () => {
+    const output = nulRecords('?? knowledge/wiki/repos/my project.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
+      changed: ['knowledge/wiki/repos/my project.md'],
+      deleted: [],
+    })
+  })
+
+  it('handles a non-ASCII path without quoting/escaping corruption', () => {
+    const output = nulRecords('?? knowledge/wiki/repos/caf\u00E9-notes.md')
+    expect(parseGitStatusPorcelainZ(output)).toStrictEqual({
+      changed: ['knowledge/wiki/repos/caf\u00E9-notes.md'],
+      deleted: [],
+    })
+  })
+
+  it('ignores empty input', () => {
+    expect(parseGitStatusPorcelainZ('')).toStrictEqual({changed: [], deleted: []})
   })
 })
 
@@ -72,7 +147,7 @@ describe('buildWikiHandoff', () => {
     const result = await buildWikiHandoff({
       cwd: '/repo',
       outDir: '/tmp/handoff',
-      runGitStatus: async () => '?? knowledge/wiki/repos/new.md\n D knowledge/log.md\n',
+      runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/new.md', ' D knowledge/log.md'),
       mkdirImpl: vi.fn(async () => undefined),
       copyFileImpl: vi.fn(async (src: unknown, dest: unknown) => {
         copies.push([String(src), String(dest)])
@@ -99,9 +174,197 @@ describe('buildWikiHandoff', () => {
       buildWikiHandoff({
         cwd: '/repo',
         outDir: '/tmp/handoff',
-        runGitStatus: async () => '?? metadata/repos.yaml\n',
+        runGitStatus: async () => nulRecords('?? metadata/repos.yaml'),
       }),
     ).rejects.toThrow('out-of-scope paths')
+  })
+
+  describe('baseline scoping', () => {
+    it('excludes a page that differs between data and main but was never touched by the agent', async () => {
+      // git status reports it (data/main differ), but its content hash matches the baseline
+      // taken right after sync — the agent never wrote to it.
+      const mocks = makeBaselineMocks({
+        baselineFiles: {'knowledge/wiki/repos/untouched.md': 'same-content'},
+        currentContents: {'knowledge/wiki/repos/untouched.md': 'same-content'},
+        existingPaths: new Set(['knowledge/wiki/repos/untouched.md']),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/untouched.md'),
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: [], deleted: []})
+    })
+
+    it('includes a page the agent actually edited (content hash differs from baseline)', async () => {
+      const mocks = makeBaselineMocks({
+        baselineFiles: {'knowledge/wiki/repos/edited.md': 'baseline-content'},
+        currentContents: {'knowledge/wiki/repos/edited.md': 'agent-edited-content'},
+        existingPaths: new Set(['knowledge/wiki/repos/edited.md']),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/edited.md'),
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: ['knowledge/wiki/repos/edited.md'], deleted: []})
+    })
+
+    it('includes a page the agent created in a brand-new directory (no baseline entry)', async () => {
+      const mocks = makeBaselineMocks({
+        baselineFiles: {},
+        currentContents: {'knowledge/wiki/newcat/created.md': 'new-content'},
+        existingPaths: new Set(['knowledge/wiki/newcat/created.md']),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/newcat/created.md'),
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: ['knowledge/wiki/newcat/created.md'], deleted: []})
+    })
+
+    it('lists an agent-deleted, baseline-only (untracked) page as deleted even though git status has no entry for it', async () => {
+      // The page existed at baseline (untracked, data-only) and the agent removed it. Since it
+      // was never tracked in HEAD, its removal produces NO git-status entry at all — this must
+      // be detected by checking baseline paths against current disk existence, not git status.
+      const mocks = makeBaselineMocks({
+        baselineFiles: {'knowledge/wiki/repos/removed.md': 'baseline-content'},
+        currentContents: {},
+        existingPaths: new Set(),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords(), // nothing reported — the untracked file just vanished
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: [], deleted: ['knowledge/wiki/repos/removed.md']})
+    })
+
+    it('still reports a tracked-in-HEAD deletion (git status D entry) as deleted regardless of baseline', async () => {
+      const mocks = makeBaselineMocks({
+        baselineFiles: {},
+        currentContents: {},
+        existingPaths: new Set(),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords(' D knowledge/wiki/repos/tracked-gone.md'),
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: [], deleted: ['knowledge/wiki/repos/tracked-gone.md']})
+    })
+
+    it('an empty manifest results when nothing changed since baseline, even with mixed candidates', async () => {
+      const mocks = makeBaselineMocks({
+        baselineFiles: {'knowledge/wiki/repos/untouched.md': 'same'},
+        currentContents: {'knowledge/wiki/repos/untouched.md': 'same'},
+        existingPaths: new Set(['knowledge/wiki/repos/untouched.md']),
+      })
+
+      const result = await buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        baselinePath: '/baseline.json',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/untouched.md'),
+        readFileImpl: mocks.readFileImpl,
+        existsImpl: mocks.existsImpl,
+        hashImpl: mocks.hashImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        copyFileImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      })
+
+      expect(result).toStrictEqual({changed: [], deleted: []})
+    })
+  })
+})
+
+describe('captureWikiBaseline', () => {
+  it('hashes every changed (added/modified/untracked) candidate path, ignoring deletions', async () => {
+    const written: Record<string, string> = {}
+    const manifest = await captureWikiBaseline({
+      cwd: '/repo',
+      baselinePath: '/baseline.json',
+      runGitStatus: async () =>
+        nulRecords('?? knowledge/wiki/repos/a.md', ' M knowledge/index.md', ' D knowledge/log.md'),
+      readFileImpl: vi.fn(async (target: unknown) => {
+        const key = String(target)
+        if (key === '/repo/knowledge/wiki/repos/a.md') return Buffer.from('content-a')
+        if (key === '/repo/knowledge/index.md') return Buffer.from('content-index')
+        throw new Error(`unexpected read: ${key}`)
+      }) as unknown as typeof fs.readFile,
+      writeFileImpl: vi.fn(async (target: unknown, data: unknown) => {
+        written[String(target)] = String(data)
+      }),
+      hashImpl: (contents: Buffer) => `hash:${contents.toString('utf8')}`,
+    })
+
+    expect(manifest).toStrictEqual({
+      files: {
+        'knowledge/wiki/repos/a.md': 'hash:content-a',
+        'knowledge/index.md': 'hash:content-index',
+      },
+    })
+    expect(JSON.parse(written['/baseline.json'] ?? '')).toStrictEqual(manifest)
+  })
+
+  it('skips any candidate path outside the wiki allowlist defensively', async () => {
+    const manifest = await captureWikiBaseline({
+      cwd: '/repo',
+      baselinePath: '/baseline.json',
+      runGitStatus: async () => nulRecords('?? metadata/repos.yaml', '?? knowledge/wiki/repos/a.md'),
+      readFileImpl: vi.fn(async () => Buffer.from('content')) as unknown as typeof fs.readFile,
+      writeFileImpl: vi.fn(async () => undefined),
+      hashImpl: () => 'hash',
+    })
+
+    expect(Object.keys(manifest.files)).toStrictEqual(['knowledge/wiki/repos/a.md'])
   })
 })
 
