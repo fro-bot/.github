@@ -221,14 +221,62 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     }
   })
 
-  it('the recheck step uses the locally-minted app-token, and REPO_PRIVATE downstream reads the local recheck output', () => {
+  it('the recheck step uses its own dedicated recheck-token (not the data-write app-token), and REPO_PRIVATE downstream reads the local recheck output', () => {
     const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
-    expect(String(recheckStep?.env?.GH_TOKEN ?? '')).toContain('steps.app-token.outputs.token')
+    expect(String(recheckStep?.env?.GH_TOKEN ?? '')).toContain('steps.recheck-token.outputs.token')
     expect(String(recheckStep?.env?.NODE_ID ?? '')).toContain('inputs.node_id')
 
     for (const stepName of ['Record survey result', 'Record survey result (cancelled/timeout fallback)']) {
       const step = persistJob?.steps.find(s => s.name === stepName)
       expect(String(step?.env?.REPO_PRIVATE ?? '')).toContain('steps.recheck.outputs.private')
+    }
+  })
+
+  it("the recheck token is a dedicated mint scoped like main's pre-A2 recheck token: owner:, no repositories:/permission-contents:write", () => {
+    const recheckTokenStep = persistJob?.steps.find(step => step.id === 'recheck-token')
+    expect(recheckTokenStep).toBeDefined()
+    expect(recheckTokenStep?.uses).toContain('actions/create-github-app-token@')
+    expect(String(recheckTokenStep?.with?.owner ?? '')).toContain('github.repository_owner')
+    expect(recheckTokenStep?.with?.repositories).toBeUndefined()
+    expect(recheckTokenStep?.with?.['permission-contents']).toBeUndefined()
+  })
+
+  it('the recheck token is a distinct step from the repo-scoped data-write app-token', () => {
+    const recheckTokenStep = persistJob?.steps.find(step => step.id === 'recheck-token')
+    const dataWriteTokenStep = persistJob?.steps.find(step => step.id === 'app-token')
+    expect(dataWriteTokenStep).toBeDefined()
+    expect(dataWriteTokenStep?.id).not.toBe(recheckTokenStep?.id)
+    expect(String(dataWriteTokenStep?.with?.repositories ?? '')).toContain('github.event.repository.name')
+    expect(dataWriteTokenStep?.with?.['permission-contents']).toBe('write')
+  })
+
+  it("the recheck-token mint's if: matches the recheck step's if: (both skip when the agent step was skipped)", () => {
+    const recheckTokenStep = persistJob?.steps.find(step => step.id === 'recheck-token')
+    const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
+    expect(String(recheckTokenStep?.if ?? '')).toBe(String(recheckStep?.if ?? ''))
+    expect(String(recheckStep?.if ?? '')).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
+  })
+
+  it('the fallback record step also requires a successful trusted recheck (fail-closed, not just the primary record step)', () => {
+    const fallbackStep = persistJob?.steps.find(
+      step => step.name === 'Record survey result (cancelled/timeout fallback)',
+    )
+    expect(String(fallbackStep?.if ?? '')).toContain("steps.recheck.conclusion == 'success'")
+  })
+
+  it("every step in survey-persist that runs record-survey-result.ts or wiki-ingest.ts is gated on steps.recheck.conclusion == 'success' (non-vacuous)", () => {
+    const writerSteps = (persistJob?.steps ?? []).filter(
+      step =>
+        typeof step.run === 'string' &&
+        (step.run.includes('record-survey-result.ts') || step.run.includes('wiki-ingest.ts')),
+    )
+    // Commit wiki ingest (wiki-ingest.ts), Record survey result, and the cancelled/timeout
+    // fallback (both record-survey-result.ts) = 3 writer steps.
+    expect(writerSteps).toHaveLength(3)
+    for (const step of writerSteps) {
+      expect(String(step.if ?? ''), `${step.name} must gate on steps.recheck.conclusion == 'success'`).toContain(
+        "steps.recheck.conclusion == 'success'",
+      )
     }
   })
 

@@ -325,6 +325,20 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
 
+      # Dedicated recheck token, mirroring main's pre-A2 "Re-mint App token for recheck"
+      # exactly: owner-scoped, no repositories:/permission-contents:write. The privacy
+      # gate only needs public-read GraphQL against any repo the owner's installation
+      # covers — the repo-scoped data-write token above cannot resolve a survey target
+      # outside this repo, so the recheck must not reuse it.
+      - name: 🔑 Mint App token for recheck
+        id: recheck-token
+        if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       # The privacy gate, run trusted-side. Same GraphQL query and fail-closed
       # behavior as before A2; only the execution context moved.
       - name: 🔒 Recheck visibility
@@ -332,7 +346,7 @@ jobs:
         if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
         run: |
           if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
             printf 'Aborting: dispatch input shape invalid\n' >&2
@@ -479,14 +493,22 @@ jobs:
       # recheck, etc.) record a failure result so last_survey_at / next_survey_eligible_at
       # advance and the minimum-floor stops retargeting this repo every day. The local
       # recheck above still runs regardless of survey-repo's own outcome (it only
-      # depends on this job's own `if: always()` and the agent-conclusion guard), so
-      # REPO_PRIVATE below reflects a trusted result even on this fallback path.
+      # depends on this job's own `if: always()` and the agent-conclusion guard).
       # The `outcome != 'success'` guard makes this idempotent: it never fires when the
       # normal record step already wrote a result.
+      #
+      # Fail-closed: `steps.recheck.conclusion == 'success'` is required here too, not
+      # just on the primary record step. Without it, a skipped or failed recheck (e.g.
+      # this job itself got cancelled before the recheck ran) would still let this
+      # fallback fire with an empty REPO_PRIVATE — record-survey-result.ts treats a
+      # missing REPO_PRIVATE as merely optional, so an unverified visibility would
+      # otherwise reach metadata/repos.yaml on the public `data` branch. If the recheck
+      # couldn't run, skip the write entirely rather than loosen the recheck's own `if:`.
       - name: Record survey result (cancelled/timeout fallback)
         if: >-
           ${{ (needs.survey-repo.result == 'cancelled' || needs.survey-repo.result == 'failure' || cancelled() || failure()) &&
-          steps.record-result.outcome != 'success' && needs.survey-repo.outputs.resolve-outcome == 'success' }}
+          steps.record-result.outcome != 'success' && needs.survey-repo.outputs.resolve-outcome == 'success' &&
+          steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
