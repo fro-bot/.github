@@ -344,9 +344,19 @@ jobs:
       # gate only needs public-read GraphQL against any repo the owner's installation
       # covers — the repo-scoped data-write token above cannot resolve a survey target
       # outside this repo, so the recheck must not reuse it.
+      #
+      # Gated on `always() && resolve-outcome == 'success'`, NOT on agent-conclusion:
+      # the fallback "Record survey result (cancelled/timeout fallback)" must still be
+      # able to run (with a trusted recheck result) when survey-repo fails or is
+      # cancelled between `resolve` and the agent step (sync-wiki/persona/setup), or
+      # this job itself is cancelled. The recheck is a read-only GraphQL call under its
+      # own owner-scoped token, so widening its gate carries no write-credential risk;
+      # every actual write step downstream keeps its own existing conditions
+      # (wiki-artifact-ready == 'success', agent-conclusion == 'success', etc.) — only
+      # the recheck itself runs more often.
       - name: 🔑 Mint App token for recheck
         id: recheck-token
-        if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' }}
+        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
@@ -354,10 +364,11 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       # The privacy gate, run trusted-side. Same GraphQL query and fail-closed
-      # behavior as before A2; only the execution context moved.
+      # behavior as before A2; only the execution context moved. See the mint step
+      # above for why this runs on resolve-outcome, not agent-conclusion.
       - name: 🔒 Recheck visibility
         id: recheck
-        if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' }}
+        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
           GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
@@ -454,13 +465,19 @@ jobs:
       #   staleness gate re-dispatches the repo tomorrow instead of waiting 30 days.
       # - The `!= 'skipped'` guard on the agent step skips metadata writes entirely
       #   when an upstream step kept the agent from running at all.
+      # - `resolve-outcome == 'success'` guards against an empty REPO_OWNER/REPO_NAME:
+      #   if survey-repo ended before the agent step ran at all (e.g. sync-wiki/persona/
+      #   setup failure), agent-conclusion is empty (not 'skipped'), which would
+      #   otherwise let this step run with nothing to identify the target repo.
       #
       # A wiki-commit conclusion of 'skipped' (its step `if:` returned false because
       # the agent made no changes, or the trusted recheck failed) counts as success,
       # not failure, because the agent itself completed cleanly.
       - name: Record survey result
         id: record-result
-        if: ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' && steps.recheck.conclusion == 'success' }}
+        if: >-
+          ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' &&
+          needs.survey-repo.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
@@ -506,8 +523,10 @@ jobs:
       # run or did not succeed (cancelled run, hard timeout, upstream failure before
       # recheck, etc.) record a failure result so last_survey_at / next_survey_eligible_at
       # advance and the minimum-floor stops retargeting this repo every day. The local
-      # recheck above still runs regardless of survey-repo's own outcome (it only
-      # depends on this job's own `if: always()` and the agent-conclusion guard).
+      # recheck above still runs regardless of survey-repo's own outcome or cancellation
+      # (it only depends on this job's own `if: always()` and `resolve-outcome ==
+      # 'success'`), so it covers cancellation and upstream failure before the agent step
+      # too — exactly the coverage this safety net promises.
       # The `outcome != 'success'` guard makes this idempotent: it never fires when the
       # normal record step already wrote a result.
       #

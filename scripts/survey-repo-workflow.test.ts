@@ -250,11 +250,33 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     expect(dataWriteTokenStep?.with?.['permission-contents']).toBe('write')
   })
 
-  it("the recheck-token mint's if: matches the recheck step's if: (both skip when the agent step was skipped)", () => {
+  it("the recheck-token mint's if: matches the recheck step's if:, gated on resolve-outcome (not agent-conclusion) so both run even when survey-repo fails or is cancelled before the agent step", () => {
     const recheckTokenStep = persistJob?.steps.find(step => step.id === 'recheck-token')
     const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
     expect(String(recheckTokenStep?.if ?? '')).toBe(String(recheckStep?.if ?? ''))
-    expect(String(recheckStep?.if ?? '')).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
+    expect(String(recheckStep?.if ?? '')).toContain('always()')
+    expect(String(recheckStep?.if ?? '')).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(String(recheckStep?.if ?? '')).not.toContain('agent-conclusion')
+  })
+
+  it('the fallback can still run (with a trusted recheck) when survey-repo fails between resolve and the agent step', () => {
+    // Simulate: resolve succeeded, but survey-repo failed/was cancelled before the agent ran
+    // (sync-wiki/persona/setup failure). agent-conclusion would be empty in that case, not
+    // 'skipped' — the recheck must not depend on it.
+    const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
+    const recheckCondition = String(recheckStep?.if ?? '')
+    // The recheck's gate is satisfiable purely from resolve-outcome + always(); it does not
+    // require agent-conclusion to be any particular value, so a pre-agent failure still lets
+    // it run.
+    expect(recheckCondition).toMatch(/always\(\)/)
+    expect(recheckCondition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+
+    const fallbackStep = persistJob?.steps.find(
+      step => step.name === 'Record survey result (cancelled/timeout fallback)',
+    )
+    const fallbackCondition = String(fallbackStep?.if ?? '')
+    expect(fallbackCondition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(fallbackCondition).toContain("steps.recheck.conclusion == 'success'")
   })
 
   it('the fallback record step also requires a successful trusted recheck (fail-closed, not just the primary record step)', () => {
@@ -278,6 +300,14 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
         "steps.recheck.conclusion == 'success'",
       )
     }
+  })
+
+  it("Record survey result requires resolve-outcome == 'success', guarding against an empty REPO_OWNER/REPO_NAME when survey-repo ends before the agent runs", () => {
+    const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+    const condition = String(recordStep?.if ?? '')
+    expect(condition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(condition).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
+    expect(condition).toContain("steps.recheck.conclusion == 'success'")
   })
 
   it('WIKI_* env in the trusted commit step is sourced from needs.survey-repo pre-agent outputs and inputs.*, never metadata.json', () => {
