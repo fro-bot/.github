@@ -130,8 +130,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: detect
-    outputs:
-      bodies-ready: ${{ steps.upload-bodies.outcome }}
     # Skip the entire job on dry-run (the default): drafting proposals only ever
     # happens on an explicit live (dry_run=false) manual dispatch. `always()`
     # keeps the job eligible even if the detect job's non-critical steps report a
