@@ -34,10 +34,15 @@ import path from 'node:path'
  * (main's committed content) reports every path where `data` differs from `main` — not
  * just what the agent touched. Left unfiltered, the handoff would carry a stale snapshot
  * of `data` wide enough to revert a concurrent writer's update. {@link captureWikiBaseline}
- * (run before the agent, right after sync) records a content hash for every candidate path
- * at that moment; {@link buildWikiHandoff}, given that baseline, includes only paths whose
- * hash changed, are new since the baseline, or vanished since the baseline — i.e. only what
- * happened during the agent step itself.
+ * (run before the agent, right after sync) records a content hash for every changed
+ * candidate path, plus the set of paths already deleted (sync-wiki's `git restore
+ * --worktree` deletes any path `main` tracks that `data` doesn't); {@link buildWikiHandoff}
+ * / {@link scopeToBaseline}, given that baseline, include only what actually happened
+ * during the agent step: a path whose content hash changed, a path new since baseline, a
+ * path deleted since baseline (excluding paths already deleted BY sync-wiki, so those
+ * don't get forwarded as phantom agent deletions), and — the subtle case — a path that
+ * differed from baseline but the agent edited back to `main`'s exact content, which
+ * produces no `git status` entry at all yet is still a real change relative to `data`.
  */
 
 /**
@@ -119,6 +124,17 @@ function defaultHashContents(contents: Buffer): string {
 export interface WikiBaselineManifest {
   /** Map of allowlisted relative path → sha256 hex digest, as it existed at baseline time. */
   files: Record<string, string>
+  /**
+   * Allowlisted paths already deleted (tracked-in-HEAD, git-status `D`) at baseline time.
+   * `sync-wiki` restores `data`'s content by running `git restore --source FETCH_HEAD
+   * --worktree -- knowledge` over a `main` checkout; any path that exists in `main`'s
+   * history but not on `data` disappears from the working tree as a result, and
+   * `git status` reports it as deleted BEFORE the agent ever runs. Without recording
+   * these here, {@link scopeToBaseline} cannot tell a sync-caused deletion from a real
+   * agent-caused one — both show up identically in the post-agent `git status` deleted
+   * list.
+   */
+  deleted: string[]
 }
 
 export interface CaptureWikiBaselineParams {
@@ -132,14 +148,16 @@ export interface CaptureWikiBaselineParams {
 
 /**
  * Capture a content-hash snapshot of every wiki-scoped path that currently differs from
- * `HEAD` (i.e. every path `git status` would report — untracked or modified). Run this
- * BEFORE the agent step, immediately after `sync-wiki` restores `data`'s content, so the
- * snapshot reflects "what `data` looks like right now", before any agent edits.
+ * `HEAD` (i.e. every path `git status` would report — untracked or modified), plus the
+ * set of wiki-scoped paths already deleted at this moment. Run this BEFORE the agent
+ * step, immediately after `sync-wiki` restores `data`'s content, so the snapshot reflects
+ * "what `data` looks like right now", before any agent edits.
  *
- * Deleted-from-HEAD paths carry no content to hash and are irrelevant to a pre-agent
- * baseline (a tracked-in-HEAD deletion is inherently agent-caused later — see
- * {@link buildWikiHandoff}), so only `changed` (added/modified/untracked) entries are
- * captured.
+ * The deleted set matters because `sync-wiki` itself can delete tracked-in-HEAD paths
+ * (any path `main` tracks that `data` doesn't) via `git restore --worktree`. Without
+ * recording those here, {@link scopeToBaseline} would have no way to distinguish that
+ * sync-caused deletion from a real deletion the agent makes later — both look identical
+ * in the post-agent `git status` output.
  */
 export async function captureWikiBaseline(params: CaptureWikiBaselineParams): Promise<WikiBaselineManifest> {
   const readFileImpl = params.readFileImpl ?? fs.readFile
@@ -147,7 +165,7 @@ export async function captureWikiBaseline(params: CaptureWikiBaselineParams): Pr
   const hashImpl = params.hashImpl ?? defaultHashContents
 
   const statusOutput = await params.runGitStatus()
-  const {changed} = parseGitStatusPorcelainZ(statusOutput)
+  const {changed, deleted} = parseGitStatusPorcelainZ(statusOutput)
 
   const files: Record<string, string> = {}
   for (const relativePath of changed) {
@@ -156,7 +174,9 @@ export async function captureWikiBaseline(params: CaptureWikiBaselineParams): Pr
     files[relativePath] = hashImpl(contents)
   }
 
-  const manifest: WikiBaselineManifest = {files}
+  const allowedDeleted = deleted.filter(relativePath => isAllowedWikiHandoffPath(relativePath))
+
+  const manifest: WikiBaselineManifest = {files, deleted: allowedDeleted}
   await writeFileImpl(params.baselinePath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   return manifest
 }
@@ -194,18 +214,24 @@ async function defaultExists(absolutePath: string): Promise<boolean> {
   }
 }
 
-async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFile): Promise<WikiBaselineManifest> {
-  const raw = await readFileImpl(baselinePath, 'utf8')
-  const parsed: unknown = JSON.parse(raw)
+function assertBaselineShape(value: unknown, baselinePath: string): asserts value is WikiBaselineManifest {
   if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    typeof (parsed as {files?: unknown}).files !== 'object' ||
-    (parsed as {files?: unknown}).files === null
+    typeof value !== 'object' ||
+    value === null ||
+    typeof (value as {files?: unknown}).files !== 'object' ||
+    (value as {files?: unknown}).files === null ||
+    !Array.isArray((value as {deleted?: unknown}).deleted) ||
+    !(value as {deleted: unknown[]}).deleted.every(entry => typeof entry === 'string')
   ) {
     throw new Error(`wiki-handoff-build: baseline at ${baselinePath} has unexpected shape`)
   }
-  return parsed as WikiBaselineManifest
+}
+
+async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFile): Promise<WikiBaselineManifest> {
+  const raw = await readFileImpl(baselinePath, 'utf8')
+  const parsed: unknown = JSON.parse(raw)
+  assertBaselineShape(parsed, baselinePath)
+  return parsed
 }
 
 /**
@@ -213,11 +239,18 @@ async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFi
  * - a changed path whose content hash matches the baseline is a pre-existing data-vs-main
  *   difference the agent never touched — excluded.
  * - a changed path with no baseline entry, or a different hash, is agent-caused — included.
- * - every git-reported deletion (always tracked-in-HEAD, since untracked deletions produce
- *   no git-status entry at all — see below) is inherently agent-caused — included as-is.
- * - a baseline path absent from BOTH the current changed and deleted lists must have been
- *   removed from disk since baseline (an untracked file's removal produces no git-status
- *   entry of its own) — included as an additional deletion.
+ * - a git-reported deletion already present in `baseline.deleted` was caused by `sync-wiki`
+ *   restoring `data` over a `main` checkout (a path `main` tracks that `data` doesn't),
+ *   not by the agent — excluded. Every other git-reported deletion is agent-caused — included.
+ * - a baseline `files` path absent from BOTH the current changed and deleted lists but
+ *   missing from disk was removed from disk since baseline without producing its own
+ *   git-status entry (an untracked file's removal does this) — included as a deletion.
+ * - a baseline `files` path absent from BOTH lists but STILL present on disk has
+ *   produced no git-status entry, meaning its current content now matches `HEAD`
+ *   (`main`) exactly — including the case where the agent edited a data-only
+ *   difference back to `main`'s exact content. If its content hash differs from the
+ *   baseline hash, that's a real change relative to `data` and must still be included
+ *   (as changed, with `main`'s content) even though git sees no diff against `HEAD`.
  */
 async function scopeToBaseline(params: {
   cwd: string
@@ -239,14 +272,27 @@ async function scopeToBaseline(params: {
     }
   }
 
-  const additionalDeleted: string[] = []
+  const deleted: string[] = []
+  for (const relativePath of rawDeleted) {
+    if (baseline.deleted.includes(relativePath)) continue
+    deleted.push(relativePath)
+  }
+
   for (const relativePath of Object.keys(baseline.files)) {
     if (rawChanged.includes(relativePath) || rawDeleted.includes(relativePath)) continue
     const exists = await existsImpl(path.join(cwd, relativePath))
-    if (!exists) additionalDeleted.push(relativePath)
+    if (!exists) {
+      deleted.push(relativePath)
+      continue
+    }
+    const contents = await readFileImpl(path.join(cwd, relativePath))
+    const currentHash = hashImpl(contents)
+    if (baseline.files[relativePath] !== currentHash) {
+      changed.push(relativePath)
+    }
   }
 
-  return {changed, deleted: [...new Set([...rawDeleted, ...additionalDeleted])]}
+  return {changed: [...new Set(changed)], deleted: [...new Set(deleted)]}
 }
 
 /**
