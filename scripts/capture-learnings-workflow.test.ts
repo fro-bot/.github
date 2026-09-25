@@ -118,6 +118,21 @@ describe('capture-learnings.yaml harvest/draft/publish split', () => {
     expect(openIndex).toBeGreaterThan(overlayIndex)
   })
 
+  // Review (blocking): scripts/capture-learnings-harvest.ts's loadPrivateTokensFromDisk()
+  // reads metadata/repos.yaml to redact private-repo mentions before they reach the
+  // digest the agent later reads. Without this overlay the harvest job scans main's
+  // (stale) copy, which only catches up with data weekly — a repo that went private
+  // recently could slip past redaction.
+  it('harvest job overlays metadata from the data branch before harvesting, fail-closed (no continue-on-error)', () => {
+    const overlayIndex = harvestJob?.steps.findIndex(step => step.name === '⤵ Overlay metadata from data branch') ?? -1
+    const harvestIndex = harvestJob?.steps.findIndex(step => step.id === 'harvest') ?? -1
+    expect(overlayIndex).toBeGreaterThanOrEqual(0)
+    expect(harvestIndex).toBeGreaterThan(overlayIndex)
+    const overlayStep = harvestJob?.steps[overlayIndex]
+    expect((overlayStep as WorkflowStep & {'continue-on-error'?: boolean})?.['continue-on-error']).toBeUndefined()
+    expect(String(overlayStep?.run ?? '')).toContain('git checkout origin/data -- metadata/')
+  })
+
   it('the agent step uses the read-only workflow GITHUB_TOKEN, never a write token', () => {
     const agentStep = draftJob?.steps.find(step => step.id === 'agent')
     expect(String(agentStep?.with?.['github-token'] ?? '')).toContain('secrets.GITHUB_TOKEN')

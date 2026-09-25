@@ -42,6 +42,20 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # scripts/capture-learnings-harvest.ts's loadPrivateTokensFromDisk() reads
+      # metadata/repos.yaml to redact private-repo mentions before they reach the
+      # digest. Overlay data's copy here so that scan sees current state, not
+      # main's (which only catches up weekly via the data -> main promotion).
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
       # Harvest merged PRs where Fro Bot's substantive reviews meet the predicate
       # (substantiveReviewCount >= 2 AND correctionSignalCount >= 1), dedup against
       # existing learning-proposal issues and docs/solutions/, cap to
