@@ -2,9 +2,14 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-09-22
+updated: 2026-09-25
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 9918ee0036100a11e61bf80bd85efa00b90b8852
+    accessed: 2026-09-25
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.115.1
+    accessed: 2026-09-25
   - url: https://github.com/fro-bot/agent/releases/tag/v0.114.0
     accessed: 2026-09-22
   - url: https://github.com/fro-bot/agent
@@ -119,23 +124,23 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | ---------------------- | ------------------------------------------------------------------- |
 | Created                | 2026-01-02                                                         |
 | Repo `node_id`         | `R_kgDOQyTMEw`                                                     |
-| Last push              | 2026-09-20T02:48Z (survey 2026-09-20, HEAD `c7622aa`, `docs: capture three learnings from the background-subagent work (#1632)`) |
-| Latest release         | **v0.114.0** (published 2026-09-21T16:26:18Z). **Correction 2026-09-22, from the [[marcusrbrown--marcusrbrown]] survey:** the 2026-09-20 reading — "v0.114.0 pending as PR #1626, and the entire background-subagent arc (#1624/#1627/#1629) sits on `main` **unreleased** — no consumer pin carries it yet" — is **superseded**. #1626 shipped the day after that survey, and [[marcusrbrown--marcusrbrown]] merged the pin at 2026-09-21T16:32:05Z (#1228), **5 m 47 s after publish** — the fastest consumer adoption measured in the fleet, ahead of [[marcusrbrown--marcusrbrown-com]]'s previously-recorded 20 minutes. The background-subagent arc plus the `invocation-outcome` / `cache-save-result` three-valued contract are therefore live on at least one consumer as of 2026-09-21. Prior: v0.113.2 (2026-09-16T09:15Z), v0.108.1 (2026-09-05) — 5 minors + patches in 11 days |
+| Last push              | 2026-09-25T03:00Z (survey 2026-09-25, HEAD `9918ee0`, `feat(workspace): require the gateway's bearer on the control API (#1665)`). Prior: 2026-09-20T02:48Z, HEAD `c7622aa` |
+| Latest release         | **v0.114.0** (published 2026-09-21T16:26:18Z). **Correction 2026-09-22, from the [[marcusrbrown--marcusrbrown]] survey:** the 2026-09-20 reading — "v0.114.0 pending as PR #1626, and the entire background-subagent arc (#1624/#1627/#1629) sits on `main` **unreleased** — no consumer pin carries it yet" — is **superseded**. #1626 shipped the day after that survey, and [[marcusrbrown--marcusrbrown]] merged the pin at 2026-09-21T16:32:05Z (#1228), **5 m 47 s after publish** — the fastest consumer adoption measured in the fleet, ahead of [[marcusrbrown--marcusrbrown-com]]'s previously-recorded 20 minutes. The background-subagent arc plus the `invocation-outcome` / `cache-save-result` three-valued contract are therefore live on at least one consumer as of 2026-09-21. Prior: v0.113.2 (2026-09-16T09:15Z), v0.108.1 (2026-09-05) — 5 minors + patches in 11 days. **Update 2026-09-25:** latest is **v0.115.1** (2026-09-24T22:51:10Z), after v0.114.1 (2026-09-22T21:47Z, deps + #1651 per-client operator rate limits) and v0.115.0 (2026-09-23T22:39Z, #1656 checkout provenance). v0.115.1 carries #1658 (workspace clone fix). The workspace uid isolation (#1661) and control-API bearer (#1665) are on `main` but **unreleased**, pending v0.116.0 (#1664) |
 | Language               | TypeScript (strict, ESM-only)                                      |
 | Node.js                | **24.21.0** (`.node-version`, both deploy Dockerfiles digest-pinned to `node:24.21.0-alpine`); `node24` action runtime |
 | Package manager        | **Bun `1.4.2` in `packageManager` — and `1.3.14` on every surface that actually installs** (runner default, `.github/actions/setup` default, `HARNESS_BUN_VERSION`, both Dockerfile `ARG BUN_VERSION`). See "The Bun Pin Two Managers Own". Bun cutover otherwise holds; `pnpm-lock.yaml`/`pnpm-workspace.yaml` remain removed |
 | Runtime                | `node24` (GitHub Action `runs.using`)                              |
 | Bundler                | tsdown **0.23.0** (Rolldown-based, dual entry points)             |
 | Test framework         | Vitest 4.1.11 (drives `evals/` and `scripts/` suites; open **#1631** — a worker that dies of heap exhaustion still exits 0) |
-| Lint                   | ESLint 10.9.1 (`@bfra.me/eslint-config` **0.52.2**), Prettier 3.9.6 |
+| Lint                   | ESLint 10.9.1 (`@bfra.me/eslint-config` **0.52.2**), Prettier **3.9.8** (was 3.9.6 at `c7622aa`; #1646). ESLint v10.11.0 still waits in #1617 |
 | TypeScript             | 6.0.3                                                              |
 | OpenCode default       | **Harness build `1.18.30+harness.7c479429`** — the *binary self-report* identity; the matching GitHub Release / npm version is `1.18.30-harness.7c479429` (see "Harness Version Namespaces"). SDK at 1.18.30; harness `base_version: 1.18.30`; **15 integration refs**, was 13 — `anomalyco/opencode#48267` + `#48268`, the two provider-transform carries whose motivating issues (#1578 OpenAI cache anchor, #1579 OpenAI model versions without a dotted minor) are still open here |
 | Release                | semantic-release on `release` branch, `next` → `release` PR model  |
 | License                | MIT                                                                |
 | Visibility             | Public                                                             |
 | Stars                  | 4 (flat)                                                           |
-| Open issues            | **12** (was 7): #252 DMR, #579 dep dashboard, #1180 dedicated minting App, #1520 first-party App PRs can't be reviewed, #1532 trivially-true eval assertion, **#1578**/**#1579** two OpenAI carries now shipped as harness refs but tracked open, **#1580** lock-contended runs are discarded with no requeue so batch-filed issues silently lose triage, **#1581** Copilot-hosted GPT/Gemini models have no cache anchor either, **#1598** track downstream migration onto the #1597 credential preflight (the DMR now feeds it — see below), **#1631** a Vitest worker that dies from heap exhaustion still exits 0, **#1633** the egress containment smoke fails on a shared unauthenticated API quota, not on containment. **Ten of twelve are `marcusrbrown`-authored**; the bot-filed share keeps shrinking. Closed this window: #1514 (2026-09-05) and #1517 (2026-09-11, by the `fix(setup)!` in #1597) |
-| Open PRs               | 6, all `fro-bot[bot]` — #1626 pending release v0.114.0, #1622 `@fro.bot/systematic` v3.20.0, #1625 osv-scanner-action v2.6.0, #1621 codeql-action v4.38.1, #1623 js-yaml v5.4.2, #1617 eslint v10.10.0 |
+| Open issues            | **12** (was 7): #252 DMR, #579 dep dashboard, #1180 dedicated minting App, #1520 first-party App PRs can't be reviewed, #1532 trivially-true eval assertion, **#1578**/**#1579** two OpenAI carries now shipped as harness refs but tracked open, **#1580** lock-contended runs are discarded with no requeue so batch-filed issues silently lose triage, **#1581** Copilot-hosted GPT/Gemini models have no cache anchor either, **#1598** track downstream migration onto the #1597 credential preflight (the DMR now feeds it — see below), **#1631** a Vitest worker that dies from heap exhaustion still exits 0, **#1633** the egress containment smoke fails on a shared unauthenticated API quota, not on containment. **Ten of twelve are `marcusrbrown`-authored**; the bot-filed share keeps shrinking. Closed this window: #1514 (2026-09-05) and #1517 (2026-09-11, by the `fix(setup)!` in #1597). **Update 2026-09-25: 21 open issues (was 12), all nine new ones `marcusrbrown`-authored**, and most of them are about the gateway/workspace deployment rather than the action: #1634 (the workspace never updates an existing checkout, so persistent-volume deployments run against a stale tree; plan `docs/plans/2026-09-24-001-feat-workspace-checkout-update-recovery-plan.md` landed in this window), #1636 and #1637 (operator push trigger kind and health), #1639 (a completed run stream never terminates when the terminal replay cache has no entry), #1642 (unpinned `apk` installs make the gateway image non-reproducible), #1645 (announce rate limiting runs before authentication on a key every caller shares), #1652 (per-client rate-limit keys make two previously unreachable ceilings reachable, a follow-on from #1651), #1655 (lock takeover on lease expiry does not establish that the previous holder stopped writing), #1663 (the workspace container has no init, so orphaned tool processes become zombies, a follow-on from the #1661 uid split). 19 of 21 are `marcusrbrown`-authored |
+| Open PRs               | 6, all `fro-bot[bot]` — #1626 pending release v0.114.0, #1622 `@fro.bot/systematic` v3.20.0, #1625 osv-scanner-action v2.6.0, #1621 codeql-action v4.38.1, #1623 js-yaml v5.4.2, #1617 eslint v10.10.0. **Update 2026-09-25: 3 open.** #1664 pending release v0.116.0 (`fro-bot[bot]`), #1617 eslint (now v10.11.0, open since 2026-09-15), and #1666 `test(workspace): make the unconfirmed-termination test deterministic` (`marcusrbrown`). All five 09-20 Renovate PRs besides #1617 merged |
 | Topics                 | actions, agent, automation, bot, fro-bot, github-actions, github-app |
 
 ## Architecture
@@ -723,6 +728,118 @@ audit trail names a version it never shipped, and only the diff or the PR body i
 family as [[marcusrbrown--sparkle]]'s autoheal PR that widened its override mid-flight and left the title
 stale — there the title drifted against its diff, here the commit subject did.
 
+**Update (2026-09-25 survey): two more cases, and now in the published release notes.** The pattern
+repeated twice in the `c7622aa..9918ee0` window:
+
+| Commit    | Subject says                            | Diff ships                                                                                              | Release notes |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------- |
+| `9dd6d7f` | `@fro.bot/systematic` to **v3.18.5** (#1622) | `SYSTEMATIC_VERSION` / `DEFAULT_SYSTEMATIC_VERSION` **3.18.4 → 3.20.0** (Dockerfile ARG + `ARCHITECTURE.md` row) | v0.114.1 says v3.18.5 |
+| `21bdcd6` | `bfra-me/.github` to **v4.32.0** (#1657) | reusable-workflow pins `e181838` (v4.31.0) **→ `6f33c67` (v4.33.0)**                                          | v0.115.1 says v4.32.0 |
+
+The 09-20 survey already listed #1622 as "`@fro.bot/systematic` v3.20.0" in the open-PR row, so the PR
+title had been refreshed. Only the squash subject stayed stale. The new consequence is that
+semantic-release builds the GitHub Release body from commit subjects, so the stale version is now in the
+**published changelog**. #1622 matters most because `DEFAULT_SYSTEMATIC_VERSION` is the plugin version the
+action installs on every consumer runner: a consumer reading the v0.114.1 notes would believe it ships
+Systematic 3.18.5 when it actually ships **3.20.0**. The rule changes from "`git log` is not a version
+ledger" to "**neither `git log` nor the generated release notes are**". Only the diff is authoritative.
+
+## Workspace UID Isolation and a Bearer on the Control API (2026-09-25 survey, unreleased)
+
+The `c7622aa..9918ee0` window (22 commits, 17 `fro-bot[bot]` Renovate, 5 `marcusrbrown`) was almost
+entirely about the deployment stack, not the action. The action's `dist/` changed only through dependency
+bumps, and `fro-bot.yaml` did not change. Of the five human commits, four (#1656, #1658, #1661, #1665)
+work on how the workspace container trusts its own processes and callers, and the fifth (#1651) fixes
+operator rate limiting. Read scope was manifests, READMEs, `deploy/` compose/Dockerfiles, and workflow
+diffs. The TypeScript sources were not read.
+
+**#1661: OpenCode now runs as its own unprivileged user.** This is the biggest change to the container's
+security posture since the stack was built.
+
+- **Two identities in one container.** The workspace-agent *service* stays uid 0, but compose drops all
+  capabilities and adds back only `CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, KILL`. It also sets
+  `no-new-privileges:true` and turns off core dumps (`ulimits.core 0/0`). OpenCode and every tool it
+  spawns run as a fixed, no-login **uid/gid 10001 (`opencode`)**. `setpriv --reuid/--regid/--clear-groups`
+  (added to the `apk` line) does the drop, so no root supplementary group can survive it.
+- **Separate homes.** The agent home is `/home/opencode` (0700). The service's `HOME` moved to a distinct
+  root-only `/var/lib/workspace-agent/home`, so the global git config the service writes cannot be read
+  or tampered with by the agent uid. The Systematic-bearing base `opencode.json` moved out of `/root/.config`
+  to a root-owned, world-readable `/usr/local/share/fro-bot/opencode.base.json`. An agent-uid subprocess
+  merges it into the agent's own XDG config, and auth reaches that subprocess over **stdin, never argv**.
+- **Secrets under a protected tmpfs.** The token, auth, and mitmproxy CA mounts moved from world-readable
+  `/run/secrets/…` and `/run/mitmproxy-certs` to `/run/workspace-agent/{secrets,mitmproxy}`, a root-only
+  0700 tmpfs that is reset on every start. The agent uid only sees the merged system CA bundle. The compose
+  comment admits one unverified assumption: nested file binds under a tmpfs "still [need] confirming
+  against a real container."
+- **A one-time, deadline-bounded migration.** Pre-existing root-owned checkouts are `lchown`'d to 10001
+  on first boot (`deploy/scripts/migrate-repo-ownership.mjs`). The migration never calls `git` and is
+  symlink-safe, hardlink-safe, resumable, and marked complete per checkout. It is bounded by
+  `WORKSPACE_MIGRATION_DEADLINE_MS` (default 5 min). If the deadline is hit, the container **refuses to
+  start** rather than run on a mixed-ownership tree. The healthcheck `start_period` went from 45 s to
+  **360 s** to fit the deadline plus boot. The README documents rollback as a manual `chown -hR 0:0` per
+  checkout, because an older image's root git hits "dubious ownership". It verified that claim with
+  `GIT_TEST_ASSUME_DIFFERENT_OWNER=1`.
+- **Fresh clones stage, then hand off.** Clones land in a root-owned `.workspace-agent/staging/` directory
+  and are handed off with `lstat`/`lchown` only. Git against an agent-owned checkout runs *as* the agent,
+  with a neutralized environment.
+- **Security claims are proven in CI.** `ci.yaml`'s workspace smoke job gained `WORKSPACE_DOCKER_SECURITY_FLAGS`,
+  which mirrors the compose `user`/`cap_*`/`security_opt`/tmpfs settings on **every** `docker run`. The
+  in-file reason: "a smoke test that runs with more privilege than production doesn't prove production
+  works." A new step runs `deploy/tests/isolation-harness.sh` (1,371 lines), which attempts each violation
+  and asserts that it fails. The comment notes that Docker is not available on dev machines, "so this job
+  is the only place these claims get proven." The smoke assertions also changed from `/root/...` to
+  `/home/opencode/...` and now check `auth.json` ownership (`10001:600`), not just mode. Generalized in
+  [[docker-containers]].
+- **Follow-on already filed:** #1663. The container has no init process, so orphaned tool processes that
+  run under the new uid split become zombies.
+
+**#1665: the control API requires the gateway's bearer.** `/clone` and the new read-only `/inspect` on
+:9100 now require `Authorization: Bearer <WORKSPACE_OPENCODE_TOKEN>`, the same root-only secret that
+already guarded the :9200 OpenCode proxy. Only `/healthz` and `/readyz` stay open. The README states the
+operational cost: **gateway and workspace images must be upgraded and rolled back together.** A version skew
+means every clone gets 401, which users see as `workspace-unavailable`. Before this change, anything on
+`sandbox-net` could ask the workspace to clone.
+
+**#1658: clone hardening, recorded in the README.** The askpass helper is explicitly `chmod 0700` after
+it is written, because the `open()` mode can be masked by umask. It answers **only** git's literal
+`https://github.com` prompt (no glob) and exits 1 for anything else, so a same-request redirect to another
+host cannot get the token. The clone subprocess seals global and system git config
+(`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_ALLOW_PROTOCOL=https`) against a planted
+`url.<x>.insteadOf` redirect. These extend the "Clone Hardening" list above.
+
+**#1656: run provenance.** The gateway now records what every run's checkout started from
+(`execute/provenance.ts` and `operator-contract/provenance.ts`, with an operator-contract version bump),
+backed by the workspace's new `/inspect` observation (head, worktree, `operationInProgress`). This is the
+observation half of #1634. The recovery half (updating a stale checkout) exists only as a plan document.
+
+**#1651: operator rate limits keyed on the client, not the proxy.** Behind a reverse proxy, every operator
+shared the proxy's socket address. The README says "a handful of page loads can exhaust the attempt cap and
+lock every operator out, with no window that drains." The fix adds a **required**
+`GATEWAY_OPERATOR_TRUSTED_PROXIES` setting: exact IPv4/IPv6 addresses only, with no CIDR, hostnames, or hop
+count. The unspecified address and multicast addresses are rejected at startup. The gateway refuses to
+start without it once the operator surface is enabled, so compose's "all three or none" operator env
+became "all four." Two parts of the documentation stand out:
+
+- **Failure modes are listed by blast radius.** Omitting an intermediate proxy silently brings back the
+  original shared-key bug, with no startup or runtime error. Naming a non-proxy address lets that caller
+  assert any client identity. X-Forwarded-For entries with a port suffix (Azure App Service, some CDNs) or
+  the value `unknown` reject the **whole chain** with a uniform 400, "deliberate — an address-with-port is
+  ambiguous against bare IPv6, and skipping a bad entry would let a caller shape which address gets
+  selected."
+- **The README states the limit of its own validation.** Startup checks "cannot prove that a configured
+  address is genuinely a reverse proxy … do not treat a clean startup as proof the trust boundary is
+  correctly deployed." This is the fleet's "a green conclusion measures the harness" lesson applied to
+  config validation.
+
+The OAuth callback also got a single retry. If the resolved client address changes between `/start` and
+`/callback` (mobile handover, VPN, CGNAT), the browser is sent back to `/start` once, and a second mismatch
+fails closed. The fix itself opened #1652: per-client keys make two previously unreachable ceilings
+reachable.
+
+**Consumer-facing status.** Only #1651, #1656, and #1658 are released (v0.114.1–v0.115.1). None of them
+changes the action's inputs or outputs. The Docker/uid work affects self-hosters of `deploy/`, not
+`fro-bot/agent@v0` consumers.
+
 ## Setup-Path Defect Cluster (v0.109.x, 2026-09-06)
 
 Six fixes in one day against the zero-config install path, all the same shape — a value that *looks* like
@@ -1021,6 +1138,13 @@ issue mutation — #1598's marker-delimited region — on top of its single-repo
 release-notes narration path keeps its own tighter 600 000 ms ceiling, deliberately unrelated to the
 60-minute execution budget.
 
+**Update (2026-09-25).** `fro-bot.yaml` is **unchanged** across `c7622aa..9918ee0`; it is not in the
+compare file list. The workflow is present and self-hosted, so no follow-up draft PR is needed. Workflow
+changes in the window were limited to `ci.yaml` (workspace smoke security flags plus the isolation harness,
+described above) and pin bumps: `codeql-action` v4.37.9 → **v4.38.2**, `osv-scanner-action` v2.5.1 →
+**v2.6.0** (both the PR and full reusable workflows), and `bfra-me/.github` → **v4.33.0** on `renovate.yaml`
+and `update-repo-settings.yaml`.
+
 The `WIKI_PROMPT` env var in the workflow contains the full wiki maintenance instructions for the project's own `docs/wiki/` Obsidian vault — a parallel artifact to the wiki Fro Bot maintains for the `.github` repo. Branch contract: `fro-bot/wiki-update`, one open PR at a time, branch is deleted if it exists with no open PR.
 
 ## Workspace Packages
@@ -1043,6 +1167,7 @@ Root `package.json` (`@fro-bot/agent-workspace`) holds external action/dev deps;
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-09-25 | `9918ee0`  | Re-survey at v0.115.1 plus an unreleased v0.116.0 arc (22 commits, **17 bot / 5 `marcusrbrown`**; releases v0.114.1, v0.115.0, v0.115.1 in 3 days). No action-interface change, and `fro-bot.yaml` unchanged. **(1) Workspace uid isolation** (#1661, unreleased): the service stays root with capabilities trimmed to 6 plus `no-new-privileges`; OpenCode and its tools run as uid 10001 via `setpriv`; secrets and the CA moved under a root-only tmpfs; a one-time, deadline-bounded, fail-closed ownership migration (`start_period` 45 → 360 s); CI smoke now runs with production security flags plus a 1,371-line isolation harness. **(2) Bearer on the :9100 control API** (#1665, unreleased): gateway and workspace images must now upgrade and roll back in lockstep. **(3) Required `GATEWAY_OPERATOR_TRUSTED_PROXIES`** (#1651): rate limits keyed per client, strict forwarded-header parsing, and a README that says what startup validation cannot prove. **(4) Run provenance and `/inspect`** (#1656) as the observation half of #1634. **(5) Clone askpass hardening** (#1658). **(6) Two more stale squash subjects** (#1622 "systematic v3.18.5" ships **3.20.0**; #1657 "bfra-me v4.32.0" ships **v4.33.0**), both now copied into the published release notes. Issues 12 → 21 (9 new, all owner-filed, mostly deploy-stack); PRs 6 → 3. Deps: hono 4.13.8, `@aws-sdk/client-s3` 3.1137.0, prettier 3.9.8, js-yaml 5.4.2 (all diff-verified), plus zod 4.6.5 and OMO Slim 2.2.22 (from commit subjects only, not diff-verified, which the finding above says matters), and Node digest `ebfe2f9` (diff-verified in both Dockerfiles). `packageManager` untouched, so the Bun 1.4.2-vs-1.3.14 drift stands. |
 | 2026-09-20 | `c7622aa`  | Re-survey at v0.113.2 + unreleased v0.114.0 arc (56 commits, **28 bot / 28 `marcusrbrown`**): **no structural change** — 5 members, 12 workflows, 9 CI jobs, 12 required contexts, `evals/` all durable. **(1) Background subagents** (#1606 requirements → #1608 file-watcher disable → #1624 ownership+drain → #1627 completion-evidence-per-turn → #1629 enable → #1632 three learnings), containment merged **before** the switch, and **still unreleased** (pending v0.114.0 #1626) — no consumer pin carries it. **(2) `invocation-outcome`** (`succeeded`/`incomplete`/`failed`/`skipped`, verified against observation completeness, ownership resolution, server quiescence, lease continuity) and **`cache-save-result`** (`durable`/`store-only`/`skipped`/`declined-for-safety`/`not-persisted`, "reports a result, not proof of durability", the two non-persisted states split because only one is retried) promote the eval corpus's three-valued discipline into the **action's public output contract**; both main-step-only because a post-hook value arrives after every consumer. **(3) Execution budget derived**, not constant: 75 m job cap is a backstop, the action's deadline is `cap − measured pre-action elapsed − 15 m teardown reserve`, and it **fails outright rather than flooring upward** — a job-level kill cannot drain background work, summarize, or publish. **(4) The DMR became a fleet instrument** (#1601/#1598): a daily-only collector sweeps downstream runtime verification across four owners with `FRO_BOT_PAT` in step-local env, the agent must read the JSON as untrusted data, `not-verified`/`no-qualifying-run`/`unavailable` are all simply unverified, edits confined to a validated marker pair, private repos out of scope. **(5) `packageManager` drifted Bun 1.3.14 → 1.4.0 → 1.4.2 past an explicit `allowedVersions: '<=1.3.14'`** because the built-in manager sees `bun` (npm) where the custom manager sees `oven-sh/bun`; every installing surface remains 1.3.14, and `8e303ca`'s subject says "v1.4.1" while the diff shipped 1.4.2. **(6) Harness base 1.18.29 → 1.18.30**, carries 13 → **15** (#48267/#48268), **two builds in one day** (`770cf62d` 06:30 → `7c479429` 12:50) with #1586 fixing the `sync-default-version` job to cut its branch from current `main` rather than the dispatch SHA. **(7) Setup-path defect cluster** — six same-day fixes for spawning an install *directory* as an executable (#1563/#1565/#1569/#1571/#1587/#1561). **(8) Corrections:** this page's Action Interface tables never recorded `trusted-head-sha`, `response-mode`, `server-bootstrap-timeout`, `brokered-push-extra-paths`, `delivery-kind`, `output-mode-migration`, `brokered-push-allowlist` — including **brokered push**, a third delivery mode that commits directly to a trusted PR's head branch under a hard-denied path allowlist. #1514/#1517 closed; open issues 7 → 12 (ten human-authored), PRs 5 → 6, stars flat at 4. |
 | 2026-09-05 | `096faf1`  | Re-survey at v0.108.1 (v0.94.0 → v0.108.1, 14 minors + patches in ~6.5 weeks): **structural — first new top-level subsystem since `packages/harness`.** **(1) `evals/`, an agent-outcome regression corpus** (23 files, `test:evals` in the root chain, skipped without `FRO_BOT_EVAL=1`): "assert outcomes, never method"; three-valued `passed`/`failed`/`inconclusive` states adopted after a harness misconfiguration produced timeouts a boolean would have blamed on the model; quality gates may assert presence in free-form prose but never absence; `clean-pr`/`planted-defect` differential pair with scorer-owned expectations; bounded 4×4 lazy repeats that never auto-promote a baseline; safety gates (`no-forbidden-mutation`, `no-secret-leak`) run even on inconclusive runs. Debt: `baselines/u1.json` predates the stable outcome projection; #1532 reports a trivially-true assertion inside the corpus. **(2) Harness version namespaces split three ways** — GitHub Release tag and npm version both `-harness.<sha>` (prerelease; git refs forbid `+`, and npm treats build metadata as version-identical), binary self-report keeps `+harness.<sha>`; **16 historical builds backfilled as hyphen-form releases on 2026-08-29** (npm was hyphen-form since 2026-07-15, so it was GitHub that migrated); **Renovate retired from `DEFAULT_OPENCODE_VERSION`** in favor of a repo-owned `sync-default-version` PR job that bumps constants + workspace Dockerfile together with a both-files idempotency guard. Base 1.18.4 → **1.18.29**; carries 12 → **13** (+`anomalyco/opencode#47430`). **(3) CI**: new `gateway-smoke` + `workspace-smoke` image jobs, both promoted to **required contexts (10 → 12)**; gateway joined the root build/lint/test fan-out; new **`osv-scanner.yaml`** (workflows 11 → **12**) with `fail-on-vuln: true` on the PR diff scan and deliberate report-only on the full scan; `merge_group` triggers added; `scripts/` grew repo-invariant guard tests (`fro-bot-workflow`, `osv-scanner-workflow`, `harness-tag-derivation`, `workspace-test-chain`, …). **(4) `pull_request` dropped from `fro-bot.yaml`'s trigger set**; PR review runs via `ci.yaml`'s `test-action`. **(5) Open-issue set inverted bot-filed → human-filed** — 6 closed, 5 opened, four `marcusrbrown` defect reports (#1514 no session persistence on mention runs without S3, #1517 credential preflight **fails open** on checkout v6 `includeIf`, #1520 first-party App PRs unreviewable via `author_association`, #1532 trivial eval assertion); #1180 supersedes #1124/#1126. **(6) README now qualifies the persistent-memory headline** with the `ACTIONS_RUNTIME_TOKEN`-is-scoped-by-trigger-class constraint. Deps: SDK 1.18.26, oMo **v3→v4**, OMO Slim **v1→v2**, systematic 3.2.2 → 3.16.0, `zod` new in runtime, `web-push` new in gateway, overrides 13 → 18 (undici v7→v8, fast-uri v3→v4). New `assets/` brand tokens, `docs/reference/carry-ledger.md`. Stars 3 → 4; open issues 6 → 7. |
 | 2026-07-21 | `9a4631f`  | Re-survey at v0.94.0 (v0.83.1 → v0.94.0, 11 minors + patches in ~2 weeks): **no structural change** — 3 pkgs / 2 apps / 11 workflows / 19 RFCs / Bun cutover all durable. Feature+hardening wave on the release/review pipelines plus a harness rebase. **(1) Release-notes narration → two-phase credential boundary** (v0.93.0, #1239): read-only generation job (bounded evidence ≤25 PRs/≤5 diffs → artifact candidate) + apply job carrying write authority via `FRO_BOT_PAT`; fail-closed validator hardened (code-span exemption #1241, short-paragraph compose #1243). **(2) `review-skip-label` opt-out input** (#1234, default `skip-agent-review`, routing-time, mention/`review_requested` overrides via sender-substituted association #1238). **(3) Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/#1254); merge model → `claude-sonnet-5`; 12 carries (churned, #1220 retired superseded, +#36045/#36361); runtime constant + Dockerfile ARG synced post-publish (#1256). Reliability: quota fail-fast (#1227), centralized error format (#1226), run-state retention tag (#1225), PR-release concurrency isolation (#1223), legacy schedule-session scaffolding removed (#1237). Deps: **systematic v2→v3** (#1250, 3.2.2), **@hono/node-server v1→v2** (#1249), @opencode-ai/sdk 1.17.20, aws-sdk 3.1085.0, eslint 10.7.0, prettier 3.9.5, tsdown 0.22.7, semantic-release 25.0.7 (+`@semantic-release/npm`), vite override 8.1.4. Doc surface: `RFCs/` dir extracted, root `CHANGELOG.md`, `docs/privacy/`, `.agents/skills/versioned-tool`. Stars 2→3; open issues flat at 6. |

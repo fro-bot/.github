@@ -6445,3 +6445,23 @@ Sources: https://github.com/marcusrbrown/vbs@2ba4e405713e576d9a1a09887b22b276c27
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-09-25 03:23] ingest | repo:fro-bot/agent
+
+Re-survey of fro-bot/agent (HEAD `9918ee0`, 22 commits since `c7622aa`: 17 `fro-bot[bot]` Renovate, 5 `marcusrbrown`). The latest release is **v0.115.1**, after v0.114.1 and v0.115.0 in three days; v0.116.0 is pending as #1664. Read scope: the compare API (commit list, file list, and diffs of workflows, manifests, READMEs, `deploy/` compose and Dockerfiles, and `apps/workspace-agent/AGENTS.md`), release bodies, and open issue/PR metadata. Local clones were blocked by sandbox policy and `gh` had no credentials, so everything came from the unauthenticated REST API. TypeScript sources were not read.
+
+- **Workspace uid isolation (#1661, unreleased):** the service stays uid 0 with capabilities trimmed to six plus `no-new-privileges`. OpenCode and its tools now run as uid 10001 via `setpriv`, with separate `HOME`s, and secrets and the mitmproxy CA moved under a root-only tmpfs. A fail-closed, deadline-bounded ownership migration runs on first boot (`start_period` 45 → 360 s). CI smoke tests now run with production security flags, plus a 1,371-line isolation harness. Follow-on #1663: the container has no init, so orphaned tool processes become zombies. Generalized in [[docker-containers]].
+- **Bearer on the :9100 control API (#1665, unreleased):** gateway and workspace images must now be upgraded and rolled back together. **#1651:** `GATEWAY_OPERATOR_TRUSTED_PROXIES` is now required, rate limits are keyed per client, and forwarded-header parsing is strict. The README states what startup validation cannot prove. **#1656:** run provenance and `/inspect`, the observation half of #1634. **#1658:** askpass and git-config sealing.
+- **Correction extended:** two more stale Renovate squash subjects. #1622 says Systematic v3.18.5 but ships **3.20.0** (`DEFAULT_SYSTEMATIC_VERSION`, which is installed on every consumer runner). #1657 says `bfra-me/.github` v4.32.0 but ships **v4.33.0**. Both were copied verbatim into the v0.114.1 and v0.115.1 release notes. Generalized in [[github-actions-ci]], with `squash_merge_commit_title: PR_TITLE` as the repair.
+- No action-interface change. `fro-bot.yaml` is unchanged; the Fro Bot workflow is present, so no follow-up draft is needed. `packageManager` was untouched, so the Bun 1.4.2-vs-1.3.14 drift still stands. Issues went 12 → 21 (nine new, all owner-filed, mostly about the deploy stack). PRs went 6 → 3.
+- Housekeeping carried over: the repo page is now ~19k words, far past the schema's 2000-word guidance, and should be split in a dedicated edit.
+
+Pages touched: [[fro-bot--agent]], [[docker-containers]], [[github-actions-ci]]; index entries for all three.
+
+Sources: https://github.com/fro-bot/agent@9918ee0036100a11e61bf80bd85efa00b90b8852, https://github.com/fro-bot/agent/releases/tag/v0.115.1, https://github.com/fro-bot/agent/releases/tag/v0.114.1
+
+## [2026-09-25 03:24] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

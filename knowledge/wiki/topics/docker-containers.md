@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-23
+updated: 2026-09-25
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 9918ee0036100a11e61bf80bd85efa00b90b8852
+    accessed: 2026-09-25
   - url: https://github.com/fro-bot/dashboard
     sha: 0c7489de29fd6f430468a021ebd1178088d16f03
     accessed: 2026-09-23
@@ -18,6 +21,7 @@ related:
   - marcusrbrown--containers
   - bfra-me--ha-addon-repository
   - fro-bot--dashboard
+  - fro-bot--agent
   - github-actions-ci
   - home-assistant
 ---
@@ -31,6 +35,7 @@ Docker container build patterns, security practices, and CI/CD integration obser
 - [[marcusrbrown--containers]] — Primary container collection with multi-arch builds, Python automation, and template system
 - [[bfra-me--ha-addon-repository]] — HA add-on template; four-arch (`aarch64`/`amd64`/`armhf`/`armv7`) builds via `home-assistant/builder` with cosign signing to GHCR, digest-pinned `ARG BUILD_FROM`, `repology` custom manager for apk pins
 - [[fro-bot--dashboard]] (added 2026-09-09) — single-arch `node:24-slim` app image, three-stage (`builder` → `prod-deps` → runtime), digest-pinned, CalVer-tagged to GHCR, smoke-tested by digest before promotion, two-phase Trivy scan on the release path
+- [[fro-bot--agent]] (added 2026-09-25) — `deploy/` compose stack (gateway, workspace, mitmproxy), two digest-pinned `node:24.21.0-alpine` multi-stage images. The workspace image splits a root, capability-trimmed service from an unprivileged uid-10001 agent (see below)
 
 ## Dockerfile Patterns Observed
 
@@ -123,6 +128,44 @@ Two details worth copying:
 [[fro-bot--dashboard]] replaced a bespoke `addgroup --system --gid 1001 dashboard` / `adduser … --uid 1001` block with plain `USER node` (uid **1000**, already present in every `node:*` image). Less Dockerfile, one fewer layer, and — the actual motivation, per the PR title `fix(docker): run as the node user to match deployment` — the container UID now matches what the deployment environment expects for volume ownership.
 
 The transferable part is the second half of that change: the release pipeline **asserted the old UID**. `release.yaml` smoke-tests the candidate with `docker run --rm "$IMG" node -p 'process.getuid()'` and failed if it was not `1001`; the same PR updated the assertion to `1000`. A UID assertion in the smoke test is a good idea precisely because it turns a silent permissions regression into a release failure — but it means the runtime identity is now specified in two places, and changing one without the other blocks every release. **If you assert a container's UID in CI, treat the Dockerfile `USER` line and the assertion as a single coupled edit**, the same discipline the *Renovate Custom Managers* entry below prescribes for base-image and package-set version pairs.
+
+#### Two Identities in One Container, Proven at Production Privilege (2026-09-25)
+
+`USER node` fits when one process needs no privilege. [[fro-bot--agent]]'s workspace image (#1661,
+unreleased as of 2026-09-25) shows the harder case: a supervisor that needs *some* root to set up
+protected state, hosting an agent that should never have it.
+
+- **Keep the service at uid 0, trim it to the capabilities it uses.** Compose sets `user: '0:0'`,
+  `cap_drop: [ALL]`, and adds back `CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, KILL`, plus
+  `no-new-privileges:true` and core dumps off. The Dockerfile says `USER 0:0` explicitly, so the choice is
+  documented rather than inherited.
+- **Drop the untrusted workload to a fixed no-login uid with `setpriv --reuid --regid --clear-groups`.**
+  This works on a numeric uid with no `/etc/passwd` lookup, and it clears supplementary groups so no root
+  group survives. The Dockerfile points to an entrypoint rationale comparing `setpriv`, `su-exec`, and
+  `runuser`. That rationale was not read in this survey.
+- **Give each identity its own `HOME`.** The service's `HOME` is a root-only `/var/lib/workspace-agent/home`,
+  not `/root`, so anything written under `$HOME` (global git config) is outside the agent's reach and the
+  agent's home is outside the service's accidental writes.
+- **Put secrets under a root-only tmpfs, not at `/run/secrets`.** Top-level `/run/secrets/*` binds are
+  readable by any uid in the container. Nesting them under `/run/workspace-agent` (tmpfs, `mode=0700,uid=0`)
+  makes the less-privileged uid unable to read them. Credentials reach the agent-uid provisioning step on
+  stdin, never argv.
+- **Migrate old volumes fail-closed.** Existing root-owned data on a named volume has to be re-owned. The
+  migration is `lstat`/`lchown` only (no following symlinks, no `git`), marked complete per item,
+  resumable, and bounded by a deadline. If the deadline is hit, the container refuses to start rather than
+  run on mixed ownership. The healthcheck `start_period` has to grow to cover that deadline (45 s → 360 s
+  here). Otherwise the orchestrator kills a healthy migration mid-flight.
+- **Smoke-test at production privilege.** CI defines a single `WORKSPACE_DOCKER_SECURITY_FLAGS` env that
+  mirrors the compose security settings and appends it to **every** `docker run` of the image. The
+  in-file reason: "a smoke test that runs with more privilege than production doesn't prove production
+  works." A separate harness then *attempts* each isolation violation and asserts that it fails. This is
+  the same coupling lesson as the UID assertion above, one level up: if CI runs the container with a
+  different privilege set than production, the security claims are only checked in production.
+
+One gap has already surfaced: open #1663 reports that the image has **no init**, so orphaned tool
+processes under the new uid become zombies. The `tini`-as-PID-1 item under *Security Hardening* above is
+the standard answer. A privilege split creates more short-lived child processes, which makes an init more
+necessary, not less.
 
 ### Tagging Strategy
 

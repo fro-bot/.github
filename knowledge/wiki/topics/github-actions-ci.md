@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-24
+updated: 2026-09-25
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 9918ee0036100a11e61bf80bd85efa00b90b8852
+    accessed: 2026-09-25
   - url: https://github.com/marcusrbrown/vbs
     sha: 2ba4e405713e576d9a1a09887b22b276c2771599
     accessed: 2026-09-24
@@ -2636,6 +2639,22 @@ committed file is `1.4.2`. A rolling `renovate/<dep>-<range>` branch updated in 
 squash took the stale branch message instead of the refreshed title. **`git log` is not a version ledger
 for bot branches** — only the diff or the PR body is authoritative. Second instance of the title-vs-diff
 class after [[marcusrbrown--sparkle]]'s autoheal PR that widened its own override mid-flight.
+
+**Update (2026-09-25): the stale subject reaches the published changelog.** [[fro-bot--agent]] had two
+more cases within five days. `9dd6d7f` "update `@fro.bot/systematic` to v3.18.5 (#1622)" ships **3.20.0**,
+and `21bdcd6` "update `bfra-me/.github` action to v4.32.0 (#1657)" ships **v4.33.0**. Both went into
+semantic-release notes unchanged (v0.114.1 and v0.115.1), because conventional-commit release tooling
+builds the changelog from squash subjects. So the error is not limited to `git log`. It becomes a
+consumer-facing claim about what a release contains, and #1622's version is the plugin the action
+installs on every downstream runner. Three repairs, cheapest first:
+
+- Configure squash merges to use the **PR title** as the commit subject (repo setting
+  `squash_merge_commit_title: PR_TITLE`). The default, `COMMIT_OR_PR_TITLE`, uses the commit message
+  for a single-commit PR, which is exactly the Renovate shape. Renovate refreshes the PR title, not the
+  branch commit.
+- Have Renovate rebase and re-commit on refresh so the branch commit message tracks the update. This is
+  weaker, because it depends on Renovate's rebase policy.
+- For surveys: **never take a version from a subject line or a generated release note**. Read the diff.
 
 ### Encode the Third State in the Contract, Not the Log (2026-09-20)
 
