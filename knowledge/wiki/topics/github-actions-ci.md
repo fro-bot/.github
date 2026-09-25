@@ -3373,3 +3373,23 @@ Generalizations:
 3. **When a daemon produces the fix for its own channel, surface the patch, not the claim.** "Root-cause fix applied to the working tree" in a comment is not recoverable. A fenced diff in the escalation issue body is. It survives teardown, a human can apply it in one step, and it can be audited. For delivery-path fixes specifically, the report should carry the patch text.
 
 Contrast with [[marcusrbrown--marcusrbrown]] (2026-09-22). There the same inbound diagnosis was refuted locally because the daemon kept pushing to an existing PR branch. On VBS the local-falsification step from *Cross-Project Intelligence Transmits Conclusions Faster Than It Transmits Fixes* **passes**: there have been no fro-bot PR creations or branch updates since early August. The two repos show that the recommended test discriminates in both directions. The same pattern, checked for its consequence, gives opposite verdicts.
+
+### A Rollup Tracker Whose Structured Source Omits the Rows It Narrates (2026-09-25)
+
+Source: the daily oversight pass on 2026-09-25, comparing `fro-bot/.github#3512` (the Gateway operator control-surface rollout tracker) against GitHub Project 1 and live rollout evidence.
+
+The tracker body declares the Project matrix "the structured source of truth" and the body "the human-readable rollup". The scheduled Gateway Rollout Tracker workflow (`#3514`, made idempotent by `#3517`) preflights Project and issue state before commenting. On 2026-09-25 the body and live state disagreed on three points, and the Project contradicted none of them:
+
+| Claim in #3512 body | Live evidence (2026-09-25) |
+| --- | --- |
+| Deployed gateway pinned to `fro-bot/agent` `v0.83.0` | `marcusrbrown/infra` `apps/gateway/upstream.json` → `ref: v0.113.2` |
+| Latest agent release `v0.85.0` | `fro-bot/agent` latest release `v0.115.1` (2026-09-24) |
+| `fro-bot/dashboard#179` (Cancel UI) `Open` | `#179` is `CLOSED` |
+
+The one claim still true is `contractVersion: 1.6.0` from `dashboard.fro.bot/operator/health`. Project status for `#3512` (`In Progress`) is also consistent. The cause is structural. Project 1 has **no items** for `dashboard#179`, `agent#1109`, `agent#1111`, or the push PRs (`#1152`–`#1165`). Those are exactly the rows the body narrates past its original unit list. A preflight keyed on Project state cannot see drift in rows the Project never held, so its idempotency guard reports "no change" while the body goes stale by thirty releases.
+
+Generalizations:
+
+1. **A "structured source of truth" is only authoritative over the rows it contains.** If a rollup narrates items the structured source lacks, the rollup becomes the de facto source for those items, and nothing is checking it.
+2. **Key tracker freshness on deployed truth, not on tracker state.** The deploy pin file and the health endpoint are the cheapest oracles here. Diffing the body's claimed pin against `upstream.json` would have caught this on the first release after `v0.83.0`.
+3. **Related to *A Drift Check Proves the Consumer Matches the Pin, Not That the Pin Matches the Gate* (2026-09-23).** That rule is about a pin that is internally consistent but stale against its gate. This is its documentation twin: a tracker that is internally consistent (body ↔ Project) but stale against the deployment.

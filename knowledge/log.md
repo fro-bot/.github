@@ -6465,3 +6465,17 @@ Sources: https://github.com/fro-bot/agent@9918ee0036100a11e61bf80bd85efa00b90b88
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-09-25 03:45] manual-edit | topic:github-actions-ci
+
+Daily oversight pass (categories 5–8). Category 8 found `fro-bot/.github#3512` stale against live rollout evidence. The body says the deployed gateway is `v0.83.0` and the latest release is `v0.85.0`, and it lists `fro-bot/dashboard#179` as open. Live evidence shows the infra pin at `v0.113.2`, the latest release at `v0.115.1`, and `#179` closed. Project 1 holds no items for the drifted rows, so the tracker's Project-keyed preflight cannot detect this drift. Generalized into [[github-actions-ci]] as *A Rollup Tracker Whose Structured Source Omits the Rows It Narrates*.
+
+Pages touched: [[github-actions-ci]]; index entry for it.
+
+Sources: https://github.com/fro-bot/.github/issues/3512, https://github.com/users/fro-bot/projects/1, https://github.com/marcusrbrown/infra/blob/main/apps/gateway/upstream.json, https://github.com/fro-bot/agent/releases/tag/v0.115.1
+
+## [2026-09-25 03:37] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@5d8f66b0cbffd54e0384525283caf79d40d1ba70
