@@ -163,9 +163,23 @@ export function scanAgentJob(params: ScanAgentJobParams): ScanAgentJobResult {
     }
   }
 
-  // Rule: post-agent step env/with/run.
+  // Rule: post-agent step env/with/run. Exception (KTD7): a later step with a byte-identical
+  // uses: may hold any subset of the first agent step's own credentials — attempt 1's model already read them, and the retry's output is still validated trusted-side.
+  const agentStepRefs = new Set(
+    findCredentialRefs(agentStep === undefined ? '' : stepText(agentStep)).map(normalizeCredentialRef),
+  )
   for (const step of steps.slice(agentStepIndex + 1)) {
-    pushIfForeign(step.name ?? step.id ?? '(unnamed step)', findCredentialRefs(stepText(step)))
+    const label = step.name ?? step.id ?? '(unnamed step)'
+    const rawRefs = findCredentialRefs(stepText(step))
+    const isSameActionRetry =
+      agentStep !== undefined && typeof step.uses === 'string' && step.uses !== '' && step.uses === agentStep.uses
+    if (isSameActionRetry) {
+      for (const ref of rawRefs.map(normalizeCredentialRef)) {
+        if (!agentStepRefs.has(ref)) violations.push({step: label, ref})
+      }
+      continue
+    }
+    pushIfForeign(label, rawRefs)
   }
 
   // Rule (a): workflow-level and job-level env — every step in the job inherits both.
@@ -564,6 +578,83 @@ describe('scanAgentJob (fixture-driven unit tests for each new rule)', () => {
         resolveCompositeAction: noOpResolver,
       })
       expect(result.violations).toStrictEqual([])
+    })
+  })
+
+  describe("KTD7: a retry step with a byte-identical uses: is exempt for a subset of the first agent step's own secrets", () => {
+    const richAgentStepWith = {
+      'github-token': `${EXPR} secrets.FRO_BOT_PAT }}`,
+      'auth-json': `${EXPR} secrets.OPENCODE_AUTH_JSON }}`,
+      'omo-providers': `${EXPR} secrets.OMO_PROVIDERS }}`,
+    }
+    const richAgentStep: WorkflowStep = {
+      uses: 'fro-bot/agent@b711f08e4049ff0add1ec06859743b2dcb7764ce',
+      with: richAgentStepWith,
+    }
+
+    it('passes for a retry step with the identical uses: and exactly the same secrets', () => {
+      const retryStep: WorkflowStep = {name: 'retry', uses: richAgentStep.uses, with: {...richAgentStepWith}}
+      const result = scanAgentJob({job: {steps: [richAgentStep, retryStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([])
+    })
+
+    it('passes for a retry step with the identical uses: and a strict subset of the secrets', () => {
+      const retryStep: WorkflowStep = {
+        name: 'retry',
+        uses: richAgentStep.uses,
+        with: {'github-token': richAgentStepWith['github-token']},
+      }
+      const result = scanAgentJob({job: {steps: [richAgentStep, retryStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([])
+    })
+
+    it('fails when the retry step pins a different SHA of the same action (uses: must match exactly, not just carry an allowed secret)', () => {
+      const retryStep: WorkflowStep = {
+        name: 'retry',
+        uses: 'fro-bot/agent@0000000000000000000000000000000000000000',
+        with: {'auth-json': richAgentStepWith['auth-json']},
+      }
+      const result = scanAgentJob({job: {steps: [richAgentStep, retryStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([{step: 'retry', ref: 'secrets.OPENCODE_AUTH_JSON'}])
+    })
+
+    it('fails and names the extra secret when the retry step carries one beyond the first agent step', () => {
+      const retryStep: WorkflowStep = {
+        name: 'retry',
+        uses: richAgentStep.uses,
+        with: {...richAgentStepWith, extra: `${EXPR} secrets.GATEWAY_WEBHOOK_SECRET }}`},
+      }
+      const result = scanAgentJob({job: {steps: [richAgentStep, retryStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([{step: 'retry', ref: 'secrets.GATEWAY_WEBHOOK_SECRET'}])
+    })
+
+    it("fails when a different action carries the first agent step's secrets (same secret alone does not exempt)", () => {
+      const retryStep: WorkflowStep = {
+        name: 'different action',
+        uses: 'some-org/some-agent@abc',
+        with: {token: richAgentStepWith['auth-json']},
+      }
+      const result = scanAgentJob({job: {steps: [richAgentStep, retryStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([{step: 'different action', ref: 'secrets.OPENCODE_AUTH_JSON'}])
+    })
+
+    it("fails on a post-agent run: step referencing one of the first step's non-github-token secrets (exemption covers only same-action uses: steps)", () => {
+      const runStep: WorkflowStep = {name: 'leak via run', run: `echo ${EXPR} secrets.OPENCODE_AUTH_JSON }}`}
+      const result = scanAgentJob({job: {steps: [richAgentStep, runStep]}, resolveCompositeAction: noOpResolver})
+      expect(result.violations).toStrictEqual([{step: 'leak via run', ref: 'secrets.OPENCODE_AUTH_JSON'}])
+    })
+
+    it('rule (e) still flags a pre-agent step using a different action with a foreign secret (unaffected by the retry exemption)', () => {
+      const preAgentStep: WorkflowStep = {
+        name: 'pre-agent foreign',
+        uses: 'some-org/some-action@abc',
+        with: {token: `${EXPR} secrets.GATEWAY_WEBHOOK_SECRET }}`},
+      }
+      const result = scanAgentJob({
+        job: {steps: [preAgentStep, richAgentStep]},
+        resolveCompositeAction: noOpResolver,
+      })
+      expect(result.violations).toStrictEqual([{step: 'pre-agent foreign', ref: 'secrets.GATEWAY_WEBHOOK_SECRET'}])
     })
   })
 })
