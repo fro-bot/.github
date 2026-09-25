@@ -6,7 +6,7 @@
  * The `open` job (agent, drafts proposal bodies) and `open-publish` job (trusted,
  * mints the write token and opens issues) are split so a prompt-injected agent
  * never shares a runner with a freshly-minted `issues: write` App token — see
- * scripts/agent-token-mint-order-guard.test.ts for the repo-wide invariant.
+ * scripts/agent-post-step-credential-guard.test.ts for the repo-wide invariant.
  */
 
 import {readFileSync} from 'node:fs'
