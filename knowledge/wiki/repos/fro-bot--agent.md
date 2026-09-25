@@ -8,6 +8,9 @@ sources:
   - url: https://github.com/fro-bot/agent
     sha: 9918ee0036100a11e61bf80bd85efa00b90b8852
     accessed: 2026-09-25
+  - url: https://github.com/fro-bot/agent
+    sha: 72f11faaf0bae1fc4b96979b279abd49e394eccc
+    accessed: 2026-09-25
   - url: https://github.com/fro-bot/agent/releases/tag/v0.115.1
     accessed: 2026-09-25
   - url: https://github.com/fro-bot/agent/releases/tag/v0.114.0
@@ -117,6 +120,23 @@ related:
 # fro-bot/agent
 
 GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (oMo)](https://github.com/code-yeongyu/oh-my-openagent) with **persistent session state** across CI runs. This is the core runtime that powers Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repositories.
+
+**Re-survey (2026-09-25, 13:10 UTC; `main` at `72f11fa`).** Since the earlier
+`9918ee0` snapshot, the repository HEAD advanced, but the permitted source
+surfaces did not: root and workspace `package.json` manifests, root and workspace
+READMEs, and all 12 `.github/workflows/` files have identical blob IDs in the
+two trees. The root still declares five Bun workspace members, and
+`.github/actions/setup/action.yaml` still installs Bun 1.3.14 by default while
+`package.json` declares Bun 1.4.2. The self-hosted `fro-bot.yaml` remains present
+with its daily report, weekly wiki update, and manual/reusable dispatch paths;
+`ci.yaml` still hosts the live PR-review action test. This is a confirmation of
+the prior workflow and package-manager findings, **not** evidence that the
+unread source or deployed gateway has not changed. The earlier release and open
+issue/PR counts are dated snapshots, not reconfirmed by this limited survey.
+The workspace-agent README's `/clone` example still omits the bearer now
+required by `deploy/README.md` for the :9100 control API; following that example
+against the documented current deployment would receive 401. Treat the deploy
+README as the current operator contract and the example as documentation drift.
 
 ## Overview
 

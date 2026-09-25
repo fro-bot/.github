@@ -2,6 +2,12 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-09-25 re-survey: [[fro-bot--agent]] advanced to `72f11fa`; its README,
+workspace manifests, and workflow blobs match the earlier `9918ee0` snapshot.
+The self-hosted Fro Bot workflow is present; the workspace-agent README's
+unauthenticated clone example conflicts with the deploy README's bearer contract.
+The repo entry below retains the accumulated history.
+
 ## Repos
 
 - [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo (v4.16.37, pnpm 11.11.0, Node 24.18.0) with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), canonical `bfra-me/.github:common-settings.yaml`, Fro Bot agent **v0.92.1** (~50 bumps in two months). 2026-07-16 survey (HEAD `1c12695`): **no structural change** — 16 workflows, 2 review/autoheal modes, one unified 15:30 pass all confirmed durable (2026-07-02 consolidation is now steady-state); additive scaffolding only — new `.ai/` planning corpus (10 aspirational plan docs: template federation, Astro Starlight docs, org-health monitoring, etc.), `.husky/pre-commit`, root `CHANGELOG.md`/`CONTRIBUTING.md`, `.git-blame-ignore-revs`; `onlyBuiltDependencies` → pnpm 11 `allowBuilds:` block; doc drift flagged (`CONTRIBUTING.md` cites pnpm "10.8.1+" vs enforced 11.x). Prior 2026-07-02: first structural change since inception (autoheal-org merged, 3→2 modes, reports consolidated to #2344, #2213 resolved, esbuild PR #2292 merged)

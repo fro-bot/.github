@@ -6512,3 +6512,25 @@ Sources: https://github.com/marcusrbrown/.dotfiles@5a890eef0d2ecb0b9310c3ccf87c2
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-09-25 13:10] ingest | repo:fro-bot/agent
+
+Re-surveyed the public repository at `72f11fa` against the prior `9918ee0`
+snapshot. Directory listings show five Bun workspace members and 12 workflows;
+README, workspace-manifest, and workflow blob IDs are unchanged. The self-hosted
+Fro Bot workflow is present, so no missing-workflow follow-up is warranted.
+The Bun 1.4.2 declaration vs setup's 1.3.14 installer drift persists. Recorded
+a documentation contradiction: `apps/workspace-agent/README.md` still shows an
+unauthenticated `/clone` call, while `deploy/README.md` says :9100 now requires
+the gateway bearer. Only [[fro-bot--agent]] and its index catalog were updated;
+the unchanged cross-cutting pages need no new claim. Reads were restricted to
+directory listings, README files, manifests, and workflows. No issue was used
+as a survey notice.
+
+Sources: https://github.com/fro-bot/agent/tree/72f11faaf0bae1fc4b96979b279abd49e394eccc, https://github.com/fro-bot/agent/blob/72f11faaf0bae1fc4b96979b279abd49e394eccc/apps/workspace-agent/README.md, https://github.com/fro-bot/agent/blob/72f11faaf0bae1fc4b96979b279abd49e394eccc/deploy/README.md
+
+## [2026-09-25 13:12] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
