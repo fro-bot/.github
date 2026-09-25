@@ -793,3 +793,64 @@ describe('fro-bot.yaml App-token wiki ingest migration', () => {
     },
   )
 })
+
+describe('fro-bot.yaml daily-digest announce isolation (agent post-step credential guard)', () => {
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const announceJob = froBotParsed.jobs['fro-bot-observe-announce']
+
+  it('fro-bot-observe no longer announces the daily digest itself', () => {
+    expect(findStepIndex(observeJob, step => step.name === '📣 Announce daily digest to gateway')).toBe(-1)
+  })
+
+  it('fro-bot-observe exposes report-url/repos-tracked/surveys-today/count-status as job outputs', () => {
+    const outputs = (observeJob as {outputs?: Record<string, string>})?.outputs ?? {}
+    expect(outputs['report-url']).toContain('steps.report-url.outputs.report_url')
+    expect(outputs['repos-tracked']).toContain('steps.digest-counts.outputs.repos_tracked')
+    expect(outputs['surveys-today']).toContain('steps.digest-counts.outputs.surveys_today')
+    expect(outputs['count-status']).toContain('steps.digest-counts.outputs.count_status')
+  })
+
+  it('fro-bot-observe still discovers the report URL with FRO_BOT_PAT — the same secret the observe agent already holds', () => {
+    const discoverStep = observeJob?.steps?.find(step => step.name === '🔍 Discover daily report URL')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).toContain('secrets.FRO_BOT_PAT')
+  })
+
+  it('declares fro-bot-observe-announce needing fro-bot-observe, with no fro-bot/agent step (trusted-writer invariant)', () => {
+    expect(announceJob).toBeDefined()
+    expect((announceJob as {needs?: string})?.needs).toBe('fro-bot-observe')
+    expect(findStepIndex(announceJob, step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBe(-1)
+  })
+
+  it('fro-bot-observe-announce checks out the default branch with persist-credentials: false', () => {
+    const checkoutStep = announceJob?.steps?.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('fro-bot-observe-announce gates on the same dry-run/count-status/report-url/DAILY_DIGEST_ENABLED conditions the old inline step used', () => {
+    const jobIf = String((announceJob as {if?: string})?.if ?? '')
+    expect(jobIf).toContain("inputs.prompt == ''")
+    expect(jobIf).toContain("needs.fro-bot-observe.outputs.count-status == 'ok'")
+    expect(jobIf).toContain('needs.fro-bot-observe.outputs.report-url')
+    expect(jobIf).toContain("vars.DAILY_DIGEST_ENABLED == 'true'")
+  })
+
+  it('validates report-url shape and repos-tracked/surveys-today as non-negative integers before announcing', () => {
+    const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+    const run = String(validateStep?.run ?? '')
+    expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
+    expect(run).toContain("grep -qE '^[0-9]+$'")
+    expect(run).toContain('::error::')
+
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.if ?? '')).toContain("steps.validated.outputs.valid == 'true'")
+  })
+
+  it('the announce step reads its values from needs.fro-bot-observe outputs, not from any local post-agent step', () => {
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.env?.REPORT_URL ?? '')).toContain('needs.fro-bot-observe.outputs.report-url')
+    expect(String(announceStep?.env?.REPOS_TRACKED ?? '')).toContain('needs.fro-bot-observe.outputs.repos-tracked')
+    expect(String(announceStep?.env?.SURVEYS_TODAY ?? '')).toContain('needs.fro-bot-observe.outputs.surveys-today')
+    expect(String(announceStep?.env?.GATEWAY_WEBHOOK_SECRET ?? '')).toContain('secrets.GATEWAY_WEBHOOK_SECRET')
+  })
+})

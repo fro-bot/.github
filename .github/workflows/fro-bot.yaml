@@ -911,6 +911,10 @@ jobs:
     timeout-minutes: 60
     outputs:
       wiki-changed: ${{ steps.wiki-changes.outputs.changed }}
+      report-url: ${{ steps.report-url.outputs.report_url }}
+      repos-tracked: ${{ steps.digest-counts.outputs.repos_tracked }}
+      surveys-today: ${{ steps.digest-counts.outputs.surveys_today }}
+      count-status: ${{ steps.digest-counts.outputs.count_status }}
     if: >-
       !cancelled() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
@@ -1125,36 +1129,6 @@ jobs:
             echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
           fi
 
-      # Best-effort Discord presence: announce the daily digest to the gateway.
-      # DORMANT until vars.DAILY_DIGEST_ENABLED is set (default unset at merge).
-      # The dedicated step gate (not GATEWAY_ANNOUNCE_DISABLED) keeps this dormant
-      # so the two live events (survey_completed, invitation_accepted) are unaffected.
-      # Also runs on workflow_dispatch for on-demand validation.
-      # Go-live: set DAILY_DIGEST_ENABLED after the gateway daily_digest variant is
-      # deployed and verified in fro-bot/agent + marcusrbrown/infra.
-      - name: 📣 Announce daily digest to gateway
-        if: >-
-          inputs.prompt == '' &&
-          steps.digest-counts.outputs.count_status == 'ok' &&
-          steps.report-url.outputs.report_url != '' &&
-          vars.DAILY_DIGEST_ENABLED == 'true'
-        env:
-          EVENT_TYPE: daily_digest
-          REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
-          SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
-          REPORT_URL: ${{ steps.report-url.outputs.report_url }}
-          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
-          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
-          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
-        run: |
-          EVENT_CONTEXT_JSON="$(jq -nc \
-            --argjson repos_tracked "$REPOS_TRACKED" \
-            --argjson surveys_today "$SURVEYS_TODAY" \
-            --arg report_url "$REPORT_URL" \
-            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
-          export EVENT_CONTEXT_JSON
-          node scripts/gateway-announce.ts
-
       - name: Detect wiki insight changes
         id: wiki-changes
         if: always() && !cancelled()
@@ -1193,6 +1167,84 @@ jobs:
           name: wiki-handoff-observe-${{ github.run_id }}
           path: ${{ runner.temp }}/wiki-handoff-observe
           retention-days: 1
+
+  # ── Trusted writer: validates and announces the daily digest ──────────────────
+  # report-url/repos-tracked/surveys-today are produced by steps that run AFTER
+  # fro-bot-observe's agent step, so they are agent-influenceable. This job
+  # revalidates their shape before ever using GATEWAY_WEBHOOK_SECRET — a
+  # credential the observe agent does not hold. Fresh default-branch checkout,
+  # no agent step.
+  fro-bot-observe-announce:
+    name: Fro Bot — Observe — Announce daily digest
+    needs: fro-bot-observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      inputs.prompt == '' &&
+      needs.fro-bot-observe.outputs.count-status == 'ok' &&
+      needs.fro-bot-observe.outputs.report-url != '' &&
+      vars.DAILY_DIGEST_ENABLED == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted code (default branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Fail-closed: reject anything that doesn't match the expected shape rather
+      # than passing agent-influenceable values straight through to the gateway.
+      - name: 🔒 Validate digest values
+        id: validated
+        env:
+          REPORT_URL: ${{ needs.fro-bot-observe.outputs.report-url }}
+          REPOS_TRACKED: ${{ needs.fro-bot-observe.outputs.repos-tracked }}
+          SURVEYS_TODAY: ${{ needs.fro-bot-observe.outputs.surveys-today }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$REPORT_URL" | grep -qE '^https://github\.com/fro-bot/\.github/issues/[0-9]+$'; then
+            echo "::error::daily-digest: report URL failed shape validation; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$REPOS_TRACKED" | grep -qE '^[0-9]+$'; then
+            echo "::error::daily-digest: repos_tracked is not a non-negative integer; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$SURVEYS_TODAY" | grep -qE '^[0-9]+$'; then
+            echo "::error::daily-digest: surveys_today is not a non-negative integer; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+
+      # Best-effort Discord presence: announce the daily digest to the gateway.
+      # DORMANT until vars.DAILY_DIGEST_ENABLED is set (default unset at merge).
+      # Go-live: set DAILY_DIGEST_ENABLED after the gateway daily_digest variant is
+      # deployed and verified in fro-bot/agent + marcusrbrown/infra.
+      - name: 📣 Announce daily digest to gateway
+        if: steps.validated.outputs.valid == 'true'
+        env:
+          EVENT_TYPE: daily_digest
+          REPOS_TRACKED: ${{ needs.fro-bot-observe.outputs.repos-tracked }}
+          SURVEYS_TODAY: ${{ needs.fro-bot-observe.outputs.surveys-today }}
+          REPORT_URL: ${{ needs.fro-bot-observe.outputs.report-url }}
+          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
+          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
+          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
+        run: |
+          EVENT_CONTEXT_JSON="$(jq -nc \
+            --argjson repos_tracked "$REPOS_TRACKED" \
+            --argjson surveys_today "$SURVEYS_TODAY" \
+            --arg report_url "$REPORT_URL" \
+            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
+          export EVENT_CONTEXT_JSON
+          node scripts/gateway-announce.ts
 
   # ── Trusted writer: applies the fro-bot-observe job's wiki handoff artifact to `data` ──
   fro-bot-observe-wiki-ingest:
