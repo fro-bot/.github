@@ -1056,105 +1056,6 @@ jobs:
             dates and sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
 
-      # Discover the daily report issue URL created by the agent this run.
-      # MUST run after the agent step (the agent creates the issue mid-run).
-      # Matches the EXACT title "Daily Fro Bot Report — <today-UTC> (UTC)" (em-dash U+2014).
-      # Two title families coexist — post-filter JSON for byte-equality to avoid false matches.
-      # Shape-validates the URL before use; skips the post on zero/multiple matches (fail-soft).
-      - name: 🔍 Discover daily report URL
-        id: report-url
-        if: inputs.prompt == ''
-        env:
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-        run: |
-          set -euo pipefail
-          TODAY_UTC="$(date -u +%Y-%m-%d)"
-          EXPECTED_TITLE="Daily Fro Bot Report — ${TODAY_UTC} (UTC)"
-          # Fetch open issues, post-filter for exact title match (byte-equality).
-          # Fail-soft: any gh/jq error emits empty report_url + warning and exits 0.
-          if ! MATCHES="$(gh issue list \
-            --repo "$GITHUB_REPOSITORY" \
-            --state open \
-            --limit 50 \
-            --json number,title,url \
-            2>/tmp/discover-err \
-            | jq --arg title "$EXPECTED_TITLE" \
-              '[.[] | select(.title == $title)]' \
-            2>>/tmp/discover-err)"; then
-            echo "report_url=" >> "$GITHUB_OUTPUT"
-            echo "::warning::daily-digest: report URL discovery failed: $(head -c 200 /tmp/discover-err 2>/dev/null)"
-            exit 0
-          fi
-          COUNT="$(echo "$MATCHES" | jq 'length')"
-          if [ "$COUNT" -ne 1 ]; then
-            echo "report_url=" >> "$GITHUB_OUTPUT"
-            echo "::notice::daily-digest: expected 1 report issue match, got ${COUNT}; skipping announce"
-          else
-            CANDIDATE_URL="$(echo "$MATCHES" | jq -r '.[0].url')"
-            # Shape-validate: must be https://github.com/fro-bot/.github/issues/<n>
-            if echo "$CANDIDATE_URL" | grep -qE '^https://github\.com/fro-bot/\.github/issues/[0-9]+$'; then
-              echo "report_url=${CANDIDATE_URL}" >> "$GITHUB_OUTPUT"
-            else
-              echo "report_url=" >> "$GITHUB_OUTPUT"
-              echo "::notice::daily-digest: report URL failed shape validation; skipping announce"
-            fi
-          fi
-
-      # Derive repos_tracked, surveys_today, should_post, count_status from metadata/repos.yaml.
-      # Surfaces count_status=='error' as a step warning so a broken data overlay is visible.
-      - name: 📊 Derive daily digest counts
-        id: digest-counts
-        if: inputs.prompt == ''
-        run: |
-          set -euo pipefail
-          TODAY_UTC="$(date -u +%Y-%m-%d)"
-          export TODAY_UTC
-          RESULT="$(node scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
-          REPOS_TRACKED="$(echo "$RESULT" | jq '.repos_tracked')"
-          SURVEYS_TODAY="$(echo "$RESULT" | jq '.surveys_today')"
-          SHOULD_POST="$(echo "$RESULT" | jq -r '.should_post')"
-          COUNT_STATUS="$(echo "$RESULT" | jq -r '.count_status')"
-          {
-            echo "result=${RESULT}"
-            echo "repos_tracked=${REPOS_TRACKED}"
-            echo "surveys_today=${SURVEYS_TODAY}"
-            echo "should_post=${SHOULD_POST}"
-            echo "count_status=${COUNT_STATUS}"
-          } >> "$GITHUB_OUTPUT"
-          if [ "$COUNT_STATUS" = "error" ]; then
-            echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
-          fi
-
-      # Best-effort Discord presence: announce the daily digest to the gateway.
-      # DORMANT until vars.DAILY_DIGEST_ENABLED is set (default unset at merge).
-      # The dedicated step gate (not GATEWAY_ANNOUNCE_DISABLED) keeps this dormant
-      # so the two live events (survey_completed, invitation_accepted) are unaffected.
-      # Also runs on workflow_dispatch for on-demand validation.
-      # Go-live: set DAILY_DIGEST_ENABLED after the gateway daily_digest variant is
-      # deployed and verified in fro-bot/agent + marcusrbrown/infra.
-      - name: 📣 Announce daily digest to gateway
-        if: >-
-          inputs.prompt == '' &&
-          steps.digest-counts.outputs.count_status == 'ok' &&
-          steps.report-url.outputs.report_url != '' &&
-          vars.DAILY_DIGEST_ENABLED == 'true'
-        env:
-          EVENT_TYPE: daily_digest
-          REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
-          SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
-          REPORT_URL: ${{ steps.report-url.outputs.report_url }}
-          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
-          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
-          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
-        run: |
-          EVENT_CONTEXT_JSON="$(jq -nc \
-            --argjson repos_tracked "$REPOS_TRACKED" \
-            --argjson surveys_today "$SURVEYS_TODAY" \
-            --arg report_url "$REPORT_URL" \
-            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
-          export EVENT_CONTEXT_JSON
-          node scripts/gateway-announce.ts
-
       - name: Detect wiki insight changes
         id: wiki-changes
         if: always() && !cancelled()
@@ -1193,6 +1094,170 @@ jobs:
           name: wiki-handoff-observe-${{ github.run_id }}
           path: ${{ runner.temp }}/wiki-handoff-observe
           retention-days: 1
+
+  # ── Trusted writer: derives and announces the daily digest ───────────────
+  # Fresh default-branch checkout, no agent step. The report URL and digest counts
+  # are computed HERE, trusted-side, instead of read from fro-bot-observe's outputs
+  # (which were produced by steps that run after the agent and would otherwise be
+  # agent-influenceable). Strict shape validation stays as defense in depth.
+  fro-bot-observe-announce:
+    name: Fro Bot — Observe — Announce daily digest
+    needs: fro-bot-observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: inputs.prompt == '' && vars.DAILY_DIGEST_ENABLED == 'true'
+    steps:
+      - name: Checkout trusted code (default branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Mirrors fro-bot-observe's own step: tolerate a missing data branch (skip, don't fail).
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            overlay_err=$(
+              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+            ) || {
+              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+            }
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # This job has no agent step, so minting here is safe (see
+      # scripts/agent-post-step-credential-guard.test.ts). Repo-scoped, read-only —
+      # narrower than the FRO_BOT_PAT this step used to borrow from the observe agent.
+      - name: 🔑 Mint App token for report discovery
+        id: report-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: read
+
+      # Same query/title-match logic as fro-bot-observe's old inline step, run trusted-side.
+      - name: 🔍 Discover daily report URL
+        id: report-url
+        env:
+          GH_TOKEN: ${{ steps.report-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          TODAY_UTC="$(date -u +%Y-%m-%d)"
+          EXPECTED_TITLE="Daily Fro Bot Report — ${TODAY_UTC} (UTC)"
+          if ! MATCHES="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --limit 50 \
+            --json number,title,url \
+            2>/tmp/discover-err \
+            | jq --arg title "$EXPECTED_TITLE" \
+              '[.[] | select(.title == $title)]' \
+            2>>/tmp/discover-err)"; then
+            echo "report_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::daily-digest: report URL discovery failed: $(head -c 200 /tmp/discover-err 2>/dev/null)"
+            exit 0
+          fi
+          COUNT="$(echo "$MATCHES" | jq 'length')"
+          if [ "$COUNT" -ne 1 ]; then
+            echo "report_url=" >> "$GITHUB_OUTPUT"
+            echo "::notice::daily-digest: expected 1 report issue match, got ${COUNT}; skipping announce"
+          else
+            CANDIDATE_URL="$(echo "$MATCHES" | jq -r '.[0].url')"
+            if echo "$CANDIDATE_URL" | grep -qE '^https://github\.com/fro-bot/\.github/issues/[0-9]+$'; then
+              echo "report_url=${CANDIDATE_URL}" >> "$GITHUB_OUTPUT"
+            else
+              echo "report_url=" >> "$GITHUB_OUTPUT"
+              echo "::notice::daily-digest: report URL failed shape validation; skipping announce"
+            fi
+          fi
+
+      # Same derivation as fro-bot-observe's old inline step, run trusted-side.
+      - name: 📊 Derive daily digest counts
+        id: digest-counts
+        run: |
+          set -euo pipefail
+          TODAY_UTC="$(date -u +%Y-%m-%d)"
+          export TODAY_UTC
+          RESULT="$(node scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
+          REPOS_TRACKED="$(echo "$RESULT" | jq '.repos_tracked')"
+          SURVEYS_TODAY="$(echo "$RESULT" | jq '.surveys_today')"
+          COUNT_STATUS="$(echo "$RESULT" | jq -r '.count_status')"
+          {
+            echo "repos_tracked=${REPOS_TRACKED}"
+            echo "surveys_today=${SURVEYS_TODAY}"
+            echo "count_status=${COUNT_STATUS}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$COUNT_STATUS" = "error" ]; then
+            echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
+          fi
+
+      # Fail-closed: reject anything that doesn't match the expected shape. An empty
+      # REPORT_URL means the discovery step already emitted its own ::notice:: (nothing
+      # found, or discovery failed) — don't double-report it as an error here.
+      - name: 🔒 Validate digest values
+        id: validated
+        env:
+          REPORT_URL: ${{ steps.report-url.outputs.report_url }}
+          REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
+          SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
+          COUNT_STATUS: ${{ steps.digest-counts.outputs.count_status }}
+        run: |
+          set -euo pipefail
+          if [ "$COUNT_STATUS" != "ok" ]; then
+            echo "::notice::daily-digest: count_status=${COUNT_STATUS}; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$REPORT_URL" ]; then
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$REPORT_URL" | grep -qE '^https://github\.com/fro-bot/\.github/issues/[0-9]+$'; then
+            echo "::error::daily-digest: report URL failed shape validation; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$REPOS_TRACKED" | grep -qE '^[0-9]+$'; then
+            echo "::error::daily-digest: repos_tracked is not a non-negative integer; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$SURVEYS_TODAY" | grep -qE '^[0-9]+$'; then
+            echo "::error::daily-digest: surveys_today is not a non-negative integer; skipping announce"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+
+      # Best-effort Discord presence: announce the daily digest to the gateway.
+      # DORMANT until vars.DAILY_DIGEST_ENABLED is set (default unset at merge).
+      # Go-live: set DAILY_DIGEST_ENABLED after the gateway daily_digest variant is
+      # deployed and verified in fro-bot/agent + marcusrbrown/infra.
+      - name: 📣 Announce daily digest to gateway
+        if: steps.validated.outputs.valid == 'true'
+        env:
+          EVENT_TYPE: daily_digest
+          REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
+          SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
+          REPORT_URL: ${{ steps.report-url.outputs.report_url }}
+          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
+          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
+          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
+        run: |
+          EVENT_CONTEXT_JSON="$(jq -nc \
+            --argjson repos_tracked "$REPOS_TRACKED" \
+            --argjson surveys_today "$SURVEYS_TODAY" \
+            --arg report_url "$REPORT_URL" \
+            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
+          export EVENT_CONTEXT_JSON
+          node scripts/gateway-announce.ts
 
   # ── Trusted writer: applies the fro-bot-observe job's wiki handoff artifact to `data` ──
   fro-bot-observe-wiki-ingest:

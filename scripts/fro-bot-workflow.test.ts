@@ -793,3 +793,220 @@ describe('fro-bot.yaml App-token wiki ingest migration', () => {
     },
   )
 })
+
+describe('fro-bot.yaml daily-digest announce isolation (agent post-step credential guard)', () => {
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const announceJob = froBotParsed.jobs['fro-bot-observe-announce']
+
+  it('fro-bot-observe no longer announces the daily digest itself', () => {
+    expect(findStepIndex(observeJob, step => step.name === '📣 Announce daily digest to gateway')).toBe(-1)
+  })
+
+  it('fro-bot-observe no longer exposes report-url/repos-tracked/surveys-today/count-status outputs, or the steps that only fed them', () => {
+    const outputs = (observeJob as {outputs?: Record<string, string>})?.outputs ?? {}
+    expect(Object.keys(outputs)).toStrictEqual(['wiki-changed'])
+    expect(findStepIndex(observeJob, step => step.name === '🔍 Discover daily report URL')).toBe(-1)
+    expect(findStepIndex(observeJob, step => step.name === '📊 Derive daily digest counts')).toBe(-1)
+  })
+
+  it('declares fro-bot-observe-announce needing fro-bot-observe, with no fro-bot/agent step (trusted-writer invariant)', () => {
+    expect(announceJob).toBeDefined()
+    expect((announceJob as {needs?: string})?.needs).toBe('fro-bot-observe')
+    expect(findStepIndex(announceJob, step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBe(-1)
+  })
+
+  it('fro-bot-observe-announce checks out the default branch with persist-credentials: false', () => {
+    const checkoutStep = announceJob?.steps?.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('fro-bot-observe-announce gates only on dry-run/DAILY_DIGEST_ENABLED — no needs.fro-bot-observe.outputs reference (those outputs no longer exist)', () => {
+    const jobIf = String((announceJob as {if?: string})?.if ?? '')
+    expect(jobIf).toContain("inputs.prompt == ''")
+    expect(jobIf).toContain("vars.DAILY_DIGEST_ENABLED == 'true'")
+    expect(jobIf).not.toContain('needs.fro-bot-observe')
+  })
+
+  it('does not add job-level permissions (reusable workflow — relies on the workflow-level contents: read)', () => {
+    expect((announceJob as {permissions?: unknown})?.permissions).toBeUndefined()
+  })
+
+  it('overlays metadata from the data branch before discovering the report URL or deriving counts', () => {
+    const steps = announceJob?.steps ?? []
+    const overlayIndex = steps.findIndex(step => step.name === '⤵ Overlay metadata from data branch')
+    const discoverIndex = steps.findIndex(step => step.name === '🔍 Discover daily report URL')
+    const countsIndex = steps.findIndex(step => step.name === '📊 Derive daily digest counts')
+    expect(overlayIndex).toBeGreaterThanOrEqual(0)
+    expect(discoverIndex).toBeGreaterThan(overlayIndex)
+    expect(countsIndex).toBeGreaterThan(overlayIndex)
+  })
+
+  it('discovers the report URL trusted-side with an App token minted in this job (no agent step here, so minting is safe)', () => {
+    const mintStep = announceJob?.steps?.find(step => step.id === 'report-token')
+    const discoverStep = announceJob?.steps?.find(step => step.name === '🔍 Discover daily report URL')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+    expect(mintStep?.with?.['permission-issues']).toBe('read')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).toContain('steps.report-token.outputs.token')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).not.toContain('FRO_BOT_PAT')
+    const run = String(discoverStep?.run ?? '')
+    expect(run).toContain('Daily Fro Bot Report')
+    expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
+  })
+
+  it('derives digest counts trusted-side from metadata/repos.yaml via the same script the old observe step used', () => {
+    const countsStep = announceJob?.steps?.find(step => step.name === '📊 Derive daily digest counts')
+    expect(String(countsStep?.run ?? '')).toContain('scripts/daily-digest-counts.ts')
+  })
+
+  it('validates count_status/report-url shape and repos-tracked/surveys-today as non-negative integers before announcing, reading from its own steps (not needs.fro-bot-observe)', () => {
+    const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+    expect(String(validateStep?.env?.REPORT_URL ?? '')).toContain('steps.report-url.outputs.report_url')
+    expect(String(validateStep?.env?.REPOS_TRACKED ?? '')).toContain('steps.digest-counts.outputs.repos_tracked')
+    expect(String(validateStep?.env?.SURVEYS_TODAY ?? '')).toContain('steps.digest-counts.outputs.surveys_today')
+    expect(String(validateStep?.env?.COUNT_STATUS ?? '')).toContain('steps.digest-counts.outputs.count_status')
+
+    const run = String(validateStep?.run ?? '')
+    expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
+    expect(run).toContain("grep -qE '^[0-9]+$'")
+    expect(run).toContain('::error::')
+
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.if ?? '')).toContain("steps.validated.outputs.valid == 'true'")
+  })
+
+  // Non-vacuity for the item-2 fix: if the announce step (or the values it validates) ever
+  // points back at needs.fro-bot-observe.outputs.*, this must fail — those outputs are
+  // agent-influenceable and no longer exist on fro-bot-observe at all.
+  it("the announce step and the values it validates read from this job's own trusted steps, never from needs.fro-bot-observe", () => {
+    const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+
+    for (const step of [validateStep, announceStep]) {
+      const envText = JSON.stringify(step?.env ?? {})
+      expect(envText).not.toContain('needs.fro-bot-observe')
+    }
+
+    expect(String(announceStep?.env?.REPORT_URL ?? '')).toContain('steps.report-url.outputs.report_url')
+    expect(String(announceStep?.env?.REPOS_TRACKED ?? '')).toContain('steps.digest-counts.outputs.repos_tracked')
+    expect(String(announceStep?.env?.SURVEYS_TODAY ?? '')).toContain('steps.digest-counts.outputs.surveys_today')
+    expect(String(announceStep?.env?.GATEWAY_WEBHOOK_SECRET ?? '')).toContain('secrets.GATEWAY_WEBHOOK_SECRET')
+  })
+})
+
+describe('fro-bot-observe-announce: 🔒 Validate digest values — extract-and-execute against fixtures (shell-flow, not a hosted GHA run)', () => {
+  const announceJob = froBotParsed.jobs['fro-bot-observe-announce']
+  const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+  const runScript = String(validateStep?.run ?? '')
+
+  function runValidateStep(
+    env: Partial<Record<'REPORT_URL' | 'REPOS_TRACKED' | 'SURVEYS_TODAY' | 'COUNT_STATUS', string>>,
+  ): {status: number; valid: string | undefined} {
+    const dir = mkdtempSync(join(tmpdir(), 'fro-bot-validate-digest-'))
+    try {
+      const scriptPath = join(dir, 'step.sh')
+      writeFileSync(scriptPath, runScript)
+      const outputPath = join(dir, 'github-output')
+      writeFileSync(outputPath, '')
+      const runEnv = {
+        COUNT_STATUS: 'ok',
+        REPORT_URL: '',
+        REPOS_TRACKED: '',
+        SURVEYS_TODAY: '',
+        ...env,
+        PATH: process.env.PATH ?? '',
+        GITHUB_OUTPUT: outputPath,
+      }
+      let status = 0
+      try {
+        execFileSync('bash', ['-c', 'bash "$0"', scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+      } catch (error) {
+        status = (error as {status?: number}).status ?? 1
+      }
+      const outputContent = readFileSync(outputPath, 'utf8')
+      const match = /^valid=(.*)$/m.exec(outputContent)
+      return {status, valid: match?.[1]}
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  }
+
+  it('finds the Validate digest values step (guards against a vacuous pass if the step were renamed/removed)', () => {
+    expect(validateStep).toBeDefined()
+  })
+
+  it('produces valid=true for a valid report URL and valid counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.status).toBe(0)
+    expect(result.valid).toBe('true')
+  })
+
+  it('produces valid=false for a URL scoped to another repo', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/other-org/other-repo/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for a URL that is not an issue (a pull request)', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/pull/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for a URL with a trailing injection string', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123; rm -rf /',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for non-numeric counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: 'abc',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for negative counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '-1',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for empty values', () => {
+    const result = runValidateStep({REPORT_URL: '', REPOS_TRACKED: '', SURVEYS_TODAY: ''})
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false when count_status is not ok, without ever evaluating the report URL', () => {
+    const result = runValidateStep({
+      COUNT_STATUS: 'error',
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('the announce step never runs unless this step set valid=true (structural check pairing the fixture runs above)', () => {
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.if ?? '')).toBe("steps.validated.outputs.valid == 'true'")
+  })
+})
