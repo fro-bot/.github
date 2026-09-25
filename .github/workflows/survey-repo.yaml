@@ -49,28 +49,23 @@ env:
     Repo wiki slug: $TARGET_SLUG
 
 jobs:
-  survey-repo:
-    name: Survey Repo
+  # ─── Trusted pre-agent resolver: privacy verification only ──────────────────
+  # No agent step in this job, ever. actions/create-github-app-token declares a
+  # `post:` phase that re-reads its own `with:` inputs (app-id, APPLICATION_PRIVATE_KEY)
+  # from runner state after every main step in the SAME job — including an agent step,
+  # whose shell can tamper with the runner's _actions tree. Minting here, in a job with
+  # no agent step at all, means there is no tampered post.cjs that could ever run.
+  # See scripts/agent-post-step-credential-guard.test.ts rules (d)/(e).
+  survey-resolve:
+    name: Resolve and verify target repository
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions: {}
     outputs:
-      wiki-artifact-ready: ${{ steps.wiki-handoff-upload.outcome }}
-      agent-conclusion: ${{ steps.survey-agent.conclusion }}
       resolve-outcome: ${{ steps.resolve.outcome }}
       resolve-owner: ${{ steps.resolve.outputs.owner }}
       resolve-repo: ${{ steps.resolve.outputs.repo }}
-      onboarded: ${{ steps.onboarded.outputs.onboarded }}
-      target-repository: ${{ steps.ingest-prompt.outputs.target-repository }}
-      target-slug: ${{ steps.ingest-prompt.outputs.target-slug }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-
-      - name: 📦 Setup
-        uses: ./.github/actions/setup
-
       # The privacy gate's only question is "is this node a public repository?" That
       # is a public read, but it must work for repos in any org the dispatch lands
       # on — including orgs whose policy forbids long-lived fine-grained PATs (e.g.
@@ -132,6 +127,26 @@ jobs:
             printf 'node_id=%s\n' "$NODE_ID"
           } >> "$GITHUB_OUTPUT"
 
+  survey-repo:
+    name: Survey Repo
+    needs: survey-resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      wiki-artifact-ready: ${{ steps.wiki-handoff-upload.outcome }}
+      agent-conclusion: ${{ steps.survey-agent.conclusion }}
+      onboarded: ${{ steps.onboarded.outputs.onboarded }}
+      target-repository: ${{ steps.ingest-prompt.outputs.target-repository }}
+      target-slug: ${{ steps.ingest-prompt.outputs.target-slug }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
       - name: Sync wiki from data branch
         uses: ./.github/actions/sync-wiki
 
@@ -153,8 +168,8 @@ jobs:
       - name: Check repo onboarded
         id: onboarded
         env:
-          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
-          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
         run: |
           if git ls-remote --exit-code origin data >/dev/null 2>&1; then
             git fetch origin data || true
@@ -190,8 +205,8 @@ jobs:
       - name: Resolve ingest prompt
         id: ingest-prompt
         env:
-          TARGET_OWNER: ${{ steps.resolve.outputs.owner }}
-          TARGET_REPO: ${{ steps.resolve.outputs.repo }}
+          TARGET_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          TARGET_REPO: ${{ needs.survey-resolve.outputs.resolve-repo }}
           PROMPT_TEMPLATE: ${{ env.INGEST_PROMPT }}
         run: |
           delimiter="EOF_$(openssl rand -hex 8)"
@@ -308,7 +323,7 @@ jobs:
   # was cancelled or timed out — mirrors the old same-job cancelled/timeout fallback.
   survey-persist:
     name: Persist survey results
-    needs: survey-repo
+    needs: [survey-resolve, survey-repo]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: always()
@@ -356,7 +371,7 @@ jobs:
       # the recheck itself runs more often.
       - name: 🔑 Mint App token for recheck
         id: recheck-token
-        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
+        if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
@@ -368,7 +383,7 @@ jobs:
       # above for why this runs on resolve-outcome, not agent-conclusion.
       - name: 🔒 Recheck visibility
         id: recheck
-        if: ${{ always() && needs.survey-repo.outputs.resolve-outcome == 'success' }}
+        if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
           GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
@@ -477,11 +492,11 @@ jobs:
         id: record-result
         if: >-
           ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' &&
-          needs.survey-repo.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
+          needs.survey-resolve.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
-          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS:
@@ -502,8 +517,8 @@ jobs:
           (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
         env:
           EVENT_TYPE: survey_completed
-          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
-          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_SLUG: ${{ needs.survey-repo.outputs.target-slug }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
@@ -540,12 +555,12 @@ jobs:
       - name: Record survey result (cancelled/timeout fallback)
         if: >-
           ${{ (needs.survey-repo.result == 'cancelled' || needs.survey-repo.result == 'failure' || cancelled() || failure()) &&
-          steps.record-result.outcome != 'success' && needs.survey-repo.outputs.resolve-outcome == 'success' &&
+          steps.record-result.outcome != 'success' && needs.survey-resolve.outputs.resolve-outcome == 'success' &&
           steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO_OWNER: ${{ needs.survey-repo.outputs.resolve-owner }}
-          REPO_NAME: ${{ needs.survey-repo.outputs.resolve-repo }}
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS: failure

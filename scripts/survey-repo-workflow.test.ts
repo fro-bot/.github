@@ -15,7 +15,7 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   steps: WorkflowStep[]
-  needs?: string
+  needs?: string | string[]
   if?: string
   permissions?: Record<string, string>
   outputs?: Record<string, string>
@@ -94,9 +94,9 @@ describe('survey-repo.yaml App-token persistence migration', () => {
   const surveyJob = workflowParsed.jobs['survey-repo']
   const persistJob = workflowParsed.jobs['survey-persist']
 
-  it('declares survey-persist needing survey-repo, running with if: always()', () => {
+  it('declares survey-persist needing survey-resolve and survey-repo, running with if: always()', () => {
     expect(persistJob).toBeDefined()
-    expect(persistJob?.needs).toBe('survey-repo')
+    expect(persistJob?.needs).toStrictEqual(['survey-resolve', 'survey-repo'])
     expect(String(persistJob?.if ?? '')).toContain('always()')
   })
 
@@ -111,18 +111,21 @@ describe('survey-repo.yaml App-token persistence migration', () => {
     expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
   })
 
-  it('survey-persist mints its own App token, distinct from the initial gate token minted in survey-repo', () => {
+  it('survey-persist mints its own App token, distinct from the gate token minted in survey-resolve (a separate job with no agent step)', () => {
     const mintStep = persistJob?.steps.find(step => step.id === 'app-token')
     expect(mintStep?.uses).toContain('actions/create-github-app-token@')
   })
 
-  it('survey-repo mints no App token after its agent step (trusted-writer invariant)', () => {
+  // Review (P1): actions/create-github-app-token has a post: phase that re-reads its own
+  // inputs from runner state after every main step in the job, including the agent step.
+  // A pre-agent mint is exposed exactly like a post-agent one, so survey-repo (the agent
+  // job) must mint no App token at all, anywhere — not just after the agent step.
+  it('survey-repo (the agent job) mints no App token anywhere — the gate mint moved to survey-resolve, a job with no agent step', () => {
     const agentIndex = surveyJob?.steps.findIndex(step => step.id === 'survey-agent') ?? -1
     expect(agentIndex).toBeGreaterThanOrEqual(0)
-    const mintIndicesAfterAgent = (surveyJob?.steps ?? [])
-      .slice(agentIndex + 1)
-      .filter(step => (step.uses ?? '').startsWith('actions/create-github-app-token@'))
-    expect(mintIndicesAfterAgent).toStrictEqual([])
+    expect(
+      surveyJob?.steps.find(step => (step.uses ?? '').startsWith('actions/create-github-app-token@')),
+    ).toBeUndefined()
   })
 
   it.each([
@@ -157,21 +160,49 @@ describe('survey-repo.yaml App-token persistence migration', () => {
 
   it('exposes the job outputs survey-persist depends on for gating (no recheck outputs — those are local to survey-persist now)', () => {
     const outputs = surveyJob?.outputs ?? {}
-    for (const key of [
-      'wiki-artifact-ready',
-      'agent-conclusion',
-      'resolve-outcome',
-      'resolve-owner',
-      'resolve-repo',
-      'onboarded',
-      'target-repository',
-      'target-slug',
-    ]) {
+    for (const key of ['wiki-artifact-ready', 'agent-conclusion', 'onboarded', 'target-repository', 'target-slug']) {
       expect(outputs[key], `missing job output: ${key}`).toBeDefined()
     }
+    // Moved off survey-repo entirely — survey-resolve is a separate, pre-agent-mint-only
+    // job now (review: an App-token mint must never share a job with fro-bot/agent).
+    expect(outputs['resolve-outcome']).toBeUndefined()
+    expect(outputs['resolve-owner']).toBeUndefined()
+    expect(outputs['resolve-repo']).toBeUndefined()
     expect(outputs['recheck-conclusion']).toBeUndefined()
     expect(outputs['recheck-private']).toBeUndefined()
     expect(outputs['ts-now']).toBeUndefined()
+  })
+})
+
+describe('survey-repo.yaml: survey-resolve — pre-agent App-token mint isolated from every agent job', () => {
+  const resolveJob = workflowParsed.jobs['survey-resolve']
+  const surveyJob = workflowParsed.jobs['survey-repo']
+
+  it('declares survey-resolve with no agent step and no checkout — it only mints and resolves', () => {
+    expect(resolveJob).toBeDefined()
+    expect(resolveJob?.steps.find(step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBeUndefined()
+    expect(resolveJob?.steps.find(step => (step.uses ?? '').startsWith('actions/checkout@'))).toBeUndefined()
+  })
+
+  it('exposes resolve-outcome/resolve-owner/resolve-repo as survey-resolve job outputs', () => {
+    const outputs = resolveJob?.outputs ?? {}
+    expect(outputs['resolve-outcome']).toContain('steps.resolve.outcome')
+    expect(outputs['resolve-owner']).toContain('steps.resolve.outputs.owner')
+    expect(outputs['resolve-repo']).toContain('steps.resolve.outputs.repo')
+  })
+
+  it('survey-repo needs survey-resolve and reads owner/repo from it, never from its own steps.resolve', () => {
+    expect(surveyJob?.needs).toBe('survey-resolve')
+    for (const step of surveyJob?.steps ?? []) {
+      const text = JSON.stringify(step.env ?? {})
+      expect(text).not.toContain('steps.resolve.')
+    }
+    const onboardedStep = surveyJob?.steps.find(step => step.name === 'Check repo onboarded')
+    expect(String(onboardedStep?.env?.REPO_OWNER ?? '')).toContain('needs.survey-resolve.outputs.resolve-owner')
+    expect(String(onboardedStep?.env?.REPO_NAME ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
+    const ingestPromptStep = surveyJob?.steps.find(step => step.name === 'Resolve ingest prompt')
+    expect(String(ingestPromptStep?.env?.TARGET_OWNER ?? '')).toContain('needs.survey-resolve.outputs.resolve-owner')
+    expect(String(ingestPromptStep?.env?.TARGET_REPO ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
   })
 })
 
@@ -255,7 +286,7 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
     expect(String(recheckTokenStep?.if ?? '')).toBe(String(recheckStep?.if ?? ''))
     expect(String(recheckStep?.if ?? '')).toContain('always()')
-    expect(String(recheckStep?.if ?? '')).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(String(recheckStep?.if ?? '')).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
     expect(String(recheckStep?.if ?? '')).not.toContain('agent-conclusion')
   })
 
@@ -269,13 +300,13 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     // require agent-conclusion to be any particular value, so a pre-agent failure still lets
     // it run.
     expect(recheckCondition).toMatch(/always\(\)/)
-    expect(recheckCondition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(recheckCondition).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
 
     const fallbackStep = persistJob?.steps.find(
       step => step.name === 'Record survey result (cancelled/timeout fallback)',
     )
     const fallbackCondition = String(fallbackStep?.if ?? '')
-    expect(fallbackCondition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(fallbackCondition).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
     expect(fallbackCondition).toContain("steps.recheck.conclusion == 'success'")
   })
 
@@ -305,7 +336,7 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
   it("Record survey result requires resolve-outcome == 'success', guarding against an empty REPO_OWNER/REPO_NAME when survey-repo ends before the agent runs", () => {
     const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
     const condition = String(recordStep?.if ?? '')
-    expect(condition).toContain("needs.survey-repo.outputs.resolve-outcome == 'success'")
+    expect(condition).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
     expect(condition).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
     expect(condition).toContain("steps.recheck.conclusion == 'success'")
   })
