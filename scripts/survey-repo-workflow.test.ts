@@ -603,7 +603,10 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
       expect(prompt).not.toContain('steps.survey-agent')
       expect(prompt).not.toMatch(/steps\.[\w-]*retry[\w-]*\.outputs/)
       expect(prompt.toLowerCase()).toContain('mandatory')
-      expect(prompt.toLowerCase()).toContain('log entry')
+      // A "just log why you couldn't finish" instruction would itself be a wiki change
+      // (log.md), so `changed=true`, recording the very false success this plan fixes.
+      expect(prompt.toLowerCase()).toContain('make no wiki changes')
+      expect(prompt.toLowerCase()).not.toContain('append a log entry')
     })
   })
 

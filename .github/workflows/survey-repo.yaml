@@ -320,9 +320,9 @@ jobs:
             </persona>
 
             The previous attempt in this run ended without the required wiki changes
-            (the repo page, the index, and the log entry). Those changes are mandatory.
-            If the survey truly cannot be completed, append a log entry to
-            `knowledge/log.md` explaining exactly why.
+            (the repo page, the index, and the log entry), and those changes are
+            mandatory. If the survey truly cannot be completed, state exactly why in
+            your final response and make no wiki changes.
 
             ${{ steps.ingest-prompt.outputs.prompt }}
 
@@ -362,9 +362,9 @@ jobs:
             </persona>
 
             The previous attempt in this run ended without the required wiki changes
-            (the repo page, the index, and the log entry). Those changes are mandatory.
-            If the survey truly cannot be completed, append a log entry to
-            `knowledge/log.md` explaining exactly why.
+            (the repo page, the index, and the log entry), and those changes are
+            mandatory. If the survey truly cannot be completed, state exactly why in
+            your final response and make no wiki changes.
 
             ${{ steps.ingest-prompt.outputs.prompt }}
 
