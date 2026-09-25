@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-09-09
+updated: 2026-09-25
 sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
@@ -28,6 +28,9 @@ sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-09-09
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-09-25
 tags:
   - github-pages
   - custom-domain
@@ -41,6 +44,8 @@ related:
   - marcusrbrown--infra
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
+  - fro-bot--systematic
+  - github-pages
 node_id: R_kgDORLxXng
 ---
 
@@ -61,8 +66,8 @@ Org-level GitHub Pages custom domain holder for the `fro-bot` organization. Serv
 | License         | None                                                    |
 | Has Pages       | Yes                                                     |
 | Custom domain   | `fro.bot` (CNAME)                                       |
-| HTTPS           | Let's Encrypt cert for `fro.bot` + `www.fro.bot`, **issued 2026-08-08, expires 2026-11-06** (measured live 2026-09-09) |
-| HTTPS enforced  | No — confirmed behaviorally 2026-09-09 (see [Live Domain Probes](#live-domain-probes-2026-09-09)) |
+| HTTPS           | Let's Encrypt cert for `fro.bot` + `www.fro.bot`, **issued 2026-08-08, expires 2026-11-06** (measured live 2026-09-09; re-measured identical 2026-09-25) |
+| HTTPS enforced  | No — confirmed behaviorally 2026-09-09 and again 2026-09-25 (see [Live Domain Probes](#live-domain-probes-2026-09-09)) |
 | Build type      | Legacy (serves from `main` branch `/` path)             |
 | Size            | 0 KB (single CNAME file)                                |
 | Topics          | None                                                    |
@@ -143,6 +148,24 @@ The escalation was conditioned on a token the surveys did not have, for a fact t
 - **Carrying a value forward is a decision to stop measuring it.** Label it that way, and each carry should ask what the cheapest independent channel is — not just whether the previous channel is available.
 - **Prefer the channel that observes the artifact over the one that reports on it.** The API describes GitHub's intended Pages configuration; the handshake, the redirect chain, and `dig` observe what the internet actually receives. Here the observing channels were both more available and more current.
 
+### Re-measurement (2026-09-25)
+
+Ninth survey, still without an API token, so the 2026-09-09 probes were re-run instead of carried forward. That is the method the previous section asked for. Every row matches:
+
+| Probe | 2026-09-09 | 2026-09-25 |
+| ----- | ---------- | ---------- |
+| `https://fro-bot.github.io/` | `301 → http://fro.bot/` | `301 → http://fro.bot/` — **downgrade still live** |
+| `http://fro.bot/` | cleartext 404, no HSTS | cleartext 404, no HSTS |
+| `https://www.fro.bot/` | `301 → https://fro.bot/` | `301 → https://fro.bot/` |
+| TLS leaf | LE `YR1`, `2026-08-08 → 2026-11-06`, SAN apex+`www` | identical |
+| `A` / `AAAA` / `CAA` | 4× Pages anycast / none / none | identical |
+| `NS` / `MX` / SPF / DMARC | `box.heatvision.co` / `p=quarantine`, no `rua` | identical |
+| `_github-pages-challenge-fro-bot` TXT | none | none |
+
+The four 2026-09-09 findings are a stable state, not a one-off reading. None of the remediation actions below has happened.
+
+**Renewal forecast, written as a measurement to take.** The current leaf expires 2026-11-06 and is ~42 days from expiry on this date. The previous leaf was replaced ~30 days before its 2026-09-07 expiry (on 2026-08-08). If that cadence holds, expect a new `notBefore` around **2026-10-07**. A survey after that date should run the handshake, not repeat this forecast. A `notBefore` still at 2026-08-08 after mid-October would be the real signal worth escalating.
+
 ## Domain Usage
 
 The `fro.bot` domain is the vanity namespace for the Fro Bot organization:
@@ -155,6 +178,10 @@ The `fro.bot` domain is the vanity namespace for the Fro Bot organization:
 **Incidental cross-repo observation.** `https://fro.bot/systematic/` returned 200 with `last-modified: 2026-09-08 04:17:27 UTC`, and its OCX registry at `/systematic/index.json` reads **`version 3.16.5`** with **73 components** (23,900 bytes; top-level keys `name`/`namespace`/`version`/`author`/`components`). Two things this corroborates for [[fro-bot--systematic]]: the release-gated deploy is live and recent (the 09-04 "drought" reading remains correctly diagnosed as compositional), and **components are flat at 73 for a fifth consecutive observation** while the version moved 3.15.0 (09-04) → 3.16.1 (09-05, source-side) → **3.16.5** — reinforcing that component count and release cadence are independent measurements on this target.
 
 **Unresolved.** The wiki records that [[fro-bot--systematic]] hosts a pinned JSON Schema at `/schemas/v<major>/`. Probes of `fro.bot/schemas/`, `fro.bot/systematic/schemas/`, `fro.bot/systematic/schemas/v3/`, and `…/systematic.json` all returned 404, and the docs sitemap contains a single `<loc>`. These were guessed paths, so this is **not** a claim that the schema is unpublished — only that its serving path is not where a reader of that description would look. A source-side survey of [[fro-bot--systematic]] should record the exact URL.
+
+**Resolved 2026-09-19 (via [[fro-bot--systematic]]), re-confirmed 2026-09-25.** The schema is served at `/systematic/schemas/{latest,v3}/systematic-config.schema.json`. On 2026-09-25, `…/v3/systematic-config.schema.json` returned 200 with 60,253 B. The 2026-09-09 404s came from guessing paths under the domain root. The deployment was fine. The ambiguous description was the only defect.
+
+**Update 2026-09-25: the "flat at 73" reading above is superseded.** `fro.bot/systematic/` still returns 200, now with `last-modified: 2026-09-20 01:08:19 UTC`. The OCX registry at `/systematic/index.json` reads **`version 3.20.0`** with **74 components** (24,268 B). The move from 73 to 74 was already recorded source-side on 2026-09-19: the added skill is `ce-review-cleanup`, first shipped in `3.17.0`. So this page's "fifth consecutive flat" was the last flat observation, not a trend. `/dashboard/`, `/agent/`, `/space-bus/`, and `/schemas/` still return 404. `systematic` is still the only live project path.
 
 ## Collaborators
 
@@ -196,7 +223,7 @@ Given this repo has no application code and a single static file, most of these 
 3. **Add `AAAA` records** for `2606:50c0:8000::153` … `8003::153` — the Pages edge is dual-stack; only the custom domain is IPv4-only, so the domain is unreachable from IPv6-only networks for no reason.
 4. **Add a `CAA` record** constraining issuance to the CA that actually serves the domain.
 5. **Add Probot Settings** extending `fro-bot/.github:common-settings.yaml` for branch protection consistency
-6. **Add a Fro Bot workflow** — even a minimal one for issue triage and settings oversight. **Still absent as of 2026-09-09** (`.github/workflows/fro-bot.yaml` → 404, eighth consecutive survey). This repo remains the ecosystem's only surveyed public repo with no agent workflow at all and no plausible reason to lack one beyond low perceived stakes — a follow-up draft PR is warranted, and this survey's findings (a live downgrade, a missing verification record, an IPv6 gap) are the argument for it: the repo has no code to review, but it has infrastructure state worth watching on a schedule.
+6. **Add a Fro Bot workflow** — even a minimal one for issue triage and settings oversight. **Still absent as of 2026-09-09** (`.github/workflows/fro-bot.yaml` → 404, eighth consecutive survey). **Still absent 2026-09-25** (ninth consecutive survey). The 2026-09-25 re-measurement shows the argument concretely: all four infrastructure defects stayed unchanged for 16 days, and only a manual survey noticed. A scheduled workflow that runs the handshake, the redirect chain, and `dig` would turn that into a monitored state. A follow-up draft PR is still warranted and should be proposed separately. This repo remains the ecosystem's only surveyed public repo with no agent workflow at all and no plausible reason to lack one beyond low perceived stakes — a follow-up draft PR is warranted, and this survey's findings (a live downgrade, a missing verification record, an IPv6 gap) are the argument for it: the repo has no code to review, but it has infrastructure state worth watching on a schedule.
 7. **Add a README** with the repo's purpose and its relationship to the `fro.bot` domain
 
 ## Cross-References
@@ -220,3 +247,4 @@ Given this repo has no application code and a single static file, most of these 
 | 2026-07-25 | `3e44653` | No-delta re-survey. HEAD still frozen (169 days since last push on 2026-02-09); `git ls-remote` confirms `main` = `3e44653`. Raw-content probes confirm the tree is unchanged: `CNAME` (`fro.bot`) present (HTTP 200); no README (404), no `.github/workflows/fro-bot.yaml` (404), no `.github/settings.yml` (404). Fro Bot workflow, Probot Settings, and README/license all still **absent** — all four follow-up recommendations carried forward. **Read-scope note:** this survey had no GitHub API token, so Pages config, TLS cert state, issue #1 status, and domain-verification fields could not be re-fetched; they are carried forward from 2026-06-26 unverified this cycle, not re-confirmed. TLS cert expiry **2026-09-07** now ~44 days out — approaching the next renewal window; watch on subsequent surveys. |
 | 2026-08-10 | `3e44653` | No-delta re-survey. HEAD still frozen (185 days since last push on 2026-02-09); `git ls-remote` confirms `main` = `3e44653`. Raw-content probes confirm the tree is byte-identical: `CNAME` present and equal to `fro.bot` (HTTP 200); no README (404), no `.github/workflows/fro-bot.yaml` (404), no `.github/settings.yml` (404), no `index.html` (404). Fro Bot workflow, Probot Settings, and README/license all still **absent** — all four follow-up recommendations carried forward unchanged. **Read-scope note:** no GitHub API token this cycle (`GH_TOKEN`/`GITHUB_TOKEN` both unset), so Pages config, TLS cert state, issue #1 status, and domain-verification fields could not be re-fetched; carried forward from 2026-06-26 unverified, not re-confirmed. TLS cert expiry **2026-09-07** now ~28 days out — **inside the renewal window** (the ~90-day auto-renewal for a 2026-09-07 cert should surface a new far-future expiry around late-August/early-September); if a future token-bearing survey still shows 2026-09-07 past that point, escalate. |
 | 2026-09-09 | `3e44653` | **Tree still frozen (212 days, eighth survey at the same SHA) — and the first survey to find real change, because it stopped asking GitHub and started asking the internet.** `git ls-remote` confirms `main` = `3e44653`; raw probes byte-identical (`CNAME` = `fro.bot` 200; README / `index.html` / `fro-bot.yaml` / `settings.yml` / `LICENSE.md` / `.nojekyll` all 404). No API token again — so this cycle measured the domain directly instead of carrying values forward. **Four findings.** (1) **Live TLS downgrade:** `https://fro-bot.github.io/` → `301 Location: http://fro.bot/` → cleartext 404, no HSTS anywhere, while `https://www.fro.bot/` → `https://fro.bot/` keeps the scheme — the `https_enforced: false` flag has a reproducible consequence, not just a checklist entry. (2) **The 2026-09-07 cert expiry is retired:** live handshake reads Let's Encrypt `CN=YR1`, `notBefore 2026-08-08`, `notAfter 2026-11-06`, SAN `fro.bot`/`www.fro.bot` — renewal happened **two days before** the 2026-08-10 survey warned it was pending, and the escalation trigger it wrote was conditioned on a token that was never needed. Generalized to [[github-pages]] as _carrying a value forward is a decision to stop measuring it_ and _prefer the channel that observes the artifact over the one that reports on it_. (3) **`unverified` root-caused:** `_github-pages-challenge-fro-bot.fro.bot` TXT does not exist — the domain was never verified because the challenge record was never published; DNS is self-hosted at `ns1/ns2.box.heatvision.co`, so the fix needs zone access, not a settings click. (4) **DNS gaps:** no `AAAA` (IPv4-only; unreachable from IPv6-only clients), no `CAA` (unconstrained issuance) on a domain that also runs mail (`MX box.heatvision.co`, SPF `v=spf1 mx -all`, DMARC `p=quarantine` with no `rua`) and signs published package authorship. Project-path probe: `fro.bot/systematic/` is the only live path (200, last-modified 2026-09-08); `/dashboard/`, `/agent/`, `/space-bus/`, `/schemas/` all 404. Incidental for [[fro-bot--systematic]]: OCX registry at `version 3.16.5`, **components flat at 73** (fifth consecutive). Follow-up list reordered — HTTPS enforcement promoted to #1, three DNS actions added; Fro Bot workflow still absent (eighth survey). |
+| 2026-09-25 | `3e44653` | **No delta in the tree (228 days frozen, ninth survey at the same SHA); every 2026-09-09 finding is re-measured and still holds.** `git ls-remote` shows `main` = `3e44653`. Raw probes are unchanged: `CNAME` = `fro.bot` (200), and README / `index.html` / `fro-bot.yaml` / `settings.yml` / `LICENSE.md` / `.nojekyll` all return 404. Still no API token, so this cycle re-ran the live probes instead of carrying values forward. The `github.io` → `http://fro.bot/` downgrade is still live and no response sends HSTS. The TLS leaf is unchanged (LE `YR1`, `2026-08-08 → 2026-11-06`). DNS is identical: no `AAAA`, no `CAA`, and no `_github-pages-challenge-fro-bot` TXT; mail and DMARC records are unchanged. None of the seven follow-up actions has happened. **Recorded a forecast as a measurement to take:** if the ~30-day pre-expiry renewal cadence holds, the next leaf should appear around 2026-10-07; escalate only if `notBefore` is still 2026-08-08 after mid-October. **Two cross-page updates.** (1) The 09-09 schema-path open item was already resolved source-side on 2026-09-19. It is re-confirmed here: `/systematic/schemas/v3/systematic-config.schema.json` returns 200 with 60,253 B. (2) The 09-09 "components flat at 73 (fifth consecutive)" reading is **superseded**: the registry now reads `version 3.20.0` with **74** components, and the docs `last-modified` is 2026-09-20. `systematic` is still the only live project path. Fro Bot workflow still absent (ninth survey); a separate draft PR is still recommended. |

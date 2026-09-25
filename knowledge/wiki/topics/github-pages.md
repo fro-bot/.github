@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-21
+updated: 2026-09-25
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-09-09
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-09-25
 tags:
   [
     github-pages,
@@ -184,6 +187,8 @@ The failure was not the absence of a token. It was treating one channel's unavai
 - **Every carry-forward should name the cheapest independent channel, not just the unavailable one.** "Not re-confirmed this cycle" is honest about provenance and silent about feasibility; those are different claims, and conflating them is how a stale value survives long enough to generate a false alarm.
 
 This is the inverse of the [[fro-bot--systematic]] lesson recorded above (_measure the gate, not the tree_): there, the wrong probe was too eager; here, the right probe was never attempted. Both reduce to picking the channel whose semantics match the question.
+
+**Write forecasts as measurements to take, not as alarms to carry (2026-09-25, [[fro-bot--fro-bot-github-io]]).** The 2026-09-25 survey re-ran every 2026-09-09 probe. None of the findings had changed: the downgrade, missing `AAAA`/`CAA`, and missing challenge TXT all remained 16 days later. It also recorded the observed renewal cadence. The prior Let's Encrypt leaf was replaced about 30 days before expiry, which predicts the next `notBefore` near 2026-10-07. That forecast is stated with the probe that tests it and the threshold that would make it a real signal (`notBefore` still 2026-08-08 after mid-October). The 2026-08-10 trigger failed because it was conditioned on a channel ("a future token-bearing survey"). A useful trigger names the observable and the date after which silence means something. Stable re-measurements of unremediated DNS and Pages defects are also the practical case for putting a custom-domain holder under scheduled monitoring. Manual surveys confirm the state but do not watch it.
 
 ## Performance Monitoring
 

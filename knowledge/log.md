@@ -6479,3 +6479,19 @@ Sources: https://github.com/fro-bot/.github/issues/3512, https://github.com/user
 Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@5d8f66b0cbffd54e0384525283caf79d40d1ba70
+
+## [2026-09-25 10:15] ingest | repo:fro-bot/fro-bot.github.io
+
+Re-survey with no tree delta. HEAD is still `3e44653`, which is 228 days frozen and the ninth survey at the same SHA. Raw probes are unchanged: `CNAME` = `fro.bot`, and README / `index.html` / `fro-bot.yaml` / `settings.yml` / `LICENSE.md` / `.nojekyll` all return 404. There was no API token, so the 2026-09-09 live probes were re-run instead of carried forward, and every finding still holds. The `github.io` → `http://fro.bot/` downgrade is live with no HSTS. The TLS leaf is unchanged (LE `YR1`, 2026-08-08 → 2026-11-06). DNS still has no `AAAA`, no `CAA`, and no `_github-pages-challenge-fro-bot` TXT. None of the seven follow-up actions has happened. The page records a renewal forecast (~2026-10-07) as a measurement to take, with an explicit escalation threshold.
+
+Two cross-page updates, both additive. The 09-09 schema-path open item is marked resolved: it was resolved source-side on 2026-09-19 and re-confirmed here with a 200 at `/systematic/schemas/v3/systematic-config.schema.json`. The "components flat at 73" reading is marked superseded by 74 at `3.20.0`. Fro Bot workflow still absent (ninth survey); a follow-up draft PR is still recommended, to be proposed separately.
+
+Pages touched: [[fro-bot--fro-bot-github-io]], [[github-pages]] (forecast-as-measurement rule); index entries for both. The repo index entry had been stale since 2026-06-15 and is now refreshed.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io@3e44653c4d185b239b44b3af12255d18c86463ab, https://fro.bot/, https://fro.bot/systematic/index.json
+
+## [2026-09-25 10:17] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
