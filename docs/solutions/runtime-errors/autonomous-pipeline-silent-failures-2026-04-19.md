@@ -134,3 +134,13 @@ After the fix lands, entries already contaminated with `last_survey_status: succ
 - First production failure: https://github.com/fro-bot/.github/actions/runs/24623241672
 - Related: `docs/solutions/runtime-errors/node-strip-only-typescript-2026-04-18.md` (prior "tests passed, production failed" trap)
 - Related: `docs/solutions/runtime-errors/octokit-invitation-method-names-2026-04-17.md` (prior "custom interface masked real API mismatch" trap)
+
+## Update (2026-09-25)
+
+Prevention item 5 above describes `record-survey-result` writing with `FRO_BOT_PAT` (a
+user PAT, `fro-bot` commits) as it stood at the time of this incident. That is no longer
+the topology: wiki ingest and survey metadata writes now run in separate trusted jobs
+(`survey-persist` in `.github/workflows/survey-repo.yaml`) with no agent step, fed by a
+validated handoff artifact from the agent job, and write with a fro-bot GitHub App
+installation token (`fro-bot[bot]` commits) minted in that trusted job. The historical
+narrative above is left as-is for the incident record.
