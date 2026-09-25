@@ -230,12 +230,7 @@ describe('buildWikiHandoff', () => {
     })
 
     it("includes a page the agent reverted back to exactly main's content, even though that produces no git-status entry", async () => {
-      // The page differed from `main` at baseline time (a data-only edit synced onto the
-      // working tree). The agent edits it back to exactly main's content, so relative to
-      // `HEAD` there is no diff at all — git status reports nothing for this path. It still
-      // exists on disk with content that differs from the baseline hash, so it must be
-      // included: applying it on the trusted side is the correct way to persist the agent's
-      // edit to `data`, which currently still has the pre-revert content.
+      // No git-status entry (content now matches HEAD), but still differs from the baseline hash.
       const mocks = makeBaselineMocks({
         baselineFiles: {'knowledge/wiki/repos/reverted.md': 'data-only-content'},
         currentContents: {'knowledge/wiki/repos/reverted.md': 'mains-content'},
@@ -282,9 +277,7 @@ describe('buildWikiHandoff', () => {
     })
 
     it('lists an agent-deleted, baseline-only (untracked) page as deleted even though git status has no entry for it', async () => {
-      // The page existed at baseline (untracked, data-only) and the agent removed it. Since it
-      // was never tracked in HEAD, its removal produces NO git-status entry at all — this must
-      // be detected by checking baseline paths against current disk existence, not git status.
+      // Untracked removal produces no git-status entry; detected via baseline-vs-disk existence.
       const mocks = makeBaselineMocks({
         baselineFiles: {'knowledge/wiki/repos/removed.md': 'baseline-content'},
         currentContents: {},
@@ -308,12 +301,7 @@ describe('buildWikiHandoff', () => {
     })
 
     it('excludes a tracked-in-HEAD deletion already caused by sync-wiki at baseline time (main tracks it, data does not)', async () => {
-      // sync-wiki's `git restore --worktree` deletes this path from the working tree BEFORE
-      // the agent ever runs, because `main` tracks it but `data` doesn't. It is therefore
-      // already in baseline.deleted, and the post-agent git status still reports it as
-      // deleted (the agent never touched it) — this must NOT be forwarded as an agent
-      // deletion, or every run touching an unrelated page would also delete this path from
-      // `data` via the trusted apply step.
+      // Already deleted at baseline (sync-wiki), so this must not be forwarded as an agent deletion.
       const mocks = makeBaselineMocks({
         baselineFiles: {},
         baselineDeleted: ['knowledge/wiki/repos/sync-caused-gone.md'],

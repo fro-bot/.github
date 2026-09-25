@@ -8,15 +8,8 @@ import {buildWikiHandoff} from './wiki-handoff-core.ts'
 const execFileAsync = promisify(execFile)
 
 /**
- * Runs in the (untrusted-adjacent) agent job, after the agent step, once a wiki diff has
- * already been detected against the pre-agent baseline. Holds no write credential and
- * writes no ingest metadata into the artifact — see `wiki-handoff-core.ts` module doc for
- * the security property this relies on.
- *
- * When `WIKI_HANDOFF_BASELINE_PATH` is set (pointing at a snapshot written by
- * `wiki-handoff-baseline.ts` before the agent ran), the manifest is scoped to only what
- * changed since that baseline — not every path `data` differs from `main` on. See
- * `wiki-handoff-core.ts`'s "Baseline scoping" module doc.
+ * Runs post-agent in the agent job (untrusted): builds the manifest.json + files/ delta.
+ * Scopes to WIKI_HANDOFF_BASELINE_PATH when set (see wiki-handoff-core.ts).
  */
 async function main(): Promise<void> {
   const outDir = requiredEnv('WIKI_HANDOFF_DIR')

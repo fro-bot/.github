@@ -5,51 +5,15 @@ import {promises as fs} from 'node:fs'
 import path from 'node:path'
 
 /**
- * Shared core for the cross-job wiki-ingest handoff protocol.
+ * Untrusted agent job builds a manifest.json + files/ delta (no ingest metadata — that's
+ * forgeable) for a trusted, agent-free job to validate and apply with an App token.
  *
- * The agent job (untrusted: the LLM agent's shell can rewrite any file in the checkout,
- * including this script) builds a delta artifact describing only knowledge/wiki/**,
- * knowledge/index.md, and knowledge/log.md changes. A separate, trusted job (fresh
- * checkout of the default branch, no agent step) downloads and validates that artifact
- * before applying it to a clean tree and running the privileged wiki-ingest / metadata
- * writers with an App installation token.
- *
- * Security property: the build side never holds a write credential, so a tampered build
- * script can at most smuggle bad *content* into the artifact — never exfiltrate a token or
- * write outside the allowed scope — because every path is re-validated in the trusted job
- * before touching disk there.
- *
- * The artifact carries ONLY `manifest.json` (the changed/deleted path lists) and a
- * `files/` directory holding the changed files' contents — nothing else. In particular it
- * never carries ingest metadata (commit message, target, sources): a tampered build
- * script could otherwise forge those values (e.g. smuggle a private repo name into
- * `WIKI_TARGET`) and have the trusted job commit them unvalidated. Every trusted job
- * derives `WIKI_*` env from its own trusted sources (`github.*` context, `inputs.*`, or
- * pre-agent `needs.*` job outputs) instead. {@link validateAndApplyWikiHandoff} rejects
- * any unexpected top-level entry in the artifact, so even a compromised build script
- * cannot resurrect a metadata file.
- *
- * Baseline scoping: `sync-wiki` restores `knowledge/` from the `data` branch into the
- * `main` checkout before the agent runs, so a plain `git status` diffed against `HEAD`
- * (main's committed content) reports every path where `data` differs from `main` — not
- * just what the agent touched. Left unfiltered, the handoff would carry a stale snapshot
- * of `data` wide enough to revert a concurrent writer's update. {@link captureWikiBaseline}
- * (run before the agent, right after sync) records a content hash for every changed
- * candidate path, plus the set of paths already deleted (sync-wiki's `git restore
- * --worktree` deletes any path `main` tracks that `data` doesn't); {@link buildWikiHandoff}
- * / {@link scopeToBaseline}, given that baseline, include only what actually happened
- * during the agent step: a path whose content hash changed, a path new since baseline, a
- * path deleted since baseline (excluding paths already deleted BY sync-wiki, so those
- * don't get forwarded as phantom agent deletions), and — the subtle case — a path that
- * differed from baseline but the agent edited back to `main`'s exact content, which
- * produces no `git status` entry at all yet is still a real change relative to `data`.
+ * Baseline scoping (captureWikiBaseline/scopeToBaseline) diffs against a pre-agent
+ * snapshot instead of HEAD, because sync-wiki restores `data` over `main` and an unscoped
+ * diff would report every main-vs-data difference, not just the agent's edits.
  */
 
-/**
- * Reject `.`/`..` path segments and require the wiki-scoped extension/location contract:
- * exactly `knowledge/index.md`, exactly `knowledge/log.md`, or any `.md` file under
- * `knowledge/wiki/`.
- */
+/** Wiki path allowlist: exactly knowledge/index.md, exactly knowledge/log.md, or any .md under knowledge/wiki/. */
 export function isAllowedWikiHandoffPath(relativePath: string): boolean {
   const normalized = relativePath.replaceAll('\\', '/')
   if (normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md') return true
@@ -62,28 +26,16 @@ export interface GitStatusChanges {
 }
 
 /**
- * Parse `git status --porcelain=v1 -z --untracked-files=all` output (NUL-record format;
- * expected to be scoped to the wiki paths via `-- knowledge/wiki knowledge/index.md
- * knowledge/log.md`) into changed (added/modified/untracked) and deleted path lists.
- *
- * `-z` disables the quoting/escaping `git status` otherwise applies to paths containing
- * spaces or non-ASCII characters, and separates records with NUL instead of newline —
- * required because a bare newline-delimited parse cannot distinguish a literal `\n` inside
- * a quoted path from a record separator. `--untracked-files=all` expands a new untracked
- * directory into its individual files instead of collapsing it to one `?? dir/` entry that
- * would otherwise fail {@link isAllowedWikiHandoffPath}'s exact-file-extension check.
- *
- * A rename/copy record (`R`/`C` status) is followed, per `-z`'s contract, by a second
- * NUL-terminated field holding the original path — not `old -> new` inline. That field is
- * consumed as the deletion; the record's own path is the change.
+ * Parses `-z --untracked-files=all` porcelain output: NUL-delimited (no quoting/escaping
+ * of spaces or non-ASCII paths), untracked dirs expanded to individual files. A rename/copy
+ * record's original path is the NEXT NUL field, not an inline `old -> new`.
  */
 export function parseGitStatusPorcelainZ(output: string): GitStatusChanges {
   const changed: string[] = []
   const deleted: string[] = []
 
   const records = output.split('\0')
-  // A trailing NUL (the normal case for well-formed `-z` output) produces one empty
-  // trailing element after split; drop it so it isn't misread as a record.
+  // Drop the trailing empty element that a well-formed trailing NUL produces.
   if (records.at(-1) === '') records.pop()
 
   let index = 0
@@ -97,7 +49,7 @@ export function parseGitStatusPorcelainZ(output: string): GitStatusChanges {
     const isRenameOrCopy = status.includes('R') || status.includes('C')
 
     if (isRenameOrCopy) {
-      // The original path is the NEXT NUL-terminated field, not part of this record.
+      // Original path is the next NUL field, not part of this record.
       const originalPath = records[index]
       index += 1
       if (originalPath !== undefined) deleted.push(originalPath)
@@ -125,14 +77,9 @@ export interface WikiBaselineManifest {
   /** Map of allowlisted relative path → sha256 hex digest, as it existed at baseline time. */
   files: Record<string, string>
   /**
-   * Allowlisted paths already deleted (tracked-in-HEAD, git-status `D`) at baseline time.
-   * `sync-wiki` restores `data`'s content by running `git restore --source FETCH_HEAD
-   * --worktree -- knowledge` over a `main` checkout; any path that exists in `main`'s
-   * history but not on `data` disappears from the working tree as a result, and
-   * `git status` reports it as deleted BEFORE the agent ever runs. Without recording
-   * these here, {@link scopeToBaseline} cannot tell a sync-caused deletion from a real
-   * agent-caused one — both show up identically in the post-agent `git status` deleted
-   * list.
+   * Paths already deleted (git-status `D`) at baseline time — sync-wiki's `git restore
+   * --worktree` removes any path `main` tracks that `data` doesn't. Lets scopeToBaseline
+   * tell that apart from a real agent deletion.
    */
   deleted: string[]
 }
@@ -147,17 +94,8 @@ export interface CaptureWikiBaselineParams {
 }
 
 /**
- * Capture a content-hash snapshot of every wiki-scoped path that currently differs from
- * `HEAD` (i.e. every path `git status` would report — untracked or modified), plus the
- * set of wiki-scoped paths already deleted at this moment. Run this BEFORE the agent
- * step, immediately after `sync-wiki` restores `data`'s content, so the snapshot reflects
- * "what `data` looks like right now", before any agent edits.
- *
- * The deleted set matters because `sync-wiki` itself can delete tracked-in-HEAD paths
- * (any path `main` tracks that `data` doesn't) via `git restore --worktree`. Without
- * recording those here, {@link scopeToBaseline} would have no way to distinguish that
- * sync-caused deletion from a real deletion the agent makes later — both look identical
- * in the post-agent `git status` output.
+ * Hashes wiki-scoped paths that differ from HEAD and records already-deleted ones. Run
+ * right after sync-wiki restores `data`, before the agent, as scopeToBaseline's reference point.
  */
 export async function captureWikiBaseline(params: CaptureWikiBaselineParams): Promise<WikiBaselineManifest> {
   const readFileImpl = params.readFileImpl ?? fs.readFile
@@ -185,12 +123,7 @@ export interface BuildWikiHandoffParams {
   cwd: string
   outDir: string
   runGitStatus: () => Promise<string>
-  /**
-   * Path to a {@link WikiBaselineManifest} written by {@link captureWikiBaseline} before
-   * the agent ran. When provided, the manifest is scoped to only what changed since that
-   * baseline (see the module doc's "Baseline scoping" section). When omitted, every path
-   * `git status` reports is included, unscoped — the pre-baseline-support behavior.
-   */
+  /** Baseline from {@link captureWikiBaseline}; when set, scopes the manifest to post-baseline changes only. */
   baselinePath?: string
   readFileImpl?: typeof fs.readFile
   writeFileImpl?: typeof fs.writeFile
@@ -235,22 +168,12 @@ async function loadBaseline(baselinePath: string, readFileImpl: typeof fs.readFi
 }
 
 /**
- * Scope raw git-status changed/deleted lists to only what changed since `baseline`:
- * - a changed path whose content hash matches the baseline is a pre-existing data-vs-main
- *   difference the agent never touched — excluded.
- * - a changed path with no baseline entry, or a different hash, is agent-caused — included.
- * - a git-reported deletion already present in `baseline.deleted` was caused by `sync-wiki`
- *   restoring `data` over a `main` checkout (a path `main` tracks that `data` doesn't),
- *   not by the agent — excluded. Every other git-reported deletion is agent-caused — included.
- * - a baseline `files` path absent from BOTH the current changed and deleted lists but
- *   missing from disk was removed from disk since baseline without producing its own
- *   git-status entry (an untracked file's removal does this) — included as a deletion.
- * - a baseline `files` path absent from BOTH lists but STILL present on disk has
- *   produced no git-status entry, meaning its current content now matches `HEAD`
- *   (`main`) exactly — including the case where the agent edited a data-only
- *   difference back to `main`'s exact content. If its content hash differs from the
- *   baseline hash, that's a real change relative to `data` and must still be included
- *   (as changed, with `main`'s content) even though git sees no diff against `HEAD`.
+ * Scopes raw git-status changed/deleted to only what the agent did: a baseline-hash match
+ * is excluded (pre-existing data-vs-main diff); a deletion already in `baseline.deleted` is
+ * sync-wiki-caused, not agent-caused, and excluded; a baseline path missing from disk with
+ * no git-status entry is a deletion (untracked-file removals produce none); a baseline path
+ * still on disk with a changed hash but no git-status entry means the agent reverted it to
+ * exactly HEAD's content, which still differs from `data` — included as changed.
  */
 async function scopeToBaseline(params: {
   cwd: string
@@ -296,13 +219,9 @@ async function scopeToBaseline(params: {
 }
 
 /**
- * Build the handoff artifact directory: `files/<path>` for each changed/added path plus
- * `manifest.json` (`{changed, deleted}`). Never writes anything else — no ingest metadata
- * of any kind — so the artifact carries no forgeable commit message, target, or sources.
- *
- * Throws if git reports any path outside the allowed wiki scope — this should be
- * unreachable in practice (the workflow scopes `git status` to the same paths), but a
- * fail-closed check here means a future workflow drift can't silently widen the artifact.
+ * Builds `files/<path>` + `manifest.json` for changed/deleted paths; never writes ingest
+ * metadata. Throws on any out-of-scope path from git status — should be unreachable, fails
+ * closed on workflow drift.
  */
 export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<BuildWikiHandoffResult> {
   const mkdirImpl = params.mkdirImpl ?? fs.mkdir
@@ -369,10 +288,7 @@ export class WikiHandoffValidationError extends Error {
 /** Generous cap for a wiki-page delta; catches a runaway or malicious artifact early. */
 export const WIKI_HANDOFF_MAX_TOTAL_BYTES = 5 * 1024 * 1024
 
-/**
- * Reject `..`/`.` traversal segments, absolute paths, and anything outside the wiki
- * allowlist (see {@link isAllowedWikiHandoffPath}).
- */
+/** Rejects traversal segments, absolute paths, and anything outside the wiki allowlist. */
 export function assertSafeWikiHandoffPath(relativePath: string): void {
   if (relativePath === '') {
     throw new WikiHandoffValidationError('wiki handoff path is empty')
@@ -414,11 +330,7 @@ export interface ApplyWikiHandoffParams {
   readdirImpl?: typeof fs.readdir
 }
 
-/**
- * The only entries a valid handoff artifact may contain. `files/` is required even for an
- * empty (no-op) manifest — {@link buildWikiHandoff} always creates it. Anything else
- * (notably a resurrected `metadata.json`) is rejected before any file is read.
- */
+/** Only entries a valid artifact may contain — anything else (e.g. a resurrected metadata.json) is rejected before any file read. */
 const ALLOWED_TOP_LEVEL_ENTRIES = new Set(['manifest.json', 'files'])
 
 export interface ApplyWikiHandoffResult {
@@ -427,13 +339,9 @@ export interface ApplyWikiHandoffResult {
 }
 
 /**
- * Validate an artifact built by {@link buildWikiHandoff} and, only if every entry passes,
- * apply it to `workspaceDir` (write changed files, remove deleted files).
- *
- * Validation rejects: any path outside the allowlist, `..`/`.` traversal segments,
- * absolute paths, symlinks, non-regular files, non-`.md` files under `knowledge/wiki`,
- * and a manifest whose total changed-file size exceeds {@link WIKI_HANDOFF_MAX_TOTAL_BYTES}.
- * Nothing is written until every entry has passed validation.
+ * Validates a {@link buildWikiHandoff} artifact (allowlist, traversal, symlinks,
+ * non-regular files, size cap) and only then applies it. Nothing is written until every
+ * entry passes.
  */
 export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams): Promise<ApplyWikiHandoffResult> {
   const readFileImpl = params.readFileImpl ?? fs.readFile

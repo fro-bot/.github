@@ -7,10 +7,8 @@ import {captureWikiBaseline} from './wiki-handoff-core.ts'
 const execFileAsync = promisify(execFile)
 
 /**
- * Runs in the agent job, right after `sync-wiki` restores `data`'s content and BEFORE the
- * agent step, so the snapshot reflects the pre-agent state. See `wiki-handoff-core.ts`'s
- * "Baseline scoping" module doc for why this exists: without it, the handoff artifact
- * would carry every path where `data` differs from `main`, not just what the agent edited.
+ * Runs right after sync-wiki, before the agent step, so the baseline reflects pre-agent
+ * `data` content rather than every main-vs-data difference (see wiki-handoff-core.ts).
  */
 async function main(): Promise<void> {
   const baselinePath = requiredEnv('WIKI_HANDOFF_BASELINE_PATH')
