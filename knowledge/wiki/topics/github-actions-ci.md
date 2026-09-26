@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-09-26
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: 51c57fdae249e50451eafd74253aa52d7cf8f1ae
+    accessed: 2026-09-26
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 5a890eef0d2ecb0b9310c3ccf87c29059c86733a
     accessed: 2026-09-25
@@ -3396,3 +3399,14 @@ Generalizations:
 1. **A "structured source of truth" is only authoritative over the rows it contains.** If a rollup narrates items the structured source lacks, the rollup becomes the de facto source for those items, and nothing is checking it.
 2. **Key tracker freshness on deployed truth, not on tracker state.** The deploy pin file and the health endpoint are the cheapest oracles here. Diffing the body's claimed pin against `upstream.json` would have caught this on the first release after `v0.83.0`.
 3. **Related to *A Drift Check Proves the Consumer Matches the Pin, Not That the Pin Matches the Gate* (2026-09-23).** That rule is about a pin that is internally consistent but stale against its gate. This is its documentation twin: a tracker that is internally consistent (body ↔ Project) but stale against the deployment.
+
+### Smoke-test the negative runtime-image boundary (2026-09-26)
+
+The [[fro-bot--dashboard]] `release.yaml` smoke test now asserts not only that
+the final image serves its health endpoint, SPA manifest, and CSP, but also
+that package-manager commands (`npm`, `npx`, `pnpm`, `pnpx`, `corepack`, `yarn`)
+and their known filesystem locations and caches are absent. This checks a
+*negative* deployment invariant against the built image rather than inferring
+it from a Dockerfile cleanup instruction. A command or path found at runtime
+fails the release. This is a release-workflow assertion, not a claim that the
+writer service or the builder image has the same boundary.

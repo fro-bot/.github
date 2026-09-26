@@ -2,6 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Updated catalog entries: [[fro-bot--dashboard]] (repo) and
+[[github-actions-ci]] (topic), 2026-09-26.
+
 2026-09-26 limited survey: [[marcusrbrown--github]] (HEAD `656663c`)
 and [[probot-settings]] record unchanged personal settings template and
 three-workflow layout, correctly pathed reusable workflows at v4.33.0,

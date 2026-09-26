@@ -6569,3 +6569,26 @@ Sources: https://github.com/marcusrbrown/.github/tree/656663c5dd260020e3b9646b95
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-09-26 19:32] ingest | fro-bot/dashboard
+
+Limited survey of public HEAD `51c57fdae249e50451eafd74253aa52d7cf8f1ae`.
+Updated [[fro-bot--dashboard]], [[github-actions-ci]], and the index additively.
+The seven-workflow layout still includes Fro Bot (agent v0.115.1); no missing-workflow
+follow-up is needed. The root manifest now pins pnpm 11.27.1 and the Renovate
+workflow calls bfra-me/.github v4.33.0. The workspace again lists four
+security overrides, correcting the impression that their 2026-08-08 absence
+persisted. The wiki-writer gate pin remains `37abb495` and the README still
+describes the service as undeployed. Release smoke now fails if package-manager
+commands or their known files remain in the final image; the CI and daily
+strip-only checks still cover `src` only. No runtime or CI outcomes were
+inferred. Target reads were limited to directory listings, README, manifests,
+and workflows. Existing unrelated working-tree changes were preserved.
+
+Sources: https://github.com/fro-bot/dashboard/tree/51c57fdae249e50451eafd74253aa52d7cf8f1ae
+
+## [2026-09-26 19:36] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard
