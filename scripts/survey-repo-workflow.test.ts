@@ -1,5 +1,8 @@
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
+import {execFileSync} from 'node:child_process'
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
@@ -11,6 +14,8 @@ interface WorkflowStep {
   with?: Record<string, unknown>
   env?: Record<string, unknown>
   if?: string
+  'timeout-minutes'?: number
+  'continue-on-error'?: boolean
 }
 
 interface WorkflowJob {
@@ -19,6 +24,7 @@ interface WorkflowJob {
   if?: string
   permissions?: Record<string, string>
   outputs?: Record<string, string>
+  'timeout-minutes'?: number
 }
 
 function assertWorkflowShape(value: unknown): asserts value is {jobs: Record<string, WorkflowJob>} {
@@ -31,6 +37,295 @@ const workflowPath = resolve(import.meta.dirname, '../.github/workflows/survey-r
 const workflowRaw = readFileSync(workflowPath, 'utf8')
 const workflowParsed: unknown = parse(workflowRaw)
 assertWorkflowShape(workflowParsed)
+
+function findStepIndex(job: WorkflowJob | undefined, predicate: (step: WorkflowStep) => boolean): number {
+  return (job?.steps ?? []).findIndex(predicate)
+}
+
+/** A real git repo with this repo's own `.gitignore` swap-file rules, for the eligibility-filtered detector's gate tests. */
+function makeHandoffGateRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'survey-repo-handoff-gate-'))
+  execFileSync('git', ['init', '-q', '-b', 'main'], {cwd: dir})
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], {cwd: dir})
+  execFileSync('git', ['config', 'user.name', 'Test'], {cwd: dir})
+  mkdirSync(join(dir, 'knowledge', 'wiki', 'repos'), {recursive: true})
+  writeFileSync(join(dir, 'knowledge', 'index.md'), '# Index\n')
+  writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n')
+  writeFileSync(join(dir, '.gitignore'), '.DS_Store\n*.swp\n*.swo\n')
+  execFileSync('git', ['add', '-A'], {cwd: dir})
+  execFileSync('git', ['commit', '-q', '-m', 'init'], {cwd: dir})
+  return dir
+}
+
+/** Builds the final-attempt script's env from up to three detects' `changed` values, short-circuiting at the first 'true' (matching the real retry gate: a retry only runs after a 'false'). */
+function finalAttemptEnv(changed: readonly [string, string, string]): Record<string, string> {
+  return {
+    ATTEMPT_1_CONCLUSION: 'success',
+    DETECT_1_CONCLUSION: 'success',
+    DETECT_1_CHANGED: changed[0],
+    RETRY_1_CONCLUSION: changed[0] === 'false' ? 'success' : 'skipped',
+    DETECT_2_CONCLUSION: changed[0] === 'false' ? 'success' : 'skipped',
+    DETECT_2_CHANGED: changed[0] === 'false' ? changed[1] : '',
+    RETRY_2_CONCLUSION: changed[0] === 'false' && changed[1] === 'false' ? 'success' : 'skipped',
+    DETECT_3_CONCLUSION: changed[0] === 'false' && changed[1] === 'false' ? 'success' : 'skipped',
+    DETECT_3_CHANGED: changed[0] === 'false' && changed[1] === 'false' ? changed[2] : '',
+  }
+}
+
+/** A real git repo (not mocked) with the scoped knowledge/ layout already committed, for the gate tie-in tests. */
+function makeGateTestRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'survey-repo-gate-tiein-'))
+  execFileSync('git', ['init', '-q', '-b', 'main'], {cwd: dir})
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], {cwd: dir})
+  execFileSync('git', ['config', 'user.name', 'Test'], {cwd: dir})
+  mkdirSync(join(dir, 'knowledge', 'wiki', 'repos'), {recursive: true})
+  writeFileSync(join(dir, 'knowledge', 'index.md'), '# Index\n')
+  writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n')
+  execFileSync('git', ['add', '-A'], {cwd: dir})
+  execFileSync('git', ['commit', '-q', '-m', 'init'], {cwd: dir})
+  return dir
+}
+
+/** Only status function this repo's retry/detect conditions may use, per KTD4/KTD8. */
+const STATUS_FUNCTION_PATTERN = /\b(success|failure|cancelled|always)\s*\(/g
+
+/**
+ * Extracts a step's `run:` block and executes it as a real bash script (no mocking of
+ * the shell itself), feeding `env` as the step's `env:` would and capturing whatever it
+ * appends to `GITHUB_OUTPUT` — mirrors the extract-and-execute pattern in
+ * fro-bot-workflow.test.ts.
+ */
+function runShellStep(
+  script: string,
+  env: Record<string, string>,
+): {status: number; stdout: string; outputs: Record<string, string>} {
+  const dir = mkdtempSync(join(tmpdir(), 'survey-repo-step-'))
+  try {
+    const outputPath = join(dir, 'github-output')
+    writeFileSync(outputPath, '')
+    const scriptPath = join(dir, 'step.sh')
+    writeFileSync(scriptPath, script)
+    let status = 0
+    let stdout = ''
+    try {
+      stdout = execFileSync('bash', [scriptPath], {
+        env: {...process.env, ...env, GITHUB_OUTPUT: outputPath},
+        encoding: 'utf8',
+      })
+    } catch (error) {
+      const failure = error as {status?: number; stdout?: string}
+      status = failure.status ?? 1
+      stdout = String(failure.stdout ?? '')
+    }
+    const outputRaw = readFileSync(outputPath, 'utf8')
+    const outputs: Record<string, string> = {}
+    for (const line of outputRaw.split('\n')) {
+      const eq = line.indexOf('=')
+      if (eq === -1) continue
+      outputs[line.slice(0, eq)] = line.slice(eq + 1)
+    }
+    return {status, stdout, outputs}
+  } finally {
+    rmSync(dir, {recursive: true, force: true})
+  }
+}
+
+/**
+ * Minimal GitHub Actions expression evaluator (Unit 4). Parses the *actual* `${{ }}`
+ * strings read from the workflow YAML rather than restating them as hard-coded terms,
+ * so these tests exercise the real expressions. Supports `==`, `!=`, `&&`, `||`, `!`,
+ * parentheses, single-quoted string literals, the `a && 'x' || 'y'` idiom, and the four
+ * status functions as fixture inputs. Any `needs.*`/`steps.*` identifier missing from the
+ * fixture evaluates to `''`, matching Actions' own behavior for unset context values.
+ */
+type ExprValue = {kind: 'bool'; value: boolean} | {kind: 'str'; value: string}
+
+interface ExprFixture {
+  context?: Record<string, string>
+  status?: Partial<Record<'always' | 'cancelled' | 'failure' | 'success', boolean>>
+}
+
+type ExprToken =
+  {type: 'and' | 'eq' | 'lparen' | 'neq' | 'not' | 'or' | 'rparen'} | {type: 'call' | 'ident' | 'string'; value: string}
+
+function stripExpressionWrapper(raw: string): string {
+  // Folded YAML scalars are already collapsed to single-line strings by the `yaml`
+  // parser's plain/folded-scalar handling, but normalize defensively in case a caller
+  // passes a raw multi-line block.
+  const folded = raw.replaceAll(/\s+/g, ' ').trim()
+  // GitHub Actions allows a bare `if:` expression with no `${{ }}` wrapper (e.g.
+  // `if: steps.a.conclusion == 'success'`), alongside the wrapped form used everywhere
+  // else in this workflow. Accept both.
+  if (folded.startsWith('${{') && folded.endsWith('}}')) {
+    return folded.slice(3, -2).trim()
+  }
+  if (folded === '' || folded.startsWith('${{') || folded.endsWith('}}')) {
+    throw new Error(`expected a \${{ }} expression or a bare condition, got: ${raw}`)
+  }
+  return folded
+}
+
+function tokenizeExpression(expr: string): ExprToken[] {
+  const tokens: ExprToken[] = []
+  let i = 0
+  while (i < expr.length) {
+    const c = expr[i]
+    if (c === undefined) break
+    if (/\s/.test(c)) {
+      i++
+      continue
+    }
+    if (c === '(') {
+      tokens.push({type: 'lparen'})
+      i++
+      continue
+    }
+    if (c === ')') {
+      tokens.push({type: 'rparen'})
+      i++
+      continue
+    }
+    if (expr.startsWith('&&', i)) {
+      tokens.push({type: 'and'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('||', i)) {
+      tokens.push({type: 'or'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('==', i)) {
+      tokens.push({type: 'eq'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('!=', i)) {
+      tokens.push({type: 'neq'})
+      i += 2
+      continue
+    }
+    if (c === '!') {
+      tokens.push({type: 'not'})
+      i++
+      continue
+    }
+    if (c === "'") {
+      const end = expr.indexOf("'", i + 1)
+      if (end === -1) throw new Error(`unterminated string literal in expression: ${expr}`)
+      tokens.push({type: 'string', value: expr.slice(i + 1, end)})
+      i = end + 1
+      continue
+    }
+    const identMatch = /^[A-Z_][\w.-]*/i.exec(expr.slice(i))
+    if (identMatch) {
+      const name = identMatch[0]
+      i += name.length
+      let j = i
+      while (j < expr.length && /\s/.test(expr[j] ?? '')) j++
+      if (expr[j] === '(') {
+        let k = j + 1
+        while (k < expr.length && /\s/.test(expr[k] ?? '')) k++
+        if (expr[k] !== ')') throw new Error(`unsupported function call with arguments: ${name} in ${expr}`)
+        tokens.push({type: 'call', value: name})
+        i = k + 1
+        continue
+      }
+      tokens.push({type: 'ident', value: name})
+      continue
+    }
+    throw new Error(`unexpected character '${c}' at position ${i} in expression: ${expr}`)
+  }
+  return tokens
+}
+
+function exprTruthy(value: ExprValue): boolean {
+  return value.kind === 'bool' ? value.value : value.value !== ''
+}
+
+function exprStringify(value: ExprValue): string {
+  return value.kind === 'bool' ? String(value.value) : value.value
+}
+
+const STATUS_FUNCTION_NAMES = ['always', 'cancelled', 'failure', 'success'] as const
+
+function evaluateExpression(rawIf: string, fixture: ExprFixture): ExprValue {
+  const tokens = tokenizeExpression(stripExpressionWrapper(rawIf))
+  let pos = 0
+  const peek = (): ExprToken | undefined => tokens[pos]
+  const advance = (): ExprToken | undefined => tokens[pos++]
+
+  function parseOr(): ExprValue {
+    let left = parseAnd()
+    while (peek()?.type === 'or') {
+      advance()
+      const right = parseAnd()
+      left = exprTruthy(left) ? left : right
+    }
+    return left
+  }
+
+  function parseAnd(): ExprValue {
+    let left = parseEquality()
+    while (peek()?.type === 'and') {
+      advance()
+      const right = parseEquality()
+      left = exprTruthy(left) ? right : left
+    }
+    return left
+  }
+
+  function parseEquality(): ExprValue {
+    let left = parseUnary()
+    while (peek()?.type === 'eq' || peek()?.type === 'neq') {
+      const op = advance()
+      const right = parseUnary()
+      const equal = exprStringify(left) === exprStringify(right)
+      left = {kind: 'bool', value: op?.type === 'eq' ? equal : !equal}
+    }
+    return left
+  }
+
+  function parseUnary(): ExprValue {
+    if (peek()?.type === 'not') {
+      advance()
+      const operand = parseUnary()
+      return {kind: 'bool', value: !exprTruthy(operand)}
+    }
+    return parsePrimary()
+  }
+
+  function parsePrimary(): ExprValue {
+    const token = advance()
+    if (!token) throw new Error(`unexpected end of expression: ${rawIf}`)
+    if (token.type === 'lparen') {
+      const inner = parseOr()
+      const close = advance()
+      if (close?.type !== 'rparen') throw new Error(`expected ')' in expression: ${rawIf}`)
+      return inner
+    }
+    if (token.type === 'string') return {kind: 'str', value: token.value}
+    if (token.type === 'call') {
+      const name = token.value
+      if (!(STATUS_FUNCTION_NAMES as readonly string[]).includes(name)) {
+        throw new Error(`unsupported status function '${name}' in expression: ${rawIf}`)
+      }
+      return {kind: 'bool', value: fixture.status?.[name as (typeof STATUS_FUNCTION_NAMES)[number]] ?? false}
+    }
+    if (token.type === 'ident') {
+      return {kind: 'str', value: fixture.context?.[token.value] ?? ''}
+    }
+    throw new Error(`unexpected token in expression: ${rawIf}`)
+  }
+
+  const result = parseOr()
+  if (pos !== tokens.length) throw new Error(`unexpected trailing tokens in expression: ${rawIf}`)
+  return result
+}
+
+function evaluateCondition(rawIf: string, fixture: ExprFixture): boolean {
+  return exprTruthy(evaluateExpression(rawIf, fixture))
+}
 
 describe('survey-repo correction injection contract', () => {
   const steps = workflowParsed.jobs['survey-repo']?.steps ?? []
@@ -214,6 +509,42 @@ describe('survey-repo.yaml: survey-resolve — pre-agent App-token mint isolated
   })
 })
 
+describe('survey-repo.yaml wiki change detection: shared script, no inline git-diff hashing', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+
+  it('Capture wiki baseline and Detect wiki survey changes both invoke wiki-change-detect.ts', () => {
+    const baselineStep = surveyJob?.steps.find(step => step.id === 'wiki-baseline')
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+
+    expect(String(baselineStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts baseline')
+    expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
+  })
+
+  it('Detect wiki survey changes feeds the baseline hash through env, not a re-read of the diff', () => {
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+    expect(String(detectStep?.env?.WIKI_CHANGE_BASELINE_HASH ?? '')).toContain('steps.wiki-baseline.outputs.hash')
+  })
+
+  it('preserves the wiki-baseline/wiki-changes step ids and the wiki-changes !cancelled() condition', () => {
+    const baselineStep = surveyJob?.steps.find(step => step.id === 'wiki-baseline')
+    const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
+    expect(baselineStep).toBeDefined()
+    expect(detectStep).toBeDefined()
+    expect(String(detectStep?.if ?? '')).toContain('!cancelled()')
+  })
+
+  it('leaves no inline git diff hashing in survey-repo.yaml (moved to scripts/wiki-change-detect.ts)', () => {
+    for (const step of surveyJob?.steps ?? []) {
+      const run = String(step.run ?? '')
+      expect(run, `${step.name ?? step.id ?? '<unnamed step>'} must not inline-hash a git diff`).not.toMatch(
+        /git diff .*shasum/s,
+      )
+      expect(run).not.toContain('wiki-baseline.diff')
+      expect(run).not.toContain('wiki-current.diff')
+    }
+  })
+})
+
 describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck', () => {
   const surveyJob = workflowParsed.jobs['survey-repo']
   const persistJob = workflowParsed.jobs['survey-persist']
@@ -368,7 +699,8 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
   it('survey-repo builds the artifact without recheck gating (privacy is enforced entirely in survey-persist now)', () => {
     const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
     const condition = String(buildStep?.if ?? '')
-    expect(condition).toContain("steps.wiki-changes.outputs.changed == 'true'")
+    expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.changed == 'true'")
     expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
     expect(condition).not.toContain('recheck')
     expect(Object.keys(buildStep?.env ?? {}).sort()).toStrictEqual(['WIKI_HANDOFF_BASELINE_PATH', 'WIKI_HANDOFF_DIR'])
@@ -396,5 +728,1299 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     const condition = String(uploadStep?.if ?? '')
     expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
     expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
+  })
+})
+
+describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and exhaustion', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const steps = surveyJob?.steps ?? []
+
+  const attempt1 = steps.find(step => step.id === 'survey-agent')
+  const detect1 = steps.find(step => step.id === 'wiki-changes')
+  const retry1 = steps.find(step => step.id === 'survey-agent-retry-1')
+  const detect2 = steps.find(step => step.id === 'wiki-changes-retry-1')
+  const retry2 = steps.find(step => step.id === 'survey-agent-retry-2')
+  const detect3 = steps.find(step => step.id === 'wiki-changes-retry-2')
+  const finalAttempt = steps.find(step => step.id === 'final-attempt')
+  const exhaustion = steps.find(step => step.name === 'Fail on survey exhaustion')
+  const handoffBuild = steps.find(step => step.id === 'wiki-handoff-build')
+  const handoffUpload = steps.find(step => step.id === 'wiki-handoff-upload')
+
+  it('declares every step in the retry chain', () => {
+    for (const [label, step] of [
+      ['attempt 1', attempt1],
+      ['detect 1', detect1],
+      ['retry 1', retry1],
+      ['detect 2', detect2],
+      ['retry 2', retry2],
+      ['detect 3', detect3],
+      ['final-attempt', finalAttempt],
+      ['exhaustion', exhaustion],
+      ['handoff build', handoffBuild],
+      ['handoff upload', handoffUpload],
+    ] as const) {
+      expect(step, `missing step: ${label}`).toBeDefined()
+    }
+  })
+
+  it('orders attempt 1 < detect 1 < retry 1 < detect 2 < retry 2 < detect 3 < selection < exhaustion < handoff build < upload', () => {
+    const order = [
+      findStepIndex(surveyJob, s => s.id === 'survey-agent'),
+      findStepIndex(surveyJob, s => s.id === 'wiki-changes'),
+      findStepIndex(surveyJob, s => s.id === 'survey-agent-retry-1'),
+      findStepIndex(surveyJob, s => s.id === 'wiki-changes-retry-1'),
+      findStepIndex(surveyJob, s => s.id === 'survey-agent-retry-2'),
+      findStepIndex(surveyJob, s => s.id === 'wiki-changes-retry-2'),
+      findStepIndex(surveyJob, s => s.id === 'final-attempt'),
+      findStepIndex(surveyJob, s => s.name === 'Fail on survey exhaustion'),
+      findStepIndex(surveyJob, s => s.id === 'wiki-handoff-build'),
+      findStepIndex(surveyJob, s => s.id === 'wiki-handoff-upload'),
+    ]
+    for (const index of order) expect(index).toBeGreaterThanOrEqual(0)
+    for (let i = 1; i < order.length; i++) {
+      const previous = order[i - 1] ?? -1
+      expect(order[i], `step at position ${i} must come after position ${i - 1}`).toBeGreaterThan(previous)
+    }
+  })
+
+  describe('retry gating: each retry names the previous attempt success and the previous detect no-op, with no status function other than success()', () => {
+    it.each([
+      ['retry 1', retry1, 'steps.survey-agent.conclusion', 'steps.wiki-changes.outputs.changed'],
+      ['retry 2', retry2, 'steps.survey-agent-retry-1.conclusion', 'steps.wiki-changes-retry-1.outputs.changed'],
+    ] as const)('%s', (_label, step, prevAgentConclusion, prevDetectChanged) => {
+      const condition = String(step?.if ?? '')
+      expect(condition).toContain(`${prevAgentConclusion} == 'success'`)
+      expect(condition).toContain(`${prevDetectChanged} == 'false'`)
+      const statusFunctions = [...condition.matchAll(STATUS_FUNCTION_PATTERN)].map(m => m[1])
+      expect(statusFunctions).toStrictEqual(['success'])
+    })
+  })
+
+  describe('detect gating: each detect step requires its own attempt to have concluded success', () => {
+    it.each([
+      ['detect 1', detect1, 'steps.survey-agent.conclusion'],
+      ['detect 2', detect2, 'steps.survey-agent-retry-1.conclusion'],
+      ['detect 3', detect3, 'steps.survey-agent-retry-2.conclusion'],
+    ] as const)('%s', (_label, step, agentConclusion) => {
+      const condition = String(step?.if ?? '')
+      expect(condition).toContain(`${agentConclusion} == 'success'`)
+    })
+  })
+
+  describe('retry uses:/with: mirror attempt 1 exactly except prompt and timeout', () => {
+    it.each([
+      ['retry 1', retry1],
+      ['retry 2', retry2],
+    ] as const)("%s's uses: is byte-identical to attempt 1's", (_label, step) => {
+      expect(step?.uses).toBe(attempt1?.uses)
+    })
+
+    it.each([
+      ['retry 1', retry1],
+      ['retry 2', retry2],
+    ] as const)("%s's with: matches attempt 1's for every key except prompt and timeout", (_label, step) => {
+      const attempt1With = attempt1?.with ?? {}
+      const stepWith = step?.with ?? {}
+      const keysToCompare = Object.keys(attempt1With).filter(key => key !== 'prompt' && key !== 'timeout')
+      expect(
+        Object.keys(stepWith)
+          .filter(key => key !== 'prompt' && key !== 'timeout')
+          .sort(),
+      ).toStrictEqual(keysToCompare.sort())
+      for (const key of keysToCompare) {
+        expect(stepWith[key], `with.${key}`).toBe(attempt1With[key])
+      }
+      expect(stepWith.prompt).not.toBe(attempt1With.prompt)
+    })
+  })
+
+  describe('retry prompt: only steps.ingest-prompt.outputs.* plus static text — no attempt output leakage', () => {
+    it.each([
+      ['retry 1', retry1],
+      ['retry 2', retry2],
+    ] as const)('%s', (_label, step) => {
+      const prompt = String(step?.with?.prompt ?? '')
+      expect(prompt).toContain('steps.ingest-prompt.outputs.prompt')
+      expect(prompt).not.toContain('steps.survey-agent')
+      expect(prompt).not.toMatch(/steps\.[\w-]*retry[\w-]*\.outputs/)
+      expect(prompt.toLowerCase()).toContain('mandatory')
+      // A "just log why you couldn't finish" instruction would itself be a wiki change
+      // (log.md), so `changed=true`, recording the very false success this plan fixes.
+      expect(prompt.toLowerCase()).toContain('make no wiki changes')
+      expect(prompt.toLowerCase()).not.toContain('append a log entry')
+    })
+  })
+
+  describe('final-attempt selection (KTD8): !cancelled(), picks the last non-skipped attempt, pairs it with its own detect', () => {
+    // Split to dodge eslint's no-template-curly-in-string rule (literal GH Actions
+    // expression syntax, not a stray JS interpolation).
+    const CANCELLED_ONLY_EXPR = '$' + '{{ !cancelled() }}'
+
+    it('runs under !cancelled() only', () => {
+      expect(String(finalAttempt?.if ?? '')).toBe(CANCELLED_ONLY_EXPR)
+    })
+
+    const baseSkipped = {
+      ATTEMPT_1_CONCLUSION: 'success',
+      DETECT_1_CONCLUSION: 'skipped',
+      DETECT_1_CHANGED: '',
+      RETRY_1_CONCLUSION: 'skipped',
+      DETECT_2_CONCLUSION: 'skipped',
+      DETECT_2_CHANGED: '',
+      RETRY_2_CONCLUSION: 'skipped',
+      DETECT_3_CONCLUSION: 'skipped',
+      DETECT_3_CHANGED: '',
+    }
+
+    const scenarios: [
+      string,
+      Record<string, string>,
+      {conclusion: string; changed: string; detectConclusion: string},
+    ][] = [
+      [
+        'attempt 1 succeeds and changed',
+        {...baseSkipped, DETECT_1_CONCLUSION: 'success', DETECT_1_CHANGED: 'true'},
+        {conclusion: 'success', changed: 'true', detectConclusion: 'success'},
+      ],
+      [
+        'attempt 1 no-op, retry 1 succeeds and changed',
+        {
+          ...baseSkipped,
+          DETECT_1_CONCLUSION: 'success',
+          DETECT_1_CHANGED: 'false',
+          RETRY_1_CONCLUSION: 'success',
+          DETECT_2_CONCLUSION: 'success',
+          DETECT_2_CHANGED: 'true',
+        },
+        {conclusion: 'success', changed: 'true', detectConclusion: 'success'},
+      ],
+      [
+        'all three attempts succeed with no changes (exhaustion case)',
+        {
+          ATTEMPT_1_CONCLUSION: 'success',
+          DETECT_1_CONCLUSION: 'success',
+          DETECT_1_CHANGED: 'false',
+          RETRY_1_CONCLUSION: 'success',
+          DETECT_2_CONCLUSION: 'success',
+          DETECT_2_CHANGED: 'false',
+          RETRY_2_CONCLUSION: 'success',
+          DETECT_3_CONCLUSION: 'success',
+          DETECT_3_CHANGED: 'false',
+        },
+        {conclusion: 'success', changed: 'false', detectConclusion: 'success'},
+      ],
+      [
+        'attempt 1 fails outright (retries never run)',
+        {...baseSkipped, ATTEMPT_1_CONCLUSION: 'failure'},
+        {conclusion: 'failure', changed: 'false', detectConclusion: 'skipped'},
+      ],
+      [
+        'retry 1 fails after attempt 1 no-op',
+        {
+          ...baseSkipped,
+          DETECT_1_CONCLUSION: 'success',
+          DETECT_1_CHANGED: 'false',
+          RETRY_1_CONCLUSION: 'failure',
+        },
+        {conclusion: 'failure', changed: 'false', detectConclusion: 'skipped'},
+      ],
+      [
+        "final attempt succeeds but its own detect fails — changed must not fall back to 'true'",
+        {...baseSkipped, DETECT_1_CONCLUSION: 'failure', DETECT_1_CHANGED: ''},
+        {conclusion: 'success', changed: 'false', detectConclusion: 'failure'},
+      ],
+    ]
+
+    it.each(scenarios)('%s', (_label, env, expected) => {
+      const result = runShellStep(String(finalAttempt?.run ?? ''), env)
+      expect(result.status).toBe(0)
+      expect(result.outputs.conclusion).toBe(expected.conclusion)
+      expect(result.outputs.changed).toBe(expected.changed)
+      expect(result.outputs['detect-conclusion']).toBe(expected.detectConclusion)
+    })
+  })
+
+  describe('exhaustion: fails loudly only when the final attempt was a clean no-op', () => {
+    it("if: requires the final attempt's conclusion == 'success', changed == 'false', and detect-conclusion == 'success'", () => {
+      const condition = String(exhaustion?.if ?? '')
+      expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
+      expect(condition).toContain("steps.final-attempt.outputs.changed == 'false'")
+      expect(condition).toContain("steps.final-attempt.outputs.detect-conclusion == 'success'")
+    })
+
+    it('run: emits ::error:: naming the attempt count and exits non-zero', () => {
+      const result = runShellStep(String(exhaustion?.run ?? ''), {})
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain('::error::survey agent completed 3 attempts without the required wiki changes')
+    })
+
+    it("a failed detect on the final attempt (conclusion success, changed false, detect-conclusion failure) does NOT evaluate as exhaustion — it's a real detect failure, not a clean no-op", () => {
+      const fixture: ExprFixture = {
+        context: {
+          'steps.final-attempt.outputs.conclusion': 'success',
+          'steps.final-attempt.outputs.changed': 'false',
+          'steps.final-attempt.outputs.detect-conclusion': 'failure',
+        },
+        status: {cancelled: false},
+      }
+      expect(evaluateCondition(String(exhaustion?.if ?? ''), fixture)).toBe(false)
+    })
+  })
+
+  it('handoff build is gated on the final-attempt outputs plus onboarded, and appears exactly once', () => {
+    const condition = String(handoffBuild?.if ?? '')
+    expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.changed == 'true'")
+    expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
+    expect(steps.filter(s => s.id === 'wiki-handoff-build')).toHaveLength(1)
+  })
+
+  it('no step in survey-repo sets continue-on-error', () => {
+    for (const step of steps) {
+      expect(
+        step['continue-on-error'],
+        `${step.name ?? step.id ?? '(unnamed step)'} must not set continue-on-error`,
+      ).toBeUndefined()
+    }
+  })
+
+  it('job timeout-minutes is at least 3x the per-attempt step timeout-minutes plus headroom, and every agent step sets an explicit timeout', () => {
+    const perAttemptTimeoutMinutes = attempt1?.['timeout-minutes']
+    expect(perAttemptTimeoutMinutes).toBeTypeOf('number')
+    expect(surveyJob?.['timeout-minutes']).toBeGreaterThanOrEqual((perAttemptTimeoutMinutes ?? 0) * 3 + 5)
+
+    for (const [label, step] of [
+      ['attempt 1', attempt1],
+      ['retry 1', retry1],
+      ['retry 2', retry2],
+    ] as const) {
+      expect(step?.['timeout-minutes'], `${label} timeout-minutes`).toBe(perAttemptTimeoutMinutes)
+      expect(String(step?.with?.timeout ?? ''), `${label} with.timeout`).not.toBe('')
+    }
+  })
+
+  it('job outputs: agent-conclusion and wiki-changed read from final-attempt; the rest are unchanged', () => {
+    const outputs = surveyJob?.outputs ?? {}
+    expect(outputs['agent-conclusion']).toContain('steps.final-attempt.outputs.conclusion')
+    expect(outputs['wiki-changed']).toContain('steps.final-attempt.outputs.changed')
+    expect(outputs['wiki-artifact-ready']).toContain('steps.wiki-handoff-upload.outcome')
+    expect(outputs.onboarded).toContain('steps.onboarded.outputs.onboarded')
+    expect(outputs['target-repository']).toContain('steps.ingest-prompt.outputs.target-repository')
+    expect(outputs['target-slug']).toContain('steps.ingest-prompt.outputs.target-slug')
+  })
+})
+
+describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () => {
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+  const announceStep = persistJob?.steps.find(step => step.name === '📣 Announce survey to gateway')
+  const fallbackStep = persistJob?.steps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+
+  const SURVEY_STATUS_EXPR = String(recordStep?.env?.SURVEY_STATUS ?? '')
+  const RECORD_IF = String(recordStep?.if ?? '')
+  const ANNOUNCE_IF = String(announceStep?.if ?? '')
+  const FALLBACK_IF = String(fallbackStep?.if ?? '')
+
+  it('reads non-empty expressions for all four conditions from the real workflow file', () => {
+    expect(SURVEY_STATUS_EXPR).not.toBe('')
+    expect(RECORD_IF).not.toBe('')
+    expect(ANNOUNCE_IF).not.toBe('')
+    expect(FALLBACK_IF).not.toBe('')
+  })
+
+  // Context keys referenced by SURVEY_STATUS/record-if/announce-if/fallback-if. Any key
+  // omitted from a fixture row below defaults to '' via evaluateExpression, matching how
+  // Actions treats an unset needs./steps. reference.
+  const BASE_CONTEXT = {
+    'needs.survey-repo.outputs.agent-conclusion': '',
+    'needs.survey-repo.outputs.wiki-changed': '',
+    'needs.survey-repo.result': '',
+    'steps.recheck.conclusion': '',
+    'needs.survey-repo.outputs.onboarded': '',
+    'steps.wiki-commit.conclusion': '',
+    'needs.survey-resolve.outputs.resolve-outcome': '',
+    'steps.record-result.outcome': '',
+  } as const satisfies Record<string, string>
+
+  interface Row {
+    label: string
+    context: Partial<Record<keyof typeof BASE_CONTEXT, string>>
+    status?: ExprFixture['status']
+    expectedStatus?: 'failure' | 'success'
+    record: boolean
+    announce: boolean
+    fallback: boolean
+  }
+
+  const rows: Row[] = [
+    {
+      label: 'success, changes, onboarded, commit success',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: false,
+    },
+    {
+      label: '3× no-op exhaustion (agent success, wiki-changed false, survey-repo result failure, commit skipped)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'hard failure at an attempt (agent-conclusion failure, result failure)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'failure',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'detect failed after a successful attempt (agent success, wiki-changed false, result failure)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'handoff build/upload failed (agent success, wiki-changed true, result failure, commit skipped)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'not onboarded, with changes, commit skipped, result success',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'success',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'recheck failed → no record, no announce',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'failure',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': '',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'skipped',
+      },
+      record: false,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'survey-repo cancelled (result cancelled, cancelled() true)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': '',
+        'needs.survey-repo.outputs.wiki-changed': '',
+        'needs.survey-repo.result': 'cancelled',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': '',
+        'steps.wiki-commit.conclusion': '',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'skipped',
+      },
+      status: {cancelled: true, failure: false},
+      record: false,
+      announce: false,
+      fallback: true,
+    },
+    {
+      // Isolates the fallback's failure() term: survey-repo.result stays 'success' (not
+      // 'failure') so the result-based clause can't also make the fallback fire — only
+      // failure() (a prior step in THIS job, survey-persist, failing — e.g. the primary
+      // record-result step itself crashing) does. record-result.outcome == 'failure'
+      // reflects that crash.
+      label: 'record-result step crashes (failure() true) — fallback fires on failure() alone',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'failure',
+      },
+      status: {cancelled: false, failure: true},
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: true,
+    },
+    {
+      // Contrast row: identical context to the row above, only failure() flips to false.
+      // Isolates that failure() (not some other term) is what made the previous row's
+      // fallback fire.
+      label: 'contrast: same inputs as above with failure() false — fallback does not fire',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'failure',
+      },
+      status: {cancelled: false, failure: false},
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: false,
+    },
+    {
+      // Defense-in-depth isolation for the wiki-changed term: given Unit 3's exhaustion
+      // step, this exact combination (agent success, wiki-changed false, yet the job
+      // result is still success) should never occur in production — the exhaustion step
+      // deterministically fails the job whenever the final attempt succeeds with no
+      // changes, so `needs.survey-repo.result == 'success'` alone already rejects the
+      // realistic "3× no-op exhaustion" row below. This synthetic row isolates the
+      // wiki-changed term itself so a regression in Unit 3 (or a future edit that drops
+      // that coupling) doesn't silently start recording false successes.
+      label: 'wiki-changed false in isolation (would be unreachable if Unit 3 holds; defense-in-depth)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: "survey-repo died before final-attempt (agent-conclusion '', result failure)",
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': '',
+        'needs.survey-repo.outputs.wiki-changed': '',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': '',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+  ]
+
+  describe.each(rows)('$label', ({context, status, expectedStatus, record, announce, fallback}) => {
+    const fixture: ExprFixture = {context: {...BASE_CONTEXT, ...context}, status}
+
+    it('record if: matches expected run/skip', () => {
+      expect(evaluateCondition(RECORD_IF, fixture)).toBe(record)
+    })
+
+    it('announce if: matches expected run/skip', () => {
+      expect(evaluateCondition(ANNOUNCE_IF, fixture)).toBe(announce)
+    })
+
+    it('fallback if: matches expected run/skip', () => {
+      expect(evaluateCondition(FALLBACK_IF, fixture)).toBe(fallback)
+    })
+
+    if (expectedStatus !== undefined) {
+      it(`SURVEY_STATUS evaluates to '${expectedStatus}'`, () => {
+        expect(exprStringify(evaluateExpression(SURVEY_STATUS_EXPR, fixture))).toBe(expectedStatus)
+      })
+    }
+  })
+
+  it('SURVEY_STATUS references the final conclusion, wiki-changed, job result, and the onboarded-commit condition (non-vacuity via term removal below)', () => {
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.agent-conclusion == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.wiki-changed == 'true'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.result == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("steps.recheck.conclusion == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.onboarded != 'true'")
+    expect(SURVEY_STATUS_EXPR).toContain("steps.wiki-commit.conclusion == 'success'")
+  })
+
+  it('announce if: has the same terms as SURVEY_STATUS plus onboarded == true (no skipped-commit exemption)', () => {
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.agent-conclusion == 'success'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.wiki-changed == 'true'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.result == 'success'")
+    expect(ANNOUNCE_IF).toContain("steps.recheck.conclusion == 'success'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.onboarded == 'true'")
+    expect(ANNOUNCE_IF).toContain("steps.wiki-commit.conclusion == 'success'")
+  })
+
+  it('the record if: and fallback if: are unchanged by this unit (still gated on resolve-outcome/recheck, not on wiki-changed)', () => {
+    expect(RECORD_IF).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
+    expect(RECORD_IF).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
+    expect(RECORD_IF).toContain("steps.recheck.conclusion == 'success'")
+    expect(RECORD_IF).not.toContain('wiki-changed')
+
+    expect(FALLBACK_IF).toContain("steps.record-result.outcome != 'success'")
+    expect(FALLBACK_IF).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
+    expect(FALLBACK_IF).toContain("steps.recheck.conclusion == 'success'")
+  })
+})
+
+describe('Unit 1 remediation: content-only detection routes index-only no-ops through the real retry/exhaustion gate end-to-end', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const steps = surveyJob?.steps ?? []
+
+  const detect1 = steps.find(step => step.id === 'wiki-changes')
+  const retry1 = steps.find(step => step.id === 'survey-agent-retry-1')
+  const detect2 = steps.find(step => step.id === 'wiki-changes-retry-1')
+  const retry2 = steps.find(step => step.id === 'survey-agent-retry-2')
+  const detect3 = steps.find(step => step.id === 'wiki-changes-retry-2')
+  const finalAttempt = steps.find(step => step.id === 'final-attempt')
+  const exhaustion = steps.find(step => step.name === 'Fail on survey exhaustion')
+  const handoffBuild = steps.find(step => step.id === 'wiki-handoff-build')
+
+  const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+  const announceStep = persistJob?.steps.find(step => step.name === '📣 Announce survey to gateway')
+  const fallbackStep = persistJob?.steps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+
+  const detectScriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
+
+  function runDetectCli(
+    mode: 'baseline' | 'detect',
+    cwd: string,
+    extraEnv: Record<string, string>,
+  ): Record<string, string> {
+    const outDir = mkdtempSync(join(tmpdir(), 'gate-tiein-output-'))
+    const outputPath = join(outDir, 'github-output')
+    try {
+      execFileSync(process.execPath, [detectScriptPath, mode], {
+        cwd,
+        env: {...process.env, ...extraEnv, GITHUB_OUTPUT: outputPath},
+      })
+      const raw = readFileSync(outputPath, 'utf8')
+      const result: Record<string, string> = {}
+      for (const line of raw.split('\n')) {
+        const eq = line.indexOf('=')
+        if (eq === -1) continue
+        result[line.slice(0, eq)] = line.slice(eq + 1)
+      }
+      return result
+    } finally {
+      rmSync(outDir, {recursive: true, force: true})
+    }
+  }
+
+  it('three index-only no-op attempts: two retries fire, three detects run, exhaustion fires, and survey-persist records failure once with everything else skipped', () => {
+    const repo = makeGateTestRepo()
+    try {
+      // Simulates sync-wiki restoring `data` content that already differs from the index
+      // before the agent ever runs — the exact drift Fro Bot's finding depends on.
+      writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nAlready edited before baseline\n')
+
+      const baselineOut = runDetectCli('baseline', repo, {})
+      const baselineHash = baselineOut.hash ?? ''
+      expect(baselineHash).toMatch(/^[0-9a-f]{64}$/)
+
+      // Attempt 1 (index-only): stage the pre-existing edit, no content change.
+      execFileSync('git', ['add', 'knowledge/log.md'], {cwd: repo})
+      const detect1Out = runDetectCli('detect', repo, {WIKI_CHANGE_BASELINE_HASH: baselineHash})
+      expect(detect1Out.changed).toBe('false')
+
+      // Attempt 2 / retry 1 (index-only): unstage a different clean file, bytes kept.
+      execFileSync('git', ['rm', '--cached', 'knowledge/index.md'], {cwd: repo})
+      const detect2Out = runDetectCli('detect', repo, {WIKI_CHANGE_BASELINE_HASH: baselineHash})
+      expect(detect2Out.changed).toBe('false')
+
+      // Attempt 3 / retry 2 (index-only): re-normalize the index, still no content change.
+      execFileSync('git', ['add', '-A'], {cwd: repo})
+      const detect3Out = runDetectCli('detect', repo, {WIKI_CHANGE_BASELINE_HASH: baselineHash})
+      expect(detect3Out.changed).toBe('false')
+
+      // The workflow's own gating: both retries fire, all three detects run.
+      const gateContext = {
+        'steps.survey-agent.conclusion': 'success',
+        'steps.wiki-changes.outputs.changed': detect1Out.changed ?? '',
+        'steps.survey-agent-retry-1.conclusion': 'success',
+        'steps.wiki-changes-retry-1.outputs.changed': detect2Out.changed ?? '',
+        'steps.survey-agent-retry-2.conclusion': 'success',
+        'steps.wiki-changes-retry-2.outputs.changed': detect3Out.changed ?? '',
+      }
+      expect(evaluateCondition(String(detect1?.if ?? ''), {context: gateContext})).toBe(true)
+      expect(evaluateCondition(String(retry1?.if ?? ''), {context: gateContext, status: {success: true}})).toBe(true)
+      expect(evaluateCondition(String(detect2?.if ?? ''), {context: gateContext})).toBe(true)
+      expect(evaluateCondition(String(retry2?.if ?? ''), {context: gateContext, status: {success: true}})).toBe(true)
+      expect(evaluateCondition(String(detect3?.if ?? ''), {context: gateContext})).toBe(true)
+
+      // The real final-attempt script, fed the real detect outputs.
+      const finalResult = runShellStep(String(finalAttempt?.run ?? ''), {
+        ATTEMPT_1_CONCLUSION: 'success',
+        DETECT_1_CONCLUSION: 'success',
+        DETECT_1_CHANGED: detect1Out.changed ?? '',
+        RETRY_1_CONCLUSION: 'success',
+        DETECT_2_CONCLUSION: 'success',
+        DETECT_2_CHANGED: detect2Out.changed ?? '',
+        RETRY_2_CONCLUSION: 'success',
+        DETECT_3_CONCLUSION: 'success',
+        DETECT_3_CHANGED: detect3Out.changed ?? '',
+      })
+      expect(finalResult.status).toBe(0)
+      expect(finalResult.outputs.conclusion).toBe('success')
+      expect(finalResult.outputs.changed).toBe('false')
+      expect(finalResult.outputs['detect-conclusion']).toBe('success')
+
+      // The real exhaustion step: fires.
+      const exhaustionContext = {
+        'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+        'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+        'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      }
+      expect(
+        evaluateCondition(String(exhaustion?.if ?? ''), {context: exhaustionContext, status: {cancelled: false}}),
+      ).toBe(true)
+      const exhaustionResult = runShellStep(String(exhaustion?.run ?? ''), {})
+      expect(exhaustionResult.status).not.toBe(0)
+      expect(exhaustionResult.stdout).toContain(
+        '::error::survey agent completed 3 attempts without the required wiki changes',
+      )
+
+      // Handoff build never runs (changed stayed false).
+      expect(
+        evaluateCondition(String(handoffBuild?.if ?? ''), {
+          context: {
+            'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+            'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+            'steps.onboarded.outputs.onboarded': 'true',
+          },
+        }),
+      ).toBe(false)
+
+      // survey-persist: job outputs agent-conclusion/wiki-changed read straight from
+      // final-attempt; the exhaustion step failing the job makes
+      // needs.survey-repo.result == 'failure'. Assert failure is recorded exactly once and
+      // everything else (handoff, ingest, announce, fallback) is skipped.
+      const persistContext = {
+        'needs.survey-repo.outputs.agent-conclusion': finalResult.outputs.conclusion ?? '',
+        'needs.survey-repo.outputs.wiki-changed': finalResult.outputs.changed ?? '',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      }
+      const persistFixture: ExprFixture = {context: persistContext, status: {cancelled: false, failure: false}}
+      expect(evaluateCondition(String(recordStep?.if ?? ''), persistFixture)).toBe(true)
+      expect(exprStringify(evaluateExpression(String(recordStep?.env?.SURVEY_STATUS ?? ''), persistFixture))).toBe(
+        'failure',
+      )
+      expect(evaluateCondition(String(announceStep?.if ?? ''), persistFixture)).toBe(false)
+      expect(evaluateCondition(String(fallbackStep?.if ?? ''), persistFixture)).toBe(false)
+    } finally {
+      rmSync(repo, {recursive: true, force: true})
+    }
+  })
+
+  it('positive sibling: retry 1 makes a real content edit — no retry 2 fires, and exhaustion does not fire', () => {
+    const repo = makeGateTestRepo()
+    try {
+      writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nAlready edited before baseline\n')
+      const baselineOut = runDetectCli('baseline', repo, {})
+      const baselineHash = baselineOut.hash ?? ''
+
+      // Attempt 1 (index-only no-op).
+      execFileSync('git', ['add', 'knowledge/log.md'], {cwd: repo})
+      const detect1Out = runDetectCli('detect', repo, {WIKI_CHANGE_BASELINE_HASH: baselineHash})
+      expect(detect1Out.changed).toBe('false')
+
+      // Retry 1 makes a REAL content edit this time.
+      writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nA real ingest happened.\n')
+      const detect2Out = runDetectCli('detect', repo, {WIKI_CHANGE_BASELINE_HASH: baselineHash})
+      expect(detect2Out.changed).toBe('true')
+
+      expect(
+        evaluateCondition(String(retry2?.if ?? ''), {
+          context: {
+            'steps.survey-agent-retry-1.conclusion': 'success',
+            'steps.wiki-changes-retry-1.outputs.changed': detect2Out.changed ?? '',
+          },
+          status: {success: true},
+        }),
+      ).toBe(false)
+
+      const finalResult = runShellStep(String(finalAttempt?.run ?? ''), {
+        ATTEMPT_1_CONCLUSION: 'success',
+        DETECT_1_CONCLUSION: 'success',
+        DETECT_1_CHANGED: detect1Out.changed ?? '',
+        RETRY_1_CONCLUSION: 'success',
+        DETECT_2_CONCLUSION: 'success',
+        DETECT_2_CHANGED: detect2Out.changed ?? '',
+        RETRY_2_CONCLUSION: 'skipped',
+        DETECT_3_CONCLUSION: 'skipped',
+        DETECT_3_CHANGED: '',
+      })
+      expect(finalResult.status).toBe(0)
+      expect(finalResult.outputs.conclusion).toBe('success')
+      expect(finalResult.outputs.changed).toBe('true')
+
+      expect(
+        evaluateCondition(String(exhaustion?.if ?? ''), {
+          context: {
+            'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+            'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+            'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+          },
+          status: {cancelled: false},
+        }),
+      ).toBe(false)
+    } finally {
+      rmSync(repo, {recursive: true, force: true})
+    }
+  })
+
+  it('exactly one baseline step and three detect steps are wired to it', () => {
+    const baselineStep = steps.find(step => step.id === 'wiki-baseline')
+    expect(String(baselineStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts baseline')
+    expect(steps.filter(step => step.id === 'wiki-baseline')).toHaveLength(1)
+
+    for (const detectStep of [detect1, detect2, detect3]) {
+      expect(String(detectStep?.env?.WIKI_CHANGE_BASELINE_HASH ?? '')).toContain('steps.wiki-baseline.outputs.hash')
+      expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
+    }
+    expect([detect1, detect2, detect3].filter(step => step !== undefined)).toHaveLength(3)
+  })
+})
+
+describe('survey-repo.yaml: non-empty handoff invariant (a positive detection must produce a real transferable delta)', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const steps = surveyJob?.steps ?? []
+
+  const finalAttempt = steps.find(step => step.id === 'final-attempt')
+  const exhaustion = steps.find(step => step.name === 'Fail on survey exhaustion')
+  const handoffBuild = steps.find(step => step.id === 'wiki-handoff-build')
+  const handoffCheck = steps.find(step => step.id === 'wiki-handoff-check')
+  const handoffUpload = steps.find(step => step.id === 'wiki-handoff-upload')
+
+  const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+  const announceStep = persistJob?.steps.find(step => step.name === '📣 Announce survey to gateway')
+  const fallbackStep = persistJob?.steps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+
+  const detectScriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
+  const handoffBaselineScriptPath = resolve(import.meta.dirname, 'wiki-handoff-baseline.ts')
+  const handoffBuildScriptPath = resolve(import.meta.dirname, 'wiki-handoff-build.ts')
+
+  function writeNested(absolutePath: string, contents: string): void {
+    mkdirSync(resolve(absolutePath, '..'), {recursive: true})
+    writeFileSync(absolutePath, contents)
+  }
+
+  /** Captures both real baselines — the detector's content hash and the handoff's status-driven manifest — before any simulated attempt runs. */
+  function captureBaselines(repo: string): {detectorHash: string; handoffBaselinePath: string} {
+    const detectOutDir = mkdtempSync(join(tmpdir(), 'gate2-detect-baseline-'))
+    const detectOutputPath = join(detectOutDir, 'github-output')
+    execFileSync(process.execPath, [detectScriptPath, 'baseline'], {
+      cwd: repo,
+      env: {...process.env, GITHUB_OUTPUT: detectOutputPath},
+    })
+    const detectorHash = readFileSync(detectOutputPath, 'utf8').trim().replace('hash=', '')
+    rmSync(detectOutDir, {recursive: true, force: true})
+
+    const handoffBaselinePath = join(mkdtempSync(join(tmpdir(), 'gate2-handoff-baseline-')), 'baseline.json')
+    execFileSync(process.execPath, [handoffBaselineScriptPath], {
+      cwd: repo,
+      env: {...process.env, WIKI_HANDOFF_BASELINE_PATH: handoffBaselinePath},
+    })
+    return {detectorHash, handoffBaselinePath}
+  }
+
+  function detectChanged(repo: string, baselineHash: string): string {
+    const outDir = mkdtempSync(join(tmpdir(), 'gate2-detect-'))
+    const outputPath = join(outDir, 'github-output')
+    try {
+      execFileSync(process.execPath, [detectScriptPath, 'detect'], {
+        cwd: repo,
+        env: {...process.env, GITHUB_OUTPUT: outputPath, WIKI_CHANGE_BASELINE_HASH: baselineHash},
+      })
+      return readFileSync(outputPath, 'utf8').trim().replace('changed=', '')
+    } finally {
+      rmSync(outDir, {recursive: true, force: true})
+    }
+  }
+
+  interface HandoffBuildResult {
+    status: number
+    changed: string
+    manifest: {changed: string[]; deleted: string[]} | undefined
+  }
+
+  function buildHandoff(repo: string, baselinePath: string): HandoffBuildResult {
+    const handoffDir = mkdtempSync(join(tmpdir(), 'gate2-handoff-'))
+    const outputDir = mkdtempSync(join(tmpdir(), 'gate2-handoff-output-'))
+    const outputPath = join(outputDir, 'github-output')
+    try {
+      execFileSync(process.execPath, [handoffBuildScriptPath], {
+        cwd: repo,
+        env: {
+          ...process.env,
+          WIKI_HANDOFF_DIR: handoffDir,
+          WIKI_HANDOFF_BASELINE_PATH: baselinePath,
+          GITHUB_OUTPUT: outputPath,
+        },
+      })
+      const changed = readFileSync(outputPath, 'utf8').trim().replace('changed=', '')
+      const manifest = JSON.parse(readFileSync(join(handoffDir, 'manifest.json'), 'utf8')) as {
+        changed: string[]
+        deleted: string[]
+      }
+      return {status: 0, changed, manifest}
+    } catch (error) {
+      const failure = error as {status?: number}
+      return {status: failure.status ?? 1, changed: '', manifest: undefined}
+    } finally {
+      rmSync(handoffDir, {recursive: true, force: true})
+      rmSync(outputDir, {recursive: true, force: true})
+    }
+  }
+
+  /** Shared assertion for both noise-only scenarios (1, 2, and the noise half of 7): exhaustion fires, nothing downstream runs. */
+  function assertNoiseOnlyAttemptsExhaustCleanly(
+    setupRepo: (repo: string) => void,
+    makeNoiseFile: (repo: string, attemptIndex: number) => void,
+    onboarded: string,
+  ): void {
+    const repo = makeHandoffGateRepo()
+    setupRepo(repo)
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    for (let attemptIndex = 0; attemptIndex < 3; attemptIndex++) {
+      makeNoiseFile(repo, attemptIndex)
+      expect(detectChanged(repo, detectorHash)).toBe('false')
+    }
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['false', 'false', 'false']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('false')
+
+    const exhaustionFixture: ExprFixture = {
+      context: {
+        'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+        'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+        'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      },
+      status: {cancelled: false},
+    }
+    expect(evaluateCondition(String(exhaustion?.if ?? ''), exhaustionFixture)).toBe(true)
+    expect(runShellStep(String(exhaustion?.run ?? ''), {}).status).not.toBe(0)
+
+    const handoffFixtureContext = {
+      'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+      'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+      'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      'steps.onboarded.outputs.onboarded': onboarded,
+      'steps.wiki-handoff-build.outcome': 'skipped',
+      'steps.wiki-handoff-build.outputs.changed': '',
+      'steps.wiki-handoff-check.outcome': 'skipped',
+    }
+    expect(evaluateCondition(String(handoffBuild?.if ?? ''), {context: handoffFixtureContext})).toBe(false)
+    expect(
+      evaluateCondition(String(handoffCheck?.if ?? ''), {context: handoffFixtureContext, status: {cancelled: false}}),
+    ).toBe(false)
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: handoffFixtureContext})).toBe(false)
+
+    if (onboarded === 'true') {
+      const persistFixture: ExprFixture = {
+        context: {
+          'needs.survey-repo.outputs.agent-conclusion': finalResult.outputs.conclusion ?? '',
+          'needs.survey-repo.outputs.wiki-changed': finalResult.outputs.changed ?? '',
+          'needs.survey-repo.result': 'failure',
+          'steps.recheck.conclusion': 'success',
+          'needs.survey-repo.outputs.onboarded': onboarded,
+          'steps.wiki-commit.conclusion': 'skipped',
+          'needs.survey-resolve.outputs.resolve-outcome': 'success',
+          'steps.record-result.outcome': 'success',
+        },
+        status: {cancelled: false, failure: false},
+      }
+      expect(evaluateCondition(String(recordStep?.if ?? ''), persistFixture)).toBe(true)
+      expect(exprStringify(evaluateExpression(String(recordStep?.env?.SURVEY_STATUS ?? ''), persistFixture))).toBe(
+        'failure',
+      )
+      expect(evaluateCondition(String(announceStep?.if ?? ''), persistFixture)).toBe(false)
+      expect(evaluateCondition(String(fallbackStep?.if ?? ''), persistFixture)).toBe(false)
+    }
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('false')
+    expect(build.manifest).toStrictEqual({changed: [], deleted: []})
+
+    rmSync(repo, {recursive: true, force: true})
+  }
+
+  it('scenario 1: three .swp-only attempts exhaust cleanly — handoff/check/upload/announce all skipped; the real builder also gives an empty manifest', () => {
+    assertNoiseOnlyAttemptsExhaustCleanly(
+      () => {},
+      (repo, attemptIndex) => {
+        writeNested(join(repo, 'knowledge', 'wiki', 'repos', `scratch-${attemptIndex}.md.swp`), 'noise\n')
+      },
+      'true',
+    )
+  })
+
+  it('scenario 2: three ignored-.md-only attempts exhaust cleanly — same result as scenario 1', () => {
+    assertNoiseOnlyAttemptsExhaustCleanly(
+      repo => writeFileSync(join(repo, '.gitignore'), '.DS_Store\n*.swp\n*.swo\nknowledge/wiki/repos/ignored-*.md\n'),
+      (repo, attemptIndex) => {
+        writeNested(join(repo, 'knowledge', 'wiki', 'repos', `ignored-${attemptIndex}.md`), '# Ignored\n')
+      },
+      'true',
+    )
+  })
+
+  it('scenario 3: noise on attempt 1, then a valid edit on retry 1 — retries stop, the real handoff is non-empty, the check passes, and upload becomes eligible', () => {
+    const repo = makeHandoffGateRepo()
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'scratch.md.swp'), 'noise\n')
+    expect(detectChanged(repo, detectorHash)).toBe('false')
+
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nA real ingest happened.\n')
+    expect(detectChanged(repo, detectorHash)).toBe('true')
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['false', 'true', '']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('true')
+
+    expect(
+      evaluateCondition(String(exhaustion?.if ?? ''), {
+        context: {
+          'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+          'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+          'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+        },
+        status: {cancelled: false},
+      }),
+    ).toBe(false)
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('true')
+    expect(build.manifest?.changed).toContain('knowledge/log.md')
+
+    const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+    expect(checkResult.status).toBe(0)
+
+    const uploadFixtureContext = {
+      'steps.wiki-handoff-build.outcome': 'success',
+      'steps.wiki-handoff-build.outputs.changed': build.changed,
+      'steps.wiki-handoff-check.outcome': 'success',
+    }
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: uploadFixtureContext})).toBe(true)
+
+    rmSync(repo, {recursive: true, force: true})
+  })
+
+  it('scenario 4 (the fix): restoring drifted content back to HEAD — detector says changed=true, the real handoff is empty, the new check fails, no exhaustion, no further retry, and upload/persisted-success/announce are all blocked', () => {
+    const repo = makeHandoffGateRepo()
+    // Simulates sync-wiki leaving pre-existing drift: the worktree differs from HEAD
+    // before any baseline is captured.
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nAlready differs at baseline\n')
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    // The "agent" restores the file to HEAD's exact committed content — a real content
+    // change relative to the drifted baseline, but git-status-invisible relative to HEAD.
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n')
+    expect(detectChanged(repo, detectorHash)).toBe('true')
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['true', '', '']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('true')
+
+    // No exhaustion: the final attempt's own changed output is 'true', not 'false'.
+    expect(
+      evaluateCondition(String(exhaustion?.if ?? ''), {
+        context: {
+          'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+          'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+          'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+        },
+        status: {cancelled: false},
+      }),
+    ).toBe(false)
+
+    // No further retry: retry 2's gate requires retry 1's detect to have said 'false'.
+    expect(
+      evaluateCondition(String(steps.find(step => step.id === 'survey-agent-retry-2')?.if ?? ''), {
+        context: {
+          'steps.survey-agent-retry-1.conclusion': 'success',
+          'steps.wiki-changes-retry-1.outputs.changed': 'true',
+        },
+        status: {success: true},
+      }),
+    ).toBe(false)
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('false')
+    expect(build.manifest).toStrictEqual({changed: [], deleted: []})
+
+    const checkFixtureContext = {
+      'steps.onboarded.outputs.onboarded': 'true',
+      'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+      'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+      'steps.wiki-handoff-build.outcome': 'success',
+    }
+    expect(
+      evaluateCondition(String(handoffCheck?.if ?? ''), {context: checkFixtureContext, status: {cancelled: false}}),
+    ).toBe(true)
+    const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+    expect(checkResult.status).not.toBe(0)
+    expect(checkResult.stdout).toContain(
+      '::error::Survey detection reported changes, but the handoff contains no transferable wiki delta.',
+    )
+
+    // Actions' implicit success gating, modeled explicitly: the check failed, so its own
+    // outcome is 'failure', and upload's if: (which now names that outcome directly)
+    // evaluates false — upload is never scheduled.
+    const uploadFixtureContext = {
+      'steps.wiki-handoff-build.outcome': 'success',
+      'steps.wiki-handoff-build.outputs.changed': build.changed,
+      'steps.wiki-handoff-check.outcome': 'failure',
+    }
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: uploadFixtureContext})).toBe(false)
+
+    // The check failing fails survey-repo, so survey-persist sees the job as 'failure' —
+    // SURVEY_STATUS is 'failure' despite wiki-changed == 'true', and announce is blocked.
+    const persistFixture: ExprFixture = {
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': finalResult.outputs.conclusion ?? '',
+        'needs.survey-repo.outputs.wiki-changed': finalResult.outputs.changed ?? '',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      status: {cancelled: false, failure: false},
+    }
+    expect(evaluateCondition(String(recordStep?.if ?? ''), persistFixture)).toBe(true)
+    expect(exprStringify(evaluateExpression(String(recordStep?.env?.SURVEY_STATUS ?? ''), persistFixture))).toBe(
+      'failure',
+    )
+    expect(evaluateCondition(String(announceStep?.if ?? ''), persistFixture)).toBe(false)
+    expect(evaluateCondition(String(fallbackStep?.if ?? ''), persistFixture)).toBe(false)
+
+    rmSync(repo, {recursive: true, force: true})
+  })
+
+  describe('scenario 5: real non-empty manifests for every kind of allowed content change', () => {
+    it('a valid tracked edit', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nReal edit.\n')
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: ['knowledge/log.md'], deleted: []})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('a new untracked page', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'brand-new.md'), '# Brand new\n')
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: ['knowledge/wiki/repos/brand-new.md'], deleted: []})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('a deletion-only delta', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      execFileSync('git', ['rm', '-q', 'knowledge/log.md'], {cwd: repo})
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: [], deleted: ['knowledge/log.md']})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('an allowed rename wholly within knowledge/wiki/', () => {
+      const repo = makeHandoffGateRepo()
+      writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'old-name.md'), '# Repo page\n')
+      execFileSync('git', ['add', 'knowledge/wiki/repos/old-name.md'], {cwd: repo})
+      execFileSync('git', ['commit', '-q', '-m', 'add old-name page'], {cwd: repo})
+      const {handoffBaselinePath} = captureBaselines(repo)
+      execFileSync('git', ['mv', 'knowledge/wiki/repos/old-name.md', 'knowledge/wiki/repos/new-name.md'], {cwd: repo})
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest?.changed).toContain('knowledge/wiki/repos/new-name.md')
+      expect(build.manifest?.deleted).toContain('knowledge/wiki/repos/old-name.md')
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+  })
+
+  describe('scenario 6: build failure, missing/invalid build output, and cancellation', () => {
+    it("a build failure keeps its own failure and isn't mislabeled — the check never runs", () => {
+      const context = {
+        'steps.onboarded.outputs.onboarded': 'true',
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.wiki-handoff-build.outcome': 'failure',
+      }
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: false}})).toBe(false)
+    })
+
+    it.each([
+      ['missing (unset)', undefined],
+      ['empty', ''],
+      ['malformed (garbage)', 'maybe'],
+    ] as const)('%s build output after a successful build fails the check', (_label, value) => {
+      const env: Record<string, string> = value === undefined ? {} : {WIKI_HANDOFF_BUILD_CHANGED: value}
+      const result = runShellStep(String(handoffCheck?.run ?? ''), env)
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain('WIKI_HANDOFF_BUILD_CHANGED is missing or malformed')
+    })
+
+    it('cancellation prevents the check from running at all', () => {
+      const context = {
+        'steps.onboarded.outputs.onboarded': 'true',
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.wiki-handoff-build.outcome': 'success',
+      }
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: true}})).toBe(false)
+    })
+  })
+
+  describe('scenario 7: not onboarded', () => {
+    it('noise-only still exhausts (exhaustion does not depend on onboarded)', () => {
+      assertNoiseOnlyAttemptsExhaustCleanly(
+        () => {},
+        (repo, attemptIndex) => {
+          writeNested(join(repo, 'knowledge', 'wiki', 'repos', `scratch-${attemptIndex}.md.swp`), 'noise\n')
+        },
+        'false',
+      )
+    })
+
+    it('a valid edit skips build, check, and upload', () => {
+      const context = {
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.onboarded.outputs.onboarded': 'false',
+        'steps.wiki-handoff-build.outcome': 'skipped',
+        'steps.wiki-handoff-build.outputs.changed': '',
+        'steps.wiki-handoff-check.outcome': 'skipped',
+      }
+      expect(evaluateCondition(String(handoffBuild?.if ?? ''), {context})).toBe(false)
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: false}})).toBe(false)
+      expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context})).toBe(false)
+    })
+  })
+
+  it('build → check → upload ordering holds, and the check sits between them', () => {
+    const buildIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-build')
+    const checkIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-check')
+    const uploadIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-upload')
+    expect(buildIndex).toBeGreaterThanOrEqual(0)
+    expect(checkIndex).toBeGreaterThan(buildIndex)
+    expect(uploadIndex).toBeGreaterThan(checkIndex)
+  })
+
+  it("upload's if: names the check step's outcome, keeping its existing terms", () => {
+    const condition = String(handoffUpload?.if ?? '')
+    expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+    expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
+    expect(condition).toContain("steps.wiki-handoff-check.outcome == 'success'")
+  })
+
+  it("the check's if: requires all six documented terms", () => {
+    const condition = String(handoffCheck?.if ?? '')
+    expect(condition).toContain('!cancelled()')
+    expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
+    expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.detect-conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.changed == 'true'")
+    expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
   })
 })

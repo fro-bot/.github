@@ -132,28 +132,33 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     } >> "$GITHUB_OUTPUT"
 ```
 
-**3. Recheck visibility before any persistence or external emit**, scoped to every survey (not just wiki-changed), reusing the App token from step 2:
+**3. Recheck visibility before any persistence or external emit**, scoped to every survey (not just wiki-changed), using its own dedicated recheck token:
 
 ```yaml
 - name: 🔒 Recheck visibility
   id: recheck
-  if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
+  if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
   env:
     NODE_ID: ${{ inputs.node_id }}
-    GH_TOKEN: ${{ steps.gate-token.outputs.token }}
+    GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
   run: |
     # shellcheck disable=SC2016
     gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
-    # NOTE: recheck currently swallows stderr with 2>/dev/null — see follow-up
-    # below. Resolve step (above) uses the tempfile-capture pattern instead.
-    response=$(gh api graphql \
+    gh_stderr=$(mktemp)
+    trap 'rm -f "$gh_stderr"' EXIT
+    if ! response=$(gh api graphql \
       -F id="$NODE_ID" \
       -f query="$gql_query" \
-      2>/dev/null) || {
-      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      2>"$gh_stderr"); then
+      printf 'GraphQL recheck failed for node_id: %s\n' "$NODE_ID" >&2
+      printf '%s\n' '--- gh stderr ---' >&2
+      cat "$gh_stderr" >&2
+      printf '%s\n' '--- end gh stderr ---' >&2
       exit 1
-    }
+    fi
 
+    # No gh stderr dump here: a jq mismatch is a logic failure (repo flipped private /
+    # unexpected isPrivate value), not a gh transport/API error — there is no gh stderr to surface.
     if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
       printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
       exit 1
@@ -162,25 +167,31 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     echo "private=false" >> "$GITHUB_OUTPUT"  # only reached on the confirmed-public path
 ```
 
-The recheck snippet above intentionally shows production verbatim, including the `2>/dev/null` that the resolve step (in section 2) no longer uses. The asymmetry is real: resolve was hardened during the 2026-05-20 diagnostic loop (PRs #3344/#3346), recheck has not yet received the same tempfile-capture treatment. Tracked as follow-up issue #3345. Until #3345 lands, recheck failures are diagnostically opaque; if the recheck starts failing, the first investigation step is to copy the resolve-step pattern locally and resubmit a diagnostic dispatch with stderr captured.
+The recheck snippet above now matches production verbatim: the `2>/dev/null` swallow is gone, replaced with the same tempfile-capture pattern the resolve step (in section 2) already used. The asymmetry once tracked here as follow-up issue #3345 ("Survey Repo privacy gate: complete the stderr-surfacing pattern + tempfile cleanup robustness") was resolved on 2026-06-04 — recheck now captures `gh` stderr to a tempfile and dumps it between marker lines on failure, same as resolve.
 
 **4. Route every persistence and external-emit step through the recheck-success gate.** This is the load-bearing detail. The recheck is only as useful as the breadth of its gating:
 
 ```yaml
 - name: Commit wiki ingest to data branch
   id: wiki-commit
-  if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success'
+  if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
   # ...
 
 - name: Record survey result
-  if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success'
+  if: >-
+    ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' &&
+    needs.survey-resolve.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
   env:
     REPO_PRIVATE: ${{ steps.recheck.outputs.private }}  # NOT hardcoded 'false'
   # ...
 
-broadcast:
-  needs: survey-repo
-  if: needs.survey-repo.result == 'success'  # recheck failure fails the job, suppressing broadcast
+- name: 📣 Announce survey to gateway
+  if: >-
+    ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
+    needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
+    needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' }}
+  # this step's own condition requires steps.recheck.conclusion == 'success' directly —
+  # a recheck failure suppresses the announce without relying on job-level propagation
 ```
 
 **5. Tighten the caller-side dispatch contract** — `scripts/reconcile-repos.ts`:
@@ -237,7 +248,7 @@ async function acceptedInvitationRepositoryPrivacy(invitationPrivacy: {kind: str
 
 The workflow is now its own privacy boundary, not a downstream consumer of someone else's gate. Even if engine-side gating fails or a caller regresses, the workflow refuses to expose canonical identity until GraphQL confirms `isPrivate === false`. Shape validation happens *before* any log statement or external call, so operator misuse (e.g., passing `owner/repo` as `node_id`) is rejected with a neutral message that doesn't echo the bad input. The recheck before persistence closes the visibility-flip race during long agent runs — if the repo flips private mid-run, the agent's output stays local to the runner and never reaches the data branch, the metadata file, or any social broadcast.
 
-The breadth of the recheck gate matters as much as its existence. Routing the recheck through every persistence and external-emit step (not just wiki-commit) means the broadcast job's existing `needs.survey-repo.result == 'success'` dependency picks up the privacy guarantee for free — when the recheck fails, the job fails, and broadcast is suppressed automatically. One change closes three leak paths.
+The breadth of the recheck gate matters as much as its existence. Routing the recheck through every persistence and external-emit step (not just wiki-commit) means the announce step's own `if:` already requires `steps.recheck.conclusion == 'success'` directly — when the recheck fails, the announce is suppressed without relying on separate job-level plumbing. One change closes three leak paths.
 
 ## Prevention
 
@@ -251,6 +262,14 @@ The breadth of the recheck gate matters as much as its existence. Routing the re
 8. **Test the contract directly.** At least one test should assert the exact `inputs:` shape the caller sends to `createWorkflowDispatch`, separate from logic tests. Contract drift is invisible to behavior tests until it leaks.
 9. **Make fail-closed paths observable.** Silent `catch {}` that downgrades to a safe default is correct but mute. Write a structured stderr line carrying error status and kind (no canonical identifiers) so transient failures are visible in CI logs.
 10. **Capture `gh api` stderr to a tempfile, not `2>/dev/null`.** Workflow gates that swallow the underlying API error force every future investigation to start from zero. Use `2>"$gh_stderr"` + `cat "$gh_stderr" >&2` between marker lines on failure. See `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the bash-builtin-`printf` marker pattern.
+
+## Update (2026-09-25)
+
+The gate now lives in two jobs: `survey-resolve` mints a token and resolves/verifies the
+target before the agent runs, and `survey-persist` mints its own dedicated recheck token
+and reruns the recheck before any persistence or emit step. The standalone `broadcast`
+job above no longer exists — broadcast is the `📣 Announce survey to gateway` step inside
+`survey-persist`, gated directly on `steps.recheck.conclusion == 'success'`.
 
 ## Related Issues
 
