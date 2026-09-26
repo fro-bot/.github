@@ -60,7 +60,7 @@ Field notes:
 
 Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows, all running under the Fro Bot App identity (`fro-bot[bot]`). The ruleset in `.github/settings.yml` enforces this: it bypasses only the App, so no other identity can update or create `data`. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
 
-**Interim state:** reconcile's own integrity check (`verifyDataBranchIntegrity`) hasn't caught up to the ruleset yet — it still accepts both `fro-bot` and `fro-bot[bot]` as legitimate `data` tip authors, and only checks the tip commit. A tightened check that requires every commit since the last reseed to be `fro-bot[bot]`-authored is planned as a follow-up once a promotion has reseeded `data` clean.
+**Interim state:** reconcile's own integrity check (`verifyDataBranchIntegrity`) hasn't caught up to the ruleset yet — it still accepts both `fro-bot` and `fro-bot[bot]` as legitimate `data` tip authors, and only checks the tip commit. It will require every commit since the last reseed to be `fro-bot[bot]`-authored once a promotion has reseeded `data`.
 
 Onboarding status values:
 
@@ -139,12 +139,12 @@ Update convention: social broadcast workflow updates this file programmatically 
 
 ## Credential expectations
 
-| File                    | Updated by                          | Credential                 |
-| ----------------------- | ----------------------------------- | -------------------------- |
-| `allowlist.yaml`        | Human edit on `data` branch         | app token (`fro-bot[bot]`) |
-| `repos.yaml`            | Invitation handler, Daily reconcile | app token (`fro-bot[bot]`) |
-| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`) |
-| `social-cooldowns.yaml` | Social broadcast                    | app token (`fro-bot[bot]`) |
+| File                    | Updated by                          | Credential                         |
+| ----------------------- | ----------------------------------- | ---------------------------------- |
+| `allowlist.yaml`        | Human edit on `data` branch         | app token (`fro-bot[bot]`) to push |
+| `repos.yaml`            | Invitation handler, Daily reconcile | app token (`fro-bot[bot]`)         |
+| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`)         |
+| `social-cooldowns.yaml` | No active writer                    | n/a                                |
 
 Every `data`-branch write, human or automated, now goes through an App installation token. The ruleset declared in `.github/settings.yml` bypasses only the Fro Bot App (`Integration` actor, id 218644) on `update`, `non_fast_forward`, and `creation`, so a personal push or a classic-PAT commit is rejected outright — there is no `fro-bot` (PAT) write path to `data` anymore.
 
