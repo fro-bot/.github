@@ -417,13 +417,17 @@ jobs:
           {
             echo "conclusion=$conclusion"
             echo "changed=$changed"
+            echo "detect-conclusion=$detect_conclusion"
           } >> "$GITHUB_OUTPUT"
 
       # The one fail-loud path this plan adds: every attempt concluded cleanly but
       # never produced the mandatory wiki changes. Runs after selection so selection's
-      # outputs still stand even though this step fails the job.
+      # outputs still stand even though this step fails the job. Also requires the final
+      # attempt's own detect step to have succeeded — a failed detect already fails the
+      # job on its own, and without this term this step would misreport that failure as
+      # a clean no-op exhaustion.
       - name: Fail on survey exhaustion
-        if: ${{ !cancelled() && steps.final-attempt.outputs.conclusion == 'success' && steps.final-attempt.outputs.changed == 'false' }}
+        if: ${{ !cancelled() && steps.final-attempt.outputs.conclusion == 'success' && steps.final-attempt.outputs.changed == 'false' && steps.final-attempt.outputs.detect-conclusion == 'success' }}
         run: |
           echo '::error::survey agent completed 3 attempts without the required wiki changes'
           exit 1

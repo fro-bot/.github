@@ -822,11 +822,15 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
       DETECT_3_CHANGED: '',
     }
 
-    const scenarios: [string, Record<string, string>, {conclusion: string; changed: string}][] = [
+    const scenarios: [
+      string,
+      Record<string, string>,
+      {conclusion: string; changed: string; detectConclusion: string},
+    ][] = [
       [
         'attempt 1 succeeds and changed',
         {...baseSkipped, DETECT_1_CONCLUSION: 'success', DETECT_1_CHANGED: 'true'},
-        {conclusion: 'success', changed: 'true'},
+        {conclusion: 'success', changed: 'true', detectConclusion: 'success'},
       ],
       [
         'attempt 1 no-op, retry 1 succeeds and changed',
@@ -838,7 +842,7 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
           DETECT_2_CONCLUSION: 'success',
           DETECT_2_CHANGED: 'true',
         },
-        {conclusion: 'success', changed: 'true'},
+        {conclusion: 'success', changed: 'true', detectConclusion: 'success'},
       ],
       [
         'all three attempts succeed with no changes (exhaustion case)',
@@ -853,12 +857,12 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
           DETECT_3_CONCLUSION: 'success',
           DETECT_3_CHANGED: 'false',
         },
-        {conclusion: 'success', changed: 'false'},
+        {conclusion: 'success', changed: 'false', detectConclusion: 'success'},
       ],
       [
         'attempt 1 fails outright (retries never run)',
         {...baseSkipped, ATTEMPT_1_CONCLUSION: 'failure'},
-        {conclusion: 'failure', changed: 'false'},
+        {conclusion: 'failure', changed: 'false', detectConclusion: 'skipped'},
       ],
       [
         'retry 1 fails after attempt 1 no-op',
@@ -868,12 +872,12 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
           DETECT_1_CHANGED: 'false',
           RETRY_1_CONCLUSION: 'failure',
         },
-        {conclusion: 'failure', changed: 'false'},
+        {conclusion: 'failure', changed: 'false', detectConclusion: 'skipped'},
       ],
       [
         "final attempt succeeds but its own detect fails — changed must not fall back to 'true'",
         {...baseSkipped, DETECT_1_CONCLUSION: 'failure', DETECT_1_CHANGED: ''},
-        {conclusion: 'success', changed: 'false'},
+        {conclusion: 'success', changed: 'false', detectConclusion: 'failure'},
       ],
     ]
 
@@ -882,20 +886,34 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
       expect(result.status).toBe(0)
       expect(result.outputs.conclusion).toBe(expected.conclusion)
       expect(result.outputs.changed).toBe(expected.changed)
+      expect(result.outputs['detect-conclusion']).toBe(expected.detectConclusion)
     })
   })
 
   describe('exhaustion: fails loudly only when the final attempt was a clean no-op', () => {
-    it("if: requires the final attempt's conclusion == 'success' and changed == 'false'", () => {
+    it("if: requires the final attempt's conclusion == 'success', changed == 'false', and detect-conclusion == 'success'", () => {
       const condition = String(exhaustion?.if ?? '')
       expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
       expect(condition).toContain("steps.final-attempt.outputs.changed == 'false'")
+      expect(condition).toContain("steps.final-attempt.outputs.detect-conclusion == 'success'")
     })
 
     it('run: emits ::error:: naming the attempt count and exits non-zero', () => {
       const result = runShellStep(String(exhaustion?.run ?? ''), {})
       expect(result.status).not.toBe(0)
       expect(result.stdout).toContain('::error::survey agent completed 3 attempts without the required wiki changes')
+    })
+
+    it("a failed detect on the final attempt (conclusion success, changed false, detect-conclusion failure) does NOT evaluate as exhaustion — it's a real detect failure, not a clean no-op", () => {
+      const fixture: ExprFixture = {
+        context: {
+          'steps.final-attempt.outputs.conclusion': 'success',
+          'steps.final-attempt.outputs.changed': 'false',
+          'steps.final-attempt.outputs.detect-conclusion': 'failure',
+        },
+        status: {cancelled: false},
+      }
+      expect(evaluateCondition(String(exhaustion?.if ?? ''), fixture)).toBe(false)
     })
   })
 
