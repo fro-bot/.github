@@ -6592,3 +6592,22 @@ Sources: https://github.com/fro-bot/dashboard/tree/51c57fdae249e50451eafd74253aa
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-09-26 23:19] ingest | marcusrbrown/panthe.ai
+
+Created [[marcusrbrown--panthe-ai]], added its absence-of-workflows record to
+[[github-actions-ci]], and cataloged both in the index. The public
+repository's complete `main` tree at `f0c4ff0` has only README.md (a heading),
+LICENSE and .gitignore; its founding commit is dated 2023-06-11. No manifest,
+CI or Fro Bot workflow is present. Purpose and implementation are not documented;
+a separate Fro Bot onboarding draft PR is a possible follow-up if the repo becomes
+active. No new topic, entity or comparison page is justified by this sparse snapshot.
+Reads were limited to the directory listing and README.
+
+Sources: https://github.com/marcusrbrown/panthe.ai/tree/f0c4ff0119bfb82feb0591950247cdd9e0596c17
+
+## [2026-09-26 23:24] ingest | repo:marcusrbrown/panthe.ai
+
+Surveyed marcusrbrown/panthe.ai and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthe.ai
