@@ -614,27 +614,16 @@ jobs:
           fi
           exit "$status"
 
-      # Write the survey outcome back to metadata/repos.yaml on the data branch so
-      # the reconcile staleness gate (30 days or more since last survey) can filter this
-      # repo out of tomorrow's candidate list.
+      # Write the survey outcome back to metadata/repos.yaml so the reconcile staleness
+      # gate can filter this repo out of tomorrow's candidate list. 'success' needs the
+      # final attempt's own success + wiki change, survey-repo's job success, a passed
+      # recheck, and (when onboarded) a successful wiki commit (KTD2). Anything else —
+      # including a clean no-op exhaustion — records 'failure'.
       #
-      # Status mapping:
-      # - 'success' requires BOTH the agent step AND the wiki commit step to have
-      #   succeeded (or the wiki commit to have been skipped because the agent made
-      #   no changes — that is a valid no-op survey).
-      # - Any failure upstream of metadata write — agent error, wiki commit ENOENT,
-      #   wiki commit conflict-exhaustion — records 'failure' so the reconcile
-      #   staleness gate re-dispatches the repo tomorrow instead of waiting 30 days.
-      # - The `!= 'skipped'` guard on the agent step skips metadata writes entirely
-      #   when an upstream step kept the agent from running at all.
-      # - `resolve-outcome == 'success'` guards against an empty REPO_OWNER/REPO_NAME:
-      #   if survey-repo ended before the agent step ran at all (e.g. sync-wiki/persona/
-      #   setup failure), agent-conclusion is empty (not 'skipped'), which would
-      #   otherwise let this step run with nothing to identify the target repo.
-      #
-      # A wiki-commit conclusion of 'skipped' (its step `if:` returned false because
-      # the agent made no changes, or the trusted recheck failed) counts as success,
-      # not failure, because the agent itself completed cleanly.
+      # `resolve-outcome == 'success'` in this step's `if:` guards against an empty
+      # REPO_OWNER/REPO_NAME: if survey-repo ended before the final attempt ran at all
+      # (e.g. a setup failure), agent-conclusion is empty, not 'skipped', which would
+      # otherwise let this step run with nothing to identify the target repo.
       - name: Record survey result
         id: record-result
         if: >-
@@ -647,8 +636,9 @@ jobs:
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS:
-            ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
-            steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
+            ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
+            needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
+            (needs.survey-repo.outputs.onboarded != 'true' || steps.wiki-commit.conclusion == 'success')) && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
       # Best-effort Discord presence: announce the completed survey to the gateway,
@@ -658,10 +648,9 @@ jobs:
       # any error and this step is excluded from the job's success aggregation.
       - name: 📣 Announce survey to gateway
         if: >-
-          ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
-          needs.survey-repo.outputs.agent-conclusion == 'success' &&
-          needs.survey-repo.outputs.onboarded == 'true' &&
-          (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
+          ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
+          needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
+          needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' }}
         env:
           EVENT_TYPE: survey_completed
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}

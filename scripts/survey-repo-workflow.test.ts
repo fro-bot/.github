@@ -86,6 +86,197 @@ function runShellStep(
   }
 }
 
+/**
+ * Minimal GitHub Actions expression evaluator (Unit 4). Parses the *actual* `${{ }}`
+ * strings read from the workflow YAML rather than restating them as hard-coded terms,
+ * so these tests exercise the real expressions. Supports `==`, `!=`, `&&`, `||`, `!`,
+ * parentheses, single-quoted string literals, the `a && 'x' || 'y'` idiom, and the four
+ * status functions as fixture inputs. Any `needs.*`/`steps.*` identifier missing from the
+ * fixture evaluates to `''`, matching Actions' own behavior for unset context values.
+ */
+type ExprValue = {kind: 'bool'; value: boolean} | {kind: 'str'; value: string}
+
+interface ExprFixture {
+  context?: Record<string, string>
+  status?: Partial<Record<'always' | 'cancelled' | 'failure' | 'success', boolean>>
+}
+
+type ExprToken =
+  {type: 'and' | 'eq' | 'lparen' | 'neq' | 'not' | 'or' | 'rparen'} | {type: 'call' | 'ident' | 'string'; value: string}
+
+function stripExpressionWrapper(raw: string): string {
+  // Folded YAML scalars are already collapsed to single-line strings by the `yaml`
+  // parser's plain/folded-scalar handling, but normalize defensively in case a caller
+  // passes a raw multi-line block.
+  const folded = raw.replaceAll(/\s+/g, ' ').trim()
+  if (!folded.startsWith('${{') || !folded.endsWith('}}')) {
+    throw new Error(`expected a \${{ }} expression, got: ${raw}`)
+  }
+  return folded.slice(3, -2).trim()
+}
+
+function tokenizeExpression(expr: string): ExprToken[] {
+  const tokens: ExprToken[] = []
+  let i = 0
+  while (i < expr.length) {
+    const c = expr[i]
+    if (c === undefined) break
+    if (/\s/.test(c)) {
+      i++
+      continue
+    }
+    if (c === '(') {
+      tokens.push({type: 'lparen'})
+      i++
+      continue
+    }
+    if (c === ')') {
+      tokens.push({type: 'rparen'})
+      i++
+      continue
+    }
+    if (expr.startsWith('&&', i)) {
+      tokens.push({type: 'and'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('||', i)) {
+      tokens.push({type: 'or'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('==', i)) {
+      tokens.push({type: 'eq'})
+      i += 2
+      continue
+    }
+    if (expr.startsWith('!=', i)) {
+      tokens.push({type: 'neq'})
+      i += 2
+      continue
+    }
+    if (c === '!') {
+      tokens.push({type: 'not'})
+      i++
+      continue
+    }
+    if (c === "'") {
+      const end = expr.indexOf("'", i + 1)
+      if (end === -1) throw new Error(`unterminated string literal in expression: ${expr}`)
+      tokens.push({type: 'string', value: expr.slice(i + 1, end)})
+      i = end + 1
+      continue
+    }
+    const identMatch = /^[A-Z_][\w.-]*/i.exec(expr.slice(i))
+    if (identMatch) {
+      const name = identMatch[0]
+      i += name.length
+      let j = i
+      while (j < expr.length && /\s/.test(expr[j] ?? '')) j++
+      if (expr[j] === '(') {
+        let k = j + 1
+        while (k < expr.length && /\s/.test(expr[k] ?? '')) k++
+        if (expr[k] !== ')') throw new Error(`unsupported function call with arguments: ${name} in ${expr}`)
+        tokens.push({type: 'call', value: name})
+        i = k + 1
+        continue
+      }
+      tokens.push({type: 'ident', value: name})
+      continue
+    }
+    throw new Error(`unexpected character '${c}' at position ${i} in expression: ${expr}`)
+  }
+  return tokens
+}
+
+function exprTruthy(value: ExprValue): boolean {
+  return value.kind === 'bool' ? value.value : value.value !== ''
+}
+
+function exprStringify(value: ExprValue): string {
+  return value.kind === 'bool' ? String(value.value) : value.value
+}
+
+const STATUS_FUNCTION_NAMES = ['always', 'cancelled', 'failure', 'success'] as const
+
+function evaluateExpression(rawIf: string, fixture: ExprFixture): ExprValue {
+  const tokens = tokenizeExpression(stripExpressionWrapper(rawIf))
+  let pos = 0
+  const peek = (): ExprToken | undefined => tokens[pos]
+  const advance = (): ExprToken | undefined => tokens[pos++]
+
+  function parseOr(): ExprValue {
+    let left = parseAnd()
+    while (peek()?.type === 'or') {
+      advance()
+      const right = parseAnd()
+      left = exprTruthy(left) ? left : right
+    }
+    return left
+  }
+
+  function parseAnd(): ExprValue {
+    let left = parseEquality()
+    while (peek()?.type === 'and') {
+      advance()
+      const right = parseEquality()
+      left = exprTruthy(left) ? right : left
+    }
+    return left
+  }
+
+  function parseEquality(): ExprValue {
+    let left = parseUnary()
+    while (peek()?.type === 'eq' || peek()?.type === 'neq') {
+      const op = advance()
+      const right = parseUnary()
+      const equal = exprStringify(left) === exprStringify(right)
+      left = {kind: 'bool', value: op?.type === 'eq' ? equal : !equal}
+    }
+    return left
+  }
+
+  function parseUnary(): ExprValue {
+    if (peek()?.type === 'not') {
+      advance()
+      const operand = parseUnary()
+      return {kind: 'bool', value: !exprTruthy(operand)}
+    }
+    return parsePrimary()
+  }
+
+  function parsePrimary(): ExprValue {
+    const token = advance()
+    if (!token) throw new Error(`unexpected end of expression: ${rawIf}`)
+    if (token.type === 'lparen') {
+      const inner = parseOr()
+      const close = advance()
+      if (close?.type !== 'rparen') throw new Error(`expected ')' in expression: ${rawIf}`)
+      return inner
+    }
+    if (token.type === 'string') return {kind: 'str', value: token.value}
+    if (token.type === 'call') {
+      const name = token.value
+      if (!(STATUS_FUNCTION_NAMES as readonly string[]).includes(name)) {
+        throw new Error(`unsupported status function '${name}' in expression: ${rawIf}`)
+      }
+      return {kind: 'bool', value: fixture.status?.[name as (typeof STATUS_FUNCTION_NAMES)[number]] ?? false}
+    }
+    if (token.type === 'ident') {
+      return {kind: 'str', value: fixture.context?.[token.value] ?? ''}
+    }
+    throw new Error(`unexpected token in expression: ${rawIf}`)
+  }
+
+  const result = parseOr()
+  if (pos !== tokens.length) throw new Error(`unexpected trailing tokens in expression: ${rawIf}`)
+  return result
+}
+
+function evaluateCondition(rawIf: string, fixture: ExprFixture): boolean {
+  return exprTruthy(evaluateExpression(rawIf, fixture))
+}
+
 describe('survey-repo correction injection contract', () => {
   const steps = workflowParsed.jobs['survey-repo']?.steps ?? []
 
@@ -748,5 +939,279 @@ describe('survey-repo.yaml Unit 3: bounded retries, final-attempt selection, and
     expect(outputs.onboarded).toContain('steps.onboarded.outputs.onboarded')
     expect(outputs['target-repository']).toContain('steps.ingest-prompt.outputs.target-repository')
     expect(outputs['target-slug']).toContain('steps.ingest-prompt.outputs.target-slug')
+  })
+})
+
+describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () => {
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+  const announceStep = persistJob?.steps.find(step => step.name === '📣 Announce survey to gateway')
+  const fallbackStep = persistJob?.steps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+
+  const SURVEY_STATUS_EXPR = String(recordStep?.env?.SURVEY_STATUS ?? '')
+  const RECORD_IF = String(recordStep?.if ?? '')
+  const ANNOUNCE_IF = String(announceStep?.if ?? '')
+  const FALLBACK_IF = String(fallbackStep?.if ?? '')
+
+  it('reads non-empty expressions for all four conditions from the real workflow file', () => {
+    expect(SURVEY_STATUS_EXPR).not.toBe('')
+    expect(RECORD_IF).not.toBe('')
+    expect(ANNOUNCE_IF).not.toBe('')
+    expect(FALLBACK_IF).not.toBe('')
+  })
+
+  // Context keys referenced by SURVEY_STATUS/record-if/announce-if/fallback-if. Any key
+  // omitted from a fixture row below defaults to '' via evaluateExpression, matching how
+  // Actions treats an unset needs./steps. reference.
+  const BASE_CONTEXT = {
+    'needs.survey-repo.outputs.agent-conclusion': '',
+    'needs.survey-repo.outputs.wiki-changed': '',
+    'needs.survey-repo.result': '',
+    'steps.recheck.conclusion': '',
+    'needs.survey-repo.outputs.onboarded': '',
+    'steps.wiki-commit.conclusion': '',
+    'needs.survey-resolve.outputs.resolve-outcome': '',
+    'steps.record-result.outcome': '',
+  } as const satisfies Record<string, string>
+
+  interface Row {
+    label: string
+    context: Partial<Record<keyof typeof BASE_CONTEXT, string>>
+    status?: ExprFixture['status']
+    expectedStatus?: 'failure' | 'success'
+    record: boolean
+    announce: boolean
+    fallback: boolean
+  }
+
+  const rows: Row[] = [
+    {
+      label: 'success, changes, onboarded, commit success',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: false,
+    },
+    {
+      label: '3× no-op exhaustion (agent success, wiki-changed false, survey-repo result failure, commit skipped)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'hard failure at an attempt (agent-conclusion failure, result failure)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'failure',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'detect failed after a successful attempt (agent success, wiki-changed false, result failure)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'handoff build/upload failed (agent success, wiki-changed true, result failure, commit skipped)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'not onboarded, with changes, commit skipped, result success',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'success',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'recheck failed → no record, no announce',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'failure',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': '',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'skipped',
+      },
+      record: false,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: 'survey-repo cancelled (result cancelled, cancelled() true)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': '',
+        'needs.survey-repo.outputs.wiki-changed': '',
+        'needs.survey-repo.result': 'cancelled',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': '',
+        'steps.wiki-commit.conclusion': '',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'skipped',
+      },
+      status: {cancelled: true, failure: false},
+      record: false,
+      announce: false,
+      fallback: true,
+    },
+    {
+      // Defense-in-depth isolation for the wiki-changed term: given Unit 3's exhaustion
+      // step, this exact combination (agent success, wiki-changed false, yet the job
+      // result is still success) should never occur in production — the exhaustion step
+      // deterministically fails the job whenever the final attempt succeeds with no
+      // changes, so `needs.survey-repo.result == 'success'` alone already rejects the
+      // realistic "3× no-op exhaustion" row below. This synthetic row isolates the
+      // wiki-changed term itself so a regression in Unit 3 (or a future edit that drops
+      // that coupling) doesn't silently start recording false successes.
+      label: 'wiki-changed false in isolation (would be unreachable if Unit 3 holds; defense-in-depth)',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'false',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'false',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      label: "survey-repo died before final-attempt (agent-conclusion '', result failure)",
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': '',
+        'needs.survey-repo.outputs.wiki-changed': '',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': '',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+  ]
+
+  describe.each(rows)('$label', ({context, status, expectedStatus, record, announce, fallback}) => {
+    const fixture: ExprFixture = {context: {...BASE_CONTEXT, ...context}, status}
+
+    it('record if: matches expected run/skip', () => {
+      expect(evaluateCondition(RECORD_IF, fixture)).toBe(record)
+    })
+
+    it('announce if: matches expected run/skip', () => {
+      expect(evaluateCondition(ANNOUNCE_IF, fixture)).toBe(announce)
+    })
+
+    it('fallback if: matches expected run/skip', () => {
+      expect(evaluateCondition(FALLBACK_IF, fixture)).toBe(fallback)
+    })
+
+    if (expectedStatus !== undefined) {
+      it(`SURVEY_STATUS evaluates to '${expectedStatus}'`, () => {
+        expect(exprStringify(evaluateExpression(SURVEY_STATUS_EXPR, fixture))).toBe(expectedStatus)
+      })
+    }
+  })
+
+  it('SURVEY_STATUS references the final conclusion, wiki-changed, job result, and the onboarded-commit condition (non-vacuity via term removal below)', () => {
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.agent-conclusion == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.wiki-changed == 'true'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.result == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("steps.recheck.conclusion == 'success'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.onboarded != 'true'")
+    expect(SURVEY_STATUS_EXPR).toContain("steps.wiki-commit.conclusion == 'success'")
+  })
+
+  it('announce if: has the same terms as SURVEY_STATUS plus onboarded == true (no skipped-commit exemption)', () => {
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.agent-conclusion == 'success'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.wiki-changed == 'true'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.result == 'success'")
+    expect(ANNOUNCE_IF).toContain("steps.recheck.conclusion == 'success'")
+    expect(ANNOUNCE_IF).toContain("needs.survey-repo.outputs.onboarded == 'true'")
+    expect(ANNOUNCE_IF).toContain("steps.wiki-commit.conclusion == 'success'")
+  })
+
+  it('the record if: and fallback if: are unchanged by this unit (still gated on resolve-outcome/recheck, not on wiki-changed)', () => {
+    expect(RECORD_IF).toContain("needs.survey-repo.outputs.agent-conclusion != 'skipped'")
+    expect(RECORD_IF).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
+    expect(RECORD_IF).toContain("steps.recheck.conclusion == 'success'")
+    expect(RECORD_IF).not.toContain('wiki-changed')
+
+    expect(FALLBACK_IF).toContain("steps.record-result.outcome != 'success'")
+    expect(FALLBACK_IF).toContain("needs.survey-resolve.outputs.resolve-outcome == 'success'")
+    expect(FALLBACK_IF).toContain("steps.recheck.conclusion == 'success'")
   })
 })
