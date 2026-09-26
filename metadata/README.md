@@ -58,7 +58,9 @@ Field notes:
 - `private` — whether the repository is private. Entries with `private: true` are stored redacted: `owner` and `name` are replaced with `<node_id>` and canonical identifiers never reach `main`. The `node_id` is used as the subject identifier in issue bodies and workflow dispatch. Redacted entries appear on `main` as part of normal promotion — this is by design, not a privacy leak. They must not be deleted from `main` as hygiene (see [Sole-writer rule and privacy boundary](#sole-writer-rule-and-privacy-boundary) below).
 - `cross_repo_receipts` — optional. Operator-declared A3 cross-repo receipt contract capability for this target. The only recognized value is `coordination-issue-v1`. **Authority boundary:** this field is authoritative only because `repos.yaml` is a `data`-branch, sole-writer contract (see below) — it is not a target self-report and a dispatched prompt is never the source of truth for it. Setting it does not prove the target will actually comply at runtime; it is an administrative routing gate the coordinator reads at dispatch time via `scripts/cross-repo-dispatch.ts`'s `classifyReceiptCapability`, and the classified value is snapshotted onto the dispatched item as `receiptContract`. **This does not currently change tracker behavior for any target:** an accepted, nonce-verified receipt resolves an item to terminal state regardless of `cross_repo_receipts`, and a missing receipt for any target (declared or legacy) remains non-terminal `needs-attention` with a diagnostic — never `completed`, never silently dropped. The field records how an operator should interpret a missing receipt for that target, not a distinct enforcement path. Absent (the default for every existing entry) means `legacy-best-effort`. An unrecognized non-empty value fails closed with a validation error rather than silently downgrading. Write this field only through the `data`-branch path described in [Editing metadata files](#editing-metadata-files); do not add or change it in a `main`-targeting feature branch. Initial backfill candidates, once an operator chooses to write them, are the [#3652](https://github.com/fro-bot/.github/issues/3652) targets that posted accepted coordination receipts: `marcusrbrown/gpt`, `fro-bot/agent`, and `fro-bot/dashboard`. `marcusrbrown/containers` and `marcusrbrown/opencode-copilot-delegate` remain unset — they completed #3652 without an accepted coordination receipt.
 
-Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows running under the fro-bot identity. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
+Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows, all running under the Fro Bot App identity (`fro-bot[bot]`). The ruleset in `.github/settings.yml` enforces this: it bypasses only the App, so no other identity can update or create `data`. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
+
+**Interim state:** reconcile's own integrity check (`verifyDataBranchIntegrity`) hasn't caught up to the ruleset yet — it still accepts both `fro-bot` and `fro-bot[bot]` as legitimate `data` tip authors, and only checks the tip commit. A tightened check that requires every commit since the last reseed to be `fro-bot[bot]`-authored is planned as a follow-up once a promotion has reseeded `data` clean.
 
 Onboarding status values:
 
@@ -137,16 +139,18 @@ Update convention: social broadcast workflow updates this file programmatically 
 
 ## Credential expectations
 
-| File                    | Updated by                          | Credential                   |
-| ----------------------- | ----------------------------------- | ---------------------------- |
-| `allowlist.yaml`        | Human edit on `data` branch         | n/a (human commit on `data`) |
-| `repos.yaml`            | Invitation handler, Daily reconcile | `FRO_BOT_PAT` / app token    |
-| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`)   |
-| `social-cooldowns.yaml` | Social broadcast                    | `FRO_BOT_PAT`                |
+| File                    | Updated by                          | Credential                 |
+| ----------------------- | ----------------------------------- | -------------------------- |
+| `allowlist.yaml`        | Human edit on `data` branch         | app token (`fro-bot[bot]`) |
+| `repos.yaml`            | Invitation handler, Daily reconcile | app token (`fro-bot[bot]`) |
+| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`) |
+| `social-cooldowns.yaml` | Social broadcast                    | app token (`fro-bot[bot]`) |
+
+Every `data`-branch write, human or automated, now goes through an App installation token. The ruleset declared in `.github/settings.yml` bypasses only the Fro Bot App (`Integration` actor, id 218644) on `update`, `non_fast_forward`, and `creation`, so a personal push or a classic-PAT commit is rejected outright — there is no `fro-bot` (PAT) write path to `data` anymore.
 
 PAT split summary:
 
-- `FRO_BOT_POLL_PAT`: invitation polling, acceptance, starring, metadata commits to `data` branch, and survey workflow dispatch. Required scopes: `repo` (contents:write for data branch commits, actions:write for workflow dispatch), `user` (read:user for invitation polling, user:invite for acceptance), `starring`.
+- `FRO_BOT_POLL_PAT`: invitation polling, acceptance, starring, and survey workflow dispatch. Required scopes: `repo` (actions:write for workflow dispatch), `user` (read:user for invitation polling, user:invite for acceptance), `starring`. It is no longer used for `data`-branch metadata commits — those go through the App installation token described above.
 - `FRO_BOT_PAT`: agent execution, PR review, autoheal, branding. Write-capable across repos.
 
 ### Workflow secret mapping
@@ -216,6 +220,8 @@ git add metadata/<file>.yaml
 git commit -m "chore(metadata): <what changed and why>"
 git push origin data
 ```
+
+That last `git push origin data` now has to authenticate as the Fro Bot App: the `data`-branch ruleset in `.github/settings.yml` bypasses only the App's `Integration` actor, so pushing with a personal credential or `FRO_BOT_PAT` is rejected. Mint a short-lived App installation token (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`) and push with that, or land the edit through an App-authenticated workflow instead.
 
 The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. For faster turnaround, trigger it manually via `gh workflow run merge-data.yaml`.
 
