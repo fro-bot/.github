@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/opencode-copilot-delegate
 created: 2026-04-23
-updated: 2026-09-10
+updated: 2026-09-26
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
     accessed: 2026-09-10
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 8fac30bd3fde62da93ceaf3b9760750f3d046c62
+    accessed: 2026-09-26
 tags:
   - opencode
   - plugin
@@ -61,6 +64,12 @@ OpenCode plugin that delegates tasks to GitHub Copilot CLI as background subproc
 ## Overview
 
 An [OpenCode](https://opencode.ai) plugin registering four tools — `copilot_delegate`, `copilot_output`, `copilot_cancel`, `copilot_resume` — that allow a parent OpenCode agent to spawn `copilot -p` as a background process, continue productive work, and receive a `<system-reminder>` notification when the subprocess completes. The async pattern mirrors OMO's `background_task` / `background_output` architecture.
+
+**Limited re-survey (2026-09-26, HEAD `8fac30bd`):** The public repo remains at v0.12.1 (latest GitHub release dated 2026-07-13). Compared with the 2026-09-10 snapshot `b67bd4da`, 32 commits changed only five paths: `package.json`, `bun.lock`, `mise.toml`, `fro-bot.yaml`, and `renovate.yaml`. The directory listing still has four tool files, and the compare file list contains no source, test, or README changes. This is evidence for an unchanged tracked implementation surface, not a fresh runtime test. The README still advertises **three** tools and omits `copilot_resume`, while the four-tool catalog documented in earlier surveys remains present in the tree. It also still describes `client.session.prompt` and a first-notification policy; earlier surveys documented `promptAsync` and in-flight-count handling. The latter discrepancy cannot be resolved from the permitted README/manifest/workflow reads alone; keep both claims attributed rather than treating README prose as runtime proof. Its install example still pins `0.1.0` despite the manifest's `0.12.1`.
+
+Manifest updates since September 10: `@biomejs/biome` 2.5.12 → **2.5.14**, `@opencode-ai/plugin` 1.18.29 → **1.18.32**, `@types/bun` 1.4.1 → **1.4.2**, `@types/node` 24.13.3 → **24.13.6**. `mise.toml` advances OpenCode 1.18.29 → **1.18.32** and Copilot CLI 1.0.83 → **1.0.88**, with Bun held at 1.4.2. The `renovate.yaml` reusable caller advanced v4.27.0 → **v4.33.0**, while `update-repo-settings.yaml` still points to the bare `f6a7976c` SHA without a version comment. These are file-pin readings; no claim about actual Renovate detection or settings-sync execution follows from them.
+
+**Fro Bot workflow is present** and now pins `fro-bot/agent@v0.115.1`. Checkout's `persist-credentials` is conditionally disabled for `pull_request`, `issue_comment`, and `issues` and enabled for other triggers. This narrows credential persistence on review paths, but the workflow still ends at `Run Fro Bot`, has no explicit `output-mode`, and has no downstream delivery step. The schedule prompt still asks for commits and pushes; its delivery claim remains unverified by this limited survey. The workflow's maintenance prompt still refers to `@opencode-ai/sdk` peer compatibility although `package.json` declares only `@opencode-ai/plugin` as a peer — another stale contract echo. No missing-workflow follow-up is warranted.
 
 **Status (2026-09-10):** **v0.12.1** still — sixth straight steady-release survey, 48 days since the last tag. HEAD `b67bd4da`, `node_id R_kgDOSKIp0Q`, stars 1, forks 1, open count **9 → 8**. The window `c6c055d…b67bd4da` is **16 commits touching 7 files**, every one authored by `mrbro-bot[bot]`: `renovate.json5`, four lines across `ci.yaml`/`fro-bot.yaml`/`renovate.yaml`, `mise.toml`, `package.json`, `bun.lock`. **Zero source-tree change** — `src/`, `tests/`, `scripts/`, `README.md`, `AGENTS.md`, `biome.json`, `.github/settings.yml`, and `.github/workflows/update-repo-settings.yaml` are all untouched (verified against the compare endpoint, not inferred from a byte count). Three findings, and the first two are the reason this pass is worth more than its diff.
 

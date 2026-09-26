@@ -6557,3 +6557,15 @@ Sources: https://github.com/fro-bot/agent/tree/72f11faaf0bae1fc4b96979b279abd49e
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-09-26 06:13] ingest | marcusrbrown/opencode-copilot-delegate
+
+Limited public survey of HEAD `8fac30bd` against the 2026-09-10 snapshot `b67bd4da`. Updated [[marcusrbrown--opencode-copilot-delegate]], [[opencode-plugins]], and the index additively. Compare lists 32 commits touching only manifests and `fro-bot.yaml`/`renovate.yaml`; release remains v0.12.1. README still lists three tools versus four tool files, retains a 0.1.0 install pin, and describes notification behavior differently from prior surveys (runtime not re-verified under the restricted read scope). Fro Bot workflow is present at agent v0.115.1 with trigger-scoped checkout credential persistence; no missing-workflow follow-up. Renovate reusable caller moved to v4.33.0 while the settings-sync caller remains at unannotated `f6a7976c`. Reads of the target were limited to directory listings, README, manifests, workflows, and repository/release/compare metadata.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/8fac30bd3fde62da93ceaf3b9760750f3d046c62, https://github.com/marcusrbrown/opencode-copilot-delegate/blob/8fac30bd3fde62da93ceaf3b9760750f3d046c62/README.md, https://github.com/marcusrbrown/opencode-copilot-delegate/blob/8fac30bd3fde62da93ceaf3b9760750f3d046c62/.github/workflows/fro-bot.yaml
+
+## [2026-09-26 09:59] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
