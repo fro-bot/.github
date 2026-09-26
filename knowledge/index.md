@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-09-26 limited re-check: [[fro-bot--agent]]'s recent main workflow runs
+still reference `72f11fa`; the self-hosted Fro Bot workflow remains active,
+v0.115.1 is the latest published release, and the Bun manifest/setup pin
+mismatch persists. The run SHA is not an independent current-HEAD check.
 2026-09-25 re-survey: [[fro-bot--agent]] advanced to `72f11fa`; its README,
 workspace manifests, and workflow blobs match the earlier `9918ee0` snapshot.
 The self-hosted Fro Bot workflow is present; the workspace-agent README's

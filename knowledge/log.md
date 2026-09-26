@@ -6534,3 +6534,26 @@ Sources: https://github.com/fro-bot/agent/tree/72f11faaf0bae1fc4b96979b279abd49e
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-09-26 06:08] ingest | repo:fro-bot/agent
+
+Limited public re-check of [[fro-bot--agent]]: five recent `main` workflow runs
+referenced the previously surveyed `72f11fa` SHA, including a 06:07 UTC run;
+this does not independently establish current HEAD. The root README still
+describes the Action, gateway, and workspace executor. The active self-hosted
+Fro Bot workflow retains daily maintenance, weekly project-wiki, and dispatch
+paths. The latest release remains v0.115.1. Code-search fragments of the root
+manifest and setup-action manifest confirm `bun@1.4.2` versus the install
+default `1.3.14`; the known contradiction persists. Updated the repo page and
+index additively; no new cross-cutting page was justified. The workflow is
+present, so no missing-workflow follow-up is needed. Reads of the target were
+limited to README, manifest fragments, workflow listings/content, and run and
+release metadata; no issue was used as a survey notice.
+
+Sources: https://github.com/fro-bot/agent/tree/72f11faaf0bae1fc4b96979b279abd49e394eccc, https://github.com/fro-bot/agent/blob/72f11faaf0bae1fc4b96979b279abd49e394eccc/.github/workflows/fro-bot.yaml, https://github.com/fro-bot/agent/blob/72f11faaf0bae1fc4b96979b279abd49e394eccc/package.json
+
+## [2026-09-26 06:12] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
