@@ -61,7 +61,13 @@ const commonSettingsParsed: unknown = parse(readFileSync(commonSettingsPath, 'ut
 assertRulesetsShape(commonSettingsParsed, 'common-settings.yaml')
 
 const rulesets = repoSettingsParsed.rulesets ?? []
-const dataRulesets = rulesets.filter(ruleset => ruleset.conditions?.ref_name?.include?.includes('refs/heads/data'))
+
+function targetsDataBranch(ruleset: Ruleset): boolean {
+  const refName = ruleset.conditions?.ref_name
+  return refName?.include?.length === 1 && refName.include[0] === 'refs/heads/data' && refName.exclude?.length === 0
+}
+
+const dataRulesets = rulesets.filter(targetsDataBranch)
 
 describe('.github/settings.yml rulesets: data branch is App-only', () => {
   it('common-settings.yaml declares no rulesets (a base array would not merge away a local one, but there is none to worry about)', () => {
@@ -72,6 +78,16 @@ describe('.github/settings.yml rulesets: data branch is App-only', () => {
     expect(dataRulesets).toHaveLength(1)
     expect(dataRulesets[0]?.target).toBe('branch')
     expect(dataRulesets[0]?.enforcement).toBe('active')
+    expect(dataRulesets[0]?.conditions?.ref_name).toEqual({include: ['refs/heads/data'], exclude: []})
+  })
+
+  it('does not treat a ruleset that excludes refs/heads/data as targeting the data branch', () => {
+    expect(
+      targetsDataBranch({
+        name: 'malformed data ruleset',
+        conditions: {ref_name: {include: ['refs/heads/data'], exclude: ['refs/heads/data']}},
+      }),
+    ).toBe(false)
   })
 
   it('declares exactly the {update, non_fast_forward, creation} rule types', () => {
