@@ -1139,6 +1139,50 @@ describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () =>
       fallback: true,
     },
     {
+      // Isolates the fallback's failure() term: survey-repo.result stays 'success' (not
+      // 'failure') so the result-based clause can't also make the fallback fire — only
+      // failure() (a prior step in THIS job, survey-persist, failing — e.g. the primary
+      // record-result step itself crashing) does. record-result.outcome == 'failure'
+      // reflects that crash.
+      label: 'record-result step crashes (failure() true) — fallback fires on failure() alone',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'failure',
+      },
+      status: {cancelled: false, failure: true},
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: true,
+    },
+    {
+      // Contrast row: identical context to the row above, only failure() flips to false.
+      // Isolates that failure() (not some other term) is what made the previous row's
+      // fallback fire.
+      label: 'contrast: same inputs as above with failure() false — fallback does not fire',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'success',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'failure',
+      },
+      status: {cancelled: false, failure: false},
+      expectedStatus: 'success',
+      record: true,
+      announce: true,
+      fallback: false,
+    },
+    {
       // Defense-in-depth isolation for the wiki-changed term: given Unit 3's exhaustion
       // step, this exact combination (agent success, wiki-changed false, yet the job
       // result is still success) should never occur in production — the exhaustion step
