@@ -15,7 +15,9 @@ const BASELINE_HASH_PATTERN = /^[0-9a-f]{64}$/
 /**
  * One script backs both the `wiki-baseline` and `wiki-changes` survey-repo steps (a third
  * copy lands in Unit 3's retries), replacing duplicated inline `git diff` hashing that
- * couldn't see untracked files. See wiki-change-detect-core.ts for the hash contract.
+ * couldn't see untracked files. Hashing is scoped to eligible content only (allowlisted
+ * paths, not git-ignored) so a positive detection always corresponds to a real
+ * transferable delta. See wiki-change-detect-core.ts for the hash and eligibility contract.
  *
  * Usage: `node scripts/wiki-change-detect.ts baseline|detect`
  *   baseline — writes `hash=<sha256>` to GITHUB_OUTPUT.

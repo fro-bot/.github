@@ -1,4 +1,5 @@
 import type {Dirent} from 'node:fs'
+
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
@@ -16,6 +17,9 @@ import {
 
 const scriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
 const WIKI_SCOPE_PATHS = ['knowledge/index.md', 'knowledge/log.md', 'knowledge/wiki']
+
+/** Reproduces this repo's own `.gitignore` rules for the noise the detector must exclude. */
+const REPO_GITIGNORE_RULES = '.DS_Store\n*.swp\n*.swo\n'
 
 const tempDirs: string[] = []
 
@@ -36,7 +40,7 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {cwd, encoding: 'utf8'})
 }
 
-/** A real git repo (not mocked) with the scoped knowledge/ layout already committed. */
+/** A real git repo (not mocked) with the scoped knowledge/ layout and this repo's own `.gitignore` rules already committed. */
 function makeRepo(): string {
   const dir = makeTempDir('wiki-change-detect-')
   git(dir, ['init', '-q', '-b', 'main'])
@@ -46,6 +50,7 @@ function makeRepo(): string {
   writeFileSync(join(dir, 'knowledge', 'index.md'), '# Index\n')
   writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n')
   writeFileSync(join(dir, 'README.md'), '# Out of scope\n')
+  writeFileSync(join(dir, '.gitignore'), REPO_GITIGNORE_RULES)
   git(dir, ['add', '-A'])
   git(dir, ['commit', '-q', '-m', 'init'])
   return dir
@@ -54,6 +59,11 @@ function makeRepo(): string {
 function writeFileWithDir(absolutePath: string, contents: string): void {
   mkdirSync(dirname(absolutePath), {recursive: true})
   writeFileSync(absolutePath, contents)
+}
+
+/** Appends to the repo's `.gitignore` without needing a commit — `check-ignore --no-index` reads the worktree file directly. */
+function appendGitignore(dir: string, rule: string): void {
+  writeFileSync(join(dir, '.gitignore'), `${REPO_GITIGNORE_RULES}${rule}\n`)
 }
 
 async function hashOf(cwd: string): Promise<string> {
@@ -94,7 +104,7 @@ describe('hashWikiScopeSnapshot (pure)', () => {
   })
 })
 
-describe('computeWikiChangeHash (real git repos, content-only)', () => {
+describe('computeWikiChangeHash (real git repos, content-only, eligibility-filtered)', () => {
   describe('changed=false: index-only operations never flip the hash', () => {
     it('clean baseline with no operation', async () => {
       const dir = makeRepo()
@@ -198,7 +208,109 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
     })
   })
 
-  describe('changed=true: real content, path-set, or rename changes', () => {
+  describe('changed=false: ineligible content never counts (allowlist + git check-ignore)', () => {
+    it.each([
+      ['.swp', 'knowledge/wiki/repos/notes.md.swp'],
+      ['.swo', 'knowledge/wiki/repos/notes.md.swo'],
+      ['.DS_Store', 'knowledge/wiki/.DS_Store'],
+    ] as const)('creating, editing, then deleting a %s file never registers', async (_label, relativePath) => {
+      const dir = makeRepo()
+      const absolutePath = join(dir, relativePath)
+      const baseline = await hashOf(dir)
+
+      writeFileWithDir(absolutePath, 'noise\n')
+      expect(await hashOf(dir)).toBe(baseline)
+
+      writeFileSync(absolutePath, 'more noise\n')
+      expect(await hashOf(dir)).toBe(baseline)
+
+      rmSync(absolutePath)
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it('a non-ignored .txt under knowledge/wiki never registers (not allowlisted)', async () => {
+      const dir = makeRepo()
+      const baseline = await hashOf(dir)
+      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'notes.txt'), 'plain text\n')
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it('an ignored .md never registers, even though it would otherwise be allowlisted', async () => {
+      const dir = makeRepo()
+      appendGitignore(dir, 'knowledge/wiki/repos/ignored.md')
+      const targetPath = join(dir, 'knowledge', 'wiki', 'repos', 'ignored.md')
+      writeFileSync(targetPath, '# Ignored but allowlisted-shaped\n')
+      const status = git(dir, ['status', '--porcelain=v1', '--ignored', '--', 'knowledge/wiki/repos/ignored.md'])
+      expect(status).toContain('!!')
+
+      const baseline = await hashOf(dir)
+      writeFileSync(targetPath, '# Edited, still ignored\n')
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it('an ignored .md inside an ignored directory never registers', async () => {
+      const dir = makeRepo()
+      appendGitignore(dir, 'knowledge/wiki/drafts/')
+      const targetPath = join(dir, 'knowledge', 'wiki', 'drafts', 'note.md')
+      writeFileWithDir(targetPath, '# Draft\n')
+      const status = git(dir, ['status', '--porcelain=v1', '--ignored', '--', 'knowledge/wiki/drafts/note.md'])
+      expect(status).toContain('!!')
+
+      const baseline = await hashOf(dir)
+      writeFileSync(targetPath, '# Draft, edited\n')
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it.each([
+      ['force-added to the index', (dir: string, relativePath: string) => git(dir, ['add', '-f', relativePath])],
+      [
+        'force-added, then removed from the index with rm --cached',
+        (dir: string, relativePath: string) => {
+          git(dir, ['add', '-f', relativePath])
+          git(dir, ['rm', '--cached', relativePath])
+        },
+      ],
+    ] as const)('an ignore-matching file, %s, stays excluded (bytes on disk unchanged)', async (_label, indexOp) => {
+      const dir = makeRepo()
+      const relativePath = 'knowledge/wiki/repos/legacy.md'
+      appendGitignore(dir, relativePath)
+      writeFileSync(join(dir, relativePath), '# Legacy\n')
+
+      const baseline = await hashOf(dir)
+      indexOp(dir, relativePath)
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it('editing a tracked .md that matches an ignore pattern never registers (the conservative --no-index policy)', async () => {
+      const dir = makeRepo()
+      const relativePath = 'knowledge/wiki/repos/legacy-tracked.md'
+      const absolutePath = join(dir, relativePath)
+      writeFileSync(absolutePath, '# Legacy tracked\n')
+      git(dir, ['add', relativePath])
+      git(dir, ['commit', '-q', '-m', 'add legacy tracked page'])
+
+      // The ignore rule arrives after the file is already tracked and committed.
+      appendGitignore(dir, relativePath)
+      const status = git(dir, ['status', '--porcelain=v1', '--ignored', '--', relativePath])
+      // `--no-index` excludes it from detection regardless of what plain `git status`
+      // says about an already-tracked path (git itself would NOT normally hide a
+      // tracked file here) — that divergence is exactly the conservative policy.
+      expect(status).toBe('')
+
+      const baseline = await hashOf(dir)
+      writeFileSync(absolutePath, '# Legacy tracked, edited\n')
+      expect(await hashOf(dir)).toBe(baseline)
+    })
+
+    it('an ignore check that finds no matches still lets capture succeed', async () => {
+      const dir = makeRepo()
+      await expect(snapshotOf(dir)).resolves.not.toThrow()
+      const snapshot = await snapshotOf(dir)
+      expect(snapshot.map(entry => entry.relativePath).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+    })
+  })
+
+  describe('changed=true: real content, path-set, or rename changes on eligible content', () => {
     it('a tracked content edit after baseline, left unstaged', async () => {
       const dir = makeRepo()
       const baseline = await hashOf(dir)
@@ -260,21 +372,27 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
       expect(await hashOf(dir)).not.toBe(baseline)
     })
 
-    it('a rename, left unstaged (plain filesystem rename)', async () => {
+    it('a rename wholly within knowledge/wiki/, left unstaged (plain filesystem rename)', async () => {
       const dir = makeRepo()
+      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'old-name.md'), '# Repo page\n')
       const baseline = await hashOf(dir)
-      const fromPath = join(dir, 'knowledge', 'log.md')
-      const toPath = join(dir, 'knowledge', 'log-renamed.md')
+      const fromPath = join(dir, 'knowledge', 'wiki', 'repos', 'old-name.md')
+      const toPath = join(dir, 'knowledge', 'wiki', 'repos', 'new-name.md')
       writeFileSync(toPath, readFileSync(fromPath))
       rmSync(fromPath)
       expect(await hashOf(dir)).not.toBe(baseline)
     })
 
-    it('a rename, staged with git mv', async () => {
+    it('a rename wholly within knowledge/wiki/, staged with git mv', async () => {
       const dir = makeRepo()
+      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'old-name.md'), '# Repo page\n')
+      git(dir, ['add', 'knowledge/wiki/repos/old-name.md'])
+      git(dir, ['commit', '-q', '-m', 'add old-name page'])
       const baseline = await hashOf(dir)
-      git(dir, ['mv', 'knowledge/log.md', 'knowledge/log-renamed.md'])
-      assertPorcelainContains(dir, 'knowledge/log-renamed.md')
+
+      git(dir, ['mv', 'knowledge/wiki/repos/old-name.md', 'knowledge/wiki/repos/new-name.md'])
+      assertPorcelainContains(dir, 'knowledge/wiki/repos/new-name.md')
+
       expect(await hashOf(dir)).not.toBe(baseline)
     })
 
@@ -289,13 +407,31 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
       expect(await hashOf(dir)).not.toBe(baseline)
     })
 
-    it('a change to a git-ignored file inside scope', async () => {
+    it('ignored noise plus a valid .md edit still registers as changed', async () => {
       const dir = makeRepo()
-      writeFileSync(join(dir, '.gitignore'), 'knowledge/wiki/repos/ignored.md\n')
       const baseline = await hashOf(dir)
-      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'ignored.md'), '# Ignored but scoped\n')
-      const status = git(dir, ['status', '--porcelain=v1', '--ignored', '--', 'knowledge/wiki/repos/ignored.md'])
-      expect(status).toContain('!!')
+
+      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'scratch.md.swp'), 'noise\n')
+      writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n\nReal ingest happened.\n')
+
+      expect(await hashOf(dir)).not.toBe(baseline)
+    })
+
+    it('a negation pattern makes a .md eligible, then editing it registers as changed', async () => {
+      const dir = makeRepo()
+      appendGitignore(dir, 'knowledge/wiki/repos/*.md\n!knowledge/wiki/repos/keep.md')
+      const keepPath = join(dir, 'knowledge', 'wiki', 'repos', 'keep.md')
+      writeFileSync(keepPath, '# Kept by negation\n')
+      // Sanity: the plain rule (without negation) really does ignore siblings, but the
+      // negated path is not ignored.
+      writeFileSync(join(dir, 'knowledge', 'wiki', 'repos', 'other.md'), '# Not kept\n')
+      const otherStatus = git(dir, ['status', '--porcelain=v1', '--ignored', '--', 'knowledge/wiki/repos/other.md'])
+      const keepStatus = git(dir, ['status', '--porcelain=v1', '--ignored', '--', 'knowledge/wiki/repos/keep.md'])
+      expect(otherStatus).toContain('!!')
+      expect(keepStatus).not.toContain('!!')
+
+      const baseline = await hashOf(dir)
+      writeFileSync(keepPath, '# Kept by negation, edited\n')
       expect(await hashOf(dir)).not.toBe(baseline)
     })
   })
@@ -305,6 +441,13 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
       const dir = makeRepo()
       const baseline = await hashOf(dir)
       writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'café repo ☃.md'), '# Snowman\n')
+      expect(await hashOf(dir)).not.toBe(baseline)
+    })
+
+    it('handles a filename containing a literal newline byte', async () => {
+      const dir = makeRepo()
+      const baseline = await hashOf(dir)
+      writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'weird\nname.md'), '# Weird\n')
       expect(await hashOf(dir)).not.toBe(baseline)
     })
 
@@ -357,17 +500,22 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
       await expect(
         captureWikiScopeSnapshot({
           cwd: '/fake',
-          scopePaths: ['scope'],
+          scopePaths: ['knowledge/wiki'],
           lstatImpl: async (p: string) => {
-            if (p === '/fake/scope') return {isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false}
-            if (p === '/fake/scope/gone.md')
+            if (p === '/fake/knowledge/wiki') {
+              return {isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false}
+            }
+            if (p === '/fake/knowledge/wiki/gone.md') {
               return {isSymbolicLink: () => false, isDirectory: () => false, isFile: () => true}
+            }
             throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
           },
-          readdirImpl: async (p: string) => (p === '/fake/scope' ? ([{name: 'gone.md'}] as unknown as Dirent[]) : []),
+          readdirImpl: async (p: string) =>
+            p === '/fake/knowledge/wiki' ? ([{name: 'gone.md'}] as unknown as Dirent[]) : [],
           readFileImpl: async () => {
             throw Object.assign(new Error('ENOENT: no such file or directory'), {code: 'ENOENT'})
           },
+          checkIgnoreRunnerImpl: async () => ({stdout: '', exitCode: 1}),
         }),
       ).rejects.toThrow(/failed to read/)
     })
@@ -390,6 +538,55 @@ describe('computeWikiChangeHash (real git repos, content-only)', () => {
       const dir = makeTempDir('wiki-change-detect-empty-')
       const snapshot = await snapshotOf(dir)
       expect(snapshot).toStrictEqual([])
+    })
+  })
+
+  describe('fail-closed: git check-ignore subprocess failures and malformed output', () => {
+    it('fails closed when the check-ignore subprocess throws (e.g. git not found)', async () => {
+      const dir = makeRepo()
+      await expect(
+        captureWikiScopeSnapshot({
+          cwd: dir,
+          scopePaths: WIKI_SCOPE_PATHS,
+          checkIgnoreRunnerImpl: async () => {
+            throw new Error('spawn git ENOENT')
+          },
+        }),
+      ).rejects.toThrow(/git check-ignore failed/)
+    })
+
+    it('fails closed on an unexpected exit status (e.g. a fatal git error, status 128)', async () => {
+      const dir = makeRepo()
+      await expect(
+        captureWikiScopeSnapshot({
+          cwd: dir,
+          scopePaths: WIKI_SCOPE_PATHS,
+          checkIgnoreRunnerImpl: async () => ({stdout: '', exitCode: 128}),
+        }),
+      ).rejects.toThrow(/unexpected status 128/)
+    })
+
+    it('fails closed on malformed output: a reported path outside the candidate set', async () => {
+      const dir = makeRepo()
+      await expect(
+        captureWikiScopeSnapshot({
+          cwd: dir,
+          scopePaths: WIKI_SCOPE_PATHS,
+          checkIgnoreRunnerImpl: async () => ({stdout: 'not-a-real-candidate.md\0', exitCode: 0}),
+        }),
+      ).rejects.toThrow(/outside the candidate set/)
+    })
+
+    it('never reads a subprocess failure as "nothing ignored" — a positive case still fails, not silently passes', async () => {
+      const dir = makeRepo()
+      writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n\nNew entry\n')
+      await expect(
+        computeWikiChangeHash({
+          cwd: dir,
+          scopePaths: WIKI_SCOPE_PATHS,
+          checkIgnoreRunnerImpl: async () => ({stdout: '', exitCode: 2}),
+        }),
+      ).rejects.toThrow(/unexpected status 2/)
     })
   })
 })
@@ -469,6 +666,20 @@ describe('wiki-change-detect.ts CLI', () => {
     expect(readFileSync(detectOutput, 'utf8')).toBe('changed=true\n')
   })
 
+  it('detect mode writes changed=false when the only new content is a .swp file (real CLI, real gitignore)', () => {
+    const dir = makeRepo()
+    const baselineOutput = githubOutputPath(dir)
+    runCli(['baseline'], dir, {GITHUB_OUTPUT: baselineOutput})
+    const baselineHash = readFileSync(baselineOutput, 'utf8').trim().replace('hash=', '')
+
+    writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'page.md.swp'), 'swap noise\n')
+
+    const detectOutput = join(dir, 'github-output-detect')
+    const result = runCli(['detect'], dir, {GITHUB_OUTPUT: detectOutput, WIKI_CHANGE_BASELINE_HASH: baselineHash})
+    expect(result.status).toBe(0)
+    expect(readFileSync(detectOutput, 'utf8')).toBe('changed=false\n')
+  })
+
   it("Fro Bot's case end-to-end through the real CLI: staging a pre-baseline edit reports changed=false", () => {
     const dir = makeRepo()
     writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n\nAlready edited before baseline\n')
@@ -542,13 +753,27 @@ describe('wiki-change-detect.ts CLI', () => {
     ).toThrow()
   })
 
-  it('a large scoped file (a few MiB) no longer fails baseline \u2014 content hashing never shells out to git diff', () => {
+  it('a large scoped file (a few MiB) no longer fails baseline — content hashing never shells out to git diff', () => {
     const dir = makeRepo()
-    // ~2 MiB: large enough that a real `git diff` of a full rewrite would exceed the old
-    // 1 MiB execFile maxBuffer default many times over, while staying well under the
-    // 5 MiB wiki-handoff artifact cap for a single file.
-    const bigContentA = `${'a'.repeat(2 * 1024 * 1024)}\n`
-    writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'big.md'), bigContentA)
+    // Commit the initial content so a real `git diff` against HEAD is meaningful, then
+    // rewrite it before capturing the baseline: a full-file diff of a ~2 MiB rewrite is
+    // large enough to exceed the old 1 MiB execFile maxBuffer default many times over,
+    // while staying well under the 5 MiB wiki-handoff artifact cap for a single file.
+    const targetPath = join(dir, 'knowledge', 'wiki', 'repos', 'big.md')
+    const originalContent = `${'a'.repeat(2 * 1024 * 1024)}\n`
+    writeFileWithDir(targetPath, originalContent)
+    git(dir, ['add', 'knowledge/wiki/repos/big.md'])
+    git(dir, ['commit', '-q', '-m', 'add big.md'])
+
+    const rewrittenContent = `${'b'.repeat(2 * 1024 * 1024)}\n`
+    writeFileSync(targetPath, rewrittenContent)
+
+    const diff = execFileSync('git', ['diff', '--no-ext-diff', '--', 'knowledge/wiki/repos/big.md'], {
+      cwd: dir,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    })
+    expect(diff.length).toBeGreaterThan(1024 * 1024)
 
     const baselineOutput = githubOutputPath(dir)
     const baselineResult = runCli(['baseline'], dir, {GITHUB_OUTPUT: baselineOutput})
@@ -563,8 +788,7 @@ describe('wiki-change-detect.ts CLI', () => {
     expect(unchangedResult.status).toBe(0)
     expect(readFileSync(unchangedOutput, 'utf8')).toBe('changed=false\n')
 
-    const bigContentB = `${'b'.repeat(2 * 1024 * 1024)}\n`
-    writeFileWithDir(join(dir, 'knowledge', 'wiki', 'repos', 'big.md'), bigContentB)
+    writeFileSync(targetPath, `${'c'.repeat(2 * 1024 * 1024)}\n`)
     const changedOutput = join(dir, 'github-output-changed')
     const changedResult = runCli(['detect'], dir, {
       GITHUB_OUTPUT: changedOutput,
