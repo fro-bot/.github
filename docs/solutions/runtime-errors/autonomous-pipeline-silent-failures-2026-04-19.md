@@ -144,3 +144,14 @@ the topology: wiki ingest and survey metadata writes now run in separate trusted
 validated handoff artifact from the agent job, and write with a fro-bot GitHub App
 installation token (`fro-bot[bot]` commits) minted in that trusted job. The historical
 narrative above is left as-is for the incident record.
+
+Fix B's aggregate expression above (agent success + wiki-commit success-or-skipped) has
+also been superseded: `SURVEY_STATUS` now additionally requires
+`needs.survey-repo.outputs.wiki-changed == 'true'` and `needs.survey-repo.result == 'success'`,
+and only accepts a skipped wiki commit when the target isn't onboarded
+(`needs.survey-repo.outputs.onboarded != 'true'`) rather than treating any skip as valid.
+`survey-repo` also retries a no-op agent attempt up to twice and fails the job outright if
+every attempt makes no wiki changes. This closes a related but distinct false-success path
+— an agent that exits cleanly without making the required wiki changes — that Fix B's
+original two-step check didn't cover. The historical narrative above is otherwise left
+as-is for the incident record.
