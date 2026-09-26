@@ -108,3 +108,24 @@ labels:
   - name: 'agent: working'
     color: '#fcf2e1'
     description: Agent is currently working on this
+
+# Restricts `data` branch writes to the Fro Bot App. No `deletion` rule: promotion relies on
+# auto-delete-on-merge (delete_branch_on_merge in common-settings.yaml) followed by the App
+# reseeding `data` from `main`, and a deletion rule would break that reseed.
+rulesets:
+  - name: 'data branch: Fro Bot App only'
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - refs/heads/data
+        exclude: []
+    rules:
+      - type: update
+      - type: non_fast_forward
+      - type: creation
+    bypass_actors:
+      - actor_id: 218644
+        actor_type: Integration
+        bypass_mode: always
