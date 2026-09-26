@@ -181,10 +181,12 @@ jobs:
           fi
           node scripts/check-repo-onboarded.ts
 
-      # Hashes the actual filesystem content under the scoped paths (not `git diff`/`git
-      # status` output), so an index-only operation can never flip `changed` and an
-      # untracked file (e.g. a first survey's brand-new repo page) still registers. See
-      # scripts/wiki-change-detect-core.ts.
+      # Hashes the actual filesystem content of eligible scoped paths (not `git diff`/
+      # `git status` output), so an index-only operation can never flip `changed` and an
+      # untracked file (e.g. a first survey's brand-new repo page) still registers.
+      # Eligible means allowlisted (scripts/wiki-handoff-core.ts's own path rule) and not
+      # git-ignored, so a positive detection always corresponds to a real transferable
+      # delta. See scripts/wiki-change-detect-core.ts.
       - name: Capture wiki baseline
         id: wiki-baseline
         run: node scripts/wiki-change-detect.ts baseline
@@ -449,13 +451,42 @@ jobs:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-survey.json
         run: node scripts/wiki-handoff-build.ts
 
+      # A positive detection (eligible content genuinely changed on disk) must correspond
+      # to a real transferable delta, or the run is a silent no-op wearing a success — the
+      # exact shape of the false-success this plan exists to close, one layer down. Runs
+      # only on the path where detection said `changed == 'true'` and the build itself
+      # succeeded; an empty positive handoff here is a hard failure, not a silent skip.
+      - name: Require non-empty survey handoff
+        id: wiki-handoff-check
+        if: >-
+          ${{ !cancelled() && steps.onboarded.outputs.onboarded == 'true' &&
+          steps.final-attempt.outputs.conclusion == 'success' && steps.final-attempt.outputs.detect-conclusion == 'success' &&
+          steps.final-attempt.outputs.changed == 'true' && steps.wiki-handoff-build.outcome == 'success' }}
+        env:
+          WIKI_HANDOFF_BUILD_CHANGED: ${{ steps.wiki-handoff-build.outputs.changed }}
+        run: |
+          if [ "$WIKI_HANDOFF_BUILD_CHANGED" = "true" ]; then
+            exit 0
+          fi
+          if [ "$WIKI_HANDOFF_BUILD_CHANGED" = "false" ]; then
+            echo '::error::Survey detection reported changes, but the handoff contains no transferable wiki delta.'
+            exit 1
+          fi
+          echo '::error::wiki-handoff-check: WIKI_HANDOFF_BUILD_CHANGED is missing or malformed'
+          exit 1
+
       # Baseline scoping (see the build step's env) can legitimately narrow a manifest
       # to empty even when the final attempt's own detection flagged something — e.g. an
-      # edit reverted before the run ended. An empty manifest must mean no artifact and
-      # no downstream ingest, matching the pre-scoping no-op contract exactly.
+      # edit reverted before the run ended. A mismatch between a positive detection and an
+      # empty build is now caught above (wiki-handoff-check) rather than silently skipping
+      # here; this upload gate covers the remaining legitimate empty case (a genuine no-op
+      # attempt whose detection also said `changed == 'false'`, so wiki-handoff-check never
+      # even ran).
       - name: Upload wiki handoff artifact
         id: wiki-handoff-upload
-        if: steps.wiki-handoff-build.outcome == 'success' && steps.wiki-handoff-build.outputs.changed == 'true'
+        if: >-
+          steps.wiki-handoff-build.outcome == 'success' && steps.wiki-handoff-build.outputs.changed == 'true' &&
+          steps.wiki-handoff-check.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wiki-handoff-survey-${{ github.run_id }}

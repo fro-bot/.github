@@ -42,6 +42,36 @@ function findStepIndex(job: WorkflowJob | undefined, predicate: (step: WorkflowS
   return (job?.steps ?? []).findIndex(predicate)
 }
 
+/** A real git repo with this repo's own `.gitignore` swap-file rules, for the eligibility-filtered detector's gate tests. */
+function makeHandoffGateRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'survey-repo-handoff-gate-'))
+  execFileSync('git', ['init', '-q', '-b', 'main'], {cwd: dir})
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], {cwd: dir})
+  execFileSync('git', ['config', 'user.name', 'Test'], {cwd: dir})
+  mkdirSync(join(dir, 'knowledge', 'wiki', 'repos'), {recursive: true})
+  writeFileSync(join(dir, 'knowledge', 'index.md'), '# Index\n')
+  writeFileSync(join(dir, 'knowledge', 'log.md'), '# Log\n')
+  writeFileSync(join(dir, '.gitignore'), '.DS_Store\n*.swp\n*.swo\n')
+  execFileSync('git', ['add', '-A'], {cwd: dir})
+  execFileSync('git', ['commit', '-q', '-m', 'init'], {cwd: dir})
+  return dir
+}
+
+/** Builds the final-attempt script's env from up to three detects' `changed` values, short-circuiting at the first 'true' (matching the real retry gate: a retry only runs after a 'false'). */
+function finalAttemptEnv(changed: readonly [string, string, string]): Record<string, string> {
+  return {
+    ATTEMPT_1_CONCLUSION: 'success',
+    DETECT_1_CONCLUSION: 'success',
+    DETECT_1_CHANGED: changed[0],
+    RETRY_1_CONCLUSION: changed[0] === 'false' ? 'success' : 'skipped',
+    DETECT_2_CONCLUSION: changed[0] === 'false' ? 'success' : 'skipped',
+    DETECT_2_CHANGED: changed[0] === 'false' ? changed[1] : '',
+    RETRY_2_CONCLUSION: changed[0] === 'false' && changed[1] === 'false' ? 'success' : 'skipped',
+    DETECT_3_CONCLUSION: changed[0] === 'false' && changed[1] === 'false' ? 'success' : 'skipped',
+    DETECT_3_CHANGED: changed[0] === 'false' && changed[1] === 'false' ? changed[2] : '',
+  }
+}
+
 /** A real git repo (not mocked) with the scoped knowledge/ layout already committed, for the gate tie-in tests. */
 function makeGateTestRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'survey-repo-gate-tiein-'))
@@ -1520,5 +1550,477 @@ describe('Unit 1 remediation: content-only detection routes index-only no-ops th
       expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
     }
     expect([detect1, detect2, detect3].filter(step => step !== undefined)).toHaveLength(3)
+  })
+})
+
+describe('survey-repo.yaml: non-empty handoff invariant (a positive detection must produce a real transferable delta)', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const steps = surveyJob?.steps ?? []
+
+  const finalAttempt = steps.find(step => step.id === 'final-attempt')
+  const exhaustion = steps.find(step => step.name === 'Fail on survey exhaustion')
+  const handoffBuild = steps.find(step => step.id === 'wiki-handoff-build')
+  const handoffCheck = steps.find(step => step.id === 'wiki-handoff-check')
+  const handoffUpload = steps.find(step => step.id === 'wiki-handoff-upload')
+
+  const recordStep = persistJob?.steps.find(step => step.name === 'Record survey result')
+  const announceStep = persistJob?.steps.find(step => step.name === '📣 Announce survey to gateway')
+  const fallbackStep = persistJob?.steps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+
+  const detectScriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
+  const handoffBaselineScriptPath = resolve(import.meta.dirname, 'wiki-handoff-baseline.ts')
+  const handoffBuildScriptPath = resolve(import.meta.dirname, 'wiki-handoff-build.ts')
+
+  function writeNested(absolutePath: string, contents: string): void {
+    mkdirSync(resolve(absolutePath, '..'), {recursive: true})
+    writeFileSync(absolutePath, contents)
+  }
+
+  /** Captures both real baselines — the detector's content hash and the handoff's status-driven manifest — before any simulated attempt runs. */
+  function captureBaselines(repo: string): {detectorHash: string; handoffBaselinePath: string} {
+    const detectOutDir = mkdtempSync(join(tmpdir(), 'gate2-detect-baseline-'))
+    const detectOutputPath = join(detectOutDir, 'github-output')
+    execFileSync(process.execPath, [detectScriptPath, 'baseline'], {
+      cwd: repo,
+      env: {...process.env, GITHUB_OUTPUT: detectOutputPath},
+    })
+    const detectorHash = readFileSync(detectOutputPath, 'utf8').trim().replace('hash=', '')
+    rmSync(detectOutDir, {recursive: true, force: true})
+
+    const handoffBaselinePath = join(mkdtempSync(join(tmpdir(), 'gate2-handoff-baseline-')), 'baseline.json')
+    execFileSync(process.execPath, [handoffBaselineScriptPath], {
+      cwd: repo,
+      env: {...process.env, WIKI_HANDOFF_BASELINE_PATH: handoffBaselinePath},
+    })
+    return {detectorHash, handoffBaselinePath}
+  }
+
+  function detectChanged(repo: string, baselineHash: string): string {
+    const outDir = mkdtempSync(join(tmpdir(), 'gate2-detect-'))
+    const outputPath = join(outDir, 'github-output')
+    try {
+      execFileSync(process.execPath, [detectScriptPath, 'detect'], {
+        cwd: repo,
+        env: {...process.env, GITHUB_OUTPUT: outputPath, WIKI_CHANGE_BASELINE_HASH: baselineHash},
+      })
+      return readFileSync(outputPath, 'utf8').trim().replace('changed=', '')
+    } finally {
+      rmSync(outDir, {recursive: true, force: true})
+    }
+  }
+
+  interface HandoffBuildResult {
+    status: number
+    changed: string
+    manifest: {changed: string[]; deleted: string[]} | undefined
+  }
+
+  function buildHandoff(repo: string, baselinePath: string): HandoffBuildResult {
+    const handoffDir = mkdtempSync(join(tmpdir(), 'gate2-handoff-'))
+    const outputDir = mkdtempSync(join(tmpdir(), 'gate2-handoff-output-'))
+    const outputPath = join(outputDir, 'github-output')
+    try {
+      execFileSync(process.execPath, [handoffBuildScriptPath], {
+        cwd: repo,
+        env: {
+          ...process.env,
+          WIKI_HANDOFF_DIR: handoffDir,
+          WIKI_HANDOFF_BASELINE_PATH: baselinePath,
+          GITHUB_OUTPUT: outputPath,
+        },
+      })
+      const changed = readFileSync(outputPath, 'utf8').trim().replace('changed=', '')
+      const manifest = JSON.parse(readFileSync(join(handoffDir, 'manifest.json'), 'utf8')) as {
+        changed: string[]
+        deleted: string[]
+      }
+      return {status: 0, changed, manifest}
+    } catch (error) {
+      const failure = error as {status?: number}
+      return {status: failure.status ?? 1, changed: '', manifest: undefined}
+    } finally {
+      rmSync(handoffDir, {recursive: true, force: true})
+      rmSync(outputDir, {recursive: true, force: true})
+    }
+  }
+
+  /** Shared assertion for both noise-only scenarios (1, 2, and the noise half of 7): exhaustion fires, nothing downstream runs. */
+  function assertNoiseOnlyAttemptsExhaustCleanly(
+    setupRepo: (repo: string) => void,
+    makeNoiseFile: (repo: string, attemptIndex: number) => void,
+    onboarded: string,
+  ): void {
+    const repo = makeHandoffGateRepo()
+    setupRepo(repo)
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    for (let attemptIndex = 0; attemptIndex < 3; attemptIndex++) {
+      makeNoiseFile(repo, attemptIndex)
+      expect(detectChanged(repo, detectorHash)).toBe('false')
+    }
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['false', 'false', 'false']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('false')
+
+    const exhaustionFixture: ExprFixture = {
+      context: {
+        'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+        'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+        'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      },
+      status: {cancelled: false},
+    }
+    expect(evaluateCondition(String(exhaustion?.if ?? ''), exhaustionFixture)).toBe(true)
+    expect(runShellStep(String(exhaustion?.run ?? ''), {}).status).not.toBe(0)
+
+    const handoffFixtureContext = {
+      'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+      'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+      'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      'steps.onboarded.outputs.onboarded': onboarded,
+      'steps.wiki-handoff-build.outcome': 'skipped',
+      'steps.wiki-handoff-build.outputs.changed': '',
+      'steps.wiki-handoff-check.outcome': 'skipped',
+    }
+    expect(evaluateCondition(String(handoffBuild?.if ?? ''), {context: handoffFixtureContext})).toBe(false)
+    expect(
+      evaluateCondition(String(handoffCheck?.if ?? ''), {context: handoffFixtureContext, status: {cancelled: false}}),
+    ).toBe(false)
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: handoffFixtureContext})).toBe(false)
+
+    if (onboarded === 'true') {
+      const persistFixture: ExprFixture = {
+        context: {
+          'needs.survey-repo.outputs.agent-conclusion': finalResult.outputs.conclusion ?? '',
+          'needs.survey-repo.outputs.wiki-changed': finalResult.outputs.changed ?? '',
+          'needs.survey-repo.result': 'failure',
+          'steps.recheck.conclusion': 'success',
+          'needs.survey-repo.outputs.onboarded': onboarded,
+          'steps.wiki-commit.conclusion': 'skipped',
+          'needs.survey-resolve.outputs.resolve-outcome': 'success',
+          'steps.record-result.outcome': 'success',
+        },
+        status: {cancelled: false, failure: false},
+      }
+      expect(evaluateCondition(String(recordStep?.if ?? ''), persistFixture)).toBe(true)
+      expect(exprStringify(evaluateExpression(String(recordStep?.env?.SURVEY_STATUS ?? ''), persistFixture))).toBe(
+        'failure',
+      )
+      expect(evaluateCondition(String(announceStep?.if ?? ''), persistFixture)).toBe(false)
+      expect(evaluateCondition(String(fallbackStep?.if ?? ''), persistFixture)).toBe(false)
+    }
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('false')
+    expect(build.manifest).toStrictEqual({changed: [], deleted: []})
+
+    rmSync(repo, {recursive: true, force: true})
+  }
+
+  it('scenario 1: three .swp-only attempts exhaust cleanly — handoff/check/upload/announce all skipped; the real builder also gives an empty manifest', () => {
+    assertNoiseOnlyAttemptsExhaustCleanly(
+      () => {},
+      (repo, attemptIndex) => {
+        writeNested(join(repo, 'knowledge', 'wiki', 'repos', `scratch-${attemptIndex}.md.swp`), 'noise\n')
+      },
+      'true',
+    )
+  })
+
+  it('scenario 2: three ignored-.md-only attempts exhaust cleanly — same result as scenario 1', () => {
+    assertNoiseOnlyAttemptsExhaustCleanly(
+      repo => writeFileSync(join(repo, '.gitignore'), '.DS_Store\n*.swp\n*.swo\nknowledge/wiki/repos/ignored-*.md\n'),
+      (repo, attemptIndex) => {
+        writeNested(join(repo, 'knowledge', 'wiki', 'repos', `ignored-${attemptIndex}.md`), '# Ignored\n')
+      },
+      'true',
+    )
+  })
+
+  it('scenario 3: noise on attempt 1, then a valid edit on retry 1 — retries stop, the real handoff is non-empty, the check passes, and upload becomes eligible', () => {
+    const repo = makeHandoffGateRepo()
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'scratch.md.swp'), 'noise\n')
+    expect(detectChanged(repo, detectorHash)).toBe('false')
+
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nA real ingest happened.\n')
+    expect(detectChanged(repo, detectorHash)).toBe('true')
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['false', 'true', '']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('true')
+
+    expect(
+      evaluateCondition(String(exhaustion?.if ?? ''), {
+        context: {
+          'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+          'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+          'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+        },
+        status: {cancelled: false},
+      }),
+    ).toBe(false)
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('true')
+    expect(build.manifest?.changed).toContain('knowledge/log.md')
+
+    const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+    expect(checkResult.status).toBe(0)
+
+    const uploadFixtureContext = {
+      'steps.wiki-handoff-build.outcome': 'success',
+      'steps.wiki-handoff-build.outputs.changed': build.changed,
+      'steps.wiki-handoff-check.outcome': 'success',
+    }
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: uploadFixtureContext})).toBe(true)
+
+    rmSync(repo, {recursive: true, force: true})
+  })
+
+  it('scenario 4 (the fix): restoring drifted content back to HEAD — detector says changed=true, the real handoff is empty, the new check fails, no exhaustion, no further retry, and upload/persisted-success/announce are all blocked', () => {
+    const repo = makeHandoffGateRepo()
+    // Simulates sync-wiki leaving pre-existing drift: the worktree differs from HEAD
+    // before any baseline is captured.
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nAlready differs at baseline\n')
+    const {detectorHash, handoffBaselinePath} = captureBaselines(repo)
+
+    // The "agent" restores the file to HEAD's exact committed content — a real content
+    // change relative to the drifted baseline, but git-status-invisible relative to HEAD.
+    writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n')
+    expect(detectChanged(repo, detectorHash)).toBe('true')
+
+    const finalResult = runShellStep(String(finalAttempt?.run ?? ''), finalAttemptEnv(['true', '', '']))
+    expect(finalResult.outputs.conclusion).toBe('success')
+    expect(finalResult.outputs.changed).toBe('true')
+
+    // No exhaustion: the final attempt's own changed output is 'true', not 'false'.
+    expect(
+      evaluateCondition(String(exhaustion?.if ?? ''), {
+        context: {
+          'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+          'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+          'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+        },
+        status: {cancelled: false},
+      }),
+    ).toBe(false)
+
+    // No further retry: retry 2's gate requires retry 1's detect to have said 'false'.
+    expect(
+      evaluateCondition(String(steps.find(step => step.id === 'survey-agent-retry-2')?.if ?? ''), {
+        context: {
+          'steps.survey-agent-retry-1.conclusion': 'success',
+          'steps.wiki-changes-retry-1.outputs.changed': 'true',
+        },
+        status: {success: true},
+      }),
+    ).toBe(false)
+
+    const build = buildHandoff(repo, handoffBaselinePath)
+    expect(build.status).toBe(0)
+    expect(build.changed).toBe('false')
+    expect(build.manifest).toStrictEqual({changed: [], deleted: []})
+
+    const checkFixtureContext = {
+      'steps.onboarded.outputs.onboarded': 'true',
+      'steps.final-attempt.outputs.conclusion': finalResult.outputs.conclusion ?? '',
+      'steps.final-attempt.outputs.detect-conclusion': finalResult.outputs['detect-conclusion'] ?? '',
+      'steps.final-attempt.outputs.changed': finalResult.outputs.changed ?? '',
+      'steps.wiki-handoff-build.outcome': 'success',
+    }
+    expect(
+      evaluateCondition(String(handoffCheck?.if ?? ''), {context: checkFixtureContext, status: {cancelled: false}}),
+    ).toBe(true)
+    const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+    expect(checkResult.status).not.toBe(0)
+    expect(checkResult.stdout).toContain(
+      '::error::Survey detection reported changes, but the handoff contains no transferable wiki delta.',
+    )
+
+    // Actions' implicit success gating, modeled explicitly: the check failed, so its own
+    // outcome is 'failure', and upload's if: (which now names that outcome directly)
+    // evaluates false — upload is never scheduled.
+    const uploadFixtureContext = {
+      'steps.wiki-handoff-build.outcome': 'success',
+      'steps.wiki-handoff-build.outputs.changed': build.changed,
+      'steps.wiki-handoff-check.outcome': 'failure',
+    }
+    expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context: uploadFixtureContext})).toBe(false)
+
+    // The check failing fails survey-repo, so survey-persist sees the job as 'failure' —
+    // SURVEY_STATUS is 'failure' despite wiki-changed == 'true', and announce is blocked.
+    const persistFixture: ExprFixture = {
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': finalResult.outputs.conclusion ?? '',
+        'needs.survey-repo.outputs.wiki-changed': finalResult.outputs.changed ?? '',
+        'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      status: {cancelled: false, failure: false},
+    }
+    expect(evaluateCondition(String(recordStep?.if ?? ''), persistFixture)).toBe(true)
+    expect(exprStringify(evaluateExpression(String(recordStep?.env?.SURVEY_STATUS ?? ''), persistFixture))).toBe(
+      'failure',
+    )
+    expect(evaluateCondition(String(announceStep?.if ?? ''), persistFixture)).toBe(false)
+    expect(evaluateCondition(String(fallbackStep?.if ?? ''), persistFixture)).toBe(false)
+
+    rmSync(repo, {recursive: true, force: true})
+  })
+
+  describe('scenario 5: real non-empty manifests for every kind of allowed content change', () => {
+    it('a valid tracked edit', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      writeFileSync(join(repo, 'knowledge', 'log.md'), '# Log\n\nReal edit.\n')
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: ['knowledge/log.md'], deleted: []})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('a new untracked page', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'brand-new.md'), '# Brand new\n')
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: ['knowledge/wiki/repos/brand-new.md'], deleted: []})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('a deletion-only delta', () => {
+      const repo = makeHandoffGateRepo()
+      const {handoffBaselinePath} = captureBaselines(repo)
+      execFileSync('git', ['rm', '-q', 'knowledge/log.md'], {cwd: repo})
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest).toStrictEqual({changed: [], deleted: ['knowledge/log.md']})
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+
+    it('an allowed rename wholly within knowledge/wiki/', () => {
+      const repo = makeHandoffGateRepo()
+      writeNested(join(repo, 'knowledge', 'wiki', 'repos', 'old-name.md'), '# Repo page\n')
+      execFileSync('git', ['add', 'knowledge/wiki/repos/old-name.md'], {cwd: repo})
+      execFileSync('git', ['commit', '-q', '-m', 'add old-name page'], {cwd: repo})
+      const {handoffBaselinePath} = captureBaselines(repo)
+      execFileSync('git', ['mv', 'knowledge/wiki/repos/old-name.md', 'knowledge/wiki/repos/new-name.md'], {cwd: repo})
+      const build = buildHandoff(repo, handoffBaselinePath)
+      expect(build.status).toBe(0)
+      expect(build.changed).toBe('true')
+      expect(build.manifest?.changed).toContain('knowledge/wiki/repos/new-name.md')
+      expect(build.manifest?.deleted).toContain('knowledge/wiki/repos/old-name.md')
+      const checkResult = runShellStep(String(handoffCheck?.run ?? ''), {WIKI_HANDOFF_BUILD_CHANGED: build.changed})
+      expect(checkResult.status).toBe(0)
+      rmSync(repo, {recursive: true, force: true})
+    })
+  })
+
+  describe('scenario 6: build failure, missing/invalid build output, and cancellation', () => {
+    it("a build failure keeps its own failure and isn't mislabeled — the check never runs", () => {
+      const context = {
+        'steps.onboarded.outputs.onboarded': 'true',
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.wiki-handoff-build.outcome': 'failure',
+      }
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: false}})).toBe(false)
+    })
+
+    it.each([
+      ['missing (unset)', undefined],
+      ['empty', ''],
+      ['malformed (garbage)', 'maybe'],
+    ] as const)('%s build output after a successful build fails the check', (_label, value) => {
+      const env: Record<string, string> = value === undefined ? {} : {WIKI_HANDOFF_BUILD_CHANGED: value}
+      const result = runShellStep(String(handoffCheck?.run ?? ''), env)
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain('WIKI_HANDOFF_BUILD_CHANGED is missing or malformed')
+    })
+
+    it('cancellation prevents the check from running at all', () => {
+      const context = {
+        'steps.onboarded.outputs.onboarded': 'true',
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.wiki-handoff-build.outcome': 'success',
+      }
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: true}})).toBe(false)
+    })
+  })
+
+  describe('scenario 7: not onboarded', () => {
+    it('noise-only still exhausts (exhaustion does not depend on onboarded)', () => {
+      assertNoiseOnlyAttemptsExhaustCleanly(
+        () => {},
+        (repo, attemptIndex) => {
+          writeNested(join(repo, 'knowledge', 'wiki', 'repos', `scratch-${attemptIndex}.md.swp`), 'noise\n')
+        },
+        'false',
+      )
+    })
+
+    it('a valid edit skips build, check, and upload', () => {
+      const context = {
+        'steps.final-attempt.outputs.conclusion': 'success',
+        'steps.final-attempt.outputs.changed': 'true',
+        'steps.final-attempt.outputs.detect-conclusion': 'success',
+        'steps.onboarded.outputs.onboarded': 'false',
+        'steps.wiki-handoff-build.outcome': 'skipped',
+        'steps.wiki-handoff-build.outputs.changed': '',
+        'steps.wiki-handoff-check.outcome': 'skipped',
+      }
+      expect(evaluateCondition(String(handoffBuild?.if ?? ''), {context})).toBe(false)
+      expect(evaluateCondition(String(handoffCheck?.if ?? ''), {context, status: {cancelled: false}})).toBe(false)
+      expect(evaluateCondition(String(handoffUpload?.if ?? ''), {context})).toBe(false)
+    })
+  })
+
+  it('build → check → upload ordering holds, and the check sits between them', () => {
+    const buildIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-build')
+    const checkIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-check')
+    const uploadIndex = findStepIndex(surveyJob, s => s.id === 'wiki-handoff-upload')
+    expect(buildIndex).toBeGreaterThanOrEqual(0)
+    expect(checkIndex).toBeGreaterThan(buildIndex)
+    expect(uploadIndex).toBeGreaterThan(checkIndex)
+  })
+
+  it("upload's if: names the check step's outcome, keeping its existing terms", () => {
+    const condition = String(handoffUpload?.if ?? '')
+    expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+    expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
+    expect(condition).toContain("steps.wiki-handoff-check.outcome == 'success'")
+  })
+
+  it("the check's if: requires all six documented terms", () => {
+    const condition = String(handoffCheck?.if ?? '')
+    expect(condition).toContain('!cancelled()')
+    expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
+    expect(condition).toContain("steps.final-attempt.outputs.conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.detect-conclusion == 'success'")
+    expect(condition).toContain("steps.final-attempt.outputs.changed == 'true'")
+    expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
   })
 })

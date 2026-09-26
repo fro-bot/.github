@@ -35,10 +35,11 @@ This plan changes two things:
 - R3. An attempt that concluded `success` with no wiki changes is retried in the same job, at most 2 times. An attempt that concluded `failure` is never retried.
 - R4. If all attempts succeed without changes, the run emits `::error::` and `survey-repo` fails. `survey-persist` then records `failure` exactly once and skips ingest and announce. The fallback stays skipped.
 - R5. Downstream consumers read one final attempt: the last attempt that ran, paired with its own detection result. A detection that was missing or failed never falls back to an earlier attempt's positive result.
-- R6. Change detection counts content additions, edits, deletions, and renames under the scoped wiki paths — tracked or untracked, git-visible or git-ignored. Index-only operations (staging, unstaging, `git rm --cached`, `git add -N`) never count.
+- R6. Change detection counts content additions, edits, deletions, and renames under the scoped wiki paths, for *eligible* content only — allowlisted (the same path rule `scripts/wiki-handoff-core.ts` uses for the handoff) and not git-ignored (`git check-ignore --no-index`, so eligibility is independent of the index: a tracked or force-added file matching an ignore pattern still doesn't count). Index-only operations (staging, unstaging, `git rm --cached`, `git add -N`) never count regardless of eligibility. A positive detection for an onboarded target must correspond to a real transferable delta in the handoff (see R10).
 - R7. All three attempts fit inside the job's time budget.
 - R8. The use-after-agent credential guard still passes. Its exemption for retries covers only later steps that use the identical pinned agent action with a subset of the first agent step's secrets.
 - R9. Comments and solution docs that describe the old success shape are corrected.
+- R10. For an onboarded target, a final attempt that detection says changed the wiki must produce a non-empty handoff (`wiki-handoff-build.ts`'s own `changed` output — `changed.length > 0 || deleted.length > 0`; a deletion-only handoff is valid). A mismatch (positive detection, empty handoff) is a terminal failure, not a silent skip — detection proves *some* transferable delta exists, not complete correspondence between the detector's snapshot and the handoff's git-status-driven scoping.
 
 ## Scope Boundaries
 
@@ -132,13 +133,14 @@ This plan changes two things:
 
 - **KTD1: Success means the final attempt changed the wiki.** Rationale: the prompt requires a log entry on every survey, so zero changes means the survey did not run. Every other signal the agent exposes misses this incident. `invocation-outcome` comes from delivery and verification facts, so a clean exit after the model admits it couldn't finish still counts as `succeeded`.
 - **KTD2: One predicate for record and announce.** The predicate: final attempt `success`, its detection `changed == 'true'`, `needs.survey-repo.result == 'success'`, recheck succeeded, and wiki commit `success` whenever `onboarded == 'true'`. Rationale: checking the job result closes the path where the handoff build or upload fails and the commit is merely `skipped`. Requiring the commit to succeed when onboarded closes "changes made but discarded".
-- **KTD3: Detection hashes complete scoped filesystem content, not a git-relative diff.** Baseline and detection share one implementation. It walks the filesystem under `knowledge/index.md`, `knowledge/log.md`, and `knowledge/wiki`, hashing every path that currently exists there (tracked, untracked, or git-ignored) regardless of index state, and hashes the sorted `[path, contentHash]` set. Rationale: the success gate now depends on this signal, a first survey creates an untracked repo page, and `sync-wiki` restoring `data` into the worktree only (never the index) means an index-relative diff can flip on a pure index operation with zero content change. The CLI contract (`baseline`/`detect`, `hash=`, `changed=`, `WIKI_CHANGE_BASELINE_HASH`) and single-baseline-per-job lifetime are unchanged. This is the third copy of the detection logic (baseline plus two new detects), so it moves into one script instead of four inline shell blocks.
+- **KTD3: Detection hashes eligible scoped filesystem content, not a git-relative diff.** Baseline and detection share one implementation. It walks the filesystem under `knowledge/index.md`, `knowledge/log.md`, and `knowledge/wiki`, filters to *eligible* paths — allowlisted via `isAllowedWikiHandoffPath` (imported unmodified from `scripts/wiki-handoff-core.ts`, so the rule lives in one place) and not `git check-ignore --no-index`-matched (one batched, NUL-safe subprocess call per capture; `--no-index` makes eligibility independent of the git index) — and hashes the sorted `[path, contentHash]` set of what survives. Rationale: the success gate now depends on this signal, a first survey creates an untracked repo page, `sync-wiki` restoring `data` into the worktree only (never the index) means an index-relative diff can flip on a pure index operation with zero content change, and a raw filesystem walk without the eligibility filters would count editor noise (`*.swp`, `.DS_Store`) that `wiki-handoff-build.ts`'s git-status-driven scoping already excludes — exactly the mismatch R10 closes. The CLI contract (`baseline`/`detect`, `hash=`, `changed=`, `WIKI_CHANGE_BASELINE_HASH`) and single-baseline-per-job lifetime are unchanged. This is the third copy of the detection logic (baseline plus two new detects), so it moves into one script instead of four inline shell blocks.
 - **KTD4: Retries are explicit duplicated steps, N = 2.** Each retry runs only if `success() && <prev agent>.conclusion == 'success' && <prev detect>.outputs.changed == 'false'`. No `continue-on-error` anywhere in the chain. Rationale: this matches the repo's existing duplicated-step fallback pattern. A shell loop around a packaged action would depend on the action's lifecycle internals, and job re-runs would break the baseline, artifact, and record-once semantics. The repo has no YAML anchors; explicit steps keep the workflow-shape tests simple.
 - **KTD5: The retry prompt is the trusted ingest prompt plus a static prefix.** The prefix says the previous attempt ended without the required wiki changes, that they are mandatory, and that if the agent truly cannot complete it must state why. Nothing from a previous attempt's output is interpolated. The session continues through `dispatch-<run_id>`, which is accepted and documented. The retry keeps useful context and also any injected context. A fresh session on the same mutable runner would not be a security boundary anyway.
-- **KTD6: No workspace reset between attempts.** An attempt judged a no-op left no change inside the scoped paths, and paths outside the scope never enter the handoff (allowlist validation in `wiki-handoff-core.ts`). A reset adds risk and doesn't fix anything.
+- **KTD6: No workspace reset between attempts.** An attempt judged a no-op left no change to *eligible* wiki content, and paths outside the scope never enter the handoff (allowlist validation in `wiki-handoff-core.ts`). Excluded noise (an editor swap file, a stray `.DS_Store`) may still remain on disk between attempts — it was never eligible, so it isn't a "change" to reset in the first place. A reset adds risk and doesn't fix anything.
 - **KTD7: Narrow guard exemption.** A later step in an agent job may reference secrets only if its `uses:` string is identical to the first agent step's (same action, same pinned SHA), and its secret references are a subset of that step's. Rationale: attempt 1's model can already read the provider credential from `~/.local/share/opencode/auth.json` (0600, same user) and the config from `~/.config/opencode/opencode.json`, so re-running the same action with the same secrets exposes nothing new. A different action, a different SHA, or an extra secret would, and those stay violations. The retry may run action code that attempt 1 tampered with in `_actions`. That code receives only credentials the model already held, and its output is still untrusted: it reaches `data` only through the trusted-side handoff validation. So tampering gains the attacker nothing beyond what attempt 1 already allowed.
 - **KTD8: Final-attempt selection is a dedicated `!cancelled()` step.** It picks the last attempt whose conclusion isn't `skipped`, and pairs it with that attempt's own detection output. Rationale: `"skipped"` is truthy, so chaining `||` would pick the wrong attempt.
 - **KTD9: Time budget.** Each attempt runs with a 20-minute agent `timeout` and a step `timeout-minutes` of 23. The extra 3 minutes cover OpenCode bootstrap and the action's post phase, which the agent `timeout` does not include. The `survey-repo` job timeout goes from 30 to 75 minutes, which fits 3 × 23 plus setup and handoff. Rationale: the job is 30 minutes today and the agent default is 30, so a retry could never run.
+- **KTD10: Non-empty handoff invariant, checked as a dedicated step.** `Require non-empty survey handoff` (`id: wiki-handoff-check`) runs between build and upload, gated on `!cancelled()`, `onboarded == 'true'`, the final attempt's own `conclusion`/`detect-conclusion`/`changed` all being `'success'`/`'success'`/`'true'`, and `wiki-handoff-build`'s own `outcome == 'success'`. It reads the build's `changed` output and succeeds only on exactly `'true'`; `'false'` and anything missing/empty/malformed are two distinct terminal `::error::`s. A mismatch (positive detection, empty handoff) is terminal — it fails `survey-repo`, which fails `survey-persist`'s job-result term, so `SURVEY_STATUS` stays `failure` even though `wiki-changed == 'true'`, and `Announce survey to gateway` stays blocked. Upload's existing `if:` gains `steps.wiki-handoff-check.outcome == 'success'` alongside its current terms. Rationale: R10 needs *some* step to actually reject the mismatch, not just a documented expectation — and a dedicated step (rather than folding the check into `wiki-handoff-build.ts` itself) keeps the build script's job "build a manifest" and the invariant's job "a positive detection must produce a real delta" separately testable and separately nameable in a run's step list.
 
 ## Open Questions
 
@@ -171,20 +173,25 @@ flowchart TD
   D2 -->|no change| A3[agent retry 2]
   A3 --> D3[detect 3] --> SEL
   SEL --> H{final success and changed?}
-  H -->|yes, onboarded| HB[build + upload handoff]
+  H -->|yes, onboarded| HB[build handoff]
+  HB --> CHK{non-empty handoff?}
+  CHK -->|yes| UP[upload handoff]
+  CHK -->|no| EX2["::error:: no transferable delta, exit 1"]
   H -->|all no-op| EX["::error:: exhaustion, exit 1"]
-  HB --> P[survey-persist]
+  UP --> P[survey-persist]
+  EX2 --> P
   EX --> P
   SEL -->|failure| P
 ```
 
 | Final state | `survey-repo` result | Record | Status | Ingest / announce | Fallback |
 |---|---|---|---|---|---|
-| Attempt 1, 2, or 3 succeeds with changes | success | primary | success | run | skipped |
+| Attempt 1, 2, or 3 succeeds with changes, handoff non-empty | success | primary | success | run | skipped |
 | All 3 no-op | failure (exhaustion) | primary | failure | skipped | skipped |
 | Attempt N concludes failure | failure | primary | failure | skipped | skipped |
 | Detection fails after an attempt succeeds | failure | primary | failure | skipped | skipped |
 | Handoff build/upload fails | failure | primary | failure | skipped | skipped |
+| Detector positive but the handoff comes out empty (wiki-handoff-check fails) | failure | primary | failure | skipped | skipped |
 | Recheck fails | any | none | none | skipped | skipped |
 | Cancelled or job timeout during `survey-repo` | cancelled | fallback | failure | skipped | runs |
 
@@ -205,9 +212,9 @@ flowchart TD
 
 **Approach:**
 - One entry point with a baseline mode, which writes a hash output, and a detect mode, which compares against the baseline hash and writes `changed=true|false`.
-- Walk the filesystem under the scoped roots (no `.md` filter) and hash a deterministic, unambiguous serialization of the sorted `[relativePath, sha256(bytes)]` set for every path that currently exists — git tracked/untracked/ignored status is irrelevant, only bytes on disk.
-- Reject symlinks (the file itself or any ancestor within the scoped subtree, checked with `lstat` before descending or reading), dangling links, and non-regular entries; each fails capture rather than counting as a change.
-- Fail closed: a missing scope root is absent (not an error); any other stat/enumerate/read error — including a file disappearing mid-capture — exits non-zero and writes no `changed=true`. The CLI keeps a bounded, content-free `git rev-parse --is-inside-work-tree` check so running outside a git work tree still fails the way it always has.
+- Walk the filesystem under the scoped roots and enumerate every regular-file candidate (no content read yet), then filter to *eligible* candidates before hashing: allowlisted (`isAllowedWikiHandoffPath`, imported unmodified from `scripts/wiki-handoff-core.ts`) and not `git check-ignore --no-index`-matched (one batched, NUL-safe, path-only subprocess call per capture, explicit `maxBuffer`; exit 0 = some matches, exit 1 = none, anything else fails closed; every reported path must be a member of the candidate set or the call is treated as malformed). Hash a deterministic, unambiguous serialization of the sorted `[relativePath, sha256(bytes)]` set of what survives.
+- Reject symlinks (the file itself or any ancestor within the scoped subtree, checked with `lstat` before descending or reading), dangling links, and non-regular entries during enumeration — never read their content; each fails capture rather than counting as a change.
+- Fail closed: a missing scope root is absent (not an error); any other stat/enumerate/read/ignore-check error — including a file disappearing mid-capture, a check-ignore subprocess failure, or malformed check-ignore output — exits non-zero and writes no `changed=true`. The CLI keeps a bounded, content-free `git rev-parse --is-inside-work-tree` check so running outside a git work tree still fails the way it always has.
 
 **Patterns to follow:** the `lstat`-before-read symlink rejection in `validateAndApplyWikiHandoff` (`scripts/wiki-handoff-core.ts`); the `run:` extract-and-execute tests in `scripts/fro-bot-workflow.test.ts`.
 
@@ -216,14 +223,15 @@ flowchart TD
 - Happy path: a tracked edit to `knowledge/log.md` → `changed=true`.
 - Edge case: only a new untracked `knowledge/wiki/repos/<slug>.md` → `changed=true`.
 - Edge case: a file that was already untracked at baseline and is unchanged → `changed=false`; the same file edited → `changed=true`.
-- Edge case: a change outside the scoped paths only → `changed=false`.
-- Edge case: a rename counts as a change even when the bytes are identical (the path set changed).
-- Edge case: a change to a git-ignored file inside scope still counts.
-- Index-only cases (the false-positive this unit fixes): staging an edit that already existed at baseline, `git rm --cached`, `git add -N`, and a normal `git add` with no content edit all report `changed=false`.
-- Error path: running outside a git repo, a missing/malformed baseline hash, a symlink (file or ancestor) in scope, a dangling link, or a non-regular entry → exits non-zero and writes no `changed=true`.
-- Integration: the workflow runs the script for the baseline and for every detection step (asserted by YAML shape), and a real end-to-end run through the retry/exhaustion gate confirms three index-only no-op attempts still trigger two retries and exhaustion.
+- Edge case: a change outside the scoped paths only, or a non-allowlisted extension (e.g. `.txt`) inside scope → `changed=false`.
+- Edge case: a rename wholly within `knowledge/wiki/` counts as a change even when the bytes are identical (the path set changed).
+- Ineligible-content cases (the false-positive this unit fixes): creating, editing, or deleting `*.swp`/`*.swo`/`.DS_Store`, an ignored `.md` (including one inside an ignored directory), a tracked `.md` later matched by an ignore rule (the conservative `--no-index` policy: it stops counting even though it's tracked), and force-adding or `rm --cached`-ing an ignore-matching file — all `changed=false`. A negation pattern that makes a `.md` eligible, then editing it, → `changed=true`.
+- Index-only cases: staging an edit that already existed at baseline, `git rm --cached`, `git add -N`, and a normal `git add` with no content edit all report `changed=false`.
+- Error path: running outside a git repo, a missing/malformed baseline hash, a symlink (file or ancestor) in scope, a dangling link, a non-regular entry, a check-ignore subprocess failure, or check-ignore reporting a path outside the candidate set → exits non-zero and writes no `changed=true`.
+- Regression: a tracked file committed, then rewritten before baseline capture, with the real `git diff` against `HEAD` exceeding 1 MiB — baseline still succeeds (no subprocess carries file content, so there's no `maxBuffer` to exceed).
+- Integration: the workflow runs the script for the baseline and for every detection step (asserted by YAML shape), and a real end-to-end run through the retry/exhaustion gate confirms three index-only (and, separately, three ineligible-content) no-op attempts still trigger two retries and exhaustion.
 
-**Verification:** Every scenario passes, no inline `git diff`/`git status` hashing remains in the survey workflow, the detector-to-exhaustion integration test in `scripts/survey-repo-workflow.test.ts` passes, and the GHAS `js/unnecessary-use-of-cat` findings in `scripts/wiki-change-detect.test.ts` are cleared (`readFileSync` in place of shelling out to `cat`).
+**Verification:** Every scenario passes, no inline `git diff`/`git status` hashing remains in the survey workflow, the detector-to-exhaustion integration tests in `scripts/survey-repo-workflow.test.ts` pass, and the GHAS `js/unnecessary-use-of-cat` findings in `scripts/wiki-change-detect.test.ts` are cleared (`readFileSync` in place of shelling out to `cat`).
 
 - [x] **Unit 2: Guard exemption for retries of the same agent action**
 
@@ -269,8 +277,8 @@ flowchart TD
 - The sequence is attempt 1 → detect 1 → retry 1 → detect 2 → retry 2 → detect 3. Each retry and each detect is gated as in KTD4.
 - Retry steps copy attempt 1's `with:` block, except for the prompt (KTD5) and the explicit `timeout`.
 - The selection step (KTD8) writes the final conclusion and `changed`.
-- The exhaustion step runs when the final conclusion is `success` and `changed == 'false'`. It emits `::error::` and exits 1.
-- Handoff build and upload run once, gated on the final selection.
+- The exhaustion step runs when the final conclusion is `success`, `changed == 'false'`, and the final attempt's own detect step concluded `success` (KTD10's sibling gate — a failed detect on the final attempt is a real failure, not a clean no-op, and must not be mislabeled as exhaustion).
+- Handoff build, the non-empty-handoff check (KTD10), and upload run once each, gated on the final selection; the check sits between build and upload.
 - Job outputs: `agent-conclusion` becomes the final conclusion. Add `wiki-changed`. Keep `wiki-artifact-ready`, `onboarded`, `target-*`.
 - Timeouts per KTD9.
 
@@ -284,13 +292,15 @@ flowchart TD
 - Happy path: each detect step runs only if its own attempt concluded `success`.
 - Edge case: selection runs under `!cancelled()`, picks the last attempt that isn't `skipped`, and takes `changed` only from that attempt's own detect step.
 - Edge case: selection with the final attempt `success` and its detect `failure`/missing → `changed` is not `true`.
-- Happy path: the exhaustion step's `if:` requires a final `success` and final `changed == 'false'`, and its `run:` emits `::error::` and exits non-zero (extract and execute).
+- Happy path: the exhaustion step's `if:` requires a final `success`, final `changed == 'false'`, and the final attempt's own `detect-conclusion == 'success'`, and its `run:` emits `::error::` and exits non-zero (extract and execute).
 - Happy path: handoff build is gated on the final selection plus `onboarded == 'true'`, and runs once.
+- Happy path (KTD10): `wiki-handoff-check`'s `if:` requires `!cancelled()`, `onboarded == 'true'`, the final attempt's `conclusion`/`detect-conclusion`/`changed` all matching a positive detection, and `wiki-handoff-build`'s own `outcome == 'success'`; its `run:` accepts only `WIKI_HANDOFF_BUILD_CHANGED == 'true'`, and emits one of two distinct `::error::`s for `'false'` versus missing/malformed.
+- Edge case: a build failure (not a check failure) skips the check entirely; a cancellation skips the check entirely; upload's `if:` names `steps.wiki-handoff-check.outcome == 'success'` alongside its existing terms, so a failed check blocks upload the same way `steps.wiki-handoff-build.outcome == 'success'` already does.
 - Edge case: the retry prompt is built from `steps.ingest-prompt.outputs.*` plus static text only. No `steps.<agent>.outputs.*` reference and no response-file content.
 - Edge case: no step in the chain sets `continue-on-error`.
 - Happy path: the job's `timeout-minutes` is ≥ 3 × per-attempt `timeout-minutes` + setup headroom, and every agent step sets an explicit `timeout`.
 
-**Verification:** Tests pass, actionlint is clean, and the Unit 2 guard reports 0 violations with 6 agent jobs.
+**Verification:** Tests pass, actionlint is clean, the Unit 2 guard reports 0 violations with 6 agent jobs, and the seven end-to-end scenarios in `scripts/survey-repo-workflow.test.ts` (noise-only exhaustion by index-only and by ineligible content, noise-then-a-real-edit, restore-to-HEAD's detector-true/handoff-empty mismatch, every kind of real non-empty manifest, build failure/malformed-output/cancellation, and not-onboarded) all pass against the real detector and handoff CLIs.
 
 - [x] **Unit 4: Success gate in `survey-persist` and stale comments**
 
@@ -359,6 +369,9 @@ flowchart TD
 | The session continues across retries and keeps injected context | Documented (KTD5). The trusted persist side still validates the handoff. |
 | The guard exemption gets widened later | Negative fixtures pin "same `uses:` and subset of secrets". |
 | `changed == 'true'` is only a liveness signal | Scoped explicitly. Detecting completeness is a non-goal. |
+| The non-empty-handoff invariant (R10/KTD10) proves *some* transferable delta exists, not that the detector's snapshot and the handoff's manifest correspond byte-for-byte | Scoped explicitly. A detector-true/handoff-empty mismatch is terminal (fails the run); a detector-true/handoff-non-empty run is never further reconciled against the detector's own snapshot. |
+| Restoring drifted content back to exactly `HEAD`'s bytes is detector-true (content changed from baseline) but handoff-empty (`git status`-driven scoping sees no delta against `HEAD`) | Exactly the mismatch the invariant is built to catch — it fails the run rather than recording a false success, but it does mean a legitimate "restore to committed content" edit can't itself be the sole change in a survey. |
+| A non-onboarded target never runs build, check, or upload, by design (R1 already required `onboarded == 'true'` for the wiki-commit path) | The invariant is scoped to `onboarded == 'true'` on purpose — a non-onboarded survey's detection can still flip `SURVEY_STATUS` to `success` on its own merits without ever producing a handoff. |
 
 ## Documentation / Operational Notes
 
