@@ -144,16 +144,21 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
   run: |
     # shellcheck disable=SC2016
     gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
-    # NOTE: recheck currently swallows stderr with 2>/dev/null — see follow-up
-    # below. Resolve step (above) uses the tempfile-capture pattern instead.
-    response=$(gh api graphql \
+    gh_stderr=$(mktemp)
+    trap 'rm -f "$gh_stderr"' EXIT
+    if ! response=$(gh api graphql \
       -F id="$NODE_ID" \
       -f query="$gql_query" \
-      2>/dev/null) || {
-      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      2>"$gh_stderr"); then
+      printf 'GraphQL recheck failed for node_id: %s\n' "$NODE_ID" >&2
+      printf '%s\n' '--- gh stderr ---' >&2
+      cat "$gh_stderr" >&2
+      printf '%s\n' '--- end gh stderr ---' >&2
       exit 1
-    }
+    fi
 
+    # No gh stderr dump here: a jq mismatch is a logic failure (repo flipped private /
+    # unexpected isPrivate value), not a gh transport/API error — there is no gh stderr to surface.
     if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
       printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
       exit 1
@@ -162,7 +167,7 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     echo "private=false" >> "$GITHUB_OUTPUT"  # only reached on the confirmed-public path
 ```
 
-The recheck snippet above intentionally shows production verbatim, including the `2>/dev/null` that the resolve step (in section 2) no longer uses. The asymmetry is real: resolve was hardened during the 2026-05-20 diagnostic loop (PRs #3344/#3346), recheck has not yet received the same tempfile-capture treatment. Tracked as follow-up issue #3345. Until #3345 lands, recheck failures are diagnostically opaque; if the recheck starts failing, the first investigation step is to copy the resolve-step pattern locally and resubmit a diagnostic dispatch with stderr captured.
+The recheck snippet above now matches production verbatim: the `2>/dev/null` swallow is gone, replaced with the same tempfile-capture pattern the resolve step (in section 2) already used. The asymmetry once tracked here as follow-up issue #3345 ("Survey Repo privacy gate: complete the stderr-surfacing pattern + tempfile cleanup robustness") was resolved on 2026-06-04 — recheck now captures `gh` stderr to a tempfile and dumps it between marker lines on failure, same as resolve.
 
 **4. Route every persistence and external-emit step through the recheck-success gate.** This is the load-bearing detail. The recheck is only as useful as the breadth of its gating:
 
