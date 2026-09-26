@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-18
+updated: 2026-09-26
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: 656663c5dd260020e3b9646b95a375e51e96c493
+    accessed: 2026-09-26
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
     accessed: 2026-09-18
@@ -396,6 +399,10 @@ This completes the pair this page has been building toward. The 2026-09-01 entry
 One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
+
+### Personal template source rechecked (2026-09-26)
+
+The [[marcusrbrown--github]] `common-settings.yaml` remains at blob `b120b52e`; its self-extending `.github/settings.yml` still declares `Lint` and `Renovate / Renovate` as required checks. Both workflow callers retain basename-matched reusable paths and now share `bfra-me/.github` v4.33.0 (`6f33c678`), superseding the v4.27.0 pin in the dated 2026-09-11 wiring table above. This confirms declaration and wiring at the current SHA, **not** that the settings were applied: the limited recheck did not inspect a scheduled apply step or live branch protection.
 
 ### Merge Strategy
 

@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-09-14
+updated: 2026-09-26
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: 656663c5dd260020e3b9646b95a375e51e96c493
+    accessed: 2026-09-26
   - url: https://github.com/marcusrbrown/esphome.life
     sha: fd398954a17ea11c94c68f4f0708cd6356e65191
     accessed: 2026-09-14
@@ -88,13 +91,13 @@ Marcus R. Brown's personal `.github` repository. Provides GitHub defaults, commu
 - **Purpose:** GitHub defaults and community health files for `marcusrbrown` repositories
 - **Default branch:** `main`
 - **Created:** 2020-10-30
-  - **Last push:** 2026-09-10T01:00:33Z
+  - **Last push (2026-09-26 readback):** 2026-09-26T08:32:55Z; the 2026-09-10 value below is historical.
 - **Topics:** `github`, `repository`, `settings`
 - **License:** MIT
 - **Language:** None (YAML/Markdown only, no application code)
 - **Visibility:** Public
 - **Node ID:** `MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=` (repo id `308533198`)
-- **Signals (2026-09-11):** 4 stars, 2 watchers, 0 forks, 2 open issues, 0 open PRs
+- **Signals (2026-09-11 snapshot; not rechecked):** 4 stars, 2 watchers, 0 forks, 2 open issues, 0 open PRs
 
 > **Measurement note.** This repo's `updated_at` is worthless as a content signal. `Update Repo Settings` runs on a `55 2 * * *` cron and writes repository settings through the API on every pass, so `updated_at` tracks the settings-sync cron (2026-09-11T02:58:39Z at survey time — the exact timestamp of run #1637) and never goes stale regardless of whether a single byte of the tree has moved. Use the HEAD commit date or `pushed_at`; for this repo they differ from `updated_at` by days at a time.
 
@@ -298,8 +301,15 @@ The 2026-09-04 deadlock sharpens the case and also bounds it honestly:
 
 ## Survey History
 
+### Limited source recheck (2026-09-26)
+
+At `656663c`, the directory listing still has 15 blobs, including exactly three workflows and no Fro Bot agent workflow. The canonical `common-settings.yaml` is still blob `b120b52e` (the 48-label personal template); `.github/settings.yml` still self-extends it and requires `Lint` and `Renovate / Renovate`. A **separate follow-up draft PR remains warranted** for the missing agent workflow.
+
+The two correctly pathed `bfra-me/.github` callers now share SHA `6f33c678` (`v4.33.0`), up from `4861d88a` (`v4.27.0`) in the 2026-09-11 snapshot. `main.yaml` still has only the Prettier `Lint` job; its version and the Renovate `postUpgradeTasks` command agree at **3.9.9** (previously 3.9.6). The Renovate preset remains **`marcusrbrown/renovate-config#4.5.9`** despite those moving pins. The 4-hour `15 */4 * * *` Renovate cron and daily `55 2 * * *` settings cron remain. These observations supersede only the earlier *current-version* labels in the workflow and tooling sections, not the dated incident timeline or prior measurements of run health. No run logs or live branch-protection readback were inspected under this limited-read survey, so workflow presence and manifest declarations do not establish runtime health or applied settings.
+
 | Date | SHA | Changes |
 | --- | --- | --- |
+| 2026-09-26 | `656663c` | Limited recheck: same 15-blob structure and three workflows; no Fro Bot workflow. Both correctly pathed reusable callers at v4.33.0, Prettier at 3.9.9 in CI and post-upgrade task; preset still #4.5.9. Settings template blob unchanged. |
 | 2025-06-18 | `be01029` | Initial ingest |
 | 2026-04-21 | `be01029` | Re-survey — no change in repo content; additive wiki updates only (label count verified, workflow details expanded, related links extended) |
 | 2026-04-22 | `be01029` | Re-survey — no change since 2026-04-21; repo content identical at same SHA |
