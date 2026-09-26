@@ -6611,3 +6611,26 @@ Sources: https://github.com/marcusrbrown/panthe.ai/tree/f0c4ff0119bfb82feb059195
 Surveyed marcusrbrown/panthe.ai and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthe.ai
+
+## [2026-09-26 23:27] ingest | marcusrbrown/panthe.ai
+
+Re-surveyed after the target's `main` changed from `f0c4ff0` to `e5022aa` at
+23:19:55Z during this dispatch. Updated [[marcusrbrown--panthe-ai]],
+[[github-actions-ci]], and the index additively, retaining the three-file
+snapshot as dated history. The current repository is a Bun 1.4.2 workspace
+scaffolding a local-first mythological-character simulation: React/Three.js
+client, Tauri Rust shell, simulation app, eight packages, and three tools.
+Its only workflow is `ci.yaml` (Bun checks on Ubuntu, Rust fmt/clippy on macOS).
+The Fro Bot workflow remains absent and may warrant a separate draft onboarding
+PR. The README and docs index describe an M0 implementation and planned MVP,
+not completed product behavior; the unsigned WKWebView probe README supports a
+WebGL2 fallback but does not rule out WebGPU in a signed app. Reads were limited
+to directory listings, READMEs, package/Cargo manifests, and the CI workflow.
+
+Sources: https://github.com/marcusrbrown/panthe.ai/tree/e5022aaa6e9970e66b41ad68334f2fb7781658e7
+
+## [2026-09-26 23:30] ingest | repo:marcusrbrown/panthe.ai
+
+Surveyed marcusrbrown/panthe.ai and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthe.ai

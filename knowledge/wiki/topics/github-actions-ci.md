@@ -5,6 +5,9 @@ created: 2026-04-18
 updated: 2026-09-26
 sources:
   - url: https://github.com/marcusrbrown/panthe.ai
+    sha: e5022aaa6e9970e66b41ad68334f2fb7781658e7
+    accessed: 2026-09-26
+  - url: https://github.com/marcusrbrown/panthe.ai
     sha: f0c4ff0119bfb82feb0591950247cdd9e0596c17
     accessed: 2026-09-26
   - url: https://github.com/fro-bot/dashboard
@@ -321,7 +324,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--sparkle]] | Present (`fro-bot.yaml`, agent **v0.95.0** as of 2026-07-28; landed 2026-06-05 at v0.54.2) | Autoheal `0 5 * * *`, Maintenance `0 17 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; comment-trigger fork-head refusal preflight. Autoheal now shipping **security-override PRs** (`pnpm.overrides` in `pnpm-workspace.yaml`) for transitive Dependabot alerts — see [[marcusrbrown--sparkle]] |
 | [[marcusrbrown--dev-like]] | Present (`fro-bot.yaml`, **two-mode** at agent **v0.105.1** SHA-pinned `e9501a9` as of 2026-08-30 — fleet-front pin, was v0.96.0/`c29ac29` at 2026-07-31; workflow body otherwise byte-identical across the interval; onboarded since the 2026-07-12 initial survey when it had none) | Daily `30 14 * * *` autoheal; modes `autoheal`/`pr-review` via dispatch (default `autoheal`); `pull_request` → pr-review, `schedule`/`workflow_dispatch` → autoheal. Distinct from the fleet's three-mode norm: **no maintenance mode**. Inline prompts encode repo invariants as hard boundaries (zero runtime deps, human-gated registry/consent/OPTOUT/profile edits, no release.yaml/OIDC edits, mandatory changesets for `registry\|skills\|bin\|scripts`, verification gates incl. `npm pack --dry-run`). Failures roll up to a single **`Fro Bot Autoheal`** issue (reopen-not-spam). `secrets.FRO_BOT_PAT`, `persist-credentials: false` |
 | [[marcusrbrown--ha-config]] | **Not present** | N/A |
-| [[marcusrbrown--panthe-ai]] | **Not present** (complete three-file tree at `f0c4ff0`, surveyed 2026-09-26; no `.github/workflows/` directory) | N/A |
+| [[marcusrbrown--panthe-ai]] | **Not present** at `f0c4ff0` (three-file tree); **present at `e5022aa`** as `ci.yaml` with Bun checks on Ubuntu and Rust fmt/clippy on macOS; **Fro Bot workflow still absent** (both surveyed 2026-09-26) | N/A |
 | [[bfra-me--works]] | Present (`fro-bot.yaml`, single-file three-mode at **v0.83.0** as of 2026-07-05 — fleet pin leader; stale Renovate PR #3691 holds the pending v0 → v1 (`v1.18.0`) cutover, untouched since 2026-06-14) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`). Autoheal still re-emitting **duplicate** security/docs PRs (#3704/#3713, #3620/#3724 all still open) plus new #3762/#3803 — dedup guard not catching its own stale cross-run PRs; backlog 7 → 11 open PRs |
 | [[bfra-me--renovate-action]] | Present (single-file three-mode `fro-bot.yaml` at **v0.98.2** SHA-pinned `994357c3` as of 2026-08-10 — ecosystem version leader/canary a sixth time, now only ~1 patch ahead of the fleet front) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt. **2026-08-10 adds a `Validate review mode inputs` guard**: a `mode=review` dispatch hard-fails without a `prompt` (review mode has no default prompt — its normal path is the `pull_request` event), and the `prompt` doc-string names the verbatim-prompt path as the release-notes-narrative automation hook |
 
