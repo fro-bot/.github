@@ -1325,15 +1325,112 @@ describe('commitWikiChanges', () => {
     expect(updateRef).not.toHaveBeenCalled()
   })
 
-  it('rejects a protected wiki target before creating git objects', async () => {
+  it('writes to protected data for the canonical repository when protected is true', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>(async () => ({data: {sha: 'blob-sha'}}))
+    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>(async () => ({data: {sha: 'tree-sha'}}))
+    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>(async () => ({data: {sha: 'commit-sha'}}))
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>(async () => ({data: {ref: 'refs/heads/data'}}))
+
+    const result = await commitWikiChanges({
+      octokit: createOctokitMock({
+        getBranch: async () => ({
+          data: {name: 'data', protected: true, protection: {enabled: false}, commit: {sha: 'data-sha'}},
+        }),
+        createBlob,
+        createTree,
+        createCommit,
+        updateRef,
+      }),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): write protected canonical data',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+    })
+
+    expect(result.committed).toBe(true)
+    expect(createBlob).toHaveBeenCalledOnce()
+    expect(createTree).toHaveBeenCalledOnce()
+    expect(createCommit).toHaveBeenCalledOnce()
+    expect(updateRef).toHaveBeenCalledWith(expect.objectContaining({force: false}))
+  })
+
+  it('writes to protected data for the canonical repository when protection.enabled is true', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>(async () => ({data: {sha: 'blob-sha'}}))
+    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>(async () => ({data: {sha: 'tree-sha'}}))
+    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>(async () => ({data: {sha: 'commit-sha'}}))
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>(async () => ({data: {ref: 'refs/heads/data'}}))
+
+    const result = await commitWikiChanges({
+      octokit: createOctokitMock({
+        getBranch: async () => ({
+          data: {name: 'data', protected: false, protection: {enabled: true}, commit: {sha: 'data-sha'}},
+        }),
+        createBlob,
+        createTree,
+        createCommit,
+        updateRef,
+      }),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): write protected canonical data',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+    })
+
+    expect(result.committed).toBe(true)
+    expect(createBlob).toHaveBeenCalledOnce()
+    expect(createTree).toHaveBeenCalledOnce()
+    expect(createCommit).toHaveBeenCalledOnce()
+    expect(updateRef).toHaveBeenCalledWith(expect.objectContaining({force: false}))
+  })
+
+  it('propagates GitHub 403 for canonical protected data without retrying', async () => {
+    const denial = Object.assign(new Error('Forbidden'), {status: 403})
+    const getBranch = vi.fn(async () => ({
+      data: {name: 'data', protected: true, commit: {sha: 'data-sha'}},
+    }))
+    const getRef = vi.fn(async () => ({data: {object: {sha: 'head-sha'}}}))
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob-sha'}}))
+    const createTree = vi.fn(async () => ({data: {sha: 'tree-sha'}}))
+    const createCommit = vi.fn(async () => ({data: {sha: 'commit-sha'}}))
+    const updateRef = vi.fn(async () => {
+      throw denial
+    })
+    const bootstrapDataBranch = vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'}))
+
+    await expect(
+      commitWikiChanges({
+        octokit: createOctokitMock({getBranch, getRef, createBlob, createTree, createCommit, updateRef}),
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): protected write denied',
+        files: {'knowledge/index.md': '# Wiki Index\n'},
+        bootstrapDataBranch,
+      }),
+    ).rejects.toBe(denial)
+
+    expect(bootstrapDataBranch).toHaveBeenCalledOnce()
+    expect(getBranch).toHaveBeenCalledOnce()
+    expect(getRef).toHaveBeenCalledOnce()
+    expect(createBlob).toHaveBeenCalledOnce()
+    expect(createTree).toHaveBeenCalledOnce()
+    expect(createCommit).toHaveBeenCalledOnce()
+    expect(updateRef).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    {name: 'protected is true', branchProtection: {protected: true, protection: {enabled: false}}},
+    {name: 'protection.enabled is true', branchProtection: {protected: false, protection: {enabled: true}}},
+  ])('rejects protected non-data wiki targets when $name', async ({branchProtection}) => {
     const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
     const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>()
     const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>()
     const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
-
     const error = await commitWikiChanges({
       octokit: createOctokitMock({
-        getBranch: async () => ({data: {name: 'protected-data', protected: true, protection: {enabled: false}}}),
+        getBranch: async () => ({data: {name: 'protected-data', ...branchProtection}}),
         createBlob,
         createTree,
         createCommit,
@@ -1354,32 +1451,51 @@ describe('commitWikiChanges', () => {
     expect(updateRef).not.toHaveBeenCalled()
   })
 
-  it('rejects a wiki target with enabled branch protection before creating git objects', async () => {
+  it('rejects protected data for a noncanonical repository before creating git objects', async () => {
     const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
-    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>()
-    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>()
     const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
 
     const error = await commitWikiChanges({
       octokit: createOctokitMock({
-        getBranch: async () => ({data: {name: 'protected-data', protected: false, protection: {enabled: true}}}),
+        getBranch: async () => ({data: {name: 'data', protected: true, protection: {enabled: false}}}),
         createBlob,
-        createTree,
-        createCommit,
         updateRef,
       }),
-      owner: 'fro-bot',
+      owner: 'someone-else',
       repo: '.github',
-      branch: 'protected-data',
-      message: 'feat(knowledge): reject protected target',
+      branch: 'data',
+      message: 'feat(knowledge): reject noncanonical protected target',
       files: {'knowledge/index.md': '# Wiki Index\n'},
+      bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'}),
     }).catch((error: unknown) => error)
 
     expect(error).toBeInstanceOf(WikiIngestError)
     expect((error as InstanceType<typeof WikiIngestError>).code).toBe('PROTECTED_BRANCH')
     expect(createBlob).not.toHaveBeenCalled()
-    expect(createTree).not.toHaveBeenCalled()
-    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('rejects protected data for a repository override before creating git objects', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
+
+    const error = await commitWikiChanges({
+      octokit: createOctokitMock({
+        getBranch: async () => ({data: {name: 'data', protected: true, protection: {enabled: false}}}),
+        createBlob,
+        updateRef,
+      }),
+      owner: 'fro-bot',
+      repo: 'other-repo',
+      branch: 'data',
+      message: 'feat(knowledge): reject repository override',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+      bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'}),
+    }).catch((error: unknown) => error)
+
+    expect(error).toBeInstanceOf(WikiIngestError)
+    expect((error as InstanceType<typeof WikiIngestError>).code).toBe('PROTECTED_BRANCH')
+    expect(createBlob).not.toHaveBeenCalled()
     expect(updateRef).not.toHaveBeenCalled()
   })
 
