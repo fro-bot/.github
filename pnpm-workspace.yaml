@@ -27,3 +27,6 @@ savePrefix: ''
 shamefullyHoist: true
 
 shellEmulator: true
+
+minimumReleaseAgeExclude:
+  - '@bfra.me/eslint-config@0.54.0'
