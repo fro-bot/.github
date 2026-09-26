@@ -181,17 +181,19 @@ jobs:
           fi
           node scripts/check-repo-onboarded.ts
 
-      # Hashes the scoped tracked diff plus untracked files under the same paths, so a
-      # first survey's brand-new repo page (never tracked, so invisible to `git diff` alone)
-      # still registers as a change. See scripts/wiki-change-detect-core.ts.
+      # Hashes the actual filesystem content under the scoped paths (not `git diff`/`git
+      # status` output), so an index-only operation can never flip `changed` and an
+      # untracked file (e.g. a first survey's brand-new repo page) still registers. See
+      # scripts/wiki-change-detect-core.ts.
       - name: Capture wiki baseline
         id: wiki-baseline
         run: node scripts/wiki-change-detect.ts baseline
 
-      # Content-hash snapshot of every wiki-scoped path as it stands right after
-      # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
-      # the handoff only carries what the agent actually changed — not every path
-      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      # Content-hash snapshot of the status-reported wiki deltas right after sync-wiki,
+      # before the agent runs — not every wiki-scoped path (captureWikiBaseline is
+      # git-status-driven, sparse by design). wiki-handoff-build.ts diffs against this so
+      # the handoff only carries what the agent actually changed — not every path `data`
+      # differs from `main` on. See scripts/wiki-handoff-core.ts.
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-survey.json

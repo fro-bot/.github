@@ -21,7 +21,7 @@ This plan changes two things:
 - **Current rule.** In `survey-persist`, `SURVEY_STATUS` is `success` when the agent step concluded `success` and the wiki commit either succeeded or was skipped.
 - **What a false success costs.** It promotes a `pending` repo to `onboarded` and pushes back its next survey (`scripts/repos-metadata.ts`, `recordSurveyResult`).
 - **Why "no changes" means "did not run".** The ingest prompt in `survey-repo.yaml` lists required outcomes: update or create the repo page, update the index, and append an ingest summary to `knowledge/log.md`. A survey that finds nothing new still owes the log entry, so a survey that changed nothing didn't do its job. Real survey commits on `data` always touch `log.md`. The false success touched only `metadata/repos.yaml`.
-- **The detector gap.** The current change detector (`wiki-baseline` / `wiki-changes`) hashes `git diff` output, so it can't see untracked files, such as a newly created repo page.
+- **The detector gap.** The current change detector (`wiki-baseline` / `wiki-changes`) hashes `git diff` output, so it can't see untracked files, such as a newly created repo page. It's also index-relative: an operation that touches only the git index (staging an edit that already existed at baseline, `git rm --cached`, `git add -N`) flips the hash with zero content change, defeating the retry/exhaustion gate this plan adds.
 
 ## Requirements Trace
 
@@ -35,7 +35,7 @@ This plan changes two things:
 - R3. An attempt that concluded `success` with no wiki changes is retried in the same job, at most 2 times. An attempt that concluded `failure` is never retried.
 - R4. If all attempts succeed without changes, the run emits `::error::` and `survey-repo` fails. `survey-persist` then records `failure` exactly once and skips ingest and announce. The fallback stays skipped.
 - R5. Downstream consumers read one final attempt: the last attempt that ran, paired with its own detection result. A detection that was missing or failed never falls back to an earlier attempt's positive result.
-- R6. Change detection counts untracked files under the scoped wiki paths.
+- R6. Change detection counts content additions, edits, deletions, and renames under the scoped wiki paths — tracked or untracked, git-visible or git-ignored. Index-only operations (staging, unstaging, `git rm --cached`, `git add -N`) never count.
 - R7. All three attempts fit inside the job's time budget.
 - R8. The use-after-agent credential guard still passes. Its exemption for retries covers only later steps that use the identical pinned agent action with a subset of the first agent step's secrets.
 - R9. Comments and solution docs that describe the old success shape are corrected.
@@ -60,7 +60,7 @@ This plan changes two things:
   - `survey-repo`: `wiki-baseline`, `survey-agent`, `wiki-changes`, `wiki-handoff-build`, and the job outputs.
   - `survey-persist`: `record-result`, the announce, and the cancelled/timeout fallback.
 - `.github/actions/sync-wiki/action.yaml`: `run_with_retry` is the repo's existing bounded-retry pattern (fixed attempt count, explicit warning/error on exhaustion).
-- `scripts/wiki-handoff-core.ts`: `captureWikiBaseline` and `parseGitStatusPorcelainZ` already enumerate scoped paths, including untracked ones, using NUL-safe `git status`.
+- `scripts/wiki-handoff-core.ts`: `captureWikiBaseline` and `parseGitStatusPorcelainZ` enumerate scoped paths using NUL-safe `git status` — useful reference for NUL-delimited path handling, but sparse and status-dependent by design (it only hashes paths `git status` already reports as changed), not a complete filesystem snapshot. Detection needs the latter.
 - `scripts/agent-post-step-credential-guard.test.ts`: `scanAgentJob` finds the first agent step and applies rules (a)–(e). Its non-vacuity assertion expects 6 agent jobs.
 - `scripts/survey-repo-workflow.test.ts`, `scripts/fro-bot-workflow.test.ts` (`findStepIndex`), and `scripts/trusted-wiki-env-source-guard.test.ts` parse the workflow YAML and assert on its structure. The fro-bot workflow tests extract `run:` blocks and execute them against a temporary git repo.
 - `scripts/check-repo-onboarded.ts`: `onboarded == 'true'` means the repo has a public entry in `metadata/repos.yaml`, whether `pending` or `onboarded`. Otherwise the check fails closed to `false`.
@@ -132,7 +132,7 @@ This plan changes two things:
 
 - **KTD1: Success means the final attempt changed the wiki.** Rationale: the prompt requires a log entry on every survey, so zero changes means the survey did not run. Every other signal the agent exposes misses this incident. `invocation-outcome` comes from delivery and verification facts, so a clean exit after the model admits it couldn't finish still counts as `succeeded`.
 - **KTD2: One predicate for record and announce.** The predicate: final attempt `success`, its detection `changed == 'true'`, `needs.survey-repo.result == 'success'`, recheck succeeded, and wiki commit `success` whenever `onboarded == 'true'`. Rationale: checking the job result closes the path where the handoff build or upload fails and the commit is merely `skipped`. Requiring the commit to succeed when onboarded closes "changes made but discarded".
-- **KTD3: Detection sees untracked files.** Baseline and detection share one implementation. It hashes the scoped tracked diff plus the list and contents of untracked files under `knowledge/index.md`, `knowledge/log.md`, and `knowledge/wiki`. Rationale: the success gate now depends on this signal, and a first survey creates an untracked repo page. This is the third copy of the detection logic (baseline plus two new detects), so it moves into one script instead of four inline shell blocks.
+- **KTD3: Detection hashes complete scoped filesystem content, not a git-relative diff.** Baseline and detection share one implementation. It walks the filesystem under `knowledge/index.md`, `knowledge/log.md`, and `knowledge/wiki`, hashing every path that currently exists there (tracked, untracked, or git-ignored) regardless of index state, and hashes the sorted `[path, contentHash]` set. Rationale: the success gate now depends on this signal, a first survey creates an untracked repo page, and `sync-wiki` restoring `data` into the worktree only (never the index) means an index-relative diff can flip on a pure index operation with zero content change. The CLI contract (`baseline`/`detect`, `hash=`, `changed=`, `WIKI_CHANGE_BASELINE_HASH`) and single-baseline-per-job lifetime are unchanged. This is the third copy of the detection logic (baseline plus two new detects), so it moves into one script instead of four inline shell blocks.
 - **KTD4: Retries are explicit duplicated steps, N = 2.** Each retry runs only if `success() && <prev agent>.conclusion == 'success' && <prev detect>.outputs.changed == 'false'`. No `continue-on-error` anywhere in the chain. Rationale: this matches the repo's existing duplicated-step fallback pattern. A shell loop around a packaged action would depend on the action's lifecycle internals, and job re-runs would break the baseline, artifact, and record-once semantics. The repo has no YAML anchors; explicit steps keep the workflow-shape tests simple.
 - **KTD5: The retry prompt is the trusted ingest prompt plus a static prefix.** The prefix says the previous attempt ended without the required wiki changes, that they are mandatory, and that if the agent truly cannot complete it must state why. Nothing from a previous attempt's output is interpolated. The session continues through `dispatch-<run_id>`, which is accepted and documented. The retry keeps useful context and also any injected context. A fresh session on the same mutable runner would not be a security boundary anyway.
 - **KTD6: No workspace reset between attempts.** An attempt judged a no-op left no change inside the scoped paths, and paths outside the scope never enter the handoff (allowlist validation in `wiki-handoff-core.ts`). A reset adds risk and doesn't fix anything.
@@ -160,7 +160,7 @@ This plan changes two things:
 
 ```mermaid
 flowchart TD
-  B[baseline: tracked diff + untracked] --> A1[agent attempt 1]
+  B[baseline: scoped filesystem-content snapshot] --> A1[agent attempt 1]
   A1 -->|failure| SEL
   A1 -->|success| D1[detect 1]
   D1 -->|changed| SEL[select final attempt]
@@ -190,25 +190,26 @@ flowchart TD
 
 ## Implementation Units
 
-- [x] **Unit 1: Detection covers untracked files**
+- [x] **Unit 1: Detection hashes scoped filesystem content, not an index-relative diff**
 
-**Goal:** Baseline and every detection step use one implementation that counts untracked files under the scoped paths.
+**Goal:** Baseline and every detection step use one implementation that hashes the actual bytes under the scoped paths on disk — additions, edits, deletions, and renames all count, and no git-index-only operation (staging, unstaging, `git rm --cached`, `git add -N`) can ever flip the result.
 
 **Requirements:** R6
 
 **Dependencies:** None
 
 **Files:**
-- Create: `scripts/<detect-wiki-changes>.ts` (name deferred)
-- Modify: `.github/workflows/survey-repo.yaml` (`wiki-baseline`, `wiki-changes`)
-- Test: `scripts/<detect-wiki-changes>.test.ts`, `scripts/survey-repo-workflow.test.ts`
+- Create: `scripts/wiki-change-detect-core.ts`, `scripts/wiki-change-detect.ts`
+- Modify: `.github/workflows/survey-repo.yaml` (`wiki-baseline`, `wiki-changes`, plus the comments describing them)
+- Test: `scripts/wiki-change-detect.test.ts`, `scripts/survey-repo-workflow.test.ts`
 
 **Approach:**
 - One entry point with a baseline mode, which writes a hash output, and a detect mode, which compares against the baseline hash and writes `changed=true|false`.
-- The hash covers the scoped tracked diff plus the sorted list and contents of untracked files under the scoped paths.
-- Fail closed: any git or hash error exits non-zero. It never writes `changed=true` by default.
+- Walk the filesystem under the scoped roots (no `.md` filter) and hash a deterministic, unambiguous serialization of the sorted `[relativePath, sha256(bytes)]` set for every path that currently exists — git tracked/untracked/ignored status is irrelevant, only bytes on disk.
+- Reject symlinks (the file itself or any ancestor within the scoped subtree, checked with `lstat` before descending or reading), dangling links, and non-regular entries; each fails capture rather than counting as a change.
+- Fail closed: a missing scope root is absent (not an error); any other stat/enumerate/read error — including a file disappearing mid-capture — exits non-zero and writes no `changed=true`. The CLI keeps a bounded, content-free `git rev-parse --is-inside-work-tree` check so running outside a git work tree still fails the way it always has.
 
-**Patterns to follow:** `parseGitStatusPorcelainZ` / `captureWikiBaseline` in `scripts/wiki-handoff-core.ts`; the `run:` extract-and-execute tests in `scripts/fro-bot-workflow.test.ts`.
+**Patterns to follow:** the `lstat`-before-read symlink rejection in `validateAndApplyWikiHandoff` (`scripts/wiki-handoff-core.ts`); the `run:` extract-and-execute tests in `scripts/fro-bot-workflow.test.ts`.
 
 **Test scenarios:**
 - Happy path: no edits since baseline → `changed=false`.
@@ -216,10 +217,13 @@ flowchart TD
 - Edge case: only a new untracked `knowledge/wiki/repos/<slug>.md` → `changed=true`.
 - Edge case: a file that was already untracked at baseline and is unchanged → `changed=false`; the same file edited → `changed=true`.
 - Edge case: a change outside the scoped paths only → `changed=false`.
-- Error path: running outside a git repo, or with a missing baseline → exits non-zero and writes no `changed=true`.
-- Integration: the workflow runs the script for the baseline and for every detection step (asserted by YAML shape).
+- Edge case: a rename counts as a change even when the bytes are identical (the path set changed).
+- Edge case: a change to a git-ignored file inside scope still counts.
+- Index-only cases (the false-positive this unit fixes): staging an edit that already existed at baseline, `git rm --cached`, `git add -N`, and a normal `git add` with no content edit all report `changed=false`.
+- Error path: running outside a git repo, a missing/malformed baseline hash, a symlink (file or ancestor) in scope, a dangling link, or a non-regular entry → exits non-zero and writes no `changed=true`.
+- Integration: the workflow runs the script for the baseline and for every detection step (asserted by YAML shape), and a real end-to-end run through the retry/exhaustion gate confirms three index-only no-op attempts still trigger two retries and exhaustion.
 
-**Verification:** Every scenario passes, and no inline `git diff` hashing remains in the survey workflow.
+**Verification:** Every scenario passes, no inline `git diff`/`git status` hashing remains in the survey workflow, the detector-to-exhaustion integration test in `scripts/survey-repo-workflow.test.ts` passes, and the GHAS `js/unnecessary-use-of-cat` findings in `scripts/wiki-change-detect.test.ts` are cleared (`readFileSync` in place of shelling out to `cat`).
 
 - [x] **Unit 2: Guard exemption for retries of the same agent action**
 
