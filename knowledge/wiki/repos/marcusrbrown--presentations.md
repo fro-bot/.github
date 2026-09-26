@@ -32,7 +32,7 @@ related:
   - marcusrbrown--github
   - marcusrbrown--renovate-config
   - marcusrbrown--mothership
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
   - marcusrbrown--marcusrbrown-com
   - marcusrbrown--tokentoilet
@@ -72,7 +72,7 @@ Marcus R. Brown's slide-deck archive — "A collection of presentations I've giv
 ### 2026-09-01 (HEAD `4613f997`)
 
 - **Last push:** 2026-08-31 · **Updated:** 2026-08-31
-- **Homepage:** `https://mrbro.dev/Presentations/` — **changed** from `marcusrbrown.github.io/Presentations/`. Not a hosting move: `marcusrbrown.github.io` is the *user* Pages site, whose custom domain is `mrbro.dev` ([[marcusrbrown--mrbro-dev]]), so every project Pages path underneath it is served from the apex. The declared homepage was simply updated to the canonical URL in `chore: update repo settings (#62)`.
+- **Homepage:** `https://mrbro.dev/Presentations/` — **changed** from `marcusrbrown.github.io/Presentations/`. Not a hosting move: `marcusrbrown.github.io` is the *user* Pages site, whose custom domain is `mrbro.dev` ([[marcusrbrown--marcusrbrown-github-io]]), so every project Pages path underneath it is served from the apex. The declared homepage was simply updated to the canonical URL in `chore: update repo settings (#62)`.
 - **Topics (10, was 6):** added `opencode`, `cheap-llms`, `slides`, `slidev`
 - **Language:** **Shell** (was JavaScript) — flipped by the ~33 KB of Bash added under `Cheap-LLMs-Meetup-Aug-2026/demo/`
 - **Size:** 5047 KB · **Tree:** 53 entries (was 42 at `34321a4`)
@@ -283,7 +283,7 @@ Engineering notes:
 
 A single hand-written, **zero-dependency** HTML file that serves as the Pages root and indexes the decks (`Presentations · Marcus R. Brown`, per-deck cards with `.deck-meta`/`.tag`/`.deck-link`). No build step, no framework, no bundler — it is copied verbatim into `_site/index.html` by CI.
 
-Notable because of *how* it is styled: the entire palette is declared in **OKLCH** custom properties (`--bg: oklch(0.99 0.003 40)`, `--accent: oklch(0.4 0.17 250)`), with inline comments justifying WCAG AA contrast on both light and dark schemes, a `prefers-color-scheme: dark` block whose background is annotated *"Matches Spectacle #1F2022"* (the 2017 deck's chrome), `a:focus-visible` outlines, `max-width: 65ch`, and `aria-label` on the archive section. That is the same OKLCH-first, accessibility-gated design vocabulary enforced by the `.impeccable` design gate in [[marcusrbrown--mrbro-dev]] and [[fro-bot--dashboard]] — applied here in a plain `.html` file with no tooling to enforce it. The design standard travelled without the gate.
+Notable because of *how* it is styled: the entire palette is declared in **OKLCH** custom properties (`--bg: oklch(0.99 0.003 40)`, `--accent: oklch(0.4 0.17 250)`), with inline comments justifying WCAG AA contrast on both light and dark schemes, a `prefers-color-scheme: dark` block whose background is annotated *"Matches Spectacle #1F2022"* (the 2017 deck's chrome), `a:focus-visible` outlines, `max-width: 65ch`, and `aria-label` on the archive section. That is the same OKLCH-first, accessibility-gated design vocabulary enforced by the `.impeccable` design gate in [[marcusrbrown--marcusrbrown-github-io]] and [[fro-bot--dashboard]] — applied here in a plain `.html` file with no tooling to enforce it. The design standard travelled without the gate.
 
 ## CI/CD Pipeline
 
@@ -311,7 +311,7 @@ Triggers, concurrency, and `permissions: contents: read` at workflow level are u
 Three things worth naming:
 
 1. **Deploy model migrated, and the old one is now dead weight.** The 2017 deck's `package.json` still carries `gh-pages 6.3.0` plus `predeploy`/`deploy` scripts that push `build/` to a `gh-pages` branch. Nothing invokes them any more — CI publishes via the Pages artifact API. `gh-pages` is *also* on Renovate's abandoned-dependencies list (below). Two independent signals that it should be deleted.
-2. **The elevated permissions are correctly scoped.** `pages: write` + `id-token: write` live only on the `Deploy` job; `Build` and `Test` keep the workflow-level `contents: read`. This is the shape the fleet's CI least-privilege issues ([[marcusrbrown--mrbro-dev]] #287) keep converging on, arrived at here on the first try.
+2. **The elevated permissions are correctly scoped.** `pages: write` + `id-token: write` live only on the `Deploy` job; `Build` and `Test` keep the workflow-level `contents: read`. This is the shape the fleet's CI least-privilege issues ([[marcusrbrown--marcusrbrown-github-io]] #287) keep converging on, arrived at here on the first try.
 3. **PR builds exercise the assembly but never publish.** The `mkdir`/`cp` assembly step is unguarded, so a PR that breaks the `_site` layout fails in CI rather than at deploy time. Deliberate and correct — the guarded steps are exactly the three that touch Pages.
 
 > **Carried footgun (still present, now doubled):** `NODE_VERSION` is declared under each `setup-node` step's `env:` block and consumed by `with.node-version: ${{ env.NODE_VERSION }}` on the same step. It resolves — the `env` context is available to `steps.*.with` — but it reads backwards and the pattern is now duplicated across the `Build` and `Test` jobs, so a refactor has two places to get wrong. Hoist it to workflow-level `env:` and the `renovate:` annotation still works.
@@ -469,7 +469,7 @@ It composes with the abandoned-`react-scripts` thread rather than standing alone
 - **Declared-vs-live drift:** the `archived: true` / live-`false` split is a clean example of Probot settings declaring an intent the platform state doesn't reflect. **2026-09-01:** root-caused — the reconciler drops the key silently, so this is a *reconciler coverage gap*, not a sync failure.
 - **A frozen archive is not a frozen repo** *(new 2026-09-01)*: the premise "each talk keeps the stack of its era" governs the *decks*, not the infrastructure around them. In 27 days the shared layer gained a Pages deploy pipeline, a Bun toolchain in CI, a hand-written landing page, and 33 KB of tested Bash — while both deck subtrees stayed semantically still. Surveys that sample only the content directories would report no change.
 - **Newly chosen ≠ maintained** *(new 2026-09-01)*: `@slidev/theme-seriph`, selected in August 2026, had its last release in February 2024. Recency of *adoption* says nothing about liveness of the *upstream*; Renovate's abandonment detection is the only thing that surfaced it, and only because `bun.lock` was checked in (`#56`) to make the deck visible to the scanner at all.
-- **Design standards travel further than the gates that enforce them** *(new 2026-09-01)*: the root `index.html` is OKLCH-first with inline WCAG-AA contrast justification, focus-visible rings, and a `65ch` measure — the full `.impeccable` vocabulary from [[marcusrbrown--mrbro-dev]] / [[fro-bot--dashboard]] — in a file with no build step, no linter, and no design gate to check it.
+- **Design standards travel further than the gates that enforce them** *(new 2026-09-01)*: the root `index.html` is OKLCH-first with inline WCAG-AA contrast justification, focus-visible rings, and a `65ch` measure — the full `.impeccable` vocabulary from [[marcusrbrown--marcusrbrown-github-io]] / [[fro-bot--dashboard]] — in a file with no build step, no linter, and no design gate to check it.
 - **An inert tree is not an inert repo** *(new 2026-09-17; sharpens the 2026-09-01 entry below)*: the 2026-09-01 survey observed that the infrastructure moved while the decks stood still. This interval went one step further — **nothing at all moved except pins**, and it still contained the most consequential event in the repo's recorded history (a 6.5-hour updater deadlock). A survey that diffs the tree reports "no change" and misses the whole interval; a survey that reads the run history and the merge timeline finds the incident. Sample the automation, not the artifact.
 - **A self-chained updater removes its own recovery path** *(new 2026-09-17)*: `renovate.yaml` has no `schedule:`; its next run is triggered by the CI run of the merge it just produced. When it stopped producing merges it stopped scheduling itself, and the outage became a deadlock rather than a delay. Liveness that is conditional on your own output is not liveness.
 - **The pin landed on the frozen dependency and stalled on the moving one** *(new 2026-09-17)*: `@slidev/theme-seriph` (one release since February 2024) got exact-pinned; `@slidev/cli` (ships continuously) stayed a floating caret with a 45-day-old pin PR and a v53 major queued behind it. Automerge matrices produce pin outcomes that are uncorrelated with pin *value*.

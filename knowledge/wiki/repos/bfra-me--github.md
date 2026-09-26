@@ -1429,7 +1429,7 @@ action can detect it as a published package.
   additive-only; recording it so the decision is deliberate rather than
   deferred by neglect. The same pressure applies fleet-wide to
   [[marcusrbrown--dotfiles]], [[marcusrbrown--infra]], and
-  [[marcusrbrown--mrbro-dev]].
+  [[marcusrbrown--marcusrbrown-github-io]].
 - **Does the contract-suite pattern propagate?** The consumer-fixture
   approach is the most reusable thing this repo has produced in months
   and applies directly to [[bfra-me--renovate-action]] (a composite

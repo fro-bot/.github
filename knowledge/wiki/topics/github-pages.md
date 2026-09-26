@@ -42,7 +42,7 @@ tags:
     https-enforcement,
   ]
 related:
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
   - marcusrbrown--presentations
@@ -56,7 +56,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 
 ## Repos Using GitHub Pages
 
-- [[marcusrbrown--mrbro-dev]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
+- [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
 - [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
@@ -67,7 +67,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 
 ### Vite + GitHub Actions
 
-The pattern used in [[marcusrbrown--mrbro-dev]]:
+The pattern used in [[marcusrbrown--marcusrbrown-github-io]]:
 
 1. Build with Vite (`pnpm run build`) using `GITHUB_PAGES=true` env variable
 2. Upload via `actions/upload-pages-artifact` (targets `./dist`)
@@ -81,7 +81,7 @@ The deploy workflow runs lint and test gates before building, ensuring only vali
 
 Two Marcus repos use custom domains with GitHub Pages:
 
-- **mrbro.dev** — [[marcusrbrown--mrbro-dev]], full portfolio with React Router
+- **mrbro.dev** — [[marcusrbrown--marcusrbrown-github-io]], full portfolio with React Router
 - **marcusrbrown.com** — [[marcusrbrown--marcusrbrown-github-io]], single-page brand site (CNAME in `public/`)
 
 Both use Vite with `base: '/'` for custom domain compatibility (no path prefix needed).
@@ -192,7 +192,7 @@ This is the inverse of the [[fro-bot--systematic]] lesson recorded above (_measu
 
 ## Performance Monitoring
 
-[[marcusrbrown--mrbro-dev]] runs Lighthouse CI against the deployed site with device-specific budgets:
+[[marcusrbrown--marcusrbrown-github-io]] runs Lighthouse CI against the deployed site with device-specific budgets:
 
 - Desktop: Performance >= 95%, LCP <= 2s, CLS <= 0.05
 - Mobile: Performance >= 90%, LCP <= 2.5s, CLS <= 0.1
@@ -204,7 +204,7 @@ Weekly scheduled performance runs (Monday 06:00 UTC) establish baselines for reg
 
 GitHub Pages does **not** resolve Git LFS pointers. If a binary asset (image, font, etc.) is tracked by LFS and committed as a pointer file, Pages serves the ~130-byte pointer text verbatim instead of the blob — the asset renders broken in production even though it displays correctly in the GitHub UI and local checkouts (which transparently smudge LFS pointers).
 
-[[marcusrbrown--mrbro-dev]] hit this on 2026-07-26 (#228): self-hosted project-preview PNGs added a week earlier (#202) were tracked by a repo-wide `*.png filter=lfs` rule, so the images broke on the live site. The fix is a **`.gitattributes` exemption** that overrides LFS for the web-served path while keeping it for other PNGs:
+[[marcusrbrown--marcusrbrown-github-io]] hit this on 2026-07-26 (#228): self-hosted project-preview PNGs added a week earlier (#202) were tracked by a repo-wide `*.png filter=lfs` rule, so the images broke on the live site. The fix is a **`.gitattributes` exemption** that overrides LFS for the web-served path while keeping it for other PNGs:
 
 ```gitattributes
 *.png filter=lfs diff=lfs merge=lfs -text
@@ -217,7 +217,7 @@ The empty `filter=`/`diff=`/`merge=` values unset the inherited LFS attributes f
 
 ## Build-time-gated, self-hosted analytics on a Pages SPA
 
-[[marcusrbrown--mrbro-dev]] added a privacy-preserving web-analytics subsystem on 2026-08-01 (#256/#257) that is a reusable template for adding telemetry to a static Pages site without violating a no-unconsented-telemetry baseline:
+[[marcusrbrown--marcusrbrown-github-io]] added a privacy-preserving web-analytics subsystem on 2026-08-01 (#256/#257) that is a reusable template for adding telemetry to a static Pages site without violating a no-unconsented-telemetry baseline:
 
 - **Self-hosted processor, not a SaaS vendor.** The tracker points at a self-hosted Umami instance (`metrics.fro.bot`, an [[marcusrbrown--infra]] app), so no third-party analytics script loads and no data leaves the operator's own infrastructure.
 - **Build-time injection gated on a repo variable.** Because a Pages SPA has no server, activation is a *build-time* decision: a GitHub repo variable (`UMAMI_WEBSITE_ID`) is mapped to a Vite env var (`VITE_UMAMI_WEBSITE_ID`) **only on the build step** of `deploy.yaml` (step-scoped, so it can't leak into unrelated steps). Vite injects exactly one tracker tag only when the variable is set; unconfigured builds and dev builds ship no tag. Leaving the variable unset is the **fail-closed default** — the deployed artifact contains no tracker until a human sets it.
@@ -255,7 +255,7 @@ Three properties that make this good rather than merely working:
 
 ## Project Pages inherit the user site's custom domain
 
-When a user Pages site (`<user>.github.io`) has a custom domain, every **project** Pages site under that account is served from the custom apex, not from `github.io`. [[marcusrbrown--presentations]]'s canonical URL moved from `marcusrbrown.github.io/Presentations/` to `mrbro.dev/Presentations/` with no change to its own Pages configuration — the move happened because `marcusrbrown.github.io` is the [[marcusrbrown--mrbro-dev]] portfolio, whose `CNAME` is `mrbro.dev`.
+When a user Pages site (`<user>.github.io`) has a custom domain, every **project** Pages site under that account is served from the custom apex, not from `github.io`. [[marcusrbrown--presentations]]'s canonical URL moved from `marcusrbrown.github.io/Presentations/` to `mrbro.dev/Presentations/` with no change to its own Pages configuration — the move happened because `marcusrbrown.github.io` is the [[marcusrbrown--marcusrbrown-github-io]] portfolio, whose `CNAME` is `mrbro.dev`.
 
 Practical consequences:
 

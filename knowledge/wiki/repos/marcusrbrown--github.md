@@ -70,7 +70,7 @@ aliases:
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--containers
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--vbs
   - marcusrbrown--infra
   - marcusrbrown--dotfiles

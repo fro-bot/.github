@@ -44,7 +44,7 @@ related:
   - marcusrbrown--vbs
   - marcusrbrown--copiloting
   - marcusrbrown--extend-vscode
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--tokentoilet
   - marcusrbrown--marcusrbrown
   - marcusrbrown--marcusrbrown-github-io
@@ -217,7 +217,7 @@ Single-issue management: the perpetual `Daily Autohealing Report` issue receives
 
 ESLint config (`eslint.config.js`) is a single re-export of `@bfra.me/eslint-config` — no local overrides.
 
-**pnpm overrides for supply-chain hardening:** `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^4.0.0`, `picomatch@4 ^4.0.4` (2026-07-26). The `picomatch@2` selector was **bumped `^2.3.2` → `^4.0.0`** since 2026-06-25 — this is PR #1311 (the picomatch@2-v4 update open across five prior surveys) finally landing. Note the override now forces the `@2` alias onto the v4 line, collapsing the two selectors toward a single major. Mirrors the override approach used in [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--marcusrbrown-github-io]] — a config-only repo carrying transitive-dep pins because npm advisory floors propagate via the lockfile. **Merged since prior survey:** #1402 (`undici >=7.28.0`, CVE-2026-9697 / CVE-2026-9678) landed — the category-2 security-override autoheal path completed end-to-end. **In-flight (2026-07-26):** open PR #1478 (authored by `fro-bot`) adds a `fast-uri` bump to `3.1.4` remediating CVE-2026-16221 — the same category-2 path firing again; not yet merged, so the `fast-uri >=3.1.2` floor above is unchanged pending it.
+**pnpm overrides for supply-chain hardening:** `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^4.0.0`, `picomatch@4 ^4.0.4` (2026-07-26). The `picomatch@2` selector was **bumped `^2.3.2` → `^4.0.0`** since 2026-06-25 — this is PR #1311 (the picomatch@2-v4 update open across five prior surveys) finally landing. Note the override now forces the `@2` alias onto the v4 line, collapsing the two selectors toward a single major. Mirrors the override approach used in [[marcusrbrown--marcusrbrown-github-io]] and [[marcusrbrown--marcusrbrown-github-io]] — a config-only repo carrying transitive-dep pins because npm advisory floors propagate via the lockfile. **Merged since prior survey:** #1402 (`undici >=7.28.0`, CVE-2026-9697 / CVE-2026-9678) landed — the category-2 security-override autoheal path completed end-to-end. **In-flight (2026-07-26):** open PR #1478 (authored by `fro-bot`) adds a `fast-uri` bump to `3.1.4` remediating CVE-2026-16221 — the same category-2 path firing again; not yet merged, so the `fast-uri >=3.1.2` floor above is unchanged pending it.
 
 ## Probot Settings
 
@@ -253,7 +253,7 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | [[marcusrbrown--copiloting]] | `#v4` (floating major-version branch) | — |
 | [[marcusrbrown--extend-vscode]] | `#4.5.0` + `sanity-io/renovate-config` | — |
 | [[marcusrbrown--infra]] | `#4.5.8` | `bun install --ignore-scripts && bun run fix` |
-| [[marcusrbrown--mrbro-dev]] | `#4.5.8` | — |
+| [[marcusrbrown--marcusrbrown-github-io]] | `#4.5.8` | — |
 | [[marcusrbrown--tokentoilet]] | `#4.5.8` | — |
 | [[marcusrbrown--marcusrbrown]] | `#4.5.1` | bootstrap + fix |
 | [[marcusrbrown--marcusrbrown-github-io]] | `#5.2.0` (crossed v4→v5 boundary on 2026-05-16 via #406) | — |

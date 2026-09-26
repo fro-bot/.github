@@ -319,7 +319,7 @@ For two consecutive surveys this page recorded "Open PRs: 0 — backlog stays cl
 | #744 | `fro-bot` | 2026-08-14 | 15d | clean | `chore(deps)`: migrate `openai` 2.54 → 3.x (HTTPX2 default client) |
 | #758 | `mrbro-bot[bot]` | 2026-08-24 | 5d | unstable | `fix(deps)`: `anthropic` → v1; fails CI on a stale `poetry.lock` |
 
-Three of the four fro-bot PRs are `mergeable_state: clean` — green, unblocked, and untouched for three to four weeks. This is the **propose-without-merge** pattern already catalogued on [[marcusrbrown--sparkle]] and [[marcusrbrown--mrbro-dev]], now confirmed here. The distinguishing detail at containers is the *asymmetry*: it isn't that merges stopped, it's that the automerge-eligible bot lane drains continuously while the agent-authored lane does not. Renovate PRs merge because Renovate automerges them; Fro Bot PRs wait on a human that isn't coming.
+Three of the four fro-bot PRs are `mergeable_state: clean` — green, unblocked, and untouched for three to four weeks. This is the **propose-without-merge** pattern already catalogued on [[marcusrbrown--sparkle]] and [[marcusrbrown--marcusrbrown-github-io]], now confirmed here. The distinguishing detail at containers is the *asymmetry*: it isn't that merges stopped, it's that the automerge-eligible bot lane drains continuously while the agent-authored lane does not. Renovate PRs merge because Renovate automerges them; Fro Bot PRs wait on a human that isn't coming.
 
 Corollary from #740: because the yamllint ignore pattern targets `*.yml` and every workflow file here is `*.yaml`, the intended workflow exclusion has never taken effect. Re-verified in the live `.yamllint.yaml` at HEAD — the drift is real and still unremediated after 22 days.
 

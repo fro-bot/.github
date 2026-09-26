@@ -207,7 +207,7 @@ related:
   - marcusrbrown--github
   - marcusrbrown--systematic
   - marcusrbrown--infra
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown
   - marcusrbrown--mothership
@@ -316,7 +316,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--containers]] | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing |
 | [[marcusrbrown--systematic]] | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]] | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |
-| [[marcusrbrown--mrbro-dev]] | Present (single-file `fro-bot.yaml` at agent **v0.93.1** SHA-pinned `a4976f4`; surveyed via the `marcusrbrown.github.io` name binding → repo id `1174807412`). **Consolidated 2→1 cron on 2026-07-28 (#234).** | Single daily `30 3 * * *` oversight + autoheal pass (was `30 3` autoheal / `30 15` maintenance until #234). Dispatch modes now `review`/`autoheal`/`live-audit` (`maintenance` dropped); dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input; `discussion_comment` trigger; scheduled autoheal wires an authenticated git remote (#236). Rolling report collapsed to a single `Daily Fro Bot Report` issue (#235) |
+| [[marcusrbrown--marcusrbrown-github-io]] | Present (single-file `fro-bot.yaml` at agent **v0.93.1** SHA-pinned `a4976f4`; surveyed via the `marcusrbrown.github.io` name binding → repo id `1174807412`). **Consolidated 2→1 cron on 2026-07-28 (#234).** | Single daily `30 3 * * *` oversight + autoheal pass (was `30 3` autoheal / `30 15` maintenance until #234). Dispatch modes now `review`/`autoheal`/`live-audit` (`maintenance` dropped); dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input; `discussion_comment` trigger; scheduled autoheal wires an authenticated git remote (#236). Rolling report collapsed to a single `Daily Fro Bot Report` issue (#235) |
 | [[marcusrbrown--marcusrbrown-github-io]] | ⚠️ **Stale row — the _brand site_ this described (repo id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]) no longer holds this name.** Since the 2026-07-13 rename/collision the name `marcusrbrown/marcusrbrown.github.io` resolves to repo id `1174807412` (mrbro.dev — see the row above). | (Historical) Daily 15:30 UTC maintenance (no autoheal) — describes the pre-rename brand site only |
 | [[marcusrbrown--marcusrbrown]] | Present (single-file three-mode `fro-bot.yaml` at v0.75.0 SHA-pinned `a12463f`, onboarded 2026-06-02 via #924; ~31 agent bumps in 20 days as of 2026-06-22) | Autoheal `30 4 * * *` (7 categories incl. Sunday-only Upstream Modernization Watch), Maintenance `30 16 * * *`; both rolling single-issue reports. Adds a comment-trigger fork-head refusal preflight step. Friction update (2026-06-22): the prior daily close/reopen churn on the perpetual maintenance issue #936 has settled — #936 is now closed, leaving the autoheal report #926 as the only open perpetual issue (zero open maintenance issue) |
 | [[marcusrbrown--renovate-config]] | Present (single-file `fro-bot.yaml` at v0.44.3; the separate `fro-bot-autoheal.yaml` was consolidated since 2026-04-28) | Daily 15:30 UTC, 6 categories incl. config validation, cross-project intelligence inbound, and Sundays-only Upstream Modernization Watch with at-most-one-draft-PR-per-scan policy |
@@ -371,7 +371,7 @@ Confirmed instances (chronological):
 - [[bfra-me--github]] (2026-07-02) — 3 → 2 modes, one unified 15:30 pass, reports consolidated to a single issue (#2344).
 - [[marcusrbrown--mothership]] (initial survey 2026-07-06) — onboarded already unified (single-run oversight+autoheal at 06:15 UTC).
 - [[fro-bot--dashboard]] — single `0 0` midnight pass.
-- [[marcusrbrown--mrbro-dev]] (**#234, 2026-07-28**) — the two-cron model (`30 3` autoheal / `30 15` maintenance) collapsed to a single `30 3` daily oversight+autoheal pass; `maintenance` dispatch mode dropped, a **`live-audit`** mode added (dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input); the split `Daily Autohealing Report`/`Daily Maintenance Report` issue pair collapsed to a single `Daily Fro Bot Report` (#235).
+- [[marcusrbrown--marcusrbrown-github-io]] (**#234, 2026-07-28**) — the two-cron model (`30 3` autoheal / `30 15` maintenance) collapsed to a single `30 3` daily oversight+autoheal pass; `maintenance` dispatch mode dropped, a **`live-audit`** mode added (dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input); the split `Daily Autohealing Report`/`Daily Maintenance Report` issue pair collapsed to a single `Daily Fro Bot Report` (#235).
 
 The consolidation reduces scheduled-run surface area and eliminates the split-report bookkeeping (two perpetual issues → one). Repos still running the two-cron split (e.g. [[bfra-me--works]], [[bfra-me--renovate-action]], [[marcusrbrown--marcusrbrown]], [[marcusrbrown--sparkle]]) are candidates for the same collapse.
 
@@ -396,7 +396,7 @@ This is a step beyond the [[marcusrbrown--infra]] convention-enforcement and [[m
 
 ### Converged Autoheal: the Null Verdict as a First-Class Outcome (2026-08-30)
 
-Most surveyed repos accumulate an **agent-authored PR backlog**: [[marcusrbrown--sparkle]] carries 15 open PRs (13 fro-bot-authored, six near-identical stacked `chore(lint)` fixes), [[bfra-me--works]] re-emits duplicate security/docs PRs across runs, [[marcusrbrown--mrbro-dev]] holds a security remediation unmerged for weeks against a frozen trunk. [[marcusrbrown--dev-like]] is the counter-example and worth studying as a control case.
+Most surveyed repos accumulate an **agent-authored PR backlog**: [[marcusrbrown--sparkle]] carries 15 open PRs (13 fro-bot-authored, six near-identical stacked `chore(lint)` fixes), [[bfra-me--works]] re-emits duplicate security/docs PRs across runs, [[marcusrbrown--marcusrbrown-github-io]] holds a security remediation unmerged for weeks against a frozen trunk. [[marcusrbrown--dev-like]] is the counter-example and worth studying as a control case.
 
 At the 2026-08-30 survey its rolling `Fro Bot Autoheal` issue (#10) carried **53 comments** from ~6 weeks of daily scheduled runs, and every recent verdict reads _"No safe fix found. Repo remains healthy. No PR opened."_ Zero autoheal PRs, zero issue spam, one issue. Two prompt properties produce this:
 
@@ -553,11 +553,11 @@ One repository, one 29-day window, two bots:
 
 Neither CI state nor review verdict nor merge conflict explains the split. The only variable that correlates is **which identity opened the PR** — Renovate carries automerge from the shared preset; the agent does not.
 
-This corrects an earlier reading. [[marcusrbrown--dev-like]]'s drain-clean queue was attributed to small surface area plus a permissive merge gate. Here the surface area is _also_ tiny (66 blobs, four React sections) and the gate is _also_ trivially satisfiable, yet the queue is six deep. **Automerge eligibility, not repo size or gate strictness, is the dominant term.** Compare the propose-without-merge backlogs at [[marcusrbrown--sparkle]] (15 open, 13 autoheal-authored), [[bfra-me--works]] (12), and [[marcusrbrown--mrbro-dev]].
+This corrects an earlier reading. [[marcusrbrown--dev-like]]'s drain-clean queue was attributed to small surface area plus a permissive merge gate. Here the surface area is _also_ tiny (66 blobs, four React sections) and the gate is _also_ trivially satisfiable, yet the queue is six deep. **Automerge eligibility, not repo size or gate strictness, is the dominant term.** Compare the propose-without-merge backlogs at [[marcusrbrown--sparkle]] (15 open, 13 autoheal-authored), [[bfra-me--works]] (12), and [[marcusrbrown--marcusrbrown-github-io]].
 
 Two second-order effects observed in the same repo:
 
-1. **An unmerged backlog is a duplicate-generating surface.** The `AUTOHEAL_PROMPT` carries an explicit deduplication clause ("search for an existing open bot-authored PR/issue for the same root cause"). It failed: PRs #473 and #523 are byte-identical in title, target file, and diff shape, opened 32 days apart on differently-named branches (`chore/update-agents-stack-notes` vs `chore/refresh-agents-stack-notes`). Branch-name variance defeats a natural-language same-root-cause search, and a longer queue gives it more candidates to mis-scan. Second confirmation of the class after the #283-vs-#254 docs duplicate at [[marcusrbrown--mrbro-dev]] — it is a pattern, not an anecdote.
+1. **An unmerged backlog is a duplicate-generating surface.** The `AUTOHEAL_PROMPT` carries an explicit deduplication clause ("search for an existing open bot-authored PR/issue for the same root cause"). It failed: PRs #473 and #523 are byte-identical in title, target file, and diff shape, opened 32 days apart on differently-named branches (`chore/update-agents-stack-notes` vs `chore/refresh-agents-stack-notes`). Branch-name variance defeats a natural-language same-root-cause search, and a longer queue gives it more candidates to mis-scan. Second confirmation of the class after the #283-vs-#254 docs duplicate at [[marcusrbrown--marcusrbrown-github-io]] — it is a pattern, not an anecdote.
 2. **The proposals collide with each other.** The six PRs are really two contested files: three edit `AGENTS.md`, three edit `package.json`, and the `package.json` trio propose _mutually incompatible_ resolutions of the same config split-brain (delete the block / rewrite it / rewrite it plus docs). Each additional proposal makes the decision look larger and less safe than it is, which further suppresses the merge.
 
 If an agent is granted authority to open PRs, decide up front what drains them. Options, roughly in order of cost: label-gated automerge for a bounded path allowlist (the model used at [[marcusrbrown--marcusrbrown]] and in this control plane's `knowledge/`-and-`metadata/`-only rule); an explicitly-granted "no safe fix → report, don't PR" clause (the converged-autoheal null verdict from [[marcusrbrown--dev-like]]); or a hard cap on open agent-authored PRs that forces the daemon to update rather than accumulate. Granting propose-authority without a drain converts a working daemon into a queue.
@@ -592,7 +592,7 @@ This is the same family as "required check is green ≠ the automation works" fr
 
 From [[marcusrbrown--marcusrbrown-com]], and a genuinely new twist on the wrong-target family.
 
-The repo was renamed `marcusrbrown.github.io` → `marcusrbrown.com` in mid-2026. Several self-references were never updated — ordinary, low-severity housekeeping debt, and the wiki recorded it as such for two surveys. Then a _different_ repository took the freed name. `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the [[marcusrbrown--mrbro-dev]] Pages holder), which happens to have a `deploy.yaml` of its own.
+The repo was renamed `marcusrbrown.github.io` → `marcusrbrown.com` in mid-2026. Several self-references were never updated — ordinary, low-severity housekeeping debt, and the wiki recorded it as such for two surveys. Then a _different_ repository took the freed name. `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the [[marcusrbrown--marcusrbrown-github-io]] Pages holder), which happens to have a `deploy.yaml` of its own.
 
 Result: the README build badge — `shields.io/.../marcusrbrown/marcusrbrown.github.io/deploy.yaml` — resolves, renders, and reports **green**, live-tracking the deploy health of an unrelated project. `package.json`'s `repository.url` has the same defect.
 
@@ -1031,7 +1031,7 @@ pull-requests: write` block on a workflow whose top-level default is
 That ordering is the lesson. Across this fleet, "the agent proposes but
 never delivers" has been read repeatedly as a prompt or review-gate
 problem — see [[marcusrbrown--sparkle]] (13 unmerged autoheal PRs),
-[[marcusrbrown--mrbro-dev]], and this repo's own four-survey backlog
+[[marcusrbrown--marcusrbrown-github-io]], and this repo's own four-survey backlog
 narrative. At least one instance was a **permissions declaration**: a
 job that inherits a read-only `GITHUB_TOKEN` cannot push a branch or
 open a PR regardless of how emphatically its prompt says to. The agent
@@ -2333,7 +2333,7 @@ The compounding failure is visible in one repo. `marcusrbrown/gpt` carries **six
 | #2674 | 60d | `fix(accessibility): keep ollama status legible` |
 | #2692 | 50d | `fix(a11y): improve ollama settings contrast` |
 
-Roughly one new attempt every four days for twenty days, each on a differently-named branch, each renaming the same fix. This is the third and by far the worst confirmation of the DEDUPLICATION-clause failure previously recorded at n=2 ([[marcusrbrown--marcusrbrown-com]] #473/#523; [[marcusrbrown--mrbro-dev]] #283/#254).
+Roughly one new attempt every four days for twenty days, each on a differently-named branch, each renaming the same fix. This is the third and by far the worst confirmation of the DEDUPLICATION-clause failure previously recorded at n=2 ([[marcusrbrown--marcusrbrown-com]] #473/#523; [[marcusrbrown--marcusrbrown-github-io]] #283/#254).
 
 What the scale-up shows that the pairs did not:
 

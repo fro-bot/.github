@@ -60,7 +60,7 @@ tags:
 aliases:
   - gpt
 related:
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--copiloting
   - marcusrbrown--marcusrbrown-com
   - marcusrbrown--sparkle
@@ -269,7 +269,7 @@ Meanwhile HEAD is a Renovate merge from this morning. **Renovate PRs open and me
 
 `AUTOHEAL_PROMPT` opens with an explicit rule: "Before creating any new PR or issue, search for an existing open bot-authored PR/issue for the same root cause. Reuse or update the existing item instead of creating a duplicate." It failed six times on the same Ollama contrast defect over 20 days, and again in the issue tracker — **#2171 "Migrate Card/Link/Avatar/Tooltip components to v3" and #2173 "Migrate Card/Link/Avatar/Tooltip to v3"** were both opened by `fro-bot` on 2026-03-28.
 
-Joins [[marcusrbrown--marcusrbrown-com]] #473/#523 (byte-identical proposals 32 days apart) and [[marcusrbrown--mrbro-dev]] #283/#254. Third confirmation, and the strongest: six near-identical PRs is not a near-miss on a search heuristic, it is a rule that does not execute.
+Joins [[marcusrbrown--marcusrbrown-com]] #473/#523 (byte-identical proposals 32 days apart) and [[marcusrbrown--marcusrbrown-github-io]] #283/#254. Third confirmation, and the strongest: six near-identical PRs is not a near-miss on a search heuristic, it is a rule that does not execute.
 
 ### Create-authority without close-authority produces monotonic backlog
 

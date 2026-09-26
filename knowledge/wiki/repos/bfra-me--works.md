@@ -608,7 +608,7 @@ to trust plans.
 - **Crons 2 → 1.** `0 16 * * *` removed; `30 3 * * *` (autoheal) is the
   only schedule. This is the same 2 → 1 collapse [[bfra-me--github]],
   [[marcusrbrown--vbs]], [[marcusrbrown--mothership]], and
-  [[marcusrbrown--mrbro-dev]] converged on, cataloged in
+  [[marcusrbrown--marcusrbrown-github-io]] converged on, cataloged in
   [[github-actions-ci]]. The concurrency key simplified in step:
   `(github.event_name == 'schedule' && github.event.schedule)` →
   `… && 'autoheal'`.
@@ -1283,7 +1283,7 @@ Release pipeline:
   prompt had a dedup instruction and still emitted #3704 and #3713 as
   byte-equivalent proposals ~8 weeks apart — the same class recorded at
   [[marcusrbrown--marcusrbrown-com]] (#473 / #523) and
-  [[marcusrbrown--mrbro-dev]] (#283 / #254). The rewrite restates it
+  [[marcusrbrown--marcusrbrown-github-io]] (#283 / #254). The rewrite restates it
   more explicitly but the mechanism is still "search before you write,"
   which is what failed. With the queue now at 2 PRs there is nothing to
   duplicate; re-check once the queue rebuilds.

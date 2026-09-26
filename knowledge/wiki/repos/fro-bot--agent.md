@@ -113,7 +113,7 @@ related:
   - marcusrbrown--gpt
   - marcusrbrown--copiloting
   - marcusrbrown--dotfiles
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--tokentoilet
   - marcusrbrown--renovate-config
   - marcusrbrown--marcusrbrown
@@ -1145,7 +1145,7 @@ Recorded as a consumer-pin observation; see [[marcusrbrown--systematic]] for the
 
 **Update (2026-07-23, from dashboard survey):** [[fro-bot--dashboard]]'s `fro-bot.yaml` action pin has advanced further to **v0.94.2** (SHA `64029d5`, still ecosystem leader), while the vendored operator contract and `.slim/clonedeps.json` inspection source remain frozen at gateway/runtime **v0.78.0** (contract `1.6.0`, unchanged). The pin-vs-inspection skew is now v0.94.2 vs v0.78.0 — intentional, as the inspection source only refreshes on a contract change, not on every action bump.
 
-Downstream consumers span the `marcusrbrown/*`, `bfra-me/*`, and `fro-bot/*` ecosystems via `fro-bot/agent@vX` references. Version lag varies widely by Renovate cadence — as of the 2026-06-03 survey the spread runs from trailing pins (e.g. [[marcusrbrown--mrbro-dev]] at v0.43.0, [[bfra-me--ha-addon-repository]] at v0.43.1) up through the bleeding edge ([[marcusrbrown--marcusrbrown-github-io]] at v0.48.1, [[bfra-me--works]] at v0.47.0). Per-repo pins are tracked on each consumer's own wiki page rather than mirrored here, since they drift faster than this page is surveyed. The agent auto-installs and configures [[marcusrbrown--systematic]] / `@fro.bot/systematic` (v2.32.0 as of the 2026-06-24 survey) as an OpenCode plugin on every run.
+Downstream consumers span the `marcusrbrown/*`, `bfra-me/*`, and `fro-bot/*` ecosystems via `fro-bot/agent@vX` references. Version lag varies widely by Renovate cadence — as of the 2026-06-03 survey the spread runs from trailing pins (e.g. [[marcusrbrown--marcusrbrown-github-io]] at v0.43.0, [[bfra-me--ha-addon-repository]] at v0.43.1) up through the bleeding edge ([[marcusrbrown--marcusrbrown-github-io]] at v0.48.1, [[bfra-me--works]] at v0.47.0). Per-repo pins are tracked on each consumer's own wiki page rather than mirrored here, since they drift faster than this page is surveyed. The agent auto-installs and configures [[marcusrbrown--systematic]] / `@fro.bot/systematic` (v2.32.0 as of the 2026-06-24 survey) as an OpenCode plugin on every run.
 
 ## Build System
 

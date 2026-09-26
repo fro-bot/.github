@@ -42,7 +42,7 @@ tags:
 related:
   - marcusrbrown--systematic
   - marcusrbrown--infra
-  - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
   - fro-bot--systematic
   - github-pages
@@ -230,7 +230,7 @@ Given this repo has no application code and a single static file, most of these 
 
 - [[marcusrbrown--systematic]] — documentation site deployed to `fro.bot/systematic`
 - [[marcusrbrown--infra]] — manages `cliproxy.fro.bot` (separate infrastructure, not served by this repo)
-- [[marcusrbrown--mrbro-dev]] — sibling custom-domain GitHub Pages site pattern (React+Vite at mrbro.dev)
+- [[marcusrbrown--marcusrbrown-github-io]] — sibling custom-domain GitHub Pages site pattern (React+Vite at mrbro.dev)
 - [[marcusrbrown--marcusrbrown-github-io]] — sibling custom-domain GitHub Pages site pattern (React+Vite at marcusrbrown.com)
 - [[fro-bot--systematic]] — the deploy target behind `fro.bot/systematic/`, the only live project path on this domain
 - [[github-pages]] — topic page covering GitHub Pages deployment patterns across the ecosystem; carries the 2026-09-09 downgrade and measurement-channel findings from this survey
