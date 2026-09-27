@@ -6635,25 +6635,14 @@ Surveyed marcusrbrown/panthe.ai and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthe.ai
 
-## [2026-09-27 10:40] ingest | marcusrbrown/renovate-config
+## [2026-09-27 10:38] ingest | marcusrbrown/containers
 
-Limited re-survey of public `main` at push-run SHA `c75dd9c`. Updated
-[[marcusrbrown--renovate-config]], [[github-actions-ci]], and the index
-additively. README still advertises three presets; latest release is 5.2.13
-(2026-09-05). Eight workflows are active; the Renovate and settings reusable
-callers are at `bfra-me/.github` v4.33.0. Fro Bot is present at v0.116.0 on
-the 15:30 UTC daily schedule, but its workflow has no explicit output mode or
-caller delivery step after the agent, so prompt-level write instructions alone
-do not prove scheduled changes land. The 0.x grouping and minimum-release-age
-questions from the earlier downstream observation remain open. Reads were
-limited to the public README, workflow listings/files, release metadata, and
-push-run identity; no target preset or package manifest was read. The
-pre-existing wiki working-tree edits were preserved.
+Limited re-survey of public `main` HEAD `2c473db0db8ca362b0e4039de878ae74f5c8f0b0`. Updated [[marcusrbrown--containers]] and [[docker-containers]] additively and cataloged both in `index.md`. The Fro Bot workflow is present at agent v0.116.0; no missing-workflow follow-up is warranted. The two Node variants, ten Poetry entry points, and 35% coverage floor remain declared. Tool pins moved to Node 24.21.0, pnpm 11.27.0, and Renovate reusable workflow v4.33.0. The build/publish workflow triggers on `scripts/**` but its matrix only includes changed Dockerfiles, so a scripts-only trigger skips image builds. `test.yaml`'s dispatch path also depends on a deliberately skipped `prepare` job; its intended container tests require an explicit status guard to run. These are workflow-level observations, not claims about observed runs. Earlier PR/backlog and image-state claims were not refreshed. Reads of the target were limited to directory listings, README, manifests, and workflows. No target issue or PR was used as a survey notice. Other existing working-tree changes were preserved.
 
-Sources: https://github.com/marcusrbrown/renovate-config/tree/c75dd9c7f20539409d21a8d7a1e6e1e14ddd7e1d
+Sources: https://github.com/marcusrbrown/containers/tree/2c473db0db8ca362b0e4039de878ae74f5c8f0b0, https://github.com/marcusrbrown/containers/blob/2c473db0db8ca362b0e4039de878ae74f5c8f0b0/.github/workflows/build-publish.yaml, https://github.com/marcusrbrown/containers/blob/2c473db0db8ca362b0e4039de878ae74f5c8f0b0/.github/workflows/test.yaml
 
-## [2026-09-27 10:41] ingest | repo:marcusrbrown/renovate-config
+## [2026-09-27 10:43] ingest | repo:marcusrbrown/containers
 
-Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/renovate-config
+Sources: https://github.com/marcusrbrown/containers

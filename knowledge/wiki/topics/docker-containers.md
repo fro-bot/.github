@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-09-27
 sources:
+  - url: https://github.com/marcusrbrown/containers
+    sha: 2c473db0db8ca362b0e4039de878ae74f5c8f0b0
+    accessed: 2026-09-27
   - url: https://github.com/fro-bot/agent
     sha: 9918ee0036100a11e61bf80bd85efa00b90b8852
     accessed: 2026-09-25
@@ -100,6 +103,10 @@ The observed pattern uses a two-phase workflow:
 2. **Matrix build** — parallel per-container jobs using `docker/build-push-action`
 
 Registry push is gated on `github.event_name != 'pull_request'` to prevent PR builds from publishing.
+
+#### A trigger is not a build matrix (2026-09-27)
+
+[[marcusrbrown--containers]]'s `build-publish.yaml` triggers on both `scripts/**` and `**/Dockerfile`, but its detection step filters the changed paths to `Dockerfile` only and returns an empty matrix for a scripts-only change. The build job then skips. The workflow declares that script changes matter while the matrix declares that they do not: a successful trigger is not evidence that a container was built. If scripts can affect published images, map those paths to the affected image(s), or remove the trigger if they cannot. The surveyed workflow establishes this routing mismatch; it does not establish an actual image regression.
 
 ### Security Scanning
 
