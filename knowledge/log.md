@@ -6634,3 +6634,26 @@ Sources: https://github.com/marcusrbrown/panthe.ai/tree/e5022aaa6e9970e66b41ad68
 Surveyed marcusrbrown/panthe.ai and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthe.ai
+
+## [2026-09-27 10:40] ingest | marcusrbrown/renovate-config
+
+Limited re-survey of public `main` at push-run SHA `c75dd9c`. Updated
+[[marcusrbrown--renovate-config]], [[github-actions-ci]], and the index
+additively. README still advertises three presets; latest release is 5.2.13
+(2026-09-05). Eight workflows are active; the Renovate and settings reusable
+callers are at `bfra-me/.github` v4.33.0. Fro Bot is present at v0.116.0 on
+the 15:30 UTC daily schedule, but its workflow has no explicit output mode or
+caller delivery step after the agent, so prompt-level write instructions alone
+do not prove scheduled changes land. The 0.x grouping and minimum-release-age
+questions from the earlier downstream observation remain open. Reads were
+limited to the public README, workflow listings/files, release metadata, and
+push-run identity; no target preset or package manifest was read. The
+pre-existing wiki working-tree edits were preserved.
+
+Sources: https://github.com/marcusrbrown/renovate-config/tree/c75dd9c7f20539409d21a8d7a1e6e1e14ddd7e1d
+
+## [2026-09-27 10:41] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
