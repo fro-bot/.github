@@ -445,9 +445,10 @@ repos:
     onboarding_status: onboarded
     last_survey_at: 2026-09-26
     last_survey_status: success
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-10-26
     private: false
     node_id: R_kgDOJt6i0Q
+    database_id: 652124881
