@@ -49,13 +49,15 @@ Two fixes, both in PR #3144.
 
 ```ts
 // BEFORE (broken) — fed deletions to readFile
-.filter(line => line.length >= 4)
-.map(line => line.slice(3))
+const pathsBefore = porcelainLines
+  .filter(line => line.length >= 4)
+  .map(line => line.slice(3))
 
 // AFTER — skip any status where X or Y position is 'D'
-.filter(line => line.length >= 4)
-.filter(line => !line.slice(0, 2).includes('D'))
-.map(line => line.slice(3))
+const pathsAfter = porcelainLines
+  .filter(line => line.length >= 4)
+  .filter(line => !line.slice(0, 2).includes('D'))
+  .map(line => line.slice(3))
 ```
 
 Tests added for the full deletion status matrix: `' D'`, `'D '`, `'DD'`, `'AD'`, `'MD'`, `'RD'`, `'CD'`. RED-confirmed by landing tests on unchanged code and watching them fail before applying the filter.
@@ -132,3 +134,24 @@ After the fix lands, entries already contaminated with `last_survey_status: succ
 - First production failure: https://github.com/fro-bot/.github/actions/runs/24623241672
 - Related: `docs/solutions/runtime-errors/node-strip-only-typescript-2026-04-18.md` (prior "tests passed, production failed" trap)
 - Related: `docs/solutions/runtime-errors/octokit-invitation-method-names-2026-04-17.md` (prior "custom interface masked real API mismatch" trap)
+
+## Update (2026-09-25)
+
+Prevention item 5 above describes `record-survey-result` writing with `FRO_BOT_PAT` (a
+user PAT, `fro-bot` commits) as it stood at the time of this incident. That is no longer
+the topology: wiki ingest and survey metadata writes now run in separate trusted jobs
+(`survey-persist` in `.github/workflows/survey-repo.yaml`) with no agent step, fed by a
+validated handoff artifact from the agent job, and write with a fro-bot GitHub App
+installation token (`fro-bot[bot]` commits) minted in that trusted job. The historical
+narrative above is left as-is for the incident record.
+
+Fix B's aggregate expression above (agent success + wiki-commit success-or-skipped) has
+also been superseded: `SURVEY_STATUS` now additionally requires
+`needs.survey-repo.outputs.wiki-changed == 'true'` and `needs.survey-repo.result == 'success'`,
+and only accepts a skipped wiki commit when the target isn't onboarded
+(`needs.survey-repo.outputs.onboarded != 'true'`) rather than treating any skip as valid.
+`survey-repo` also retries a no-op agent attempt up to twice and fails the job outright if
+every attempt makes no wiki changes. This closes a related but distinct false-success path
+— an agent that exits cleanly without making the required wiki changes — that Fix B's
+original two-step check didn't cover. The historical narrative above is otherwise left
+as-is for the incident record.

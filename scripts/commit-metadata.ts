@@ -27,7 +27,7 @@ const METADATA_PATH_PATTERN = /^metadata\/[a-z][a-z0-9-]*\.yaml$/
  * The helper enforces three guards by default:
  * 1. Path must match `metadata/<name>.yaml` (no arbitrary file writes).
  * 2. Branch must be `data` (no writes to main, feature branches, or anywhere else).
- * 3. Branch must not be protected at the time of the pre-flight check.
+ * 3. Protected branches are refused except canonical `fro-bot/.github@data`.
  *
  * Callers that need to write outside `metadata/*.yaml` should use a different
  * helper. Callers that need to target another branch (testing only) can pass
@@ -352,12 +352,15 @@ async function assertWritableBranch(
   // Check both the top-level `protected` boolean and the nested `protection.enabled`
   // field. GitHub's REST API surfaces branch protection via both; older clients
   // only check the latter, which misses repos configured via the newer rulesets API.
-  if (response.data.protected === true || response.data.protection?.enabled === true) {
+  if (
+    (response.data.protected === true || response.data.protection?.enabled === true) &&
+    !(owner === DEFAULT_OWNER && repo === DEFAULT_REPO && branch === DEFAULT_BRANCH)
+  ) {
     throw new CommitMetadataError({
       code: 'PROTECTED_BRANCH',
       message: `commitMetadata refuses to write to protected branch "${branch}"`,
       remediation:
-        'Autonomous writes must land on an unprotected branch (the data branch). If this branch became protected unexpectedly, review the ruleset and branch protection configuration.',
+        'Target the canonical fro-bot/.github data branch or another unprotected branch. Review the ruleset and branch protection if this target should be writable.',
     })
   }
 }

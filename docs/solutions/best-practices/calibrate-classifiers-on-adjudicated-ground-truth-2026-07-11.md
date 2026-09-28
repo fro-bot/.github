@@ -58,7 +58,7 @@ The regression fixture shape (real, immutable inputs):
 // class docs, adjudicated 1 true / 13 false. Real titles, labels,
 // created-at dates, frontmatter, and git add-dates — hardcoded.
 it('surfaces exactly the adjudicated true edge', () => {
-  const {edges} = computeMetrics({solutionDocs: REAL_DOCS, proposalEvents: REAL_EVENTS, ...})
+  const {edges} = computeMetrics({solutionDocs: REAL_DOCS, proposalEvents: REAL_EVENTS})
   expect(edges).toHaveLength(1)
   expect(edges[0].classKey).toBe(SELF_AUDIT_CLASS_KEY)
   expect(edges[0].eventId).toBe(ISSUE_3656_ID)

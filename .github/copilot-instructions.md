@@ -76,6 +76,8 @@ If you touched workflows, also validate YAML shape and action references in modi
 
 If you touched docs/instructions/agent files, ensure markdown lint rules still pass.
 
+If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `pnpm check:mutation-guards`.
+
 ## High-Risk Do / Don’t Patterns
 
 ### Package manager
@@ -102,6 +104,11 @@ If you touched docs/instructions/agent files, ensure markdown lint rules still p
 
 - **Do:** change only files relevant to the request
 - **Don’t:** bundle unrelated cleanup/refactors in the same PR
+
+### Stryker disable directives
+
+- **Do:** enumerate every variant the named mutator generates for that line before adding a `Stryker disable next-line` directive; prefer deleting dead code or adding a seam instead. See [`docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md`](../docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md).
+- **Don’t:** write a directive that argues only the variant that prompted it — a `Stryker disable next-line` directive is mutator-scoped, not variant-scoped, so it silently suppresses every other variant that mutator produces on the same line.
 
 ## Security & Safety Constraints
 

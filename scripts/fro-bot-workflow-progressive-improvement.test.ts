@@ -5,21 +5,30 @@ import {parse} from 'yaml'
 
 interface WorkflowDocument {
   env: {
-    SCHEDULE_PROMPT: string
+    OBSERVE_CATEGORIES: string
+    OBSERVE_OUTPUT: string
+    SHARED_RULES: string
   }
 }
 
-/** Narrow the parsed YAML to the schedule-prompt shape asserted below. */
+// The daily-pass prompt used to be one monolithic SCHEDULE_PROMPT env entry.
+// It is now split across fro-bot-remediate (categories 1–4) and
+// fro-bot-observe (categories 5–8 + the daily report). Everything this suite
+// asserts on lives in the observe half: OBSERVE_CATEGORIES (categories 5–8),
+// OBSERVE_OUTPUT (the report structure/status legend), and SHARED_RULES (the
+// version-comparison guidance shared with the remediate prompt).
 function assertFroBotWorkflow(value: unknown): asserts value is WorkflowDocument {
+  const env = typeof value === 'object' && value !== null && 'env' in value ? (value as {env?: unknown}).env : undefined
   if (
-    typeof value !== 'object' ||
-    value === null ||
-    !('env' in value) ||
-    typeof (value as Record<string, unknown>).env !== 'object' ||
-    (value as {env?: Record<string, unknown>}).env?.SCHEDULE_PROMPT === undefined ||
-    typeof (value as {env?: Record<string, unknown>}).env?.SCHEDULE_PROMPT !== 'string'
+    typeof env !== 'object' ||
+    env === null ||
+    typeof (env as Record<string, unknown>).OBSERVE_CATEGORIES !== 'string' ||
+    typeof (env as Record<string, unknown>).OBSERVE_OUTPUT !== 'string' ||
+    typeof (env as Record<string, unknown>).SHARED_RULES !== 'string'
   ) {
-    throw new TypeError('fro-bot.yaml does not have expected shape: missing SCHEDULE_PROMPT')
+    throw new TypeError(
+      'fro-bot.yaml does not have expected shape: missing OBSERVE_CATEGORIES/OBSERVE_OUTPUT/SHARED_RULES',
+    )
   }
 }
 
@@ -29,7 +38,7 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
   const raw = readFileSync(workflowPath, 'utf8')
   const parsed: unknown = parse(raw)
   assertFroBotWorkflow(parsed)
-  const prompt = parsed.env.SCHEDULE_PROMPT
+  const prompt = `${parsed.env.OBSERVE_CATEGORIES}${parsed.env.OBSERVE_OUTPUT}${parsed.env.SHARED_RULES}`
 
   it('flags stalled learning proposals', () => {
     // #then category 7 names the intake, expected authoring action, thresholds,

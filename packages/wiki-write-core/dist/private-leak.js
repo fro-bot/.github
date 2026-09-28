@@ -31,6 +31,16 @@ export function checkPrivateLeak(privateNames, diff, override) {
             matchedFiles.push(path);
         }
     };
+    // Shared by the '+' added-line scan below and the hunk-header trailing-context scan (#3842):
+    // both attribute a match to the file the hunk belongs to, not to a path of their own.
+    const checkContent = (text) => {
+        const contentLower = text.toLowerCase();
+        if (currentFile !== null &&
+            lowerNames.some(name => contentLower.includes(name)) &&
+            !matchedFiles.includes(currentFile)) {
+            matchedFiles.push(currentFile);
+        }
+    };
     for (const line of diff.split('\n')) {
         const expectingPlusHeader = pendingNewFileCheck;
         pendingNewFileCheck = undefined;
@@ -61,7 +71,40 @@ export function checkPrivateLeak(privateNames, diff, override) {
         }
         if (line.startsWith('@@')) {
             inHunk = true;
-            // Fall through: a hunk marker never starts with '+', so the content scan skips it anyway.
+            // Grammar (#3842): a hunk header is `@@ -l,s +l,s @@` -- or, for an n-way combined diff,
+            // `@@@ -l,s -l,s +l,s @@@` with one more leading/trailing '@' per extra parent -- where
+            // both markers use the SAME run length of '@', and the range text between them (digits,
+            // commas, spaces, one leading '+'/'-') can never itself contain '@'. Scanning for that
+            // same-length run past the leading marker always lands on the real closing marker, never
+            // a lookalike inside the ranges -- handling both shapes with no dedicated combined-diff
+            // branch (pinned below).
+            //
+            // Anything after the closing marker is git's optional function-context, drawn from a line
+            // above the hunk on the pre-change side, so a match here requires the name to already
+            // exist on the base side -- a redaction gap on already-present text, not new disclosure
+            // (the '+' scan below still covers new additions). This repo has no markdown diff driver
+            // configured (`git check-attr diff` reports "unspecified"), so git falls back to its
+            // default funcname pattern (lines starting with a letter, '_' or '$' -- not a digit, not '#') --
+            // real context here is ordinary prose, not a heading. Git also truncates funcname context
+            // to 80 bytes, so a name past that cut, or split across it, will not substring-match.
+            //
+            // Fixed here, in the parser, not by suppressing context at the `git diff` call site:
+            // checkPrivateLeak takes diffs from more than one producer (a direct git-diff subprocess
+            // and the GitHub compare API's raw diff), and a producer-side fix would leave every other
+            // source unguarded.
+            //
+            // No `continue`: nothing between here and the `!line.startsWith('+')` filter below can
+            // match a line beginning with '@', so falling through is safe. A branch inserted above
+            // that filter later must preserve that property or add its own '@'-guard.
+            let markerLength = 0;
+            while (line[markerLength] === '@')
+                markerLength += 1;
+            const marker = '@'.repeat(markerLength);
+            const closingIndex = line.indexOf(marker, markerLength);
+            const context = closingIndex === -1 ? line.slice(markerLength) : line.slice(closingIndex + marker.length);
+            if (context !== '') {
+                checkContent(context);
+            }
         }
         if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
             const destination = line.startsWith('rename to ')
@@ -85,12 +128,7 @@ export function checkPrivateLeak(privateNames, diff, override) {
         if (!line.startsWith('+')) {
             continue;
         }
-        const content = line.slice(1).toLowerCase();
-        if (currentFile !== null &&
-            lowerNames.some(name => content.includes(name)) &&
-            !matchedFiles.includes(currentFile)) {
-            matchedFiles.push(currentFile);
-        }
+        checkContent(line.slice(1));
     }
     return matchedFiles.length === 0 ? { ok: true } : { ok: false, matchedFiles };
 }

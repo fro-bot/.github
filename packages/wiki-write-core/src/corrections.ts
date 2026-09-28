@@ -52,12 +52,12 @@ function withoutLifecycleFields<
   delete copy.state
   delete copy.superseded_by
   delete copy.reason
+  // attribution is never deleted from `copy`, so it's already present/absent via the spread — no re-add needed.
   return {
     ...copy,
     id: record.id,
     page_node_id: record.page_node_id,
     span: record.span,
-    ...(record.attribution === undefined ? {} : {attribution: record.attribution}),
   }
 }
 
@@ -150,12 +150,14 @@ function isCorrectionLifecycle(value: unknown): value is CorrectionLifecycle {
 }
 
 function isCorrectionRecord(value: unknown): value is CorrectionRecord {
+  let ok = true
   try {
+    // Stryker disable next-line StringLiteral: swallowed by the catch below; isCorrectionsFile only exposes a boolean, so this string is never observable.
     assertCorrectionRecord(value, 'corrections')
-    return true
   } catch {
-    return false
+    ok = false
   }
+  return ok
 }
 
 export function isCorrectionsFile(value: unknown): value is CorrectionsFile {
@@ -184,14 +186,16 @@ function assertCorrectionSpan(value: unknown, path: string): asserts value is Co
   if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
   if (typeof value.text !== 'string' || normalizeCorrectionText(value.text) === '')
     throw invalidCorrections(`${path}.text`, 'expected text with non-empty normalized content')
-  const start = value.start
-  const end = value.end
-  if (start !== undefined && (!Number.isInteger(start) || typeof start !== 'number' || start < 0))
+  // Safe only because Number.isInteger short-circuits before the comparison — do not reorder.
+  const start = value.start as number | undefined
+  const end = value.end as number | undefined
+  if (start !== undefined && (!Number.isInteger(start) || start < 0))
     throw invalidCorrections(`${path}.start`, 'expected non-negative integer')
-  if (end !== undefined && (!Number.isInteger(end) || typeof end !== 'number' || end < 0))
+  if (end !== undefined && (!Number.isInteger(end) || end < 0))
     throw invalidCorrections(`${path}.end`, 'expected non-negative integer')
-  if (typeof start === 'number' && typeof end === 'number' && end < start)
-    throw invalidCorrections(path, 'end must be greater than or equal to start')
+  // Stryker disable next-line ConditionalExpression,LogicalOperator: whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below.
+  const bothPresent = start !== undefined && end !== undefined
+  if (bothPresent && end < start) throw invalidCorrections(path, 'end must be greater than or equal to start')
 }
 
 function assertCorrectionAttribution(value: unknown, path: string): asserts value is CorrectionAttribution {
@@ -210,7 +214,10 @@ function invalidCorrections(path: string, message: string): CorrectionStoreError
   })
 }
 
-const emptyCorrectionsFile = (): CorrectionsFile => ({version: CORRECTIONS_VERSION, corrections: []})
+// function, not const arrow: static-mutant workaround, see size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md
+function emptyCorrectionsFile(): CorrectionsFile {
+  return {version: CORRECTIONS_VERSION, corrections: []}
+}
 
 export function parseCorrections(raw: string): CorrectionsFile {
   const value: unknown = parse(raw)
@@ -265,32 +272,23 @@ export function normalizeLooseCorrectionRecord(record: LooseCorrectionRecord, pa
   return {...base, state: 'needs-reconfirmation', reason: record.reason}
 }
 
-function parseLooseCorrectionRecord(value: unknown, path: string): LooseCorrectionRecord {
+/** @internal */
+export function parseLooseCorrectionRecord(value: unknown, path: string): LooseCorrectionRecord {
   if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
   if (typeof value.id !== 'string' || value.id === '')
     throw invalidCorrections(`${path}.id`, 'expected non-empty string')
   if (typeof value.page_node_id !== 'string' || value.page_node_id === '')
     throw invalidCorrections(`${path}.page_node_id`, 'expected non-empty string')
   assertCorrectionSpan(value.span, `${path}.span`)
-  let attribution: CorrectionAttribution | undefined
-  if (value.attribution !== undefined) {
-    assertCorrectionAttribution(value.attribution, `${path}.attribution`)
-    attribution = value.attribution
-  }
+  if (value.attribution !== undefined) assertCorrectionAttribution(value.attribution, `${path}.attribution`)
   if (value.state !== undefined && !isCorrectionLifecycle(value.state))
     throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
   if (value.superseded_by !== undefined && (typeof value.superseded_by !== 'string' || value.superseded_by === ''))
     throw invalidCorrections(`${path}.superseded_by`, 'expected non-empty string')
   if (value.reason !== undefined && (typeof value.reason !== 'string' || value.reason === ''))
     throw invalidCorrections(`${path}.reason`, 'expected non-empty string')
-  const base = {...value, id: value.id, page_node_id: value.page_node_id, span: value.span}
-  return {
-    ...base,
-    ...(attribution === undefined ? {} : {attribution}),
-    ...(value.state === undefined ? {} : {state: value.state}),
-    ...(value.superseded_by === undefined ? {} : {superseded_by: value.superseded_by}),
-    ...(value.reason === undefined ? {} : {reason: value.reason}),
-  }
+  // `...value` already carries attribution/state/superseded_by/reason verbatim when present (validated above); no reconstruction is needed.
+  return {...value, id: value.id, page_node_id: value.page_node_id, span: value.span}
 }
 
 export function serializeCorrections(value: unknown): string {
@@ -301,7 +299,7 @@ export function serializeCorrections(value: unknown): string {
 export async function readCorrections(
   readFileImpl: ReadUtf8File = async (path, encoding) => readFile(path, encoding),
   warn: (message: string) => void = () => undefined,
-  path = CORRECTIONS_PATH,
+  path: string = CORRECTIONS_PATH,
 ): Promise<CorrectionsReadResult> {
   let raw: string
   try {
@@ -328,6 +326,7 @@ export async function readCorrections(
   try {
     return {corrections: parseCorrections(raw), warnings: []}
   } catch (error: unknown) {
+    // Stryker disable next-line StringLiteral: parseCorrections only throws Error subclasses, so this non-Error fallback text is unreachable.
     const detail = error instanceof Error ? error.message : 'invalid YAML or schema'
     const storeError = invalidCorrections(path, `unable to parse existing file (${detail})`)
     warn(storeError.message)
@@ -342,7 +341,7 @@ function isMissingFileError(error: unknown): boolean {
 export async function writeCorrections(
   value: unknown,
   writeFileImpl: WriteUtf8File = async (path, content, encoding) => writeFile(path, content, encoding),
-  path = CORRECTIONS_PATH,
+  path: string = CORRECTIONS_PATH,
 ): Promise<void> {
   const content = serializeCorrections(value)
   try {
@@ -415,8 +414,9 @@ export function transitionCorrection(
   assertCorrectionsFile(file)
   const index = file.corrections.findIndex(correction => correction.id === id)
   if (index === -1) throw correctionNotFound(id)
-  const current = file.corrections[index]
-  if (current === undefined) throw correctionNotFound(id)
+  // findIndex only returns -1 (handled above) or a valid position, so this index always holds a record.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const current = file.corrections[index]!
   if (current.state === 'retired' || current.state === 'superseded')
     throw new CorrectionStoreError({
       code: 'INVALID_TRANSITION',
@@ -449,14 +449,18 @@ export function transitionCorrection(
   return {version: CORRECTIONS_VERSION, corrections}
 }
 
-export const retireCorrection = (file: CorrectionsFile, id: string): CorrectionsFile =>
-  transitionCorrection(file, id, 'retired')
+// function, not const arrow: static-mutant workaround, see size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md
+export function retireCorrection(file: CorrectionsFile, id: string): CorrectionsFile {
+  return transitionCorrection(file, id, 'retired')
+}
 
-export const flagCorrectionForReconfirmation = (file: CorrectionsFile, id: string): CorrectionsFile =>
-  transitionCorrection(file, id, 'needs-reconfirmation')
+export function flagCorrectionForReconfirmation(file: CorrectionsFile, id: string): CorrectionsFile {
+  return transitionCorrection(file, id, 'needs-reconfirmation')
+}
 
-export const reconfirmCorrection = (file: CorrectionsFile, id: string): CorrectionsFile =>
-  transitionCorrection(file, id, 'active')
+export function reconfirmCorrection(file: CorrectionsFile, id: string): CorrectionsFile {
+  return transitionCorrection(file, id, 'active')
+}
 
 function correctionNotFound(id: string): CorrectionStoreError {
   return new CorrectionStoreError({

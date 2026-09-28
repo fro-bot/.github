@@ -48,7 +48,7 @@ The `OctokitClient` interface, implementation calls, and all test mocks were upd
 
 **Discovery method** — introspect the real Octokit instance at runtime:
 
-```typescript
+```bash
 node -e "
 import('@octokit/rest').then(m => {
   const o = new m.Octokit({ auth: 'fake' });

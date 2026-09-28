@@ -142,3 +142,4 @@ the field.
 - [Diagnostic patches must fail loudly and preserve stderr](diagnostic-patches-observability-discipline-2026-05-20.md) — preserve the error evidence needed to distinguish an infrastructure failure from a policy finding.
 - [Privacy Gate Design for Data→Main Promotion Leak Prevention](privacy-gate-promotion-leak-prevention-2026-06-04.md) — the fail-closed privacy contract this capacity fix preserves.
 - [Silent Failures in Autonomous Multi-Step Pipelines (Wiki Commit Drift + Misclassified Status)](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md) — aggregate workflow status must reflect whether every required step actually completed.
+- [A mutation score can measure nothing](a-mutation-score-can-measure-nothing-2026-09-08.md) — this doc mentions the static module-level `const` mechanism only in passing; the mutation-reachability rule lives there.

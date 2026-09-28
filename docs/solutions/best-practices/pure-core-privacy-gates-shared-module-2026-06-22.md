@@ -77,13 +77,13 @@ import the gate module. A change to either propagates to both automatically.
 
 ```ts
 // wiki-slug.ts — the single source of truth for token shape
-export function buildPrivateTokenSet(privateNames: string[]): Set<string> { ... }
+export function buildPrivateTokenSet(privateNames: string[]): Set<string> { /* ... */ }
 
 // capture-learnings-privacy.ts — imports the builder, owns the gate: both call
 // sites (open step, harvest step) import this module, not each other
 import {buildPrivateTokenSet} from './wiki-slug.ts'
-export function learningBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean { ... }
-export async function loadPrivateTokensFromDisk(): Promise<Set<string>> { ... }
+export function learningBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean { /* ... */ }
+export async function loadPrivateTokensFromDisk(): Promise<Set<string>> { /* ... */ }
 ```
 
 ### 3. Handle empty-vs-absent in the I/O shell, not the pure core
@@ -112,7 +112,7 @@ short-circuited, proving it is structural rather than decorative.
 ```ts
 it('blocks private prose from entering the digest', () => {
   const prose = 'see acme/private-repo for context'
-  const tokens = buildPrivateTokenSet([{nameWithOwner: 'acme/private-repo', ...}])
+  const tokens = buildPrivateTokenSet([{nameWithOwner: 'acme/private-repo'}])
   expect(() => scanForPrivateTokens(prose, tokens)).toThrow(PrivacyGateError)
 })
 

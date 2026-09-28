@@ -121,10 +121,20 @@ contribute to status:
 ```yaml
 - name: 📣 Announce survey to gateway
   if: >-
-    ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
-    steps.survey-agent.conclusion == 'success' &&
-    (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
+    ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
+    needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
+    needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' }}
 ```
+
+Update (2026-09-25): the gate above grew two more terms since this doc was written —
+`needs.survey-repo.outputs.wiki-changed == 'true'` and `needs.survey-repo.result == 'success'`
+— and dropped the `wiki-commit.conclusion == 'skipped'` exemption in favor of requiring
+`onboarded == 'true'` explicitly. `survey-repo` also moved to a separate job from the one
+running `Announce survey to gateway` (hence `needs.survey-repo.outputs.*` instead of
+`steps.survey-agent.*`), and now retries a no-op agent attempt up to twice before failing
+the job. The guidance in this section — gate the announce on upstream success, never let
+it contribute to job status — is unchanged; only the exact expression above is refreshed
+to match `.github/workflows/survey-repo.yaml` as committed.
 
 ### 3. Never render a placeholder value into a public surface
 

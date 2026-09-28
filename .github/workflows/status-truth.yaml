@@ -79,6 +79,8 @@ jobs:
           # Same credential class as gateway-rollout-tracker; scoped to this read-only snapshot step.
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           ROLLOUT_TRACKER_SNAPSHOT_PATH: ${{ runner.temp }}/rollout-snapshot.json
+          # Only .snapshot is consumed here; an empty body skips the ~1 MB tracker-comment fetch.
+          ROLLOUT_TRACKER_COMMENT_BODY: ''
         run: |
           set -euo pipefail
           snapshot_path="$ROLLOUT_TRACKER_SNAPSHOT_PATH"

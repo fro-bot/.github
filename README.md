@@ -18,7 +18,7 @@ Fro Bot is an AI-powered GitHub bot for repository review, maintenance, and cont
 
 **What Fro Bot Does:**
 
-- Reviews pull requests and triages issues under the `@fro-bot` identity
+- Reviews pull requests and triages issues opened/edited by trusted authors (OWNER/MEMBER/COLLABORATOR) under the `@fro-bot` identity
 - Accepts allowlisted collaborator invitations, stars onboarded repositories, and tracks them in auditable metadata
 - Ingests collaborator repositories into the knowledge wiki and lints the authoritative snapshot from `data`
 - Dispatches Renovate across tracked repos and refreshes org metadata on schedule
@@ -132,6 +132,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
    pnpm coverage
    ```
 
+   > [!NOTE] A few `scripts/*.test.ts` files (e.g. `fro-bot-workflow.test.ts`) shell out to `bash` and a fake `git` fixture to exercise workflow `run:` blocks directly; these are verified on Linux CI and macOS, not tested on Windows.
+
 4. **Auto-fix issues:**
 
    ```bash
@@ -150,7 +152,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 25 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 29 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -208,7 +210,7 @@ Fro Bot control plane:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch, workflow_call |
+| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
 | **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
@@ -222,6 +224,9 @@ Fro Bot control plane:
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
+| **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |
+| **Publish Wiki** | Build the Quartz site from the wiki and deploy it to GitHub Pages | Push to main touching `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, or `quartz-site/**`; dispatch |
+| **Unpublish Wiki (emergency takedown)** | Replace the live wiki site with a static "unavailable" page | Manual dispatch |
 
 Repository management:
 
@@ -246,7 +251,7 @@ Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to synch
 
 ### Control Plane State
 
-Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the unprotected `data` branch and promote to `main` via the **Merge Data Branch** workflow. `Update Metadata`, invitation handling, reconcile, social cooldown writes, and wiki ingest all follow that model.
+Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the `data` branch and promote to `main` via the **Merge Data Branch** workflow. A repository ruleset blocks direct `update` and `creation` writes to `data` from any identity other than the Fro Bot App (`fro-bot[bot]`) — though a repo admin can still edit or remove the ruleset itself. `Update Metadata`, invitation handling, reconcile, social cooldown writes, and wiki ingest all follow that model.
 
 Correction lifecycle operations use `scripts/correction-lifecycle.ts`. Agents can `record`, `retire`, `reconfirm`, or `supersede` entries in `knowledge/corrections.yaml`; pass `help` or `--help` for machine-readable command and failure-code documentation. The command emits JSON and derives attribution from the authenticated `GITHUB_ACTOR`. It prepares the guarded sidecar locally but never pushes or commits to `data` itself. Ingest correction findings are JSONL with `target` plus `recovery.lifecycle` and `recovery.action` fields, so agents can act without scraping prose.
 
