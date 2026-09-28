@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/extend-vscode
 created: 2026-04-18
-updated: 2026-08-31
+updated: 2026-09-15
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -49,6 +49,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 2a3ec00223b951119cce53664dd8ce03ffa63d05
     accessed: 2026-08-31
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
+    accessed: 2026-09-15
 tags:
   - vscode
   - vscode-extension
@@ -77,14 +80,14 @@ Modular toolkit for building VS Code extensions. Provides typed abstractions for
 - **Purpose:** Reference extension + reusable toolkit for VS Code extension development
 - **Default branch:** `main`
 - **Created:** 2020-11-16
-- **Last push:** 2026-08-31 (re-verified 2026-08-31; repo id `313368595`, `private: false`, not a fork, not archived)
-- **Version:** 0.1.0 (pre-release, semantic-release configured — **never fired**: zero tags, zero GitHub releases as of 2026-08-31)
+- **Last push:** 2026-09-15T08:37:20Z (re-verified 2026-09-15; repo id `313368595`, `private: false`, not a fork, not archived)
+- **Version:** 0.1.0 (pre-release, semantic-release configured — **still zero tags, zero GitHub releases** as of 2026-09-15. The earlier "never fired" gloss is superseded: `publish.yaml` has run **233 times** and succeeded end-to-end on three of them. See the 2026-09-15 delta.)
 - **License:** MIT
-- **Engine:** VS Code `^1.102.0`
+- **Engine:** VS Code `^1.102.0` (unchanged across all seventeen surveys, while `@types/vscode` has advanced to **1.137.0** — see 2026-09-15 delta)
 - **Topics:** `vscode`, `vscode-extension`
-- **Package manager:** pnpm 10.34.4 (`packageManager` field; the fleet is on 11.x — see 2026-08-31 delta)
-- **Node target:** 24.20.0 (`.node-version`)
-- **Tree size:** 156 tracked blobs at HEAD (path list unchanged since 2026-07-28)
+- **Package manager:** pnpm 10.34.5 (`packageManager` field; the fleet is on 11.x — extend-vscode remains the last pnpm-10 repo)
+- **Node target:** 24.21.0 (`.node-version`)
+- **Tree size:** **123 tracked blobs** + 33 directories at HEAD. Corrects the "156 tracked blobs" recorded 2026-08-31 and earlier — recomputing the *same* commit `2a3ec002` returns `{"blob": 123, "tree": 33}`, and 123 + 33 = 156. The prior figure counted directories as files; the byte-identical-tree conclusions it supported are unaffected.
 
 ## Architecture
 
@@ -226,6 +229,8 @@ The security path bypasses the rule (Renovate's vulnerability alerts ignore `ena
 
 ### Release posture: full pipeline, zero releases
 
+> **Superseded in part on 2026-09-15.** The reading below — "unexercised release path," "the first real `publish.yaml` run will be the first integration test" — is wrong on the central fact. `publish.yaml` fires on every push to `main` and has run **233 times since 2025-08-17**, failing 230 of them at a vulnerability-scan gate and succeeding end-to-end (including `Semantic Release`) on three runs on 2025-11-01. The pipeline is neither untested nor silent; it is red in public with nobody required to look. Read the 2026-09-15 delta before relying on anything in this section. What survives: zero tags, zero releases, `version: 0.1.0`, and the fictional `CHANGELOG.md` entry.
+
 As of 2026-08-31 the repository has **zero git tags and zero GitHub releases**, and `package.json` has read `"version": "0.1.0"` across all sixteen surveys since 2026-04-18. Standing against that: a three-target semantic-release publish workflow, a per-platform emergency rollback workflow with confirmation gate, `release.config.mjs`, `scripts/{rollback,publish-utils,validate-tokens}.ts`, and `CHANGELOG.md` wired into the published `files` array.
 
 `CHANGELOG.md`'s sole entry is `## [0.1.0](https://github.com/marcusrbrown/extend-vscode/releases/tag/v0.1.0) (2025-08-17)` — a hand-seeded entry in semantic-release's output format whose release link 404s, because no `v0.1.0` tag exists. The changelog documents a release that never cut. It is scaffolding wearing the costume of history.
@@ -272,6 +277,11 @@ The repo references `.github:common-settings.yaml` in its Probot settings (`_ext
 - **A Renovate PR title is mutable state** (2026-08-31): #508 opened as "update pnpm to v11 [SECURITY]" and merged as a `10.34.0 → 10.34.4` patch after Renovate retargeted and retitled the branch. Long-lived bot PRs must be re-read at merge; the branch name and diff are durable, the title is not.
 - **Publishing chrome without a release** (2026-08-31): three-target semantic-release, per-platform rollback workflow, seeded `CHANGELOG.md`, and `files[]` packaging — with zero tags and zero releases across 16 surveys. The changelog's `[0.1.0]` link 404s. The pipeline has been maintained by dependency automation for over a year without ever executing.
 - **`.ai/plan/` is intent, not state** (2026-08-31): the plan corpus describes eight features, three of which have been open as issues #317–#319 since 2025-08-17 without movement. Same shape as [[bfra-me--github]]'s `.ai/` corpus. Read it as a wishlist, never as documentation.
+- **The stricter gate is the optional one** (2026-09-15): `Run Checks` — required, `enforce_admins: true` — runs lint/test/test:web/build. The vulnerability scan exists only in `publish.yaml`, which is not a required context. So the check that decides whether code merges knows nothing about advisories, and the check that knows about advisories has been red on essentially every merge for ten months and blocked nothing. A release gate outside the required set is a gate on releases only, and it degrades to a gate on nothing once it stops being green.
+- **A daemon with no clock** (2026-09-15): `renovate.yaml` has no `schedule:` — its in-repo executions chain off `workflow_run` on **Main** completing on `main`, i.e. off a merge. A merge happens when a PR lands; a PR lands when the updater works. The loop is self-sustaining while it runs and has no way to restart itself if it stops. Confirmed against a 100-run event census: 59 `issues` (all `skipped`), 20 `push`, 21 `workflow_run`, **0 `schedule`**.
+- **A patch kill-switch can withhold an incident fix** (2026-09-15): the repo took `bfra-me/.github` **v4.25.0** — the poisoned `tar` release — and could not take **v4.25.1**, because v4.25.1 is a patch and patches are disabled. It escaped 2 d 8 h later on the next *minor*. The policy that mutes an update class mutes remediations in that class too, and remediations are exactly the updates you cannot schedule.
+- **Duration discriminates here, and that is a property of the band, not the poison** (2026-09-15): the two Renovate passes that ran on v4.25.0 took **39 s and 40 s** against a **63–72 s** healthy band over ten other passes. [[marcusrbrown--esphome-life]] measured 46 s against a 55–100 s band and correctly concluded duration was useless there. Both are right. Measure the healthy band's variance before deciding whether timing is an instrument.
+- **The security path and the patch path split a monorepo** (2026-09-15): `vitest` rode the vulnerability bypass to **4.1.11**; `@vitest/coverage-v8` and `@vitest/ui` sit at **4.1.0** because catching up is a patch. Neither is loaded by `pnpm test` or `pnpm test:web`, so the required gate cannot see the skew. `test:coverage` and `test:ui` exist as scripts and run in no workflow.
 
 ## Delta Log
 
@@ -627,6 +637,154 @@ Seven minor boundaries in fifteen days: v4.16.x → **v4.23.0** (#525, #526, #52
 - Testing/build: `@playwright/test` 1.62.0, `jsdom` 29.1.0, `type-fest` 5.8.0, `esbuild-plugin-polyfill-node` 0.3.0, `tsx` 4.23.0, `jiti` 2.7.0
 - Actions: `actions/checkout` v6.1.0 (`d23441a4`), `actions/setup-node` v6.5.0 (`24997072`), `pnpm/action-setup` **v6.0.0** (`08c4be7e`, frozen by the patch rule), `bfra-me/.github` v4.23.0 (`eb1772eb`)
 
+### 2026-09-15 (SHA `2c78b3d2` from `2a3ec002`)
+
+Seventeen commits merged between 2026-09-01 and 2026-09-15 (#536–#551), every one a `mrbro-bot[bot]` Renovate automerge. Tree byte-identical again — **123 blobs at both SHAs**, and only **eight files changed content**: five workflow files (`main.yaml`, `publish.yaml`, `renovate.yaml`, `rollback.yaml`, `update-repo-settings.yaml` — all action-SHA tokens), `.node-version`, `package.json`, `pnpm-lock.yaml`. `README.md`, `llms.txt`, `.github/copilot-instructions.md`, `src/`, `test/`, `.ai/`, `.cursor/`, `.github/renovate.json5`, `.github/settings.yml` are all unchanged. Seventeenth consecutive survey with no structural, architectural, or source change.
+
+Open PRs: **0** (second consecutive zero reading). Open issues: 5 (#142, #162, #317–#319) — unchanged for ~21 weeks. Stars 2, watchers 2, subscribers 1, forks 0.
+
+| PR   | Date       | Change                                                        |
+| ---- | ---------- | ------------------------------------------------------------- |
+| #551 | 2026-09-15 | `@types/vscode` → v1.137.0                                     |
+| #550 | 2026-09-14 | `bfra-me/.github` → v4.29.0                                    |
+| #549 | 2026-09-14 | `bfra-me/.github` → v4.28.0                                    |
+| #548 | 2026-09-10 | `typescript-eslint` v8.69.0 → v8.70.0                          |
+| #547 | 2026-09-10 | `bfra-me/.github` → v4.27.0                                    |
+| #546 | 2026-09-09 | Node.js → v24.21.0                                             |
+| #545 | 2026-09-09 | `vitest` → v4.1.11 **[SECURITY]**                              |
+| #544 | 2026-09-08 | `@playwright/test` → v1.63.0                                   |
+| #543 | 2026-09-07 | `eslint` v10.9.0 → v10.10.0                                    |
+| #542 | 2026-09-07 | `bfra-me/.github` → v4.26.0                                    |
+| #541 | 2026-09-05 | `pnpm/action-setup` → **v6.1.0** (first minor since adoption)   |
+| #540 | 2026-09-04 | `bfra-me/.github` → **v4.25.0** (the poisoned `tar` release)    |
+| #539 | 2026-09-03 | `typescript-eslint` v8.68.0 → v8.69.0                          |
+| #538 | 2026-09-03 | All non-major dependencies (grouped)                           |
+| #537 | 2026-09-01 | `pnpm` → v10.34.5 **[SECURITY]**                               |
+| #536 | 2026-09-01 | `@types/vscode` → v1.134.0                                     |
+
+#### The publish pipeline is not unexercised — it is red, and has been for ten months
+
+The headline finding, and it supersedes two surveys of framing.
+
+`publish.yaml` triggers on push to `main` (plus `next`, `next-major`, `beta`, `alpha`, and maintenance branches). It has **233 runs, 230 failures, 3 successes.** The first run, 2025-08-17T10:07:07Z, failed. The last 100 runs are **100 failures**.
+
+The blocking leg is consistent. Sampled at 2025-10-09, 2026-03-13 and 2026-09-15, the failing job is `Pre-Release Validation (vulnerabilities)`, step `Scan vulnerabilities` → `pnpm exec tsx scripts/publish-utils.ts --vulnerabilities-only`. Because the matrix declares `fail-fast: true`, the other seven legs (`lint`, `test`, `test-web`, `build`, `bundle-size`, `manifest`, `dual-target`) are **cancelled**, and `Semantic Release` — which `needs: [validate-secrets, pre-release-validation]` — is **skipped**. One sampled outlier, 2025-12-02, failed at `Semantic Release` itself instead.
+
+The three successes are all on **2025-11-01** (runs `18993695173`, `18994287322`, `18994369596`; heads `49b57ea1`, `5b8a3e99`, `c79ed549`) and every job in them is green, `Semantic Release` included. So the pipeline is **proven end-to-end**. It ran, it found no releasable commit — the history is `chore(deps)` all the way down — and it published nothing, correctly.
+
+Three corrections follow:
+
+1. **"An unexercised release path accumulates untested assumptions"** (2026-08-31) is withdrawn. The path is exercised on every merge. What accumulates is a red check nobody subscribes to.
+2. **"The first real `publish.yaml` run will be the first integration test"** is withdrawn. The integration test ran 233 times and passed on 2025-11-01.
+3. **"semantic-release configured — never fired"** is imprecise. It fired, succeeded, and had nothing to release. The reason there are no tags is *not* that the pipeline is broken; it is that the pipeline has been unable to reach `Semantic Release` since 2025-11-01, and on the one day it could, there was no releasable commit to act on.
+
+The reason none of this surfaced: **`Publish` is not a required status check.** `.github/settings.yml` declares `contexts: [Renovate / Renovate, Run Checks]`, and `Run Checks` (`main.yaml`) runs lint / test / test:web / build — no vulnerability scan anywhere in it. The gate that knows about advisories has no authority; the gate with authority does not know. Compare [[fro-bot--dashboard]]'s base-image release gate (`github-actions-ci`, 2026-09-15), which is the same structure with a different payload: a release blocked by a supply-chain gate that the repo's own dependency automation cannot clear. Cause here is unconfirmed — `scripts/publish-utils.ts` is source and was not read under this survey's constraints — but the `pnpm-workspace.yaml` override ledger (8 transitive security pins) is the obvious suspect for what the scan is failing to satisfy.
+
+#### The `tar` outage reached here too, and the patch kill-switch withheld the antidote
+
+Third repo inside the 2026-09-04 `bfra-me/renovate-action` 10.34.0 incident, after [[marcusrbrown--github]] and [[marcusrbrown--esphome-life]] — and the only one where the *fix* was blocked by the consumer's own update policy.
+
+| Event                                                    | Time (UTC)             |
+| -------------------------------------------------------- | ---------------------- |
+| `bfra-me/.github` **v4.25.0** published (poisoned)        | 2026-09-04T16:18:57Z   |
+| #540 opened                                              | 2026-09-04T16:28:11Z   |
+| #540 merged — repo now on the poisoned tag                | 2026-09-04T16:29:13Z   |
+| First in-repo Renovate pass on v4.25.0                    | 2026-09-04T16:30:16Z   |
+| `bfra-me/.github` **v4.25.1** published (the fix, *patch*) | 2026-09-04T20:52:07Z   |
+| Second in-repo Renovate pass on v4.25.0                   | 2026-09-05T08:31:50Z   |
+| `bfra-me/.github` **v4.26.0** published (*minor*)          | 2026-09-06T21:54:25Z   |
+| #542 merged — escape                                      | 2026-09-07T01:07:12Z   |
+
+**Exposure: 2 d 8 h 37 m 59 s**, against ~6½ h at the two sibling repos. v4.25.1 was never proposed and never will be: the first rule in `.github/renovate.json5` is `matchUpdateTypes: ['patch'] → enabled: false`, with no `matchManagers` restriction, so it covers the `github-actions` manager too. The repo escaped by accident of upstream cadence — the next minor happened to carry the fix.
+
+That is the patch-suppression thread's sharpest instance yet. Prior surveys could only show it producing *drift* (a frozen preset pin, a frozen action pin). Here it withheld the remediation for a live defect in the repository's own updater. A policy that mutes an update class mutes the fixes shipped in that class, and fixes are precisely the updates nobody gets to schedule.
+
+Two corroborating consequences in the same window:
+
+- **`pnpm/action-setup` completed the natural experiment.** Frozen at **v6.0.0** since adoption while v6.0.1 → v6.0.9 shipped, it moved to **v6.1.0** (#541) three days after the 2026-08-31 survey inferred the mechanism from a static pin. Minors flow. Patches do not. The intermediate patches were never proposed at all.
+- **`bfra-me/.github` took six minors in fifteen days** (v4.23.0 → v4.29.0, #542/#547/#549/#550 plus #540) and skipped exactly one release: the v4.25.1 patch.
+
+#### Duration discriminates here — correcting the esphome.life reading
+
+Exactly two in-repo Renovate executions ran on the poisoned tag, and both are measurably short:
+
+| Run          | Head       | `Renovate` step start | Duration |
+| ------------ | ---------- | --------------------- | -------- |
+| `33895494983` | `72313031` | 2026-09-04T16:30:16Z  | **39 s** |
+| `33955508816` | `ac2fc9dd` | 2026-09-05T08:31:50Z  | **40 s** |
+
+The other ten `workflow_run` passes in the same 100-run window: 63, 63, 67, 67, 67, 67, 69, 69, 70, 70, 72 s. Healthy band **63–72 s**; the poisoned runs sit 23 s (~37 %) below its floor. Both concluded `success`.
+
+[[marcusrbrown--esphome-life]] recorded, on 2026-09-14, that "run duration does not discriminate" — a 46 s poisoned step inside a 55–100 s healthy band. That finding is correct for that repo and the conclusion drawn from it ("stop looking for a cheaper proxy than output") is still the safe default. But the mechanism is **band variance, not the poison**. esphome.life's Renovate pass covers a 17-blob repo where most healthy passes are also no-ops, so "did work" and "found nothing" overlap completely. extend-vscode's pass is a uniform single-repo post-merge sweep with σ ≈ 3 s over ten samples, and a 37 % drop is unmistakable. Generalized in [[github-actions-ci]]: **before discarding duration as a health signal, measure the healthy band's variance — the answer is per-repo, not per-incident.**
+
+#### The Renovate daemon has no clock
+
+`renovate.yaml` triggers on `issues: [edited]`, `pull_request: [edited]`, `push: branches-ignore: [main]`, `workflow_dispatch`, and `workflow_run` on **Main** completing on `main`. There is **no `schedule:`**. A 100-run event census confirms it: 59 `issues`, 20 `push`, 21 `workflow_run`, **zero `schedule`**. All 59 `issues`-triggered runs conclude `skipped`; the `push` and `workflow_run` runs conclude `success`.
+
+So an in-repo Renovate pass is a *consequence* of a merge to `main`, and a merge is a consequence of Renovate having worked. The daemon is merge-chained with no independent heartbeat: if the chain ever breaks, only a human `workflow_dispatch` or a human Dependency Dashboard edit restarts it — and the dashboard path is gated on `!contains(github.actor, '[bot]')`, so bot-authored dashboard churn cannot do it. Contrast [[marcusrbrown--github]] and [[marcusrbrown--esphome-life]], which carry crons and therefore recover on a clock. `update-repo-settings.yaml` here *does* carry `cron: '23 0 * * *'` (firing ~01:00–01:07 UTC in practice; see *Cron Declarations Are Not Execution Times*) with 99/100 success, so the absence in `renovate.yaml` is a choice, not an oversight.
+
+Observed consequence in this interval: a **40 h 35 m PR drought** (#541 merged 2026-09-05T08:30:57Z → #542 opened 2026-09-07T01:05:41Z) against an otherwise ~daily cadence, spanning the poisoned window. The longest gap in the interval.
+
+#### `vitest` version skew, invisible to the required gate
+
+#545 took `vitest` 4.1.0 → **4.1.11** on the security path, which bypasses the patch kill-switch. Its monorepo siblings did not follow:
+
+| Package                | Version |
+| ---------------------- | ------- |
+| `vitest`               | 4.1.11  |
+| `@vitest/coverage-v8`  | 4.1.0   |
+| `@vitest/ui`           | 4.1.0   |
+
+Eleven patch versions apart, because closing the gap is a patch update and patch updates are disabled. `Run Checks` runs `pnpm test` (`vitest run`) and `pnpm test:web` — neither loads `@vitest/ui` or `@vitest/coverage-v8`, so the required gate cannot observe the skew. `test:coverage` and `test:ui` exist as `package.json` scripts and are invoked by no workflow. This is the patch rule's first *concrete* consequence recorded on this page; every prior instance was freshness drift.
+
+#### `@types/vscode` is now 35 minors ahead of the declared engine
+
+`@types/vscode` went 1.125.0 → **1.137.0** this interval (#536 → 1.134.0, #551 → 1.137.0). `engines.vscode` has read **`^1.102.0`** across all seventeen surveys. Renovate advances the types; nothing advances the engine floor, and nothing checks that the two agree.
+
+The compiler will accept any API added through 1.137 while the manifest promises to run on 1.102. Whether a post-1.102 API is *actually* referenced is unverified — `src/` was not read under this survey's constraints — so no defect is claimed. The verifiable fact is that the **guardrail is absent**: there is no CI leg, no lint rule, and no `publish-utils` validation comparing `@types/vscode` against `engines.vscode`, and for a toolkit published to three registries for third-party consumption that gap is the durable finding, not whatever the current instance happens to be. Cataloged in [[vscode-extensions]].
+
+#### #508's 47-day stall, mechanism supplied
+
+The 2026-08-31 correction established *what* #508 was (a `10.34.4` patch retitled from a v11 major, not a pending major) and noted that the ~47-day stall was real but unexplained. The run history explains it: **`Main` failed on `renovate/npm-pnpm-vulnerability` eleven times** between 2026-07-06T17:22:49Z and 2026-08-07T01:02:46Z. `Run Checks` is a required context with `enforce_admins: true`, so automerge had nothing to merge into. The standing hypothesis (a `packageManager`/lockfile lockstep gate) was directionally right about *a failing gate* and wrong about everything else.
+
+One more detail, and it sharpens the mutable-title rule rather than softening it: the branch's `Main` runs already carried the title `chore(deps): update pnpm to v10.34.4 [SECURITY]` on **2026-07-06**. The 2026-08-02 survey recorded "#508 (`pnpm` v11 [SECURITY]) still open" — reading a title that had already changed four weeks earlier. The durable facts were in the run list the whole time.
+
+#### TS v6 (#466) was red before it was swept
+
+`Main` failed on `renovate/typescript-6.x` on 2026-07-06, 2026-07-08, and 2026-07-09; Renovate autoclosed the PR on 2026-07-11. The 2026-07-13 entry guessed "superseded, un-schedulable, or blocked"; the observable is **four days of red CI, then the sweep**. `typescript` remains **5.9.3**, now ~9.3 weeks past the autoclose with no re-proposal, and the manifest still carries zero pending majors.
+
+#### Workflow health census (2026-09-15)
+
+| Workflow             | Total runs | Last 100                               |
+| -------------------- | ---------- | -------------------------------------- |
+| Renovate             | 5577       | 40 success, 60 skipped                 |
+| Main                 | 752        | 82 success, 16 failure, 2 cancelled    |
+| Update Repo Settings | 677        | 99 success, 1 failure                  |
+| Cache Cleanup        | 405        | 100 success                            |
+| **Publish**          | **233**    | **100 failure**                        |
+| Emergency Rollback   | **0**      | never run                              |
+
+All 16 `Main` failures are PR-branch runs on two branches — eleven on `renovate/npm-pnpm-vulnerability` (#508) and three on `renovate/typescript-6.x` (#466), plus two more on the pnpm branch. `main` itself has not gone red.
+
+#### Carried forward
+
+- **Preset pin still `#5.2.0`**, now against a fleet at `#5.2.13` — **thirteen** unreachable patch releases, frozen since 2026-05-14 (~17.5 weeks). The closed loop recorded 2026-08-31 is one release wider. `prettier` likewise holds 3.9.0 against a fleet 3.9.6. See [[marcusrbrown--renovate-config]].
+- **Last pnpm-10 repo in the fleet.** `packageManager: pnpm@10.34.5` (#537, [SECURITY]); `pnpm-workspace.yaml` still uses the pnpm-10 `onlyBuiltDependencies:` key and the 8-entry override ledger is unchanged. The eventual v11 crossing still carries the `allowBuilds:` rewrite.
+- **Settings-sync wiring still correct.** Both `bfra-me/.github` callers pin the same SHA (`0e881c39`, v4.29.0) to the *correct* paths — `renovate.yaml` → upstream `renovate.yaml`, `update-repo-settings.yaml` → upstream `update-repo-settings.yaml`. Still the in-fleet counter-example to [[marcusrbrown--esphome-life]]'s miswiring. See [[probot-settings]].
+- **The `main.yaml` concurrency-group typo survives** (`$${{ github.event.number || github.ref }}`). Nineteen weeks, cosmetic, still there.
+- **Still no Fro Bot agent workflow — seventeenth consecutive survey, ~21 weeks.** Six workflows, unchanged. The case is now materially stronger than "three actionable items a daemon would have surfaced": a release pipeline has been red on every merge for ten months, and the repo has no resident agent whose job is to notice. A follow-up draft PR to onboard the agent should be proposed separately.
+- Dependabot alerts and code scanning both returned **403 `Resource not accessible by integration`** this run (2026-08-31 got a `401`). Inconclusive in both directions; no posture claim recorded.
+
+#### Dependency snapshot at HEAD (`2c78b3d2`)
+
+- Runtime: **pnpm 10.34.5**, Node **24.21.0** (`.node-version`), VS Code engine `^1.102.0`, lockfile `9.0`
+- Core: `typescript` 5.9.3 (v6 deferred), `tsup` 8.5.1, `vitest` **4.1.11**, `@vitest/coverage-v8` 4.1.0, `@vitest/ui` 4.1.0, `@vitest/eslint-plugin` 1.6.1
+- Lint: `eslint` **10.10.0**, `typescript-eslint` **8.70.0**, `@bfra.me/eslint-config` 0.52.0, `@bfra.me/tsconfig` 0.13.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.9.0
+- VS Code tooling: `@types/vscode` **1.137.0**, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@semantic-release/changelog` 6.0.3, `@semantic-release/git` 10.0.1
+- Testing/build: `@playwright/test` **1.63.0**, `jsdom` 29.1.0, `type-fest` **5.9.0**, `esbuild-plugin-polyfill-node` 0.3.0, `tsx` 4.23.0, `jiti` 2.7.0
+- Actions: `actions/checkout` v6.1.0 (`d23441a4`), `actions/setup-node` v6.5.0 (`24997072`), `pnpm/action-setup` **v6.1.0** (`ea17c68d`), `actions/upload-artifact` v7.0.1 (`043fb46d`), `bfra-me/.github` **v4.29.0** (`0e881c39`)
+
 ## Survey History
 
 | Date       | HEAD       | Headline                                                                                              |
@@ -645,3 +803,4 @@ Seven minor boundaries in fifteen days: v4.16.x → **v4.23.0** (#525, #526, #52
 | 2026-07-13 | `c322c419` | TS v6 (#466) **autoclosed unmerged**; CVE streak breaks                                                |
 | 2026-08-02 | `9ecc7a55` | `CHANGELOG.md` wired into published `files[]`; #508 still open                                         |
 | 2026-08-31 | `2a3ec002` | **Tree byte-identical (156 blobs); PR queue drained to 0; #508 corrected — patch, not major; patch-suppression policy root-caused; pnpm-10 holdout; zero releases** |
+| 2026-09-15 | `2c78b3d2` | **`publish.yaml` red 230/233 runs since 2025-08-17, gated at the vulnerability scan and not a required check — "unexercised pipeline" superseded; `tar` outage reached the repo and the patch kill-switch withheld v4.25.1 (2 d 8 h exposure); poisoned Renovate passes measurably short (39–40 s vs 63–72 s band), correcting esphome.life's duration reading; `renovate.yaml` has no cron — merge-chained daemon; `vitest` monorepo split 4.1.11 / 4.1.0 by the patch rule; `@types/vscode` 1.137.0 vs `engines.vscode` `^1.102.0`; blob count corrected 156 → 123** |

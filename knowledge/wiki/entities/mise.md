@@ -2,8 +2,15 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-07-27
-tags: [mise, tool-management, runtime-versions, asdf, dev-tools]
+updated: 2026-09-25
+sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
+    accessed: 2026-09-10
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 5a890eef0d2ecb0b9310c3ccf87c29059c86733a
+    accessed: 2026-09-25
+tags: [mise, tool-management, runtime-versions, asdf, dev-tools, pyenv, git-dir-leak, installer-pinning, devcontainer]
 aliases: [rtx]
 related:
   - marcusrbrown--dotfiles
@@ -16,9 +23,78 @@ Polyglot runtime/tool version manager. Rust-based successor to asdf (originally 
 
 Site: https://mise.jdx.dev/
 
+## Upstream Behavior Changes Worth Tracking
+
+### 2026.9.0 resolves Python versions through pyenv — and therefore shells out to `git` (2026-09-01)
+
+mise `2026.9.0`, released 2026-09-01, began resolving Python's version list by **cloning pyenv and running `python-build --definitions`**. Nothing in the prior release line made mise invoke `git` on this path. That is an ordinary implementation detail until it meets an environment with `GIT_DIR` exported process-wide, at which point mise's internal `git` calls are redirected, the pyenv tree never lands, and mise executes a `python-build` binary that does not exist.
+
+The failure signature is worth memorizing because it is uninformative by construction:
+
+```text
+mise WARN  Failed to resolve tool version list for python: python@3.14.7:
+  failed to execute command: …/mise/python/pyenv/plugins/python-build/bin/python-build
+  --definitions: No such file or directory (os error 2)
+mise ERROR Failed to install tools: core:python@3.14.7, pipx:poetry@2.4.2
+```
+
+Python produces **no progress lines at all** while every other tool installs cleanly, because it fails during *version-list resolution* and never enters the install pipeline — so the precompiled download that normally satisfies it is never attempted. Documented in full at [[marcusrbrown--dotfiles]]; the `GIT_DIR` half generalizes in [[dotfiles]].
+
+Two operational consequences for anyone running mise in a container:
+
+- **`mise install` as a devcontainer `postCreateCommand` inherits `remoteEnv`.** Any git-environment override declared there reaches mise. Keep `GIT_DIR`/`GIT_WORK_TREE` out of `remoteEnv` and scope them per command instead.
+- **Pin the mise install itself.** `curl https://mise.run | sh` accepts `MISE_VERSION` from the environment:
+
+  ```bash
+  # renovate: datasource=github-releases packageName=jdx/mise
+  MISE_VERSION=2026.9.4
+  curl https://mise.run | MISE_INSTALL_PATH="$MISE_INSTALL_PATH" MISE_VERSION="$MISE_VERSION" sh
+  ```
+
+  Unpinned, the container adopts every mise release the day it ships, so a behavior change presents as a repository regression with no repository commit. Pair with `set -eo pipefail` — see [[dotfiles]] for why `set -e` alone lets a 404'd pin install nothing and exit 0.
+
+- **`jdx/mise-action`'s `MISE_VERSION` and a devcontainer's mise install are separate pins.** A repo that pins one and not the other gets a green CI job vouching for a version the failing job never ran. See *Two Jobs Pinning the Same Tool Are Not the Same Pin* in [[github-actions-ci]].
+
+### `cache: true` on `jdx/mise-action` can void an install-verification job
+
+If a job exists to prove that a mise config installs cleanly, a cache hit skips the install and the job passes without testing anything. The cache is also large — [[marcusrbrown--dotfiles]] measured **~993 MB per entry**, and keyed on mise version × config hash × ref it consumed 8.9 GB of a 10 GB Actions budget across nine entries, LRU-evicting every other cache in the repository. Detail in [[github-actions-ci]].
+
+### pnpm 12 needs the `aqua:` backend, not the legacy asdf plugin (2026-09-11)
+
+A bare `pnpm = "12.x"` resolves through the legacy asdf plugin. That plugin does not discover pnpm 12's `.mjs` entry points and fails with an unset `BIN_PATH`. [[marcusrbrown--dotfiles]] (#2582) switched to the explicit backend, `"aqua:pnpm/pnpm" = "12.6.0"`, which behaves the same on every machine. Renovate then tracks the package under the `aqua:pnpm/pnpm` name (#2583 onward). **Rule:** when a tool's major version changes its packaging layout, name the backend explicitly instead of relying on shorthand resolution.
+
 ## Usage Across Repos
 
-### [[marcusrbrown--dotfiles]] — current state (SHA `cd03ad8`, 2026-07-27)
+### [[marcusrbrown--dotfiles]] — delta (SHA `5a890ee`, 2026-09-25)
+
+These are changes since the `fe0144c` snapshot below, which is kept as the baseline:
+- **pnpm → `aqua:pnpm/pnpm` 12.6.0**, per the section above.
+- Prettier 3.9.8, biome 2.5.14, tsx 4.23.15, agent-browser 0.38.1, skills 1.7.0, `@github/copilot` 1.0.87, claude-code 2.1.270, `@fro.bot/harness` 1.18.30-harness.7c479429, pyright 1.1.414, pipx 1.17.6, `pipx:poetry` 2.5.1, deno 2.9.7. node, npm, bun, rust, and typescript are unchanged.
+- **New tasks:** `typecheck`, `format-check`, `ignore:audit`, `opencode:cache-plateau`, `claude:settings`.
+- **`MISE_VERSION` 2026.9.13** in both the `jdx/mise-action` pin and the devcontainer feature pin, which are still bumped in lockstep by Renovate.
+- **Machine-wide tools pinned twice:** TypeScript and Prettier are pinned in `config.toml` and also in the repo's `.dotfiles/package.json` script toolchain, which is what CI actually runs. A Renovate `script toolchain` group matches both files so the two copies cannot drift apart. This is the same separate-pins lesson as the `jdx/mise-action` note above, applied to npm tools.
+
+### [[marcusrbrown--dotfiles]] — current state (SHA `fe0144c`, 2026-09-10)
+
+**Language runtimes:** Node 24.21.0, Python 3.14.7, Rust 1.98.1, Go 1.27.1, Bun 1.4.2, Deno 2.9.6, Zig 0.15.2 (ZLS 0.16.0), **pnpm 12.3.4**, **npm 12.0.2**.
+
+**CLI tools (npm):** **TypeScript 7.0.2**, Prettier 3.9.6 (with `@bfra.me/prettier-config` 0.16.11), ast-grep 0.45.3, Playwright 1.63.0, agent-browser 0.36.0, skills 1.5.24, ocx 2.0.15, tsx 4.23.13, rimraf 6.1.3, `@github/copilot` 1.0.83, `@biomejs/biome` 2.5.12, `@fro.bot/harness` 1.18.29-harness.88b6b5fb.
+
+**Manually pinned (Renovate disabled):** `@anthropic-ai/claude-code` 2.1.163. Stock `opencode-ai` remains **absent** since 2026-08-26 — the harness build is the only OpenCode CLI.
+
+**Aqua tools:** shfmt (`aqua:mvdan/sh`) 3.14.1, gitleaks (`aqua:gitleaks/gitleaks`) 8.30.1.
+
+**Language servers (npm):** pyright 1.1.413, **typescript-language-server 6.0.0**.
+
+**Other:** cargo-binstall 1.23.0, pipx 1.17.2, `pipx:poetry` 2.4.3, `@marcusrbrown/infra` latest.
+
+**Four major boundaries in one window:** npm v11 → v12, pnpm v11 → v12, `npm:typescript` v6 → v7 (after holding at 6.0.3 since 2026-04-22), `typescript-language-server` v5 → v6. No tools added or removed — pure version movement.
+
+**Tasks:** `distill`, `format`, `install`, `mise`, `opencode`, `print` — file-based shebang tasks under `.config/mise/tasks/`. A portability note recorded in the repo's own `AGENTS.md` is worth carrying: **`task_config.includes` does not expand `~`/`$HOME`/`{{config_root}}`/`{{xdg_config_home}}` and silently ignores relative paths in global config** (`project_root` is `None`), so the field is unusable for a global config — use auto-discovered file-based tasks instead.
+
+### Historical Snapshot — [[marcusrbrown--dotfiles]] (SHA `cd03ad8`, 2026-07-27)
+
+Superseded by the entry above. The intervening 2026-08-26 snapshot (SHA `3479589`) is recorded only on [[marcusrbrown--dotfiles]]; its notable deltas were the removal of `opencode-ai`, `puppeteer`, and `vibe-tools` and the addition of an explicit `pipx` pin.
 
 **Language runtimes:** Node 24.18.0, Python 3.14.6, Rust 1.97.1, Go 1.26.5, Bun 1.3.14, Deno 2.9.4, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.17.0, npm 11.18.0.
 
@@ -93,6 +169,12 @@ Custom devcontainer feature installs mise and runs `mise install` post-create, e
 ### Renovate Integration
 
 Renovate manages mise tool version bumps via custom regex managers that parse `_VERSION` variables and tool entries from TOML config files. Some tools (notably `@anthropic-ai/claude-code` and `opencode-ai`) have Renovate updates disabled for manual version control.
+
+**Extend the manager past the TOML (2026-09-10).** A `_VERSION` regex manager scoped to `mise.toml` / `.mise/config.toml` misses every mise version pinned *outside* mise's own config — most importantly the `MISE_VERSION` in a devcontainer feature's install script and the one in a workflow `env:` block. [[marcusrbrown--dotfiles]] widened its `managerFilePatterns` to cover `.devcontainer/features/*/install.sh` after discovering that a freshly-added `# renovate:` marker there was matched by nothing. **A `# renovate:` comment does not make a version managed** — verify from Renovate's debug log, which reports the files each manager matched:
+
+```text
+DEBUG: Matched 2 file(s) for manager regex: .config/mise/config.toml, .devcontainer/features/mise/install.sh
+```
 
 ### Bun-Accelerated npm Installs
 

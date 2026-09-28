@@ -2,8 +2,20 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-05
+updated: 2026-09-26
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
+    accessed: 2026-09-21
+  - url: https://github.com/fro-bot/systematic
+    sha: c5cbd2e
+    accessed: 2026-09-19
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/mothership
+    sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
+    accessed: 2026-09-08
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
     accessed: 2026-04-23
@@ -13,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 02cac9c024744a290c9257d5c740d2a83e2c8e42
     accessed: 2026-04-27
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 8fac30bd3fde62da93ceaf3b9760750f3d046c62
+    accessed: 2026-09-26
   - url: https://github.com/marcusrbrown/systematic
     sha: 420ef650215a9ca8cefa01f125e02434e351952e
     accessed: 2026-05-06
@@ -67,7 +82,10 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary]
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: fe0144c0e9fc0168fc4ed9aa9fa0492df4846599
+    accessed: 2026-09-10
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary, prompt-cache, per-harness-config, config-drift, measurement]
 ---
 
 # OpenCode Plugin Development
@@ -209,7 +227,7 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
 | [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
-| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
+| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.1 (4 tool files: delegate/output/cancel/resume; README still lists 3) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
 | [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths (now with session-interaction + message-correlation `/core` primitives) | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.15.0** (6 tools: bus_roster/task/status/result/wait/registry) |
 
@@ -398,7 +416,7 @@ The same repo supplies the third-deletion instance in isolation: `README.md` sti
 Not every OpenCode plugin is published or general-purpose. A recurring **app-embedded** pattern: an application repo vendors an OpenCode plugin *in-tree* to run a design/quality gate against the agents that work on that same repo, rather than consuming the gate as a pinned CI action.
 
 - **[[fro-bot--dashboard]]** (2026-07-23) first vendored the Impeccable design gate as `.opencode/impeccable/plugin.ts` alongside `.agents/skills/impeccable/`, wiring `.opencode/tsconfig.json` into `check-types` and adding `@opencode-ai/plugin` as a devDep.
-- **[[marcusrbrown--mrbro-dev]]** (2026-07-25, surveyed via the `marcusrbrown.github.io` name binding) took the same move: root `opencode.json` registers `"plugin": ["./.opencode/impeccable/plugin.ts"]`, backed by `.opencode/impeccable/{plugin.ts, hook-bridge.ts}` (+ `plugin.test.ts`, `hook-bridge.integration.test.ts`) and `.opencode/tsconfig.json` in the `check-types` script; `@opencode-ai/plugin@1.18.2` devDep. The `hook-bridge.ts` naming suggests the plugin bridges OpenCode hook events into the Impeccable gate's evaluation surface.
+- **[[marcusrbrown--marcusrbrown-github-io]]** (2026-07-25, surveyed via the `marcusrbrown.github.io` name binding) took the same move: root `opencode.json` registers `"plugin": ["./.opencode/impeccable/plugin.ts"]`, backed by `.opencode/impeccable/{plugin.ts, hook-bridge.ts}` (+ `plugin.test.ts`, `hook-bridge.integration.test.ts`) and `.opencode/tsconfig.json` in the `check-types` script; `@opencode-ai/plugin@1.18.2` devDep. The `hook-bridge.ts` naming suggests the plugin bridges OpenCode hook events into the Impeccable gate's evaluation surface.
 
 Distinguishing traits vs the distributable plugins above: **no npm publish**, **relative-path plugin registration** (`./.opencode/...` not a package name), and **the plugin is a repo-local build artifact type-checked by the app's own `tsc` pass**. This is the Impeccable gate propagating from a pinned CI action into a repo-local plugin across the fleet — worth tracking whether it lands a shared/published shape or stays vendored per-repo.
 
@@ -497,6 +515,212 @@ The new `profiles` property carries this description, and it is the most securit
 
 A checked-out repository can *choose* a routing overlay but cannot *author* one. This is the correct direction for a plugin that merges configuration from multiple precedence sources: a cloned project cannot silently redirect the user's agents to a model of its choosing. It is the config-layer expression of the same untrusted-input posture the ecosystem's agent prompts take toward issue bodies — and notably it is enforced in the *schema*, where an IDE surfaces it, not only in the loader. Plugin authors merging user + project config should ask, for every property: **is this safe for a repository I just cloned to set?** Systematic answers it per-field.
 
+## Cross-Check Every Enumeration, Not One Representative Enumeration (2026-09-19)
+
+Two-week follow-up to the two sections above, from the [[fro-bot--systematic]] survey at registry `3.18.10`. Three results, in ascending order of usefulness.
+
+**The fingerprint earned its keep, and the probes came back.** `definitions` held at 100 and top-level properties held at 12 — both header metrics identical to 2026-09-05 — while the file moved **58,954 → 59,589 bytes** and `sha256[:16]` moved `1f9b7c48a4b6455c` → `a66df5f746c28d38`. The pre-2026-09-04 method (count the top-level properties) would have logged "schema unchanged" for a third consecutive interval and been wrong for a third consecutive interval. Separately, the 09-05 caution proved exactly right: the `$ref` + `allOf` indirection is still in place, and **dereferencing it recovers both 09-04 structural claims intact** — `agents` is still a closed 74-key enumeration with `additionalProperties: false`, `categories` is still open-keyed via `propertyNames: {type: string}`. *Treat an empty structural read as "instrument broken" until proven otherwise* held. Deref and the semantics were never gone.
+
+**The real finding: a generated schema can contain several enumerations of the same catalog, produced by different mechanisms, and only some of them track reality.** Systematic's schema names its bundled components in three places. One is derived from the live roster. Two are hand-maintained literals:
+
+| Surface | Entries | Live catalog | Stale |
+| --- | --- | --- | --- |
+| `properties.agents` (keys) | 74 (37 bare + 37 qualified) | 37 agents | 0 |
+| `disabled_agents` (`items.enum`) | 102 (51 bare + 51 qualified) | 37 agents | 28 |
+| `disabled_skills` (`items.enum`) | 50 | 32 skills | 18 |
+
+The surplus is the **v2-era roster pruned at the 2026-07-22 major** — retired skills (`proof`, `rclone`, `setup`, `test-xcode`, `todo-create`/`todo-resolve`/`todo-triage`, `orchestrating-swarms`, …), retired agents (`security-sentinel`, `performance-oracle`, `schema-drift-detector`, …), and a retired *category prefix* (`docs/`) that no longer exists in the live `agents` map. The lists are demonstrably maintained — `disabled_skills` went 49 → 50 in this interval, gaining exactly the one newly-shipped skill — so this is **append-only maintenance with no prune step**, not abandonment. One entry is spelled `generate_command` where the registry and docs used `generate-command`, which is the tell: a derived list cannot disagree with itself about a separator.
+
+The 2026-09-04 survey ran a cross-artifact check on this exact file, compared `agents` against the registry, got 37 = 37, and concluded "no drift." It was checking the one surface that cannot drift. **Re-reading the 09-04 tree shows `disabled_agents` was already 102 then** — the drift was in the file the whole time, one property over from the probe.
+
+**Why stale enums are worse than they look.** The field's own description reads *"Unknown skill names are rejected at parse time."* That makes the enum the validation boundary, and a stale enum turns it into a liar in the quiet direction: `disabled_skills: ["proof"]` parses clean, shows green in the editor, and **does nothing**. This is the same defect class as the `categories` footgun recorded on 2026-09-04, with the polarity reversed — `categories` accepts any string and silently no-ops the overlay; `disabled_skills` accepts a *specific* obsolete string and silently no-ops the disable. Stated generally: **a config schema fails its user whenever its verdict and the runtime's behavior disagree, and permissiveness is only one of the two ways that happens — an allowlist that outlives what it allowlists is the other.**
+
+Operational rules for anyone tracking or authoring a generated config schema:
+
+- **Enumerate the enumerations first.** Before cross-checking a schema against a catalog, list every place the schema names catalog members. Checking one and generalizing is how this was missed for two surveys.
+- **Ask which surfaces are derived and which are literals.** Derived surfaces cannot drift and are not worth re-checking; literals are the entire risk. Spelling inconsistencies between surfaces are a cheap detector.
+- **Prune enums at major boundaries, or document the tolerance.** If retired names are kept deliberately for back-compat, the description must say so and the loader should warn. Silence makes back-compat indistinguishable from neglect.
+- **A schema that validates a name should be able to say whether that name still does anything.**
+
+**Postscript — a `trust` boundary that got documented rather than standardized.** The non-standard `"trust"` keyword grew 16 → 30 occurrences (`project-or-higher` 23, `any` 7), and the 2026-09-04 *inference* about its meaning is now stated outright in `description` text that every draft-07 validator and IDE renders: "Trust-protected fields (model, variant, skills, permission, opencode, pi) are only valid in user config or `OPENCODE_CONFIG_DIR` config — a project config setting them has that field ignored with a warning; other fields in the same overlay still apply." The keyword is still inert to standard tooling. The fix was not to standardize the annotation but to **mirror its meaning into a field standard tooling already reads** — cheaper than a validator extension, portable to every consumer, and the right move for any plugin publishing a semantically load-bearing custom keyword. The cost is that two representations of one rule can now drift apart; the keyword remains the machine-readable one.
+
+## The Stale-Enum Finding, Resolved in the Benign Direction (2026-09-21)
+
+Source-side follow-up from the [[marcusrbrown--systematic]] survey at HEAD `f903dc6d`. Two of the section
+above's claims survive; one needs its severity corrected.
+
+**Survives, unchanged.** Across 97 commits and four releases the literals did not move: `disabled_skills`
+still enumerates **50** names against **32** shipped skill directories, `disabled_agents` still **102**
+against **37** shipped agents. Append-only with no prune step, now measured across a second interval.
+The fingerprint moved again (58,954 → **60,253 B**, `definitions` 100 → **101**, top-level properties
+12 → **13**, `sha256[:16]` `1f9b7c48a4b6455c` → **`f7cd9984739a7fab`**) — a third consecutive interval
+where the byte/definitions/hash triple detects a change, and this time the *property order* changed too
+(`profiles`/`profile` now precede the `disabled_*` block), so positional probes remain as brittle as the
+2026-09-05 caution said.
+
+**Corrected: the loader is not silent.** The open question — *does a retired-but-enumerated name warn, or
+is it silently dropped?* — resolves from the repo's own v2 history. **v2.32.0 (#534) made removed bundled
+names in `disabled_skills`/`disabled_agents` warn-and-ignore rather than reject**, specifically so that
+cleaning up a skill upstream would not brick configs that had disabled it. So `disabled_skills:
+["proof"]` parses clean **and emits a warning**. The severity drops from *silently no-ops* to a
+**documentation defect**, and the rule needs one clause added:
+
+> The field description reads *"Unknown skill names are rejected at parse time."* That conflates two
+> populations the implementation treats differently — a **never-bundled** name is rejected, a
+> **retired-but-enumerated** name is accepted and warned. When a loader deliberately tolerates retired
+> names, the schema description must distinguish the two, or readers will infer that the enum answers a
+> question it does not answer.
+
+The general rule stands with its polarity fixed: *a schema that validates a name should be able to say
+whether that name still does anything*. Here the **runtime** can say it and the **schema** cannot, which
+is a strictly better failure than the reverse — but it also means the enum validates spelling, not
+effect, and no reader can tell that from the artifact alone. The 2026-09-19 operational rules are
+otherwise unchanged; add: **before escalating a stale allowlist, check whether the loader already
+tolerates it deliberately** — back-compat and neglect look identical in the schema and differ entirely in
+the log.
+
+## A Trust Boundary Relaxed With an Un-Self-Grantable Permission (2026-09-21)
+
+Supersedes the *"a project config may select a profile but may not define this field"* claim recorded on
+2026-09-05 (see [A schema that encodes a trust boundary](#a-schema-that-encodes-a-trust-boundary)). The
+absolute ban was a real constraint on legitimate use — [[marcusrbrown--systematic]] issue **#993**
+argued repository-specific routing was impossible under it — and **#1011** relaxed it. The direction is
+unchanged and the mechanism is stronger than the ban was. Three interlocking layers, all expressed in
+the schema:
+
+1. **A new `allow_project_profiles` boolean**, default `false`, described as *"User-owned only — only
+   valid in user config or `OPENCODE_CONFIG_DIR` config; a project config setting this field has it
+   ignored (**a project cannot grant itself a permission it does not already have**). Defaults to
+   false."*
+2. **`profiles` now reads** *"A project config may always select a profile, but may only define this
+   field when the user sets `allow_project_profiles`."*
+3. **Even when granted, the project's bundle is advisory** — it *"fills only routing the user has not
+   set,"* so it loses every conflict rather than winning by precedence.
+
+This is the shape to copy for any plugin that merges configuration across trust tiers and needs to
+loosen a restriction: **make the permission a separate field, make that field un-self-grantable, and
+make the granted capability lose ties.** Each layer fails safe independently — a cloned repository with
+a hostile `profiles` map does nothing without the flag, cannot set the flag, and cannot override a
+routing decision the user has actually made. Compare the all-or-nothing alternatives: dropping the ban
+outright hands a cloned repo full routing control, and keeping it forces users to fork or hand-copy a
+repo's routing.
+
+The custom `"trust"` keyword continues (31 occurrences, `allow_project_profiles` carrying
+`"trust": "project-or-higher"`), and so does the 2026-09-19 practice of mirroring its meaning into
+`description` text that standard draft-07 tooling renders. The two representations have not drifted yet;
+they remain two representations of one rule.
+
+## An MCP Client Keyed by Server Name Cannot Carry a Session Principal (2026-09-08)
+
+From [[marcusrbrown--mothership]]'s `docs/architecture/planning-host-contract.md` — the first artifact in this wiki to trace the OpenCode MCP invocation path end-to-end and write down where agent identity is lost. The reading is against `@fro.bot/harness@1.18.29-harness.88b6b5fb` (runtime integration commit `88b6b5fb…` in `fro-bot/agent`, base OpenCode `1.18.29`).
+
+The call path, as documented:
+
+1. The MCP service **stores clients by MCP server name within the service instance** — `packages/opencode/src/mcp/index.ts`. A client is *not* allocated per agent session.
+2. `SessionTools.resolve` (`packages/opencode/src/session/tools.ts`) does hold the full per-call context: runtime `sessionID`, `messageID`, `callID`, and `agent`.
+3. `McpCatalog.convertTool` (`packages/opencode/src/mcp/catalog.ts`) constructs the outbound `client.callTool` request from **tool name and arguments only**. It supplies abort/timeout/progress options and **constructs no agent-principal assertion**.
+4. A consuming stdio bridge (Mothership's `scripts/ide-mcp-bridge.ts`) forwards tool name and arguments **with a shared bearer**. Its request envelope contains no verified agent principal.
+
+Net: **a shared MCP connection cannot distinguish simultaneous calls from differently-authorized sessions.** The context exists one layer up and is dropped at the wire boundary. For any MCP server that wants to make an authorization decision per calling agent — rather than per connection — this is the blocking gap.
+
+The contract scopes its own claim carefully, which is worth imitating: _"SDK-generated transport metadata, such as progress bookkeeping, is not agent identity. The finding is the absence of a principal handoff in the inspected construction, not a claim that the SDK can never add any metadata."_
+
+Constraints any fix must satisfy, per the same document:
+
+- **Identity must come from runtime context** — never from model arguments, agent display names, mutable client-global variables, or an earlier request on the same connection. Every one of those is either model-controlled or connection-scoped, and the whole problem is that the connection is shared.
+- **The assertion must bind to the actual outbound request.** Changes introduced by tool hooks must not let an assertion minted for one request authorize a different one.
+- **A shared connection must support simultaneous calls from differently authorized sessions without context crossing between them** — i.e. the binding has to be per-invocation, not per-client.
+- **A new metadata object alone is not the proof.** Transport authentication and host registration are separate design work.
+
+### npm `gitHead` Names the Wrapper Tree, Not the Runtime Tree
+
+A second, immediately reusable provenance rule from the same document. For the patched-OpenCode harness, npm `gitHead` is `cb4a1425…` (the `packages/harness` wrapper source) while the runtime integration commit is `88b6b5fb…` (the tree containing `packages/opencode`). They are different trees in the same repository, and the contract states the consequence plainly: **"inspecting only `packages/harness` at npm `gitHead` does not establish the runtime MCP behavior."**
+
+When a published package wraps a patched runtime, `gitHead` answers *"what did we package?"*, not *"what will execute?"*. Auditing plugin or harness behavior from `gitHead` alone reads the wrong tree. Related: [[marcusrbrown--systematic]]'s `HARNESSES.md`, which solves the adjacent honesty problem by making unverified matrix cells say the literal string `UNVERIFIED` rather than defaulting to an optimistic assumption.
+
+## Explicit Prompt-Cache Anchoring Reaches Only Anthropic-Family Models (2026-09-10)
+
+Measured from the consumer side at [[marcusrbrown--dotfiles]] and filed upstream as `anomalyco/opencode#48246`. This is the first observation on this page that gives a **non-preference, economic reason to prefer one model family** in an OpenCode routing config.
+
+**The mechanism.** OpenCode's `applyCaching()` in `packages/opencode/src/provider/transform.ts` places explicit cache breakpoints on the first two system messages and **the last two non-system messages** — an anchor that advances every turn as the conversation grows. Its call site gates on model family:
+
+```ts
+if (
+  (model.providerID === "anthropic" ||
+    model.api.id.includes("anthropic") ||
+    model.api.id.includes("claude") ||
+    model.api.npm === "@ai-sdk/anthropic" || …) &&
+  model.api.npm !== "@ai-sdk/gateway" &&
+  !usesAnthropicAutomaticCaching
+) {
+  msgs = applyCaching(msgs, model)
+}
+```
+
+A model on `@ai-sdk/openai` matches none of the disjuncts, so the function never runs and reuse falls back to OpenAI's implicit prefix cache — which truncates at the first differing byte and **has nothing to re-anchor**. The `openrouter` / `bedrock` / `copilot` / `openaiCompatible` keys inside `applyCaching()`'s own provider map exist for Claude routed *through* those gateways; the absence of an `openai` key is a consequence of the gate, not a gap in the map.
+
+**Measured over 10 days of real sessions:**
+
+| provider/model | family | turns | reuse | collapsed |
+|---|---|---|---|---|
+| anthropic/claude-sonnet-5 | claude | 17,615 | 100.0% | 0.0% |
+| anthropic/claude-opus-5 | claude | 11,499 | 100.0% | 0.1% |
+| openai/gpt-6-astra | other | 1,691 | 92.1% | 8.5% |
+| openai/gpt-5.6-sol | other | 343 | 64.9% | 27.4% |
+| github-copilot/gpt-5.4-mini | other | 2,768 | 80.1% | 18.3% |
+| github-copilot/gemini-3.5-flash | other | 693 | 91.3% | 4.6% |
+
+The row that settles it: **`github-copilot` serves Claude at 100% and its own GPT and Gemini models at 80.1% and 91.3%** — same provider, opposite behavior. A provider-shaped reading of this data reaches the wrong conclusion; the split is by **model family**.
+
+**Three measurement rules that generalize past this bug**, all from the same investigation:
+
+1. **Normalize for the provider's reporting convention before comparing.** Anthropic reports `input` *exclusive* of cache reads; OpenAI reports it *inclusive*. Use `reuse = cached / (input + cached)`. The naive `cached / input` produced an Anthropic row at **12,509,400%** — nonsense loud enough to catch, which is luckier than it sounds.
+2. **Collapse run-lengths into episodes before drawing a conclusion.** A collapsed turn is a symptom; an episode is the event. Here 144 collapsed turns decomposed into **84 onsets with a median episode length of 1 turn**, and 64 single-turn episodes carried 48.2% of all waste — ordinary rewarming that recovers by itself. The headline "8.5% of turns cause 89% of the waste" reads as a systemic condition worth tuning against; the episode view shows the actionable remainder is **two long episodes carrying 30.5%**, a targeted-recovery problem rather than a threshold problem.
+3. **Read the formula in the installed bundle, not the config key name.** Magic Context computes its history-summary budget as `Math.floor(displayContextLimit * (Math.min(executeThresholdPercentage, 80) / 100) * historyBudgetPercentage)`. The `Math.min(…, 80)` makes 80 a **ceiling**: lowering `execute_threshold_percentage` to 65 cuts the history budget by exactly 18.75% and buys nothing, while raising it above 80 does nothing at all. **A knob can be capped, and the config key will not say so.**
+
+Three hypotheses were reasoned to confidently and then killed by measurement — worth not re-walking: that encrypted reasoning items were not being requested (they were, via an npm-keyed switch rather than the suspected gate); that compaction causes the collapse (one affected session never compacted; only 13 of 84 onsets follow one); and that lowering the context threshold would cut the blast radius (see rule 3). Diagnostic detail: every observed cached value is an exact multiple of **128**, matching OpenAI's documented prefix-match increment, and one collapse recurred **12 seconds** after the prefix was written — so not TTL expiry.
+
+**There is no local workaround.** Placing a breakpoint requires `providerOptions.<ns>.promptCacheBreakpoint` on a content block; `chat.params` exposes only request-level `options`, and the published `TextPart` type carries `metadata` but no `providerOptions`, with no mapping between them anywhere in the build. A plugin cannot reach the seam.
+
+**Consequence for routing configs.** [[marcusrbrown--dotfiles]] flips its active OMO-slim preset and per-seat models several times a quarter. Under this finding, each flip between an Anthropic seat and an OpenAI/Copilot seat is also a cache-economics decision, and the two are not comparable on price-per-token alone.
+
+## `.config/cortexkit/` — Per-Harness Model Blocks in a Third-Party Plugin Config (2026-09-10)
+
+The multi-harness architecture recorded at [[marcusrbrown--systematic]] (one content source, three shipped adapters, all peers optional) has reached the **config layer of a different vendor's package**. `@cortexkit/opencode-magic-context` and `@cortexkit/aft-opencode` moved their config out of `.config/opencode/` into a plugin-owned `.config/cortexkit/`, and their agent definitions replaced a flat `model` key with sibling harness blocks:
+
+```jsonc
+"historian": {
+  "temperature": 0.1,
+  "permission": { "bash": "deny", "webfetch": "deny", "edit": "deny" },
+  "opencode": { "model": "anthropic/claude-sonnet-5", "variant": "medium" },
+  "pi":       { "model": "anthropic/claude-sonnet-5" }
+}
+```
+
+Two observations. First, **the config-path move is what made the tuning survivable**: this same file was *deleted* at 2026-07-10 and the wiki recorded that as a deliberate simplification ("deferring behavior to upstream plugin defaults"). It was not — the tuning returned intact the moment upstream provided a stable, vendor-owned home for it. A config file's disappearance is weak evidence about intent when the plugin is still moving its own conventions.
+
+Second, **the asymmetry between the two blocks mirrors the upstream capability matrix**: the `opencode` block carries a `variant`, the `pi` block does not. This is the same shape as `HARNESSES.md`'s honest two-tier matrix — content portability and capability portability are different claims — showing up as a *schema* fact in an unrelated package rather than as documentation. See [[pi-coding-agent]].
+
+**2026-09-15 — the same vendor's state directory appears at repository scope.** [[bfra-me--ha-addon-repository]], an infrastructure template with no OpenCode plugin, no `package.json`, and no JS runtime, added `.cortexkit/.gitignore` containing a fenced managed block:
+
+```gitignore
+# >>> cortexkit:magic-context
+magic-context/
+# <<< cortexkit:magic-context
+```
+
+Two small but real extensions to the observation above. First, `@cortexkit/*` adoption is not confined to a user's `~/.config` — **magic-context materializes per-project state inside the repository it operates on**, and the plugin manages its own ignore rules there with fenced begin/end markers (the same idempotent-edit convention `mise`, `sheldon`, and shell framework installers use, and the right one: it makes the block re-writable without clobbering a hand-edited file).
+
+Second, it means an agent-tooling artifact is now committed to a **template repository**, so every fork inherits an ignore rule for a plugin the forker may not run. Harmless — it ignores a directory that will not exist — but it is the first observed case of agent-plugin state crossing into a fork-propagated tree, and the general caution from [[bfra-me--ha-addon-repository]]'s interval applies: a template artifact should state which repository it is about, and this one does not.
+
+A third, smaller item from the 2026-09-10 config: `dreamer` replaced a single `schedule: "00:00-08:00"` window with a **nine-task cron scheduler** (`verify`, `verify-broad`, `curate`, `classify-memories`, `retrospective`, `maintain-docs`, `map-memories`, `evaluate-smart-notes`, `review-user-memories`), with an empty schedule string used as the disable mechanism for one task.
+
+## Preset References Are Not Validated Against Registered Servers (2026-09-10)
+
+`oh-my-opencode-slim` presets name MCP servers and skills as bare strings. Nothing checks them against `opencode.json`'s `mcp` block or against any installed skill tree. At [[marcusrbrown--dotfiles]] the `librarian.mcps` array in **all six presets** reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` while exactly two servers are registered — four dangling names — and two skill names in every `designer` array (`brand-voice`, `impeccable`) live in neither local skills tree.
+
+The instructive part is the history. The same drift was recorded on 2026-07-10 (`tavily`, one name), reported as **repaired** on 2026-08-26 ("updated in lockstep, so no stale reference this time"), and returned four-deep on 2026-09-10. **The lockstep was a property of one edit, not an enforced invariant** — so "it was fixed last time" is not evidence about this time when the mechanism that fixed it was a person noticing. A dangling MCP name fails silently at agent-construction time, which is why the drift can widen for weeks without a signal. Any config that names capabilities in one file and registers them in another needs a check, not a habit.
+
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Was the largest OpenCode plugin; **as of v3 a three-harness workflow system** (OpenCode + [[pi-coding-agent]] + Claude Code, all peers optional). v3 boundary is **`3.0.0`, 2026-07-17** (the earlier `v3.2.5`/07-22 reading was a downstream artifact); catalog contracted 104 → 73 components (37 agents / 31 skills); discovered-skills-as-slash-commands added v2.33.0
@@ -505,6 +729,7 @@ A checked-out repository can *choose* a routing overlay but cannot *author* one.
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
-- [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
+- [[marcusrbrown--dotfiles]] — The ecosystem's reference *consumer* config: `.agents/skills/` skill bus, seven pinned OpenCode plugins, six OMO-slim routing presets, and `.config/cortexkit/` per-harness plugin config. Source of the 2026-09-10 findings above on prompt-cache anchoring, per-harness model blocks, and unvalidated preset references
+- [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

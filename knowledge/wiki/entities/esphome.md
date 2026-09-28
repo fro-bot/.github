@@ -2,7 +2,7 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-09-06
+updated: 2026-09-14
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -30,6 +30,14 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 150e0597ef657ef60ce7c38b83cab743f3e5016b
     accessed: 2026-09-06
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: fd398954a17ea11c94c68f4f0708cd6356e65191
+    accessed: 2026-09-14
+  - url: https://github.com/bfra-me/renovate-config
+    sha: 8806d6b6ec8cd42b3b23c8bd926e9eb1e6a79fd3
+    accessed: 2026-09-14
+  - url: https://github.com/esphome/esp-web-tools/releases/latest
+    accessed: 2026-09-14
 tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy, calendar-versioning]
 aliases: [esphome, esphome-life]
 related:
@@ -66,9 +74,11 @@ The install page's widget is loaded from a hand-written `https://unpkg.com/esp-w
 
 ## Version Pinning
 
-ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across **ten** surveys spanning 2026-04 → 2026-08-30, ~5.6 months). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. Reinforcing this read: on 2026-08-01 the *tooling* around ESPHome finally advanced — `esphome/build-action` bumped v7.3.0 → v7.4.0 — while the ESPHome runtime version it builds stayed frozen. Renovate is clearly reaching this repo; the `depName=esphome/esphome versioning=loose` datasource comment on the pinned `version:` is what holds the runtime still. The upstream ESPHome project has continued releasing (2026.x series).
+ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across **eleven** surveys spanning 2026-04 → 2026-09-14, ~5.9 months; the `ci.yaml` blob is byte-identical across that whole span). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. Reinforcing this read: on 2026-08-01 the *tooling* around ESPHome finally advanced — `esphome/build-action` bumped v7.3.0 → v7.4.0 — while the ESPHome runtime version it builds stayed frozen. Renovate is clearly reaching this repo; the `depName=esphome/esphome versioning=loose` datasource comment on the pinned `version:` is what holds the runtime still. The upstream ESPHome project has continued releasing (2026.x series).
 
 ### Drift quantified (2026-08-30)
+
+> **Partially superseded 2026-09-14** — the drift arithmetic below holds, but the "invisible / no PR is ever opened" root cause does not. See [Correction (2026-09-14)](#correction-2026-09-14-it-was-never-invisible--it-was-approval-gated-all-along).
 
 The upstream `esphome/esphome` latest release is **2026.8.1** (published 2026-08-23). The pin at 2025.12.7 is therefore roughly **eight months and nine calendar-versioned minor series behind**. In the same window Renovate landed 13 PRs against this repo — six `bfra-me/.github` minor boundaries, a Pages-deploy-action bump, three preset bumps — without proposing a single ESPHome bump.
 
@@ -100,6 +110,43 @@ Same root cause, same frozen version, opposite failure signatures. Visible-and-s
 **Corollary to the rule above:** `separateMinorPatch: false` on a calver dependency does not just hide the jump, it removes the *incremental escape route*. Keep the split, and a stalled major at least leaves a merged trail of patches behind it.
 
 Upstream at 2026-09-06 is **2026.8.2** per ha-config's dependency dashboard (was 2026.8.1 on 2026-08-30) — the series continues to move while both consumers hold.
+
+### Correction (2026-09-14): it was never invisible — it was approval-gated all along
+
+Direct read of [[marcusrbrown--esphome-life]]'s Dependency Dashboard (issue #26) at HEAD `fd39895` **falsifies the "invisible" half** of the 2026-08-30 finding above, and collapses the comparison table into a single mechanism.
+
+Renovate detects every ESPHome dependency in that repo, resolves the target, and has prepared the branches:
+
+```text
+docker.io/ptr727/esphome-nonroot 2025.12.7 → [Updates: 2026.8.2]   (.devcontainer.json)
+esphome/esphome 2025.12.7                  → [Updates: 2026.8.2]   (.github/workflows/ci.yaml, regex manager)
+```
+
+Both sit under `## Pending Approval` as unchecked checkboxes. **No PR is opened not because nothing is asking, but because `dependencyDashboardApproval` stops the branch from ever being created.** The gate is inherited: `bfra-me/renovate-config#5.2.7`'s `default.json5` carries `matchUpdateTypes: ['major'] → extends: [':approveMajorUpdates']`, and `separateMajorMinor: false` in the repo's own package rule guarantees that *every* ESPHome bump — year rollover or not — lands in the `major` bucket that rule gates.
+
+The corrected table:
+
+| | [[marcusrbrown--esphome-life]] | [[marcusrbrown--ha-config]] |
+| --- | --- | --- |
+| Classification | `major` (via `separateMajorMinor: false`) | `major` (calver year rollover) |
+| Gate | `dependencyDashboardApproval` — branch never created | automerge covers only `minor`/`patch` — PR created, never merged |
+| Symptom | unchecked checkbox on the Dependency Dashboard | PR **#777**, open since 2026-05-14 |
+| Visible where | issue #26 body | the PR list |
+| Elapsed at 2026-09-14 | ~5.9 months | ~123 days |
+
+So the two repos differ in **which surface the stall is parked on**, not in whether it is observable. Both are visible; only one is visible to an audit that counts open PRs. The 2026-08-30 row that read "Detectability: invisible — looks like upstream is quiet" was an artifact of the instrument, not a property of the configuration.
+
+**Revised rules.** The 2026-08-30 generalization ("calendar-versioned upstreams and `versioning: loose` are a bad pairing") survives but for a different reason, and one clause is withdrawn:
+
+1. **Withdrawn:** "loose versioning has no notion of a calver year rollover … the net effect is a rule that made bumps *invisible*." Loose versioning classifies the bump fine. It is `separateMajorMinor: false` that makes the classification `major`, and an inherited org preset that makes `major` mean "wait for a human."
+2. **Stands, strengthened:** collapsing `separateMajorMinor`/`separateMinorPatch` on a calver dependency removes the incremental escape route *and* promotes the whole series into whatever policy the org applies to majors. On a fleet where majors are approval-gated by default, that single flag converts an automerging dependency into a permanently parked one. It is a two-token change with org-policy-level consequences, written locally by someone optimizing PR tidiness.
+3. **New:** when a pin looks frozen under a live bot, **read the Dependency Dashboard body before concluding anything about detection**. Absence from the PR list and absence from the dashboard are different findings with different fixes — the first needs a policy decision, the second needs a custom manager.
+
+### ESP Web Tools drift quantified (2026-09-14)
+
+The untracked CDN pin has a number now. `static/index.md` still hand-writes `esp-web-tools@8.0.3`; upstream `esphome/esp-web-tools` latest is **10.4.0** (published 2026-07-15) — **two majors behind**, on the only artifact users' browsers execute.
+
+This is the genuinely invisible case, and worth contrasting with the ESPHome pin directly: ESPHome appears in the dashboard's `Detected Dependencies` with a resolved target and a waiting checkbox; `esp-web-tools` appears **nowhere**, because no manager claims a markdown `<script src>`. One is a decision nobody made; the other is a dependency nobody declared. Filing them together — as the 2026-08-30 survey did under "invisible to Renovate" — hides the fact that they need different repairs.
 
 ## External Links
 
