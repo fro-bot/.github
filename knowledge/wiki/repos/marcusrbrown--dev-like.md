@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/dev-like
 created: 2026-07-12
-updated: 2026-08-30
+updated: 2026-09-28
 sources:
   - url: https://github.com/marcusrbrown/dev-like
     sha: c7defd9c89568909f8a598b1e3d37b204414e257
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/dev-like
     sha: 218aa444da9e7ffafffecfdbae50b6229427c6c6
     accessed: 2026-08-30
+  - url: https://github.com/marcusrbrown/dev-like
+    sha: 0d604821930faafd600f5ccc342ab4ea166b0567
+    accessed: 2026-09-28
 tags:
   - agent-skills
   - claude-code
@@ -45,6 +48,18 @@ node_id: R_kgDOTVrJ0w
 ---
 
 # marcusrbrown/dev-like
+
+## Limited re-survey — 2026-09-28
+
+Public `main` at `0d604821930faafd600f5ccc342ab4ea166b0567`. This pass read only directory listings, the root README, root and docs package manifests, and the seven workflows. It does **not** re-check historical run results, publication history, registry entry contents, or the implementation of the validators. The older observations below remain dated snapshots.
+
+- The root package is still `dev-like` **0.4.1**, Node `>=20`, with no declared runtime dependencies; `docs/package.json` now declares Playwright **1.63.0** (1.62.1 at the August snapshot). The release workflow installs npm **11.20.0** (11.19.0 in August). This verifies manifest/workflow pins, not that npm has published a new version.
+- The README and directory listing still show **five** registry profile directories (`37signals`, `every`, `linear`, `oxide`, `theo`). The current README labels `theo` **“generated on demand”** while `registry/theo/skill/develop-like-theo/` still exists in the tree. This is a documentation/distribution ambiguity, not proof the generated artifact is absent. It qualifies the older assertion that every profile ships a generated skill; the actual CLI behavior was not inspected in this pass.
+- The seven workflows are present and listed as active by `gh workflow list`: **Fro Bot is present**, two-mode (`autoheal` and `pr-review`), daily at `30 14 * * *`, now pinned to `fro-bot/agent@e6efc1f` (**v0.117.0**). No missing-workflow follow-up is warranted. The inline prompt still guards provenance, consent, release steps, zero runtime deps, and changesets. Its failure-report step now posts to the rolling issue when a run fails or is cancelled, independently of the agent's own no-safe-fix report. Workflow presence and active registration do not establish successful recent runs.
+- Renovate and settings-sync reuse `bfra-me/.github` **v4.34.0** (`55859d5`), up from v4.22.0. The CI job still runs `bun run validate` and `bun run test`; the site workflow also runs docs tests/build before Pages deploy. The weekly link-check workflow uses `gh issue create --body-file` when its failure artifact exists — the correctly expanded flag, in contrast to the historical agent `--body @path` incident. The release remains Changesets + npm OIDC with an App token for version PRs.
+- The prior dangling-index-schema finding remains **open at the directory level**: `registry/schema/` lists only `entry.schema.json`, not `index.schema.json`. This pass did not read `registry/index.json` or execute validation, so whether the index still references that missing path is unverified. Likewise, the older queue, autoheal-convergence, site-dormancy, and eval verdicts were not re-measured.
+
+**Existing attribution correction:** the earlier claim below that `_extends: .github:common-settings.yaml` resolves to `fro-bot/.github` conflicts with the later [[probot-settings]] finding: this short form resolves to the **owner's `marcusrbrown/.github`**. Retain the dated claim as history, but use the corrected owner resolution; settings.yml was not read in this pass.
 
 **dev-like** profiles a tech company or developer's engineering culture from **public sources only** and distills it into an installable, spec-compliant [Agent Skill](https://agentskills.io): `develop-like-every`, `develop-like-theo`, `develop-like-<your-heroes>`. Its tagline: _"Steal the workflow, not the code. `/dev-like Every` and your agent develops like the shops you admire — with receipts."_ Every claim in a generated skill links to the public source it came from: **no source, no claim.**
 
@@ -304,6 +319,7 @@ Unchanged and re-confirmed by the daemon's own probes: **code scanning is not en
 
 | Date       | HEAD      | Notes                                                                                       |
 | ---------- | --------- | ------------------------------------------------------------------------------------------- |
+| 2026-09-28 | `0d60482` | Limited README/manifest/workflow/directory survey. Five registry directories and seven active workflows; Fro Bot pin v0.117.0, reusable workflows v4.34.0, npm release install 11.20.0, docs Playwright 1.63.0. README says Theo's skill is generated on demand although its generated directory is present. Previous schema-path finding only partially re-checked; run and publication outcomes not measured. |
 | 2026-07-12 | `c7defd9` | Initial survey. Brand-new repo (created 2026-07-11). Four-in-one artifact (skill + Claude plugin/marketplace + npm CLI + registry). 2 seed profiles (`every`, `theo`). OIDC-trusted-publish + Changesets + `mrbro-bot` release. Zero runtime deps. **No Fro Bot workflow** — onboarding follow-up candidate. |
 | 2026-08-30 | `218aa444` | Third survey. **Steady state — the tree did not move.** 30 commits, all `mrbro-bot[bot]` Renovate automerges; recursive blob path list byte-identical to `a2a30b6` (135 files); `ci.yaml`/`renovate.json5`/`settings.yml`/`package.json`/`README.md`/`AGENTS.md`/`registry/index.json` all diff clean; `fro-bot.yaml` differs on one line. Deltas: agent **v0.96.0 → v0.105.1** (`e9501a9`, 12 bumps, crosses cosmetic v0.100), `bfra-me/.github` reusable **v4.16.42 → v4.22.0**, `npm` 11.18.0 → 11.19.0, `playwright` 1.62.0 → 1.62.1. **Publish drought ~40 days** (npm latest `0.4.1`, 2026-07-20; all six releases in a 9-day July burst); **registry frozen at 5** profiles, no community PR. **Queue inverted vs the fleet: 0 open PRs**, 2 open issues (#41 Dependency Dashboard, #10 rolling autoheal) — every Renovate PR merged same-day. **Converged autoheal:** 53 comments on #10, all "No safe fix found. Repo remains healthy. No PR opened." Two new findings: **(1)** the 2026-08-26 autoheal comment posted as a literal `@/tmp/opencode/autoheal-comment-final.md` (`gh --body` doesn't expand `@`; `--body-file` does) — one of 53 reports lost silently; **(2)** `registry/index.json` `$schema` points at a nonexistent `registry/schema/index.schema.json`, invisible to both `validate.mjs` and `check-links.mjs`. **Correction:** `DESIGN.md`/`LAUNCH.md` were absent already at `a2a30b6` — the 2026-07-31 page carried that section forward unverified. Recorded late: 15-line `AGENTS.md` invariant sheet, 9-doc `docs/solutions/` compound-docs corpus (same `module`/`tags`/`problem_type` convention as `fro-bot/.github`), `evals/triggers/` second harness (60 verdicts/skill, 10/10 + 10/10), OPTOUT issue forms, and the "no re-enable Renovate" / AFT-skepticism autoheal boundaries. Gap carried: no CodeQL/Scorecard (code scanning API 404). Stars 2, forks 1 → 0. |
 | 2026-07-31 | `a2a30b6` | Second survey. **Scaffold → shipped.** npm **v0.1.1 → v0.4.1**; live Astro/Starlight docs site at `mrbro.dev/dev-like/` (`site.yaml`, workspace `docs/`); registry **2 → 5** profiles (+`37signals`/`linear`/`oxide`, all org `self-published`, each shipping a generated skill in-repo); new `evals/paired/` A/B harness (honest n=1 null result). **All four prior onboarding threads resolved:** Fro Bot workflow (two-mode autoheal+pr-review, agent **v0.96.0**, invariant-encoding prompts, rolling "Fro Bot Autoheal" issue), Renovate (`renovate.json5` extends [[marcusrbrown--renovate-config]]), Probot Settings (`settings.yml` extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). Zero runtime deps holds. Stars 1→2, forks 0→1, +`portfolio` topic. Remaining gap: no CodeQL/Scorecard. |

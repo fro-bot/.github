@@ -6646,3 +6646,15 @@ Sources: https://github.com/marcusrbrown/containers/tree/2c473db0db8ca362b0e4039
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-09-28 11:49] ingest | marcusrbrown/dev-like
+
+Limited public-repository survey at `0d604821930faafd600f5ccc342ab4ea166b0567`. Updated [[marcusrbrown--dev-like]], [[github-actions-ci]], and the index additively. The root manifest still declares `dev-like` 0.4.1 with zero runtime dependencies; the docs manifest declares Playwright 1.63.0. The README and directory listing show five registry profiles, but README now labels Theo's skill “generated on demand” despite a checked-in generated-skill directory. Seven active workflows remain, including the two-mode Fro Bot workflow at v0.117.0; Renovate and settings sync use `bfra-me/.github` v4.34.0, and release installs npm 11.20.0. The Fro Bot workflow has a separate failure-to-rolling-issue step. The directory-level index-schema gap persists, but the current index reference was not checked. Older queue, run, release, and eval outcomes were not re-measured. Reads were limited to listings, README, manifests, and workflows. No target issue was used as a survey notice.
+
+Sources: https://github.com/marcusrbrown/dev-like/tree/0d604821930faafd600f5ccc342ab4ea166b0567, https://github.com/marcusrbrown/dev-like/blob/0d604821930faafd600f5ccc342ab4ea166b0567/.github/workflows/fro-bot.yaml
+
+## [2026-09-28 11:50] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like

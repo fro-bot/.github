@@ -2,6 +2,13 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-09-28 limited re-survey: [[marcusrbrown--dev-like]] remains a public
+five-profile, seven-workflow project at `0d60482` with an active Fro Bot
+workflow now pinned v0.117.0. [[github-actions-ci]] records its separate
+workflow-failure reporting path; README's Theo distribution claim differs
+from the present generated-skill directory. Earlier run and release claims
+were not re-verified.
+
 Updated catalog entries: [[fro-bot--dashboard]] (repo) and
 [[github-actions-ci]] (topic), 2026-09-26.
 
