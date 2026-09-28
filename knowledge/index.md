@@ -2,12 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
-2026-09-28 limited re-survey: [[marcusrbrown--dev-like]] remains a public
-five-profile, seven-workflow project at `0d60482` with an active Fro Bot
-workflow now pinned v0.117.0. [[github-actions-ci]] records its separate
-workflow-failure reporting path; README's Theo distribution claim differs
-from the present generated-skill directory. Earlier run and release claims
-were not re-verified.
+2026-09-28 limited re-survey: [[marcusrbrown--marcusrbrown-github-io]]
+still names the mrbro.dev repo (not the renamed brand site). Fro Bot is present
+at v0.113.2 with explicit scheduled `branch-pr` delivery; [[github-actions-ci]]
+records selective PR check gating and the visual-suite success wording that
+overstates screenshot matching. These two existing pages were updated.
 
 Updated catalog entries: [[fro-bot--dashboard]] (repo) and
 [[github-actions-ci]] (topic), 2026-09-26.

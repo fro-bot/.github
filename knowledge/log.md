@@ -6647,14 +6647,14 @@ Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
 
-## [2026-09-28 11:49] ingest | marcusrbrown/dev-like
+## [2026-09-28 11:47] ingest | marcusrbrown/marcusrbrown.github.io
 
-Limited public-repository survey at `0d604821930faafd600f5ccc342ab4ea166b0567`. Updated [[marcusrbrown--dev-like]], [[github-actions-ci]], and the index additively. The root manifest still declares `dev-like` 0.4.1 with zero runtime dependencies; the docs manifest declares Playwright 1.63.0. The README and directory listing show five registry profiles, but README now labels Theo's skill “generated on demand” despite a checked-in generated-skill directory. Seven active workflows remain, including the two-mode Fro Bot workflow at v0.117.0; Renovate and settings sync use `bfra-me/.github` v4.34.0, and release installs npm 11.20.0. The Fro Bot workflow has a separate failure-to-rolling-issue step. The directory-level index-schema gap persists, but the current index reference was not checked. Older queue, run, release, and eval outcomes were not re-measured. Reads were limited to listings, README, manifests, and workflows. No target issue was used as a survey notice.
+Limited survey of the public `main` ref at `aa563beb2426b9bd94ff26a5d35ea48042050b7b` (repo id `1174807412`, mrbro.dev; distinct from the former brand site now [[marcusrbrown--marcusrbrown-com]]). Updated [[marcusrbrown--marcusrbrown-github-io]] and [[github-actions-ci]] additively and cataloged both in `index.md`. The Fro Bot workflow is present, now pinned to agent v0.113.2 with scheduled `branch-pr` delivery configured; no missing-workflow follow-up is warranted. PR-only path filters selectively gate test/build/type-check/E2E/performance work, while non-PR runs bypass filters; category mapping was not inspected. The visual-test README explicitly disclaims automated screenshot comparison, contradicting the E2E workflow's “All screenshots matched” success message. pnpm advanced to 11.27.0, Vitest to 4.1.11, Playwright to 1.63.0; eight workflow files remain, and the audit gate and step-scoped optional analytics build variable persist. Reads were limited to listings, README files, manifests, and workflow files; no issue/PR or observed run was surveyed. No GitHub issue was opened, updated, or commented on for this ingest.
 
-Sources: https://github.com/marcusrbrown/dev-like/tree/0d604821930faafd600f5ccc342ab4ea166b0567, https://github.com/marcusrbrown/dev-like/blob/0d604821930faafd600f5ccc342ab4ea166b0567/.github/workflows/fro-bot.yaml
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/aa563beb2426b9bd94ff26a5d35ea48042050b7b, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/.github/workflows/fro-bot.yaml, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/.github/workflows/e2e-tests.yaml, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/tests/visual/README.md
 
-## [2026-09-28 11:50] ingest | repo:marcusrbrown/dev-like
+## [2026-09-28 11:52] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/dev-like
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
