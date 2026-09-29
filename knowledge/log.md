@@ -6658,3 +6658,15 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/aa563beb242
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-09-29 11:29] ingest | bfra-me/.github
+
+Limited survey of public `main` HEAD `0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f` using only directory listings, README, manifests, and workflows. Updated [[bfra-me--github]] and [[github-actions-ci]] additively and refreshed their index catalog. The 16-workflow layout and three custom actions remain; the private root manifest is v4.34.0 with pnpm 11.28.0 and TypeScript 6.0.3, while `.node-version` remains 24.21.0. Fro Bot is present at v0.117.0. Its one-step agent workflow still omits explicit `output-mode` and a downstream delivery step despite prompt instructions to branch, commit, push, and open a PR; this is a workflow-level contradiction, not a new claim about run outcomes. The README still names `elstudio/actions-settings` for settings sync, but the workflow invokes the local action. No missing-workflow follow-up is needed. Earlier operational counts were not rechecked. No issue or PR was used as a run notice.
+
+Sources: https://github.com/bfra-me/.github/tree/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f, https://github.com/bfra-me/.github/blob/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f/.github/workflows/fro-bot.yaml, https://github.com/bfra-me/.github/blob/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f/.github/workflows/update-repo-settings.yaml
+
+## [2026-09-29 11:31] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github

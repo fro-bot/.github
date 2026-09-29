@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-09-14
+updated: 2026-09-29
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -28,6 +28,9 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: a4180e7c31b3738c29fa3906902ec45e35d42a30
     accessed: 2026-09-14
+  - url: https://github.com/bfra-me/.github
+    sha: 0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f
+    accessed: 2026-09-29
 tags:
   - bfra-me
   - dotgithub
@@ -55,6 +58,14 @@ node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
+
+## Limited workflow and manifest re-survey (2026-09-29)
+
+At public `main` HEAD `0c1cf271`, the directory listing still contains **16 workflow files** and the three custom action manifests. The root `package.json` declares private `@bfra.me/.github` **4.34.0**, pnpm **11.28.0**, TypeScript **6.0.3**, and `quality-check` (type-check, lint, build, test); `.node-version` remains **24.21.0**. `main.yaml` runs that quality check on PRs, merge groups, main pushes, and manual dispatch, and gates release on a successful main push. The source `README.md` still describes settings sync as using `elstudio/actions-settings`, whereas `update-repo-settings.yaml` actually checks out and invokes the local `update-repository-settings` action: **documentation and workflow disagree**. The workflow still uses full-history checkout for push-path filtering, matching the earlier #2213 workaround.
+
+**Fro Bot is present**, as a single `fro-bot.yaml` with a daily 15:30 UTC pass and review/autoheal dispatch modes, now pinned to `fro-bot/agent@v0.117.0`. The workflow ends at `Run Fro Bot`, supplies no `output-mode`, and has no later delivery step. Its embedded autoheal prompt still demands that the agent create a branch, commit, push, and open a PR itself. This is the same structural delivery-contract contradiction documented at the 2026-09-14 survey, **not evidence that any specific run discarded a fix today**: the present pass did not inspect runs or generated artifacts. A missing-Fro-Bot-workflow follow-up is not warranted. See [[github-actions-ci]] for the cross-repo delivery-mode pattern.
+
+The earlier 2026-09-14 issue/PR counts, incident duration, and claims about observed scheduled runs remain dated observations; they were not re-measured in this restricted survey.
 
 Org control center for the `bfra-me` GitHub organization. This is the
 canonical home of the org's reusable workflows, custom GitHub Actions,

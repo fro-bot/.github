@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-28
+updated: 2026-09-29
 sources:
+  - url: https://github.com/bfra-me/.github
+    sha: 0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f
+    accessed: 2026-09-29
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: aa563beb2426b9bd94ff26a5d35ea48042050b7b
     accessed: 2026-09-28
@@ -226,6 +229,10 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-09-29 — bfra-me delivery contract remains structurally unresolved
+
+The current [[bfra-me--github]] `fro-bot.yaml` still has a single agent job whose last step invokes `fro-bot/agent@v0.117.0` with no `output-mode` input and no later delivery step. The autoheal prompt explicitly requires branch/commit/push/PR delivery, so the workflow still carries the 2026-09-14 contradiction between requested output and the caller's write path. This re-survey verifies YAML structure only; it does not establish what any September 29 run actually delivered. The same repo's `main.yaml` now explicitly includes `merge_group` among its quality-check triggers, so the quality-check job can run for merge queues as well as PRs.
 
 ## 2026-09-28 — selective checks must report their evidence state
 
