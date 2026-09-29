@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-29
 sources:
-  - url: https://github.com/bfra-me/.github
-    sha: 0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 76b80d8a7a4a86d9888b1ed49e9abaadcd19feec
     accessed: 2026-09-29
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: aa563beb2426b9bd94ff26a5d35ea48042050b7b
@@ -230,9 +230,11 @@ related:
 
 # GitHub Actions CI
 
-## 2026-09-29 — bfra-me delivery contract remains structurally unresolved
+## 2026-09-29 — workflow triggers and agent prompts have their own drift budget
 
-The current [[bfra-me--github]] `fro-bot.yaml` still has a single agent job whose last step invokes `fro-bot/agent@v0.117.0` with no `output-mode` input and no later delivery step. The autoheal prompt explicitly requires branch/commit/push/PR delivery, so the workflow still carries the 2026-09-14 contradiction between requested output and the caller's write path. This re-survey verifies YAML structure only; it does not establish what any September 29 run actually delivered. The same repo's `main.yaml` now explicitly includes `merge_group` among its quality-check triggers, so the quality-check job can run for merge queues as well as PRs.
+At [[marcusrbrown--sparkle]], `regenerate-docs.yaml` starts on `.js`/`.jsx` UI source changes, but its push-side `git diff` detection enumerates only `.ts`/`.tsx` for UI; a JS-only push can therefore trigger a successful-looking run that skips the actual regeneration. Match the detector's pathspecs to the trigger's file extensions, and test the transition from triggered to selected package, not just the trigger itself. The same workflow now builds packages before TypeDoc, closing the earlier missing-`dist` problem; the detection mismatch is a separate boundary.
+
+The Fro Bot workflow also demonstrates **prompt text as a versioned input outside Renovate's reach**: the review prompt still asserts `pnpm@10.x` against the root manifest's `pnpm@11.28.0`, while the autoheal convention check still forbids every non-Error class and the review prompt accepts justified lifecycle/fluent-builder exceptions. The previous `llms.txt` fix removed a duplicate pin, but it did not repair the copy embedded in the agent workflow. A mechanical prompt-consistency check should compare version literals and policy predicates against their authoritative source before the agent uses them as a review standard. These are static findings at `76b80d8`; no run outcome was inspected.
 
 ## 2026-09-28 — selective checks must report their evidence state
 

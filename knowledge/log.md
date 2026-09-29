@@ -6659,14 +6659,14 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-09-29 11:29] ingest | bfra-me/.github
+## [2026-09-29 11:25] ingest | marcusrbrown/sparkle
 
-Limited survey of public `main` HEAD `0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f` using only directory listings, README, manifests, and workflows. Updated [[bfra-me--github]] and [[github-actions-ci]] additively and refreshed their index catalog. The 16-workflow layout and three custom actions remain; the private root manifest is v4.34.0 with pnpm 11.28.0 and TypeScript 6.0.3, while `.node-version` remains 24.21.0. Fro Bot is present at v0.117.0. Its one-step agent workflow still omits explicit `output-mode` and a downstream delivery step despite prompt instructions to branch, commit, push, and open a PR; this is a workflow-level contradiction, not a new claim about run outcomes. The README still names `elstudio/actions-settings` for settings sync, but the workflow invokes the local action. No missing-workflow follow-up is needed. Earlier operational counts were not rechecked. No issue or PR was used as a run notice.
+Limited public-repo survey of `main` HEAD `76b80d8a7a4a86d9888b1ed49e9abaadcd19feec`. Updated [[marcusrbrown--sparkle]] and [[github-actions-ci]] additively and refreshed their catalog notes in `knowledge/index.md`. Seven workflows remain listed, including Fro Bot at v0.117.0 with the autoheal-only `branch-pr` delivery gate; no missing-workflow follow-up is needed. Root pnpm advanced to 11.28.0 and turbo to 2.11.4. The Fro Bot review prompt still asserts pnpm 10.x and the autoheal class predicate conflicts with its review prompt's exceptions; the docs regeneration workflow's JS/JSX trigger paths are absent from its internal push detector. These are static contradictions, not verified run failures. Root `typedoc` remains pinned and the build allowlist still omits `@parcel/watcher`; earlier issue/PR states were not rechecked. Target reads were restricted to directory listings, README files, manifests, and workflows. Existing working-tree edits were preserved; no target issue/PR was used as a survey notice.
 
-Sources: https://github.com/bfra-me/.github/tree/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f, https://github.com/bfra-me/.github/blob/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f/.github/workflows/fro-bot.yaml, https://github.com/bfra-me/.github/blob/0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f/.github/workflows/update-repo-settings.yaml
+Sources: https://github.com/marcusrbrown/sparkle/tree/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec, https://github.com/marcusrbrown/sparkle/blob/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec/.github/workflows/fro-bot.yaml, https://github.com/marcusrbrown/sparkle/blob/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec/.github/workflows/regenerate-docs.yaml
 
-## [2026-09-29 11:31] ingest | repo:bfra-me/.github
+## [2026-09-29 11:31] ingest | repo:marcusrbrown/sparkle
 
-Surveyed bfra-me/.github and updated the control-plane wiki.
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
-Sources: https://github.com/bfra-me/.github
+Sources: https://github.com/marcusrbrown/sparkle

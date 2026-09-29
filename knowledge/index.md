@@ -2,13 +2,12 @@
 
 Master catalog of all wiki pages, organized by type.
 
-2026-09-29 limited re-survey: [[bfra-me--github]] remains a 16-workflow
-org control center (HEAD `0c1cf271`, root v4.34.0, pnpm 11.28.0) with a
-present Fro Bot workflow at v0.117.0. Its single-step autoheal still has no
-explicit delivery mode or caller delivery step, and its README's settings
-action description differs from the workflow. [[github-actions-ci]] records
-the confirmed structural delivery-contract mismatch; run outcomes were not
-surveyed.
+2026-09-29 limited re-survey: [[marcusrbrown--sparkle]] remains a pnpm/Turborepo
+design-system monorepo with Fro Bot present at v0.117.0. Its review prompt still
+asserts pnpm 10.x against the manifest's 11.28.0, and the docs-regeneration
+detector omits JS/JSX UI paths accepted by its trigger. [[github-actions-ci]]
+records both workflow-contract drift patterns; older issue/run states were not
+rechecked. Both existing pages are cataloged below.
 
 2026-09-28 limited re-survey: [[marcusrbrown--marcusrbrown-github-io]]
 still names the mrbro.dev repo (not the renamed brand site). Fro Bot is present
