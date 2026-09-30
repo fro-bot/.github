@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/cortexkit_anthropic-auth
 created: 2026-05-28
-updated: 2026-09-02
+updated: 2026-09-18
 node_id: R_kgDOSmhCGA
 sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
@@ -32,6 +32,12 @@ sources:
   - url: https://github.com/cortexkit/anthropic-auth
     sha: v1.21.0
     accessed: 2026-09-02
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-09-18
+  - url: https://github.com/cortexkit/anthropic-auth
+    sha: v1.22.0
+    accessed: 2026-09-18
 tags:
   - opencode
   - pi
@@ -51,6 +57,7 @@ tags:
   - npm-dist-tag
   - disabled-workflow
   - abandoned-fork
+  - workflow-liveness
 related:
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--systematic
@@ -78,6 +85,14 @@ This is a Bun workspace monorepo with three packages: a shared core, an OpenCode
 - Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork at upstream version `1.2.5` — explicitly excluded from publish jobs.
 - Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`. _(Corrected 2026-09-02: this is the npm `latest` version, **not** what the README recommends. `README.md` line 66 still says `@1.2.2-mb.2`. See [Two Stale Pointers](#two-stale-pointers-the-mb-dist-tag-and-the-readme-pin).)_
 - Fro Bot workflow active since the `1.2.5-mb.3` release cycle — see [Fro Bot Status](#fro-bot-status). _(Superseded 2026-09-02: the workflow is now `disabled_inactivity`.)_
+
+**Seventh re-survey (2026-09-18, SHA `99fdbe9`) — the tree is frozen at 110 days, both automation deaths persist, and the interval's value is that two instruments this page relies on gave opposite readings.** HEAD unchanged at `99fdbe9`; `pushed_at 2026-05-31T04:03:34Z` / `updated_at 2026-05-31T04:03:23Z` still frozen — **110 days**. Tree re-verified at the same SHA: **104 blobs / 28 trees**, `truncated: false`, 4 workflow files. Public, MIT, fork, `archived: false`, `disabled: false`, default branch `marcusrbrown/main`, **1 star / 0 forks / 1 watcher** (unchanged across all seven surveys), 520 KB, `open_issues_count` 1. Branches: `main` `0511865` and `marcusrbrown/main` `99fdbe90`, both `protected: false`. Issue #11 byte-for-byte as recorded — 19 comments, `updated_at 2026-06-29T10:46:28Z`, body **54,813** chars, now silent **81 days**. `Fro Bot` workflow still `disabled_inactivity`, still 141 lifetime runs, last run still #141 at `2026-07-30T06:05:02Z` — **dead 50 days**. The `mb` dist-tag still resolves on both fork packages. No new finding contradicts anything below; two are added and one carried claim is sharpened.
+
+1. **`state: active` measures enablement, not liveness — and here it flags exactly the wrong workflow.** See [Four Inert Workflows, One Flagged](#four-inert-workflows-one-flagged-2026-09-18).
+2. **Upstream divergence measured by releases and measured by commits pointed in opposite directions this interval.** Releases say upstream stalled; commits say it accelerated ~2.5×. See [Divergence, Quantified](#divergence-quantified-2026-09-02).
+3. **The registry did not expire what GitHub expired.** GitHub switched off the daemon after 60 quiet days; npm has served the producerless `mb` tag for 110 and has no such policy. Recorded in [[opencode-plugins]] and at [Two Stale Pointers](#two-stale-pointers-the-mb-dist-tag-and-the-readme-pin).
+
+A [Re-Survey Trigger Conditions](#re-survey-trigger-conditions-2026-09-18) section is added so the eighth pass can be settled from four API fields instead of a full survey.
 
 **Sixth re-survey (2026-09-02, SHA `99fdbe9`) — the tree is still frozen, but the automation died twice while nobody was reading.** HEAD unchanged at `99fdbe9` (`chore(release): bump fork packages to 1.2.5-mb.3`, 2026-05-31T04:03Z); `pushed_at 2026-05-31T04:03:34Z` / `updated_at 2026-05-31T04:03:23Z` still frozen — now **93 days**. Tree is byte-identical by definition (same SHA): 104 blobs / 28 trees, 4 workflow files, all pins as previously recorded (Biome `2.4.15`, TypeScript `6.0.3`, Lefthook `2.1.6`, `@opencode-ai/plugin` `1.15.5`, Bun `1.3.14`, agent pin **`v0.45.0`** / `8aac0fc`). Public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks / 1 watcher, 520 KB, `open_issues_count` 1 (issue #11, no PRs). Repo id `1248346648`, `node_id R_kgDOSmhCGA`, `archived: false` — still no deprecation signal.
 
@@ -137,6 +152,31 @@ This is the general cost profile of the two-branch fork pattern: it front-loads 
 
 Upstream health, re-verified 2026-09-02: `cortexkit/anthropic-auth` `pushed_at 2026-09-02T09:21:24Z` (same day as this survey), **38 stars** (29 at 2026-08-05), **14 forks** (11), 7 open issues (13 — trending down, i.e. being worked), latest release `v1.21.0` (2026-08-28). All three upstream packages — including `@cortexkit/pi-anthropic-auth`, the one this fork keeps private — publish in lockstep at `1.21.0`. Upstream is not merely alive; it is accelerating relative to the fork.
 
+### Update 2026-09-18: the two divergence instruments disagreed
+
+Re-measured 16 days later. The fork contributed nothing to the delta — `ahead_by` is **30, unchanged**, as it has been since 2026-05-31.
+
+| Measure | 2026-09-02 | 2026-09-18 | Δ |
+| --- | --- | --- | --- |
+| `compare` status | `diverged` | `diverged` | — |
+| Commits **behind** `cortexkit:main` | 334 | **479** | **+145** |
+| Commits **ahead** | 30 | 30 | 0 |
+| Upstream releases since the fork's sync point | 32 | **33** | +1 |
+| Upstream npm `latest` | `1.21.0` | **`1.22.0`** | +1 minor |
+| Upstream published versions | 43 | **44** | +1 |
+| Upstream stars / forks / open issues | 38 / 14 / 7 | **41 / 16 / 6** | +3 / +2 / −1 |
+| Upstream `pushed_at` | 2026-09-02T09:21:24Z | **2026-09-18T08:51:41Z** | same-day as survey, again |
+
+Read one way, upstream stalled: **one release in 16 days**, and the current drought is **15.6 days** against an all-time maximum inter-release gap of **16.71 days** (`v1.18.0` → `v1.19.0`, 2026-07-24 → 2026-08-10). A survey that polls `releases/latest` — which is what the 2026-08-05 and 2026-09-02 passes did — would report this interval as the slowest publishing window in upstream's history and might reasonably wonder whether the fork's abandonment had stopped mattering.
+
+Read the other way, upstream accelerated hard: **145 commits in 16 days ≈ 9.1/day**, against 334 commits over the preceding ~94 days ≈ **3.6/day**. The work rate roughly **2.5×'d** in exactly the window the release feed went quiet, and `pushed_at` landed on the morning of this survey for the second consecutive pass.
+
+Both readings are correct about their own instrument, and only one of them answers the question this page keeps asking. **A release is a publishing decision; a commit is the work.** Release cadence is gated on a maintainer's judgement about when to cut — it goes to zero during a refactor, a long-lived branch merge, or a maintainer's vacation, none of which mean the project slowed. Commit divergence has no such gate. For a fork-relevance question — *how expensive is a resync, and is upstream still the live artifact?* — the compare API's `behind_by` is the instrument, and `releases/latest` is a lagging proxy that will occasionally invert.
+
+The practical consequence is a cost estimate, not a taxonomy point: **the resync this fork has deferred grew by 43% in 16 days** (334 → 479 commits), against a repository with no default-branch CI, no branch protection, and no working agent. The prior survey's "archiving is cheaper than resyncing" conclusion does not merely hold — the gap between those two costs is widening at roughly nine commits a day, and it widened fastest during the interval that looked, from the release feed, like upstream taking a break.
+
+Carried forward to [[github-actions-ci]] as the general form: when two cheap metadata instruments can answer the same question, check whether they can disagree, and name which one the conclusion actually depends on before the interval in which they diverge.
+
 ## Technology Stack
 
 | Aspect | Detail |
@@ -186,6 +226,20 @@ Live npm registry state, 2026-09-02:
 So the fork has **two independent stale pointers that converge on the same abandoned version**, one in registry metadata and one in documentation, while the release pipeline moved on without either. Generalized into [[opencode-plugins]]: **decommissioning a release lane takes three deletions — the CI job, the registry pointer, and the docs that reference it.** Only the first was done, and only the first is the one CI can verify. A dangling dist-tag is strictly worse than a deleted one: it is a live install surface with no producer, and it fails silently by succeeding.
 
 The release-lane-watch section of the maintenance prompt is scoped to _"recent release workflow failures … Trusted Publishing, latest dist-tag verification, or fork package dependency checks"_ — it reads run outcomes, not registry state, so it would not have caught either pointer even while running.
+
+**Re-verified 2026-09-18 — both pointers unchanged, and the contrast with GitHub is the finding.**
+
+| Package | `dist-tags` | Versions | `latest` published |
+| --- | --- | --- | --- |
+| `@marcusrbrown/anthropic-auth-core` | `latest: 1.2.5-mb.3`, **`mb: 1.2.2-mb.2`** | 5 | 2026-05-31T04:04:57Z |
+| `@marcusrbrown/opencode-anthropic-auth` | `latest: 1.2.5-mb.3`, **`mb: 1.2.2-mb.2`** | 6 | 2026-05-31T04:05:28Z |
+| `@cortexkit/opencode-anthropic-auth` | `latest: 1.22.0` | **44** (was 43) | 2026-09-02T19:04:50Z |
+
+The same registry state as 16 days ago, and as 110 days ago. Set that beside what happened on GitHub in the same window: **after 60 quiet days the platform reached in and switched off the scheduled workflow.** npm has now served `@marcusrbrown/opencode-anthropic-auth@mb` for 110 quiet days and will serve it indefinitely.
+
+The asymmetry is not arbitrary — it is a straightforward consequence of what each platform pays for. GitHub expires the thing that costs it money on an idle repo (compute) and is aggressive about it, to the point of disabling a watchdog whose entire purpose is to watch idle repositories. npm's cost of continuing to serve a tag that points at an already-stored tarball is approximately zero, so there is no policy and there will not be one — and unpublishing is deliberately hard, for good reasons that have nothing to do with this case.
+
+So the abandonment signal is enforced exactly where it is cheap and absent exactly where it is consequential: **the platform expired the daemon and kept the install surface.** A dormant workflow harms nobody; a dormant `dist-tag` is a live, resolving, silent-by-succeeding instruction to install a three-releases-stale build, and its lifetime is unbounded by construction. Recorded in [[opencode-plugins]] as the corollary to the existing three-deletions rule: of the three deletions a decommissioned release lane needs, **the registry pointer is the only one no platform will ever garbage-collect for you**, which makes it the one worth doing first rather than last.
 
 ## Architecture
 
@@ -338,9 +392,36 @@ The most likely cause is that **Dependabot version updates are disabled by defau
 
 This is why the toolchain is uniformly stale in a way no other surveyed repo's is: Biome `2.4.15` (vs `2.5.9` at [[marcusrbrown--opencode-copilot-delegate]]), `@opencode-ai/plugin` `1.15.5` (vs `1.18.19`), Bun `1.3.14` (vs `1.4.0`). The prior surveys attributed the freeze entirely to operator inactivity. It is also a governance vacuum: **this repo has no working dependency bot, no working agent, and no default-branch CI.** Every automated maintenance surface the fleet relies on is either absent or off — and each was individually plausible enough to escape five surveys. Recorded in [[github-actions-ci]] as the fork-inherited-config gap.
 
+### Four Inert Workflows, One Flagged (2026-09-18)
+
+The prior survey established that the Fro Bot daemon is `disabled_inactivity`, and framed it as *the* automation failure. Enumerating the full workflow list makes a sharper point: **every workflow in this repository is inert, and the one GitHub marks as not-active is the one that survived longest.**
+
+| Workflow | `state` | Lifetime runs | Last run | Dead for |
+| --- | --- | --- | --- | --- |
+| `fro-bot.yaml` (Fro Bot) | **`disabled_inactivity`** | 141 | `2026-07-30T06:05:02Z` (`schedule`, `success`) | **50 d** |
+| `ci.yml` (CI) | `active` | 24 | `2026-05-31T03:38:35Z` (`pull_request`, `success`) | **110 d** |
+| `release.yaml` (Release) | `active` | 12 | `2026-05-31T04:03:36Z` (`push`, `success`) | **110 d** |
+| `copilot-setup-steps.yml` | `active` | 10 | `2026-05-31T04:03:36Z` (`push`, `success`) | **110 d** |
+| `dynamic/copilot-swe-agent/copilot` | `active` | — | — | — |
+
+188 lifetime runs across the repository, 141 of them Fro Bot. The three workflows reporting `active` have produced nothing for **110 days** — sixty days longer than the one reporting `disabled_inactivity`.
+
+This is not a GitHub bug; it is a definition. `state` records whether the workflow is *permitted to run*, and the inactivity policy only ever targets `schedule` triggers, because a scheduled workflow is the only kind that consumes minutes on a repository nobody is touching. `ci.yml` is `on: pull_request` and `release.yaml` is `on: push` tags — they cost nothing while idle, so nothing disables them, so they stay green-labelled forever. The field is doing exactly what it says and answering a question no one is asking.
+
+Two operational consequences:
+
+- **A fleet lint that scans for `state != "active"` finds one row here and calls the other four healthy.** It catches the daemon — real value, and worth keeping — but it will systematically report event-triggered workflows as fine in repositories where nothing has triggered them since the Obama administration. The signal it produces is *inversely* correlated with dormancy: the more thoroughly a repo is abandoned, the fewer of its workflows will ever be flagged, because abandonment removes the triggers that would have exercised them.
+- **The complementary check is last-run recency per workflow, and it is one API call.** `GET /actions/workflows/{file}/runs?per_page=1` returns `total_count` plus the newest run; `created_at` on that run discriminates all four rows above and needs no interpretation. It is strictly cheaper than reading workflow YAML and strictly more informative than reading `state`.
+
+The deeper version, and the reason this belongs in the topic page rather than only here: **an event-triggered workflow's liveness is a property of its triggers, not of itself.** `ci.yml` is correctly written, correctly wired, permitted to run, and has verified nothing in 110 days — not because it is broken, but because `pull_request` events stopped arriving. There is no state a workflow can be in that distinguishes "ready and waiting" from "will never run again," and the platform offers no field that would. Only the run history does. Generalized into [[github-actions-ci]].
+
+This also completes the picture the [`ci.yml` note above](#ciyml--pull-request-validation) started: the absence of default-branch CI is usually described as a coverage gap, and it is also a **liveness gap**. A `pull_request`-only gate on a repository with no pull requests is indistinguishable, by every automated signal GitHub exposes, from a working one.
+
 ## Fro Bot Status
 
 **Disabled since 2026-07-30 (as of the 2026-09-02 survey).** Workflow state is `disabled_inactivity`; last run of any kind was run #141 at `2026-07-30T06:05:02Z`. Not paused, not failing — switched off by GitHub, and it will stay off until a human re-enables it or the repo receives a push. A `workflow_dispatch` will not revive it either; disabled workflows reject all triggers.
+
+**Re-confirmed 2026-09-18, unchanged in every field.** `state: disabled_inactivity`, workflow `updated_at 2026-07-30T06:05:02.000Z` (still identical to the last run), lifetime run count still **141**, newest run still #141. **50 days dead.** Nothing about a disabled workflow decays further — it produces no runs, no failures, and no notifications, so the only field that will ever move is `state`, and only a human moves it. This is the quietest failure mode on the wiki: there is no artifact to go stale, because there is no artifact.
 
 _Prior reading, preserved:_ **Active but pinned to a stale agent.** `fro-bot.yaml` landed between the 2026-05-28 survey and the 2026-06-09 re-survey (last push `2026-05-31T04:03:34Z`). Agent version: `v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`) — re-confirmed unchanged through the 2026-08-05 survey. This is the oldest agent pin in the surveyed fleet by a wide margin (leaders sit at v0.95–v0.96 as of early August). The pin doesn't advance because the tree is frozen: no PRs to review, and the scheduled maintenance/autoheal passes find nothing to fix, so nothing generates the churn that would carry an agent bump. If the fork ever resumes (upstream sync + fork release), expect a large single-step agent jump on the first active PR.
 
@@ -459,11 +540,11 @@ _Prior gap note (2026-05-28): No Fro Bot workflow was present at that time. The 
 
 ## Cross-Cutting References
 
-- [[opencode-plugins]] — Plugin architecture, Bun build target, peer-dep handling, plugin singleton patterns. This repo is an additional data point for the singleton + cross-process lock category.
+- [[opencode-plugins]] — Plugin architecture, Bun build target, peer-dep handling, plugin singleton patterns. This repo is an additional data point for the singleton + cross-process lock category, the source of the **three-deletions** decommissioning rule, and (2026-09-18) the corollary that **the registry pointer is the deletion no platform garbage-collects for you**.
 - [[marcusrbrown--opencode-copilot-delegate]] — Another OpenCode plugin in Marcus's stack; same Biome 2.4.15 + Bun 1.3.14 toolchain, comparable peer-dep and build-target discipline.
 - [[marcusrbrown--systematic]] — Sibling OpenCode plugin (skills/agents framework).
 - [[marcusrbrown--dotfiles]] — Consumes OpenCode plugins via OpenCode config. Pinned at `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` (this fork) as of the 2026-06-06 dotfiles survey, **but switched to upstream `@cortexkit/opencode-anthropic-auth@1.13.0` by the 2026-07-10 survey and advanced to `1.18.0` by 2026-07-27** — see the upstream-confirmed fork-relevance divergence signal above. The consumer surface now tracks upstream, which is itself confirmed live at `v1.18.0`.
-- [[github-actions-ci]] — General CI patterns; this repo contributes the tag-commit integrity check pattern and the "no manifest mutation in CI" release rule, and (2026-09-02) the **60-day scheduled-workflow inactivity shutoff**, the **green-run/empty-channel** class, and the **fork-inherited dependency-bot config that never runs**.
+- [[github-actions-ci]] — General CI patterns; this repo contributes the tag-commit integrity check pattern and the "no manifest mutation in CI" release rule, and (2026-09-02) the **60-day scheduled-workflow inactivity shutoff**, the **green-run/empty-channel** class, and the **fork-inherited dependency-bot config that never runs**. 2026-09-18 adds **`state: active` measures enablement, not liveness** (three `active` workflows here are 60 days deader than the one `disabled_inactivity` row, because the inactivity policy only targets `schedule`) and the **two-instrument divergence check** (releases vs. commits gave opposite readings of upstream in the same interval).
 - [[bfra-me--ha-addon-repository]] — The fleet's other dead Fro Bot daemon, and the instructive contrast: that one fails **loudly** and is ignored because the required-check surface never evaluates scheduled runs; this one produces no artifact at all. Both were invisible to content-only surveys. See the comparison table in [The 60-Day Watchdog Shutoff](#the-60-day-watchdog-shutoff-2026-07-30).
 
 ## Open Questions / Gaps
@@ -478,3 +559,22 @@ _Prior gap note (2026-05-28): No Fro Bot workflow was present at that time. The 
 - **Escalated (2026-09-02): the "parked as a fallback" reading no longer holds up, and the question is now about cost, not intent.** A fallback has to be reachable. This one is 334 commits and 32 releases behind upstream, has no working dependency bot, no default-branch CI, an agent daemon that GitHub switched off, and an unprotected default branch — reviving it means merging a 334-commit upstream delta with no gate on the result. The `.agents/skills/anthropic-auth-upstream-release/SKILL.md` still ships and still describes the procedure, but the procedure assumes an `main` mirror that was never advanced. Meanwhile the fork is not inert: `@marcusrbrown/opencode-anthropic-auth@mb` and the README both actively direct installs to `1.2.2-mb.2`, a build three fork-releases and 19 upstream minors stale. **Archiving is now the cheaper correct action than resyncing**, and it is the only one that stops the stale pointers from serving. Two lower-cost partial steps if the operator wants to keep the option open: `npm dist-tag rm` the `mb` lane on both packages, and fix the README pin. Both are one-line changes; both are currently blocked on nothing.
 
 - **Onboarding note (per survey brief):** a Fro Bot workflow **is** present, so no follow-up draft PR proposing one is warranted. The actionable item here is the inverse — the workflow exists, is correctly written, and is switched off. Re-enabling it (a push, or the Actions UI "Enable workflow" button) restarts the daemon at `agent@v0.45.0`, ~62 minor versions behind the fleet leader, against a harness that may no longer be compatible. Bumping the pin and re-enabling should be done together, and would be a reasonable single follow-up PR if the fork is being kept.
+
+- **Onboarding note re-confirmed 2026-09-18.** Still present, still `disabled_inactivity`, still unwarranted as a draft-PR target. The pin gap has widened: `agent@v0.45.0` against a fleet leader at **v0.113.1** ([[marcusrbrown--marcusrbrown-com]], 2026-09-16) — and that repo's own daemon has been failing on a persistent upstream `APIError; status=400` since 2026-09-06, which is direct evidence that a cold-started v0.45.0 harness is not a safe assumption. If the fork is revived, bump and re-enable in one change and expect the first run to fail.
+
+## Re-Survey Trigger Conditions (2026-09-18)
+
+Seven surveys, 110 days, one commit's worth of tree change (zero). Five of those surveys were wrong in the same direction — they inferred liveness from content — and the two that were right got there from metadata. This page is now considerably more active than the repository it describes, which is a signal about survey cost, not about the repo.
+
+State the exit condition explicitly so the eighth pass is a fixed-cost check rather than a full survey. **Re-survey in depth only if one of these four fields moves:**
+
+| Field | Current value (2026-09-18) | What a change means |
+| --- | --- | --- |
+| `repos/…` → `pushed_at` | `2026-05-31T04:03:34Z` | Any push. Revives the Actions surface, resets the 60-day clock, and is the only thing that can produce a fork-side delta. |
+| `actions/workflows/fro-bot.yaml` → `state` | `disabled_inactivity` | Re-enabled by hand. The daemon resumes at `v0.45.0`; expect the first run to be interesting either way. |
+| `repos/…` → `archived` | `false` | The operator answered the retirement question. Close the page's open questions and stop surveying. |
+| `registry.npmjs.org/@marcusrbrown/opencode-anthropic-auth` → `dist-tags.mb` | `1.2.2-mb.2` | The dangling lane was cleaned up, which is the single highest-value one-line action available here. |
+
+Everything else this page tracks is derivable or slow-moving: `behind_by` grows monotonically at upstream's commit rate and needs no intervention to predict; issue #11 cannot change while the daemon is off; the tree cannot change without `pushed_at` moving. **Four fields, four unauthenticated GET requests, no reasoning required** — and if all four hold, the correct output is a log line, not a page edit.
+
+This is worth stating because the failure mode of a compounding wiki is not missing a delta; it is spending a full survey's attention re-deriving a frozen state and writing another paragraph that says so. A page that cannot name what would change its mind is not a knowledge artifact, it is a subscription.

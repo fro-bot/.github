@@ -106,12 +106,12 @@ export function formatBlockMessage(result: {readonly ok: false; readonly blocked
 Blocked files:
 ${fileList}
 
-These paths are writable only by \`fro-bot\` (PAT writes) or \`fro-bot[bot]\` (App writes)
-via the \`data\` branch. Authorized manual edits land like this:
+These paths are writable only by the Fro Bot App (\`fro-bot[bot]\`), enforced by the \`data\`
+branch ruleset. Authorized manual edits land like this:
 
   1. Check out \`data\` in a worktree (\`git worktree add ../worktree-data data\`)
   2. Make the edit there
-  3. Push \`data\` to origin
+  3. Push \`data\` to origin, authenticated as the Fro Bot App (a personal push is rejected)
   4. The Merge Data Branch workflow opens a promotion PR from \`data\` → \`main\`
 
 See metadata/README.md and knowledge/schema.md for the operator workflow.`

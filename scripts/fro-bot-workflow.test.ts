@@ -9,7 +9,7 @@
  */
 
 import {execFileSync} from 'node:child_process'
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -22,6 +22,7 @@ interface WorkflowStep {
   if?: string
   run?: string
   uses?: string
+  shell?: string
   env?: Record<string, unknown>
   with?: Record<string, unknown>
 }
@@ -115,16 +116,24 @@ describe('fro-bot.yaml wiki baseline/detect/ingest ordering', () => {
   const observeJob = froBotParsed.jobs['fro-bot-observe']
   const remediateJob = froBotParsed.jobs['fro-bot-remediate']
 
-  it('within fro-bot-observe: Capture wiki baseline precedes the agent step, which precedes Detect/Ingest', () => {
+  it('within fro-bot-observe: Capture wiki baseline precedes the agent step, which precedes Detect/Build handoff', () => {
     const baselineIndex = findStepIndex(observeJob, step => step.name === 'Capture wiki baseline')
     const agentIndex = findStepIndex(observeJob, step => step.id === 'fro-bot-agent')
     const detectIndex = findStepIndex(observeJob, step => step.name === 'Detect wiki insight changes')
-    const ingestIndex = findStepIndex(observeJob, step => step.name === 'Ingest wiki insight changes')
+    const buildIndex = findStepIndex(observeJob, step => step.name === 'Build wiki handoff artifact')
+    const uploadIndex = findStepIndex(observeJob, step => step.name === 'Upload wiki handoff artifact')
 
     expect(baselineIndex).toBeGreaterThanOrEqual(0)
     expect(agentIndex).toBeGreaterThan(baselineIndex)
     expect(detectIndex).toBeGreaterThan(agentIndex)
-    expect(ingestIndex).toBeGreaterThan(detectIndex)
+    expect(buildIndex).toBeGreaterThan(detectIndex)
+    expect(uploadIndex).toBeGreaterThan(buildIndex)
+  })
+
+  it('fro-bot-observe never runs wiki-ingest.ts itself — that only happens in the trusted follow-on job', () => {
+    expect(findStepIndex(observeJob, step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'))).toBe(
+      -1,
+    )
   })
 
   it('fro-bot-remediate has no wiki baseline/detect/ingest steps — it cannot commit knowledge/**', () => {
@@ -401,46 +410,98 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   })
 })
 
-describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
-  const syncStep = froBotParsed.jobs['fro-bot']?.steps?.find(step => step.name === 'Sync wiki from data branch')
+describe('sync-wiki composite action: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
+  const syncWikiActionPath = resolve(import.meta.dirname, '../.github/actions/sync-wiki/action.yaml')
+  const syncWikiAction: unknown = parse(readFileSync(syncWikiActionPath, 'utf8'))
+  const syncStep = (syncWikiAction as {runs?: {steps?: WorkflowStep[]}}).runs?.steps?.find(
+    step => step.name === 'Sync wiki from data branch',
+  )
   const runScript = String(syncStep?.run ?? '')
+
+  it('finds the Sync wiki from data branch step in the action file', () => {
+    expect(syncStep).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
+  })
+
+  it('pins shell: bash on the composite step (composite run steps have no default shell)', () => {
+    expect(syncStep?.shell).toBe('bash')
+  })
 
   // Bounded, single-purpose fake `git`: only the three subcommands this step calls
   // are recognized, each exits per an env var the test controls, and each appends its
   // own name to a trace file so tests can assert which subcommands actually ran.
+  // ls-remote/fetch also accept a space-separated exit sequence (e.g. FAKE_GIT_FETCH_EXITS="128 128 0")
+  // consumed one value per call via a counter file, falling back to the fixed single-value var.
   // Not a git reimplementation.
   const fakeGit = [
     '#!/bin/sh',
     'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
+    'if [ -n "$FAKE_GIT_ECHO" ]; then echo "fake-git-output:$1" >&2; fi',
+    'next_from_sequence() {',
+    '  seq_var="$1"; counter_file="$2"; fallback_var="$3"',
+    String.raw`  eval "sequence=\$$seq_var"`,
+    '  if [ -z "$sequence" ]; then',
+    String.raw`    eval "exit \$$fallback_var"`,
+    '  fi',
+    '  count=$(cat "$counter_file" 2>/dev/null || echo 0)',
+    '  # shellcheck disable=SC2086',
+    '  value=$(echo $sequence | cut -d" " -f$((count + 1)))',
+    '  echo $((count + 1)) > "$counter_file"',
+    '  exit "$value"',
+    '}',
     'case "$1" in',
-    '  ls-remote) exit "$FAKE_GIT_LS_REMOTE_EXIT" ;;',
-    '  fetch) exit "$FAKE_GIT_FETCH_EXIT" ;;',
+    '  ls-remote) next_from_sequence FAKE_GIT_LS_REMOTE_EXITS "$FAKE_GIT_TRACE_FILE.ls-remote-count" FAKE_GIT_LS_REMOTE_EXIT ;;',
+    '  fetch) next_from_sequence FAKE_GIT_FETCH_EXITS "$FAKE_GIT_TRACE_FILE.fetch-count" FAKE_GIT_FETCH_EXIT ;;',
     '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
     '  *) exit 0 ;;',
     'esac',
   ].join('\n')
 
-  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; trace: string[]} {
+  function runSyncStep(env: Record<string, string>): {
+    status: number
+    stdout: string
+    stderr: string
+    trace: string[]
+    sleeps: string[]
+    pwned: boolean
+  } {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
       const gitPath = join(dir, 'git')
       writeFileSync(gitPath, fakeGit)
       chmodSync(gitPath, 0o755)
+      // Fake `sleep` records the requested delay instead of waiting, so backoff assertions cost no wall time.
+      const sleepLog = join(dir, 'sleeps')
+      writeFileSync(sleepLog, '')
+      const sleepPath = join(dir, 'sleep')
+      writeFileSync(sleepPath, `#!/bin/sh\necho "$1" >> "${sleepLog}"\n`)
+      chmodSync(sleepPath, 0o755)
       const scriptPath = join(dir, 'step.sh')
       writeFileSync(scriptPath, runScript)
       const traceFile = join(dir, 'trace')
       writeFileSync(traceFile, '')
-      const runEnv = {...env, PATH: `${dir}:${process.env.PATH ?? ''}`, FAKE_GIT_TRACE_FILE: traceFile}
+      const runEnv = {
+        SYNC_WIKI_RETRY_DELAY_SECONDS: '0',
+        ...env,
+        PATH: `${dir}:${process.env.PATH ?? ''}`,
+        FAKE_GIT_TRACE_FILE: traceFile,
+      }
+      const stderrFile = join(dir, 'stderr')
       let result: {status: number; stdout: string}
       try {
-        const stdout = execFileSync('bash', [scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+        const stdout = execFileSync('bash', ['-c', 'bash "$0" 2>"$1"', scriptPath, stderrFile], {
+          cwd: dir,
+          env: runEnv,
+          encoding: 'utf8',
+        })
         result = {status: 0, stdout}
       } catch (error) {
         const failure = error as {status?: number; stdout?: string}
         result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
       }
+      const stderr = readFileSync(stderrFile, 'utf8')
       const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
-      return {...result, trace}
+      const sleeps = readFileSync(sleepLog, 'utf8').split('\n').filter(Boolean)
+      return {...result, stderr, trace, sleeps, pwned: existsSync(join(dir, 'pwned'))}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -460,24 +521,492 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
     expect(result.stdout.toLowerCase()).toContain('not yet established')
   })
 
-  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed with ::error::, no fetch/restore attempted', () => {
+  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed after 3 attempts with a byte-identical ::error::, no fetch/restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
     expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain('::error::')
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.trace).toEqual(['ls-remote'])
+    expect(result.stdout).toContain(
+      '::error::data branch probe failed (exit 128); refusing to run on a possibly stale knowledge/ snapshot.',
+    )
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'ls-remote'])
   })
 
-  it('fetch fails after a successful probe: fails closed with ::error::, no restore attempted', () => {
+  it('fetch fails after a successful probe: fails closed after 3 attempts with a byte-identical ::error::, no restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
     expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain('::error::')
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.trace).toEqual(['ls-remote', 'fetch'])
+    expect(result.stdout).toContain(
+      '::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot.',
+    )
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch'])
   })
 
   it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
     expect(result.status).not.toBe(0)
+  })
+
+  it('probe fails once, then succeeds: fetch and restore run, exits clean, exactly one ::warning::, no ::error::', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXITS: '128 0',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::error::')
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(1)
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'fetch', 'restore'])
+  })
+
+  it('fetch fails twice, then succeeds: restore runs, exits clean, exactly two ::warning:: lines', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 1 0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::error::')
+    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch', 'restore'])
+  })
+
+  it('probe exit 2 (branch absent) is never retried: exactly one ls-remote call, no ::warning::', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote'])
+  })
+
+  it('probe fails transiently, then reports branch absent: skips the sync but warns that absence followed a failure', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXITS: '128 2',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(
+      '::warning::data branch probe returned exit 2 on attempt 2/3 after earlier failures',
+    )
+    expect(result.stdout.toLowerCase()).toContain('not yet established')
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote'])
+  })
+
+  it.each(['', '5s', 'a[$(touch pwned)]'])(
+    'falls back to the default delay when SYNC_WIKI_RETRY_DELAY_SECONDS is %j',
+    delay => {
+      const result = runSyncStep({
+        SYNC_WIKI_RETRY_DELAY_SECONDS: delay,
+        FAKE_GIT_LS_REMOTE_EXIT: '0',
+        FAKE_GIT_FETCH_EXITS: '1 0',
+        FAKE_GIT_RESTORE_EXIT: '0',
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('retrying in 5s')
+      expect(result.sleeps).toEqual(['5'])
+      expect(result.pwned).toBe(false)
+    },
+  )
+
+  it('backs off linearly at the production default: 5s, then 10s (15s worst case)', () => {
+    const result = runSyncStep({
+      SYNC_WIKI_RETRY_DELAY_SECONDS: '',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 1 1',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(1)
+    expect(result.sleeps).toEqual(['5', '10'])
+  })
+
+  it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
+    const result = runSyncStep({
+      FAKE_GIT_ECHO: '1',
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXITS: '1 0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+    expect(result.status).toBe(0)
+    expect(result.stderr.match(/fake-git-output:fetch/g)).toHaveLength(2)
+    expect(result.stderr).not.toContain('fake-git-output:ls-remote')
+  })
+})
+
+describe('fro-bot.yaml: all three jobs delegate wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
+  it.each(['fro-bot', 'fro-bot-remediate', 'fro-bot-observe'])(
+    '%s has a Sync wiki from data branch step using ./.github/actions/sync-wiki',
+    jobName => {
+      const syncStep = froBotParsed.jobs[jobName]?.steps?.find(step => step.name === 'Sync wiki from data branch')
+      expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+    },
+  )
+
+  it.each(['fro-bot', 'fro-bot-observe'])(
+    '%s: Sync wiki from data branch precedes Capture wiki baseline (baseline must hash post-sync content)',
+    jobName => {
+      const job = froBotParsed.jobs[jobName]
+      const syncIndex = findStepIndex(job, step => step.name === 'Sync wiki from data branch')
+      const baselineIndex = findStepIndex(job, step => step.name === 'Capture wiki baseline')
+
+      expect(syncIndex).toBeGreaterThanOrEqual(0)
+      expect(baselineIndex).toBeGreaterThan(syncIndex)
+    },
+  )
+})
+
+describe('fro-bot.yaml App-token wiki ingest migration', () => {
+  const froBotJob = froBotParsed.jobs['fro-bot']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const wikiIngestJob = froBotParsed.jobs['fro-bot-wiki-ingest']
+  const observeWikiIngestJob = froBotParsed.jobs['fro-bot-observe-wiki-ingest']
+
+  it('declares both trusted writer jobs, each needing its agent job', () => {
+    expect(wikiIngestJob).toBeDefined()
+    expect(observeWikiIngestJob).toBeDefined()
+    expect((wikiIngestJob as {needs?: string}).needs).toBe('fro-bot')
+    expect((observeWikiIngestJob as {needs?: string}).needs).toBe('fro-bot-observe')
+  })
+
+  it("gates each trusted writer job on the agent job's wiki-changed output", () => {
+    expect(String((wikiIngestJob as {if?: string}).if ?? '')).toContain("needs.fro-bot.outputs.wiki-changed == 'true'")
+    expect(String((observeWikiIngestJob as {if?: string}).if ?? '')).toContain(
+      "needs.fro-bot-observe.outputs.wiki-changed == 'true'",
+    )
+  })
+
+  it('exposes wiki-changed as a job output on both agent jobs', () => {
+    expect((froBotJob as {outputs?: Record<string, string>}).outputs?.['wiki-changed']).toContain(
+      'steps.wiki-changes.outputs.changed',
+    )
+    expect((observeJob as {outputs?: Record<string, string>}).outputs?.['wiki-changed']).toContain(
+      'steps.wiki-changes.outputs.changed',
+    )
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s has no fro-bot/agent step (trusted-writer invariant)', (_name, job) => {
+    const agentStep = findStepIndex(job, step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    expect(agentStep).toBe(-1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s checks out the default branch with persist-credentials: false', (_name, job) => {
+    const checkoutStep = (job as WorkflowJob)?.steps?.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s runs wiki-ingest.ts with a minted App token, never FRO_BOT_PAT', (_name, job) => {
+    const ingestStep = (job as WorkflowJob)?.steps?.find(
+      step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'),
+    )
+    const token = String(ingestStep?.env?.GITHUB_TOKEN ?? '')
+    expect(token).toContain('steps.app-token.outputs.token')
+    expect(token).not.toContain('secrets.FRO_BOT_PAT')
+
+    const mintStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'app-token')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])('%s mints no App token after any fro-bot/agent step (there is none in this job at all)', (_name, job) => {
+    const mintSteps = ((job as WorkflowJob)?.steps ?? []).filter(step =>
+      (step.uses ?? '').startsWith('actions/create-github-app-token@'),
+    )
+    expect(mintSteps).toHaveLength(1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', wikiIngestJob],
+    ['fro-bot-observe-wiki-ingest', observeWikiIngestJob],
+  ])(
+    "%s sources WIKI_* env from github.* context and this job's own trusted timestamp — never from an artifact-carried metadata.json",
+    (_name, job) => {
+      const ingestStep = (job as WorkflowJob)?.steps?.find(
+        step => typeof step.run === 'string' && step.run.includes('wiki-ingest.ts'),
+      )
+      const run = String(ingestStep?.run ?? '')
+      expect(run).not.toContain('metadata.json')
+      expect(run).not.toContain('jq')
+
+      const env = ingestStep?.env ?? {}
+      expect(String(env.WIKI_TARGET ?? '')).toContain('github.repository')
+      expect(String(env.WIKI_SUMMARY ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_COMMIT_MESSAGE ?? '')).toContain('github.event_name')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('github.sha')
+      expect(String(env.WIKI_SOURCES ?? '')).toContain('steps.ingest-ts.outputs.now')
+
+      const timestampStep = (job as WorkflowJob)?.steps?.find(step => step.id === 'ingest-ts')
+      expect(timestampStep?.run).toContain('date -u')
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])('%s (agent job): the build step writes no WIKI_* metadata into the handoff artifact', (_name, job) => {
+    const buildStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Build wiki handoff artifact')
+    const env = buildStep?.env ?? {}
+    expect(Object.keys(env).sort()).toStrictEqual(['WIKI_HANDOFF_BASELINE_PATH', 'WIKI_HANDOFF_DIR'])
+  })
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    '%s (agent job): captures a wiki content baseline before the agent step, wired to the build step',
+    (_name, job) => {
+      const steps = (job as WorkflowJob)?.steps ?? []
+      const baselineIndex = steps.findIndex(step => step.name === 'Capture wiki content baseline')
+      const agentIndex = steps.findIndex(step => step.id === 'fro-bot-agent')
+      const buildIndex = steps.findIndex(step => step.name === 'Build wiki handoff artifact')
+
+      expect(baselineIndex).toBeGreaterThanOrEqual(0)
+      expect(agentIndex).toBeGreaterThan(baselineIndex)
+      expect(buildIndex).toBeGreaterThan(agentIndex)
+
+      const baselineStep = steps[baselineIndex]
+      const buildStep = steps[buildIndex]
+      expect(String(baselineStep?.run ?? '')).toContain('wiki-handoff-baseline.ts')
+      expect(baselineStep?.env?.WIKI_HANDOFF_BASELINE_PATH).toBe(buildStep?.env?.WIKI_HANDOFF_BASELINE_PATH)
+    },
+  )
+
+  it.each([
+    ['fro-bot', froBotJob],
+    ['fro-bot-observe', observeJob],
+  ])(
+    "%s (agent job): the upload step requires the build step's own non-empty-manifest signal, not just success",
+    (_name, job) => {
+      const uploadStep = (job as WorkflowJob)?.steps?.find(step => step.name === 'Upload wiki handoff artifact')
+      const condition = String(uploadStep?.if ?? '')
+      expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+      expect(condition).toContain("steps.wiki-handoff-build.outputs.changed == 'true'")
+    },
+  )
+})
+
+describe('fro-bot.yaml daily-digest announce isolation (agent post-step credential guard)', () => {
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const announceJob = froBotParsed.jobs['fro-bot-observe-announce']
+
+  it('fro-bot-observe no longer announces the daily digest itself', () => {
+    expect(findStepIndex(observeJob, step => step.name === '📣 Announce daily digest to gateway')).toBe(-1)
+  })
+
+  it('fro-bot-observe no longer exposes report-url/repos-tracked/surveys-today/count-status outputs, or the steps that only fed them', () => {
+    const outputs = (observeJob as {outputs?: Record<string, string>})?.outputs ?? {}
+    expect(Object.keys(outputs)).toStrictEqual(['wiki-changed'])
+    expect(findStepIndex(observeJob, step => step.name === '🔍 Discover daily report URL')).toBe(-1)
+    expect(findStepIndex(observeJob, step => step.name === '📊 Derive daily digest counts')).toBe(-1)
+  })
+
+  it('declares fro-bot-observe-announce needing fro-bot-observe, with no fro-bot/agent step (trusted-writer invariant)', () => {
+    expect(announceJob).toBeDefined()
+    expect((announceJob as {needs?: string})?.needs).toBe('fro-bot-observe')
+    expect(findStepIndex(announceJob, step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBe(-1)
+  })
+
+  it('fro-bot-observe-announce checks out the default branch with persist-credentials: false', () => {
+    const checkoutStep = announceJob?.steps?.find(step => (step.uses ?? '').startsWith('actions/checkout@'))
+    expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.event.repository.default_branch')
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('fro-bot-observe-announce gates only on dry-run/DAILY_DIGEST_ENABLED — no needs.fro-bot-observe.outputs reference (those outputs no longer exist)', () => {
+    const jobIf = String((announceJob as {if?: string})?.if ?? '')
+    expect(jobIf).toContain("inputs.prompt == ''")
+    expect(jobIf).toContain("vars.DAILY_DIGEST_ENABLED == 'true'")
+    expect(jobIf).not.toContain('needs.fro-bot-observe')
+  })
+
+  it('does not add job-level permissions (reusable workflow — relies on the workflow-level contents: read)', () => {
+    expect((announceJob as {permissions?: unknown})?.permissions).toBeUndefined()
+  })
+
+  it('overlays metadata from the data branch before discovering the report URL or deriving counts', () => {
+    const steps = announceJob?.steps ?? []
+    const overlayIndex = steps.findIndex(step => step.name === '⤵ Overlay metadata from data branch')
+    const discoverIndex = steps.findIndex(step => step.name === '🔍 Discover daily report URL')
+    const countsIndex = steps.findIndex(step => step.name === '📊 Derive daily digest counts')
+    expect(overlayIndex).toBeGreaterThanOrEqual(0)
+    expect(discoverIndex).toBeGreaterThan(overlayIndex)
+    expect(countsIndex).toBeGreaterThan(overlayIndex)
+  })
+
+  it('discovers the report URL trusted-side with an App token minted in this job (no agent step here, so minting is safe)', () => {
+    const mintStep = announceJob?.steps?.find(step => step.id === 'report-token')
+    const discoverStep = announceJob?.steps?.find(step => step.name === '🔍 Discover daily report URL')
+    expect(mintStep?.uses).toContain('actions/create-github-app-token@')
+    expect(mintStep?.with?.['permission-issues']).toBe('read')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).toContain('steps.report-token.outputs.token')
+    expect(String(discoverStep?.env?.GH_TOKEN ?? '')).not.toContain('FRO_BOT_PAT')
+    const run = String(discoverStep?.run ?? '')
+    expect(run).toContain('Daily Fro Bot Report')
+    expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
+  })
+
+  it('derives digest counts trusted-side from metadata/repos.yaml via the same script the old observe step used', () => {
+    const countsStep = announceJob?.steps?.find(step => step.name === '📊 Derive daily digest counts')
+    expect(String(countsStep?.run ?? '')).toContain('scripts/daily-digest-counts.ts')
+  })
+
+  it('validates count_status/report-url shape and repos-tracked/surveys-today as non-negative integers before announcing, reading from its own steps (not needs.fro-bot-observe)', () => {
+    const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+    expect(String(validateStep?.env?.REPORT_URL ?? '')).toContain('steps.report-url.outputs.report_url')
+    expect(String(validateStep?.env?.REPOS_TRACKED ?? '')).toContain('steps.digest-counts.outputs.repos_tracked')
+    expect(String(validateStep?.env?.SURVEYS_TODAY ?? '')).toContain('steps.digest-counts.outputs.surveys_today')
+    expect(String(validateStep?.env?.COUNT_STATUS ?? '')).toContain('steps.digest-counts.outputs.count_status')
+
+    const run = String(validateStep?.run ?? '')
+    expect(run).toContain(String.raw`github\.com/fro-bot/\.github/issues/[0-9]+`)
+    expect(run).toContain("grep -qE '^[0-9]+$'")
+    expect(run).toContain('::error::')
+
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.if ?? '')).toContain("steps.validated.outputs.valid == 'true'")
+  })
+
+  // Non-vacuity for the item-2 fix: if the announce step (or the values it validates) ever
+  // points back at needs.fro-bot-observe.outputs.*, this must fail — those outputs are
+  // agent-influenceable and no longer exist on fro-bot-observe at all.
+  it("the announce step and the values it validates read from this job's own trusted steps, never from needs.fro-bot-observe", () => {
+    const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+
+    for (const step of [validateStep, announceStep]) {
+      const envText = JSON.stringify(step?.env ?? {})
+      expect(envText).not.toContain('needs.fro-bot-observe')
+    }
+
+    expect(String(announceStep?.env?.REPORT_URL ?? '')).toContain('steps.report-url.outputs.report_url')
+    expect(String(announceStep?.env?.REPOS_TRACKED ?? '')).toContain('steps.digest-counts.outputs.repos_tracked')
+    expect(String(announceStep?.env?.SURVEYS_TODAY ?? '')).toContain('steps.digest-counts.outputs.surveys_today')
+    expect(String(announceStep?.env?.GATEWAY_WEBHOOK_SECRET ?? '')).toContain('secrets.GATEWAY_WEBHOOK_SECRET')
+  })
+})
+
+describe('fro-bot-observe-announce: 🔒 Validate digest values — extract-and-execute against fixtures (shell-flow, not a hosted GHA run)', () => {
+  const announceJob = froBotParsed.jobs['fro-bot-observe-announce']
+  const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
+  const runScript = String(validateStep?.run ?? '')
+
+  function runValidateStep(
+    env: Partial<Record<'REPORT_URL' | 'REPOS_TRACKED' | 'SURVEYS_TODAY' | 'COUNT_STATUS', string>>,
+  ): {status: number; valid: string | undefined} {
+    const dir = mkdtempSync(join(tmpdir(), 'fro-bot-validate-digest-'))
+    try {
+      const scriptPath = join(dir, 'step.sh')
+      writeFileSync(scriptPath, runScript)
+      const outputPath = join(dir, 'github-output')
+      writeFileSync(outputPath, '')
+      const runEnv = {
+        COUNT_STATUS: 'ok',
+        REPORT_URL: '',
+        REPOS_TRACKED: '',
+        SURVEYS_TODAY: '',
+        ...env,
+        PATH: process.env.PATH ?? '',
+        GITHUB_OUTPUT: outputPath,
+      }
+      let status = 0
+      try {
+        execFileSync('bash', ['-c', 'bash "$0"', scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+      } catch (error) {
+        status = (error as {status?: number}).status ?? 1
+      }
+      const outputContent = readFileSync(outputPath, 'utf8')
+      const match = /^valid=(.*)$/m.exec(outputContent)
+      return {status, valid: match?.[1]}
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  }
+
+  it('finds the Validate digest values step (guards against a vacuous pass if the step were renamed/removed)', () => {
+    expect(validateStep).toBeDefined()
+  })
+
+  it('produces valid=true for a valid report URL and valid counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.status).toBe(0)
+    expect(result.valid).toBe('true')
+  })
+
+  it('produces valid=false for a URL scoped to another repo', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/other-org/other-repo/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for a URL that is not an issue (a pull request)', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/pull/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for a URL with a trailing injection string', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123; rm -rf /',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for non-numeric counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: 'abc',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for negative counts', () => {
+    const result = runValidateStep({
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '-1',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false for empty values', () => {
+    const result = runValidateStep({REPORT_URL: '', REPOS_TRACKED: '', SURVEYS_TODAY: ''})
+    expect(result.valid).toBe('false')
+  })
+
+  it('produces valid=false when count_status is not ok, without ever evaluating the report URL', () => {
+    const result = runValidateStep({
+      COUNT_STATUS: 'error',
+      REPORT_URL: 'https://github.com/fro-bot/.github/issues/123',
+      REPOS_TRACKED: '5',
+      SURVEYS_TODAY: '2',
+    })
+    expect(result.valid).toBe('false')
+  })
+
+  it('the announce step never runs unless this step set valid=true (structural check pairing the fixture runs above)', () => {
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(String(announceStep?.if ?? '')).toBe("steps.validated.outputs.valid == 'true'")
   })
 })

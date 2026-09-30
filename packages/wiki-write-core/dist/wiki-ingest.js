@@ -215,11 +215,12 @@ function rejectProtectedWikiBranchName(branch) {
 }
 async function assertWritableWikiBranch(octokit, owner, repo, branch) {
     const response = await octokit.rest.repos.getBranch({ owner, repo, branch });
-    if (response.data.protected === true || response.data.protection?.enabled === true) {
+    if ((response.data.protected === true || response.data.protection?.enabled === true) &&
+        !(owner === DEFAULT_OWNER && repo === DEFAULT_REPO && branch === DEFAULT_BRANCH)) {
         throw new WikiIngestError({
             code: 'PROTECTED_BRANCH',
             message: `wiki ingest refuses to write to protected branch "${branch}"`,
-            remediation: 'Autonomous wiki writes must land on an unprotected branch. Review the ruleset or target the data branch.',
+            remediation: 'Target the canonical fro-bot/.github data branch or another unprotected branch. Review the ruleset and branch protection if this target should be writable.',
         });
     }
 }

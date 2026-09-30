@@ -1,6 +1,8 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import type {OctokitClient, RepositoryInvitation} from './handle-invitation.ts'
 
+import process from 'node:process'
+
 import {describe, expect, it, vi} from 'vitest'
 import {
   countPublicAcceptedInvitations,
@@ -120,6 +122,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -194,6 +197,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -267,6 +271,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -321,6 +326,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -366,6 +372,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -422,6 +429,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -494,6 +502,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -542,6 +551,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -592,6 +602,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -641,6 +652,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -690,6 +702,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -738,6 +751,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -790,6 +804,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -838,6 +853,7 @@ describe('handleInvitations', () => {
 
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -896,6 +912,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -951,6 +968,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -974,6 +992,76 @@ describe('handleInvitations', () => {
     expect(commitMetadata).toHaveBeenCalledOnce()
   })
 
+  it('routes commitMetadata through metadataOctokit, not the polling octokit (App-token invariant)', async () => {
+    const pollOctokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 201,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'token-routing',
+              node_id: 'R_kgDOTOKEN',
+              private: false,
+              owner: {login: 'fro-bot'},
+            },
+          },
+        ],
+      }),
+      getRepo: async () => ({data: {node_id: 'R_kgDOTOKEN', private: false}}),
+    })
+    const metadataOctokit = mockOctokit()
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+
+    // #given distinct poll (PAT) and metadata (App) Octokit clients
+    // #when an invitation is accepted and its metadata entry committed
+    await handleInvitations({
+      octokit: pollOctokit,
+      metadataOctokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    // #then commitMetadata received the App-token client, never the PAT client
+    expect(commitMetadata).toHaveBeenCalledOnce()
+    expect(commitMetadata.mock.calls[0]?.[0].octokit).toBe(metadataOctokit)
+    expect(commitMetadata.mock.calls[0]?.[0].octokit).not.toBe(pollOctokit)
+  })
+
+  it('throws MISSING_METADATA_TOKEN when neither metadataOctokit nor METADATA_WRITE_TOKEN is available', async () => {
+    const octokit = mockOctokit()
+    const savedToken = process.env.METADATA_WRITE_TOKEN
+    delete process.env.METADATA_WRITE_TOKEN
+
+    try {
+      // #given no metadataOctokit and no METADATA_WRITE_TOKEN in the environment
+      // #when invitation polling runs
+      const caught = await handleInvitations({
+        octokit,
+        allowlistPath: 'metadata/allowlist.yaml',
+        reposPath: 'metadata/repos.yaml',
+        now: new Date('2026-04-16T12:00:00.000Z'),
+        workflowFile: 'survey.yaml',
+        workflowRef: 'main',
+        readMetadata: readTestMetadata,
+      }).catch((caughtError: unknown) => caughtError)
+
+      // #then it fails closed with a distinct, actionable error rather than silently
+      // #reusing the PAT client for a data-branch write
+      expect(caught).toBeInstanceOf(InvitationHandlingError)
+      expect((caught as InvitationHandlingError).code).toBe('MISSING_METADATA_TOKEN')
+    } finally {
+      if (savedToken === undefined) delete process.env.METADATA_WRITE_TOKEN
+      else process.env.METADATA_WRITE_TOKEN = savedToken
+    }
+  })
+
   it('throws a structured error when polling is rate limited', async () => {
     const octokit = mockOctokit({
       listInvitationsForAuthenticatedUser: async () => {
@@ -985,6 +1073,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const error = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -1021,6 +1110,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),
@@ -1056,6 +1146,7 @@ describe('handleInvitations', () => {
     // #when invitation polling runs
     const result = await handleInvitations({
       octokit,
+      metadataOctokit: octokit,
       allowlistPath: 'metadata/allowlist.yaml',
       reposPath: 'metadata/repos.yaml',
       now: new Date('2026-04-16T12:00:00.000Z'),

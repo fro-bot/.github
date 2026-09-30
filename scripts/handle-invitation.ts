@@ -46,6 +46,14 @@ export type OctokitClient = Octokit
 
 export interface HandleInvitationsParams {
   octokit?: OctokitClient
+  /**
+   * Octokit authenticated with an App installation token, used ONLY for `data`-branch
+   * metadata writes (bootstrap + `commitMetadata`). Kept separate from `octokit` (the
+   * user-scoped `FRO_BOT_POLL_PAT` client used for reading/accepting invitations and
+   * starring) so every `data` write in this repo's automation goes through the App,
+   * never a long-lived PAT. Defaults to a client built from `METADATA_WRITE_TOKEN`.
+   */
+  metadataOctokit?: OctokitClient
   owner?: string
   repo?: string
   allowlistPath?: string
@@ -94,6 +102,7 @@ export interface FailedInvitationResult {
 
 export type InvitationHandlingErrorCode =
   | 'MISSING_TOKEN'
+  | 'MISSING_METADATA_TOKEN'
   | 'OCTOKIT_LOAD_FAILED'
   | 'INVALID_ALLOWLIST'
   | 'INVALID_REPOS'
@@ -125,12 +134,14 @@ export async function handleInvitations(params: HandleInvitationsParams = {}): P
   const workflowRef = params.workflowRef ?? DEFAULT_WORKFLOW_REF
   const now = params.now ?? new Date()
   const octokit = params.octokit ?? (await createOctokitFromEnv())
+  const metadataOctokit = params.metadataOctokit ?? (await createMetadataOctokitFromEnv())
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? commitMetadata
   const bootstrap = params.bootstrapDataBranch ?? bootstrapDataBranch
 
   // Ensure data branch exists before any metadata writes (idempotent — no-op if already present).
-  await bootstrap({octokit, owner, repo})
+  // Uses the App-token client: creating the `data` branch is itself a `data`-branch write.
+  await bootstrap({octokit: metadataOctokit, owner, repo})
 
   const allowlist = await loadAllowlist(readMetadata, allowlistPath)
   const approvedInviters = new Set(allowlist.approved_inviters.map(inviter => inviter.username))
@@ -147,6 +158,7 @@ export async function handleInvitations(params: HandleInvitationsParams = {}): P
   for (const invitation of invitations) {
     const invitationResult = await processInvitation({
       octokit,
+      metadataOctokit,
       owner,
       repo,
       reposPath,
@@ -166,6 +178,7 @@ export async function handleInvitations(params: HandleInvitationsParams = {}): P
 
 async function processInvitation(params: {
   octokit: OctokitClient
+  metadataOctokit: OctokitClient
   owner: string
   repo: string
   reposPath: string
@@ -237,7 +250,7 @@ async function processInvitation(params: {
         : {private: false, node_id: acceptedPrivacy.nodeId}),
     }
     await params.commitMetadata({
-      octokit: params.octokit,
+      octokit: params.metadataOctokit,
       path: params.reposPath,
       message: invitationCommitMessage(displayTarget),
       mutator: current => addRepoEntry(current, entryInput),
@@ -564,6 +577,28 @@ async function createOctokitFromEnv(): Promise<OctokitClient> {
       code: 'MISSING_TOKEN',
       message: 'handleInvitations requires params.octokit or GITHUB_TOKEN in the environment',
       remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
+    })
+  }
+
+  const LoadedOctokit = await loadOctokitConstructor()
+  return new LoadedOctokit({auth: token})
+}
+
+/**
+ * Builds the App-token Octokit used exclusively for `data`-branch metadata writes. Kept
+ * separate from `createOctokitFromEnv` (which builds the `FRO_BOT_POLL_PAT` client) so a
+ * missing App token fails with a distinct, actionable error instead of silently reusing
+ * the PAT for a write it should never make.
+ */
+async function createMetadataOctokitFromEnv(): Promise<OctokitClient> {
+  const token = process.env.METADATA_WRITE_TOKEN
+
+  if (token === undefined || token === '') {
+    throw new InvitationHandlingError({
+      code: 'MISSING_METADATA_TOKEN',
+      message: 'handleInvitations requires params.metadataOctokit or METADATA_WRITE_TOKEN in the environment',
+      remediation:
+        'Mint a GitHub App installation token in the workflow (contents:write) and pass it as METADATA_WRITE_TOKEN, or supply params.metadataOctokit directly.',
     })
   }
 

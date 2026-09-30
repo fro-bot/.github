@@ -225,30 +225,111 @@ describe('commitMetadata API', () => {
     expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
   })
 
-  it('refuses protected: true branches (PROTECTED_BRANCH)', async () => {
+  it('writes to protected data for the canonical repository when protected is true', async () => {
+    const createOrUpdateFileContents = vi.fn(async () => ({data: {commit: {sha: 'new-sha-456'}}}))
+    const octokit = mockOctokit({
+      getBranch: async () => ({data: {name: 'data', protected: true, commit: {sha: 'data-sha'}}}),
+      createOrUpdateFileContents,
+    })
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: () => ({version: 2}),
+      octokit,
+    })
+    expect(result.committed).toBe(true)
+    expect(createOrUpdateFileContents).toHaveBeenCalledOnce()
+  })
+
+  it('writes to protected data for the canonical repository when protection.enabled is true', async () => {
+    const createOrUpdateFileContents = vi.fn(async () => ({data: {commit: {sha: 'new-sha-456'}}}))
+    const octokit = mockOctokit({
+      getBranch: async () => ({
+        data: {name: 'data', protected: false, protection: {enabled: true}, commit: {sha: 'data-sha'}},
+      }),
+      createOrUpdateFileContents,
+    })
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: () => ({version: 2}),
+      octokit,
+    })
+    expect(result.committed).toBe(true)
+    expect(createOrUpdateFileContents).toHaveBeenCalledOnce()
+  })
+
+  it('propagates GitHub 403 for canonical protected data without retrying', async () => {
+    const denial = Object.assign(new Error('Forbidden'), {status: 403})
+    const getBranch = vi.fn(async ({branch}: {branch: string}) => ({
+      data: {name: branch, protected: true, commit: {sha: 'data-sha'}},
+    }))
+    const getContent = vi.fn(async () => ({
+      data: {type: 'file' as const, sha: 'abc123', content: encode({version: 1}), encoding: 'base64'},
+    }))
+    const createOrUpdateFileContents = vi.fn(async () => {
+      throw denial
+    })
+    const bootstrapDataBranch = vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'}))
+    const octokit = mockOctokit({getBranch, getContent, createOrUpdateFileContents})
+
+    await expect(
+      commitMetadata({
+        path: 'metadata/repos.yaml',
+        message: 'test',
+        mutator: () => ({version: 2}),
+        octokit,
+        bootstrapDataBranch,
+      }),
+    ).rejects.toBe(denial)
+
+    expect(bootstrapDataBranch).toHaveBeenCalledOnce()
+    expect(getBranch).toHaveBeenCalledOnce()
+    expect(getContent).toHaveBeenCalledOnce()
+    expect(createOrUpdateFileContents).toHaveBeenCalledOnce()
+  })
+
+  it('refuses protected data for a noncanonical repository', async () => {
     const octokit = mockOctokit({
       getBranch: async () => ({data: {name: 'data', protected: true, commit: {sha: 'data-sha'}}}),
     })
     const error = await commitMetadata({
       path: 'metadata/repos.yaml',
+      owner: 'someone-else',
+      repo: '.github',
       message: 'test',
-      mutator: x => x,
+      mutator: () => ({version: 2}),
       octokit,
     }).catch((error: unknown) => error)
     expect(error).toBeInstanceOf(CommitMetadataError)
     expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
   })
 
-  it('refuses protection.enabled branches (PROTECTED_BRANCH)', async () => {
+  it('refuses protected data for a repository override', async () => {
     const octokit = mockOctokit({
-      getBranch: async () => ({
-        data: {name: 'data', protected: false, protection: {enabled: true}, commit: {sha: 'data-sha'}},
-      }),
+      getBranch: async () => ({data: {name: 'data', protected: true, commit: {sha: 'data-sha'}}}),
     })
     const error = await commitMetadata({
       path: 'metadata/repos.yaml',
+      repo: 'other-repo',
       message: 'test',
-      mutator: x => x,
+      mutator: () => ({version: 2}),
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
+  })
+
+  it('refuses protected non-data branches even with allowUnsafeBranch', async () => {
+    const octokit = mockOctokit({
+      getBranch: async () => ({data: {name: 'protected-feature', protected: true, commit: {sha: 'protected-sha'}}}),
+    })
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      branch: 'protected-feature',
+      allowUnsafeBranch: true,
+      message: 'test',
+      mutator: () => ({version: 2}),
       octokit,
     }).catch((error: unknown) => error)
     expect(error).toBeInstanceOf(CommitMetadataError)

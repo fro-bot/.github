@@ -227,7 +227,7 @@ function deriveLearningTitle(mergeSha: string): string {
 // I/O shell: openLearningIssues
 // ---------------------------------------------------------------------------
 
-const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
+export const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
   name: LEARNING_PROPOSAL_LABEL,
   // Color matches .github/settings.yml (hex without '#', as GitHub createLabel requires)
   color: '0e8a16',

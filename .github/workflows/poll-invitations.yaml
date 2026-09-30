@@ -25,10 +25,22 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # metadata/repos.yaml writes must land with the App token, not the user-scoped PAT
+      # — FRO_BOT_POLL_PAT stays reserved for reading/accepting invitations and starring.
+      - name: 🔑 Mint App token for metadata writes
+        id: metadata-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       - name: 📬 Poll invitations
         id: poll
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
+          METADATA_WRITE_TOKEN: ${{ steps.metadata-token.outputs.token }}
         run: node scripts/handle-invitation.ts
 
       # Best-effort Discord presence: announce accepted public invitations to the
