@@ -10,7 +10,9 @@ onlyBuiltDependencies:
 
 overrides:
   ajv@8: 8.20.0
-  brace-expansion: '>=5.0.9'
+  # GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p: recursion DoS; 5.0.12 also fixes GHSA-q2hr-2g5m-vwhr.
+  # Remove this floor only when all parent ranges exclude the affected versions.
+  brace-expansion: '>=5.0.12'
   fast-uri: '>=4.1.3'
   flatted: '>=3.4.2'
   minimatch: '>=10.2.3'
