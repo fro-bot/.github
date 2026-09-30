@@ -14,7 +14,7 @@ overrides:
   picomatch: '>=4.0.4'
   postcss: '>=8.5.18'
   qs: '>=6.15.2'
-  undici: '>=8.9.0'
+  undici: '>=8.10.2'
   vite: '>=8.0.16'
   yaml: '>=2.8.3'
 
@@ -2583,8 +2583,8 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@8.10.0:
-    resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
+  undici@8.10.2:
+    resolution: {integrity: sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==}
     engines: {node: '>=22.19.0'}
 
   unicode-segmenter@0.14.5:
@@ -4219,7 +4219,7 @@ snapshots:
       package-json: 10.0.1
       semver: 7.8.5
       synckit: 0.11.12
-      undici: 8.10.0
+      undici: 8.10.2
     transitivePeerDependencies:
       - '@eslint/json'
 
@@ -5463,7 +5463,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@8.10.0: {}
+  undici@8.10.2: {}
 
   unicode-segmenter@0.14.5: {}
 

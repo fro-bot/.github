@@ -18,7 +18,9 @@ overrides:
   picomatch: '>=4.0.4'
   postcss: '>=8.5.18'
   qs: '>=6.15.2'
-  undici: '>=8.9.0'
+  # GHSA-w293-vg96-wgc3, GHSA-vp8m-p9jh-q5pm, and GHSA-rfgv-xxqx-mfg5 affect <8.10.2.
+  # Remove this floor only when all parent ranges exclude the affected versions.
+  undici: '>=8.10.2'
   vite: '>=8.0.16'
   yaml: '>=2.8.3'
 
