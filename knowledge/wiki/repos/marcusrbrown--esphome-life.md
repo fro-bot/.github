@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/esphome.life
 created: 2026-04-18
-updated: 2026-09-14
+updated: 2026-09-30
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 6852f168e06bce3373901bea9fdb79bf4aee831f
+    accessed: 2026-09-30
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-21
@@ -78,6 +81,58 @@ node_id: R_kgDOIZmGgg
 ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forked from the [esphome-project-template](https://github.com/esphome/esphome-project-template), it builds firmware via CI and publishes a GitHub Pages site with [ESP Web Tools](https://esphome.github.io/esp-web-tools/) for browser-based flashing.
 
 ## Overview
+
+### Current source observations (2026-09-30)
+
+The public `main` tree at `6852f168e06bce3373901bea9fdb79bf4aee831f`
+still contains 17 files and exactly three workflows: `ci.yaml`, `renovate.yaml`,
+and `update-repo-settings.yaml`. **No Fro Bot workflow is present**, including
+under another filename. A follow-up draft PR adding review/triage automation can
+be proposed separately; the existing recommendation is retained.
+
+Both reusable-workflow callers now pin `bfra-me/.github` **v4.34.0**
+(`55859d58bf2922cecdde2a079f8ba8a1c2615566`), superseding the dated v4.29.0
+snapshot below. The settings caller still targets **`renovate.yaml`**, despite
+its filename, job name, and introductory comment claiming settings synchronization.
+Its push-to-main trigger and daily `23 12 * * *` schedule persist. This verifies
+the wiring defect, not current run outcomes or live settings; see
+[[probot-settings]].
+
+`ci.yaml` still builds only `olimex-bluetooth-proxy-1349f4.yaml`; the directory
+listing also includes `olimex-bluetooth-proxy-13451c.yaml`, outside the matrix.
+ESPHome remains **2025.12.7**, matching the devcontainer image manifest.
+The build action is **v7.4.0** and Pages deploy action **v4.9.0**. These current
+pins supersede the older v7.2.0/v4.8.0 pipeline description as present-tense claims;
+the dated action snapshots remain historical evidence.
+
+**Firmware manifest output is not forwarded.** `build-firmware` exposes
+`esphome-version` from its build step, but the intervening `build` job declares
+no outputs. `publish` depends on `[prepare, build]` and constructs the combined
+manifest with `needs.build.outputs.esphome-version`. That lookup has no producer,
+so the workflow expression supplies an empty string for the top-level `version`
+field. The completion gate does not relay the firmware job's outputs.
+This is a static workflow finding, not an inspection of a published artifact;
+neither device firmware nor installer behavior was tested. A repair would
+explicitly forward the output through `build`, or declare the firmware job as a
+direct dependency and read its output. See [[esphome]] for the artifact-contract
+distinction.
+
+`docs/readme.md` remains the upstream template and directs readers to
+`.github/workflows/publish.yml` and `.github/workflows/ci.yml`, neither of which
+exists in the current listing. The actual combined build/publish pipeline is
+`ci.yaml`. This is documentation drift, not evidence of two missing workflows.
+
+Sources: [tree](https://github.com/marcusrbrown/esphome.life/tree/6852f168e06bce3373901bea9fdb79bf4aee831f),
+[CI workflow](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/ci.yaml),
+[settings caller](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/update-repo-settings.yaml),
+[Renovate caller](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/renovate.yaml),
+[devcontainer manifest](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.devcontainer.json),
+[README](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/docs/readme.md).
+
+The remaining overview and survey history carry dated accumulated knowledge.
+Issue/PR states, approval gates, upstream releases, deployed Pages content,
+device YAML bodies, and settings/Renovate configuration bodies were not reread
+in this limited pass; their earlier observations are not refreshed by this date.
 
 - **Purpose:** ESPHome device firmware definitions, CI-built and deployed to GitHub Pages
 - **Default branch:** `main`

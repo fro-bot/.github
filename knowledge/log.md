@@ -6683,42 +6683,49 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
-## [2026-09-30 11:15] ingest | bfra-me/ha-addon-repository
+## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
 
-Limited public-repository survey at unchanged `main` SHA
-`b7bcd528f511809e0f5906af42ca6ff131c1ff1e`. Updated
-[[bfra-me--ha-addon-repository]] and [[docker-containers]] additively and
-cataloged both in `knowledge/index.md`. The two-architecture add-on manifest,
-seven-workflow layout, Fro Bot v0.112.0 workflow, and v4.29.0 reusable callers
-remain declared. No missing-Fro-Bot-workflow follow-up is needed. Recorded that
-publication jobs do not depend on release-integrity or repository-metadata
-validation: a red validator is not an in-workflow publication barrier. This is
-a static dependency observation, not an observed invalid release. Added a dated
-correction to the topic's older four-architecture summary and bounded the repo's
-earlier delivery diagnosis to the workflow shape actually rechecked. Live issue,
-PR, run, alert, and branch-protection states were not surveyed. Target content
-was treated as untrusted; reads were limited to listings, README files, manifests,
-and workflows. Corrections context contained no records. Pre-existing working-tree
-edits were preserved; the caller owns delivery, and this log is the survey notice.
+Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
+Updated [[marcusrbrown--esphome-life]], [[esphome]], and [[probot-settings]]
+additively and refreshed their catalog references in `knowledge/index.md`.
+The 17-file tree retains three workflows and no Fro Bot workflow; the repo page
+carries the recommendation for a separately proposed onboarding draft PR.
+Both reusable callers now use bfra-me/.github v4.34.0, but the settings caller
+still targets Renovate. ESPHome remains 2025.12.7 in CI and the devcontainer,
+and only one of the two listed device configs is in the firmware matrix.
+New static findings: the combined firmware manifest reads a version output from
+a gate job that never forwards it, and the template README references two absent
+`.yml` workflow paths instead of the actual combined `ci.yaml` pipeline.
+Earlier versions and contradictions were retained with dates; dashboard, PR,
+upstream-release, deployment, and live-settings claims were not refreshed.
+Target reads were restricted to directory listings, README, the devcontainer
+manifest, and workflow files, all pinned to the same SHA. Corrections context
+contained no correction spans. Existing working-tree changes were preserved.
+This entry is the canonical ingest summary; no issue or PR notice was created.
 
-Verification: `git diff --check` passed; snapshot validation scanned 47 wiki
-pages with no deterministic findings on the touched pages or catalog (two
-findings elsewhere). Direct `tsc --noEmit` passed, and direct Vitest execution
-passed 4,079 tests across 88 files, with three todo tests. `pnpm lint` stopped
-at existing advisory-floor failures for `undici` and `brace-expansion` before
-ESLint; wiki files are excluded by the repository's ESLint configuration.
-Bootstrap and the build-wrapped type/test scripts were omitted under the
-non-mutating-shell delivery constraint. Visibility was rechecked as public.
-No GitHub comment/review was posted: this dispatch supplies no comment target,
-permits no external writes, and explicitly prohibits an issue run notice.
+Verification: frontmatter, commit provenance, wikilinks, catalog entries, and
+log presence passed the scoped validation; `git diff --check` and direct
+`tsc --noEmit` passed. Direct Vitest execution passed 88 files / 4,079 tests
+(3 todo). `pnpm lint` stopped at existing override-floor violations for
+`undici` and `brace-expansion`, after its Markdown-link check passed.
+Prettier reported drift in all five touched files, also present in their
+committed baselines; accumulated content was not reformatted. ESLint ignores
+the wiki paths. Cached dependencies were used: `pnpm bootstrap` and the
+build-writing `pnpm check-types` / `pnpm test` wrappers were not run under the
+non-mutating-shell contract; their direct type/test equivalents were run.
+No permitted GitHub comment/review destination was supplied for this dispatch,
+so the comment delivery requirement could not be fulfilled within working-dir
+constraints. The caller retains responsibility for persisting these changes.
 
-Sources: https://github.com/bfra-me/ha-addon-repository/tree/b7bcd528f511809e0f5906af42ca6ff131c1ff1e,
-https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/main.yaml,
-https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/fro-bot.yaml,
-https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/example/config.yaml
+Sources: https://github.com/marcusrbrown/esphome.life/tree/6852f168e06bce3373901bea9fdb79bf4aee831f,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/ci.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/renovate.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/update-repo-settings.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.devcontainer.json,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/docs/readme.md
 
-## [2026-09-30 11:20] ingest | repo:bfra-me/ha-addon-repository
+## [2026-09-30 11:22] ingest | repo:marcusrbrown/esphome.life
 
-Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
-Sources: https://github.com/bfra-me/ha-addon-repository
+Sources: https://github.com/marcusrbrown/esphome.life

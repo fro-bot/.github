@@ -2,8 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-09-30: [[bfra-me--ha-addon-repository]] (repo) and
-[[docker-containers]] (topic).
+Catalog refreshed 2026-09-30: [[marcusrbrown--esphome-life]] (repo),
+[[esphome]] (entity), and [[probot-settings]] (topic). Existing entries and
+dated catalog observations are retained below.
 
 2026-09-29 limited re-survey: [[marcusrbrown--sparkle]] remains a pnpm/Turborepo
 design-system monorepo with Fro Bot present at v0.117.0. Its review prompt still

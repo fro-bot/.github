@@ -2,8 +2,11 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-09-14
+updated: 2026-09-30
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 6852f168e06bce3373901bea9fdb79bf4aee831f
+    accessed: 2026-09-30
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
@@ -73,6 +76,24 @@ ESPHome is an open-source framework for configuring and building custom firmware
 The install page's widget is loaded from a hand-written `https://unpkg.com/esp-web-tools@8.0.3/...` module URL embedded in `static/index.md` — no manifest, no Renovate custom manager, no SRI hash (see [[marcusrbrown--esphome-life]], 2026-08-30). ESPHome's published CI/CD template gives you SHA-pinned actions and a Renovate-managed firmware version, but it hands the distribution widget over as a raw CDN string. Anyone adopting `esphome-project-template` inherits that gap. Mitigation: add a Renovate `customManagers` regex for the `esp-web-tools@<version>` token in `static/index.md`, or vendor the script.
 
 ## Version Pinning
+
+### Firmware build success does not validate distribution metadata (2026-09-30)
+
+At [[marcusrbrown--esphome-life]] commit `6852f168`, the CI and devcontainer
+manifest still pin **2025.12.7** and the build action remains **v7.4.0**. The
+workflow exposes the ESPHome version as a `build-firmware` job output, but the
+combined browser-install manifest reads it from an intervening `build` job that
+never forwards that output. The top-level manifest `version` therefore receives
+an empty workflow-expression value even if firmware compilation succeeds.
+The generated or deployed manifest was not read in this pass.
+
+Verify distribution metadata separately from compilation: a dependency edge
+orders jobs but does not transitively export outputs. This concerns the local
+workflow, not a claim that `esphome/build-action` itself produces invalid metadata.
+The earlier approval-gate diagnosis below remains dated evidence; dashboard state
+and upstream releases were not rechecked.
+
+Source: [CI workflow at the surveyed commit](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/ci.yaml).
 
 ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across **eleven** surveys spanning 2026-04 → 2026-09-14, ~5.9 months; the `ci.yaml` blob is byte-identical across that whole span). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. Reinforcing this read: on 2026-08-01 the *tooling* around ESPHome finally advanced — `esphome/build-action` bumped v7.3.0 → v7.4.0 — while the ESPHome runtime version it builds stayed frozen. Renovate is clearly reaching this repo; the `depName=esphome/esphome versioning=loose` datasource comment on the pinned `version:` is what holds the runtime still. The upstream ESPHome project has continued releasing (2026.x series).
 
