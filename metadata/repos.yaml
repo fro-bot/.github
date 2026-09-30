@@ -309,17 +309,17 @@ repos:
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
     database_id: 307573591
-  - owner: marcusrbrown
-    name: cortexkit_anthropic-auth
+  - owner: '[REDACTED]'
+    name: R_kgDOSmhCGA
     added: 2026-05-28
-    onboarding_status: onboarded
+    onboarding_status: lost-access
     last_survey_at: 2026-09-18
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
     next_survey_eligible_at: 2026-10-18
-    private: false
+    private: true
     node_id: R_kgDOSmhCGA
     database_id: 1248346648
   - owner: '[REDACTED]'
