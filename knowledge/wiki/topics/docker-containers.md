@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-27
+updated: 2026-09-30
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-30
   - url: https://github.com/marcusrbrown/containers
     sha: 2c473db0db8ca362b0e4039de878ae74f5c8f0b0
     accessed: 2026-09-27
@@ -41,6 +44,13 @@ Docker container build patterns, security practices, and CI/CD integration obser
 - [[fro-bot--agent]] (added 2026-09-25) — `deploy/` compose stack (gateway, workspace, mitmproxy), two digest-pinned `node:24.21.0-alpine` multi-stage images. The workspace image splits a root, capability-trimmed service from an unprivileged uid-10001 agent (see below)
 
 ## Dockerfile Patterns Observed
+
+**Dated correction (2026-09-30):** the four-architecture/`ARG BUILD_FROM`
+description of [[bfra-me--ha-addon-repository]] in the list above is historical,
+superseded by its September 15 rebuild. The current manifest and workflow at
+`b7bcd528` declare only `aarch64` and `amd64`, with native ARM64/AMD64 runners
+and composable builder sub-actions. The older snapshot is retained for provenance;
+the two-architecture pattern is detailed below.
 
 ### Base Image Pinning
 
@@ -109,6 +119,24 @@ Registry push is gated on `github.event_name != 'pull_request'` to prevent PR bu
 [[marcusrbrown--containers]]'s `build-publish.yaml` triggers on both `scripts/**` and `**/Dockerfile`, but its detection step filters the changed paths to `Dockerfile` only and returns an empty matrix for a scripts-only change. The build job then skips. The workflow declares that script changes matter while the matrix declares that they do not: a successful trigger is not evidence that a container was built. If scripts can affect published images, map those paths to the affected image(s), or remove the trigger if they cannot. The surveyed workflow establishes this routing mismatch; it does not establish an actual image regression.
 
 ### Security Scanning
+
+#### A validation job is not automatically a publication gate (2026-09-30)
+
+In [[bfra-me--ha-addon-repository]]'s
+[`main.yaml`](https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/main.yaml),
+`publish-addon` needs only `prepare`, and `publish-manifest` needs only
+`prepare` plus `publish-addon`. Release-integrity and repository-metadata
+validation run in parallel; their results feed `Lint`, not the publication lane.
+The workflow can publish on a qualifying default-branch push even if those
+validation jobs fail. This is a static job-graph property, not evidence of a
+bad image having shipped; live branch protection was not checked.
+
+If validation must block publication within a workflow, make successful validation
+a prerequisite of the privileged publish job. A required PR check can protect
+the merge path, but it is a different guarantee from an explicit publish dependency.
+Likewise, reading a manifest back from the registry proves its platform list,
+not that earlier release-policy validation passed. Preserve both controls rather
+than treating either as a substitute for the other.
 
 Trivy is used for both vulnerability scanning (image scan) and misconfiguration scanning (config scan). Results are uploaded as SARIF for GitHub Security tab integration. Hadolint provides static Dockerfile linting with SARIF output.
 

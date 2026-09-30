@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-09-15
+updated: 2026-09-30
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-09-30
 tags:
   - home-assistant
   - addon
@@ -62,6 +65,53 @@ node_id: R_kgDOIKWaJA
 Template repository for a Home Assistant add-on repository. GitHub template (`is_template: true`) under the `bfra-me` org, used as the blueprint when starting a new HA add-on collection. The repo ships one example add-on (`example/`) that gets built and published to GHCR.
 
 This is the bfra-me ecosystem's add-on counterpart to Marcus's runtime [[marcusrbrown--ha-config]] — where ha-config consumes add-ons and integrations, this repo defines the scaffolding for building and publishing new ones.
+
+## 2026-09-30 — Static contract recheck
+
+The public `main` ref still resolves to **`b7bcd528f511809e0f5906af42ca6ff131c1ff1e`**,
+the September 15 source snapshot. Directory listings, root and example READMEs,
+`repository.yaml`, `example/config.yaml`, and all seven workflow files were inspected.
+Earlier issue, PR, alert, run, and applied-settings claims below remain dated observations;
+they were not refreshed. Dockerfiles, scripts, contributor guidance, and external action
+implementations were outside this pass's read scope.
+
+### Template and automation declarations remain unchanged
+
+The README and add-on manifest agree on `aarch64` and `amd64`, version `1.2.8`,
+and the generic image `ghcr.io/bfra-me/addon-example`. `repository.yaml` still
+contains placeholder name and maintainer fields. The README explicitly asks fork
+owners to personalize the repository metadata and image namespace.
+
+**Fro Bot is present** in `.github/workflows/fro-bot.yaml`, pinned to agent
+**v0.112.0**, with the daily `30 15 * * *` schedule. The job still ends after
+checkout and agent execution: checkout disables persisted credentials, the agent
+has no explicit `output-mode`, and no caller delivery step follows it. This confirms
+the previously observed workflow shape, not the current harness's resolved mode
+or the daemon's live ability to push. A missing-workflow draft is not warranted.
+Both reusable workflow callers remain at `bfra-me/.github` **v4.29.0**.
+
+### Release validation and publication are parallel lanes
+
+An additional static finding in
+[`main.yaml`](https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/main.yaml):
+`publish-addon` depends only on `prepare`; `publish-manifest` depends on
+`prepare` and `publish-addon`. Neither waits for `release-integrity`,
+`repository-metadata`, or the `Lint` aggregator. `Build` likewise checks
+preparation and build/publication results, not the lint results.
+
+On an eligible default-branch push, publication can therefore proceed alongside
+validation. A failing release-integrity job makes the workflow red but does not
+directly prevent the publish jobs from running. Pre-merge checks may prevent such
+a change from reaching the branch, but their currently applied protection state
+was not surveyed. The earlier description of release integrity as a required
+check remains historical; interpreting it as an in-workflow publication prerequisite
+would overstate the job graph. No invalid release or actual race was observed.
+See [[docker-containers]] for this validation-versus-publication distinction.
+
+The manifest publisher still reads back the versioned registry reference and
+compares its platforms with the declared architecture list. These are separate
+guarantees: registry readback verifies the published platform set, while a
+dependency on validation would enforce whether publication was allowed to happen.
 
 ## 2026-09-15 — The parked car started, and it was not a maintenance interval
 

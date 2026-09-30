@@ -6682,3 +6682,43 @@ Sources: https://github.com/fro-bot/.github/pull/3942#issuecomment-5904530000, h
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-09-30 11:15] ingest | bfra-me/ha-addon-repository
+
+Limited public-repository survey at unchanged `main` SHA
+`b7bcd528f511809e0f5906af42ca6ff131c1ff1e`. Updated
+[[bfra-me--ha-addon-repository]] and [[docker-containers]] additively and
+cataloged both in `knowledge/index.md`. The two-architecture add-on manifest,
+seven-workflow layout, Fro Bot v0.112.0 workflow, and v4.29.0 reusable callers
+remain declared. No missing-Fro-Bot-workflow follow-up is needed. Recorded that
+publication jobs do not depend on release-integrity or repository-metadata
+validation: a red validator is not an in-workflow publication barrier. This is
+a static dependency observation, not an observed invalid release. Added a dated
+correction to the topic's older four-architecture summary and bounded the repo's
+earlier delivery diagnosis to the workflow shape actually rechecked. Live issue,
+PR, run, alert, and branch-protection states were not surveyed. Target content
+was treated as untrusted; reads were limited to listings, README files, manifests,
+and workflows. Corrections context contained no records. Pre-existing working-tree
+edits were preserved; the caller owns delivery, and this log is the survey notice.
+
+Verification: `git diff --check` passed; snapshot validation scanned 47 wiki
+pages with no deterministic findings on the touched pages or catalog (two
+findings elsewhere). Direct `tsc --noEmit` passed, and direct Vitest execution
+passed 4,079 tests across 88 files, with three todo tests. `pnpm lint` stopped
+at existing advisory-floor failures for `undici` and `brace-expansion` before
+ESLint; wiki files are excluded by the repository's ESLint configuration.
+Bootstrap and the build-wrapped type/test scripts were omitted under the
+non-mutating-shell delivery constraint. Visibility was rechecked as public.
+No GitHub comment/review was posted: this dispatch supplies no comment target,
+permits no external writes, and explicitly prohibits an issue run notice.
+
+Sources: https://github.com/bfra-me/ha-addon-repository/tree/b7bcd528f511809e0f5906af42ca6ff131c1ff1e,
+https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/main.yaml,
+https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/fro-bot.yaml,
+https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/example/config.yaml
+
+## [2026-09-30 11:20] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository

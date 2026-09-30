@@ -2,6 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-09-30: [[bfra-me--ha-addon-repository]] (repo) and
+[[docker-containers]] (topic).
+
 2026-09-29 limited re-survey: [[marcusrbrown--sparkle]] remains a pnpm/Turborepo
 design-system monorepo with Fro Bot present at v0.117.0. Its review prompt still
 asserts pnpm 10.x against the manifest's 11.28.0, and the docs-regeneration
