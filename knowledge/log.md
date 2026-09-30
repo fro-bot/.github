@@ -6670,3 +6670,15 @@ Sources: https://github.com/marcusrbrown/sparkle/tree/76b80d8a7a4a86d9888b1ed49e
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-09-30 05:30] manual-edit | security-remediation-integration
+
+Added [[security-remediation-integration]] and cataloged it in `knowledge/index.md`. Captured the verified distinction between standalone security PR failures and combined-tree success from the remediation evidence, plus repository/registry advisory snapshot lag. Referenced the public agent's differential-versus-full-tree OSV workflow as an additional reporting pattern, explicitly preserving the control plane's existing required security gate. PR merge outcomes and live scanner execution were not inferred. The wiki diff is left for the caller's authoritative ingestion step.
+
+Sources: https://github.com/fro-bot/.github/pull/3942#issuecomment-5904530000, https://github.com/fro-bot/.github/pull/3941, https://github.com/fro-bot/.github/pull/3942, https://github.com/fro-bot/agent/blob/27d08f8201656db6da2c60758bd4a0579fa2f6bb/.github/workflows/osv-scanner.yaml
+
+## [2026-09-30 05:39] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
