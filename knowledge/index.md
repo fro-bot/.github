@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-01: [[marcusrbrown--marcusrbrown-com]] (repo) and
+[[github-pages]] (topic). Their existing catalog entries and dated observations
+remain below; the Pages topic now distinguishes the brand-site identity and
+its deployment checks from the separate PR CI contract.
+
 2026-10-01 oversight: [[github-actions-ci]] records why report backlinks must
 not reset PR inactivity. Creation age and actual update activity were checked
 separately using paginated timelines; older catalog observations remain below.

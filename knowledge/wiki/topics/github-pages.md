@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-10-01
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 6f975b1d7bb09ea515f2628ff50e2f4b8e68020d
+    accessed: 2026-10-01
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
@@ -53,6 +56,38 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Brand-site identity and gate correction (2026-10-01)
+
+The historical catalog below lists `marcusrbrown.com` under
+[[marcusrbrown--marcusrbrown-github-io]]. The brand site's canonical page is
+now [[marcusrbrown--marcusrbrown-com]]; the `github.io` slug describes the
+separate mrbro.dev portfolio and retains pre-rename history. Read the old
+brand-site references here with that dated correction rather than combining
+the two sites. README and manifest at the brand site's current SHA still
+point at the old repository name, so those self-references are not identity
+proof. The README's live URL and manifest's package name/homepage identify
+the brand site as marcusrbrown.com.
+
+**Deployment gates must be read from the deployment workflow.** At
+`6f975b1d7bb09ea515f2628ff50e2f4b8e68020d`, its `deploy.yaml` runs lint and
+build, uploads `dist` through the Pages artifact API, and deploys under the
+`github-pages` environment. Its push-to-main/dispatch pipeline never invokes
+unit tests, Playwright, or `pnpm audit`, and does not depend on the separate
+PR CI workflow. The older general statement that the Vite deployment runs
+both lint and test gates does not apply to this brand-site pipeline. PR CI
+does run unit tests and the moderate-severity audit gate; enforcement through
+live branch settings was outside this bounded survey.
+
+Reusable audit rule: distinguish **checks the deployment executes** from
+**checks a protected merge may require**. Configured E2E files, browser setup,
+and a separate green CI workflow do not establish that a deployment ran those
+tests. No runtime or live-domain probe was performed in this pass.
+
+Sources: [brand-site README](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/README.md),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/package.json),
+[Deploy](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows/deploy.yaml),
+[CI](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows/ci.yaml).
 
 ## Repos Using GitHub Pages
 

@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.com
 created: 2026-07-13
-updated: 2026-09-20
+updated: 2026-10-01
 node_id: R_kgDOPOkk2A
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
@@ -17,6 +17,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 27ac09de578a72e9285e9fee26fe2b10e8745201
     accessed: 2026-09-16
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 6f975b1d7bb09ea515f2628ff50e2f4b8e68020d
+    accessed: 2026-10-01
 tags:
   - brand-site
   - react
@@ -50,6 +53,81 @@ related:
 # marcusrbrown/marcusrbrown.com
 
 Personal brand site for Marcus R. Brown ("Principal Software Engineer"). Single-page React 19 landing site deployed to [[github-pages]] at [marcusrbrown.com](https://marcusrbrown.com). Simpler than [[marcusrbrown--marcusrbrown-github-io]] (the full developer portfolio at mrbro.dev) — no routing, no theme system, no blog.
+
+## Current bounded observations (2026-10-01)
+
+Public `main` resolves to `6f975b1d7bb09ea515f2628ff50e2f4b8e68020d`.
+This pass reads only directory listings, README, package/workspace manifests,
+and the five workflow files at that SHA. Historical issue, PR, run-health,
+coverage, resolved-dependency, and live-site measurements below remain dated
+observations; none were rechecked. In particular, the September daemon-outage
+record is not evidence that the daemon is still failing in October.
+
+### Stack and structure
+
+- The listing retains the same 66-file layout: 15 files under `src/`, one
+  Playwright E2E file, 15 under `scripts/`, and seven `.ai/plan/` documents.
+  Matching paths do not establish unchanged implementation; source contents
+  were outside this survey's read boundary.
+- `package.json` declares React/React DOM `^19.0.0`, TypeScript `^6.0.0`,
+  Vite `^8.1.3`, Vitest `^4.0.0`, Playwright `^1.58.0`, ESLint `^10.0.0`,
+  and `@bfra.me/eslint-config` **`^0.54.0`** (September: `^0.52.0`). These
+  are declared ranges, not verified installed versions. pnpm is pinned to
+  **11.28.1** (September: 11.27.0), with Node `>=22.0.0` and pnpm `^11.8.0`
+  engine constraints. This pass did not read the setup action, so its historical
+  Node 22 default is not independently refreshed.
+- `pnpm-workspace.yaml` still has 16 overrides. Its exact pins now include
+  `brace-expansion: 5.0.12`, `fast-uri: 3.1.8`, and `postcss: 8.5.28`.
+  `minimumReleaseAgeExclude` names only `@bfra.me/eslint-config@0.54.0`;
+  this scoped exception does not by itself prove a configured release-age
+  policy. The four-package `allowBuilds` block and `shamefullyHoist: true`
+  remain present, while `browserslist` remains absent from the override list.
+- **Correction to prior ledger terminology:** the current manifest has a
+  *top-level* `overrides` object containing `fast-uri` and `flatted`, not a
+  nested `pnpm.overrides` object. The earlier prose names the latter. Both
+  descriptions are retained; without reading the old manifest or executing
+  pnpm here, this pass cannot establish when that difference arose or which
+  diagnostic applies. Workspace override declarations are directly observed;
+  effective resolution is not.
+
+### Workflow contracts, rather than runtime verdicts
+
+**Fro Bot is present**, SHA-pinned to
+`fro-bot/agent@3e86a1249c9af11f5152625259b0e26e9a828cfe` (**v0.117.1**).
+The three dispatch modes and `30 3` / `30 15` UTC crons remain. The job ends
+at `Run Fro Bot`, passes `vars.FRO_BOT_MODEL`, uses checkout with
+`persist-credentials: false`, and supplies no explicit `output-mode` or
+caller-owned commit/PR stage. That confirms the missing explicit delivery
+contract, not an inability to push using the supplied PAT. No onboarding
+draft PR is warranted merely to add Fro Bot.
+
+CI retains five parallel checks after setup and a fail-on-any-non-success
+`Quality Gate`, including `pnpm audit --audit-level moderate`. The test job
+runs `pnpm test`, not `pnpm test:e2e`; no workflow invokes Playwright tests or
+Lighthouse. Browser installation in the autoheal setup is not an E2E gate.
+The workflow listing still lacks CodeQL and Scorecard.
+
+Deploy remains a separate push-to-`main`/dispatch workflow: lint, build,
+upload `dist`, then `actions/deploy-pages` v5.0.1. It does **not** run unit
+tests, E2E, or the dependency audit, and has no CI job dependency. Thus PR
+CI and deployment have different contracts; whether branch protections
+enforce the former was not surveyed. [[github-pages]] records this distinction.
+Renovate still has no cron and calls `bfra-me/.github` **v4.35.0** via a
+SHA-pinned reusable workflow, with successful Deploy completion among its
+triggers.
+
+README's badge and `package.json.repository.url` still name
+`marcusrbrown/marcusrbrown.github.io`; all three agent prompts also retain
+that name. README's pnpm 10.13.1+ and ESLint 9 wording still lag the manifest.
+Its `LICENSE` link still has no matching file in the listing. These are
+confirmed stale references, not refreshed evidence about the other site's
+current status. The Pages topic's old brand-site wikilinks are likewise
+corrected by a dated identity note, preserving the earlier catalog text.
+
+Sources: [README](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/README.md),
+[package manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/package.json),
+[workspace manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/pnpm-workspace.yaml),
+[workflow directory](https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows).
 
 ## Repository identity and the github.io rename
 

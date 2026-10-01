@@ -6748,3 +6748,57 @@ https://github.com/fro-bot/.github/actions/runs/36818273959
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-01 11:42] ingest | marcusrbrown/marcusrbrown.com
+
+Surveyed public `main` at `6f975b1d7bb09ea515f2628ff50e2f4b8e68020d` using
+only directory listings, README, package/workspace manifests, and the five
+workflow files. Updated [[marcusrbrown--marcusrbrown-com]] and [[github-pages]]
+additively and refreshed their catalog references in `knowledge/index.md`.
+The 66-file layout persists; matching paths do not establish unchanged code.
+Fro Bot is present at v0.117.1, so no workflow-onboarding proposal is needed.
+pnpm is 11.28.1, the ESLint config range is ^0.54.0, and the Renovate reusable
+workflow is v4.35.0. Static findings: explicit delivery mode/stage remains
+absent; Deploy runs lint/build but not tests or audit; E2E/Lighthouse still
+have no workflow invocation. README/manifest/prompt identity drift persists.
+Recorded the top-level `overrides` versus historical `pnpm.overrides` wording
+as a contradiction rather than inferring effective pnpm behavior. The Pages
+topic now documents the canonical brand-site slug and qualifies its older
+deployment-gate claim. September run-health and issue/PR observations remain
+dated and unrefreshed. Corrections context had no spans; existing working-tree
+changes were preserved, including caller-prepared metadata.
+
+Verification: direct `tsc --noEmit` passed; direct Vitest passed 88 files /
+4,079 tests (3 todo); `git diff --check` passed. `pnpm lint` passed its
+Markdown-link stage, then failed on existing `undici`/`brace-expansion`
+override-floor violations. Prettier reports formatting drift in the touched
+pages/index; their committed baselines also have formatting drift. Accumulated
+content was not broadly reformatted. Cached dependencies were used instead
+of `pnpm bootstrap`; build-writing `pnpm check-types` / `pnpm test` wrappers
+were replaced by their direct type/test checks under the non-mutating-shell
+delivery contract. Scoped schema, source-SHA, wikilink, and catalog checks
+validate the changed pages; this is not a full authoritative-snapshot lint.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+### Run Summary
+
+- Wiki ingest delivered in the working tree; the caller owns persistence.
+- Verification is partial: type/tests pass; existing lint/format drift remains.
+- Comment delivery is blocked: no permitted comment/review destination was
+  supplied, issue notices are forbidden, and working-dir permits no GitHub
+  mutations. This log entry is the canonical survey summary.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/README.md,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/package.json,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/pnpm-workspace.yaml,
+https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows
+
+## [2026-10-01 11:47] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
