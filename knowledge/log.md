@@ -6729,3 +6729,22 @@ https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-10-01 05:24] ingest | daily oversight activity measurement
+
+Added the audit-backlink exclusion rule to [[github-actions-ci]] and refreshed
+its catalog observation. Paginated timelines for 103 public open PRs confirmed
+that cross-references can falsely refresh inactivity without commits, reviews,
+comments on the PR, or state changes. Preserved existing workflow-prepared wiki
+edits and metadata staging; no metadata was edited by this oversight pass.
+The caller owns ingestion and persistence of the dirty wiki tree.
+
+Sources: https://github.com/bfra-me/github-app/pull/843,
+https://github.com/marcusrbrown/sparkle/pull/2048,
+https://github.com/fro-bot/.github/actions/runs/36818273959
+
+## [2026-10-01 05:32] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4

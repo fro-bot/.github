@@ -2,8 +2,12 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-29
+updated: 2026-10-01
 sources:
+  - url: https://github.com/bfra-me/github-app/pull/843
+    accessed: 2026-10-01
+  - url: https://github.com/marcusrbrown/sparkle/pull/2048
+    accessed: 2026-10-01
   - url: https://github.com/marcusrbrown/sparkle
     sha: 76b80d8a7a4a86d9888b1ed49e9abaadcd19feec
     accessed: 2026-09-29
@@ -229,6 +233,14 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-01 — an audit backlink is not pull-request activity
+
+The daily oversight pass verified creation age and actual update activity for 103 public open PRs using paginated timelines and PR metadata. Taking the newest timestamp from every timeline event incorrectly reduced the inactive-beyond-fourteen-days count from 50 to 13: the newer events were often `cross-referenced` backlinks from reports, not commits, reviews, comments on the PR, or state changes.
+
+The public GitHub App repository's [PR #843](https://github.com/bfra-me/github-app/pull/843) carries a 2026-09-25 backlink, while its latest actual PR update remains 2026-06-16. At [[marcusrbrown--sparkle]], [PR #2048](https://github.com/marcusrbrown/sparkle/pull/2048) has a 2026-09-30 report backlink but its last review/state activity is 2026-09-09. Neither reference should reset inactivity. The corrected snapshot has 78 aging PRs and 50 stale PRs; those counts are dated observations, not standing fleet totals.
+
+Keep creation age and inactivity separate. Measure inactivity from PR update metadata plus commit, review, comment, and state events; exclude cross-references, mentions, and subscription events. Otherwise an oversight loop can make its own backlog appear active merely by reporting it. Paginate timelines: some inspected PRs had more than 100 events. A backlink is evidence that an observer looked, not that the work moved.
 
 ## 2026-09-29 — workflow triggers and agent prompts have their own drift budget
 

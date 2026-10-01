@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-01 oversight: [[github-actions-ci]] records why report backlinks must
+not reset PR inactivity. Creation age and actual update activity were checked
+separately using paginated timelines; older catalog observations remain below.
+
 Catalog refreshed 2026-09-30: [[marcusrbrown--esphome-life]] (repo),
 [[esphome]] (entity), and [[probot-settings]] (topic). Existing entries and
 dated catalog observations are retained below.
