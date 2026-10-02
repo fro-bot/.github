@@ -2,7 +2,7 @@
 type: topic
 title: Security remediation integration and evidence boundaries
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-02
 sources:
   - url: https://github.com/fro-bot/.github/pull/3942#issuecomment-5904530000
     accessed: 2026-09-30
@@ -15,6 +15,11 @@ sources:
   - url: https://github.com/fro-bot/agent
     sha: 27d08f8201656db6da2c60758bd4a0579fa2f6bb
     accessed: 2026-09-30
+  - url: https://github.com/fro-bot/.github/pull/3946#issuecomment-5925981518
+    accessed: 2026-10-02
+  - url: https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/renovate.json5
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-02
 tags: [security, dependencies, integration, ci, evidence]
 ---
 
@@ -43,3 +48,11 @@ For remediation, combine repository-alert evidence with the package registry's a
 [[fro-bot--agent]] has a source-verified [OSV workflow](https://github.com/fro-bot/agent/blob/27d08f8201656db6da2c60758bd4a0579fa2f6bb/.github/workflows/osv-scanner.yaml) that separates PR introduction checks from full-tree reporting. The PR path compares base and head; push, scheduled, and merge-group paths upload full-tree findings to Code Scanning without failing on standing findings. This is a declared workflow contract, not a measured scanner-success result from this survey. It is useful as an additional posture channel; adopting it here would not authorize replacing or weakening the existing override-floor gate.
 
 See [[github-actions-ci]] for related distinctions between successful jobs, executed checks, and delivered artifacts. The practical rule is to record which boundary each green signal proves before using it as authority for the next one.
+
+## 2026-10-02 — the same standing advisory can block unrelated update artifacts
+
+The [October 2 remediation evidence](https://github.com/fro-bot/.github/pull/3941#issuecomment-5945924199) reconfirmed the two standalone security PRs remained blocked. A third PR, [the routine reusable-workflow update #3946](https://github.com/fro-bot/.github/pull/3946), now carries the same dependency-floor failure in two channels: its Lint check run and its legacy `renovate/artifacts` commit status.
+
+The [artifact diagnostic](https://github.com/fro-bot/.github/pull/3946#issuecomment-5925981518) names `pnpm run fix` as the failed command. At the trusted [`b96b990` snapshot](https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/renovate.json5), `postUpgradeTasks` runs bootstrap followed by that command. The fix script runs the whole lint chain before ESLint's formatter, so the standing undici and brace-expansion advisories stop artifact generation even though this PR only updates Actions workflows. There is no evidence here of an additional lockfile-generation or formatter defect.
+
+An artifact failure is a delivery symptom, not automatically a second root cause. Inspect the command diagnostic and both status channels before authoring a repair. In this case the smallest next step is resolving the already-recorded security integration dependency, then letting Renovate refresh its artifacts. Do not remove post-upgrade checks, weaken the advisory gate, or add unrelated security upgrades to a routine version-update branch merely to make its status green. The two high-level observations remain distinct: dedicated patches exist, and the default branch is still vulnerable until an authorized integration lands.

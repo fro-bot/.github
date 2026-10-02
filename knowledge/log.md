@@ -6802,3 +6802,23 @@ https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff5
 Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-10-02 05:14] manual-edit | security-remediation-integration
+
+Extended [[security-remediation-integration]] with the verified propagation of
+the existing undici/brace-expansion floor failures into PR #3946's Renovate
+post-upgrade artifacts. The failing `pnpm run fix` diagnostic establishes the
+shared cause; separate check-run and legacy-status signals are not separate
+defects. Cataloged the observation without changing the existing dedicated
+security PRs or weakening validation. Earlier wiki edits and staged metadata
+were preserved; this additive diff is left for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/pull/3941#issuecomment-5945924199,
+https://github.com/fro-bot/.github/pull/3946#issuecomment-5925981518,
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/renovate.json5
+
+## [2026-10-02 05:19] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4

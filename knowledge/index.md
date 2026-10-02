@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-02 oversight: [[security-remediation-integration]] records how a standing
+whole-tree advisory gate also blocks a routine Actions update's post-upgrade
+artifacts. Check-run and legacy-status failures share the same verified cause;
+the earlier integration and advisory-clock observations remain below.
+
 Catalog refreshed 2026-10-01: [[marcusrbrown--marcusrbrown-com]] (repo) and
 [[github-pages]] (topic). Their existing catalog entries and dated observations
 remain below; the Pages topic now distinguishes the brand-site identity and
