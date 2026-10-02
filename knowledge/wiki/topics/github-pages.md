@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-01
+updated: 2026-10-02
 sources:
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
+    accessed: 2026-10-02
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 6f975b1d7bb09ea515f2628ff50e2f4b8e68020d
     accessed: 2026-10-01
@@ -56,6 +59,16 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Multi-toolchain archive: dependency locks versus runtime pins (2026-10-02)
+
+At `cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39`, [[marcusrbrown--presentations]] still builds CRA/Spectacle under Yarn and Slidev under Bun, then stages both outputs and a root landing page in `_site/`. PRs exercise the assembly; Pages configuration, upload, and deployment are restricted to non-PR runs on `main`. Deployment depends on both `Build` and `Test`, but that test job invokes only the CRA deck's suite. The workflow contains no invocation of the separately listed demo rehearsal test or a browser/link smoke check of the assembled site. Building every artifact does not mean testing every artifact or its final routing.
+
+The two installation steps use frozen lockfiles, while the runtime controls differ: Node is explicitly 20.20.2, and SHA-pinned `oven-sh/setup-bun` (v2.2.0 annotation) has no `bun-version` input. The inspected manifests also declare no package-manager version. An action SHA fixes installer code; it does not itself state the Bun release that code installs. Treat dependency resolution, runtime selection, and output layout as three separate reproducibility contracts when maintaining an independently built static archive. No installed runtime or live site was probed in this pass.
+
+The CRA manifest retains `gh-pages` and its deployment scripts, but inspected CI deploys solely through the Pages artifact API. Their continued presence establishes a parallel local command, not evidence of a second automated publishing path or its current use.
+
+Sources: [CI workflow](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/.github/workflows/ci.yaml), [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Blockchain-Meetup-Feb-2017/package.json), [Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Cheap-LLMs-Meetup-Aug-2026/slides/package.json).
 
 ## Brand-site identity and gate correction (2026-10-01)
 

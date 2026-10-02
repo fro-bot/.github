@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/Presentations
 created: 2026-08-05
-updated: 2026-09-17
+updated: 2026-10-02
 sources:
   - url: https://github.com/marcusrbrown/Presentations
     sha: 34321a4c4a38c99c4bd8b683f267ddba05cd6fe4
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/Presentations
     sha: e510e237f5ac65164d4c259c1205f6adef5ab2ba
     accessed: 2026-09-17
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
+    accessed: 2026-10-02
 tags:
   - presentations
   - slides
@@ -48,6 +51,22 @@ node_id: MDEwOlJlcG9zaXRvcnk4MjcxMzM5Ng==
 Marcus R. Brown's slide-deck archive — "A collection of presentations I've given." A polyglot **monorepo of independent talks**, each in its own top-level directory with its own build toolchain, published to [[github-pages]] at `marcusrbrown.github.io/Presentations/`. Created 2017-02-21; the oldest deck dates to that first commit, the newest was added 2026-08-04.
 
 ## Overview
+
+### Bounded source re-check (2026-10-02)
+
+Public visibility and default branch `main` were confirmed before reading the snapshot at `cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39`. The complete directory listing contains 53 entries, including 42 files, two presentation subtrees, and exactly three workflow files. There is still no root package manifest or workspace manifest. This establishes the current layout, not byte-identical content or an absence of intervening changes.
+
+- **Deck toolchains remain independent.** The 2017 manifest declares React and ReactDOM 18.3.1, Spectacle 10.2.3, `react-scripts` 5.0.1, `gh-pages` 6.3.0, and the `assert` npm alias at 2.1.0. The Slidev manifest still declares `@slidev/cli: ^52.1.0` and exact `@slidev/theme-seriph: 0.25.0`. Both packages are marked private for publication; that flag does not describe repository visibility. Lockfile contents and installed versions were not read.
+- **CI builds both decks, tests one, and publishes their assembly.** `Build` installs the CRA deck with frozen Yarn dependencies on Node 20.20.2, then builds the Slidev deck with frozen Bun dependencies. It assembles root `index.html` and both outputs into `_site/` on PRs too. `Test` invokes only the CRA deck's `yarn test`; the listed `demo/run-preset.test.sh` is not invoked. Main-only `Deploy` depends on both jobs and alone receives `pages: write` and `id-token: write`. No PDF export, site reachability test, or browser check is invoked by this workflow.
+- **Pinned installer is not a pinned runtime.** `oven-sh/setup-bun` remains SHA-pinned at the v2.2.0 annotation, but supplies no `bun-version` input. Neither inspected manifest declares a package-manager version. The workflow therefore does not explicitly constrain Bun to an exact release; frozen dependency resolution does not close that runtime boundary. See [[github-pages]] for the two-toolchain reproducibility distinction.
+- **Shared callers advanced together.** Renovate and settings sync now use `bfra-me/.github` at `6522e7232b5f31bca9b7856ea2d737d34307f470` (v4.35.0), superseding the dated v4.30.0 pins below. Settings sync still targets `update-repo-settings.yaml` correctly and schedules at 14:19 UTC. Renovate still has no cron and is chained to successful `CI` completion, alongside edit, non-main push, and manual triggers. Its OR expression still allows a bot edit under the `event_name != 'workflow_run'` arm on a literal reading. The earlier observed skip/text contradiction remains historical and unresolved; run behavior was not sampled in this pass.
+- **Fro Bot workflow remains absent.** The only workflow files are `ci.yaml`, `renovate.yaml`, and `update-repo-settings.yaml`; none invokes Fro Bot. A follow-up draft PR can be proposed separately, retaining the prior low-priority recommendation rather than interpreting shared governance as resident agent integration.
+
+The root README is still a title and CI badge; the Slidev README documents local presentation/build/PDF commands and links `../OUTLINE.md`, which exists in the listing. CRA's manifest still carries `predeploy`/`deploy` scripts for `gh-pages`, while inspected CI exclusively uses Pages artifacts. That is a confirmed alternate deployment path, not proof nobody invokes it manually.
+
+**Evidence boundary:** reads were limited to directory listings, README files, package manifests, and workflows. Earlier PR ages, dashboard abandonment classifications, advisory status, branch protections, archive-state diagnosis, demo implementation details, and deployed-domain claims are retained as dated observations, not renewed assertions. No source files, slides, notes, settings, Renovate configuration, or lockfile contents were inspected or executed.
+
+Sources: [directory listing](https://github.com/marcusrbrown/Presentations/tree/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39), [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Blockchain-Meetup-Feb-2017/package.json), [Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Cheap-LLMs-Meetup-Aug-2026/slides/package.json), [CI workflow](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/.github/workflows/ci.yaml), [Renovate workflow](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/.github/workflows/renovate.yaml), [settings-sync workflow](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/.github/workflows/update-repo-settings.yaml).
 
 - **Purpose:** Archive of conference/meetup presentation decks, one directory per talk
 - **Default branch:** `main`
