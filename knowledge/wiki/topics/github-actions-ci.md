@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-01
+updated: 2026-10-02
 sources:
+  - url: https://github.com/bfra-me/renovate-action
+    sha: b214c0b1b1a1803e94ff36b9cafffc610e8b33dc
+    accessed: 2026-10-02
   - url: https://github.com/bfra-me/github-app/pull/843
     accessed: 2026-10-01
   - url: https://github.com/marcusrbrown/sparkle/pull/2048
@@ -233,6 +236,31 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-02 — a marker cannot deduplicate what discovery excludes
+
+[[bfra-me--renovate-action]]'s `release-alert.yaml` at `b214c0b1` first queries
+open issues with `--label release-failure --limit 100`, then filters returned
+bodies for `<!-- release-failure:v1 -->`. The earlier repo-page claim that
+deduplication used the marker instead of a mutable label is contradicted:
+the effective predicate requires **both**. Removing a label makes the existing
+report invisible to the lookup, even if its body marker is intact. The cap
+also bounds discovery. This is a static duplicate risk, not an observed
+duplicate or a finding about current issue state.
+
+Read the whole selection pipeline before calling a marker-based lifecycle
+robust. A stable identifier cannot rescue an object excluded by the upstream
+query. The alert's separate signal remains well-scoped: it checks the failed
+`Release` job after a failed default-branch `Main` run, but cannot detect a
+successfully published defective engine.
+
+The same snapshot retains trigger-scoped checkout credentials while omitting
+both the agent's explicit `output-mode` and any post-agent delivery step.
+Credential availability and delivery ownership must be checked separately;
+neither prompt instructions nor workflow shape alone prove recent PR output.
+
+Source: [Release Alert](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows/release-alert.yaml)
+and [Fro Bot](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows/fro-bot.yaml).
 
 ## 2026-10-01 — an audit backlink is not pull-request activity
 

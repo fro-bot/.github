@@ -6822,3 +6822,64 @@ https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-02 11:14] ingest | bfra-me/renovate-action
+
+Surveyed public `main` at `b214c0b1b1a1803e94ff36b9cafffc610e8b33dc` using
+only directory listings, the root/docs READMEs and package manifests, and all
+nine workflow files. Updated [[bfra-me--renovate-action]] and
+[[github-actions-ci]] additively and refreshed their catalog references.
+Fro Bot is present at v0.117.1; no missing-workflow proposal is warranted.
+The manifest now pins pnpm 11.28.2; the README still advertises v9 against
+the recorded v10 history. Renovate and post-release dispatch callers are
+v4.35.0 while settings remains correctly pathed at v4.16.0. The Fro Bot
+workflow retains trigger-scoped credentials but lacks explicit output mode
+and any caller delivery stage. These are static observations, not fresh
+measurements of successful runs, queue state, installed versions, or releases.
+
+Corrected the earlier marker-only release-alert deduplication claim without
+removing it: discovery requires the `release-failure` label AND the body
+marker, bounded by 100 results. Recorded the resulting duplicate risk as
+hypothetical, not observed. The job-specific failure signal remains valid.
+Corrections context contained no spans. Preserved all pre-existing wiki edits
+and caller-prepared metadata; this pass modifies only the two wiki pages,
+index, and this append-only log. External repository content was treated as
+data and none of its commands or agent instructions were executed.
+
+Verification: direct `tsc --noEmit` passed; direct Vitest passed 88 files /
+4,079 tests (3 todo); `git diff --check` passed. Read-only scoped wiki lint
+found no deterministic schema, wikilink, or catalog defects in the touched
+pages and no index drift across the 47-page working snapshot. This is not an
+authoritative-data-branch freshness review. `pnpm lint` passed Markdown-link
+validation, then failed on existing undici/brace-expansion override floors.
+ESLint ignores the wiki Markdown files, so the scoped ESLint invocation is
+not a Markdown-formatting pass. Cached dependencies were used: bootstrap
+and the build-writing `pnpm check-types`/`pnpm test` wrappers were replaced
+with direct checks under the non-mutating-shell delivery contract. Full
+repository verification remains partial. Workflow guarding was unavailable.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+### Run Summary
+
+- Wiki ingest delivered in the working tree; caller owns persistence.
+- Type/tests and scoped wiki integrity pass; existing advisory-floor lint
+  failures prevent a clean full verification result.
+- Comment delivery is blocked: no permitted comment/review destination was
+  supplied, issue run notices are forbidden, and working-dir permits no
+  GitHub mutations. This log entry is the canonical survey summary.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/bfra-me/renovate-action/tree/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc,
+https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/README.md,
+https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/package.json,
+https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/docs/README.md,
+https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/docs/package.json,
+https://github.com/bfra-me/renovate-action/tree/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows
+
+## [2026-10-02 11:16] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action

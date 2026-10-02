@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-02: [[bfra-me--renovate-action]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog entries and dated observations
+remain below.
+
 2026-10-02 oversight: [[security-remediation-integration]] records how a standing
 whole-tree advisory gate also blocks a routine Actions update's post-upgrade
 artifacts. Check-run and legacy-status failures share the same verified cause;
