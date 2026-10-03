@@ -6683,6 +6683,47 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
+## [2026-10-03 10:30] ingest | fro-bot/space-bus
+
+Bounded public-repository survey at `20ab67c56a39f12774d7dcb659e65848767bc03e`.
+Added a current sourced snapshot to [[fro-bot--space-bus]] and a production
+versus development-watch export-contract observation to [[opencode-plugins]];
+refreshed their catalog note in `index.md`. Preserved accumulated content,
+existing node identity, and all pre-existing working-tree changes. The
+untrusted corrections context contains no corrections.
+
+The manifest remains `0.15.0`; Fro Bot remains present at `v0.112.0` with
+no explicit delivery-mode input or caller delivery steps. README “four tools”
+wording and the missing `/registry` documentation remain. Development-watch
+entry lists omit the exported registry entry; this is a coverage observation,
+not an executed-runtime diagnosis. CI, Changesets/OIDC declarations, shared
+workflow pins, and split checkout majors were recorded from pinned files.
+Target reads were restricted to listings, README, manifest, and seven workflow
+files. Historical registry, code-freeze, advisory, issue/PR, and run claims were
+not rechecked or extended. No new entity/comparison page was justified.
+
+Delivery: working tree only; the caller owns commit/push/PR creation. No issue
+run notice was created. Posting a GitHub comment conflicts with this delivery
+mode's read-only GitHub/non-mutating-shell boundary; this log is the canonical
+survey summary. The workflow guard is unavailable under the supplied harness
+declaration, so validation proceeds locally without guarded delivery.
+
+Sources: https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e;
+https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md;
+https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json;
+https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows
+
+Verification: direct non-emitting TypeScript passed; direct Vitest passed
+(88 files, 4,079 tests, three todo). Markdown-link checks, independent ESLint,
+solutions-example checks, touched-page frontmatter/provenance/wikilink checks,
+whole-wiki catalog coverage, and diff whitespace checks passed. `pnpm lint`
+stopped on five existing high-severity undici/brace-expansion override-floor
+findings. Prettier flags all four touched files; each also fails formatting
+at `HEAD`, independently checked without reflowing accumulated knowledge.
+Cached dependencies were used: `pnpm bootstrap` and the build-writing
+`pnpm check-types`/`pnpm test` wrappers were not run under the non-mutating-shell
+and allowed-path contract; their non-emitting/direct checks ran instead.
+
 ## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
 
 Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
@@ -6889,3 +6930,9 @@ individual fleet issue/PR was mutated.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-03 10:36] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus

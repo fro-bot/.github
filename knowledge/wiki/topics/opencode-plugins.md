@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-26
+updated: 2026-10-03
 sources:
+  - url: https://github.com/fro-bot/space-bus
+    sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
+    accessed: 2026-10-03
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
@@ -720,6 +723,30 @@ A third, smaller item from the 2026-09-10 config: `dreamer` replaced a single `s
 `oh-my-opencode-slim` presets name MCP servers and skills as bare strings. Nothing checks them against `opencode.json`'s `mcp` block or against any installed skill tree. At [[marcusrbrown--dotfiles]] the `librarian.mcps` array in **all six presets** reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` while exactly two servers are registered — four dangling names — and two skill names in every `designer` array (`brand-voice`, `impeccable`) live in neither local skills tree.
 
 The instructive part is the history. The same drift was recorded on 2026-07-10 (`tavily`, one name), reported as **repaired** on 2026-08-26 ("updated in lockstep, so no stale reference this time"), and returned four-deep on 2026-09-10. **The lockstep was a property of one edit, not an enforced invariant** — so "it was fixed last time" is not evidence about this time when the mechanism that fixed it was a person noticing. A dangling MCP name fails silently at agent-construction time, which is why the drift can widen for weeks without a signal. Any config that names capabilities in one file and registers them in another needs a check, not a habit.
+
+## Production and Watch Export Contracts (2026-10-03)
+
+[[fro-bot--space-bus]] provides a manifest-level example of why plugin
+packaging has more than one entry graph. At `20ab67c5`, `./server` still
+resolves to the default plugin entry (`dist/index.js`), while lifecycle
+consumers use `./managed-server` (`dist/server.js`). Its manifest additionally
+exports `./registry` (`dist/registry-entry.js`), but the explicit entry lists
+in `scripts.dev` omit `src/registry-entry.ts`; the directory listing confirms
+that source file exists. The README's Library surface list also omits
+`/registry` and still calls the six-tool bus “four tools.”
+
+The production `build` script invokes `build.ts` plus declaration generation;
+the development script instead starts two explicit Bun watch builds. CI runs
+the production build and a Node default-export smoke test, not `scripts.dev`.
+Those workflow declarations do not prove a broken watch runtime, but neither
+do they establish that a clean watch-only checkout produces every advertised
+export or that changes to each entry refresh its artifact. Check production
+exports, development-watch coverage, and README coverage as distinct contracts.
+The earlier source-versus-published-artifact observations remain applicable.
+
+Sources: [manifest](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json),
+[README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md),
+[CI](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows/ci.yaml).
 
 ## Related Pages
 
