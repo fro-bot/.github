@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-03 oversight: [[github-actions-ci]] distinguishes learning discovery,
+verified artifact delivery, and codification. A successful draft job without
+its bodies artifact does not satisfy the publisher; healthy recurrence metrics
+do not measure the unauthored learning-proposal queue. Earlier observations remain.
+
 2026-10-02 oversight: [[security-remediation-integration]] records how a standing
 whole-tree advisory gate also blocks a routine Actions update's post-upgrade
 artifacts. Check-run and legacy-status failures share the same verified cause;

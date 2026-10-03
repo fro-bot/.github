@@ -6848,3 +6848,44 @@ Sources: https://github.com/marcusrbrown/Presentations/tree/cafbee055c4bdb552c55
 Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/Presentations
+
+## [2026-10-03 05:00] manual-edit | github-actions-ci
+
+Added a source-verified learning-pipeline observation to [[github-actions-ci]]
+and refreshed its index note. The latest Capture Learnings run has successful
+harvest/draft jobs but fails publishing because its bodies artifact is missing.
+The warning/continue-on-error transport declarations do not change the CLI's
+required-file contract. Independently, ten unauthored proposals coexist with a
+healthy recurrence report whose pending count measures only matched codified
+classes. Recorded discovery, delivered handoff, and codification as separate
+postconditions; the absent artifact's producer-side cause remains unproven.
+No workflow, script, proposal, tracker, or metadata change was made. Pre-existing
+wiki edits and staged metadata are preserved; this additive wiki diff is left
+dirty for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/36364267649;
+https://github.com/fro-bot/.github/issues/3674;
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml;
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts#L325-L386
+
+Verification: direct non-emitting TypeScript and direct Vitest passed (88 files,
+4,079 passed, three todo), as did independent ESLint, Markdown-link checks,
+solutions examples, added-section frontmatter/source-SHA/wikilink/catalog
+checks, and diff whitespace. Full Lint stops on the existing five high
+undici/brace-expansion floor findings. Whole-file Prettier flags accumulated
+formatting in all three touched wiki files; existing content was not reflowed.
+Cached dependencies were used rather than install/build-writing wrappers under
+the working-dir non-mutating-shell contract.
+
+Published and exact-body-readback verified the October 3 daily report:
+https://github.com/fro-bot/.github/issues/3949. Closed the prior report with
+this invocation's single marked replacement comment:
+https://github.com/fro-bot/.github/issues/3947#issuecomment-5965811985.
+Paginated readback confirms exactly one open daily report. No tracker or
+individual fleet issue/PR was mutated.
+
+## [2026-10-03 05:09] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4

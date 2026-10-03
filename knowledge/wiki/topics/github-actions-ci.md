@@ -2,8 +2,18 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-02
+updated: 2026-10-03
 sources:
+  - url: https://github.com/fro-bot/.github/actions/runs/36364267649
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/issues/3674
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-03
   - url: https://github.com/bfra-me/renovate-action
     sha: b214c0b1b1a1803e94ff36b9cafffc610e8b33dc
     accessed: 2026-10-02
@@ -236,6 +246,16 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-03 — learning capture, artifact delivery, and codification are separate postconditions
+
+The latest default-branch [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/36364267649), from September 28, reports successful harvest and draft jobs but a failed **Open learning-proposal issues** job. Its failed logs show that `capture-learnings-bodies` was absent, followed by `capture-learnings-open.ts` throwing `ENOENT` while reading the agent-bodies file. This establishes a missing handoff; it does not establish why the producer failed to deliver the file.
+
+At the pinned [`b96b990` workflow](https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml), upload uses `if-no-files-found: warn`, and download uses `continue-on-error: true`. Those declarations tolerate an absent artifact at the transport steps, but the deterministic CLI requires its JSON input before planning or writing a counts result. The comments describing absence as already tracked do not make the file optional. Before calling the draft job successful, validate a parseable output artifact. An intentional no-candidate result should be explicit and distinguishable from missing output; do not convert missing bodies into empty success or bypass the trusted privacy gate. Preserve the scoped, separate-job token boundary described in `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`.
+
+The same October 3 observation found ten open learning proposals: five created September 14 and five September 21. The [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674), generated September 28, still says **healthy**, with **Pending backlog: 0**. This is not a contradiction in its measured population: [`computeMetrics`](https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts#L325-L386) counts pending recurrence edges that match already-codified solution classes, not every unauthored proposal. New knowledge that has not become a solution document can therefore be absent from that backlog by construction. The dated report also cannot certify current pipeline liveness.
+
+Monitor three boundaries separately: candidate discovery, verified artifact/publication delivery, and accepted knowledge authored into `docs/solutions/`. Count and age the unauthored proposal queue independently of recurrence metrics. Repairing the September 28 handoff would not by itself author the existing ten proposals, and a healthy recurrence report proves neither delivery nor codification.
 
 ## 2026-10-02 — a marker cannot deduplicate what discovery excludes
 
