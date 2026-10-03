@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-03
 sources:
+  - url: https://github.com/bfra-me/works
+    sha: 534b5cab0bd260f3f2f153f85d647f08972fee86
+    accessed: 2026-10-03
   - url: https://github.com/fro-bot/.github/actions/runs/36364267649
     accessed: 2026-10-03
   - url: https://github.com/fro-bot/.github/issues/3674
@@ -246,6 +249,16 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-03 — performance telemetry and configured delivery are not outcome gates
+
+At [[bfra-me--works]] snapshot `534b5cab`, `benchmarks.yaml` is a separate weekly/manual workflow, not part of `Main`'s PR graph. It invokes the ES benchmark runner with `--report-only`, obtains its comparison baseline from the most recent successful `main` benchmark run, tolerates missing baseline artifacts, and uploads a new baseline on `main` with 90-day retention. Its regression-check description does not establish a blocking performance budget. Baseline selection, comparison reporting, and merge enforcement are three distinct contracts; a rolling successful-run artifact is not by itself an accepted performance budget. The script implementation and actual run artifacts were outside this survey's scope.
+
+The same source updates the September 18 delivery finding: `fro-bot.yaml` now explicitly selects `branch-pr` for resolved `autoheal` mode, while checkout remains credential-less and the action receives `github-token`. The missing-input diagnosis is historical; delivery remains unverified without a run and resulting PR/commit. Do not propagate either "still no output-mode" or "paralysis resolved" from the old fleet narrative alone.
+
+`docs-sync.yaml` supplies a second distinction: the tool README promises automatic synchronization, but repository freshness validation is replaced by `true`, sync is hardcoded to dry-run, manual dispatch cannot admit the push-only sync job, and uppercase-only README filters miss lowercase configuration-package READMEs. A useful tool and a green workflow can coexist with no enforced freshness or delivered write path.
+
+Sources: [benchmark workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/benchmarks.yaml), [Fro Bot workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/fro-bot.yaml), and [documentation-sync workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/docs-sync.yaml).
 
 ## 2026-10-03 — learning capture, artifact delivery, and codification are separate postconditions
 

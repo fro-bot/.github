@@ -2,9 +2,8 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-10-03: [[fro-bot--space-bus]] (repo) and
-[[opencode-plugins]] (topic). Existing catalog entries and historical
-observations remain below.
+Catalog refreshed 2026-10-03: [[bfra-me--works]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog entries and history are retained.
 
 2026-10-03 oversight: [[github-actions-ci]] distinguishes learning discovery,
 verified artifact delivery, and codification. A successful draft job without
