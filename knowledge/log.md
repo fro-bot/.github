@@ -6949,69 +6949,28 @@ Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
 
-## [2026-10-04 11:10] ingest | fro-bot/systematic
+## [2026-10-04 11:11] ingest | marcusrbrown/gpt
 
-Bounded public-repository survey at
-`88809b5d8fddb8e9bfd4c7eaf0b5307a95100565` (`gh-pages`). Updated
-[[fro-bot--systematic]] and [[github-pages]] additively and refreshed their
-existing catalog entries in `knowledge/index.md`. Preserved accumulated
-working-tree updates, all historical observations, and the 2026-09-21
-withdrawal of the publish/deploy-race diagnosis. Corrections context contained
-no correction records and was treated as untrusted data.
+Surveyed public `main` snapshot `129b109d2783c67289a2ee3d64cf385698e79a16` using only listings, README files, package/workspace manifests, and the ten active workflow files. Added dated findings to [[marcusrbrown--gpt]], [[github-pages]], and [[langchain]], and refreshed their index references. Historical knowledge and pre-existing working-tree changes were preserved. The untrusted corrections context contained no correction records.
 
-Findings:
+Nine security override keys now exist on the default branch, superseding the September three-override snapshot without establishing delivery provenance or present advisory coverage. Fro Bot is present at v0.117.1; its caller still declares no output mode or post-agent persistence stage. No onboarding draft is needed. Pages deployment depends only on Build, with incomplete automatic build-cache input coverage and a manual-dispatch rebuild exception. E2E push/dispatch admission is explicit; accessibility/performance dispatch paths retain skipped dependency gates. Visual CI/baseline updates select only the homepage suite. README/script/path drift and current LangChain package-family versions were recorded. Issues, alerts, runtime behavior, live protections, and updater suppression were not rechecked.
 
-- Complete directory listing retains 17 root entries and has no README source,
-  dependency manifest, `.github/`, or committed Fro Bot workflow. Recorded the
-  absence for separately considered onboarding; the generated-output overwrite
-  concern and historical exemption recommendation remain explicit.
-- Agent-reference directories number 38, including `readme/`; there are 37
-  named-agent paths. Re-reading the 2026-09-19 directory listing yields the same
-  paths, resolving a possible false-growth reading of its "37 agent pages"
-  shorthand. Skill-reference directories remain 32; component-route directories
-  number 71. Routes are not registry records or proof of runtime registration.
-- Guide directories remain 14, getting-started directories 3, and schema
-  directories `latest/` and `v3/`. Generated HTML/JSON bodies, npm, live hosting,
-  issues, PRs, source code, and workflow-run states were not surveyed. Richer
-  historical claims retain their original dates rather than being revalidated
-  by inference from paths.
-
+<!-- fro-bot-agent -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Delivery: working-dir; four requested knowledge files updated. Caller owns
-  diff detection and delivery. No branch, commit, push, or PR action performed.
-- Verification: frontmatter, pinned provenance, touched-page wikilinks, and
-  catalog checks passed (all 47 wiki pages cataloged); `git diff --check`,
-  `pnpm exec tsc --noEmit --project ./tsconfig.json`, `pnpm exec eslint`,
-  Markdown-link and solution-example checks passed. Direct
-  `pnpm exec vitest run` passed 88 files / 4079 tests, with 3 todo cases, using
-  existing build artifacts. `pnpm lint` stopped at the existing override-floor gate: undici
-  `>=8.9.0` admits versions below `>=8.10.2`; brace-expansion `>=5.0.9` admits
-  versions below `>=5.0.10`/`>=5.0.11`. No dependency files were changed.
-  Prettier warned on all four touched files; all four committed baselines also
-  fail its check, and the wiki is excluded from repository ESLint. Historical
-  pages were not broadly reformatted. `pnpm bootstrap`, `pnpm check-types`, and
-  `pnpm test` invoke installation or generated file writes, so their mutating
-  forms were skipped under this delivery contract.
-- Workflow guard: unavailable in the supplied guard context; continued with
-  direct local edits and verification under the working-dir contract.
-- Response limitation: exactly-one-comment delivery conflicts with the
-  operator-level non-mutating-shell contract, and no comment/review target was
-  supplied. No GitHub comment or review can be posted within these constraints;
-  this append-only log is the canonical survey notice.
+- Delivery: five allowed wiki files edited in the working tree. The caller owns persistence; existing changes were preserved.
+- Verification: direct TypeScript no-emit and Vitest passed (88 files, 4,079 tests, 3 todo). Independent ESLint, Markdown-link checks, solutions-example checks, and diff whitespace checks passed. Three touched pages passed frontmatter, provenance, wikilink, and related-page validation; all 47 wiki content pages remain cataloged.
+- Limitations: `pnpm lint` stops at five existing high-severity undici/brace-expansion override-floor findings. Four touched files already have historical formatting drift; only new sections were formatted. Cached dependencies were used instead of `pnpm bootstrap` and the build-writing `pnpm check-types`/`pnpm test` wrappers under the non-mutating-shell/path contract. The supplied workflow guard was unavailable.
+- Response: working-dir delivery permits no mutating GitHub operation and supplies no comment/review destination. The required GitHub comment cannot be posted within those constraints. This log entry is the canonical notice; no issue or PR was opened, commented on, or updated.
 
 <!-- fro-bot:run-summary:end -->
 
-<!-- fro-bot -->
+Sources: https://github.com/marcusrbrown/gpt/tree/129b109d2783c67289a2ee3d64cf385698e79a16; `readme.md`, `tests/visual/README.md`, `package.json`, `pnpm-workspace.yaml`, and `.github/workflows/{main,fro-bot,test-coverage,test-accessibility,test-performance,visual-tests,renovate,update-repo-settings,cache-cleanup,copilot-setup-steps}.yaml` at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37197782827
 
-Sources: https://github.com/fro-bot/systematic/tree/88809b5d8fddb8e9bfd4c7eaf0b5307a95100565;
-https://github.com/fro-bot/systematic/tree/c5cbd2edd69db3d9c2defe32149ab117d7eafa59/reference/agents.
-Run: https://github.com/fro-bot/.github/actions/runs/37197700722
+## [2026-10-04 11:19] ingest | repo:marcusrbrown/gpt
 
-## [2026-10-04 11:17] ingest | repo:fro-bot/systematic
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
-Surveyed fro-bot/systematic and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/systematic
+Sources: https://github.com/marcusrbrown/gpt

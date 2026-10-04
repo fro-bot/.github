@@ -4,8 +4,8 @@ title: GitHub Pages
 created: 2026-04-18
 updated: 2026-10-04
 sources:
-  - url: https://github.com/fro-bot/systematic
-    sha: 88809b5d8fddb8e9bfd4c7eaf0b5307a95100565
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 129b109d2783c67289a2ee3d64cf385698e79a16
     accessed: 2026-10-04
   - url: https://github.com/marcusrbrown/Presentations
     sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
@@ -51,6 +51,7 @@ tags:
     https-enforcement,
   ]
 related:
+  - marcusrbrown--gpt
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
@@ -63,31 +64,15 @@ related:
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
 
-## Rendered route counts are not component counts (2026-10-04)
+## Build-only deployment dependencies and cached artifacts (2026-10-04)
 
-[[fro-bot--systematic]]'s complete output-tree listing at
-`88809b5d8fddb8e9bfd4c7eaf0b5307a95100565` contains 38 child directories under
-`reference/agents/`, including `readme/`, and 32 under `reference/skills/`.
-The 2026-09-19 listing already had those same 38 agent-reference paths. A raw
-directory count would falsely suggest growth against the wiki's earlier
-"37 agent pages" shorthand: that number excludes the README route. Exclude
-overview/documentation routes explicitly and compare names before reporting
-a roster delta. Presence of a named route alone does not prove that the
-runtime registers that agent.
+At `129b109d2783c67289a2ee3d64cf385698e79a16`, [[marcusrbrown--gpt]]'s `main.yaml` runs lint, unit tests, and build as siblings after `Prepare`. The Pages deploy job depends **only on Build**, uploads/deploys `dist`, and is restricted to `refs/heads/main`. A sibling lint or test failure is not a dependency gate on that deploy job. Live branch protections were not read; the older claim that Vite deployment runs lint/test gates must not be applied to this workflow's job graph. The historical gpt domain is `gpt.mrbro.dev`; current DNS and site behavior were not probed.
 
-The output also has 71 `components/` child directories, a different inventory
-from the historical 74 typed records in its OCX registry. Route directories
-must not substitute for reading a manifest or registry when measuring a
-published installation contract. Similarly, `schemas/latest/` and
-`schemas/v3/` establish paths in the checked-in artifact; without reading the
-schema bodies or probing the host, they do not establish byte equality,
-validation semantics, or live HTTP availability. In a listing-only survey,
-retain those richer claims as dated observations rather than silently
-refreshing them. This boundary complements the earlier clock-semantics
-correction: pick an observable that actually measures the claim.
+The build cache key hashes the lockfile, package manifest, TS/TSX source, `index.html`, `public/**`, and TypeScript configs. It omits `vite.config.ts`, `src/index.css`, `pnpm-workspace.yaml`, and the setup action, so changes limited to these inputs can reuse a previous `dist` on push/PR. Manual dispatch now forces build and unit-test execution even on cache hits; this exception does not fix the automatic-run key coverage. An uploaded artifact proves transport of an output, not that the current run compiled all current build inputs.
 
-Sources: [current output tree](https://github.com/fro-bot/systematic/tree/88809b5d8fddb8e9bfd4c7eaf0b5307a95100565),
-[2026-09-19 reference tree](https://github.com/fro-bot/systematic/tree/c5cbd2edd69db3d9c2defe32149ab117d7eafa59/reference/agents).
+Reusable check: trace **deploy dependencies**, **cache inputs**, and **cache-hit execution conditions** separately. Merge-time checks can constrain how code reaches `main`, but that is a separate contract from what a deploy executes. These findings describe the workflow, not an observed bad deployment.
+
+Source: [Main workflow](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/.github/workflows/main.yaml).
 
 ## Multi-toolchain archive: dependency locks versus runtime pins (2026-10-02)
 
