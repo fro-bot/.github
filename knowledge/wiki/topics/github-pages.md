@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-02
+updated: 2026-10-04
 sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: 88809b5d8fddb8e9bfd4c7eaf0b5307a95100565
+    accessed: 2026-10-04
   - url: https://github.com/marcusrbrown/Presentations
     sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
     accessed: 2026-10-02
@@ -59,6 +62,32 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Rendered route counts are not component counts (2026-10-04)
+
+[[fro-bot--systematic]]'s complete output-tree listing at
+`88809b5d8fddb8e9bfd4c7eaf0b5307a95100565` contains 38 child directories under
+`reference/agents/`, including `readme/`, and 32 under `reference/skills/`.
+The 2026-09-19 listing already had those same 38 agent-reference paths. A raw
+directory count would falsely suggest growth against the wiki's earlier
+"37 agent pages" shorthand: that number excludes the README route. Exclude
+overview/documentation routes explicitly and compare names before reporting
+a roster delta. Presence of a named route alone does not prove that the
+runtime registers that agent.
+
+The output also has 71 `components/` child directories, a different inventory
+from the historical 74 typed records in its OCX registry. Route directories
+must not substitute for reading a manifest or registry when measuring a
+published installation contract. Similarly, `schemas/latest/` and
+`schemas/v3/` establish paths in the checked-in artifact; without reading the
+schema bodies or probing the host, they do not establish byte equality,
+validation semantics, or live HTTP availability. In a listing-only survey,
+retain those richer claims as dated observations rather than silently
+refreshing them. This boundary complements the earlier clock-semantics
+correction: pick an observable that actually measures the claim.
+
+Sources: [current output tree](https://github.com/fro-bot/systematic/tree/88809b5d8fddb8e9bfd4c7eaf0b5307a95100565),
+[2026-09-19 reference tree](https://github.com/fro-bot/systematic/tree/c5cbd2edd69db3d9c2defe32149ab117d7eafa59/reference/agents).
 
 ## Multi-toolchain archive: dependency locks versus runtime pins (2026-10-02)
 

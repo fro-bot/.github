@@ -6948,3 +6948,70 @@ at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37116395335
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-10-04 11:10] ingest | fro-bot/systematic
+
+Bounded public-repository survey at
+`88809b5d8fddb8e9bfd4c7eaf0b5307a95100565` (`gh-pages`). Updated
+[[fro-bot--systematic]] and [[github-pages]] additively and refreshed their
+existing catalog entries in `knowledge/index.md`. Preserved accumulated
+working-tree updates, all historical observations, and the 2026-09-21
+withdrawal of the publish/deploy-race diagnosis. Corrections context contained
+no correction records and was treated as untrusted data.
+
+Findings:
+
+- Complete directory listing retains 17 root entries and has no README source,
+  dependency manifest, `.github/`, or committed Fro Bot workflow. Recorded the
+  absence for separately considered onboarding; the generated-output overwrite
+  concern and historical exemption recommendation remain explicit.
+- Agent-reference directories number 38, including `readme/`; there are 37
+  named-agent paths. Re-reading the 2026-09-19 directory listing yields the same
+  paths, resolving a possible false-growth reading of its "37 agent pages"
+  shorthand. Skill-reference directories remain 32; component-route directories
+  number 71. Routes are not registry records or proof of runtime registration.
+- Guide directories remain 14, getting-started directories 3, and schema
+  directories `latest/` and `v3/`. Generated HTML/JSON bodies, npm, live hosting,
+  issues, PRs, source code, and workflow-run states were not surveyed. Richer
+  historical claims retain their original dates rather than being revalidated
+  by inference from paths.
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: working-dir; four requested knowledge files updated. Caller owns
+  diff detection and delivery. No branch, commit, push, or PR action performed.
+- Verification: frontmatter, pinned provenance, touched-page wikilinks, and
+  catalog checks passed (all 47 wiki pages cataloged); `git diff --check`,
+  `pnpm exec tsc --noEmit --project ./tsconfig.json`, `pnpm exec eslint`,
+  Markdown-link and solution-example checks passed. Direct
+  `pnpm exec vitest run` passed 88 files / 4079 tests, with 3 todo cases, using
+  existing build artifacts. `pnpm lint` stopped at the existing override-floor gate: undici
+  `>=8.9.0` admits versions below `>=8.10.2`; brace-expansion `>=5.0.9` admits
+  versions below `>=5.0.10`/`>=5.0.11`. No dependency files were changed.
+  Prettier warned on all four touched files; all four committed baselines also
+  fail its check, and the wiki is excluded from repository ESLint. Historical
+  pages were not broadly reformatted. `pnpm bootstrap`, `pnpm check-types`, and
+  `pnpm test` invoke installation or generated file writes, so their mutating
+  forms were skipped under this delivery contract.
+- Workflow guard: unavailable in the supplied guard context; continued with
+  direct local edits and verification under the working-dir contract.
+- Response limitation: exactly-one-comment delivery conflicts with the
+  operator-level non-mutating-shell contract, and no comment/review target was
+  supplied. No GitHub comment or review can be posted within these constraints;
+  this append-only log is the canonical survey notice.
+
+<!-- fro-bot:run-summary:end -->
+
+<!-- fro-bot -->
+
+Sources: https://github.com/fro-bot/systematic/tree/88809b5d8fddb8e9bfd4c7eaf0b5307a95100565;
+https://github.com/fro-bot/systematic/tree/c5cbd2edd69db3d9c2defe32149ab117d7eafa59/reference/agents.
+Run: https://github.com/fro-bot/.github/actions/runs/37197700722
+
+## [2026-10-04 11:17] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic

@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-04: [[fro-bot--systematic]] (repo) and
+[[github-pages]] (topic). Both remain cataloged below; their new dated
+observations distinguish rendered route inventories from runtime/registry
+counts and preserve earlier corrections and history.
+
 Catalog refreshed 2026-10-03: [[bfra-me--works]] (repo) and
 [[github-actions-ci]] (topic). Existing catalog entries and history are retained.
 
