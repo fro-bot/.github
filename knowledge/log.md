@@ -7014,3 +7014,71 @@ issues/PRs, workflow files, or metadata were edited by this invocation.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-05 12:23] ingest | marcusrbrown/systematic
+
+Surveyed public `main` snapshot `ce3c817f37ac5ed2c13109eda680c1d36ce43c49`
+using only directory listings, READMEs, package/marketplace manifests, and
+the eight workflow files. Added a dated bounded snapshot to
+[[marcusrbrown--systematic]], extended [[opencode-plugins]] with entry-smoke
+proof depths and local-evaluation boundaries, and refreshed both index
+references. Accumulated knowledge and all pre-existing working-tree edits
+were preserved. The untrusted corrections context contained no records.
+
+The three-harness packaging contract remains explicit, but the README's
+31-skill count still contradicts 32 immediate skill directories; 37 agents
+matches the listing after excluding the review README. Recorded the distinct
+Node smoke-test depths for plugin initialization, Pi import shape, and CLI
+importability; none implies full cross-harness runtime parity. Host Contract
+remains a release dependency, whereas Registry and Docs Build are separate
+jobs. Local evals explicitly exclude OS isolation, other harnesses,
+credentialed/networked tasks, hosted execution, and CI orchestration.
+The floating Bun-types selector alone was qualified as insufficient proof
+of same-commit variability under frozen-lockfile installs. Current manifest
+pins and README/manifest packaging drift were captured without replacing
+historical claims. Fro Bot is present at v0.117.2 with explicit autoheal
+delivery routing, so no onboarding draft is needed. Live runs, releases,
+issues, alerts, protections, implementation, and exclusion configs were not
+read or inferred as current facts.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki files edited directly in the working tree;
+  the caller owns diff detection and persistence. Existing unrelated edits,
+  including metadata, were preserved.
+- Verification: direct TypeScript no-emit and Vitest passed (88 test files,
+  4,079 passing tests, three todo). Independent ESLint, Markdown-link checks,
+  solution-example checks, and diff whitespace passed. Both touched pages
+  passed required frontmatter, SHA provenance, wikilink, and related-page
+  checks; all 47 wiki content pages remain cataloged. Public visibility was
+  rechecked before finalization.
+- Limitations: `pnpm lint` stops at five existing high-severity undici and
+  brace-expansion override-floor findings. Prettier reports formatting drift
+  in all four touched accumulated files; no whole-page reformat was applied.
+  Cached dependencies were used for direct checks instead of
+  `pnpm bootstrap` and the build-writing `pnpm check-types`/`pnpm test`
+  wrappers under the non-mutating-shell and allowed-path delivery contract.
+  The supplied workflow guard was unavailable (`guard-unavailable`);
+  the initial diagnostic's `no-active-epoch` label was incorrect.
+- Response: the working-dir delivery contract permits no mutating GitHub
+  operation and supplies no comment/review destination. The required GitHub
+  comment cannot be posted within those constraints. This log entry is the
+  canonical survey notice; no GitHub issue or PR was opened, commented on,
+  or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/systematic/tree/ce3c817f37ac5ed2c13109eda680c1d36ce43c49;
+`README.md`, `evals/README.md`, `tests/manual/README.md`, `package.json`,
+`docs/package.json`, `.claude-plugin/marketplace.json`, and
+`.github/workflows/{main,fro-bot,docs,codeql-analysis,scorecard,copilot-setup-steps,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37308822811
+
+## [2026-10-05 12:30] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic

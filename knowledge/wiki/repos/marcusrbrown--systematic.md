@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-09-21
+updated: 2026-10-05
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
+  - url: https://github.com/marcusrbrown/systematic
+    sha: ce3c817f37ac5ed2c13109eda680c1d36ce43c49
+    accessed: 2026-10-05
 tags:
   - opencode
   - plugin
@@ -79,7 +82,115 @@ Compound-engineering workflow system for AI coding harnesses. Published to npm a
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
 
-## Overview
+## 2026-10-05 bounded snapshot
+
+Public `main` at **`ce3c817f37ac5ed2c13109eda680c1d36ce43c49`**. Evidence is
+limited to directory listings, READMEs, package/marketplace manifests, and the
+eight workflow files. The overview and earlier dated sections below remain
+historical snapshots: release versions, issue state, live workflow health,
+branch protection, published artifacts, and implementation behavior were not
+rechecked. The manifest's `0.0.0-semantic-release` is a source placeholder,
+not evidence of the current published version.
+
+### Packaging and documentation contracts
+
+The three-harness packaging contract remains explicit in `package.json`:
+OpenCode imports `dist/index.js`, the `systematic` binary points to
+`dist/cli.js`, and Pi declares `dist/pi.js` plus `skills/`. All three harness
+peers remain optional; Pi is built with a Node target while the plugin and CLI
+use Bun targets. The Claude marketplace still points to the generated
+`claude-code-plugin` branch. Its publisher runs only after a successful
+main-push release reports a new version; that is a declaration of delivery
+ordering, not proof that the branch currently matches npm.
+
+**The README count contradiction persists:** it says 31 bundled skills and
+37 agents; the recursive directory listing contains **32** immediate `skills/`
+directories and **37** agent Markdown files after excluding
+`agents/review/README.md`. This agrees with the September 21 measurement,
+not the README's skill count. `tests/manual/README.md` also lists the npm
+allowlist without `HARNESSES.md`, although the manifest includes that file.
+The manifest remains the stronger packaging evidence. See [[opencode-plugins]]
+for the distinction between declared entries, smoke-tested behavior, and
+documented surface.
+
+Current manifest pins include Biome **2.5.15**, TypeScript **7.0.2**, OpenCode
+plugin/SDK **1.18.34**, `typebox` **1.3.34**, and `@types/node` **26.6.4**.
+`@types/bun` remains `latest`; the CI install does use `--frozen-lockfile`,
+so that selector alone does not prove same-commit install variability. Lock
+contents were outside this read scope; the earlier variability inference is
+not revalidated. Runtime shell-parser dependencies remain `tree-sitter-bash`
+0.25.1 and `web-tree-sitter` 0.27.0. The private docs workspace declares Astro
+`^7.2.8`, Starlight `^0.41.3`, and Playwright **1.63.0**; ranges are declared
+requirements, not measurements of installed versions.
+
+### CI validates several different entry contracts
+
+`main.yaml` smoke-imports the built artifacts under plain **Node 24**. The
+plugin and Pi entries must each export only `default`, which must be a
+function. The plugin is additionally instantiated with a small client stub
+and must populate nonempty agent and command maps. Pi is imported and its
+export shape checked, but its extension factory is not invoked by this step.
+The CLI must import and export something; this step does **not** execute its
+binary or verify a CLI command. These checks establish different depths of
+compatibility rather than complete harness parity.
+
+The seven content/build/drift steps documented in September remain present.
+Source, scripts/docs scripts, and tests/scripts typechecks are all required
+steps. The Host Contract job still has step-level PR path gating, fails on
+unexpected filter output, builds before integration tests, requires the
+OpenCode host, and applies the skipped-test/pass-floor guard after an executed
+suite. `Release` still depends on Build, Typecheck, Lint, Test, and Host
+Contract; it does **not** list Registry or Docs Build as dependencies. Their
+separate jobs do not establish release-job prerequisites; current merge
+requirements were not inspected.
+
+The docs CI and deployment workflows install cached Chromium without
+`--with-deps`, with comments relying on `ubuntu-latest` system libraries and
+launch failure as the detection mechanism. In contrast, `scripts.docs:verify`
+still requests `--with-deps`. These are distinct verification environments,
+not evidence that either has failed. Docs deployment remains stable-release
+or manual-dispatch driven, combines the registry with the site output, and
+writes to [[fro-bot--systematic]].
+
+### Automation and evaluation boundaries
+
+**Fro Bot is present** in `.github/workflows/fro-bot.yaml`, pinned to agent
+**v0.117.2** (`cdb27fce4a200a386ecfb23a2da6b5a9a43aee02`). No onboarding
+workflow draft is needed. The daily `30 3 * * *` schedule and empty-prompt
+autoheal dispatch explicitly request `branch-pr`; custom-prompt dispatches
+retain their separate routing. `timeout: 0` remains in the caller. The
+autoheal prompt now names reactive bug-issue healing as a daily/autoheal-only
+category, caps new proactive repair PRs at one, and requires preparing a
+complete report locally before its single intended write. These are workflow
+policy declarations, not independently verified runtime outcomes. Both
+shared Renovate and settings workflows reference **bfra-me/.github v4.36.0**
+(`5fb6633ce7cd45a56719113056b56326ec48080a`).
+
+`evals/README.md` documents only local OpenCode cases `bootstrap-loading` and
+`fixture-local-write`, in `source` and `installed` modes. It defines
+`manifest.json` written last as a completion marker and distinguishes
+`success`, `infra_failure`, `task_failure`, and `privacy_cleanup_failure`.
+Persisted evidence is allowlisted; raw streams, transcripts, secrets, user
+prose, repository content, environment values, and absolute paths are outside
+that boundary. Isolation is explicitly fixture-local, **not OS isolation**;
+Pi, Claude Code, credentialed/networked tasks, hosted execution, and CI
+orchestration are unsupported for these evals. This limitation does not negate
+the separate Host Contract integration job.
+
+`tests/manual/README.md` describes deliberately unhardened, non-shipped
+scaffolding and claims CodeQL and Renovate exclusions. The CodeQL workflow
+does reference a custom config, but neither exclusion config was read in this
+bounded pass; those exclusions remain README claims. Manual fixtures should
+not be confused with the automated unit/integration suites.
+
+Sources: [README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/README.md),
+[manifest](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/package.json),
+[CI](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/.github/workflows/main.yaml),
+[Fro Bot](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/.github/workflows/fro-bot.yaml),
+[local eval README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/evals/README.md),
+and [manual-test README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/tests/manual/README.md).
+
+## Overview (2026-09-21 historical snapshot)
 
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |

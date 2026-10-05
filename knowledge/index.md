@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-05: [[marcusrbrown--systematic]] (repo) and
+[[opencode-plugins]] (topic). Existing catalog entries are retained; the
+per-survey ingest summary is in `knowledge/log.md`.
+
 2026-10-05 oversight: [[github-actions-ci]] records a second weekly missing
 learning-bodies handoff and distinguishes the newly ambiguous metrics state
 from the ten-proposal unauthored queue. Historical observations are retained.

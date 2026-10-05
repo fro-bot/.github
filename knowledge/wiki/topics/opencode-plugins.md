@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-10-03
+updated: 2026-10-05
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: ce3c817f37ac5ed2c13109eda680c1d36ce43c49
+    accessed: 2026-10-05
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-10-03
@@ -747,6 +750,43 @@ The earlier source-versus-published-artifact observations remain applicable.
 Sources: [manifest](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json),
 [README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md),
 [CI](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows/ci.yaml).
+
+## Entry Smoke Tests Have Different Proof Depths (2026-10-05)
+
+At [[marcusrbrown--systematic]] snapshot `ce3c817f`, the Main workflow imports
+three built entries under Node 24, but exercises them differently:
+
+| Entry | Verified by the workflow's smoke step | Not established by that step |
+| --- | --- | --- |
+| OpenCode plugin | Only a default function export; factory invocation with a stub; nonempty configured agents and commands | Real-host operation of every registered tool |
+| Pi extension | Only a default function export; successful module import | Extension initialization or delegated sessions |
+| CLI | Successful import and at least one export | Binary invocation, argument parsing, or command behavior |
+
+That is useful layered verification, provided its claims retain those bounds.
+A module-load check catches resolution and export-shape regressions; it does
+not prove the entry's public operation works. Systematic separately runs a
+real-OpenCode integration suite with a result guard, which adds evidence for
+that harness rather than filling in Pi or CLI behavior by association.
+
+The manifest still exposes three install paths with optional harness peers.
+Its source version is `0.0.0-semantic-release`, so neither the manifest nor a
+passing source-build check identifies the current npm release. Likewise, the
+README's 31-skill claim still disagrees with 32 immediate skill directories;
+the 37-agent claim agrees once `agents/review/README.md` is excluded. Keep
+catalog counts, package exports, built-entry checks, and real-host behavior as
+separate claims with separate evidence.
+
+The local-eval README adds another explicit boundary: fixture-scoped OpenCode
+isolation is not OS isolation, and these evals do not support Pi, Claude Code,
+networked/credentialed tasks, hosted execution, or CI orchestration. The
+documented completion marker is a final `manifest.json`, with infrastructure,
+task, and privacy-cleanup failures distinguished. This is the local-eval
+contract, not a claim about all integration tests or shipped harness support.
+
+Sources: [manifest](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/package.json),
+[CI](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/.github/workflows/main.yaml),
+[README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/README.md),
+and [eval README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/evals/README.md).
 
 ## Related Pages
 
