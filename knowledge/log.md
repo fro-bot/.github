@@ -6974,3 +6974,43 @@ Sources: https://github.com/marcusrbrown/gpt/tree/129b109d2783c67289a2ee3d64cf38
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-10-05 05:00] manual-edit | github-actions-ci
+
+Added the next weekly observation to [[github-actions-ci]] and refreshed its
+index note. Capture Learnings again reports successful harvest/draft but lacks
+the bodies artifact required by the deterministic publisher. Ten unauthored
+proposals remain open, while the refreshed metrics report changes from its
+historical healthy state to ambiguous and still measures zero pending
+recurrence edges. Retained the earlier dated observation and the distinction
+between discovery, artifact delivery, and codification; producer cause remains
+unproven. Existing wiki edits and staged metadata were preserved. Only the
+allowed wiki topic, index, and log were additionally edited; the dirty wiki
+tree is left for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/37250027224;
+https://github.com/fro-bot/.github/issues/3674;
+https://github.com/fro-bot/.github/issues/3909;
+https://github.com/fro-bot/.github/issues/3887
+
+Verification: direct no-emit TypeScript and Vitest passed (88 files, 4,079
+tests, three todo), as did ESLint, Markdown links, solution examples, wiki
+frontmatter/new-section links, the 47-page catalog, and diff whitespace.
+Cached dependencies were used without install/build-writing wrappers.
+The separate remediation pass remains the source for full-Lint failures.
+
+Published the October 5 report with exact-body readback:
+https://github.com/fro-bot/.github/issues/3952. Closed the previous report
+with this invocation's one marked replacement comment:
+https://github.com/fro-bot/.github/issues/3950#issuecomment-5988626306.
+Paginated readback confirms exactly one open daily report. Public reporting
+separates dependency alerts from Code Scanning security records and marks
+unavailable/stale sources incomplete. All 35 tracked entries received bounded
+source scans after stable-ID recovery. No tracker fields, individual fleet
+issues/PRs, workflow files, or metadata were edited by this invocation.
+
+## [2026-10-05 05:25] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4

@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-05 oversight: [[github-actions-ci]] records a second weekly missing
+learning-bodies handoff and distinguishes the newly ambiguous metrics state
+from the ten-proposal unauthored queue. Historical observations are retained.
+
 Catalog refreshed 2026-10-04: [[marcusrbrown--gpt]] (repo), [[github-pages]] (topic), and [[langchain]] (topic). Existing catalog entries and dated observations are retained; the ingest record is in `knowledge/log.md`.
 
 Catalog refreshed 2026-10-03: [[bfra-me--works]] (repo) and

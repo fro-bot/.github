@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-03
+updated: 2026-10-05
 sources:
+  - url: https://github.com/fro-bot/.github/actions/runs/37250027224
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3674
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3909
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3887
+    accessed: 2026-10-05
   - url: https://github.com/bfra-me/works
     sha: 534b5cab0bd260f3f2f153f85d647f08972fee86
     accessed: 2026-10-03
@@ -249,6 +258,16 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-05 — a new metrics report does not repair a missing learning handoff
+
+The next weekly [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/37250027224), at `b96b990`, reproduced the September 28 handoff failure: harvest and draft succeeded, but **Open learning-proposal issues** could not download `capture-learnings-bodies`; its CLI then failed with `ENOENT` for the agent-bodies JSON. Two consecutive weekly observations establish recurrence at the transport/publication boundary, not the producer-side cause. Rerunning unchanged publication inputs cannot supply the missing artifact.
+
+At the October 5 snapshot, ten `learning-proposal` issues remained open: five from September 14 (about 21 days old) and five from September 21 (about 14 days old). Representative records are [#3887](https://github.com/fro-bot/.github/issues/3887) and [#3909](https://github.com/fro-bot/.github/issues/3909). Authoring those proposals into `docs/solutions/` is a separate unfinished operation; fixing artifact delivery would not codify them automatically.
+
+The refreshed [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674), generated October 5 at 01:47 UTC, now says **ambiguous**, rather than the September 28 **healthy** snapshot recorded below, but still reports **Pending backlog: 0**. The newer state supersedes the dated state, not the population distinction: recurrence edges matching codified classes do not count every unauthored proposal. A fresh metrics timestamp cannot substitute for publication evidence or a proposal-age measure.
+
+The bounded repair target remains a verified, parseable draft output before artifact upload, with an explicit intentional no-candidate result distinguished from absent output. Inspect `.github/workflows/capture-learnings.yaml` and the required input contract in `scripts/capture-learnings-open.ts`; retain the deterministic publisher's privacy gate and separate token scope described in `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`. Do not replace missing bodies with empty success or suppress the publisher failure. The October 5 oversight pass reported this recurrence without modifying that workflow or the queued proposals.
 
 ## 2026-10-03 — performance telemetry and configured delivery are not outcome gates
 
