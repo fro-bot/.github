@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-05
+updated: 2026-10-06
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 793b2a4b81a577b64a7469ae65d1a61bf498ab7c
+    accessed: 2026-10-06
   - url: https://github.com/fro-bot/.github/actions/runs/37250027224
     sha: b96b9904b20ed086304e184807d90c06cc3365b4
     accessed: 2026-10-05
@@ -258,6 +261,28 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-06 — synthetic alerts and shared run classification
+
+[[marcusrbrown--infra]]'s `release-alert.yaml` at `793b2a4` separates owner-only
+synthetic validation from production failure reporting with distinct labels,
+titles, and body markers. Synthetic discovery is paginated and ambiguous
+multiple matches abort; creates and subsequent comments are checked by bounded
+readback. This updates the September "no self-test" observation for the
+configured workflow, not proof of an executed test. Production still triggers
+only on `failure` and uses a separate 100-item discovery query. A stronger
+synthetic identity path does not establish production discovery completeness or
+coverage of cancelled/timed-out releases.
+
+Its Fro Bot storage job uses one `daily-equivalent`/`custom` classification for
+prompt selection, `skip-cache`, and post-agent reconciliation. Exactly empty
+dispatch input is daily; whitespace-only input is custom. Frozen date/run markers
+bind the daily report to the same execution identity. The reconciler is skipped
+after agent failure by the normal step success condition. Durable pattern:
+derive related controls from one classification, then distinguish configured
+postconditions from observed runtime delivery. The workflow's explicit
+`branch-pr` setting belongs to that target, not to surveys running under a
+separate working-directory delivery contract.
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 
