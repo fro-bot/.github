@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-06 oversight: [[security-remediation-integration]] records a third
+dedicated advisory fix and why the September 30 combined-tree verification is
+historical evidence, not current proof against a changed advisory population.
+Existing catalog entries and dated observations are retained.
+
 Catalog refreshed 2026-10-05: [[marcusrbrown--systematic]] (repo) and
 [[opencode-plugins]] (topic). Existing catalog entries are retained; the
 per-survey ingest summary is in `knowledge/log.md`.

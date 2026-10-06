@@ -7082,3 +7082,23 @@ at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37308822811
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-10-06 05:58] manual-edit | topic:security-remediation-integration
+
+Recorded the newly observed high source-map-js advisory, its dedicated #3954
+remediation, and the evidence boundary it exposes: September 30's successful
+two-fix integration is a dated result, not current proof against October 6's
+six-high advisory population on unchanged main. Updated the topic provenance
+and index additively; retained the historical combined-tree result. The caller
+owns ingestion and persistence of this dirty working-tree diff. Existing wiki
+changes and staged metadata were preserved without edits or cleanup.
+
+Sources: https://github.com/fro-bot/.github/pull/3954;
+https://github.com/fro-bot/.github/pull/3954#issuecomment-6010263024;
+https://github.com/advisories/GHSA-68fv-2mgg-jv7q
+
+## [2026-10-06 06:04] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
