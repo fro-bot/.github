@@ -2,9 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-10-06: [[marcusrbrown--infra]] (repo) and
-[[github-actions-ci]] (topic). Both existing entries and their dated observations
-are retained; the canonical per-survey ingest summary is in `knowledge/log.md`.
+Catalog refreshed 2026-10-06: [[marcusrbrown--marcusrbrown]] (repo) and
+[[github-actions-ci]] (topic). Both existing entries and their accumulated
+observations are retained; the canonical ingest record is in `knowledge/log.md`.
 
 2026-10-06 oversight: [[security-remediation-integration]] records a third
 dedicated advisory fix and why the September 30 combined-tree verification is

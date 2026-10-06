@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-06
 sources:
-  - url: https://github.com/marcusrbrown/infra
-    sha: 793b2a4b81a577b64a7469ae65d1a61bf498ab7c
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 340a317382d8bb9436ad01e3c916e4a7cb14f4ac
     accessed: 2026-10-06
   - url: https://github.com/fro-bot/.github/actions/runs/37250027224
     sha: b96b9904b20ed086304e184807d90c06cc3365b4
@@ -261,28 +261,6 @@ related:
 ---
 
 # GitHub Actions CI
-
-## 2026-10-06 — synthetic alerts and shared run classification
-
-[[marcusrbrown--infra]]'s `release-alert.yaml` at `793b2a4` separates owner-only
-synthetic validation from production failure reporting with distinct labels,
-titles, and body markers. Synthetic discovery is paginated and ambiguous
-multiple matches abort; creates and subsequent comments are checked by bounded
-readback. This updates the September "no self-test" observation for the
-configured workflow, not proof of an executed test. Production still triggers
-only on `failure` and uses a separate 100-item discovery query. A stronger
-synthetic identity path does not establish production discovery completeness or
-coverage of cancelled/timed-out releases.
-
-Its Fro Bot storage job uses one `daily-equivalent`/`custom` classification for
-prompt selection, `skip-cache`, and post-agent reconciliation. Exactly empty
-dispatch input is daily; whitespace-only input is custom. Frozen date/run markers
-bind the daily report to the same execution identity. The reconciler is skipped
-after agent failure by the normal step success condition. Durable pattern:
-derive related controls from one classification, then distinguish configured
-postconditions from observed runtime delivery. The workflow's explicit
-`branch-pr` setting belongs to that target, not to surveys running under a
-separate working-directory delivery contract.
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 
@@ -3556,3 +3534,24 @@ and their known filesystem locations and caches are absent. This checks a
 it from a Dockerfile cleanup instruction. A command or path found at runtime
 fails the release. This is a release-workflow assertion, not a claim that the
 writer service or the builder image has the same boundary.
+
+### A test script and an agent prompt do not establish a PR test gate (2026-10-06)
+
+In [[marcusrbrown--marcusrbrown]] at `340a317382d8bb9436ad01e3c916e4a7cb14f4ac`,
+the manifest exposes `test: vitest run`, and the directory listing contains six
+test-file paths. `main.yaml` executes only `pnpm lint`, which expands to
+`markdownlint-cli2 && tsc --noEmit && eslint`. The separate Fro Bot autoheal prompt
+requests `pnpm test`, but that workflow excludes bot-authored direct PR events and
+does not itself contain a deterministic test step. These are three distinct facts:
+tests are available, an agent is asked to run them, and PR CI does not run them in
+the inspected workflow. None of the first two supplies the missing third fact.
+Runtime results and required-check settings were outside this bounded survey.
+
+The profile workflow also illustrates the distinction between a regeneration
+trigger and its file selector. `pull_request` enables a Prepare job, but Finalize
+requires a matching changed path. `package.json` and `pnpm-lock.yaml` are selected;
+`pnpm-workspace.yaml` is not, despite its build policy and override ledger.
+A workspace-only change does not select PR regeneration through that filter;
+scheduled/default-branch runs remain independent paths. The mechanism behind
+earlier generated-content riders persists, but current rider counts and delivery
+outcomes cannot be inferred from the workflow alone.

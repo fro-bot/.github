@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/marcusrbrown
 created: 2026-04-18
-updated: 2026-09-22
+updated: 2026-10-06
 node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 340a317382d8bb9436ad01e3c916e4a7cb14f4ac
+    accessed: 2026-10-06
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: 39ce599af41cd1358d238ffd69cc7048c904e8ca
     accessed: 2026-09-22
@@ -76,6 +79,79 @@ related:
 # marcusrbrown/marcusrbrown
 
 Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automation system that generates and maintains his public GitHub profile, including sponsor tracking, badge automation, A/B content testing, and scheduled profile updates via [[github-actions-ci]].
+
+## Bounded source snapshot — 2026-10-06
+
+Sources are the public `main` tree at `340a317382d8bb9436ad01e3c916e4a7cb14f4ac`,
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and all six workflow files.
+Only directory listings, the README, manifests, and workflows were read.
+Implementation, templates, settings, tool-version config, lockfile resolutions,
+issues, PRs, alerts, and Actions run history were not inspected. Earlier operational
+measurements below remain dated observations, not current health claims.
+
+### Public content and manifest contract
+
+The README now presents Marcus as a principal engineer and architect with 22 years
+in software, focused on agent-native architecture, developer tooling, and open
+source. It advertises consulting availability, links the portfolio at
+`marcusrbrown.com`, and retains the badge, highlights, and sponsorship entry points.
+This is a changed public-content snapshot relative to September 22's report that
+the README had been unchanged for 121 days; that historical measurement is retained,
+but an unchanged-README claim must not be carried forward. The bounded survey does
+not establish when, how, or through which delivery path the new copy landed.
+
+The ESM package still exposes `tsx` commands for sponsors, badges, analytics,
+content tracking, mobile checks, and A/B testing. Current manifest pins are
+pnpm 11.28.3, Vitest and `@vitest/ui` 4.1.11, Prettier 3.9.9, `tsx` 4.23.15,
+`jiti` 2.7.0, `@bfra.me/eslint-config` 0.54.0,
+`@bfra.me/prettier-config` 0.16.13, and `@bfra.me/tsconfig` 0.13.2.
+`@types/node` 24.19.0 is a type-package version, not evidence of the Node runtime
+version. TypeScript and ESLint are not declared as direct dependencies even though
+`lint` invokes `tsc` and `eslint`; this survey does not infer their resolved versions.
+
+The workspace manifest retains `allowBuilds` and `onlyBuiltDependencies` for
+`esbuild`, `simple-git-hooks`, and `unrs-resolver`, plus version-specific
+`minimumReleaseAgeExclude` entries for shared configs. Its override ledger includes
+`jiti <2.8.0`, `vite 7.3.6`, floors for `fast-uri`, `picomatch`, `postcss`, and
+`js-yaml`, and parent-scoped `brace-expansion` overrides. Comments associate these
+with advisories; without lockfile or advisory reads, they establish declared
+constraints, not present vulnerability status or proof of patched resolutions.
+
+### Workflow contracts and retained gaps
+
+- **Fro Bot is present**, pinned to `fro-bot/agent` v0.117.5
+  (`378bc287c7f934c3f23cf6f805e4058972d629e3`), with review, maintenance, and
+  autoheal dispatch modes and the 04:30/16:30 UTC schedules. No missing-workflow
+  onboarding draft is warranted. Presence does not establish that scheduled runs
+  are active or successful.
+- The agent workflow still ends at `Run Fro Bot`, omits `output-mode`, and checks
+  out with `persist-credentials: false`. The explicit caller-side persistence gap
+  remains visible. September 22's observed branch pushes neither prove nor refute
+  present invocation permissions; source configuration alone does not establish
+  a current runtime capability boundary.
+- Direct PR runs still exclude fork heads, `[bot]` authors, and `fro-bot`.
+  The comment-triggered fork preflight still uses `.head.repo.fork // "unknown"`:
+  jq's alternative operator treats `false` as absent, so a same-repository head
+  also becomes `unknown` and is refused. This preserves the earlier defect finding
+  without asserting the current state of its tracking issue.
+- The stagger comment still says settings sync runs at 02:55, while
+  `update-repo-settings.yaml` declares 21:32 UTC. Both settings sync and Renovate
+  now call their correctly pathed `bfra-me/.github` reusable workflows at v4.36.0
+  (`5fb6633ce7cd45a56719113056b56326ec48080a`).
+- `Main` runs `pnpm lint` only: Markdown lint, `tsc --noEmit`, and ESLint according
+  to the package manifest. A `pnpm test` script and six test-file paths exist,
+  but this workflow does not execute them. The autoheal prompt requests tests;
+  that is a separate agent task, not a demonstrated PR test gate.
+- Profile generation still runs every six hours and on relevant PR changes,
+  tolerates only the sponsor/badge fetch failures, copies README and highlights
+  from templates, runs `pnpm fix`, then writes generated content to PR heads or
+  proposes `build/update-readme` on `main`. PR filtering includes `package.json`
+  and `pnpm-lock.yaml` but not `pnpm-workspace.yaml`. A workspace-only policy change
+  therefore does not independently select regeneration. The September rider and
+  cannibalization measurements were not repeated; the source mechanism remains.
+
+See [[github-actions-ci]] for the distinction between manifest test commands,
+agent-requested verification, and workflow-executed PR checks.
 
 ## Overview
 
