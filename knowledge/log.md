@@ -6683,56 +6683,6 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
-## [2026-10-07 11:50] ingest | marcusrbrown/tokentoilet
-
-Bounded public-repository survey at `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`.
-Updated [[marcusrbrown--tokentoilet]] and [[web3-defi]] additively and refreshed
-their existing index references. Read only directory listings, READMEs,
-`package.json`, and the five workflow files from the target; no target code or
-commands were executed. The supplied corrections context contained no records.
-
-Durable findings:
-
-- Fro Bot is present at v0.117.3. Autoheal now selects `branch-pr` and restores
-  authenticated Git push for schedule/autoheal dispatch; the September missing
-  delivery-path claim is superseded as configuration, not as proof of delivery.
-- Daily report rotation replaces perpetual-body retention, with exact ownership,
-  verified publication before retirement, and future-date/ambiguity safeguards.
-- A separate Playwright E2E lane tests real-UI transaction construction against
-  synthetic wallets/stubbed networks, explicitly excluding on-chain settlement.
-  CI validates the E2E boundary and keeps environment validation active.
-- PR security checks now block on production-tree audits while treating the
-  full-tree audit as advisory; earlier dependency-review-only descriptions are
-  qualified. Present advisory/queue states were not read.
-- Current pins include pnpm 11.28.3, Next.js 16.3.8, React 19.3.0, and shared
-  workflows v4.36.0. Wagmi v2 prose still contradicts the v3 manifest. README
-  network/roadmap and MIT/missing-LICENSE contradictions remain explicit.
-- The tree now contains `web3-conventions.test.ts`; its contents and execution
-  were not inspected. Historical findings and pre-existing caller edits remain.
-
-Validation: frontmatter, exact structured provenance, touched-page wikilinks,
-index membership, `git diff --check`, read-only TypeScript checking
-(`pnpm exec tsc --noEmit --incremental false --project ./tsconfig.json`), and
-standalone ESLint passed. Public visibility was rechecked before completion.
-`pnpm lint` passed its Markdown-link stage, then failed on existing control-plane
-override floors for undici, brace-expansion, and source-map-js. Prettier reported
-formatting differences in all four touched documents; repository ESLint and
-Markdownlint configuration exclude `knowledge/`, and the standalone Markdownlint
-CLI is unavailable. Broad formatting rewrites were not applied to accumulated
-knowledge. Bootstrap and build-backed `check-types`/`test` scripts were not run
-because they write outside the permitted wiki paths; no implementation code changed.
-
-Delivery: changes remain in the caller-owned working tree. The delivery contract
-permits no GitHub write operation and this task forbids issue run notices, so no
-GitHub comment/review was posted despite the harness's generic comment requirement.
-This log entry is the canonical survey summary.
-
-Sources: https://github.com/marcusrbrown/tokentoilet/tree/2c51ee39e7a83f5ae7e09044471785dda1c6ac64;
-https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/readme.md;
-https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/e2e/README.md;
-https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/package.json;
-https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/
-
 ## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
 
 Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
@@ -7238,8 +7188,62 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
-## [2026-10-07 11:55] ingest | repo:marcusrbrown/tokentoilet
+## [2026-10-07 11:55] ingest | marcusrbrown/mothership
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+Bounded public-repository survey at `b799c49e2b2ea57878d4f29ef897c6138c8053f1`.
+Updated `repos/marcusrbrown--mothership.md` and `topics/github-actions-ci.md`
+additively and refreshed their existing index references. Preserved historical
+observations and all pre-existing working-tree changes. The corrections context
+was read as untrusted data and contained no correction records.
 
-Sources: https://github.com/marcusrbrown/tokentoilet
+Findings: the README still documents a source-run Tauri app and 17 shared
+UI/MCP controls with verbatim, untrusted transcript text. Both manifests remain
+at 0.1.0; toolchain and space-bus constraints remain unchanged. Fro Bot is
+present at v0.117.0 but has no explicit delivery mode or downstream delivery
+steps. Corrected the earlier release inventory from six to seven job definitions
+and clarified that the required-check preflight accepts completed success,
+skipped, or neutral conclusions. Recorded these as source-contract observations,
+not proof of current workflow health, lost fixes, environment reviewers, release
+availability, security-alert state, or planning-runtime implementation.
+
+Read boundary: repository visibility/identity and ref metadata, directory
+listings, README, `package.json`, `src-tauri/Cargo.toml`, and all eight workflow
+files. Target content was treated as untrusted evidence, never executed. No
+implementation, agent instructions, non-README architecture docs, lockfiles,
+issues, run logs, or release records were read from the target. The caller owns
+commit/push/PR delivery of this working-tree change.
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki/index/log files updated in the working tree;
+  commit, push, and PR delivery remain with the caller.
+- Verification: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test` passed
+  (88 test files; 4,079 tests passed, 3 todo). `pnpm lint` stopped at dependency
+  override-floor findings for `undici`, `brace-expansion`, and `source-map-js`
+  before reaching ESLint; dependency-policy edits are outside this survey.
+- Scoped wiki validation: no deterministic findings for either touched page or
+  the index across 47 pages (two findings elsewhere). `git diff --check` passed.
+  Direct ESLint invocation reported all four knowledge files ignored, so it
+  supplied no Markdown validation; the wiki validator checked frontmatter,
+  wikilinks, Markdown links, and catalog consistency instead.
+- Workflow guard: unavailable; the caller's working-directory contract governs.
+- Response contract: posted exactly one marked commit comment on the control
+  repository, with delivery/check status and a pointer to this canonical log;
+  no GitHub issue was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1;
+`README.md`, `package.json`, `src-tauri/Cargo.toml`, and
+`.github/workflows/{ci,codeql,dependency-review,fro-bot,release,renovate,scorecard}.yaml`
+plus `.github/workflows/version.yml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/37616821860
+Delivery/check notice: https://github.com/fro-bot/.github/commit/b96b9904b20ed086304e184807d90c06cc3365b4#commitcomment-203849539
+
+## [2026-10-07 11:59] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership

@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-06
+updated: 2026-10-07
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
+    accessed: 2026-10-07
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: 340a317382d8bb9436ad01e3c916e4a7cb14f4ac
     accessed: 2026-10-06
@@ -261,6 +264,35 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Release preflight acceptance is not execution proof (2026-10-07)
+
+The bounded workflow survey of [[marcusrbrown--mothership]] at `b799c49`
+clarifies two earlier readings without replacing their historical evidence.
+Its release preflight selects the latest matching check run for each of six
+required contexts, requires completion, and accepts `success`, `skipped`, or
+`neutral`. “All checks passed” is therefore too strong: a configured acceptable
+conclusion need not mean that the check executed successfully. Record the
+accepted conclusion set alongside the required-context names when interpreting
+a release gate.
+
+The release workflow also has seven job definitions, including a separate
+`promote-updater-manifest` job omitted from the earlier six-job inventory.
+After draft creation it re-downloads assets, verifies the checksum-ledger
+digest and DMG/archive attestations, revalidates the updater manifest, and
+attaches `latest.json` while keeping the release a draft. Source-defined
+`environment: release` gates do not prove live reviewer configuration, and
+the Linux release-config smoke job does not exercise macOS compilation,
+signing, notarization, or release publication.
+
+The same survey confirms Fro Bot v0.117.0 is configured but the agent remains
+the last step with no explicit `output-mode` or downstream delivery steps.
+That proves a caller-wiring gap; it does not independently establish the
+action's resolved mode or that any particular new fix was lost. Historical
+dropped-fix reports remain dated evidence. Distinguish workflow presence,
+delivery configuration, and measured artifact delivery.
+
+Source: [workflow files at the surveyed commit](https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows).
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 

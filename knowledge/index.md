@@ -2,9 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-10-07: [[marcusrbrown--tokentoilet]] (repo) and
-[[web3-defi]] (topic). Existing entries and dated observations are preserved;
-the canonical ingest record is in `knowledge/log.md`.
+Catalog refreshed 2026-10-07: [[marcusrbrown--mothership]] (repo) and
+[[github-actions-ci]] (topic). Both existing entries and accumulated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
 
 2026-10-07 oversight: [[fro-bot--dashboard]] distinguishes published contract
 1.8.0 parity from live contract 1.6.0, infrastructure pin intent, and the pending
