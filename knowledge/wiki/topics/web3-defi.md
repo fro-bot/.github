@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-09-07
+updated: 2026-10-07
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: b81e74b9e6bb9fab1de88a80f28bcf9c5642b0c1
     accessed: 2026-09-07
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
+    accessed: 2026-10-07
 tags:
   [
     web3,
@@ -95,6 +98,28 @@ These patterns are enforced in [[marcusrbrown--tokentoilet]] via AGENTS.md and F
 - **Dependency review:** `actions/dependency-review-action` at moderate+ severity on PRs
 
 ## Testing Patterns
+
+### Browser construction is not settlement (2026-10-07)
+
+At `2c51ee39`, [[marcusrbrown--tokentoilet]] documents a separate Playwright
+suite driving its real wallet connection and approval/burn UI against a local
+development server. A synthetic wallet and stubbed responses verify calldata and
+UI states; the README explicitly excludes real broadcasts, funds, and on-chain
+settlement. Browser coverage strengthens the UI-to-transaction construction seam
+without establishing chain execution correctness.
+
+Its `E2E Tests` CI job runs `validate:e2e-boundary` before Chromium, supplies dummy
+public provider configuration, and enables environment validation even though
+other CI jobs skip it. `pnpm test` remains Vitest-only; `pnpm test:e2e` is separate,
+and the aggregate `validate` script includes neither E2E nor the Next.js build.
+Presence of these commands and jobs does not prove they passed or are required
+for merge.
+
+Sources: [E2E README](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/e2e/README.md),
+[CI workflow](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/ci.yaml),
+[manifest](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/package.json).
+
+### Existing unit-test patterns
 
 - Co-located test files (`*.test.ts(x)`) alongside hook/component source
 - Mocked wallet providers (wagmi, AppKit) in test setup
@@ -173,3 +198,12 @@ Two rules for Web3 repos specifically, where the transitive surface guarantees a
 2. **PR-scoped dependency review is a change gate, not a posture monitor.** Pair it with a scheduled `pnpm audit` (or equivalent) against the default branch that can actually go red, or the only thing reporting your posture will be an agent writing prose into an issue nobody gates on.
 
 Detail on both, including the per-PR breakdown, lives on [[marcusrbrown--tokentoilet]] and in [[github-actions-ci]] § *Merge Gates Sorted by Authorship, Not Quality* (2026-09-07 addendum).
+
+**2026-10-07 qualification:** At `2c51ee39`, the PR-only `Security Audit` job now
+combines dependency review with a blocking installed-production-tree audit and
+an advisory full-tree audit. The September description of dependency-review-only
+coverage is superseded; its broader warning about absent default-branch monitoring
+still applies to this workflow. Current advisory counts and remediation queue
+state were not surveyed. Both the root README and Fro Bot prompts also retain
+Wagmi v2 prose against `wagmi: ^3.0.0`; the documented migration-context drift
+remains directly observable.

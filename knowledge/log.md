@@ -6683,6 +6683,56 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
+## [2026-10-07 11:50] ingest | marcusrbrown/tokentoilet
+
+Bounded public-repository survey at `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`.
+Updated [[marcusrbrown--tokentoilet]] and [[web3-defi]] additively and refreshed
+their existing index references. Read only directory listings, READMEs,
+`package.json`, and the five workflow files from the target; no target code or
+commands were executed. The supplied corrections context contained no records.
+
+Durable findings:
+
+- Fro Bot is present at v0.117.3. Autoheal now selects `branch-pr` and restores
+  authenticated Git push for schedule/autoheal dispatch; the September missing
+  delivery-path claim is superseded as configuration, not as proof of delivery.
+- Daily report rotation replaces perpetual-body retention, with exact ownership,
+  verified publication before retirement, and future-date/ambiguity safeguards.
+- A separate Playwright E2E lane tests real-UI transaction construction against
+  synthetic wallets/stubbed networks, explicitly excluding on-chain settlement.
+  CI validates the E2E boundary and keeps environment validation active.
+- PR security checks now block on production-tree audits while treating the
+  full-tree audit as advisory; earlier dependency-review-only descriptions are
+  qualified. Present advisory/queue states were not read.
+- Current pins include pnpm 11.28.3, Next.js 16.3.8, React 19.3.0, and shared
+  workflows v4.36.0. Wagmi v2 prose still contradicts the v3 manifest. README
+  network/roadmap and MIT/missing-LICENSE contradictions remain explicit.
+- The tree now contains `web3-conventions.test.ts`; its contents and execution
+  were not inspected. Historical findings and pre-existing caller edits remain.
+
+Validation: frontmatter, exact structured provenance, touched-page wikilinks,
+index membership, `git diff --check`, read-only TypeScript checking
+(`pnpm exec tsc --noEmit --incremental false --project ./tsconfig.json`), and
+standalone ESLint passed. Public visibility was rechecked before completion.
+`pnpm lint` passed its Markdown-link stage, then failed on existing control-plane
+override floors for undici, brace-expansion, and source-map-js. Prettier reported
+formatting differences in all four touched documents; repository ESLint and
+Markdownlint configuration exclude `knowledge/`, and the standalone Markdownlint
+CLI is unavailable. Broad formatting rewrites were not applied to accumulated
+knowledge. Bootstrap and build-backed `check-types`/`test` scripts were not run
+because they write outside the permitted wiki paths; no implementation code changed.
+
+Delivery: changes remain in the caller-owned working tree. The delivery contract
+permits no GitHub write operation and this task forbids issue run notices, so no
+GitHub comment/review was posted despite the harness's generic comment requirement.
+This log entry is the canonical survey summary.
+
+Sources: https://github.com/marcusrbrown/tokentoilet/tree/2c51ee39e7a83f5ae7e09044471785dda1c6ac64;
+https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/readme.md;
+https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/e2e/README.md;
+https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/package.json;
+https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/
+
 ## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
 
 Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
@@ -7187,3 +7237,9 @@ https://dashboard.fro.bot/operator/health
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-07 11:55] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
