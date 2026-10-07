@@ -7161,3 +7161,29 @@ at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37460726962
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-10-07 05:33] manual-edit | repo:fro-bot/dashboard
+
+Added a dated operator-contract evidence boundary: dashboard 2026.10.9 and
+gateway v0.118.2 declare 1.8.0 while live health reports 1.6.0, infrastructure
+pins v0.113.2, and the dashboard deployment is pending. Preserved historical
+surveys and contrasted stale July tracker-body anchors with the Project's
+In Progress state and closed cancellation-UI issue. Attributed production push
+delivery to the operator's update; no authenticated flow or push test was
+performed in this oversight pass. Refreshed the existing index reference.
+The caller owns ingest/commit delivery of this dirty wiki diff; pre-existing
+wiki changes and staged metadata are preserved.
+
+Sources: https://github.com/fro-bot/dashboard/blob/ba499c714d9cbbf8a6d1025add7f885b70230d69/src/gateway/operator-contract/version.ts;
+https://github.com/fro-bot/agent/blob/77f2bad7d68ac38279cd0fa28f38b26a0cd15dfb/packages/gateway/src/operator-contract/version.ts;
+https://github.com/marcusrbrown/infra/blob/27b05ce05791d4eb978efd955cd776e915d54642/apps/gateway/upstream.json;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6031561710;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6031581475;
+https://github.com/fro-bot/dashboard/issues/179;
+https://dashboard.fro.bot/operator/health
+
+## [2026-10-07 05:39] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
