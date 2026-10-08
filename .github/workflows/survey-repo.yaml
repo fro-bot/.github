@@ -260,7 +260,7 @@ jobs:
       # action's post phase, which the agent timeout does not cover.
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@77f2bad7d68ac38279cd0fa28f38b26a0cd15dfb # v0.118.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
@@ -302,7 +302,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@77f2bad7d68ac38279cd0fa28f38b26a0cd15dfb # v0.118.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
@@ -344,7 +344,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@77f2bad7d68ac38279cd0fa28f38b26a0cd15dfb # v0.118.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
