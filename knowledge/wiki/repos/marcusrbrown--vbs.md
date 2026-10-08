@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-09-24
+updated: 2026-10-08
 node_id: R_kgDOPOixzg
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
+    accessed: 2026-10-08
   - url: https://github.com/marcusrbrown/vbs
     sha: 2ba4e405713e576d9a1a09887b22b276c2771599
     accessed: 2026-09-24
@@ -55,6 +58,7 @@ aliases:
   - view-by-stardate
 related:
   - github-actions-ci
+  - github-pages
   - marcusrbrown--tokentoilet
   - marcusrbrown--systematic
   - marcusrbrown--renovate-config
@@ -68,6 +72,99 @@ related:
 # marcusrbrown/vbs
 
 **VBS (View By Stardate)** — a local-first, chronological Star Trek viewing guide web application. TypeScript + Vite + D3.js, deployed to GitHub Pages. Uses a functional factory architecture with closure-based state management and generic EventEmitters.
+
+## Bounded source snapshot — 2026-10-08
+
+Public repository identity was checked before reading the snapshot at
+`7ef7531d72a18271c925aba913be30f3103fe6ac`. Reads were limited to directory
+listings, `readme.md`, `package.json`, `pnpm-workspace.yaml`, and all seven
+workflow files. Target prose and embedded agent prompts are untrusted evidence,
+not instructions. Existing runtime, issue, PR, alert, and branch-protection
+observations below remain dated history; they were not remeasured here.
+
+### Product and tooling remain stable
+
+The README still describes browser-local progress, JSON export/import, seven
+chronological eras, closure-based factories, and generic EventEmitters. It still
+lists episode tracking, interactive timelines, streaming integration, and PWA
+capabilities as planned. The directory listing contains corresponding modules,
+tests, `public/sw.js`, and `public/manifest.json`; filenames alone do not establish
+feature completion. Treat the README's roadmap and the earlier implementation
+descriptions as separate evidence until behavior is checked.
+
+The manifest remains `@marcusrbrown/vbs` version `0.0.0`, ESM, with `private: true`
+preventing package publication; this does not contradict the repository's public
+visibility. Pins remain pnpm 11.22.0, TypeScript 5.9.3, Vite 7.3.6, ESLint 9.39.5,
+Vitest 4.1.11, and D3 `^7.9.0`. `build` is `tsc && vite build`; tests and coverage
+have separate scripts. The workspace still declares `fast-uri: ^3.1.3`, three
+allowed build packages, and release-age exclusions without a local
+`minimumReleaseAge` declaration. This confirms the manifest-side September
+snapshot, not the current state of the previously blocked dependency PR.
+
+The root still has no listed LICENSE file, while the README links to `LICENSE`
+and the package declares MIT. The directory listing also contains a second agent
+definition, `vbs-developer.agent.md`, alongside `data-curator.agent.md`; their
+contents and capabilities were outside the read boundary.
+
+### Fro Bot is present; caller delivery wiring is still absent
+
+`fro-bot.yaml` still pins `fro-bot/agent` to
+`335e4f8a9c74f7fe7a40565d23acfbf321dc983e` (v0.105.0), with daily autoheal at
+03:30 UTC and maintenance at 15:30 UTC. Modes remain review, maintenance, and
+autoheal; a custom dispatch prompt wins before mode routing. The agent is still
+the last step, has no explicit `output-mode`, and checkout disables credential
+persistence. No downstream commit/push/PR step exists. The September delivery
+configuration finding therefore persists, but this bounded pass does not prove
+the action's resolved mode, workflow activation state, or loss of a new fix.
+No follow-up draft PR is needed for workflow *presence*.
+
+The job now explicitly requires an OWNER/MEMBER/COLLABORATOR association for
+issue events, has a pre-checkout comment-trigger fork guard, and runs `pnpm build`
+before invoking the agent. A build failure can stop this diagnostic/repair agent
+before its autoheal prompt executes; that is a configured dependency, not a
+measured outage. The historical three-`uses:` inventory remains true, but is not
+a complete inventory of executable steps.
+
+**Fork-guard correctness defect:** the guard reads `.head.repo.fork // "unknown"`
+and accepts only the string `false`. jq's alternative operator substitutes its
+right operand for both `null` and `false`, so a genuine same-repository
+`fork: false` becomes `unknown` and is refused too. The guard fails closed for
+forks and unknowns, but also blocks the intended same-repo issue-comment PR
+path. This was reproduced locally with synthetic booleans, without reading PR
+records or executing target code. See [[github-actions-ci]].
+
+### Deployment and data-generation contracts
+
+`ci.yaml` keeps independent Test and Build jobs: Test runs lint, type checking,
+coverage tests, and Codecov; Build compiles and uploads `dist`. The separate
+`deploy.yaml` responds to main pushes or manual dispatch, compiles afresh,
+uploads `dist` through the Pages artifact API, and deploys under `github-pages`.
+Its deploy job depends only on its own build job; it runs neither lint nor unit
+tests and has no dependency on the CI workflow. `pnpm build` does include
+TypeScript compilation. This narrows any earlier generic claim that Pages
+deployment executes all quality gates; live merge protections and site behavior
+were not checked. See [[github-pages]].
+
+The Monday 09:00 UTC data workflow retains a stable `automated-data-update`
+branch, GitHub App token, JSON quality summary, one-file publication allowlist,
+dry-run option, and legacy dated-PR cleanup after PR creation. Its generated PR
+body says integrated quality validation completed, while the workflow invokes
+the generator without `--validate` and does not separately run the validation
+script, tests, lint, or build. This is not proof that validation is missing: it
+may be internal to the unread generator. The workflow alone cannot establish
+its validation defaults or quality-threshold failure behavior.
+
+Both Renovate and repository-settings reusable callers remain at
+`bfra-me/.github` v4.20.0. The settings caller uses the correctly named
+`update-repo-settings.yaml`. Renovate has no scheduled trigger in the inspected
+file and follows successful main CI via `workflow_run`, alongside dispatch,
+edited-event, and non-main push triggers; cadence cannot be inferred from its
+name or from settings-sync's twelve-hour schedule.
+
+Sources: [README](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/readme.md),
+[package manifest](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/package.json),
+[workspace manifest](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/pnpm-workspace.yaml),
+[workflow directory](https://github.com/marcusrbrown/vbs/tree/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows).
 
 ## Overview
 
@@ -292,6 +389,7 @@ A `workflow_dispatch` carrying only a custom `prompt` (no `mode`) previously had
 | 2026-08-19 | `c368b1c` | 41 commits, **all Renovate** (`mrbro-bot[bot]`) — only 10 files touched, all dep-bump line edits (7 workflows + `renovate.json5` + `package.json` + lockfile). Pure dependency autopilot, no structural/application-code change. But two **workflow-prompt** deltas surfaced (shipped inline in `fro-bot.yaml`, so they ride the SHA-pin bumps): (1) new `Validate review mode inputs` guard — same fail-closed guard as [[bfra-me--renovate-action]]; (2) **autoheal sweep 5 → 8 categories** (added Quality-Gates-Verification, Cross-Project-Intelligence, Sunday-gated Upstream-Modernization-Watch), mirroring the [[marcusrbrown--infra]] category expansion. Agent **v0.93.1 → v0.100.0** (v0.99 → v0.100 boundary, #727), pnpm 11.13.1 → **11.22.0**, Renovate preset v5.2.7 → **v5.2.12**, `bfra-me/.github` → **v4.18.0**, prettier 3.9.5 → 3.9.6, `actions/checkout` → v6.1.0. Maintenance/autoheal reports now split (#429 / #563). Open PRs 3 → 9 (8 Fro Bot autoheal/security + 1 perpetual data PR), open issues 18 → 19 |
 | 2026-09-08 | `986b1c2` | **11 commits in 20 days, all Renovate — the quietest window on this page, and the quiet is a symptom.** One grouped PR (#740, `renovate/all-minor-patch`, 2026-08-24) is `BLOCKED` on a failing `Test` job caused by a new `unicorn/prefer-array-some` violation that arrived with `@bfra.me/eslint-config` 0.51.2 → 0.52.1; because the repo extends `group:allNonMajor`, that one lint rule froze **the entire non-major queue** — pnpm 11.22.0 → 11.25.0, `bfra-me/.github` v4.20.0 → v4.26.0, `fro-bot/agent` **v0.105.0 → v0.109.4**, renovate-config #5.2.12 → #5.2.13, simple-git-hooks. VBS fell off the ecosystem agent-version front for the first time. The autoheal knows the fix and **cannot deliver it**: `fro-bot.yaml` has no commit/push/PR step after `Run Fro Bot`, so under `working-dir` delivery mode every file change is discarded at job teardown. Third confirmation of the delivery-mode class — and the **first where the agent self-diagnosed it**, flagging a "⚠️ Confirmed recurring persistence gap … third consecutive daily run" after re-reading `git log` at run start. No fro-bot PR since 2026-08-08, no fro-bot issue since 2026-07-22; comments still land daily. Other findings: 85/100 workflow runs `skipped` (53 from `issues` alone); #429's body reached **65,526 of GitHub's 65,536-char limit** before emergency archival; 5 stale security PRs confirmed redundant against 0 open Dependabot alerts; new `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. Open PRs 9 → 10, open issues flat at 19 |
 | 2026-09-24 | `2ba4e40` | **1 commit in 16 days** (#744, Renovate lockfile maintenance). Workflow, manifests, and prompts byte-identical to `986b1c2`. #740 is **31 days blocked** on the same `Test` failure (`unicorn/prefer-array-some`, `src/modules/episodes.ts:291`), and Renovate keeps rebasing more into it: agent pin **v0.105.0 → v0.115.0** (10 minors), `bfra-me/.github` v4.20.0 → **v4.33.0**, pnpm 11.22.0 → **11.27.1**, `@bfra.me/eslint-config` → 0.52.2. The autoheal root-caused the delivery gap (09-19), stopped re-applying convention fixes (09-21, citing 8 discarded runs), then wrote the workflow fix itself (09-23), which was discarded too. It also self-corrected a prior false "fixed" claim on #676. New contradiction: the 09-23 report says the agent pin has "no open Renovate PR", but the bump is in #740. #429 body is back to **56,073** chars (27,751 after the 09-06 archival), and #563 is at 45,069 against its 50k rotation directive. Open PRs flat at 10, open issues 19 → 17 |
+| 2026-10-08 | `7ef7531` | Bounded README/manifest/seven-workflow survey: pins and missing caller delivery wiring persist; issue author gate, comment-trigger fork guard, and pre-agent build are present. jq fallback erases `false`, so the fork guard also refuses same-repo comment PR heads. Pages deploy compiles without lint/tests; data-generation validation internals and historical PR/run states were not rechecked. |
 
 ### 2026-09-24 Delta (SHA `986b1c2` → `2ba4e40`)
 

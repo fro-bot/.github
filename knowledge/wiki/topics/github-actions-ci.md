@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-07
+updated: 2026-10-08
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
+    accessed: 2026-10-08
   - url: https://github.com/marcusrbrown/mothership
     sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
     accessed: 2026-10-07
@@ -264,6 +267,39 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Boolean-preserving fork guards and pre-agent gates (2026-10-08)
+
+At `7ef7531`, [[marcusrbrown--vbs]]'s comment-trigger PR preflight reads
+`.head.repo.fork // "unknown"` through `gh api --jq` and proceeds only if the
+result equals `false`. jq's `//` substitutes for **false as well as null**:
+synthetic inputs `false`, `true`, and `null` produce `unknown`, `true`, and
+`unknown`. Every normal same-repository PR therefore fails this guard too.
+This is a fail-closed availability defect, not a fork bypass; no live PR path
+was exercised in the survey.
+
+Reusable check: test true, false, missing, malformed, and failed-query cases
+separately. An explicit boolean-preserving null check can retain a valid false
+while refusing unknowns; placing a fail-closed shell comparison after a decoder
+that erased false cannot recover it.
+
+The same workflow runs `pnpm build` before the agent. A deterministic failure
+there prevents agent invocation, including the requested autoheal diagnostic
+pass. Distinguish prerequisite validation from gates the repair agent should
+diagnose. Fro Bot remains the final step at v0.105.0 with no explicit delivery
+mode or downstream file-delivery steps. These source contracts preserve the
+September wiring finding without establishing new runtime failures or lost
+artifacts.
+
+VBS's data-generation workflow illustrates another boundary: its PR template
+asserts integrated validation completed, but the YAML contains only a generator
+invocation, not a separate validation/test step. Without reading the generator,
+neither that claim nor the absence of `--validate` proves whether validation
+ran. Workflow shape, implementation defaults, and observed results are distinct
+evidence layers.
+
+Sources: [Fro Bot workflow](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/fro-bot.yaml),
+[data update workflow](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/update-star-trek-data.yaml).
 
 ## Release preflight acceptance is not execution proof (2026-10-07)
 

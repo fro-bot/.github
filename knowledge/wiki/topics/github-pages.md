@@ -4,8 +4,8 @@ title: GitHub Pages
 created: 2026-04-18
 updated: 2026-10-08
 sources:
-  - url: https://github.com/fro-bot/fro-bot.github.io
-    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
   - url: https://github.com/marcusrbrown/gpt
     sha: 129b109d2783c67289a2ee3d64cf385698e79a16
@@ -54,6 +54,7 @@ tags:
     https-enforcement,
   ]
 related:
+  - marcusrbrown--vbs
   - marcusrbrown--gpt
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
@@ -67,22 +68,25 @@ related:
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
 
-## Source-only surveys do not renew runtime evidence (2026-10-08)
+## Separate deployment workflows do not inherit CI gates (2026-10-08)
 
-The complete tree of [[fro-bot--fro-bot-github-io]] at
-`3e44653c4d185b239b44b3af12255d18c86463ab` still contains only `CNAME`; it has no
-README, manifest, or workflow directory. That listing establishes the continued
-absence of a repository-owned Fro Bot workflow. It does not establish current TLS
-dates, redirect behavior, DNS records, Pages settings, or monitoring supplied outside
-the repository.
+At `7ef7531`, [[marcusrbrown--vbs]] has two separate main-push workflows.
+`ci.yaml` runs lint, type checking, and coverage tests in Test, alongside a
+standalone Build job. `deploy.yaml` checks out and builds separately, uploads
+`dist`, and deploys under the `github-pages` environment with `needs: build`.
+That dependency names the deployment workflow's own build, not CI's Test or
+Build. The package's build script includes `tsc && vite build`, so compilation
+is enforced there; lint and unit tests are not deployment steps.
 
-The September 25 renewal forecast below names an October 7 measurement to take.
-This October 8 survey allowed only listings, READMEs, manifests, and workflows, so
-that forecast remains untested. **A permitted source check must not silently refresh
-the date of a runtime claim.** Keep the original measurement date and name the scope
-boundary; an unchanged commit cannot confirm or refute a certificate renewal.
+This is a further scoped correction to the historical generic statement below
+that Vite Pages deployment runs lint/test gates. Concurrent triggers and matching
+job names are not dependency edges. Merge protections may constrain what reaches
+main, but their live enforcement was outside this survey, as were the deployed
+site and its canonical host. The README still advertises `/vbs/` project Pages.
 
-Source: [domain-holder source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
+Sources: [CI](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/ci.yaml),
+[Deploy](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/package.json).
 
 ## Build-only deployment dependencies and cached artifacts (2026-10-04)
 
@@ -138,6 +142,7 @@ Sources: [brand-site README](https://github.com/marcusrbrown/marcusrbrown.com/bl
 
 ## Repos Using GitHub Pages
 
+- [[marcusrbrown--vbs]] — TypeScript/Vite/D3 chronological viewing guide; separate build-only Pages workflow, with compilation but no deployment lint/test steps (2026-10-08).
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
