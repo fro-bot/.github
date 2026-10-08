@@ -2,6 +2,12 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-08 oversight: [[fro-bot--dashboard]] records fresh live operator
+contract 1.8.0, successful paired deploy records, and attributed authenticated
+launch/stream evidence. The earlier pending-cutover snapshot is retained;
+post-migration rollback requires volume recovery, and remaining operator-flow
+checks are distinguished from completed parity.
+
 Catalog refreshed 2026-10-07: [[marcusrbrown--mothership]] (repo) and
 [[github-actions-ci]] (topic). Both existing entries and accumulated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.

@@ -7247,3 +7247,35 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/b96b9904b20ed08
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-10-08 05:39] manual-edit | daily oversight: operator cutover evidence
+
+Updated `knowledge/wiki/repos/fro-bot--dashboard.md` additively and refreshed
+its existing catalog reference. A fresh public health probe reports contract
+1.8.0; gateway and dashboard deployment records show success, and the operator
+reports authenticated sign-in, an SSE ready frame, and launch-to-success
+verification. Kept those operator reports distinct from independently checked
+health/release/run evidence. Preserved the October 7 morning pending-cutover
+snapshot and credited the later transition instead of overwriting history.
+
+Recorded the corrected rollback boundary: the one-way ownership migration
+requires volume-snapshot recovery plus paired image restore, not pin reversal
+alone. Approval/cancel/logout verification and the two open producer gates
+remain outstanding. No tracker, Project, workflow, or metadata edits were made.
+All pre-existing working-tree changes were retained; the caller owns ingestion
+and commit delivery of this dirty wiki.
+
+Sources: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949;
+https://github.com/marcusrbrown/infra/pull/1484;
+https://github.com/marcusrbrown/infra/pull/1485;
+https://github.com/marcusrbrown/infra/actions/runs/37680188015;
+https://github.com/marcusrbrown/infra/actions/runs/37667587606;
+https://dashboard.fro.bot/operator/health.
+Run: https://github.com/fro-bot/.github/actions/runs/37732192119
+
+## [2026-10-08 05:46] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4

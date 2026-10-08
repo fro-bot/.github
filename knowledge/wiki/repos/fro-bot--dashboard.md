@@ -2,9 +2,27 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-07
+updated: 2026-10-08
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105
+    accessed: 2026-10-08
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/infra/pull/1484
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/infra/pull/1485
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37680188015
+    sha: faf714146364466dd093317d8ef5c9401264d0fd
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37667587606
+    sha: 5b7e5f242abfa227d8a082356c175a1e7331a6a4
+    accessed: 2026-10-08
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.14
+    accessed: 2026-10-08
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-08
   - url: https://github.com/fro-bot/dashboard/blob/ba499c714d9cbbf8a6d1025add7f885b70230d69/src/gateway/operator-contract/version.ts
     sha: ba499c714d9cbbf8a6d1025add7f885b70230d69
     accessed: 2026-10-07
@@ -99,6 +117,50 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-08 — live parity closes the cutover gate, not every operator flow
+
+The October 7 morning snapshot below remains historical evidence. By the
+October 8 oversight check, live `dashboard.fro.bot/operator/health` returned
+`{"ok":true,"contractVersion":"1.8.0"}`. The published gateway **v0.118.2**
+and dashboard **2026.10.14** both declare **1.8.0** in their server-side
+contract barrels. Infrastructure [#1484](https://github.com/marcusrbrown/infra/pull/1484)
+merged the gateway pin/proxy changes, and
+[#1485](https://github.com/marcusrbrown/infra/pull/1485) recorded the dashboard
+image. The [gateway deploy](https://github.com/marcusrbrown/infra/actions/runs/37680188015)
+and [dashboard deploy](https://github.com/marcusrbrown/infra/actions/runs/37667587606)
+both concluded success. This supersedes the morning's pending-cutover finding;
+**2026.10.9** is the contract-adoption release, not the serving dashboard
+version reported by the operator.
+
+The operator's [evening update](https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105)
+reports trusted-proxy sign-in, an authenticated SSE `ready` frame at 1.8.0,
+and a newly launched run streaming to `SUCCEEDED`. Those browser results,
+running digest checks, migration counts, and proxy peer verification are
+**attributed operator evidence**, not tests replayed by this oversight pass.
+The fresh health probe independently establishes the live contract; it does
+not attest the serving image digest or exercise authenticated flows.
+
+The update also changes the rollback contract: a one-way workspace ownership
+migration requires a **volume-snapshot restore plus paired image restore**.
+The [follow-up correction](https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949)
+withdraws paired-image-only rollback advice. Version pin reversal is not a
+complete rollback when data layout or ownership has changed. Verify the
+documented snapshot recovery path in [[marcusrbrown--infra]] before relying
+on an image-pair rollback.
+
+Rollout remains unfinished. Approval decisions, cancellation, and logout/CSRF
+still require their authenticated sweep. Question handling
+[agent #1736](https://github.com/fro-bot/agent/issues/1736) and checkout-field
+projection [#1737](https://github.com/fro-bot/agent/issues/1737) are still open;
+matching contract constants do not prove either producer behavior. The new
+[dashboard #583](https://github.com/fro-bot/dashboard/issues/583) expired-snapshot
+and [#584](https://github.com/fro-bot/dashboard/issues/584) stale-Cancel defects
+provide concrete regression cases for that sweep. Project 1 continues to show
+**In Progress / waiting**, while #3512's July-era body still names gateway
+v0.83.0, latest agent v0.85.0, and cancellation UI #179 as open. Overall
+In Progress is consistent with remaining work; the old cutover/version
+anchors are superseded and need reconciliation by the dedicated tracker.
 
 ## 2026-10-07 — released contract parity does not establish live cutover
 
