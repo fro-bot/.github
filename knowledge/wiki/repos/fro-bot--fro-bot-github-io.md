@@ -2,8 +2,11 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-09-25
+updated: 2026-10-08
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-10-08
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-05-07
@@ -52,6 +55,31 @@ node_id: R_kgDORLxXng
 # fro-bot/fro-bot.github.io
 
 Org-level GitHub Pages custom domain holder for the `fro-bot` organization. Serves the `fro.bot` domain.
+
+## Bounded source confirmation (2026-10-08)
+
+GitHub identifies this repository as public with default branch `main`. The complete,
+non-truncated root tree at `3e44653c4d185b239b44b3af12255d18c86463ab` contains exactly
+one entry: the `CNAME` blob (`208ca8c19f45a2b15968aaa4c0c391f18df60df4`). This confirms
+the same source snapshot as the September 25 survey. There is no README, manifest,
+`.github` directory, or workflow file to inspect. **The Fro Bot workflow remains
+absent**; a minimal monitoring/triage workflow can be proposed in a separate draft PR.
+
+This pass inspected repository identity and directory listings only. It did not read
+the `CNAME` contents or probe DNS, HTTP, TLS, Pages settings, branch protections,
+collaborators, or issues. The domain value below is accumulated evidence from earlier
+surveys, not a newly read value. A stable tree does not establish stable external
+infrastructure: the September 25 certificate dates, downgrade behavior, verification
+status, DNS gaps, and issue state remain dated observations. In particular, the
+forecast of renewal around October 7 is **untested here**, not evidence of renewal
+or a missed renewal. See [[github-pages]] for this source/runtime evidence boundary.
+
+**Catalog contradiction:** the older index entry still quoted a September 7 TLS
+expiry, already superseded by the September 9 and September 25 handshake evidence
+recorded below (November 6 expiry). The October 8 catalog annotation explicitly
+marks the older value as historical; no current certificate validity is inferred.
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## Overview
 

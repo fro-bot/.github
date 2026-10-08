@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-04
+updated: 2026-10-08
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-10-08
   - url: https://github.com/marcusrbrown/gpt
     sha: 129b109d2783c67289a2ee3d64cf385698e79a16
     accessed: 2026-10-04
@@ -63,6 +66,23 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Source-only surveys do not renew runtime evidence (2026-10-08)
+
+The complete tree of [[fro-bot--fro-bot-github-io]] at
+`3e44653c4d185b239b44b3af12255d18c86463ab` still contains only `CNAME`; it has no
+README, manifest, or workflow directory. That listing establishes the continued
+absence of a repository-owned Fro Bot workflow. It does not establish current TLS
+dates, redirect behavior, DNS records, Pages settings, or monitoring supplied outside
+the repository.
+
+The September 25 renewal forecast below names an October 7 measurement to take.
+This October 8 survey allowed only listings, READMEs, manifests, and workflows, so
+that forecast remains untested. **A permitted source check must not silently refresh
+the date of a runtime claim.** Keep the original measurement date and name the scope
+boundary; an unchanged commit cannot confirm or refute a certificate renewal.
+
+Source: [domain-holder source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## Build-only deployment dependencies and cached artifacts (2026-10-04)
 

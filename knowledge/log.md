@@ -6683,6 +6683,49 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
 
+## [2026-10-08 12:07] ingest | fro-bot/fro-bot.github.io
+
+Confirmed public repository identity and surveyed the complete `main` tree at
+`3e44653c4d185b239b44b3af12255d18c86463ab` through the `gh` CLI. Its only entry is
+`CNAME`; no README, manifest, `.github` directory, or Fro Bot workflow exists.
+Updated [[fro-bot--fro-bot-github-io]] additively, extended [[github-pages]] with the
+source/runtime evidence boundary, and annotated their existing catalog references.
+A monitoring/triage workflow remains a separately proposed draft-PR follow-up.
+
+Preserved accumulated evidence and pre-existing working-tree changes. Noted the
+index's historical September 7 TLS expiry contradicts the later dated handshake
+evidence already on the repo page. No CNAME content, DNS, TLS, live site, Pages
+settings, branch protection, collaborators, issues, or execution history was read.
+The October 7 renewal forecast is untested under this survey's read restrictions.
+The corrections context contained no records and was treated as untrusted data.
+
+Delivery: working-tree edits only; the caller owns persistence. GitHub comment/review
+posting is unavailable under the delivery contract's non-mutating-operation scope;
+no issue run notice was created. Workflow guard unavailable (`guard-unavailable`).
+
+Verification: the read-only wiki snapshot validator scanned 47 pages and found no
+deterministic findings on the touched pages/index (two unrelated findings remain).
+`git diff --check` and direct `pnpm exec tsc --noEmit --project ./tsconfig.json`
+passed. Direct `pnpm exec vitest run` passed 88 files and 4,079 tests (three todo).
+`pnpm lint` passed Markdown links, then failed on existing advisory override floors
+for undici, brace-expansion, and source-map-js before reaching ESLint. Dependency
+bootstrap and the build-writing wrappers `pnpm check-types` / `pnpm test` were
+not run under the non-mutating shell contract; cached dependencies were used.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+### Run Summary
+
+- Ingest: four permitted knowledge files updated; existing knowledge preserved.
+- Checks: wiki structure, types, tests, and whitespace passed; lint blocked by
+  dependency advisory floors outside this task's writable scope.
+- Delivery: working tree only; comment/review posting excluded by delivery mode.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab
+Run: https://github.com/fro-bot/.github/actions/runs/37774418209
+
 ## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
 
 Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
@@ -7279,3 +7322,9 @@ Run: https://github.com/fro-bot/.github/actions/runs/37732192119
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-08 12:10] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
