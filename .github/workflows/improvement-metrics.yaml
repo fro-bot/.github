@@ -54,17 +54,27 @@ jobs:
         uses: ./.github/actions/setup
 
       # Overlay metadata/ from the data branch so the privacy gate reads the
-      # authoritative private-repo list from metadata/repos.yaml. Best-effort;
-      # `loadPrivateTokensFromDisk()` is the fail-closed chokepoint downstream.
+      # authoritative private-repo list from metadata/repos.yaml. A missing branch
+      # (probe exit 2) skips the overlay; a failed probe fails the step. `loadPrivateTokensFromDisk()`
+      # remains the fail-closed chokepoint downstream.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       # Compute the event -> codified-class edge digest and write it to
       # IMPROVEMENT_METRICS_DIGEST_PATH. Writing the file directly avoids the
