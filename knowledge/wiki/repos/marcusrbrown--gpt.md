@@ -3,8 +3,11 @@ type: repo
 title: marcusrbrown/gpt
 node_id: R_kgDOK0Z5CA
 created: 2026-04-18
-updated: 2026-09-20
+updated: 2026-10-04
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 129b109d2783c67289a2ee3d64cf385698e79a16
+    accessed: 2026-10-04
   - url: https://github.com/marcusrbrown/gpt
     sha: 9a2b6e142a875d84a1c1642bef1a043c07d67a0b
     accessed: 2026-09-20
@@ -87,6 +90,34 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30, and now *explained*: `node` sits inside blocked Renovate PR #2662 (see the 2026-09-20 section). Renovate detects `24.21.0`
 - **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
 - **Counts (2026-09-20):** 1 star, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** — the identical queue to 2026-09-03, same numbers, same members (see the measurement correction below)
+
+## 2026-10-04 bounded survey — committed overrides, unchanged delivery boundary
+
+Public `main` snapshot: `129b109d2783c67289a2ee3d64cf385698e79a16`. Evidence is restricted to directory listings, READMEs, manifests, and workflows. Earlier issue queues, alert counts, branch suppression, and observed run outcomes remain dated observations; this pass does not establish their current state.
+
+### Security floors now exist on the default branch
+
+**Contradiction resolved by newer manifest evidence:** the September sections recorded only three committed overrides and repeatedly discarded repairs. The current `pnpm-workspace.yaml` declares nine: `@xmldom/xmldom`, `brace-expansion@2`, `brace-expansion@5`, `browserslist`, `fast-uri`, `ip-address`, `langsmith`, `path-to-regexp`, and `ws@7`. The `fast-uri` floor is now `>=3.1.6 <4.0.0`, replacing September's `>=3.1.2`. Seven entries have upper major-version bounds; `langsmith` and `path-to-regexp` retain their older unbounded floors. Neither `undici` nor `hono` is an override key. This proves committed constraint changes, not who delivered them, which versions the lockfile resolves, or present advisory coverage. None of the ten active workflow files invokes `pnpm audit`.
+
+### Fro Bot is present; persistence is still not declared by this caller
+
+`fro-bot.yaml` pins agent **v0.117.1** at `3e86a1249c9af11f5152625259b0e26e9a828cfe`, retains review/maintenance/autoheal modes and the 03:30/15:30 UTC schedules, and still ends at `timeout: 0`. It supplies no `output-mode` input and no post-agent diff/commit/push/PR stage. Conditional checkout credentials remain present. The newly committed overrides therefore supersede the earlier claim that those constraints never reached `main`; they do **not** establish that scheduled file delivery recovered. No missing-Fro-Bot onboarding draft is warranted.
+
+### Deployment and test admission are different contracts
+
+In `main.yaml`, `Deploy` depends only on `Build`; lint and unit tests are parallel siblings, not deploy prerequisites. Build and unit-test steps now explicitly bypass artifact-cache hits on `workflow_dispatch`. On push/PR, cache hits still skip execution, and the build key still omits `vite.config.ts`, `src/index.css`, `pnpm-workspace.yaml`, and the setup action. See [[github-pages]] for the distinction between deployment dependencies and intended merge gates.
+
+`test-coverage.yaml` explicitly admits push/dispatch E2E runs and filters PR runs. Its older disabled E2E filename remains listed, so that filename alone does not mean E2E is disabled. Accessibility dispatch and performance dispatch/schedule still depend on a deliberately skipped `Prepare` job without an explicit status-function override; their event predicates do not remove GitHub's default dependency-success gate. These are static admission findings, not sampled run failures.
+
+Visual CI invokes `test:visual:ci`, whose manifest command selects only `tests/visual/homepage.visual.spec.ts`; baseline updates use that same subset. The broader `test:visual` command remains available locally. The visual README also advertises absent `test:visual:headed`/`test:visual:debug` scripts and an unlisted `gpt-test-pane.visual.spec.ts`. Its `any`/`localStorage` example contradicts the Fro Bot workflow's stated test/code conventions; documentation examples do not prove those patterns execute in the application.
+
+### Stack and documentation drift
+
+The manifest declares Vite **8.3.1**, ESLint **10.11.0**, Prettier **3.9.9**, React **19.2.5**, TypeScript **5.9.3**, and pnpm **11.11.0**. LangChain advances to **1.5.15**, core **1.2.14**, OpenAI integration **1.6.1**, and Anthropic integration **1.5.11**; LangGraph remains **1.4.7**. See [[langchain]] for the dated package-family snapshot, without inferring compatibility from version pins.
+
+The root README and all three Fro Bot prompts still describe **Vite 7**. README notebook names remain absent from the listing, which instead contains `notebooks/agents/analysis/code-analyzer.ipynb` and `notebooks/templates/agent.ipynb`. Its RFC index link targets `RFCs/RFCS.md`, while the index is listed at root `RFCS.md`. The README calls MCP “Multi-Call Protocol”; the manifest's `@modelcontextprotocol/sdk` identifies Model Context Protocol. Older architecture and runtime privacy claims remain historical, not independently verified by this restricted survey.
+
+Sources: [README](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/readme.md), [manifest](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/pnpm-workspace.yaml), [workflows](https://github.com/marcusrbrown/gpt/tree/129b109d2783c67289a2ee3d64cf385698e79a16/.github/workflows), [visual README](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/tests/visual/README.md).
 
 ## 2026-09-20 survey — a human touched the workflow, and the thing that froze the dependencies was the bot
 

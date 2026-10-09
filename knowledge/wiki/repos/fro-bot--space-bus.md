@@ -3,7 +3,7 @@ type: repo
 title: fro-bot/space-bus
 node_id: R_kgDOTMGFnQ
 created: 2026-07-03
-updated: 2026-09-19
+updated: 2026-10-03
 sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
@@ -20,6 +20,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 47e32358040d9df0a9b897e17adefd70924ae55e
     accessed: 2026-09-19
+  - url: https://github.com/fro-bot/space-bus
+    sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
+    accessed: 2026-10-03
 tags:
   - opencode
   - mcp
@@ -84,6 +87,55 @@ related:
 > **2026-07-18 survey (HEAD `8e20e01`) — the repo matured from MVP dogfood to shipped plugin.** Since the 2026-07-03 initial survey it has: (1) **converted to a published OpenCode plugin** on npm (`0.13.1`, 20 versions via changesets + npm OIDC trusted publishing — resolving the private/`0.0.0` → published contradiction flagged at 2026-07-06); (2) grown from **four tools to six** (`bus_wait` async-delegation, `bus_registry` multi-roster) — the "exactly four tools" MVP constraint is **superseded**; (3) added a **plugin-managed server lifecycle** + `space-bus` CLI + macOS **launchd** reboot-persistence; (4) exposed a **CI-enforced browser-safe library surface** (subpath exports for renderers like [[marcusrbrown--mothership]]); and (5) **grown a full Fro Bot workflow + CI/CodeQL/Scorecard/Renovate/Probot Settings** — resolving the "no automation" thread. Sections below preserve the 2026-07-03 MVP record and mark what changed.
 
 ## Overview
+
+### Bounded current snapshot (2026-10-03)
+
+At `20ab67c56a39f12774d7dcb659e65848767bc03e`, the README still describes
+the six-tool, directory-routed OpenCode bus, stdio MCP facade, managed-server
+lifecycle, and macOS launchd service. The manifest still declares `0.15.0`,
+ESM, MIT, the `space-bus` and `space-bus-mcp` binaries, and public publishing.
+Runtime dependencies are MCP SDK `1.29.0` and Zod `^4.4.3`; development pins
+include OpenCode plugin `1.18.26`, Biome `2.5.2`, Changesets `2.31.1`, Bun
+types `1.4.2`, and TypeScript `5.9.3`. The plugin peer range remains
+`>=1.17.13 <2`. These are manifest declarations, not a registry or runtime check.
+
+**Fro Bot workflow remains present.** Its SHA-pinned agent is still `v0.112.0`,
+with a daily `0 0 * * *` schedule and manual `prompt` input. The job still ends
+after checkout, Bun setup, frozen install, and the agent invocation. It declares
+neither an `output-mode` input nor a caller-owned commit/push/PR step. This
+confirms the structural delivery gap recorded on 2026-09-19; it does not
+establish what a later run actually attempted or delivered. The workflow's
+PR-head concurrency key is explicitly limited to `pull_request` events;
+issue/review-comment events keep their own thread keys.
+
+CI still runs frozen install, typecheck, Biome, production build, a Node ESM
+default-export smoke test, and Bun unit tests. The Bun setup action has no
+explicit `bun-version`, so its action SHA alone is not a Bun runtime pin.
+Release waits for successful main-branch CI (or manual dispatch), uses
+Changesets with Node 24 and npm `11.18.0`, and declares OIDC publishing via
+`id-token: write`; trusted-publisher configuration and publish success were
+not inspected. Renovate and settings-sync workflows both reference
+`bfra-me/.github` `v4.29.0`. Checkout remains split between `v6.1.0` in
+CI/release/Fro Bot and `v7.0.1` in CodeQL/Scorecard.
+
+**README drift remains independently visible:** its Library surface prose says
+“four tools” while the Tools section lists six, and it omits `/registry` even
+though `package.json` exports `./registry` to `dist/registry-entry.js`.
+The manifest's development watch entry lists also omit `registry-entry.ts`,
+whereas that file is present in the directory listing. A successful production
+build is therefore not evidence of development-watch export parity; see
+[[opencode-plugins]]. The watch command was not executed.
+
+This snapshot used only directory listings, README, manifest, and workflow
+files. Earlier npm availability, code-freeze duration, advisory, issue/PR,
+workflow-activity, and AGENTS.md claims below are retained as dated evidence,
+not renewed by this pass. In particular, manifest version `0.15.0` alone does
+not extend the earlier measured publish drought. The manifest still has no
+`overrides` block, but current vulnerability status cannot be inferred from that.
+
+Sources: [README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md),
+[manifest](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json),
+[workflows](https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows).
 
 | Attribute          | Value (2026-09-19 survey, HEAD `47e32358`)                                   |
 | ------------------ | ----------------------------------------------------------------------------- |

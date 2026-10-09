@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/infra
 created: 2026-04-18
-updated: 2026-09-22
+updated: 2026-10-06
 node_id: R_kgDOR4g8TA
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 793b2a4b81a577b64a7469ae65d1a61bf498ab7c
+    accessed: 2026-10-06
   - url: https://github.com/marcusrbrown/infra
     sha: 3e4d76d40d92fa1bd0f9dc6511c9f6e41cd7fc79
     accessed: 2026-09-22
@@ -105,7 +108,73 @@ related:
 
 Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), an AWS S3 durable-storage provisioner for `fro-bot/agent` session state (OIDC → STS, per-repo least-privilege IAM roles), and an operational CLI with MCP bridge.
 
-## Overview
+## 2026-10-06 — bounded source snapshot
+
+At `793b2a4b81a577b64a7469ae65d1a61bf498ab7c`, the complete directory listing
+still has eight app directories, two package directories, and twenty workflow
+files. The root README distinguishes seven deployable apps from the local-only
+`apps/agent` storage provisioner. This pass reads listings, READMEs, package
+manifests, and workflows only. Earlier issue counts, environment protection
+settings, deployed versions, label timelines, and retention attestations remain
+dated evidence; none were rechecked here.
+
+### Declared package version and documentation drift
+
+`packages/cli/package.json` now declares **0.24.0**, compared with the September
+22 snapshot's 0.23.0. This is a source-manifest version, not a registry publication
+or installation check. Its executable is `dist/cli.js`; the publish allowlist is
+`dist` plus `src/commands/vpn/peers.ts`, with that single source file exported as
+`./vpn/peers`. The package README still says it "ships TypeScript source" as its
+runtime explanation. Both descriptions are retained: the manifest describes a
+built main executable with one intentional source export, while the README's
+broad wording does not distinguish them. Bun remains required by the declared
+engine and README; no executable was run during this survey.
+
+The CLI README documents exactly nine read-only MCP status/model tools and
+explicitly excludes mutating commands. Its agent group documents model-credential
+setup and S3 handoff wiring, including a non-mutating `--plan` option. These are
+documented interfaces, not a fresh implementation audit. Root tooling declares
+TypeScript 6.0.3, ESLint 10.12.0, Prettier 3.9.9, and Changesets 3.0.3.
+
+### Fro Bot present; run classification has an explicit delivery setting
+
+`.github/workflows/fro-bot.yaml` references SHA-pinned **agent v0.117.5** in
+both jobs. The content job retains read-only `GITHUB_TOKEN` permissions and
+default-ref checkout with `persist-credentials: false`; same-repo PR comment
+heads are resolved separately. The storage job remains schedule/main-dispatch
+only, uses the `fro-bot-storage` environment and AWS OIDC, and explicitly sets
+`output-mode: branch-pr` after installing an authenticated git header.
+These describe workflow wiring, not the effective scope of its separate PAT.
+
+One classifier selects prompt, cache bypass, and reconciliation: schedules and
+exactly empty dispatch prompts are `daily-equivalent`; every nonempty prompt,
+including whitespace, is `custom`. The daily UTC date/run ID is frozen before
+the agent. The post-agent reconciler is daily-only, inherits the default success
+guard, and blanks the exported AWS credentials. No missing-Fro-Bot follow-up is
+needed. See [[github-actions-ci]] for the shared-classification pattern.
+
+### Alert validation changed; scanner enforcement did not
+
+The September 22 claim that Release Alert has "no self-test" is superseded at
+this SHA **for workflow wiring**: `release-alert.yaml` has owner-only manual
+synthetic validation, separate test title/label/body marker, canonical create
+response checks, bounded issue/comment readback, exhaustive synthetic discovery,
+and refusal to mutate multiple matching synthetic issues. This survey does not
+establish that validation ran or passed. Production still alerts only on
+`failure`, and uses a separately bounded 100-item discovery path rather than
+the synthetic path's pagination.
+
+The gateway scanner still has `continue-on-error: true`, Trivy `--exit-code 0`,
+and fallback reporting when scans produce no output. Its deploy dependency on
+`scan-images` does not turn vulnerabilities into a blocking condition. The
+September finding remains supported by current workflow evidence.
+
+Sources: [root README](https://github.com/marcusrbrown/infra/blob/793b2a4b81a577b64a7469ae65d1a61bf498ab7c/README.md),
+[CLI README](https://github.com/marcusrbrown/infra/blob/793b2a4b81a577b64a7469ae65d1a61bf498ab7c/packages/cli/README.md),
+[CLI manifest](https://github.com/marcusrbrown/infra/blob/793b2a4b81a577b64a7469ae65d1a61bf498ab7c/packages/cli/package.json),
+and `.github/workflows/{fro-bot,ci,release-alert,deploy-gateway}.yaml` at the same SHA.
+
+### Historical overview (2026-09-22)
 
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`

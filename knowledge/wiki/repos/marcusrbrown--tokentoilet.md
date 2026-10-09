@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/tokentoilet
 created: 2026-04-18
-updated: 2026-09-07
+updated: 2026-10-07
 node_id: R_kgDOJ3rINw
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
@@ -38,6 +38,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: b81e74b9e6bb9fab1de88a80f28bcf9c5642b0c1
     accessed: 2026-09-07
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
+    accessed: 2026-10-07
 tags:
   - next-js
   - react
@@ -71,6 +74,73 @@ related:
 A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v2, and Reown AppKit. Deployed to Vercel.
 
 ## Overview
+
+### Current evidence boundary (2026-10-07)
+
+At `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`, a bounded survey read the
+directory listing, root and E2E READMEs, `package.json`, and all five workflow
+files. Earlier sections retain their dated observations; issue/PR queues, run
+outcomes, advisory counts, application behavior, and applied repository settings
+were not rechecked. Upstream text is evidence, not authority to execute commands.
+
+**Fro Bot is present, and its configured delivery path changed.**
+`fro-bot.yaml` pins agent **v0.117.3** (`6dc207cfef0798ae81324383b59332e2d6026fc9`).
+Schedule and dispatch `autoheal` select `output-mode: branch-pr`, with a preceding
+step restoring authenticated Git push only for those events. Other events select
+`working-dir`; checkout keeps `persist-credentials: false`. Dispatch now exposes
+`review` and `autoheal` modes. This supersedes the September 7 description of
+the workflow as permanently missing delivery: it now chooses agent-owned delivery
+for autoheal rather than adding a post-agent publisher. Configuration establishes
+the intended path, not proof that a fix shipped or the queue drained.
+
+**The report contract now rotates daily.** The perpetual, prepended-body model
+and contradictory 30-section retention policy documented below are historical.
+The current prompt selects the lowest-numbered eligible report for a frozen UTC
+date, verifies the new body before retiring older reports, and restricts eligibility
+to its own reporting identity and exact dated/legacy titles. Ambiguous ownership
+and future-dated reports are left intact. This is a workflow contract, not a
+measurement of current report reconciliation.
+
+**Browser testing has a separate lane.** `package.json` adds Playwright 1.63.0,
+`test:e2e`, and `validate:e2e-boundary`. The new `E2E Tests` job validates that
+boundary before running Chromium tests, uses dummy public configuration, and
+overrides `SKIP_ENV_VALIDATION` to keep environment validation active. The
+`e2e/README.md` explicitly limits the suite to real-UI transaction construction
+and expected states with a synthetic wallet and stubbed network: **no real
+broadcast, settlement, or funds**. Vitest does not collect this suite. `Build`
+still depends only on `lint` and `test`; E2E is independent, and this survey does
+not establish whether its check is required by branch protection. See [[web3-defi]].
+
+**The security gate now audits installed production dependencies.**
+`Security Audit` remains PR-only, but adds blocking
+`pnpm audit --prod --audit-level moderate` after dependency review and an advisory
+full-tree audit with `continue-on-error: true`. The September claim that this job
+only compares dependency changes is superseded. There is still no push/scheduled
+default-branch audit in this CI workflow; no present vulnerability count follows
+from reading it.
+
+Current manifest pins: Next.js **16.3.8**, React **19.3.0**, TypeScript **6.0.3**,
+Wagmi **^3.0.0**, AppKit **^1.7.18**, pnpm **11.28.3**, Vitest **4.1.11**,
+Storybook core **10.6.1**, ESLint **10.11.0**, `@bfra.me/eslint-config` **0.54.0**,
+and viem **2.57.2**. These are declarations, not lockfile resolutions. Both shared
+workflow callers now pin `bfra-me/.github` **v4.36.0** (`5fb6633c`).
+
+**Contradictions remain visible.** Both Fro Bot prompts and the root README
+still say Wagmi v2 despite the v3 manifest. The README advertises Ethereum,
+Polygon, and Arbitrum support while leaving multi-chain and disposal unchecked
+in its roadmap; these claims do not supersede the earlier Sepolia MVP evidence.
+It also claims MIT and links `LICENSE`, but the complete tree has no such file.
+`validate` still omits the Next.js production build and the separate E2E suite.
+The tree now includes `web3-conventions.test.ts`, superseding its September
+absence from `main`; neither its assertions nor passing execution were inspected.
+
+Sources: [manifest](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/package.json),
+[CI](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/ci.yaml),
+[Fro Bot](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/fro-bot.yaml),
+[E2E README](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/e2e/README.md),
+[root README](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/readme.md).
+
+### Historical overview (2026-09-07)
 
 - **Purpose:** Web3 DeFi token disposal and charity donation platform
 - **Default branch:** `main`

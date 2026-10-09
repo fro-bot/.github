@@ -6646,3 +6646,698 @@ Sources: https://github.com/marcusrbrown/containers/tree/2c473db0db8ca362b0e4039
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-09-28 11:47] ingest | marcusrbrown/marcusrbrown.github.io
+
+Limited survey of the public `main` ref at `aa563beb2426b9bd94ff26a5d35ea48042050b7b` (repo id `1174807412`, mrbro.dev; distinct from the former brand site now [[marcusrbrown--marcusrbrown-com]]). Updated [[marcusrbrown--marcusrbrown-github-io]] and [[github-actions-ci]] additively and cataloged both in `index.md`. The Fro Bot workflow is present, now pinned to agent v0.113.2 with scheduled `branch-pr` delivery configured; no missing-workflow follow-up is warranted. PR-only path filters selectively gate test/build/type-check/E2E/performance work, while non-PR runs bypass filters; category mapping was not inspected. The visual-test README explicitly disclaims automated screenshot comparison, contradicting the E2E workflow's “All screenshots matched” success message. pnpm advanced to 11.27.0, Vitest to 4.1.11, Playwright to 1.63.0; eight workflow files remain, and the audit gate and step-scoped optional analytics build variable persist. Reads were limited to listings, README files, manifests, and workflow files; no issue/PR or observed run was surveyed. No GitHub issue was opened, updated, or commented on for this ingest.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/aa563beb2426b9bd94ff26a5d35ea48042050b7b, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/.github/workflows/fro-bot.yaml, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/.github/workflows/e2e-tests.yaml, https://github.com/marcusrbrown/marcusrbrown.github.io/blob/aa563beb2426b9bd94ff26a5d35ea48042050b7b/tests/visual/README.md
+
+## [2026-09-28 11:52] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-09-29 11:25] ingest | marcusrbrown/sparkle
+
+Limited public-repo survey of `main` HEAD `76b80d8a7a4a86d9888b1ed49e9abaadcd19feec`. Updated [[marcusrbrown--sparkle]] and [[github-actions-ci]] additively and refreshed their catalog notes in `knowledge/index.md`. Seven workflows remain listed, including Fro Bot at v0.117.0 with the autoheal-only `branch-pr` delivery gate; no missing-workflow follow-up is needed. Root pnpm advanced to 11.28.0 and turbo to 2.11.4. The Fro Bot review prompt still asserts pnpm 10.x and the autoheal class predicate conflicts with its review prompt's exceptions; the docs regeneration workflow's JS/JSX trigger paths are absent from its internal push detector. These are static contradictions, not verified run failures. Root `typedoc` remains pinned and the build allowlist still omits `@parcel/watcher`; earlier issue/PR states were not rechecked. Target reads were restricted to directory listings, README files, manifests, and workflows. Existing working-tree edits were preserved; no target issue/PR was used as a survey notice.
+
+Sources: https://github.com/marcusrbrown/sparkle/tree/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec, https://github.com/marcusrbrown/sparkle/blob/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec/.github/workflows/fro-bot.yaml, https://github.com/marcusrbrown/sparkle/blob/76b80d8a7a4a86d9888b1ed49e9abaadcd19feec/.github/workflows/regenerate-docs.yaml
+
+## [2026-09-29 11:31] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-09-30 05:30] manual-edit | security-remediation-integration
+
+Added [[security-remediation-integration]] and cataloged it in `knowledge/index.md`. Captured the verified distinction between standalone security PR failures and combined-tree success from the remediation evidence, plus repository/registry advisory snapshot lag. Referenced the public agent's differential-versus-full-tree OSV workflow as an additional reporting pattern, explicitly preserving the control plane's existing required security gate. PR merge outcomes and live scanner execution were not inferred. The wiki diff is left for the caller's authoritative ingestion step.
+
+Sources: https://github.com/fro-bot/.github/pull/3942#issuecomment-5904530000, https://github.com/fro-bot/.github/pull/3941, https://github.com/fro-bot/.github/pull/3942, https://github.com/fro-bot/agent/blob/27d08f8201656db6da2c60758bd4a0579fa2f6bb/.github/workflows/osv-scanner.yaml
+
+## [2026-09-30 05:39] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-09-30 11:13] ingest | marcusrbrown/esphome.life
+
+Limited survey of public `main` at `6852f168e06bce3373901bea9fdb79bf4aee831f`.
+Updated [[marcusrbrown--esphome-life]], [[esphome]], and [[probot-settings]]
+additively and refreshed their catalog references in `knowledge/index.md`.
+The 17-file tree retains three workflows and no Fro Bot workflow; the repo page
+carries the recommendation for a separately proposed onboarding draft PR.
+Both reusable callers now use bfra-me/.github v4.34.0, but the settings caller
+still targets Renovate. ESPHome remains 2025.12.7 in CI and the devcontainer,
+and only one of the two listed device configs is in the firmware matrix.
+New static findings: the combined firmware manifest reads a version output from
+a gate job that never forwards it, and the template README references two absent
+`.yml` workflow paths instead of the actual combined `ci.yaml` pipeline.
+Earlier versions and contradictions were retained with dates; dashboard, PR,
+upstream-release, deployment, and live-settings claims were not refreshed.
+Target reads were restricted to directory listings, README, the devcontainer
+manifest, and workflow files, all pinned to the same SHA. Corrections context
+contained no correction spans. Existing working-tree changes were preserved.
+This entry is the canonical ingest summary; no issue or PR notice was created.
+
+Verification: frontmatter, commit provenance, wikilinks, catalog entries, and
+log presence passed the scoped validation; `git diff --check` and direct
+`tsc --noEmit` passed. Direct Vitest execution passed 88 files / 4,079 tests
+(3 todo). `pnpm lint` stopped at existing override-floor violations for
+`undici` and `brace-expansion`, after its Markdown-link check passed.
+Prettier reported drift in all five touched files, also present in their
+committed baselines; accumulated content was not reformatted. ESLint ignores
+the wiki paths. Cached dependencies were used: `pnpm bootstrap` and the
+build-writing `pnpm check-types` / `pnpm test` wrappers were not run under the
+non-mutating-shell contract; their direct type/test equivalents were run.
+No permitted GitHub comment/review destination was supplied for this dispatch,
+so the comment delivery requirement could not be fulfilled within working-dir
+constraints. The caller retains responsibility for persisting these changes.
+
+Sources: https://github.com/marcusrbrown/esphome.life/tree/6852f168e06bce3373901bea9fdb79bf4aee831f,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/ci.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/renovate.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/update-repo-settings.yaml,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.devcontainer.json,
+https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/docs/readme.md
+
+## [2026-09-30 11:22] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-10-01 05:24] ingest | daily oversight activity measurement
+
+Added the audit-backlink exclusion rule to [[github-actions-ci]] and refreshed
+its catalog observation. Paginated timelines for 103 public open PRs confirmed
+that cross-references can falsely refresh inactivity without commits, reviews,
+comments on the PR, or state changes. Preserved existing workflow-prepared wiki
+edits and metadata staging; no metadata was edited by this oversight pass.
+The caller owns ingestion and persistence of the dirty wiki tree.
+
+Sources: https://github.com/bfra-me/github-app/pull/843,
+https://github.com/marcusrbrown/sparkle/pull/2048,
+https://github.com/fro-bot/.github/actions/runs/36818273959
+
+## [2026-10-01 05:32] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-01 11:42] ingest | marcusrbrown/marcusrbrown.com
+
+Surveyed public `main` at `6f975b1d7bb09ea515f2628ff50e2f4b8e68020d` using
+only directory listings, README, package/workspace manifests, and the five
+workflow files. Updated [[marcusrbrown--marcusrbrown-com]] and [[github-pages]]
+additively and refreshed their catalog references in `knowledge/index.md`.
+The 66-file layout persists; matching paths do not establish unchanged code.
+Fro Bot is present at v0.117.1, so no workflow-onboarding proposal is needed.
+pnpm is 11.28.1, the ESLint config range is ^0.54.0, and the Renovate reusable
+workflow is v4.35.0. Static findings: explicit delivery mode/stage remains
+absent; Deploy runs lint/build but not tests or audit; E2E/Lighthouse still
+have no workflow invocation. README/manifest/prompt identity drift persists.
+Recorded the top-level `overrides` versus historical `pnpm.overrides` wording
+as a contradiction rather than inferring effective pnpm behavior. The Pages
+topic now documents the canonical brand-site slug and qualifies its older
+deployment-gate claim. September run-health and issue/PR observations remain
+dated and unrefreshed. Corrections context had no spans; existing working-tree
+changes were preserved, including caller-prepared metadata.
+
+Verification: direct `tsc --noEmit` passed; direct Vitest passed 88 files /
+4,079 tests (3 todo); `git diff --check` passed. `pnpm lint` passed its
+Markdown-link stage, then failed on existing `undici`/`brace-expansion`
+override-floor violations. Prettier reports formatting drift in the touched
+pages/index; their committed baselines also have formatting drift. Accumulated
+content was not broadly reformatted. Cached dependencies were used instead
+of `pnpm bootstrap`; build-writing `pnpm check-types` / `pnpm test` wrappers
+were replaced by their direct type/test checks under the non-mutating-shell
+delivery contract. Scoped schema, source-SHA, wikilink, and catalog checks
+validate the changed pages; this is not a full authoritative-snapshot lint.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+### Run Summary
+
+- Wiki ingest delivered in the working tree; the caller owns persistence.
+- Verification is partial: type/tests pass; existing lint/format drift remains.
+- Comment delivery is blocked: no permitted comment/review destination was
+  supplied, issue notices are forbidden, and working-dir permits no GitHub
+  mutations. This log entry is the canonical survey summary.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/README.md,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/package.json,
+https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/pnpm-workspace.yaml,
+https://github.com/marcusrbrown/marcusrbrown.com/tree/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows
+
+## [2026-10-01 11:47] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-10-02 05:14] manual-edit | security-remediation-integration
+
+Extended [[security-remediation-integration]] with the verified propagation of
+the existing undici/brace-expansion floor failures into PR #3946's Renovate
+post-upgrade artifacts. The failing `pnpm run fix` diagnostic establishes the
+shared cause; separate check-run and legacy-status signals are not separate
+defects. Cataloged the observation without changing the existing dedicated
+security PRs or weakening validation. Earlier wiki edits and staged metadata
+were preserved; this additive diff is left for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/pull/3941#issuecomment-5945924199,
+https://github.com/fro-bot/.github/pull/3946#issuecomment-5925981518,
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/renovate.json5
+
+## [2026-10-02 05:19] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-02 11:11] ingest | marcusrbrown/Presentations
+
+Re-surveyed the public `main` snapshot at `cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39` using only directory listings, READMEs, package manifests, and workflows. Updated [[marcusrbrown--presentations]] additively, extended [[github-pages]] with the distinction between frozen dependency resolution and explicit runtime pinning, and refreshed the repo's catalog entry. Retained existing history and the unresolved Renovate condition/observed-skip contradiction without claiming a fresh runtime check. Corrections context contained no correction records.
+
+The archive still has two independent CRA/Spectacle and Slidev toolchains, 42 files, and three workflows. Shared reusable callers advanced to v4.35.0. CI still builds both decks but tests only CRA; Bun's installer action is SHA-pinned without an explicit runtime version. No Fro Bot workflow exists, so a separate follow-up draft PR remains an option. Existing local `gh-pages` scripts were distinguished from the sole automated Pages-artifact deployment rather than assumed unused everywhere.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four in-scope files edited in the working tree; pre-existing changes preserved. Caller owns commit, push, and PR creation.
+- Validation: two updated pages passed required frontmatter, source-SHA, wikilink, catalog, and added-section formatting checks; all 47 wiki content pages remain cataloged. TypeScript no-emit passed; direct Vitest run passed 88 files / 4,079 tests (3 todo). Markdown link checks and diff whitespace checks passed.
+- Limitations: `pnpm lint` stopped on existing undici/brace-expansion advisory-floor failures. Targeted ESLint ignores wiki Markdown; whole-file Prettier checks also flag historical formatting, which was preserved. Dependency installation and build-writing script wrappers were not run under the non-mutating-shell/path contract; direct type/test checks used existing dependencies. Workflow guard was unavailable.
+- Response: no GitHub comment was posted because working-dir delivery permits only non-mutating GitHub operations and provides no comment/review target. This entry is the canonical survey notice; no issue or PR was opened or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/Presentations/tree/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39; `README.md`, both inspected `package.json` files, `Cheap-LLMs-Meetup-Aug-2026/slides/README.md`, and `.github/workflows/{ci,renovate,update-repo-settings}.yaml` at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/36999440354
+
+## [2026-10-02 11:22] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/Presentations
+
+## [2026-10-03 05:00] manual-edit | github-actions-ci
+
+Added a source-verified learning-pipeline observation to [[github-actions-ci]]
+and refreshed its index note. The latest Capture Learnings run has successful
+harvest/draft jobs but fails publishing because its bodies artifact is missing.
+The warning/continue-on-error transport declarations do not change the CLI's
+required-file contract. Independently, ten unauthored proposals coexist with a
+healthy recurrence report whose pending count measures only matched codified
+classes. Recorded discovery, delivered handoff, and codification as separate
+postconditions; the absent artifact's producer-side cause remains unproven.
+No workflow, script, proposal, tracker, or metadata change was made. Pre-existing
+wiki edits and staged metadata are preserved; this additive wiki diff is left
+dirty for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/36364267649;
+https://github.com/fro-bot/.github/issues/3674;
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml;
+https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts#L325-L386
+
+Verification: direct non-emitting TypeScript and direct Vitest passed (88 files,
+4,079 passed, three todo), as did independent ESLint, Markdown-link checks,
+solutions examples, added-section frontmatter/source-SHA/wikilink/catalog
+checks, and diff whitespace. Full Lint stops on the existing five high
+undici/brace-expansion floor findings. Whole-file Prettier flags accumulated
+formatting in all three touched wiki files; existing content was not reflowed.
+Cached dependencies were used rather than install/build-writing wrappers under
+the working-dir non-mutating-shell contract.
+
+Published and exact-body-readback verified the October 3 daily report:
+https://github.com/fro-bot/.github/issues/3949. Closed the prior report with
+this invocation's single marked replacement comment:
+https://github.com/fro-bot/.github/issues/3947#issuecomment-5965811985.
+Paginated readback confirms exactly one open daily report. No tracker or
+individual fleet issue/PR was mutated.
+
+## [2026-10-03 05:09] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-03 10:30] ingest | bfra-me/works
+
+Surveyed public `main` snapshot `534b5cab0bd260f3f2f153f85d647f08972fee86`
+using directory listings, READMEs, package/workspace manifests, and workflows
+only. Added dated findings to [[bfra-me--works]] and [[github-actions-ci]],
+and refreshed their catalog reference in `knowledge/index.md`. Prior wiki
+content and pre-existing working-tree changes were preserved. The untrusted
+corrections context contained no correction records.
+
+The repo now pins pnpm 12.8.1 and Vitest 5.0.2, retains TypeScript 6.0.3,
+and has thirteen YAML workflows including a separate report-only benchmark
+lane with artifact-carried rolling baselines. Corrected the historical
+package count using nine public-publishable package manifests; docs and
+scripts are private npm workspaces. Fro Bot is present at v0.117.1 and now
+explicitly requests `branch-pr` for autoheal, superseding the missing-input
+claim without claiming measured delivery recovery. Settings sync remains
+pinned at v4.16.0. Doc-sync's advertised capability remains distinct from
+the repository's disabled freshness validation, forced dry-run, push-only
+sync admission, and uppercase-only README filters. No missing-Fro-Bot draft
+is warranted; no current issue, run, or registry state was inferred.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki files edited in the checked-out working tree;
+  caller owns diff detection, commit, push, and PR creation.
+- Verification: direct TypeScript no-emit passed; direct Vitest passed
+  88 files / 4,079 tests (3 todo). Independent ESLint, Markdown-link checks,
+  solutions-example checks, and diff whitespace checks passed. Both updated
+  pages passed required frontmatter, source-SHA, wikilink, and added-section
+  formatting validation; all 47 wiki content pages remain cataloged.
+- Limitations: `pnpm lint` stops on the existing five high-severity
+  undici/brace-expansion override-floor findings. Whole-file Prettier reports
+  accumulated formatting in the four touched files; historical content was
+  retained. Bootstrap and build-writing check-types/test wrappers were not
+  run under the non-mutating-shell/path contract; cached dependencies were
+  used for direct checks. Workflow guard reported unavailable.
+- Response: the working-dir contract permits no mutating GitHub operation
+  and supplies no comment/review target. No GitHub comment or review could
+  be posted within those constraints; this log is the canonical ingest
+  notice. No issue or PR was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/bfra-me/works/tree/534b5cab0bd260f3f2f153f85d647f08972fee86;
+`readme.md`, root `package.json` and `pnpm-workspace.yaml`, all nine
+`packages/*/package.json` files, `docs/package.json`, `scripts/package.json`,
+`docs/readme.md`, `packages/{es,doc-sync,workspace-analyzer}/README.md`, and
+`.github/workflows/{main,fro-bot,release,benchmarks,docs,docs-sync,renovate,renovate-changeset,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37116395335
+
+## [2026-10-03 10:39] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
+
+## [2026-10-04 11:11] ingest | marcusrbrown/gpt
+
+Surveyed public `main` snapshot `129b109d2783c67289a2ee3d64cf385698e79a16` using only listings, README files, package/workspace manifests, and the ten active workflow files. Added dated findings to [[marcusrbrown--gpt]], [[github-pages]], and [[langchain]], and refreshed their index references. Historical knowledge and pre-existing working-tree changes were preserved. The untrusted corrections context contained no correction records.
+
+Nine security override keys now exist on the default branch, superseding the September three-override snapshot without establishing delivery provenance or present advisory coverage. Fro Bot is present at v0.117.1; its caller still declares no output mode or post-agent persistence stage. No onboarding draft is needed. Pages deployment depends only on Build, with incomplete automatic build-cache input coverage and a manual-dispatch rebuild exception. E2E push/dispatch admission is explicit; accessibility/performance dispatch paths retain skipped dependency gates. Visual CI/baseline updates select only the homepage suite. README/script/path drift and current LangChain package-family versions were recorded. Issues, alerts, runtime behavior, live protections, and updater suppression were not rechecked.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: five allowed wiki files edited in the working tree. The caller owns persistence; existing changes were preserved.
+- Verification: direct TypeScript no-emit and Vitest passed (88 files, 4,079 tests, 3 todo). Independent ESLint, Markdown-link checks, solutions-example checks, and diff whitespace checks passed. Three touched pages passed frontmatter, provenance, wikilink, and related-page validation; all 47 wiki content pages remain cataloged.
+- Limitations: `pnpm lint` stops at five existing high-severity undici/brace-expansion override-floor findings. Four touched files already have historical formatting drift; only new sections were formatted. Cached dependencies were used instead of `pnpm bootstrap` and the build-writing `pnpm check-types`/`pnpm test` wrappers under the non-mutating-shell/path contract. The supplied workflow guard was unavailable.
+- Response: working-dir delivery permits no mutating GitHub operation and supplies no comment/review destination. The required GitHub comment cannot be posted within those constraints. This log entry is the canonical notice; no issue or PR was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/gpt/tree/129b109d2783c67289a2ee3d64cf385698e79a16; `readme.md`, `tests/visual/README.md`, `package.json`, `pnpm-workspace.yaml`, and `.github/workflows/{main,fro-bot,test-coverage,test-accessibility,test-performance,visual-tests,renovate,update-repo-settings,cache-cleanup,copilot-setup-steps}.yaml` at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37197782827
+
+## [2026-10-04 11:19] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-10-05 05:00] manual-edit | github-actions-ci
+
+Added the next weekly observation to [[github-actions-ci]] and refreshed its
+index note. Capture Learnings again reports successful harvest/draft but lacks
+the bodies artifact required by the deterministic publisher. Ten unauthored
+proposals remain open, while the refreshed metrics report changes from its
+historical healthy state to ambiguous and still measures zero pending
+recurrence edges. Retained the earlier dated observation and the distinction
+between discovery, artifact delivery, and codification; producer cause remains
+unproven. Existing wiki edits and staged metadata were preserved. Only the
+allowed wiki topic, index, and log were additionally edited; the dirty wiki
+tree is left for caller-owned ingestion.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/37250027224;
+https://github.com/fro-bot/.github/issues/3674;
+https://github.com/fro-bot/.github/issues/3909;
+https://github.com/fro-bot/.github/issues/3887
+
+Verification: direct no-emit TypeScript and Vitest passed (88 files, 4,079
+tests, three todo), as did ESLint, Markdown links, solution examples, wiki
+frontmatter/new-section links, the 47-page catalog, and diff whitespace.
+Cached dependencies were used without install/build-writing wrappers.
+The separate remediation pass remains the source for full-Lint failures.
+
+Published the October 5 report with exact-body readback:
+https://github.com/fro-bot/.github/issues/3952. Closed the previous report
+with this invocation's one marked replacement comment:
+https://github.com/fro-bot/.github/issues/3950#issuecomment-5988626306.
+Paginated readback confirms exactly one open daily report. Public reporting
+separates dependency alerts from Code Scanning security records and marks
+unavailable/stale sources incomplete. All 35 tracked entries received bounded
+source scans after stable-ID recovery. No tracker fields, individual fleet
+issues/PRs, workflow files, or metadata were edited by this invocation.
+
+## [2026-10-05 05:25] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-05 12:23] ingest | marcusrbrown/systematic
+
+Surveyed public `main` snapshot `ce3c817f37ac5ed2c13109eda680c1d36ce43c49`
+using only directory listings, READMEs, package/marketplace manifests, and
+the eight workflow files. Added a dated bounded snapshot to
+[[marcusrbrown--systematic]], extended [[opencode-plugins]] with entry-smoke
+proof depths and local-evaluation boundaries, and refreshed both index
+references. Accumulated knowledge and all pre-existing working-tree edits
+were preserved. The untrusted corrections context contained no records.
+
+The three-harness packaging contract remains explicit, but the README's
+31-skill count still contradicts 32 immediate skill directories; 37 agents
+matches the listing after excluding the review README. Recorded the distinct
+Node smoke-test depths for plugin initialization, Pi import shape, and CLI
+importability; none implies full cross-harness runtime parity. Host Contract
+remains a release dependency, whereas Registry and Docs Build are separate
+jobs. Local evals explicitly exclude OS isolation, other harnesses,
+credentialed/networked tasks, hosted execution, and CI orchestration.
+The floating Bun-types selector alone was qualified as insufficient proof
+of same-commit variability under frozen-lockfile installs. Current manifest
+pins and README/manifest packaging drift were captured without replacing
+historical claims. Fro Bot is present at v0.117.2 with explicit autoheal
+delivery routing, so no onboarding draft is needed. Live runs, releases,
+issues, alerts, protections, implementation, and exclusion configs were not
+read or inferred as current facts.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki files edited directly in the working tree;
+  the caller owns diff detection and persistence. Existing unrelated edits,
+  including metadata, were preserved.
+- Verification: direct TypeScript no-emit and Vitest passed (88 test files,
+  4,079 passing tests, three todo). Independent ESLint, Markdown-link checks,
+  solution-example checks, and diff whitespace passed. Both touched pages
+  passed required frontmatter, SHA provenance, wikilink, and related-page
+  checks; all 47 wiki content pages remain cataloged. Public visibility was
+  rechecked before finalization.
+- Limitations: `pnpm lint` stops at five existing high-severity undici and
+  brace-expansion override-floor findings. Prettier reports formatting drift
+  in all four touched accumulated files; no whole-page reformat was applied.
+  Cached dependencies were used for direct checks instead of
+  `pnpm bootstrap` and the build-writing `pnpm check-types`/`pnpm test`
+  wrappers under the non-mutating-shell and allowed-path delivery contract.
+  The supplied workflow guard was unavailable (`guard-unavailable`);
+  the initial diagnostic's `no-active-epoch` label was incorrect.
+- Response: the working-dir delivery contract permits no mutating GitHub
+  operation and supplies no comment/review destination. The required GitHub
+  comment cannot be posted within those constraints. This log entry is the
+  canonical survey notice; no GitHub issue or PR was opened, commented on,
+  or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/systematic/tree/ce3c817f37ac5ed2c13109eda680c1d36ce43c49;
+`README.md`, `evals/README.md`, `tests/manual/README.md`, `package.json`,
+`docs/package.json`, `.claude-plugin/marketplace.json`, and
+`.github/workflows/{main,fro-bot,docs,codeql-analysis,scorecard,copilot-setup-steps,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37308822811
+
+## [2026-10-05 12:30] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-10-06 05:58] manual-edit | topic:security-remediation-integration
+
+Recorded the newly observed high source-map-js advisory, its dedicated #3954
+remediation, and the evidence boundary it exposes: September 30's successful
+two-fix integration is a dated result, not current proof against October 6's
+six-high advisory population on unchanged main. Updated the topic provenance
+and index additively; retained the historical combined-tree result. The caller
+owns ingestion and persistence of this dirty working-tree diff. Existing wiki
+changes and staged metadata were preserved without edits or cleanup.
+
+Sources: https://github.com/fro-bot/.github/pull/3954;
+https://github.com/fro-bot/.github/pull/3954#issuecomment-6010263024;
+https://github.com/advisories/GHSA-68fv-2mgg-jv7q
+
+## [2026-10-06 06:04] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-06 12:07] ingest | marcusrbrown/marcusrbrown
+
+Surveyed public `main` snapshot `340a317382d8bb9436ad01e3c916e4a7cb14f4ac`
+using only the directory listing, `README.md`, `package.json`,
+`pnpm-workspace.yaml`, and all six workflows. Updated
+[[marcusrbrown--marcusrbrown]] additively, extended [[github-actions-ci]] with
+the test-script versus PR-test-gate distinction and workspace-only regeneration
+selector gap, and refreshed both index references. Existing wiki content and
+unrelated working-tree changes were preserved. Untrusted corrections data
+contained no records, and target content was treated as evidence, not instructions.
+
+The README now emphasizes 22 years in software and agent-native systems; the
+September unchanged-content measurement is historical, with the delivery path
+of the changed copy unverified. Fro Bot remains present at v0.117.5, so no
+onboarding draft is needed. The missing explicit delivery routing, jq false-value
+fork-preflight defect, bot-author exclusions, and settings-schedule comment drift
+remain visible in source. Reusable workflow callers are at v4.36.0. Captured
+current manifest pins and qualified advisory comments as constraint evidence,
+not proof of current patched resolutions. No implementation, templates, settings,
+lockfile resolutions, live runs, issues, PRs, or alerts were read or inferred.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki files edited in the checked-out working tree;
+  the caller owns persistence.
+- Verification: direct TypeScript no-emit and Vitest checks passed (88 test
+  files, 4,079 passing tests, three todo). Independent ESLint, Markdown-link,
+  solution-example, and diff-whitespace checks passed. Both touched pages passed
+  required-frontmatter, pinned-source, wikilink, and related-page checks; all 47
+  wiki pages remain cataloged. Public visibility and the pinned main commit ref
+  were rechecked before finalization.
+- Limitations: the supplied workflow guard is unavailable (`guard-unavailable`).
+  Dependency-install and build-writing verification wrappers are outside the
+  non-mutating-shell delivery contract; cached dependencies were used for
+  direct checks instead of `pnpm bootstrap`, `pnpm check-types`, and `pnpm test`.
+  `pnpm lint` stops at six existing high-severity override-floor findings for
+  undici, brace-expansion, and source-map-js. Prettier reports formatting drift
+  in the four touched accumulated files; no whole-page reformat was applied.
+- Response: no comment/review destination is supplied, and working-dir delivery
+  allows no mutating GitHub operation. The exactly-one-comment requirement cannot
+  be fulfilled within this contract. This log entry is the canonical survey notice;
+  no issue or PR was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/marcusrbrown/tree/340a317382d8bb9436ad01e3c916e4a7cb14f4ac;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,fro-bot,update-profile,renovate,update-repo-settings,cleanup-cache}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/37460726962
+
+## [2026-10-06 12:11] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-10-07 05:33] manual-edit | repo:fro-bot/dashboard
+
+Added a dated operator-contract evidence boundary: dashboard 2026.10.9 and
+gateway v0.118.2 declare 1.8.0 while live health reports 1.6.0, infrastructure
+pins v0.113.2, and the dashboard deployment is pending. Preserved historical
+surveys and contrasted stale July tracker-body anchors with the Project's
+In Progress state and closed cancellation-UI issue. Attributed production push
+delivery to the operator's update; no authenticated flow or push test was
+performed in this oversight pass. Refreshed the existing index reference.
+The caller owns ingest/commit delivery of this dirty wiki diff; pre-existing
+wiki changes and staged metadata are preserved.
+
+Sources: https://github.com/fro-bot/dashboard/blob/ba499c714d9cbbf8a6d1025add7f885b70230d69/src/gateway/operator-contract/version.ts;
+https://github.com/fro-bot/agent/blob/77f2bad7d68ac38279cd0fa28f38b26a0cd15dfb/packages/gateway/src/operator-contract/version.ts;
+https://github.com/marcusrbrown/infra/blob/27b05ce05791d4eb978efd955cd776e915d54642/apps/gateway/upstream.json;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6031561710;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6031581475;
+https://github.com/fro-bot/dashboard/issues/179;
+https://dashboard.fro.bot/operator/health
+
+## [2026-10-07 05:39] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-07 11:55] ingest | marcusrbrown/mothership
+
+Bounded public-repository survey at `b799c49e2b2ea57878d4f29ef897c6138c8053f1`.
+Updated `repos/marcusrbrown--mothership.md` and `topics/github-actions-ci.md`
+additively and refreshed their existing index references. Preserved historical
+observations and all pre-existing working-tree changes. The corrections context
+was read as untrusted data and contained no correction records.
+
+Findings: the README still documents a source-run Tauri app and 17 shared
+UI/MCP controls with verbatim, untrusted transcript text. Both manifests remain
+at 0.1.0; toolchain and space-bus constraints remain unchanged. Fro Bot is
+present at v0.117.0 but has no explicit delivery mode or downstream delivery
+steps. Corrected the earlier release inventory from six to seven job definitions
+and clarified that the required-check preflight accepts completed success,
+skipped, or neutral conclusions. Recorded these as source-contract observations,
+not proof of current workflow health, lost fixes, environment reviewers, release
+availability, security-alert state, or planning-runtime implementation.
+
+Read boundary: repository visibility/identity and ref metadata, directory
+listings, README, `package.json`, `src-tauri/Cargo.toml`, and all eight workflow
+files. Target content was treated as untrusted evidence, never executed. No
+implementation, agent instructions, non-README architecture docs, lockfiles,
+issues, run logs, or release records were read from the target. The caller owns
+commit/push/PR delivery of this working-tree change.
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki/index/log files updated in the working tree;
+  commit, push, and PR delivery remain with the caller.
+- Verification: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test` passed
+  (88 test files; 4,079 tests passed, 3 todo). `pnpm lint` stopped at dependency
+  override-floor findings for `undici`, `brace-expansion`, and `source-map-js`
+  before reaching ESLint; dependency-policy edits are outside this survey.
+- Scoped wiki validation: no deterministic findings for either touched page or
+  the index across 47 pages (two findings elsewhere). `git diff --check` passed.
+  Direct ESLint invocation reported all four knowledge files ignored, so it
+  supplied no Markdown validation; the wiki validator checked frontmatter,
+  wikilinks, Markdown links, and catalog consistency instead.
+- Workflow guard: unavailable; the caller's working-directory contract governs.
+- Response contract: posted exactly one marked commit comment on the control
+  repository, with delivery/check status and a pointer to this canonical log;
+  no GitHub issue was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1;
+`README.md`, `package.json`, `src-tauri/Cargo.toml`, and
+`.github/workflows/{ci,codeql,dependency-review,fro-bot,release,renovate,scorecard}.yaml`
+plus `.github/workflows/version.yml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/37616821860
+Delivery/check notice: https://github.com/fro-bot/.github/commit/b96b9904b20ed086304e184807d90c06cc3365b4#commitcomment-203849539
+
+## [2026-10-07 11:59] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-10-08 05:39] manual-edit | daily oversight: operator cutover evidence
+
+Updated `knowledge/wiki/repos/fro-bot--dashboard.md` additively and refreshed
+its existing catalog reference. A fresh public health probe reports contract
+1.8.0; gateway and dashboard deployment records show success, and the operator
+reports authenticated sign-in, an SSE ready frame, and launch-to-success
+verification. Kept those operator reports distinct from independently checked
+health/release/run evidence. Preserved the October 7 morning pending-cutover
+snapshot and credited the later transition instead of overwriting history.
+
+Recorded the corrected rollback boundary: the one-way ownership migration
+requires volume-snapshot recovery plus paired image restore, not pin reversal
+alone. Approval/cancel/logout verification and the two open producer gates
+remain outstanding. No tracker, Project, workflow, or metadata edits were made.
+All pre-existing working-tree changes were retained; the caller owns ingestion
+and commit delivery of this dirty wiki.
+
+Sources: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949;
+https://github.com/marcusrbrown/infra/pull/1484;
+https://github.com/marcusrbrown/infra/pull/1485;
+https://github.com/marcusrbrown/infra/actions/runs/37680188015;
+https://github.com/marcusrbrown/infra/actions/runs/37667587606;
+https://dashboard.fro.bot/operator/health.
+Run: https://github.com/fro-bot/.github/actions/runs/37732192119
+
+## [2026-10-08 05:46] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b96b9904b20ed086304e184807d90c06cc3365b4
+
+## [2026-10-08 12:06] ingest | marcusrbrown/vbs
+
+Bounded survey of the verified public repository at
+`7ef7531d72a18271c925aba913be30f3103fe6ac`. Updated
+`wiki/repos/marcusrbrown--vbs.md`, `wiki/topics/github-actions-ci.md`, and
+`wiki/topics/github-pages.md` additively, and refreshed their catalog references
+in `index.md`. Prior observations and pre-existing working-tree changes were
+preserved. Corrections context was read as untrusted data and contained no
+correction records.
+
+Findings: README and manifest retain the local-first viewing-guide contract,
+pnpm 11.22.0, Vite 7.3.6, TypeScript 5.9.3, and Vitest 4.1.11. Fro Bot remains
+present at v0.105.0 with no explicit delivery mode or downstream delivery steps;
+no presence follow-up PR is needed. Its issue author gate, comment-trigger fork
+preflight, and pre-agent build are now recorded. A synthetic jq check confirms
+that `false // "unknown"` erases the valid same-repo boolean, so the fail-closed
+guard refuses that intended path too. The separate Pages workflow compiles but
+does not execute CI's lint/tests. Data-generation validation claims were bounded
+to the workflow; the unread generator's internal defaults were not inferred.
+
+Read boundary: visibility/identity and ref metadata, directory listings,
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and all seven workflow files.
+No implementation, instructions, non-README docs, lockfiles, issues, PRs, alerts,
+run logs, or live site were read from the target. Target content was never
+executed. Current workflow activation, delivery outcomes, feature completion,
+dependency-PR state, and branch protections remain unverified; older evidence
+is retained with its dates rather than projected forward.
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: five allowed wiki/index/log files updated in the working tree.
+  The caller owns commit, push, and PR delivery.
+- Verification: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test` passed
+  (88 test files; 4,079 tests passed, 3 todo). `pnpm lint` stopped before ESLint
+  at existing dependency override-floor findings for `undici`,
+  `brace-expansion`, and `source-map-js`; policy changes are outside this ingest.
+- Scoped wiki validation: no deterministic findings for the three touched pages
+  or index across 47 pages (two findings elsewhere). `pnpm check:md-links` and
+  `git diff --check` passed. Hash comparison confirms pre-existing tracked
+  changes outside the five-file scope were untouched.
+- Workflow guard: unavailable; the working-directory delivery contract governs.
+- Response contract: posted exactly one marked commit comment on the control
+  repository with delivery/check status and a pointer to this canonical log;
+  no GitHub issue was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Sources: https://github.com/marcusrbrown/vbs/tree/7ef7531d72a18271c925aba913be30f3103fe6ac;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{ci,copilot-setup-steps,deploy,fro-bot,renovate,update-repo-settings,update-star-trek-data}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/37774240089
+Delivery/check notice: https://github.com/fro-bot/.github/commit/b96b9904b20ed086304e184807d90c06cc3365b4#commitcomment-204025494
+
+## [2026-10-08 12:12] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs

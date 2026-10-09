@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-09-21
+updated: 2026-10-04
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -44,6 +44,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: c5cbd2e
     accessed: 2026-09-19
+  - url: https://github.com/fro-bot/systematic
+    sha: 88809b5d8fddb8e9bfd4c7eaf0b5307a95100565
+    accessed: 2026-10-04
 tags:
   - documentation
   - github-pages
@@ -60,11 +63,53 @@ related:
   - marcusrbrown--systematic
   - marcusrbrown--dotfiles
   - fro-bot--fro-bot-github-io
+  - github-pages
 ---
 
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+## Build-output inventory and counting boundary (2026-10-04)
+
+The public repository's default branch remains `gh-pages`, at
+`88809b5d8fddb8e9bfd4c7eaf0b5307a95100565`. Its complete recursive directory
+listing retains the 17 root entries recorded on 2026-09-19: rendered HTML,
+`_astro/`, `pagefind/`, reference and guide trees, `components/`, `schemas/`,
+`index.json`, and the OCX discovery directory. No README source, dependency
+manifest, `.github/` directory, or committed workflow file is present.
+The deployed HTML and generated JSON bodies were not read in this bounded
+survey; their presence establishes artifact layout, not current contents or
+runtime behavior.
+
+| Listed subtree      | Current layout                                              |
+| ------------------- | ----------------------------------------------------------- |
+| `getting-started/`   | 3 child directories: configuration, installation, quick-start |
+| `guides/`            | 14 child directories, matching the dated 2026-09-19 inventory |
+| `reference/agents/`  | 38 child directories: 37 named-agent paths plus `readme/`      |
+| `reference/skills/`  | 32 child directories                                        |
+| `components/`        | 71 child directories; not a measurement of registry records  |
+| `schemas/`           | `latest/` and `v3/`; no other major-version directory         |
+
+**Counting clarification against 2026-09-19.** Re-reading that snapshot's
+directory listing at `c5cbd2edd69db3d9c2defe32149ab117d7eafa59` yields the same
+38 agent-reference paths, including `readme/` and `systematic-implementer/`.
+Thus the earlier "37 agent pages" figure describes named-agent paths after
+excluding the README route, not all child directories. Seeing 38 directories
+today is not evidence that an agent was added this interval. Likewise, the 71
+component directories do not contradict the historical 74 registry records:
+rendered routes and typed registry records are different inventories. No
+current registry version, component-type count, schema fingerprint, or npm
+mirror equality is inferred from these paths. See [[github-pages]] for the
+cross-cutting distinction between output layout and published contracts.
+
+The 2026-09-21 withdrawal of the publish/deploy-race diagnosis remains the
+applicable correction to older claims below. Neither release timing nor
+availability was remeasured here. Historical issue, PR, branch-count, and
+dynamic-workflow states also remain dated observations.
+
+Sources: [current output tree](https://github.com/fro-bot/systematic/tree/88809b5d8fddb8e9bfd4c7eaf0b5307a95100565),
+[historical agent-reference tree](https://github.com/fro-bot/systematic/tree/c5cbd2edd69db3d9c2defe32149ab117d7eafa59/reference/agents).
 
 > **2026-09-21 correction from the [[marcusrbrown--systematic]] source-side survey (HEAD `f903dc6d`).** Finding (1) below — "the publish → deploy ordering inverted on 2026-09-15" — **is withdrawn as a diagnosis.** The measurement reproduces exactly (18 releases / 18 deploy commits, `+37 s` at `3.18.3`, `−59 s` at `3.18.4`, clean flip, no straddle), but nothing in the producer changed: `.releaserc.yaml` has been **byte-stable since 2026-05-23** with `@semantic-release/npm` still ahead of `@semantic-release/github`; `docs.yaml` is a **separate workflow** triggered by `release: [published]`, never a job in the release workflow, so there is no job graph to parallelize; and every Docs run in **both** regimes is a `release`-event run of ~35–45 s. Differencing each run's own `created_at` against the npm `time` entry shows the GitHub release firing **1.7 s after** npm for `v3.18.3` and **93 s before** it for `v3.18.4` — the offset moved between the publish call and the **registry's own `time` row**, upstream of both repositories.
 >
@@ -435,6 +480,17 @@ Issue #2 was a PR (now merged). Issue #3 is Renovate's standard config-error not
 **Update 2026-09-19:** still unchanged — both #1 and #3 **open**, untouched for a **seventh** consecutive survey (#3 last updated 2026-06-26, now ~12 weeks; #1 last updated 2026-03-09, ~6.3 months). `open_issues_count` reads 2, zero open PRs, single branch. The full issue ledger for this repo remains three items total across its entire life (#1, #2 merged, #3). Nineteen more deploys landed this interval and the root tree still has no `.github/`. The 2026-09-04 call stands: these are **inert**, not backlog. No automation here will ever touch them, and closing both is a one-time manual action.
 
 ## Fro Bot Workflow
+
+**2026-10-04 directory-only confirmation:** no `.github/workflows/` or Fro Bot
+workflow file exists at `88809b5d8fddb8e9bfd4c7eaf0b5307a95100565`.
+This records the missing-workflow finding for a separately considered draft
+PR; it does not establish the status of GitHub-synthesized workflows. The
+historical recommendation below is an exemption for a generated-output repo,
+not an instruction to ignore the absence. Any separately proposed onboarding
+change needs a durable source of truth in the producer's deployment contract,
+given the previously documented overwrite behavior; a workflow added only to
+the output branch risks being erased. The old paragraph's race rationale was
+withdrawn by the 2026-09-21 correction and supplies no additional justification.
 
 **No Fro Bot agent workflow detected.** This is expected — the repo contains only static build output. No PR review, autoheal, or maintenance workflows are present. Only GitHub's built-in `pages-build-deployment` and `Dependency Graph` dynamic workflows are active.
 

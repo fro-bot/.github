@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/sparkle
 created: 2026-04-28
-updated: 2026-09-13
+updated: 2026-09-29
 sources:
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 76b80d8a7a4a86d9888b1ed49e9abaadcd19feec
+    accessed: 2026-09-29
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
     accessed: 2026-04-28
@@ -72,6 +75,16 @@ node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
 # marcusrbrown/sparkle
 
 **Sparkle** — a TypeScript playground and monorepo showcasing cross-platform web and mobile development. React component library, design token system, Expo/React Native mobile app, Astro Starlight documentation site, and comprehensive build tooling via Turborepo and pnpm workspaces.
+
+## 2026-09-29 Limited Re-survey — Workflow Contracts and a Stale Agent Instruction
+
+_Public `main` HEAD `76b80d8a7a4a86d9888b1ed49e9abaadcd19feec`; reads limited to directory listings, README files, manifests, and workflows. Older issue/PR counts, live-site state, CI conclusions, and generated artifacts below were **not re-verified**._
+
+- The seven-workflow layout and eight-package/two-app workspace remain declared. Root `packageManager` advanced from `pnpm@11.26.0` to **`pnpm@11.28.0`**; `turbo` from 2.10.12 to **2.11.4**, `@bfra.me/eslint-config` to **0.54.0**, and `prettier` to **3.9.9**. TypeScript holds at 5.9.3. The `docs` manifest still uses Astro `^7.0.0`, Starlight `^0.41.0`, and `typedoc-plugin-frontmatter` **1.3.2**; root `typedoc` **0.28.20** remains declared, so the earlier #2048 proposal to remove that workaround cannot be described as landed from this manifest. The existing six-entry build allowlist still **does not include `@parcel/watcher`**; this is configuration evidence only, not a fresh CI-failure claim.
+- **Fro Bot workflow present** at `.github/workflows/fro-bot.yaml`, now SHA-pinned to `fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6` (**v0.117.0**). The 05:00 autoheal / 17:00 maintenance schedule and shared `Resolve delivery mode` gate persist: only autoheal schedule/dispatch requests `branch-pr`; its credential restore reads the same gate output as `output-mode`. No missing-workflow follow-up is warranted. Workflow configuration is evidence of intent, not proof a scheduled run delivered.
+- **Contradiction in the workflow's own review guidance:** `PR_REVIEW_PROMPT` still says the repo pins `packageManager: pnpm@10.x`; the root manifest pins **pnpm 11.28.0**. The prior `llms.txt` duplication was removed, but the same coupled-constant drift survives in executable agent instructions. The autoheal category-3 check asks for `llms.txt` accuracy, not its own prompt's accuracy. Its convention check also still says "No ES6 `class` declarations outside of `Error` subclasses" even though the review prompt now allows justified fluent builders and cohesive lifecycle resources (the #2015 exception recorded in the prior survey). A stale predicate can keep reporting a class that the current review policy explicitly permits. [[github-actions-ci]] records the generalizable drift pattern.
+- The documentation-regeneration workflow retains the previously added **Build documented packages** step before TypeDoc. Its `detect-changes` push pathspec, however, lists `packages/ui/src/**/*.ts` and `.tsx` but **not the `.js`/`.jsx` patterns included in the workflow trigger and cache key**. A JS/JSX-only UI source push can start the workflow and then report `has-changes=false`, skipping regeneration. This is a static workflow-contract mismatch, not a claim that such a push occurred. The separate `deploy-docs.yaml` workflow still builds `@sparkle/ui...` before the docs build; its generated-docs cache key uses brace patterns in `hashFiles`, unlike the regeneration workflow's explicitly enumerated extensions, so cache invalidation for those extensions should be checked rather than assumed. The force-regeneration path remains exposed by dispatch; whether hand-authored `.mdx` cleanup was fixed cannot be established from the allowed reads.
+- The only inspected docs README is still the generic Starlight starter text. It directs readers to run `pnpm build` from the docs root but its manifest has a site-specific `docs:automation` pre-build; use the manifest and workflow as the current operational contract, not that starter README.
 
 ## Overview
 

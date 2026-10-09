@@ -2,8 +2,20 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-10-08
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 129b109d2783c67289a2ee3d64cf385698e79a16
+    accessed: 2026-10-04
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
+    accessed: 2026-10-02
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 6f975b1d7bb09ea515f2628ff50e2f4b8e68020d
+    accessed: 2026-10-01
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
@@ -42,6 +54,8 @@ tags:
     https-enforcement,
   ]
 related:
+  - marcusrbrown--vbs
+  - marcusrbrown--gpt
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
@@ -54,8 +68,81 @@ related:
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
 
+## Separate deployment workflows do not inherit CI gates (2026-10-08)
+
+At `7ef7531`, [[marcusrbrown--vbs]] has two separate main-push workflows.
+`ci.yaml` runs lint, type checking, and coverage tests in Test, alongside a
+standalone Build job. `deploy.yaml` checks out and builds separately, uploads
+`dist`, and deploys under the `github-pages` environment with `needs: build`.
+That dependency names the deployment workflow's own build, not CI's Test or
+Build. The package's build script includes `tsc && vite build`, so compilation
+is enforced there; lint and unit tests are not deployment steps.
+
+This is a further scoped correction to the historical generic statement below
+that Vite Pages deployment runs lint/test gates. Concurrent triggers and matching
+job names are not dependency edges. Merge protections may constrain what reaches
+main, but their live enforcement was outside this survey, as were the deployed
+site and its canonical host. The README still advertises `/vbs/` project Pages.
+
+Sources: [CI](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/ci.yaml),
+[Deploy](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/package.json).
+
+## Build-only deployment dependencies and cached artifacts (2026-10-04)
+
+At `129b109d2783c67289a2ee3d64cf385698e79a16`, [[marcusrbrown--gpt]]'s `main.yaml` runs lint, unit tests, and build as siblings after `Prepare`. The Pages deploy job depends **only on Build**, uploads/deploys `dist`, and is restricted to `refs/heads/main`. A sibling lint or test failure is not a dependency gate on that deploy job. Live branch protections were not read; the older claim that Vite deployment runs lint/test gates must not be applied to this workflow's job graph. The historical gpt domain is `gpt.mrbro.dev`; current DNS and site behavior were not probed.
+
+The build cache key hashes the lockfile, package manifest, TS/TSX source, `index.html`, `public/**`, and TypeScript configs. It omits `vite.config.ts`, `src/index.css`, `pnpm-workspace.yaml`, and the setup action, so changes limited to these inputs can reuse a previous `dist` on push/PR. Manual dispatch now forces build and unit-test execution even on cache hits; this exception does not fix the automatic-run key coverage. An uploaded artifact proves transport of an output, not that the current run compiled all current build inputs.
+
+Reusable check: trace **deploy dependencies**, **cache inputs**, and **cache-hit execution conditions** separately. Merge-time checks can constrain how code reaches `main`, but that is a separate contract from what a deploy executes. These findings describe the workflow, not an observed bad deployment.
+
+Source: [Main workflow](https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/.github/workflows/main.yaml).
+
+## Multi-toolchain archive: dependency locks versus runtime pins (2026-10-02)
+
+At `cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39`, [[marcusrbrown--presentations]] still builds CRA/Spectacle under Yarn and Slidev under Bun, then stages both outputs and a root landing page in `_site/`. PRs exercise the assembly; Pages configuration, upload, and deployment are restricted to non-PR runs on `main`. Deployment depends on both `Build` and `Test`, but that test job invokes only the CRA deck's suite. The workflow contains no invocation of the separately listed demo rehearsal test or a browser/link smoke check of the assembled site. Building every artifact does not mean testing every artifact or its final routing.
+
+The two installation steps use frozen lockfiles, while the runtime controls differ: Node is explicitly 20.20.2, and SHA-pinned `oven-sh/setup-bun` (v2.2.0 annotation) has no `bun-version` input. The inspected manifests also declare no package-manager version. An action SHA fixes installer code; it does not itself state the Bun release that code installs. Treat dependency resolution, runtime selection, and output layout as three separate reproducibility contracts when maintaining an independently built static archive. No installed runtime or live site was probed in this pass.
+
+The CRA manifest retains `gh-pages` and its deployment scripts, but inspected CI deploys solely through the Pages artifact API. Their continued presence establishes a parallel local command, not evidence of a second automated publishing path or its current use.
+
+Sources: [CI workflow](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/.github/workflows/ci.yaml), [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Blockchain-Meetup-Feb-2017/package.json), [Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39/Cheap-LLMs-Meetup-Aug-2026/slides/package.json).
+
+## Brand-site identity and gate correction (2026-10-01)
+
+The historical catalog below lists `marcusrbrown.com` under
+[[marcusrbrown--marcusrbrown-github-io]]. The brand site's canonical page is
+now [[marcusrbrown--marcusrbrown-com]]; the `github.io` slug describes the
+separate mrbro.dev portfolio and retains pre-rename history. Read the old
+brand-site references here with that dated correction rather than combining
+the two sites. README and manifest at the brand site's current SHA still
+point at the old repository name, so those self-references are not identity
+proof. The README's live URL and manifest's package name/homepage identify
+the brand site as marcusrbrown.com.
+
+**Deployment gates must be read from the deployment workflow.** At
+`6f975b1d7bb09ea515f2628ff50e2f4b8e68020d`, its `deploy.yaml` runs lint and
+build, uploads `dist` through the Pages artifact API, and deploys under the
+`github-pages` environment. Its push-to-main/dispatch pipeline never invokes
+unit tests, Playwright, or `pnpm audit`, and does not depend on the separate
+PR CI workflow. The older general statement that the Vite deployment runs
+both lint and test gates does not apply to this brand-site pipeline. PR CI
+does run unit tests and the moderate-severity audit gate; enforcement through
+live branch settings was outside this bounded survey.
+
+Reusable audit rule: distinguish **checks the deployment executes** from
+**checks a protected merge may require**. Configured E2E files, browser setup,
+and a separate green CI workflow do not establish that a deployment ran those
+tests. No runtime or live-domain probe was performed in this pass.
+
+Sources: [brand-site README](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/README.md),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/package.json),
+[Deploy](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows/deploy.yaml),
+[CI](https://github.com/marcusrbrown/marcusrbrown.com/blob/6f975b1d7bb09ea515f2628ff50e2f4b8e68020d/.github/workflows/ci.yaml).
+
 ## Repos Using GitHub Pages
 
+- [[marcusrbrown--vbs]] — TypeScript/Vite/D3 chronological viewing guide; separate build-only Pages workflow, with compilation but no deployment lint/test steps (2026-10-08).
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch

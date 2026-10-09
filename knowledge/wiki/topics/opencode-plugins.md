@@ -2,8 +2,14 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-26
+updated: 2026-10-05
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: ce3c817f37ac5ed2c13109eda680c1d36ce43c49
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/space-bus
+    sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
+    accessed: 2026-10-03
   - url: https://github.com/marcusrbrown/systematic
     sha: f903dc6d1a81814418b7d72bae21ce460d2c9089
     accessed: 2026-09-21
@@ -720,6 +726,67 @@ A third, smaller item from the 2026-09-10 config: `dreamer` replaced a single `s
 `oh-my-opencode-slim` presets name MCP servers and skills as bare strings. Nothing checks them against `opencode.json`'s `mcp` block or against any installed skill tree. At [[marcusrbrown--dotfiles]] the `librarian.mcps` array in **all six presets** reads `["aha", "atlassian", "box", "context7", "gh_grep", "slack"]` while exactly two servers are registered — four dangling names — and two skill names in every `designer` array (`brand-voice`, `impeccable`) live in neither local skills tree.
 
 The instructive part is the history. The same drift was recorded on 2026-07-10 (`tavily`, one name), reported as **repaired** on 2026-08-26 ("updated in lockstep, so no stale reference this time"), and returned four-deep on 2026-09-10. **The lockstep was a property of one edit, not an enforced invariant** — so "it was fixed last time" is not evidence about this time when the mechanism that fixed it was a person noticing. A dangling MCP name fails silently at agent-construction time, which is why the drift can widen for weeks without a signal. Any config that names capabilities in one file and registers them in another needs a check, not a habit.
+
+## Production and Watch Export Contracts (2026-10-03)
+
+[[fro-bot--space-bus]] provides a manifest-level example of why plugin
+packaging has more than one entry graph. At `20ab67c5`, `./server` still
+resolves to the default plugin entry (`dist/index.js`), while lifecycle
+consumers use `./managed-server` (`dist/server.js`). Its manifest additionally
+exports `./registry` (`dist/registry-entry.js`), but the explicit entry lists
+in `scripts.dev` omit `src/registry-entry.ts`; the directory listing confirms
+that source file exists. The README's Library surface list also omits
+`/registry` and still calls the six-tool bus “four tools.”
+
+The production `build` script invokes `build.ts` plus declaration generation;
+the development script instead starts two explicit Bun watch builds. CI runs
+the production build and a Node default-export smoke test, not `scripts.dev`.
+Those workflow declarations do not prove a broken watch runtime, but neither
+do they establish that a clean watch-only checkout produces every advertised
+export or that changes to each entry refresh its artifact. Check production
+exports, development-watch coverage, and README coverage as distinct contracts.
+The earlier source-versus-published-artifact observations remain applicable.
+
+Sources: [manifest](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json),
+[README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md),
+[CI](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows/ci.yaml).
+
+## Entry Smoke Tests Have Different Proof Depths (2026-10-05)
+
+At [[marcusrbrown--systematic]] snapshot `ce3c817f`, the Main workflow imports
+three built entries under Node 24, but exercises them differently:
+
+| Entry | Verified by the workflow's smoke step | Not established by that step |
+| --- | --- | --- |
+| OpenCode plugin | Only a default function export; factory invocation with a stub; nonempty configured agents and commands | Real-host operation of every registered tool |
+| Pi extension | Only a default function export; successful module import | Extension initialization or delegated sessions |
+| CLI | Successful import and at least one export | Binary invocation, argument parsing, or command behavior |
+
+That is useful layered verification, provided its claims retain those bounds.
+A module-load check catches resolution and export-shape regressions; it does
+not prove the entry's public operation works. Systematic separately runs a
+real-OpenCode integration suite with a result guard, which adds evidence for
+that harness rather than filling in Pi or CLI behavior by association.
+
+The manifest still exposes three install paths with optional harness peers.
+Its source version is `0.0.0-semantic-release`, so neither the manifest nor a
+passing source-build check identifies the current npm release. Likewise, the
+README's 31-skill claim still disagrees with 32 immediate skill directories;
+the 37-agent claim agrees once `agents/review/README.md` is excluded. Keep
+catalog counts, package exports, built-entry checks, and real-host behavior as
+separate claims with separate evidence.
+
+The local-eval README adds another explicit boundary: fixture-scoped OpenCode
+isolation is not OS isolation, and these evals do not support Pi, Claude Code,
+networked/credentialed tasks, hosted execution, or CI orchestration. The
+documented completion marker is a final `manifest.json`, with infrastructure,
+task, and privacy-cleanup failures distinguished. This is the local-eval
+contract, not a claim about all integration tests or shipped harness support.
+
+Sources: [manifest](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/package.json),
+[CI](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/.github/workflows/main.yaml),
+[README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/README.md),
+and [eval README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/evals/README.md).
 
 ## Related Pages
 

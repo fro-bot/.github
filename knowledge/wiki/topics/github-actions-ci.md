@@ -2,8 +2,52 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-27
+updated: 2026-10-08
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
+    accessed: 2026-10-08
+  - url: https://github.com/marcusrbrown/mothership
+    sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
+    accessed: 2026-10-07
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 340a317382d8bb9436ad01e3c916e4a7cb14f4ac
+    accessed: 2026-10-06
+  - url: https://github.com/fro-bot/.github/actions/runs/37250027224
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3674
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3909
+    accessed: 2026-10-05
+  - url: https://github.com/fro-bot/.github/issues/3887
+    accessed: 2026-10-05
+  - url: https://github.com/bfra-me/works
+    sha: 534b5cab0bd260f3f2f153f85d647f08972fee86
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/actions/runs/36364267649
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/issues/3674
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-03
+  - url: https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml
+    sha: b96b9904b20ed086304e184807d90c06cc3365b4
+    accessed: 2026-10-03
+  - url: https://github.com/bfra-me/renovate-action
+    sha: b214c0b1b1a1803e94ff36b9cafffc610e8b33dc
+    accessed: 2026-10-02
+  - url: https://github.com/bfra-me/github-app/pull/843
+    accessed: 2026-10-01
+  - url: https://github.com/marcusrbrown/sparkle/pull/2048
+    accessed: 2026-10-01
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 76b80d8a7a4a86d9888b1ed49e9abaadcd19feec
+    accessed: 2026-09-29
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: aa563beb2426b9bd94ff26a5d35ea48042050b7b
+    accessed: 2026-09-28
   - url: https://github.com/marcusrbrown/renovate-config
     sha: c75dd9c7f20539409d21a8d7a1e6e1e14ddd7e1d
     accessed: 2026-09-27
@@ -223,6 +267,143 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Boolean-preserving fork guards and pre-agent gates (2026-10-08)
+
+At `7ef7531`, [[marcusrbrown--vbs]]'s comment-trigger PR preflight reads
+`.head.repo.fork // "unknown"` through `gh api --jq` and proceeds only if the
+result equals `false`. jq's `//` substitutes for **false as well as null**:
+synthetic inputs `false`, `true`, and `null` produce `unknown`, `true`, and
+`unknown`. Every normal same-repository PR therefore fails this guard too.
+This is a fail-closed availability defect, not a fork bypass; no live PR path
+was exercised in the survey.
+
+Reusable check: test true, false, missing, malformed, and failed-query cases
+separately. An explicit boolean-preserving null check can retain a valid false
+while refusing unknowns; placing a fail-closed shell comparison after a decoder
+that erased false cannot recover it.
+
+The same workflow runs `pnpm build` before the agent. A deterministic failure
+there prevents agent invocation, including the requested autoheal diagnostic
+pass. Distinguish prerequisite validation from gates the repair agent should
+diagnose. Fro Bot remains the final step at v0.105.0 with no explicit delivery
+mode or downstream file-delivery steps. These source contracts preserve the
+September wiring finding without establishing new runtime failures or lost
+artifacts.
+
+VBS's data-generation workflow illustrates another boundary: its PR template
+asserts integrated validation completed, but the YAML contains only a generator
+invocation, not a separate validation/test step. Without reading the generator,
+neither that claim nor the absence of `--validate` proves whether validation
+ran. Workflow shape, implementation defaults, and observed results are distinct
+evidence layers.
+
+Sources: [Fro Bot workflow](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/fro-bot.yaml),
+[data update workflow](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925aba913be30f3103fe6ac/.github/workflows/update-star-trek-data.yaml).
+
+## Release preflight acceptance is not execution proof (2026-10-07)
+
+The bounded workflow survey of [[marcusrbrown--mothership]] at `b799c49`
+clarifies two earlier readings without replacing their historical evidence.
+Its release preflight selects the latest matching check run for each of six
+required contexts, requires completion, and accepts `success`, `skipped`, or
+`neutral`. “All checks passed” is therefore too strong: a configured acceptable
+conclusion need not mean that the check executed successfully. Record the
+accepted conclusion set alongside the required-context names when interpreting
+a release gate.
+
+The release workflow also has seven job definitions, including a separate
+`promote-updater-manifest` job omitted from the earlier six-job inventory.
+After draft creation it re-downloads assets, verifies the checksum-ledger
+digest and DMG/archive attestations, revalidates the updater manifest, and
+attaches `latest.json` while keeping the release a draft. Source-defined
+`environment: release` gates do not prove live reviewer configuration, and
+the Linux release-config smoke job does not exercise macOS compilation,
+signing, notarization, or release publication.
+
+The same survey confirms Fro Bot v0.117.0 is configured but the agent remains
+the last step with no explicit `output-mode` or downstream delivery steps.
+That proves a caller-wiring gap; it does not independently establish the
+action's resolved mode or that any particular new fix was lost. Historical
+dropped-fix reports remain dated evidence. Distinguish workflow presence,
+delivery configuration, and measured artifact delivery.
+
+Source: [workflow files at the surveyed commit](https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows).
+
+## 2026-10-05 — a new metrics report does not repair a missing learning handoff
+
+The next weekly [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/37250027224), at `b96b990`, reproduced the September 28 handoff failure: harvest and draft succeeded, but **Open learning-proposal issues** could not download `capture-learnings-bodies`; its CLI then failed with `ENOENT` for the agent-bodies JSON. Two consecutive weekly observations establish recurrence at the transport/publication boundary, not the producer-side cause. Rerunning unchanged publication inputs cannot supply the missing artifact.
+
+At the October 5 snapshot, ten `learning-proposal` issues remained open: five from September 14 (about 21 days old) and five from September 21 (about 14 days old). Representative records are [#3887](https://github.com/fro-bot/.github/issues/3887) and [#3909](https://github.com/fro-bot/.github/issues/3909). Authoring those proposals into `docs/solutions/` is a separate unfinished operation; fixing artifact delivery would not codify them automatically.
+
+The refreshed [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674), generated October 5 at 01:47 UTC, now says **ambiguous**, rather than the September 28 **healthy** snapshot recorded below, but still reports **Pending backlog: 0**. The newer state supersedes the dated state, not the population distinction: recurrence edges matching codified classes do not count every unauthored proposal. A fresh metrics timestamp cannot substitute for publication evidence or a proposal-age measure.
+
+The bounded repair target remains a verified, parseable draft output before artifact upload, with an explicit intentional no-candidate result distinguished from absent output. Inspect `.github/workflows/capture-learnings.yaml` and the required input contract in `scripts/capture-learnings-open.ts`; retain the deterministic publisher's privacy gate and separate token scope described in `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`. Do not replace missing bodies with empty success or suppress the publisher failure. The October 5 oversight pass reported this recurrence without modifying that workflow or the queued proposals.
+
+## 2026-10-03 — performance telemetry and configured delivery are not outcome gates
+
+At [[bfra-me--works]] snapshot `534b5cab`, `benchmarks.yaml` is a separate weekly/manual workflow, not part of `Main`'s PR graph. It invokes the ES benchmark runner with `--report-only`, obtains its comparison baseline from the most recent successful `main` benchmark run, tolerates missing baseline artifacts, and uploads a new baseline on `main` with 90-day retention. Its regression-check description does not establish a blocking performance budget. Baseline selection, comparison reporting, and merge enforcement are three distinct contracts; a rolling successful-run artifact is not by itself an accepted performance budget. The script implementation and actual run artifacts were outside this survey's scope.
+
+The same source updates the September 18 delivery finding: `fro-bot.yaml` now explicitly selects `branch-pr` for resolved `autoheal` mode, while checkout remains credential-less and the action receives `github-token`. The missing-input diagnosis is historical; delivery remains unverified without a run and resulting PR/commit. Do not propagate either "still no output-mode" or "paralysis resolved" from the old fleet narrative alone.
+
+`docs-sync.yaml` supplies a second distinction: the tool README promises automatic synchronization, but repository freshness validation is replaced by `true`, sync is hardcoded to dry-run, manual dispatch cannot admit the push-only sync job, and uppercase-only README filters miss lowercase configuration-package READMEs. A useful tool and a green workflow can coexist with no enforced freshness or delivered write path.
+
+Sources: [benchmark workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/benchmarks.yaml), [Fro Bot workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/fro-bot.yaml), and [documentation-sync workflow](https://github.com/bfra-me/works/blob/534b5cab0bd260f3f2f153f85d647f08972fee86/.github/workflows/docs-sync.yaml).
+
+## 2026-10-03 — learning capture, artifact delivery, and codification are separate postconditions
+
+The latest default-branch [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/36364267649), from September 28, reports successful harvest and draft jobs but a failed **Open learning-proposal issues** job. Its failed logs show that `capture-learnings-bodies` was absent, followed by `capture-learnings-open.ts` throwing `ENOENT` while reading the agent-bodies file. This establishes a missing handoff; it does not establish why the producer failed to deliver the file.
+
+At the pinned [`b96b990` workflow](https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/.github/workflows/capture-learnings.yaml), upload uses `if-no-files-found: warn`, and download uses `continue-on-error: true`. Those declarations tolerate an absent artifact at the transport steps, but the deterministic CLI requires its JSON input before planning or writing a counts result. The comments describing absence as already tracked do not make the file optional. Before calling the draft job successful, validate a parseable output artifact. An intentional no-candidate result should be explicit and distinguishable from missing output; do not convert missing bodies into empty success or bypass the trusted privacy gate. Preserve the scoped, separate-job token boundary described in `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`.
+
+The same October 3 observation found ten open learning proposals: five created September 14 and five September 21. The [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674), generated September 28, still says **healthy**, with **Pending backlog: 0**. This is not a contradiction in its measured population: [`computeMetrics`](https://github.com/fro-bot/.github/blob/b96b9904b20ed086304e184807d90c06cc3365b4/scripts/improvement-metrics-detect.ts#L325-L386) counts pending recurrence edges that match already-codified solution classes, not every unauthored proposal. New knowledge that has not become a solution document can therefore be absent from that backlog by construction. The dated report also cannot certify current pipeline liveness.
+
+Monitor three boundaries separately: candidate discovery, verified artifact/publication delivery, and accepted knowledge authored into `docs/solutions/`. Count and age the unauthored proposal queue independently of recurrence metrics. Repairing the September 28 handoff would not by itself author the existing ten proposals, and a healthy recurrence report proves neither delivery nor codification.
+
+## 2026-10-02 — a marker cannot deduplicate what discovery excludes
+
+[[bfra-me--renovate-action]]'s `release-alert.yaml` at `b214c0b1` first queries
+open issues with `--label release-failure --limit 100`, then filters returned
+bodies for `<!-- release-failure:v1 -->`. The earlier repo-page claim that
+deduplication used the marker instead of a mutable label is contradicted:
+the effective predicate requires **both**. Removing a label makes the existing
+report invisible to the lookup, even if its body marker is intact. The cap
+also bounds discovery. This is a static duplicate risk, not an observed
+duplicate or a finding about current issue state.
+
+Read the whole selection pipeline before calling a marker-based lifecycle
+robust. A stable identifier cannot rescue an object excluded by the upstream
+query. The alert's separate signal remains well-scoped: it checks the failed
+`Release` job after a failed default-branch `Main` run, but cannot detect a
+successfully published defective engine.
+
+The same snapshot retains trigger-scoped checkout credentials while omitting
+both the agent's explicit `output-mode` and any post-agent delivery step.
+Credential availability and delivery ownership must be checked separately;
+neither prompt instructions nor workflow shape alone prove recent PR output.
+
+Source: [Release Alert](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows/release-alert.yaml)
+and [Fro Bot](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows/fro-bot.yaml).
+
+## 2026-10-01 — an audit backlink is not pull-request activity
+
+The daily oversight pass verified creation age and actual update activity for 103 public open PRs using paginated timelines and PR metadata. Taking the newest timestamp from every timeline event incorrectly reduced the inactive-beyond-fourteen-days count from 50 to 13: the newer events were often `cross-referenced` backlinks from reports, not commits, reviews, comments on the PR, or state changes.
+
+The public GitHub App repository's [PR #843](https://github.com/bfra-me/github-app/pull/843) carries a 2026-09-25 backlink, while its latest actual PR update remains 2026-06-16. At [[marcusrbrown--sparkle]], [PR #2048](https://github.com/marcusrbrown/sparkle/pull/2048) has a 2026-09-30 report backlink but its last review/state activity is 2026-09-09. Neither reference should reset inactivity. The corrected snapshot has 78 aging PRs and 50 stale PRs; those counts are dated observations, not standing fleet totals.
+
+Keep creation age and inactivity separate. Measure inactivity from PR update metadata plus commit, review, comment, and state events; exclude cross-references, mentions, and subscription events. Otherwise an oversight loop can make its own backlog appear active merely by reporting it. Paginate timelines: some inspected PRs had more than 100 events. A backlink is evidence that an observer looked, not that the work moved.
+
+## 2026-09-29 — workflow triggers and agent prompts have their own drift budget
+
+At [[marcusrbrown--sparkle]], `regenerate-docs.yaml` starts on `.js`/`.jsx` UI source changes, but its push-side `git diff` detection enumerates only `.ts`/`.tsx` for UI; a JS-only push can therefore trigger a successful-looking run that skips the actual regeneration. Match the detector's pathspecs to the trigger's file extensions, and test the transition from triggered to selected package, not just the trigger itself. The same workflow now builds packages before TypeDoc, closing the earlier missing-`dist` problem; the detection mismatch is a separate boundary.
+
+The Fro Bot workflow also demonstrates **prompt text as a versioned input outside Renovate's reach**: the review prompt still asserts `pnpm@10.x` against the root manifest's `pnpm@11.28.0`, while the autoheal convention check still forbids every non-Error class and the review prompt accepts justified lifecycle/fluent-builder exceptions. The previous `llms.txt` fix removed a duplicate pin, but it did not repair the copy embedded in the agent workflow. A mechanical prompt-consistency check should compare version literals and policy predicates against their authoritative source before the agent uses them as a review standard. These are static findings at `76b80d8`; no run outcome was inspected.
+
+## 2026-09-28 — selective checks must report their evidence state
+
+The current mrbro.dev name-holder ([[marcusrbrown--marcusrbrown-github-io]]) gates PR-only unit, build, type-check, E2E, visual, accessibility, and performance work with `dorny/paths-filter`. CI uses a broader, separate type-check gate rather than reusing the build gate; E2E builds only when at least one suite is selected, and its notification distinguishes skipped suites from passed suites. Dispatch/non-PR runs bypass the path filter; malformed filter results fail closed. The `.github/filters.yaml` mapping was outside this survey's allowed reads, so these are workflow-contract observations, not a completeness audit of path categories.
+
+There is still a semantic leak: the E2E workflow reports “All screenshots matched” when its visual job succeeds, while `tests/visual/README.md` explicitly says screenshots are saved for manual review and **no automated snapshot comparison** runs. A green job plus a performance/visual label is not proof that the named artifact was checked. The old reports of “visual regression” on this wiki identify a suite name, not measured pixel parity.
 
 Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bot ecosystem.
 
@@ -3421,3 +3602,24 @@ and their known filesystem locations and caches are absent. This checks a
 it from a Dockerfile cleanup instruction. A command or path found at runtime
 fails the release. This is a release-workflow assertion, not a claim that the
 writer service or the builder image has the same boundary.
+
+### A test script and an agent prompt do not establish a PR test gate (2026-10-06)
+
+In [[marcusrbrown--marcusrbrown]] at `340a317382d8bb9436ad01e3c916e4a7cb14f4ac`,
+the manifest exposes `test: vitest run`, and the directory listing contains six
+test-file paths. `main.yaml` executes only `pnpm lint`, which expands to
+`markdownlint-cli2 && tsc --noEmit && eslint`. The separate Fro Bot autoheal prompt
+requests `pnpm test`, but that workflow excludes bot-authored direct PR events and
+does not itself contain a deterministic test step. These are three distinct facts:
+tests are available, an agent is asked to run them, and PR CI does not run them in
+the inspected workflow. None of the first two supplies the missing third fact.
+Runtime results and required-check settings were outside this bounded survey.
+
+The profile workflow also illustrates the distinction between a regeneration
+trigger and its file selector. `pull_request` enables a Prepare job, but Finalize
+requires a matching changed path. `package.json` and `pnpm-lock.yaml` are selected;
+`pnpm-workspace.yaml` is not, despite its build policy and override ledger.
+A workspace-only change does not select PR regeneration through that filter;
+scheduled/default-branch runs remain independent paths. The mechanism behind
+earlier generated-content riders persists, but current rider counts and delivery
+outcomes cannot be inferred from the workflow alone.

@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/mothership
 created: 2026-07-06
-updated: 2026-09-08
+updated: 2026-10-07
 node_id: R_kgDOTOX0_A
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
+    accessed: 2026-10-07
   - url: https://github.com/marcusrbrown/mothership
     sha: 48bd14a2b8735d35c7737716a512b9b365adcc27
     accessed: 2026-07-06
@@ -64,7 +67,90 @@ related:
 
 As of the 2026-09-08 survey the `ide_*` surface has doubled from layout control into **session control** (17 tools: 8 layout + 9 session), and a `src/planning/` subsystem has begun landing under an explicitly contract-first, prove-before-enable methodology. The repo's own working notes are the first place in this wiki where the **MCP agent-principal handoff gap in the [[fro-bot--agent]] OpenCode runtime** is written down precisely.
 
-## Overview
+## Evidence dates
+
+The tables and detailed survey below retain their **2026-09-08 snapshot**.
+The following bounded observation is the newer evidence; historical issue,
+release, alert, and workflow-run counts were not rechecked.
+
+## 2026-10-07 Observation — stable public contract, incomplete delivery wiring
+
+At commit `b799c49e2b2ea57878d4f29ef897c6138c8053f1`, the permitted
+directory listings, README, manifests, and eight workflow files still describe
+a source-run Tauri 2 application over [[fro-bot--space-bus]]. The README still
+documents **17 `ide_*` tools**, shared UI/MCP typed execution, loopback-only
+transport, a per-launch bearer rendezvous, and server-owned session state.
+It still explicitly warns that transcript text crosses verbatim and is not
+guaranteed secret-free. That is a documented structural allowlist, not a
+content-redaction promise; the two statements must be read together.
+
+### Manifest pins and capability claims
+
+`package.json` remains a private ESM package at `0.1.0` (package publishing
+status, not repository visibility). Both it and `src-tauri/Cargo.toml` declare
+`0.1.0`. Exact pins remain space-bus `0.15.0`, MCP SDK `1.29.0`, TypeScript
+`5.8.3`, Vite `7.3.6`, Biome `1.9.4`, Tauri CLI `2.11.4`, and Changesets
+`2.31.1`; React and dockview remain declared ranges `^19.1.0` and `^7.0.2`.
+CI, release, versioning, and Fro Bot continue to select Bun `1.3.14`.
+These are manifest constraints and workflow selections, not independently
+resolved lockfile versions or evidence that the installed tools work.
+
+The README still says no tagged or signed release exists and calls the code
+view, Storybook, and MCP Apps panels planned. This observation attributes those
+claims to the README; tags/releases were outside the read boundary. Likewise,
+the September planning/principal findings remain dated evidence: neither
+architecture documents nor implementation files were read, so this pass does
+not establish current planning-runtime availability or closure of that gap.
+The frozen pins do not independently re-prove the September dashboard-approval
+diagnosis; current approval checkboxes were not inspected.
+
+### Fro Bot is present; delivery remains an unresolved configuration boundary
+
+`fro-bot.yaml` now SHA-pins `fro-bot/agent` to
+`e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6` (**v0.117.0**, replacing the
+September v0.109.4 observation). Daily `15 6 * * *` scheduling and custom-prompt
+dispatch are still configured. Presence is confirmed from the file, **not**
+live scheduling health. The job still ends at `Run Fro Bot`, declares no
+`output-mode`, and has no downstream diff/commit/PR step. Checkout still has
+`persist-credentials: false` while the action receives `FRO_BOT_PAT`.
+
+This preserves the September delivery concern but narrows its current proof:
+the missing caller wiring is visible; today's action-resolved delivery mode,
+ability to write a PR, and actual loss of fixes were not measured. Historical
+reports about dropped CodeQL fixes are not new confirmation. No workflow
+onboarding draft is needed merely for presence; a delivery-contract repair
+remains a separate follow-up. See [[github-actions-ci]].
+
+### Release job-count correction and preflight acceptance semantics
+
+The inspected `release.yaml` has **seven job definitions**, not the six named
+in the September section: `policy-guard`, `required-check-preflight`, `build`,
+`sign-and-notarize`, `attest`, `publish-draft`, and
+`promote-updater-manifest`. The seventh re-downloads draft assets, checks the
+checksum-ledger digest, verifies DMG/archive attestations, revalidates the
+candidate manifest against the previously published version, and attaches
+`latest.json` while retaining draft status. It declares `environment: release`;
+whether that environment requires approval is a live setting, not proven by
+the workflow file. The earlier six-job description is retained as an incomplete
+inventory, not evidence that the seventh job was added in this interval.
+
+The September wording that all six required checks must have “passed” also
+needs precision: the preflight requires a latest matching run to be completed
+and explicitly accepts **`success`, `skipped`, or `neutral`**. Missing,
+incomplete, or other conclusions block it. This is the configured acceptance
+policy, not six independently successful executions. Meanwhile `ci.yaml`
+still runs Linux type/lint/Bun-test, design, release-config smoke, and actionlint
+checks; it has no Rust compilation/test lane. macOS compilation is defined in
+the separate release workflow, and CodeQL still covers only
+`javascript-typescript` and `actions`. A config smoke check is not a signed
+build or an exercised release path.
+
+Sources: [README](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/README.md),
+[package manifest](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/package.json),
+[Rust manifest](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/src-tauri/Cargo.toml),
+and [workflow directory](https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows).
+
+## Historical overview (2026-09-08)
 
 | Attribute        | Value                                                                          |
 | ---------------- | ------------------------------------------------------------------------------ |

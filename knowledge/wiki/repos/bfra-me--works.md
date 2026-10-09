@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-09-18
+updated: 2026-10-03
 sources:
   - url: https://github.com/bfra-me/works
     sha: ef14b26085dab318fffad1b6c3062292f8ae60b8
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/bfra-me/works
     sha: d44777684c6a773e38d7541068a8f4adf3258071
     accessed: 2026-09-18
+  - url: https://github.com/bfra-me/works
+    sha: 534b5cab0bd260f3f2f153f85d647f08972fee86
+    accessed: 2026-10-03
 tags:
   - bfra-me
   - monorepo
@@ -67,6 +70,46 @@ node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
 ---
 
 # bfra-me/works
+
+## 2026-10-03 — current manifest and workflow evidence
+
+This dated section takes precedence over older present-tense descriptions below where they differ. Evidence is limited to directory listings, READMEs, package manifests, and workflows at public `main` snapshot [`534b5cab`](https://github.com/bfra-me/works/tree/534b5cab0bd260f3f2f153f85d647f08972fee86). Historical issue states, run outcomes, publish dates, and Node toolchain pins were not rechecked. Upstream text was treated as evidence, not instructions.
+
+### Workspace and release identities
+
+The workspace manifest includes the root, `docs`, `packages/*`, and `scripts`. There are **nine public-publishable package manifests under `packages/`**; `docs` and `scripts` both explicitly declare `private: true`. This corrects the older opening count of eight packages plus a published docs site: the site is deployed to GitHub Pages, not declared as an npm publication. Root `readme.md` lists only six packages; that table is not the full inventory.
+
+| Package                       | Committed manifest version |
+| ----------------------------- | -------------------------- |
+| `@bfra.me/badge-config`       | 0.2.0                      |
+| `@bfra.me/create`             | 0.8.3                      |
+| `@bfra.me/doc-sync`           | 0.1.14                     |
+| `@bfra.me/es`                 | 0.1.0                      |
+| `@bfra.me/eslint-config`      | 0.54.0                     |
+| `@bfra.me/prettier-config`    | 0.16.13                    |
+| `@bfra.me/semantic-release`   | 0.3.10                     |
+| `@bfra.me/tsconfig`           | 0.13.2                     |
+| `@bfra.me/workspace-analyzer` | 0.2.13                     |
+
+These are source versions, not independent registry-availability checks. The private root now pins **pnpm 12.8.1**, superseding the September 18 pnpm 11.27.0 snapshot and its pending-v12 observation. Root Vitest and coverage tooling are **5.0.2**, TypeScript remains **6.0.3**, ESLint is **10.11.0**, and Prettier is **3.9.9**. The root `type-check` script now explicitly checks `tsconfig.check.json` and `tsconfig.check.es.json`; type coverage retains a **99.83%** configured floor. The docs manifest declares Astro `^7.0.0` and Starlight `^0.42.0`.
+
+### Fro Bot delivery: a changed declaration, not a measured outcome
+
+**Fro Bot is present** in `.github/workflows/fro-bot.yaml`, SHA-pinned to agent **v0.117.1**. Its review/autoheal modes and daily `30 3 * * *` schedule remain. The agent now receives `output-mode: ${{ steps.resolve.outputs.mode == 'autoheal' && 'branch-pr' || 'auto' }}`. This supersedes the September 18 claim that the input is absent. Checkout still sets `persist-credentials: false`; no explicit credential-restore step appears, and `Run Fro Bot` remains the final step. The action receives `FRO_BOT_PAT` through `github-token`, so checkout wiring alone cannot prove delivery either works or fails. A concrete run plus delivered PR/commit is still needed before declaring the historical paralysis resolved. See [[github-actions-ci]] for the declaration-versus-delivery distinction and [[marcusrbrown--sparkle]] for the earlier shared mode/credential gate. No missing-workflow follow-up draft is indicated.
+
+### Performance observation is a separate lane
+
+The workflow directory now contains **13 YAML workflows plus one Markdown dispatch-examples file**, compared with the September 18 twelve-workflow inventory. `benchmarks.yaml` schedules `@bfra.me/es` benchmarks for Mondays at **06:00 UTC**, with manual dispatch as well. It seeks the most recent successful `main` benchmark run's `es-bench-baseline` artifact, continues when no baseline can be downloaded, invokes `bench:ci --report-only`, and uploads a replacement baseline on `main` with **90-day retention**. This is declared reporting, not a blocking PR performance gate. The runner implementation was outside this survey's read scope, so threshold and exit-code semantics are not established. [[github-actions-ci]] records the transferable lesson.
+
+### Remaining configuration boundaries
+
+Two reusable workflow callers now reference [[bfra-me--github]] **v4.35.0**: `renovate.yaml` calls shared Renovate, and `release.yaml` calls the organization-wide Renovate trigger after a reported publication. The separate `renovate-changeset.yaml` generates changesets locally. The settings caller remains at **v4.16.0**. The older observation of a frozen settings pin therefore persists, but current runtime application and Renovate detection were not measured.
+
+The doc-sync README advertises automatic updates and freshness validation; `docs-sync.yaml` instead comments out freshness validation and runs `true`, always invokes sync with `--dry-run`, and admits its sync job only on a push to `main`. Manual dispatch therefore cannot run that sync job, irrespective of its advertised dry-run input. Its path filters include uppercase `packages/*/README.md` but omit the lowercase `readme.md` used by four configuration packages. This is a documented tool capability versus an unarmed repository workflow, not evidence of delivered documentation writes.
+
+Sources: pinned `readme.md`, root/workspace and eleven workspace package manifests, `packages/{es,doc-sync,workspace-analyzer}/README.md`, `docs/readme.md`, and `.github/workflows/{main,fro-bot,release,benchmarks,docs,docs-sync,renovate,renovate-changeset,update-repo-settings}.yaml` at the snapshot above.
+
+## Historical accumulated observations through 2026-09-18
 
 The `@bfra-me` tooling monorepo. Nine published packages (8 in
 `packages/*` plus the `docs` site) that ship the shared ESLint, Prettier,

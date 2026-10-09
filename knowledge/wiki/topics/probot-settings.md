@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-26
+updated: 2026-09-30
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 6852f168e06bce3373901bea9fdb79bf4aee831f
+    accessed: 2026-09-30
   - url: https://github.com/marcusrbrown/.github
     sha: 656663c5dd260020e3b9646b95a375e51e96c493
     accessed: 2026-09-26
@@ -399,6 +402,19 @@ This completes the pair this page has been building toward. The 2026-09-01 entry
 One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
+
+### A newer ref does not repair a wrong workflow path (2026-09-30)
+
+At [[marcusrbrown--esphome-life]] commit `6852f168`, both reusable callers
+have advanced from the dated v4.29.0 snapshot to **v4.34.0** (`55859d58`).
+`update-repo-settings.yaml` still calls the upstream **`renovate.yaml`**,
+contradicting its own settings-sync comment and job name. The daily 12:23 UTC
+cron and push-to-main trigger remain. This is current static evidence that
+dependency freshness and correct task routing are independent properties.
+Scheduled execution, live settings, and the callee's implementation at this
+new ref were not inspected; the earlier measured run costs remain historical.
+
+Source: [settings caller at the surveyed commit](https://github.com/marcusrbrown/esphome.life/blob/6852f168e06bce3373901bea9fdb79bf4aee831f/.github/workflows/update-repo-settings.yaml).
 
 ### Personal template source rechecked (2026-09-26)
 

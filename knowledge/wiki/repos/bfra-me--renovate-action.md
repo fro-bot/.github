@@ -2,8 +2,11 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-09-19
+updated: 2026-10-02
 sources:
+  - url: https://github.com/bfra-me/renovate-action
+    sha: b214c0b1b1a1803e94ff36b9cafffc610e8b33dc
+    accessed: 2026-10-02
   - url: https://github.com/bfra-me/renovate-action
     sha: 0c1bdac0d3f6f11638cda0a01d1e225ba4db78ac
     accessed: 2026-09-17
@@ -64,6 +67,75 @@ node_id: R_kgDOKWu8zQ
 ---
 
 # bfra-me/renovate-action
+
+## Current permitted-source snapshot (2026-10-02)
+
+At public `main` SHA `b214c0b1b1a1803e94ff36b9cafffc610e8b33dc`, the tree
+still lists nine workflows, a composite-action manifest, Docker entrypoint,
+TypeScript scaffold, committed `dist/`, and an Astro/Starlight docs workspace.
+This pass reads only directory listings, both READMEs, both package manifests,
+and the nine workflow files. Matching paths do not prove unchanged runtime
+code. The dated release, queue, run-health, action-input, and container-tool
+observations below remain historical; they were not independently refreshed.
+
+### Manifest and documentation state
+
+The root manifest still declares a private ESM package with only
+`@actions/core` 3.0.1 in `dependencies`; pnpm is now **11.28.2**, Node remains
+**24.21.0**, TypeScript **6.0.3**, ESLint **10.11.0**, and Prettier **3.9.9**.
+`check` runs type-checking, lint, and the docs check; `build-action` runs tsup,
+while `build` also invokes recursive workspace builds. The docs manifest
+declares Astro `^7.0.0`, Starlight `^0.42.0`, and Sharp `^0.35.0`. These are
+declared ranges, not independently verified installed versions. The root
+version remains `0.0.0-semantic-release`; it cannot establish a latest release.
+
+**Version-copy contradiction persists:** the root README links Renovate
+**44.132.1**, but its usage examples still prescribe `bfra-me/renovate-action@v9`
+and its notes describe Renovate v43 and planned Docker removal in v10.
+`docs/README.md` likewise calls v9 the current action. These conflict with the
+source-pinned v10 history recorded on 2026-09-17. The badge link is documentation
+evidence, not a fresh check of the engine pin or of the removal horizon.
+The docs README correctly identifies `action.yaml` and `docker/entrypoint.sh`
+as runtime authority and distinguishes maintained `guides/` from `legacy/`.
+
+### Workflow contracts
+
+**Fro Bot is present**, pinned to agent **v0.117.1** (`3e86a124`), with the
+same `30 3 * * *` schedule and `review`/`autoheal` dispatch choices. Its six
+autoheal categories and rotating dated daily-report contract remain declared.
+The checkout retains credentials except on `pull_request`, `issue_comment`,
+and `issues`. However, `Run Fro Bot` has **no explicit `output-mode` input**
+and is the final step: no caller-side diff/commit/push/PR delivery follows.
+The prompt still requests PR creation and existing-branch repairs. This is a
+static delivery-contract gap, not evidence that recent runs produced no PRs;
+workflow text alone cannot measure effective runtime mode or delivered output.
+See [[github-actions-ci]] for the separate credential and delivery checks.
+
+`main.yaml` still limits `uses: ./` self-testing to default-branch pushes with
+`action-self-test-changed == 'true'`, passing `dry-run: true`; it remains
+unreachable on PRs. The external filters and action dry-run implementation
+were not read in this pass. Renovate and post-release org-dispatch callers
+both advance to `bfra-me/.github` **v4.35.0**, while the correctly pathed settings
+caller stays at **v4.16.0**, scheduled daily at 08:51 UTC. A frozen reference
+does not establish a failed settings application. CodeQL is now v4.38.2 and
+Dependency Review v5.0.0; these pins do not prove successful runs.
+
+**Correction to the 2026-09-17 release-alert interpretation:** the actual
+issue lookup first uses `gh issue list --label release-failure --limit 100`,
+then filters bodies for `<!-- release-failure:v1 -->`. Identity is therefore
+**label AND marker**, not marker alone as previously claimed below. A report
+whose label is removed is excluded and could be duplicated on a later alert;
+the 100-result cap is another discovery bound. No duplicate was observed in
+this permitted-source pass. The useful job-level signal survives: it only
+alerts when the default-branch `Main` failure includes a failed `Release` job,
+not when publication succeeds but the delivered engine is defective.
+
+Sources: [tree](https://github.com/bfra-me/renovate-action/tree/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc),
+[README](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/README.md),
+[root manifest](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/package.json),
+[docs README](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/docs/README.md),
+[docs manifest](https://github.com/bfra-me/renovate-action/blob/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/docs/package.json),
+[workflows](https://github.com/bfra-me/renovate-action/tree/b214c0b1b1a1803e94ff36b9cafffc610e8b33dc/.github/workflows).
 
 Composite GitHub Action that runs a **self-hosted Renovate bot** in a Docker container with **GitHub App** authentication. Published as `bfra-me/renovate-action@v10` (was `@v9` through 2026-07-18; major branch and tag crossed at the 2026-07-31 `10.0.0` release) and consumed across the `bfra-me` organization (and indirectly by `marcusrbrown/*` / `fro-bot/*` via the reusable `bfra-me/.github/.github/workflows/renovate.yaml` that wraps it).
 

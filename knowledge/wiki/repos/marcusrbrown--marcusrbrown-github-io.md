@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.github.io
 created: 2026-04-25
-updated: 2026-09-13
+updated: 2026-09-28
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -112,6 +112,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: d9eaaff0c3b2b01115f5e16dd89aa2dd958f8f37
     accessed: 2026-09-13
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: aa563beb2426b9bd94ff26a5d35ea48042050b7b
+    accessed: 2026-09-28
 tags:
   - brand-site
   - react
@@ -667,6 +670,15 @@ The repo wrote the class down rather than just patching it. `docs/solutions/` is
 Open items **14 → 5**: #379 (`Daily Fro Bot Report — 2026-09-13`, `fro-bot`) / #369 (the stuck blog PR, `mrbro-bot[bot]`) / **#366** (`fix(ci): performance summary masks dashboard failures with || echo`, `marcusrbrown`) / **#334** (`ci(blog): rolling content PR can never receive an approving review`, `marcusrbrown`) / #1 (Dependency Dashboard). Both substantive issues are human-filed and both are false-signal bugs — the queue's authorship inverted along with its size. Stars 1, forks 0, license API-null (MIT in `package.json`), `pushed_at` 2026-09-13T06:58 (PR-branch pushes), `updated_at` 2026-09-03T02:15.
 
 Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (`GH_TOKEN` unset; `gh auth status` reports no host), so all reads were unauthenticated `api.github.com` + `raw.githubusercontent.com`, scoped to directory listings, README/manifest files, and workflow files. Durable per-repo knowledge for the current occupant is recorded on **marcusrbrown--mrbro-dev** (Delta Log 2026-09-13), which discharges the standing re-survey note left by the 2026-09-01 incidental observation. No new facts about the _brand site_ (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+## Delta Log (2026-09-28, `main` `aa563beb` — current name-holder, mrbro.dev)
+
+The name still resolves to public repo id `1174807412` / node id `R_kgDORgYjdA` (`package.json` name `mrbro.dev`, homepage `https://mrbro.dev/`). It is **not** the former brand-site repo id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]. Earlier brand-site sections remain historical; this snapshot describes only the current name-holder. Survey scope: directory listings, README files, manifests, and workflows at the default-branch ref; no issue/PR status or runtime behavior was measured.
+
+- **Fro Bot is present**, in `.github/workflows/fro-bot.yaml` at `fro-bot/agent@43023e5b9755fe307c03ede1067cc182564d30e3 # v0.113.2` (up from v0.105.1 at the 2026-09-13 snapshot). Its single `30 3 * * *` UTC schedule, `autoheal`/`review`/`live-audit` dispatch paths, and five-job split remain. Scheduled autoheal now explicitly selects `output-mode: branch-pr` and restores push credentials only on schedule/autoheal dispatch; review stays `working-dir`. This closes the *workflow configuration* gap noted in the earlier delivery-mode discussion, but does not prove any PR was actually delivered. **No missing-Fro-Bot-workflow follow-up is warranted.**
+- **Path-sensitive PR checks are now explicit.** `ci.yaml` uses `dorny/paths-filter` and separate gates for unit tests, build, and TypeScript type-check (the latter includes inputs beyond build). `e2e-tests.yaml` gates E2E, visual, and accessibility suites independently, sharing a build only if any suite needs it; its summaries distinguish a skipped suite from a passed one. `performance.yaml` gates only PR audits, while main pushes, dispatches, and the Monday schedule still run audits; malformed filter outputs fail closed. `quality-gate` in CI still requires job success, so a skipped *step* inside a successful job is not proof the corresponding check ran. The path mapping lives in `.github/filters.yaml`, which was not read in this limited survey; category completeness is unverified. See [[github-actions-ci]].
+- **A live wording contradiction:** `tests/visual/README.md` says the visual tests save screenshots with `page.screenshot({ path })` for manual review and **do not use `toMatchSnapshot()` for automated diff comparison**. Yet `e2e-tests.yaml` labels a successful visual job “All screenshots matched.” That success demonstrates the job's steps passed, not screenshot parity. Treat the older “visual regression” claims on this page and [[github-pages]] as test-suite names, not evidence of automatic pixel comparison. The README's stack table also still says “pnpm v11.1.3+” and “Vite 7”; the current manifest requires `engines.pnpm >=11.11.0` and pins `pnpm@11.27.0`, while Vite remains `7.3.6`.
+- **Deployment and updater remain distinct.** `deploy.yaml` builds with `GITHUB_PAGES=true`, injects optional `VITE_UMAMI_WEBSITE_ID` only at the build step, and uploads `dist/` to Pages; the workflow does not reveal whether the repo variable is set, so activation is not inferred. `blog-refresh.yaml` publishes semantic changes to one rolling PR using a late-minted App token; `renovate.yaml` calls `bfra-me/.github` at v4.31.0 on an hourly `17 * * * *` schedule. Eight workflow files still exist. The manifest holds React 19, React Router `^7.18.2`, TypeScript 5.9.3, Vite 7.3.6, Vitest 4.1.11, Playwright 1.63.0, Node `>=24`, and pnpm 11.27.0. Security overrides and three advisory exceptions live in `pnpm-workspace.yaml`; the CI `pnpm audit --audit-level moderate` gate remains. The current README's clone/badge links still use the old `marcusrbrown/mrbro.dev` name; their resolution was not tested.
 
 ## Survey History
 
