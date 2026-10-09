@@ -50,6 +50,16 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
     expect(prompt).toContain('Improvement Metrics report (#3674)')
   })
 
+  it('points at the open drafted solution-doc PR instead of calling covered proposals stalled', () => {
+    // #then category 7 names the drafted head, author, and body line, reports the PR and its
+    // age, and keeps the stall rule for proposals the PR does not cover
+    const normalized = prompt.replaceAll(/\s+/g, ' ')
+    expect(normalized).toContain('an open PR on head `docs/drafted-solutions` authored by `fro-bot[bot]`')
+    expect(normalized).toContain('open proposals named in the `Closes #N` line of its body')
+    expect(normalized).toContain('report that PR and its age instead of calling those proposals stalled')
+    expect(normalized).toContain('Proposals it does not cover keep the 14-day and two-or-more rule')
+  })
+
   it('distinguishes verified-clean from could-not-check', () => {
     expect(prompt).toContain('✅ = verified-clean')
     expect(prompt).toContain('❔ =')

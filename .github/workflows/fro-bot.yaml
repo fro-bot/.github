@@ -406,7 +406,12 @@ env:
        open issues labeled `learning-proposal`: the expected action for each
        is authoring the learning into `docs/solutions/`, so any older than 14
        days, or two or more open at once, means the compounding pipeline has
-       stalled. Report the count and ages. Do not treat a `healthy` reading on
+        stalled. Exception: an open PR on head `docs/drafted-solutions` authored
+        by `fro-bot[bot]` covers the open proposals named in the `Closes #N`
+        line of its body; report that PR and its age instead of calling those
+        proposals stalled. Proposals it does not cover keep the 14-day and
+        two-or-more rule. Report the count and ages. Do not treat a `healthy`
+        reading on
        the Improvement Metrics report (#3674) as evidence this is fine —
        unauthored proposals never become classes there, so that report stays
        green precisely while this is stalled. Report under "Progressive
@@ -482,7 +487,14 @@ jobs:
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+          (
+            !endsWith(github.event.pull_request.user.login || '', '[bot]') ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         )
       ) && (
         (
@@ -493,8 +505,17 @@ jobs:
         ) ||
         (
           github.event_name == 'pull_request' &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-          (github.event.pull_request.user.login || '') != 'fro-bot'
+          (
+            (
+              !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+              (github.event.pull_request.user.login || '') != 'fro-bot'
+            ) ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         ) ||
         (
           (github.event_name == 'issue_comment' ||
