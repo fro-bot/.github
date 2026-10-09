@@ -5,13 +5,19 @@ import {Buffer} from 'node:buffer'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  assertSafeHandoffPath,
   assertSafeWikiHandoffPath,
   buildWikiHandoff,
   captureWikiBaseline,
+  DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
+  DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+  isAllowedDraftedSolutionPath,
   isAllowedWikiHandoffPath,
   parseGitStatusPorcelainZ,
+  validateAndApplyHandoff,
   validateAndApplyWikiHandoff,
   WIKI_HANDOFF_MAX_TOTAL_BYTES,
+  WIKI_HANDOFF_POLICY,
   WikiHandoffValidationError,
 } from './wiki-handoff-core.ts'
 
@@ -728,5 +734,180 @@ describe('validateAndApplyWikiHandoff', () => {
       }),
     ).rejects.toThrow(WikiHandoffValidationError)
     expect(Object.keys(mocks.written)).toStrictEqual([])
+  })
+})
+
+describe('isAllowedDraftedSolutionPath', () => {
+  it.each([
+    'docs/solutions/best-practices/new-doc-2026-10-09.md',
+    'docs/solutions/documentation-gaps/x.md',
+    'docs/solutions/integration-issues/x.md',
+    'docs/solutions/runtime-errors/x.md',
+    'docs/solutions/security-issues/x.md',
+    'docs/solutions/workflow-issues/x.md',
+  ])('allows %s', (candidate: string) => {
+    expect(isAllowedDraftedSolutionPath(candidate)).toBe(true)
+  })
+
+  it.each([
+    ['.github/workflows/x.yaml', 'workflow'],
+    ['docs/plans/x.md', 'other docs tree'],
+    ['docs/solutions/x.md', 'no category'],
+    ['docs/solutions/not-a-category/x.md', 'unknown category'],
+    ['docs/solutions/best-practices/x.yaml', 'non-.md'],
+    ['docs/solutions/best-practices/.md', 'empty stem'],
+    ['docs/solutions/best-practices/nested/x.md', 'nested below a category'],
+    ['docs/solutions/best-practices', 'category directory itself'],
+    ['docs/solutions/best-practices/', 'trailing slash'],
+    ['knowledge/wiki/repos/foo.md', 'wiki path'],
+  ])('rejects %s (%s)', (candidate: string) => {
+    expect(isAllowedDraftedSolutionPath(candidate)).toBe(false)
+  })
+})
+
+describe('assertSafeHandoffPath', () => {
+  it('applies the supplied policy: a wiki path passes the wiki policy and fails the drafted policy', () => {
+    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', WIKI_HANDOFF_POLICY)).not.toThrow()
+    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', DRAFTED_SOLUTIONS_HANDOFF_POLICY)).toThrow(
+      WikiHandoffValidationError,
+    )
+  })
+})
+
+describe('validateAndApplyHandoff with the wiki policy', () => {
+  it('still applies deletions and uses the wiki size cap', async () => {
+    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
+    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']}))
+
+    const result = await validateAndApplyHandoff({
+      policy: WIKI_HANDOFF_POLICY,
+      handoffDir: '/handoff',
+      workspaceDir: '/workspace',
+      mkdirImpl: mocks.mkdirImpl,
+      readdirImpl: mocks.readdirImpl,
+      lstatImpl: mocks.lstatImpl,
+      readFileImpl: mocks.readFileImpl,
+      writeFileImpl: mocks.writeFileImpl,
+      rmImpl: mocks.rmImpl,
+    })
+
+    expect(result).toStrictEqual({applied: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']})
+    expect(WIKI_HANDOFF_POLICY.maxTotalBytes).toBe(WIKI_HANDOFF_MAX_TOTAL_BYTES)
+    expect(WIKI_HANDOFF_POLICY.allowDeletions).toBe(true)
+  })
+})
+
+async function applyDrafted(mocks: ReturnType<typeof makeFsMocks>) {
+  return validateAndApplyHandoff({
+    policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+    handoffDir: '/handoff',
+    workspaceDir: '/workspace',
+    mkdirImpl: mocks.mkdirImpl,
+    readdirImpl: mocks.readdirImpl,
+    lstatImpl: mocks.lstatImpl,
+    readFileImpl: mocks.readFileImpl,
+    writeFileImpl: mocks.writeFileImpl,
+    rmImpl: mocks.rmImpl,
+  })
+}
+
+describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
+  it('accepts a new doc and a modified doc under solutions categories', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/docs/solutions/best-practices/new-doc.md': {size: 100},
+      '/handoff/files/docs/solutions/workflow-issues/existing-doc.md': {size: 200},
+    })
+    mocks.setManifest(
+      JSON.stringify({
+        changed: ['docs/solutions/best-practices/new-doc.md', 'docs/solutions/workflow-issues/existing-doc.md'],
+        deleted: [],
+      }),
+    )
+
+    const result = await applyDrafted(mocks)
+
+    expect(result).toStrictEqual({
+      applied: ['docs/solutions/best-practices/new-doc.md', 'docs/solutions/workflow-issues/existing-doc.md'],
+      deleted: [],
+    })
+    expect(Object.keys(mocks.written)).toStrictEqual([
+      '/workspace/docs/solutions/best-practices/new-doc.md',
+      '/workspace/docs/solutions/workflow-issues/existing-doc.md',
+    ])
+  })
+
+  it.each([
+    ['.github/workflows/x.yaml', 'workflow file'],
+    ['docs/plans/x.md', 'plan doc'],
+    ['docs/solutions/x.md', 'solution doc without a category'],
+    ['docs/solutions/best-practices/x.yaml', 'non-.md file'],
+    ['docs/solutions/best-practices/../../../etc/passwd', 'traversal'],
+    ['/etc/passwd', 'absolute path'],
+  ])('rejects %s (%s) and writes nothing', async (rejected: string) => {
+    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/ok.md', rejected], deleted: []}))
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(WikiHandoffValidationError)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+    expect(mocks.removed).toStrictEqual([])
+  })
+
+  it('rejects a symlink entry and writes nothing', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/docs/solutions/best-practices/ok.md': {size: 1},
+      '/handoff/files/docs/solutions/best-practices/link.md': {size: 1, symlink: true},
+    })
+    mocks.setManifest(
+      JSON.stringify({
+        changed: ['docs/solutions/best-practices/ok.md', 'docs/solutions/best-practices/link.md'],
+        deleted: [],
+      }),
+    )
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(/symlink/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+    expect(mocks.removed).toStrictEqual([])
+  })
+
+  it('rejects a non-empty deleted list, even for an in-scope path, and writes nothing', async () => {
+    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    mocks.setManifest(
+      JSON.stringify({
+        changed: ['docs/solutions/best-practices/ok.md'],
+        deleted: ['docs/solutions/best-practices/old.md'],
+      }),
+    )
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(/deletions/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+    expect(mocks.removed).toStrictEqual([])
+  })
+
+  it('rejects a bundle over the drafted size cap and writes nothing', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/docs/solutions/best-practices/big.md': {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES + 1},
+    })
+    mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/big.md'], deleted: []}))
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(/size cap/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+  })
+
+  it('accepts a bundle that is exactly at the size cap', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/docs/solutions/best-practices/edge.md': {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES},
+    })
+    mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/edge.md'], deleted: []}))
+
+    await expect(applyDrafted(mocks)).resolves.toStrictEqual({
+      applied: ['docs/solutions/best-practices/edge.md'],
+      deleted: [],
+    })
+  })
+
+  it('rejects unexpected top-level entries just like the wiki policy', async () => {
+    const mocks = makeFsMocks({}, ['manifest.json', 'files', '.git'])
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(/unexpected top-level entries/)
   })
 })
