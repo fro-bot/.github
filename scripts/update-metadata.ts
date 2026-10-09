@@ -12,7 +12,15 @@
  *   - discoverRenovateRepos(octokit, owner): async I/O — list installation repos
  *     filtered to the target owner, probe each. Returns repos in discovery order;
  *     canonicalization happens in buildRenovateFile.
- *   - main(): thin shell — token, octokit, discover, commitMetadata.
+ *   - runUpdateMetadata({discovery, writer, ...}): discover with the read-only
+ *     client, commit with the repo-scoped writer client.
+ *   - runFromEnv / main(): thin shell — validate both tokens, build both clients.
+ *
+ * Two App installation tokens, two clients (least privilege):
+ *   - discovery (owner-wide, metadata:read + contents:read): installation listing
+ *     and `getContent` on `.github/workflows/renovate.yaml` only.
+ *   - writer (this repo only, contents:write): `commitMetadata` to `data`.
+ * Neither client's response bodies are logged or persisted; output is the summary.
  *
  * Uses `apps.listReposAccessibleToInstallation` so the call works whether the
  * Fro Bot account is a User (current) or an Organization (future migration).
@@ -23,7 +31,7 @@ import type {RenovateFile} from './schemas.ts'
 
 import process from 'node:process'
 
-import {commitMetadata} from './commit-metadata.ts'
+import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 
 export type OctokitClient = Octokit
 
@@ -103,35 +111,77 @@ function formatErrorStatus(error: unknown): string {
   return 'unknown error'
 }
 
-// ─── CLI entrypoint ─────────────────────────────────────────────────────────
+// ─── Orchestration ──────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  const {Octokit} = await import('@octokit/rest')
+export interface UpdateMetadataSummary {
+  owner: string
+  detected: number
+  committed: boolean
+  attempts: number
+}
 
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') throw new Error('GITHUB_TOKEN is required')
+export interface RunUpdateMetadataParams {
+  /** Owner-wide read-only client: installation listing + renovate workflow probes. */
+  discovery: OctokitClient
+  /** Repo-scoped contents:write client: `commitMetadata` only. */
+  writer: OctokitClient
+  owner: string
+  commit?: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
+}
 
-  const octokit = new Octokit({auth: token})
-  const owner = process.env.UPDATE_METADATA_OWNER ?? DEFAULT_OWNER
-
-  const detected = await discoverRenovateRepos(octokit, owner)
+export async function runUpdateMetadata(params: RunUpdateMetadataParams): Promise<UpdateMetadataSummary> {
+  const commit = params.commit ?? commitMetadata
+  const detected = await discoverRenovateRepos(params.discovery, params.owner)
   const next = buildRenovateFile(detected)
 
-  const result = await commitMetadata({
+  const result = await commit({
     path: RENOVATE_METADATA_PATH,
-    message: `chore(metadata): refresh renovate.yaml from ${owner} account scan`,
-    octokit,
+    message: `chore(metadata): refresh renovate.yaml from ${params.owner} account scan`,
+    octokit: params.writer,
     async mutator() {
       return next
     },
   })
 
-  const summary = {
-    owner,
+  return {
+    owner: params.owner,
     detected: detected.length,
     committed: result.committed,
     attempts: result.attempts,
   }
+}
+
+// ─── CLI entrypoint ─────────────────────────────────────────────────────────
+
+function requireToken(env: Record<string, string | undefined>, name: string): string {
+  const value = env[name]
+  if (value === undefined || value === '') throw new Error(`${name} is required`)
+  return value
+}
+
+/**
+ * Validate both tokens up front — before any client exists — so a missing writer
+ * token can't leave a half-finished run (discovery done, nothing committed).
+ */
+export async function runFromEnv(
+  env: Record<string, string | undefined>,
+  createClient: (token: string) => Promise<OctokitClient>,
+  commit?: RunUpdateMetadataParams['commit'],
+): Promise<UpdateMetadataSummary> {
+  const discoveryToken = requireToken(env, 'UPDATE_METADATA_DISCOVERY_TOKEN')
+  const writerToken = requireToken(env, 'UPDATE_METADATA_WRITER_TOKEN')
+
+  const discovery = await createClient(discoveryToken)
+  const writer = await createClient(writerToken)
+  const owner = env.UPDATE_METADATA_OWNER ?? DEFAULT_OWNER
+
+  return runUpdateMetadata({discovery, writer, owner, commit})
+}
+
+async function main(): Promise<void> {
+  const {Octokit} = await import('@octokit/rest')
+
+  const summary = await runFromEnv(process.env, async token => new Octokit({auth: token}))
   process.stdout.write(`${JSON.stringify(summary)}\n`)
 }
 
