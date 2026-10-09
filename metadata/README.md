@@ -232,6 +232,7 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data â
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
+- Writes to exactly `metadata/repos.yaml` are checked by the rename guard (`scripts/metadata-wiki-rename-guard.ts`, applied inside `commitMetadata`, so reconcile, invitation acceptance, survey results, and survey resets all inherit it). A change that would remove a public repo name while `knowledge/wiki/repos/<owner>--<name>.md` still exists on `data` is refused with a redacted `WIKI_PAGE_RENAME_BLOCKED` error; an unreadable or ambiguous wiki lookup is refused with `WIKI_STATE_UNVERIFIABLE`. Both errors carry counts only (no names or paths). The check reruns on every 409 retry. Restrictive updates (a public repo becoming private or unknown) are never blocked. To unblock a refused rename, repair the old page through an operator-approved App-backed wiki write on `data`, then rerun the writer.
 - Manual edits to `metadata/*.{yaml,yml}` also target `data` and are promoted via the `Merge Data Branch` workflow â€” see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 

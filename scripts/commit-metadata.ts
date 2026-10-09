@@ -8,6 +8,12 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {
+  evaluateRenameGuard,
+  lookupRepoWikiPage,
+  REPOS_METADATA_PATH,
+  type RenameGuardVerdict,
+} from './metadata-wiki-rename-guard.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -28,6 +34,11 @@ const METADATA_PATH_PATTERN = /^metadata\/[a-z][a-z0-9-]*\.yaml$/
  * 1. Path must match `metadata/<name>.yaml` (no arbitrary file writes).
  * 2. Branch must be `data` (no writes to main, feature branches, or anywhere else).
  * 3. Protected branches are refused except canonical `fro-bot/.github@data`.
+ *
+ * Writes to exactly `metadata/repos.yaml` are additionally checked by the rename guard
+ * (see `metadata-wiki-rename-guard.ts`): a change that would remove a public repo name
+ * while its wiki page still exists on the target branch is refused with a redacted
+ * `WIKI_PAGE_RENAME_BLOCKED` (or `WIKI_STATE_UNVERIFIABLE`) error, re-checked on every retry.
  *
  * Callers that need to write outside `metadata/*.yaml` should use a different
  * helper. Callers that need to target another branch (testing only) can pass
@@ -135,6 +146,8 @@ export type CommitMetadataErrorCode =
   | 'INVALID_FILE'
   | 'CONFLICT_EXHAUSTED'
   | 'OCTOKIT_LOAD_FAILED'
+  | 'WIKI_PAGE_RENAME_BLOCKED'
+  | 'WIKI_STATE_UNVERIFIABLE'
 
 export async function commitMetadata(params: CommitMetadataParams): Promise<CommitMetadataResult> {
   if (!METADATA_PATH_PATTERN.test(params.path)) {
@@ -202,6 +215,17 @@ export async function commitMetadata(params: CommitMetadataParams): Promise<Comm
         return {committed: false, attempts: attempt}
       }
 
+      // Re-evaluated on every attempt against the freshly read snapshot and branch tree: a wiki
+      // page can appear between a 409 and the retry, and only verified absence permits a rename.
+      if (params.path === REPOS_METADATA_PATH) {
+        const verdict = await evaluateRenameGuard({
+          previous: current.parsed,
+          next,
+          lookup: async slug => lookupRepoWikiPage({octokit, owner, repo, branch, slug}),
+        })
+        assertRenameAllowed(verdict)
+      }
+
       const response = await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -241,6 +265,33 @@ export async function commitMetadata(params: CommitMetadataParams): Promise<Comm
   }
 
   throw new Error('commitMetadata reached an unreachable retry state')
+}
+
+/**
+ * Convert a blocking rename-guard verdict into a redacted `CommitMetadataError`. Messages carry
+ * counts only: this error surfaces in public workflow logs, so no repo name, slug, or wiki path
+ * may appear in it (and no `cause`, since API errors embed the request path).
+ */
+function assertRenameAllowed(verdict: RenameGuardVerdict): void {
+  if (verdict.kind === 'allow') {
+    return
+  }
+
+  if (verdict.kind === 'page-present') {
+    throw new CommitMetadataError({
+      code: 'WIKI_PAGE_RENAME_BLOCKED',
+      message: `commitMetadata blocked a ${REPOS_METADATA_PATH} change that would remove ${verdict.count} public repository name(s) whose wiki page still exists on the data branch`,
+      remediation:
+        'Repair the old wiki page through an operator-approved, App-backed data-branch wiki write (redirect references to the canonical page, then delete the old page), then rerun the writer. Do not bypass the promotion privacy gate.',
+    })
+  }
+
+  throw new CommitMetadataError({
+    code: 'WIKI_STATE_UNVERIFIABLE',
+    message: `commitMetadata blocked a ${REPOS_METADATA_PATH} change: could not verify wiki page state for ${verdict.count} removed public repository name(s)`,
+    remediation:
+      'The data-branch wiki tree could not be read or was ambiguous. Check GitHub API health and token permissions, then rerun the writer; the change is refused until absence of the old page is verified.',
+  })
 }
 
 /**
