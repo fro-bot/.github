@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-09: [[marcusrbrown--dotfiles]] (repo) and
+[[dotfiles]] (topic). Existing catalog entries are retained; the ingest
+record is in `knowledge/log.md`.
+
 2026-10-09 oversight: [[github-actions-ci]] records verified learning-artifact
 publication recovery alongside a thirteen-proposal codification backlog.
 [[fro-bot--dashboard]] distinguishes two closed producer issues from their

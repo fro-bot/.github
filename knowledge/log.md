@@ -7392,3 +7392,51 @@ report. Exactly one marked comment was posted by this oversight invocation.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@8317e094c4a6065b02aac39f1ad61084f563be49
+
+## [2026-10-09 11:57] ingest | marcusrbrown/.dotfiles
+
+Bounded public-repository survey at `61447f9a4817963afc88a9158b72bd93b86e6db7`.
+Updated [[marcusrbrown--dotfiles]] and [[dotfiles]] additively and refreshed
+their existing catalog entries. Preserved earlier evidence and recorded dated
+corrections to the sole-skill, root-guide, and schedule/dispatch-only credential
+descriptions. The corrections context contained no active correction spans.
+
+The bare-Git/XDG documentation and four-feature devcontainer layout persist.
+The four workflows include Fro Bot v0.118.3, shared callers v4.37.0, uncached
+mise installation proof, a five-file Linux/macOS script matrix, explicit
+allowlist auditing, and Ubuntu-only type/format checks. The script manifest
+now pins SDK 1.18.34 and Prettier 3.9.9. Recorded the workflow's declared
+real-server-test skip boundary and the unqualified `AGENTS.md` prompt reference
+against the scoped guide listing. No new entity or comparison page was warranted.
+Fro Bot is present, so no onboarding follow-up is needed.
+
+Reads were confined to directory listings, two READMEs, one package manifest,
+and four workflows. Target content was treated as untrusted data; target
+commands were not executed. Runs, issues, installer scripts, shell sources,
+and plugin settings were not surveyed. Existing working-tree changes were
+preserved. Caller workflow owns persistence and delivery; this survey records
+its summary here rather than creating an issue notice.
+
+Sources: https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7;
+https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/README.md;
+https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/README.md;
+https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/package.json;
+https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows.
+Run: https://github.com/fro-bot/.github/actions/runs/37926773358.
+
+Verification: `pnpm bootstrap`, `pnpm check-types`, `pnpm lint`, and
+`pnpm test` passed (90 test files, 4,149 passing tests, three todo).
+`git diff --check` passed. In-memory wiki lint scanned 47 pages and found
+no deterministic findings on the two edited pages, index, or log; two
+pre-existing `LICENSE` link findings remain on an unrelated repo page.
+Repository ESLint and Markdownlint configurations explicitly exclude
+`knowledge/**`; the scoped wiki schema/link check supplies validation here.
+This invocation changed only the two wiki pages, index, and append-only log.
+No GitHub comment was posted: this dispatch supplies no comment thread,
+prohibits issue run notices, and assigns remote delivery to the caller.
+
+## [2026-10-09 12:03] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles

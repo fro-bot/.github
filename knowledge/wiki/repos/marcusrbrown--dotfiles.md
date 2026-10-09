@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/.dotfiles
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-10-09
 node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 61447f9a4817963afc88a9158b72bd93b86e6db7
+    accessed: 2026-10-09
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 2f2d1e6ac04999c5e61ee054fc585d9542cd3a74
     accessed: 2026-04-18
@@ -92,6 +95,60 @@ related:
 # marcusrbrown/.dotfiles
 
 Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** pattern (`GIT_DIR=~/.dotfiles`, `GIT_WORK_TREE=$HOME`) to track shell and development environment configuration directly in `$HOME` without symlinks.
+
+## 2026-10-09 bounded observations
+
+Public repository visibility was verified before reading. All observations below
+refer to `61447f9a4817963afc88a9158b72bd93b86e6db7`. Reads were limited to the
+recursive directory listing, `.github/README.md`, `.dotfiles/README.md`,
+`.dotfiles/package.json`, and the four workflow files. Target instructions and
+commands were treated as source data, not executed. Earlier runtime, issue,
+plugin-routing, and installer-integrity findings remain historical evidence;
+this pass does not revalidate them.
+
+**The documented architecture remains bare Git and XDG-oriented.** Both READMEs
+describe `$HOME` as the work tree, `.dotfiles/ignore` as the allowlist, and
+`*.local` overrides. The directory listing retains four local devcontainer
+feature directories, shared Bash exports/aliases, and Sheldon configurations
+for Bash and Zsh. The README's load-order claims were not tested in a live shell.
+
+**CI still separates installation proof from cached container builds.**
+`main.yaml` keeps `cache: false` for the independent mise installation job
+(`MISE_VERSION: 2026.10.5`). Devcontainer builds use the GHCR image as
+`cacheFrom`; their push filter permits push/release events, not PR events.
+The script matrix remains Linux/macOS with Bun 1.4.2 and five named test-file
+invocations: doctor, distillation, cache plateau, settings sync, and ignore
+audit. The real allowlist audit explicitly supplies `.dotfiles/ignore`.
+Ubuntu alone installs the frozen script toolchain, type-checks both script
+projects, and checks formatting. Its manifest pins TypeScript 7.0.2,
+`@types/bun` 1.4.2, SDK 1.18.34, and Prettier 3.9.9; the latter two advance
+the September 25 SDK 1.18.32/Prettier 3.9.8 snapshot. The always-running
+`Script Tests` aggregator rejects any matrix result other than success.
+The workflow explicitly says tests needing a real OpenCode server skip
+when none resolves, and installs no server binary. This defines a coverage
+boundary, not evidence that every runtime integration was exercised.
+
+**Fro Bot workflow is present**, SHA-pinned at agent v0.118.3 (`d88c245`).
+It retains daily `30 15 * * *` maintenance, content-event triggers, and custom
+dispatch. No onboarding draft is needed. Both shared workflow callers now
+pin `bfra-me/.github` v4.37.0 (`35dbc9c`), advancing September's v4.33.0
+Renovate snapshot. Workflow presence is not a check of scheduler liveness.
+
+**Two prompt/checkout boundaries need precise wording.** The Fro Bot review
+and maintenance prompts still say “Read AGENTS.md,” while the directory
+listing has `.dotfiles/AGENTS.md` and no root `AGENTS.md`. The README correctly
+describes the scoped guide; resolution by the actual harness was not inspected.
+Also, September's statement that checkout credentials are kept “only on
+schedule/dispatch” was too broad: the expression excludes exactly
+`pull_request`, `issue_comment`, and `issues`, leaving
+`pull_request_review_comment` outside that exclusion. This is a static
+predicate observation, not a demonstrated exploit or token-use measurement.
+See [[dotfiles]] for the updated inventory and coverage qualifications.
+
+Sources: [README](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/README.md),
+[toolchain manifest](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/package.json),
+[Main](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows/main.yaml),
+[Fro Bot](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows/fro-bot.yaml).
 
 ## 2026-09-25 Survey — the repo turned its postmortems into gates
 
