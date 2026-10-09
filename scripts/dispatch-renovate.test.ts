@@ -1,3 +1,4 @@
+import type {PlanClient} from './dispatch-renovate.ts'
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -40,6 +41,13 @@ const {mocks, mockOctokit} = vi.hoisted(() => {
     },
   }
 })
+
+// Narrow structural client for the plan path: only what planning calls. `satisfies` keeps the mock
+// honest against the production type with no cast.
+const planClient = {
+  paginate: mocks.paginate,
+  rest: {apps: {listReposAccessibleToInstallation: mocks.listReposAccessibleToInstallation}},
+} satisfies PlanClient
 
 describe('buildDispatchPlan', () => {
   it('maps repo names to EligibleRepo with fro-bot owner', async () => {
@@ -205,7 +213,6 @@ function installation(...names: string[]): FakeRepo[] {
   return names.map(name => ({name, owner: {login: 'fro-bot'}}))
 }
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 describe('cleanRepoNames', () => {
   it('trims, drops empties and dedupes while keeping first-seen order', async () => {
     const {cleanRepoNames} = await import('./dispatch-renovate.ts')
@@ -231,7 +238,7 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github', 'tokentoilet'))
 
-    const plan = await planDispatchRepositories({octokit: mockOctokit as any, requested: ['agent', '.github']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', '.github']})
 
     expect(plan).toEqual(['agent', '.github'])
     expect(mocks.paginate).toHaveBeenCalledWith(mocks.listReposAccessibleToInstallation, {per_page: 100})
@@ -241,7 +248,7 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent'))
 
-    const plan = await planDispatchRepositories({octokit: mockOctokit as any, requested: ['agent', 'gone-repo']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', 'gone-repo']})
 
     expect(plan).toEqual(['agent'])
   })
@@ -253,7 +260,7 @@ describe('planDispatchRepositories', () => {
       {name: '.github', owner: {login: 'fro-bot'}},
     ])
 
-    const plan = await planDispatchRepositories({octokit: mockOctokit as any, requested: ['agent', '.github']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', '.github']})
 
     expect(plan).toEqual(['.github'])
   })
@@ -263,7 +270,7 @@ describe('planDispatchRepositories', () => {
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github'))
 
     const plan = await planDispatchRepositories({
-      octokit: mockOctokit as any,
+      octokit: planClient,
       requested: [' agent ', '', '  ', 'agent', '.github'],
     })
 
@@ -274,7 +281,7 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('unrelated'))
 
-    const plan = await planDispatchRepositories({octokit: mockOctokit as any, requested: ['gone-1', 'gone-2']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['gone-1', 'gone-2']})
 
     expect(plan).toEqual([])
   })
@@ -282,7 +289,7 @@ describe('planDispatchRepositories', () => {
   it('returns an empty plan without calling the API when there is nothing requested', async () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
 
-    const plan = await planDispatchRepositories({octokit: mockOctokit as any, requested: ['', '  ']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['', '  ']})
 
     expect(plan).toEqual([])
     expect(mocks.paginate).not.toHaveBeenCalled()
@@ -292,9 +299,7 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockRejectedValueOnce(new Error('API 403'))
 
-    await expect(planDispatchRepositories({octokit: mockOctokit as any, requested: ['agent']})).rejects.toThrow(
-      'API 403',
-    )
+    await expect(planDispatchRepositories({octokit: planClient, requested: ['agent']})).rejects.toThrow('API 403')
   })
 })
 
@@ -319,7 +324,7 @@ describe('runPlanMode', () => {
     const outputPath = join(dir, 'output')
 
     await runPlanMode({
-      octokit: mockOctokit as any,
+      octokit: planClient,
       renovatePath: await renovateFile([' agent', 'agent', '.github', 'stale']),
       outputPath,
     })
@@ -332,7 +337,7 @@ describe('runPlanMode', () => {
     mocks.paginate.mockResolvedValueOnce(installation('unrelated'))
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: mockOctokit as any, renovatePath: await renovateFile(['stale']), outputPath})
+    await runPlanMode({octokit: planClient, renovatePath: await renovateFile(['stale']), outputPath})
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
   })
@@ -341,7 +346,7 @@ describe('runPlanMode', () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: mockOctokit as any, renovatePath: await renovateFile([]), outputPath})
+    await runPlanMode({octokit: planClient, renovatePath: await renovateFile([]), outputPath})
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
     expect(mocks.paginate).not.toHaveBeenCalled()
@@ -351,7 +356,7 @@ describe('runPlanMode', () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: mockOctokit as any, renovatePath: join(dir, 'missing.yaml'), outputPath})
+    await runPlanMode({octokit: planClient, renovatePath: join(dir, 'missing.yaml'), outputPath})
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
   })
@@ -362,7 +367,7 @@ describe('runPlanMode', () => {
     const outputPath = join(dir, 'output')
 
     await expect(
-      runPlanMode({octokit: mockOctokit as any, renovatePath: await renovateFile(['agent']), outputPath}),
+      runPlanMode({octokit: planClient, renovatePath: await renovateFile(['agent']), outputPath}),
     ).rejects.toThrow('API 500')
     await expect(readFile(outputPath, 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
   })
@@ -372,12 +377,9 @@ describe('runPlanMode', () => {
     const path = join(dir, 'renovate.yaml')
     await writeFile(path, 'repositories: nope\n')
 
-    await expect(
-      runPlanMode({octokit: mockOctokit as any, renovatePath: path, outputPath: join(dir, 'o')}),
-    ).rejects.toThrow()
+    await expect(runPlanMode({octokit: planClient, renovatePath: path, outputPath: join(dir, 'o')})).rejects.toThrow()
   })
 })
-/* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
 // ─── Workflow contract ──────────────────────────────────────────────────────
 

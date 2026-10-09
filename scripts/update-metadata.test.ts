@@ -1,4 +1,4 @@
-import type {OctokitClient} from './update-metadata.ts'
+import type {DiscoveryClient, OctokitClient} from './update-metadata.ts'
 
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
@@ -35,7 +35,7 @@ const {mocks, mockOctokit} = vi.hoisted(() => {
           getContent: mocks.getContent,
         },
       },
-    } as unknown as OctokitClient,
+    } satisfies DiscoveryClient,
   }
 })
 
@@ -255,7 +255,7 @@ function makeDiscoveryClient(calls: SplitCall[], repos: ReturnType<typeof repo>[
     throw new Error(`discovery client must not call ${method}`)
   }
   const listReposAccessibleToInstallation = vi.fn()
-  return {
+  const client = {
     paginate: vi.fn(async (fn: unknown) => {
       calls.push({client: 'discovery', method: 'paginate'})
       if (fn !== listReposAccessibleToInstallation) throw new Error('discovery paginate on unexpected endpoint')
@@ -278,7 +278,10 @@ function makeDiscoveryClient(calls: SplitCall[], repos: ReturnType<typeof repo>[
       issues: Object.fromEntries(MUTATING_METHODS.map(m => [m, forbidden(`issues.${m}`)])),
       actions: Object.fromEntries(MUTATING_METHODS.map(m => [m, forbidden(`actions.${m}`)])),
     },
-  } as unknown as OctokitClient
+  }
+  // `satisfies`, not a cast: the extra forbidden members stay on the object (that is the point of
+  // the adversarial double) while the narrow production type is checked against it.
+  return client satisfies DiscoveryClient
 }
 
 /**
@@ -296,7 +299,7 @@ function makeWriterClient(calls: SplitCall[]) {
     calls.push({client: 'writer', method: 'listReposAccessibleToInstallation'})
     throw new Error('writer client must not enumerate the installation')
   })
-  return {
+  const client = {
     paginate: vi.fn(async (fn: unknown) => {
       calls.push({client: 'writer', method: 'paginate'})
       if (fn === listReposAccessibleToInstallation) throw new Error('writer client must not enumerate the installation')
@@ -329,7 +332,10 @@ function makeWriterClient(calls: SplitCall[]) {
         }),
       },
     },
-  } as unknown as OctokitClient
+  }
+  // Cast kept: `commitMetadata` takes the full `OctokitClient` (`CommitMetadataParams.octokit`),
+  // so a writer double must present as one. Narrowing that belongs to commit-metadata.ts.
+  return client as unknown as OctokitClient
 }
 
 describe('runUpdateMetadata (discovery/writer split)', () => {
@@ -471,7 +477,11 @@ describe('createClientsFromEnv', () => {
     const calls: SplitCall[] = []
     const discoveryClient = makeDiscoveryClient(calls, [repo('agent')])
     const writerClient = makeWriterClient(calls)
-    const createClient = vi.fn(async (token: string) => (token === 'd-tok' ? discoveryClient : writerClient))
+    // Cast kept: `runFromEnv`'s single `createClient` factory returns the full `OctokitClient` for
+    // both roles, so the narrow discovery double must present as one here.
+    const createClient = vi.fn(async (token: string) =>
+      token === 'd-tok' ? (discoveryClient as unknown as OctokitClient) : writerClient,
+    )
     const commit = vi.fn(async (params: {octokit?: OctokitClient}) => {
       expect(params.octokit).toBe(writerClient)
       return {committed: false, attempts: 1}

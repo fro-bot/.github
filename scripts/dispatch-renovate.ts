@@ -15,7 +15,7 @@
  * dispatchRenovate() + thin main() shell.
  */
 
-import type {Octokit} from '@octokit/rest'
+import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 
 import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
@@ -24,6 +24,27 @@ import {parse} from 'yaml'
 import {assertRenovateFile} from './schemas.ts'
 
 export type OctokitClient = Octokit
+
+// A bare callable, not the SDK's endpoint-method type: that type also carries `defaults` and
+// `endpoint`, which a test double has no reason to fake. The real endpoint methods satisfy it.
+type EndpointRoute = (...args: never[]) => unknown
+
+// Derived from the real Octokit response so SDK drift becomes a compile error. Projected to the
+// fields planning reads, so the narrow client type (and its test doubles) need not fake the rest.
+type FullInstallationRepo =
+  RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
+type InstallationRepo = Pick<FullInstallationRepo, 'name'> & {owner: Pick<FullInstallationRepo['owner'], 'login'>}
+
+/**
+ * Exactly what planning calls: paginated installation listing. Narrower than `OctokitClient` so
+ * the plan step cannot reach (and tests need not fake) anything that dispatches. The real
+ * `Octokit` satisfies it structurally.
+ */
+export interface PlanClient {
+  // Method syntax (bivariant parameters) so the SDK's generic `paginate` overloads still match.
+  paginate: (route: EndpointRoute, params: {per_page: number}) => Promise<InstallationRepo[]>
+  rest: {apps: {listReposAccessibleToInstallation: EndpointRoute}}
+}
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_WORKFLOW_ID = 'renovate.yaml'
@@ -49,14 +70,14 @@ export interface DispatchRenovateResult {
 
 export interface PlanParams {
   /** Discovery client: read-only, owner-wide. */
-  octokit: OctokitClient
+  octokit: PlanClient
   /** Raw `with-renovate` entries from metadata/renovate.yaml. */
   requested: readonly string[]
   owner?: string
 }
 
 export interface RunPlanParams {
-  octokit: OctokitClient
+  octokit: PlanClient
   renovatePath: string
   outputPath: string
   owner?: string

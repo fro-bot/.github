@@ -39,9 +39,33 @@ const DEFAULT_OWNER = 'fro-bot'
 const RENOVATE_WORKFLOW_PATH = '.github/workflows/renovate.yaml'
 const RENOVATE_METADATA_PATH = 'metadata/renovate.yaml'
 
-// Derived from the real Octokit response so SDK drift becomes a compile error.
-type InstallationRepo =
+// Derived from the real Octokit response so SDK drift becomes a compile error. Projected to the
+// fields discovery reads, so the narrow client type (and its test doubles) need not fake the rest.
+type GetContentParams = RestEndpointMethodTypes['repos']['getContent']['parameters']
+type FullInstallationRepo =
   RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
+type InstallationRepo = Pick<FullInstallationRepo, 'name' | 'archived' | 'fork'> & {
+  owner: Pick<FullInstallationRepo['owner'], 'login'>
+}
+
+// A bare callable, not the SDK's endpoint-method type: that type also carries `defaults` and
+// `endpoint`, which a test double has no reason to fake. The real endpoint methods satisfy it.
+type EndpointRoute = (...args: never[]) => unknown
+
+/**
+ * Exactly what discovery calls: paginated installation listing and `getContent` for the renovate
+ * workflow probe. Narrower than `OctokitClient` so the owner-wide read-only client is typed (and
+ * tested) without any write surface. The real `Octokit` satisfies it structurally; the SDK's own
+ * method types provide the `getContent` argument and result shapes.
+ */
+export interface DiscoveryClient {
+  // Method syntax (bivariant parameters) so the SDK's generic `paginate` overloads still match.
+  paginate: (route: EndpointRoute, params: {per_page: number}) => Promise<InstallationRepo[]>
+  rest: {
+    apps: {listReposAccessibleToInstallation: EndpointRoute}
+    repos: {getContent: (params: GetContentParams) => Promise<unknown>}
+  }
+}
 
 // ─── Pure engine ────────────────────────────────────────────────────────────
 
@@ -64,7 +88,7 @@ export function buildRenovateFile(repoNames: string[]): RenovateFile {
  * Renovate dispatches). 404 from the probe means "no Renovate workflow"; non-404
  * errors propagate with repo context so failures point at the offending repo.
  */
-export async function discoverRenovateRepos(octokit: OctokitClient, owner: string): Promise<string[]> {
+export async function discoverRenovateRepos(octokit: DiscoveryClient, owner: string): Promise<string[]> {
   const allRepos: InstallationRepo[] = await octokit.paginate(octokit.rest.apps.listReposAccessibleToInstallation, {
     per_page: 100,
   })
@@ -122,8 +146,12 @@ export interface UpdateMetadataSummary {
 
 export interface RunUpdateMetadataParams {
   /** Owner-wide read-only client: installation listing + renovate workflow probes. */
-  discovery: OctokitClient
-  /** Repo-scoped contents:write client: `commitMetadata` only. */
+  discovery: DiscoveryClient
+  /**
+   * Repo-scoped contents:write client: `commitMetadata` only. Stays the full `OctokitClient`
+   * because `CommitMetadataParams.octokit` is typed as the full client; narrowing it belongs to
+   * `commit-metadata.ts`, not here.
+   */
   writer: OctokitClient
   owner: string
   commit?: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
