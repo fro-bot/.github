@@ -53,6 +53,7 @@ import {
   hashProposalBody,
   mergeCoverageRows,
   parseCoverageBlock,
+  PR_BODY_MAX_LENGTH,
   renderPrBody,
   validateCoverageRows,
   type CoverageRow,
@@ -88,6 +89,7 @@ export const DRAFTED_COMMIT_MESSAGE = 'docs(solutions): draft learnings from ope
 const REVIEWER = 'fro-bot'
 const DRAFTED_UPDATE_REF = `heads/${DRAFTED_BRANCH}`
 const DRAFTED_CREATE_REF = `refs/heads/${DRAFTED_BRANCH}`
+const PR_BODY_TOO_LONG_MESSAGE = `rendered PR body exceeds GitHub's ${PR_BODY_MAX_LENGTH}-character limit; merge or close the drafted PR`
 const PR_APPEARED_MESSAGE = 'drafted PR appeared during publish; the next run reconciles it'
 const WITHHELD = '[message withheld: matched the privacy gate]'
 
@@ -612,9 +614,20 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   const directRows = rows.filter(row => !bodyRows.includes(row))
   const closeRows = directRows.filter(row => states.get(row.issue) !== 'closed')
   const skipped = directRows.filter(row => states.get(row.issue) === 'closed').map(row => row.issue)
-  const writesPr = hasDocChanges || (openPr !== null && bodyRows.length > 0)
-  const mergedRows = writesPr ? mergeCoverageRows(existingRows, bodyRows) : []
+  // Every incoming decision for issue N, of any outcome, replaces the existing body row for N. An
+  // unverified decision is not recorded, so without this a previously covered proposal that turned
+  // unverified would keep a stale row and a `Closes #N` that closes it as completed on merge.
+  const incomingIssues = new Set(rows.map(row => row.issue))
+  const keptRows = existingRows.filter(row => !incomingIssues.has(row.issue))
+  const supersedesExisting = keptRows.length < existingRows.length
+  // A removal-only reconciliation (open PR, nothing else to record) is a body-only update that
+  // runs before the direct close of the unverified rows.
+  const writesPr = hasDocChanges || (openPr !== null && (bodyRows.length > 0 || supersedesExisting))
+  const mergedRows = writesPr ? mergeCoverageRows(keptRows, bodyRows) : []
   const body = writesPr ? renderPrBody(mergedRows) : ''
+  // GitHub rejects an oversize body after branch writes have landed. Bound the final merged body
+  // now; the machine block is never truncated.
+  if (body.length > PR_BODY_MAX_LENGTH) throw new DraftedSolutionsError(PR_BODY_TOO_LONG_MESSAGE)
 
   // Read-only, before the gate and any write: resolve the commit whose tree backs the PR and verify
   // that every row about to claim a doc (the whole merged body, plus covered rows closed directly)

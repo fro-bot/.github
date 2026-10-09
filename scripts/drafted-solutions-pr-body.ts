@@ -59,11 +59,31 @@ const BLOCK_PATTERN = /<!-- fro-bot:drafted-solutions-coverage v1\r?\n([\s\S]*?)
 const ROW_KEYS = ['issue', 'outcome', 'targetDoc', 'sourceSha', 'evidence', 'droppedClaims', 'bodyHash', 'reason']
 const EVIDENCE_KEYS = ['kind', 'ref']
 
-const MAX_EVIDENCE_PER_ROW = 50
-const MAX_CLAIMS_PER_ROW = 50
-const MAX_REF_LENGTH = 500
-const MAX_CLAIM_LENGTH = 1000
-const MAX_REASON_LENGTH = 2000
+/** GitHub rejects a PR body over this many characters, after any branch write has already landed. */
+export const PR_BODY_MAX_LENGTH = 65_536
+
+/**
+ * Per-field caps, sized so one run's five rows at maximum field sizes fit under
+ * {@link PR_BODY_MAX_LENGTH} even in the worst case: every character is one that expands when
+ * rendered (`<` becomes `&lt;` in the table and `\u003c` in the JSON block, about 10 characters
+ * per source character, since each row's text appears in both). Raising any of these needs that
+ * arithmetic redone; the body-size test renders the worst case.
+ */
+export const FIELD_LIMITS = {
+  maxEvidence: 3,
+  maxClaims: 3,
+  maxRef: 160,
+  maxClaim: 100,
+  maxReason: 300,
+  maxTargetDoc: 120,
+} as const
+
+const MAX_EVIDENCE_PER_ROW = FIELD_LIMITS.maxEvidence
+const MAX_CLAIMS_PER_ROW = FIELD_LIMITS.maxClaims
+const MAX_REF_LENGTH = FIELD_LIMITS.maxRef
+const MAX_CLAIM_LENGTH = FIELD_LIMITS.maxClaim
+const MAX_REASON_LENGTH = FIELD_LIMITS.maxReason
+const MAX_TARGET_DOC_LENGTH = FIELD_LIMITS.maxTargetDoc
 
 /** sha256 hex of a proposal body, with CRLF normalized so API round trips do not change it. */
 export function hashProposalBody(body: string): string {
@@ -155,8 +175,12 @@ function parseRow(value: unknown, index: number): CoverageRow | string {
 
   if (outcome === 'unverified') {
     if (targetDoc !== null) return `${label}: targetDoc must be null for an unverified row`
-  } else if (typeof targetDoc !== 'string' || !isAllowedDraftedSolutionPath(targetDoc)) {
-    return `${label}: targetDoc must be a docs/solutions/<category>/*.md path for a ${outcome} row`
+  } else if (
+    typeof targetDoc !== 'string' ||
+    targetDoc.length > MAX_TARGET_DOC_LENGTH ||
+    !isAllowedDraftedSolutionPath(targetDoc)
+  ) {
+    return `${label}: targetDoc must be a docs/solutions/<category>/*.md path of at most ${MAX_TARGET_DOC_LENGTH} characters for a ${outcome} row`
   }
 
   if ((outcome === 'new-doc' || outcome === 'extension') && evidence.length === 0) {

@@ -6,7 +6,14 @@ import path from 'node:path'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildMergeShaMarker} from './capture-learnings-harvest.ts'
-import {hashProposalBody, parseCoverageBlock, renderPrBody, type CoverageRow} from './drafted-solutions-pr-body.ts'
+import {
+  FIELD_LIMITS,
+  hashProposalBody,
+  parseCoverageBlock,
+  PR_BODY_MAX_LENGTH,
+  renderPrBody,
+  type CoverageRow,
+} from './drafted-solutions-pr-body.ts'
 import {
   DRAFTED_PR_TITLE,
   publishDraftedSolutions,
@@ -1480,6 +1487,200 @@ describe('publishDraftedSolutions: the drafted base must not move under a handof
       MOVED_MESSAGE,
     )
     expect(callsOf(fake, 'repos.getContent').map(call => call.args.ref)).toStrictEqual([BRANCH_SHA, MOVED_BRANCH_SHA])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Superseded rows: any incoming decision for N replaces the body row for N
+// ---------------------------------------------------------------------------
+
+const bodyRowIssues = (fake: Fake): number[] => {
+  const parsed = parseCoverageBlock(fake.pulls[0]?.body, 'existing-pr')
+  return parsed.ok ? parsed.rows.map(row => row.issue) : []
+}
+
+/** Index of the first recorded call to `op`, to assert ordering between writes. */
+const firstCall = (fake: Fake, op: string): number => fake.calls.findIndex(call => call.op === op)
+
+describe('publishDraftedSolutions: an incoming decision supersedes the existing body row', () => {
+  const original = makeIssue(9, {body: 'Original lesson'})
+  const edited = makeIssue(9, {body: 'Corrected lesson'})
+
+  it('previously covered, now unverified (unverified-only run): removes the row, then closes as not planned', async () => {
+    const pull = makePull({body: renderPrBody([blockRow(original, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [edited], pulls: [pull], branchDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {proposals: [edited], rows: [unverifiedRow(edited)]})
+
+    expect(result).toMatchObject({mode: 'updated-pr-body', prNumber: 900, closed: [9]})
+    expect(bodyRowIssues(fake)).toStrictEqual([])
+    expect(fake.pulls[0]?.body).not.toContain('Closes #9')
+    expect(fake.calls.filter(call => GIT_WRITE_OPS.includes(call.op))).toStrictEqual([])
+    expect(callsOf(fake, 'issues.update')[0]?.args).toMatchObject({
+      issue_number: 9,
+      state: 'closed',
+      state_reason: 'not_planned',
+    })
+    // The body repair lands before the direct close.
+    expect(firstCall(fake, 'pulls.update')).toBeGreaterThanOrEqual(0)
+    expect(firstCall(fake, 'pulls.update')).toBeLessThan(firstCall(fake, 'issues.createComment'))
+    expect(firstCall(fake, 'pulls.update')).toBeLessThan(firstCall(fake, 'issues.update'))
+  })
+
+  it('previously covered, now unverified, in a mixed run: the row is removed while the new row is added', async () => {
+    const drafted = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(original, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [edited, drafted], pulls: [pull], branchDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {
+      proposals: [edited, drafted],
+      rows: [unverifiedRow(edited), agentRow(drafted)],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr', closed: [9]})
+    expect(bodyRowIssues(fake)).toStrictEqual([11])
+    expect(fake.pulls[0]?.body).not.toContain('Closes #9')
+    expect(fake.pulls[0]?.body).toContain('Closes #11')
+    expect(callsOf(fake, 'issues.update')[0]?.args).toMatchObject({issue_number: 9, state_reason: 'not_planned'})
+    expect(firstCall(fake, 'pulls.update')).toBeLessThan(firstCall(fake, 'issues.update'))
+  })
+
+  it('an existing new-doc row superseded by covered becomes the covered row', async () => {
+    const pull = makePull({body: renderPrBody([blockRow(original, 'new-doc', docPath(9))])})
+    const fake = makeFake({issues: [edited], pulls: [pull], branchDocs: [EXISTING_DOC, docPath(9)]})
+
+    const result = await run(fake, {proposals: [edited], rows: [coveredRow(edited)]})
+
+    expect(result).toMatchObject({mode: 'updated-pr-body', closed: []})
+    const parsed = parseCoverageBlock(fake.pulls[0]?.body, 'existing-pr')
+    expect(parsed.ok && parsed.rows.map(row => [row.issue, row.outcome, row.targetDoc])).toStrictEqual([
+      [9, 'covered', EXISTING_DOC],
+    ])
+    expect(callsOf(fake, 'issues.update')).toHaveLength(0)
+  })
+
+  it('an existing new-doc row superseded by unverified is removed too', async () => {
+    const pull = makePull({body: renderPrBody([blockRow(original, 'new-doc', docPath(9))])})
+    const fake = makeFake({issues: [edited], pulls: [pull], branchDocs: [docPath(9)]})
+
+    await run(fake, {proposals: [edited], rows: [unverifiedRow(edited)]})
+
+    expect(bodyRowIssues(fake)).toStrictEqual([])
+  })
+
+  it('leaves existing rows for other proposals untouched', async () => {
+    const other = makeIssue(8, {state: 'closed'})
+    const pull = makePull({
+      body: renderPrBody([blockRow(other, 'covered', EXISTING_DOC), blockRow(original, 'covered', EXISTING_DOC)]),
+    })
+    const fake = makeFake({issues: [other, edited], pulls: [pull], branchDocs: [EXISTING_DOC]})
+
+    await run(fake, {proposals: [edited], rows: [unverifiedRow(edited)]})
+
+    expect(bodyRowIssues(fake)).toStrictEqual([8])
+  })
+
+  it('makes no PR write when the unverified proposal had no existing row', async () => {
+    const other = makeIssue(8, {state: 'closed'})
+    const fresh = makeIssue(12)
+    const pull = makePull({body: renderPrBody([blockRow(other, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [other, fresh], pulls: [pull], branchDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {proposals: [fresh], rows: [unverifiedRow(fresh)]})
+
+    expect(result).toMatchObject({mode: 'closed-proposals', closed: [12]})
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The rendered body is bounded before any write
+// ---------------------------------------------------------------------------
+
+describe('publishDraftedSolutions: the PR body size bound', () => {
+  const LIMIT_MESSAGE = "rendered PR body exceeds GitHub's 65536-character limit; merge or close the drafted PR"
+  const {maxReason, maxClaim, maxRef, maxClaims, maxEvidence, maxTargetDoc} = FIELD_LIMITS
+  const bigDoc = `docs/solutions/best-practices/${'<'.repeat(maxTargetDoc - 'docs/solutions/best-practices/'.length - 3)}.md`
+
+  /** A closed-issue row at maximum field sizes, in the worst-case (escape-heavy) characters. */
+  function bigBlockRow(issue: FakeIssue): CoverageRow {
+    return blockRow(issue, 'covered', bigDoc, {
+      evidence: Array.from({length: maxEvidence}, () => ({kind: 'review' as const, ref: '<'.repeat(maxRef)})),
+      droppedClaims: Array.from({length: maxClaims}, () => '<'.repeat(maxClaim)),
+      reason: '<'.repeat(maxReason),
+    })
+  }
+
+  it('accepts a maximum-size single run of five rows', async () => {
+    const issues = [1, 2, 3, 4, 5].map(n => makeIssue(30 + n))
+    const fake = makeFake({issues, mainDocs: [bigDoc]})
+    const rows = issues.map(issue => ({
+      ...coveredRow(issue, bigDoc),
+      evidence: [],
+      droppedClaims: Array.from({length: maxClaims}, () => '<'.repeat(maxClaim)),
+      reason: '<'.repeat(maxReason),
+    }))
+    const drafted = makeIssue(40)
+
+    // Five rows land in one body: one new doc plus four covered (a doc change makes covered rows body rows).
+    fake.issues.set(40, drafted)
+    const result = await run(fake, {
+      proposals: [...issues.slice(0, 4), drafted],
+      rows: [...rows.slice(0, 4), agentRow(drafted, {evidence: [{kind: 'review', ref: '<'.repeat(maxRef)}]})],
+      changed: {[docPath(40)]: DOC_BODY},
+    })
+
+    expect(result.mode).toBe('created-pr')
+    expect((callsOf(fake, 'pulls.create')[0]?.args as {body: string}).body.length).toBeLessThanOrEqual(
+      PR_BODY_MAX_LENGTH,
+    )
+  })
+
+  it('rejects accumulated rows over the limit with zero writes', async () => {
+    const earlier = [1, 2, 3, 4, 5].map(n => makeIssue(20 + n, {state: 'closed'}))
+    const incoming = makeIssue(11)
+    const pull = makePull({body: renderPrBody(earlier.map(issue => bigBlockRow(issue)))})
+    const fake = makeFake({issues: [...earlier, incoming], pulls: [pull], branchDocs: [bigDoc]})
+    expect(pull.body?.length).toBeLessThanOrEqual(PR_BODY_MAX_LENGTH)
+
+    await expectBlocked(
+      fake,
+      {
+        proposals: [incoming],
+        rows: [
+          {
+            ...coveredRow(incoming, bigDoc),
+            droppedClaims: Array.from({length: maxClaims}, () => '<'.repeat(maxClaim)),
+            reason: '<'.repeat(maxReason),
+          },
+        ],
+      },
+      new RegExp(LIMIT_MESSAGE.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)),
+    )
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+  })
+
+  it('rejects an oversize body before any write on the commit path, too', async () => {
+    const earlier = [1, 2, 3, 4, 5].map(n => makeIssue(20 + n, {state: 'closed'}))
+    const incoming = makeIssue(11)
+    const pull = makePull({body: renderPrBody(earlier.map(issue => bigBlockRow(issue)))})
+    const fake = makeFake({issues: [...earlier, incoming], pulls: [pull], branchDocs: [bigDoc]})
+
+    await expectBlocked(
+      fake,
+      {
+        proposals: [incoming],
+        rows: [
+          agentRow(incoming, {
+            evidence: [{kind: 'review', ref: '<'.repeat(maxRef)}],
+            droppedClaims: Array.from({length: maxClaims}, () => '<'.repeat(maxClaim)),
+          }),
+        ],
+        changed: {[docPath(11)]: DOC_BODY},
+      },
+      /rendered PR body exceeds GitHub's 65536-character limit/,
+    )
   })
 })
 

@@ -1,9 +1,11 @@
 import {describe, expect, it} from 'vitest'
 
 import {
+  FIELD_LIMITS,
   hashProposalBody,
   mergeCoverageRows,
   parseCoverageBlock,
+  PR_BODY_MAX_LENGTH,
   renderPrBody,
   validateCoverageRows,
   type CoverageRow,
@@ -99,6 +101,45 @@ describe('renderPrBody / parseCoverageBlock round trip', () => {
 
     expect(body.trimEnd().endsWith('-->')).toBe(true)
     expect(body.lastIndexOf(BLOCK_START)).toBeGreaterThan(body.lastIndexOf('Closes #'))
+  })
+})
+
+/** A row with every bounded field at its maximum length, filled with `char`. */
+function maxRow(issue: number, char: string): CoverageRow {
+  const {maxReason, maxClaim, maxRef, maxClaims, maxEvidence, maxTargetDoc} = FIELD_LIMITS
+  const prefix = 'docs/solutions/best-practices/'
+  return makeRow({
+    issue,
+    outcome: 'covered',
+    targetDoc: `${prefix}${char.repeat(maxTargetDoc - prefix.length - '.md'.length)}.md`,
+    evidence: Array.from({length: maxEvidence}, () => ({kind: 'review' as const, ref: char.repeat(maxRef)})),
+    droppedClaims: Array.from({length: maxClaims}, () => char.repeat(maxClaim)),
+    reason: char.repeat(maxReason),
+  })
+}
+
+describe('PR body size bound', () => {
+  it("exports GitHub's 65536-character limit", () => {
+    expect(PR_BODY_MAX_LENGTH).toBe(65_536)
+  })
+
+  it.each(['a', '<', '>', '&', '|', '"', '\\'])(
+    'a single run of five maximum-size rows fits under the limit even when every character is %j',
+    (char: string) => {
+      const rows = [1, 2, 3, 4, 5].map(issue => maxRow(issue, char))
+
+      const body = renderPrBody(rows)
+
+      expect(body.length).toBeLessThanOrEqual(PR_BODY_MAX_LENGTH)
+      expect(parseCoverageBlock(body, 'existing-pr')).toStrictEqual({ok: true, rows})
+    },
+  )
+
+  it('keeps the table and the machine block both complete in a maximum-size body', () => {
+    const body = renderPrBody([1, 2, 3, 4, 5].map(issue => maxRow(issue, 'a')))
+
+    expect(body.match(/^Closes #\d+$/gm)).toHaveLength(5)
+    expect(body.trimEnd().endsWith('-->')).toBe(true)
   })
 })
 
@@ -313,9 +354,36 @@ describe('validateCoverageRows', () => {
   })
 
   it('bounds free-text fields so a body cannot grow without limit', () => {
-    expect(validateCoverageRows([makeRow({reason: 'x'.repeat(2001)})]).ok).toBe(false)
-    expect(validateCoverageRows([makeRow({droppedClaims: ['x'.repeat(1001)]})]).ok).toBe(false)
-    expect(validateCoverageRows([makeRow({evidence: [{kind: 'pr', ref: 'x'.repeat(501)}]})]).ok).toBe(false)
+    const {maxReason, maxClaim, maxRef, maxClaims, maxEvidence, maxTargetDoc} = FIELD_LIMITS
+    const accepts = (row: CoverageRow): boolean => validateCoverageRows([row]).ok
+    const longDoc = (length: number): string =>
+      `docs/solutions/best-practices/${'x'.repeat(length - 'docs/solutions/best-practices/'.length - '.md'.length)}.md`
+
+    expect(accepts(makeRow({reason: 'x'.repeat(maxReason)}))).toBe(true)
+    expect(accepts(makeRow({reason: 'x'.repeat(maxReason + 1)}))).toBe(false)
+    expect(accepts(makeRow({droppedClaims: ['x'.repeat(maxClaim)]}))).toBe(true)
+    expect(accepts(makeRow({droppedClaims: ['x'.repeat(maxClaim + 1)]}))).toBe(false)
+    expect(accepts(makeRow({droppedClaims: Array.from({length: maxClaims}, () => 'claim')}))).toBe(true)
+    expect(accepts(makeRow({droppedClaims: Array.from({length: maxClaims + 1}, () => 'claim')}))).toBe(false)
+    expect(accepts(makeRow({evidence: [{kind: 'pr', ref: 'x'.repeat(maxRef)}]}))).toBe(true)
+    expect(accepts(makeRow({evidence: [{kind: 'pr', ref: 'x'.repeat(maxRef + 1)}]}))).toBe(false)
+    expect(
+      accepts(makeRow({evidence: Array.from({length: maxEvidence}, () => ({kind: 'pr' as const, ref: '#1'}))})),
+    ).toBe(true)
+    expect(
+      accepts(makeRow({evidence: Array.from({length: maxEvidence + 1}, () => ({kind: 'pr' as const, ref: '#1'}))})),
+    ).toBe(false)
+    expect(accepts(makeRow({targetDoc: longDoc(maxTargetDoc)}))).toBe(true)
+    expect(accepts(makeRow({targetDoc: longDoc(maxTargetDoc + 1)}))).toBe(false)
+  })
+
+  it('leaves room for real repo doc paths and file-evidence refs that cite a full commit SHA', () => {
+    const realPath = 'docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md'
+    const fileRef = `${'a'.repeat(40)}:${realPath}`
+
+    expect(validateCoverageRows([makeRow({targetDoc: realPath, evidence: [{kind: 'file', ref: fileRef}]})]).ok).toBe(
+      true,
+    )
   })
 
   it('rejects a row with an unknown key', () => {
