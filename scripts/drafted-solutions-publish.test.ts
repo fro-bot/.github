@@ -120,6 +120,8 @@ interface FakeOptions {
   /** An open PR exists but the drafted branch ref does not. */
   branchMissing?: boolean
   reviewRequestError?: unknown
+  /** The first N review requests fail with a 500 (a transient outage); later ones succeed. */
+  reviewRequestFailures?: number
   /** Comments already on proposal issues, by issue number. */
   existingComments?: Record<number, {body: string; user: {login: string}}[]>
   /** The next issues.update fails once (a close that did not land). */
@@ -219,8 +221,13 @@ function makeFake(options: FakeOptions) {
         return record('pulls.update', args, {data: {}})
       }),
       requestReviewers: vi.fn(async (args: Record<string, unknown>) => {
+        record('pulls.requestReviewers', args, undefined)
         if (options.reviewRequestError !== undefined) throw options.reviewRequestError
-        return record('pulls.requestReviewers', args, {data: {}})
+        if ((options.reviewRequestFailures ?? 0) > 0) {
+          options.reviewRequestFailures = (options.reviewRequestFailures ?? 0) - 1
+          throw Object.assign(new Error('review request unavailable'), {status: 500})
+        }
+        return {data: {}}
       }),
     },
     repos: {
@@ -532,7 +539,7 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
 
     await expect(
       run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/boom/)
+    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
   })
 
   it('a create-422 because a PR appeared fails closed: no body repair, no PR update', async () => {
@@ -1681,6 +1688,104 @@ describe('publishDraftedSolutions: the PR body size bound', () => {
       },
       /rendered PR body exceeds GitHub's 65536-character limit/,
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Review requests follow every drafted PR write
+// ---------------------------------------------------------------------------
+
+describe('publishDraftedSolutions: the review request follows every drafted PR write', () => {
+  const reviewCalls = (fake: Fake) => callsOf(fake, 'pulls.requestReviewers')
+
+  it('requests a review after a delta commit on an open PR', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()]})
+
+    const result = await run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
+
+    expect(result.mode).toBe('updated-pr')
+    expect(reviewCalls(fake)).toHaveLength(1)
+    expect(reviewCalls(fake)[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
+  })
+
+  it('requests a review after a body-only update', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
+
+    expect(result.mode).toBe('updated-pr-body')
+    expect(reviewCalls(fake)).toHaveLength(1)
+    expect(reviewCalls(fake)[0]?.args).toMatchObject({pull_number: 900})
+  })
+
+  it('requests no review when there is no PR write (direct closes only)', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(reviewCalls(fake)).toHaveLength(0)
+  })
+
+  it('tolerates a 422 (already requested) on update paths', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      pulls: [makePull()],
+      branchDocs: [EXISTING_DOC],
+      reviewRequestError: Object.assign(new Error('already requested'), {status: 422}),
+    })
+
+    await expect(run(fake, {proposals: [issue], rows: [coveredRow(issue)]})).resolves.toMatchObject({
+      mode: 'updated-pr-body',
+    })
+  })
+
+  it('a failed request on create exits non-zero after the PR exists; the next write retries it', async () => {
+    const first = makeIssue(11)
+    const second = makeIssue(12)
+    const fake = makeFake({issues: [first, second], reviewRequestFailures: 1})
+
+    await expect(
+      run(fake, {proposals: [first], rows: [agentRow(first)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
+    // The PR and its coverage exist even though the run failed.
+    expect(fake.pulls).toHaveLength(1)
+    expect(bodyRowIssues(fake)).toStrictEqual([11])
+    expect(reviewCalls(fake)).toHaveLength(1)
+
+    // The next run's harvest pins the branch head the failed run left behind.
+    const branchHead = fake.refs.get(BRANCH_REF) ?? ''
+    fake.treeDocs.set(branchHead, new Set([docPath(11)]))
+    const retry = await run(fake, {
+      proposals: [second],
+      rows: [agentRow(second)],
+      changed: {[docPath(12)]: DOC_BODY},
+      draftBaseSha: branchHead,
+    })
+
+    expect(retry.mode).toBe('updated-pr')
+    expect(reviewCalls(fake)).toHaveLength(2)
+    expect(reviewCalls(fake)[1]?.args).toMatchObject({pull_number: 901, reviewers: ['fro-bot']})
+  })
+
+  it('names no agent text in the failure message', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], reviewRequestError: Object.assign(new Error(PRIVATE_TOKEN), {status: 500})})
+
+    const failure = await run(fake, {
+      proposals: [issue],
+      rows: [agentRow(issue)],
+      changed: {[docPath(11)]: DOC_BODY},
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect(failure).toBeInstanceOf(DraftedSolutionsError)
+    expect((failure as Error).message).toBe('drafted PR #901 opened but requesting review failed')
   })
 })
 

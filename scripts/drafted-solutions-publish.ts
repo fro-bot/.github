@@ -11,13 +11,21 @@
  *     account for the handoff both ways: each new-doc/extension row's doc is in it, and each file in
  *     it belongs to such a row;
  *  4. re-verify digest proposals and any open drafted PR against the API (the digest and PR body
- *     are not trusted), resolve the commit that will back the PR, and check that every row about to
- *     claim a doc (the whole merged PR body, existing rows included, plus covered rows closed
- *     directly) points at one on that commit's tree or in the handoff: the live drafted-branch head
- *     when a PR is open, else main's head;
+ *     are not trusted), resolve the commit that will back the PR (B: the live drafted-branch head
+ *     when a PR is open, else main's head), refuse a lost update (every handoff path must have the
+ *     same blob at B as at the digest's drafting base D, which only harvest sets), and check that
+ *     every row about to claim a doc (the whole merged PR body, existing rows included, plus
+ *     covered rows closed directly) points at one on B's tree or in the handoff. Every incoming
+ *     decision first replaces the existing body row for its issue, and the final merged body must
+ *     fit GitHub's 65536-character limit;
  *  5. gate every file (path and content), the PR title, the commit message, the fully rendered PR
  *     body, and every comment;
- *  6. write.
+ *  6. write. The drafted branch is never forced: a new one is created, a stale one is
+ *     fast-forwarded by a two-parent commit (a non-forced update is a compare-and-swap), and an
+ *     open PR gets a delta commit. A PR that appears or reappears before the ref write, or a
+ *     create-422, fails the run closed; the next run reconciles. A Fro Bot review is requested
+ *     after every PR write (create, delta commit, body-only update); a failure other than 422
+ *     fails the run after the write landed, and the next write retries it.
  *
  * Routing (outcome x drafted PR open x doc changes):
  *   new-doc / extension -> always in the PR body (they require doc changes in the handoff).
@@ -451,12 +459,24 @@ async function commitFiles(
   return commit.data.sha
 }
 
-async function requestReview(octokit: OctokitClient, owner: string, repo: string, prNumber: number): Promise<void> {
+/**
+ * Requests the Fro Bot review. `fro-bot.yaml` does not review on `opened`, so the request is the
+ * only thing that triggers the required review; it follows every PR write, not just creation, so a
+ * transient failure is repaired by the next write. 422 means already requested (or already acted);
+ * anything else fails the run after the write landed. The message carries no upstream text.
+ */
+async function requestReview(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  verb: 'opened' | 'updated',
+): Promise<void> {
   try {
     await octokit.rest.pulls.requestReviewers({owner, repo, pull_number: prNumber, reviewers: [REVIEWER]})
   } catch (error: unknown) {
-    // 422: already requested (or reviewer already acted). Anything else is a real failure.
-    if (errorStatus(error) !== 422) throw error
+    if (errorStatus(error) === 422) return
+    throw new DraftedSolutionsError(`drafted PR #${prNumber} ${verb} but requesting review failed`)
   }
 }
 
@@ -513,6 +533,7 @@ async function writePr(
   if (openPr !== null && files.length === 0) {
     // Covered rows only: repair the PR body without touching the branch.
     await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
+    await requestReview(octokit, owner, repo, openPr.number, 'updated')
     return {mode: 'updated-pr-body', prNumber: openPr.number}
   }
 
@@ -522,6 +543,7 @@ async function writePr(
     const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
     await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
     await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
+    await requestReview(octokit, owner, repo, openPr.number, 'updated')
     return {mode: 'updated-pr', prNumber: openPr.number, commitSha}
   }
 
@@ -542,6 +564,7 @@ async function writePr(
     await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
   }
 
+  let createdNumber: number
   try {
     const created = await octokit.rest.pulls.create({
       owner,
@@ -551,14 +574,15 @@ async function writePr(
       base: BASE_BRANCH,
       body,
     })
-    await requestReview(octokit, owner, repo, created.data.number)
-    return {mode: 'created-pr', prNumber: created.data.number, commitSha}
+    createdNumber = created.data.number
   } catch (error: unknown) {
     // 422: a PR for this head already exists. Do not repair its body from here; the next run
     // re-harvests, re-authorizes, and reconciles it against the tree it actually has.
     if (errorStatus(error) === 422) throw new DraftedSolutionsError(PR_APPEARED_MESSAGE)
     throw error
   }
+  await requestReview(octokit, owner, repo, createdNumber, 'opened')
+  return {mode: 'created-pr', prNumber: createdNumber, commitSha}
 }
 
 /** Posts the closure comment unless the bot already left it, then closes the issue. */
