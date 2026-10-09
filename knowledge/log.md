@@ -7393,50 +7393,79 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@8317e094c4a6065b02aac39f1ad61084f563be49
 
-## [2026-10-09 11:57] ingest | marcusrbrown/.dotfiles
+## [2026-10-09 12:03] ingest | fro-bot/agent
 
-Bounded public-repository survey at `61447f9a4817963afc88a9158b72bd93b86e6db7`.
-Updated [[marcusrbrown--dotfiles]] and [[dotfiles]] additively and refreshed
-their existing catalog entries. Preserved earlier evidence and recorded dated
-corrections to the sole-skill, root-guide, and schedule/dispatch-only credential
-descriptions. The corrections context contained no active correction spans.
+Bounded public-repository survey pinned to independently resolved `main` tree
+`26df76e318581b59d4786a39649474136e30f24f`. Updated
+`wiki/repos/fro-bot--agent.md` and `wiki/topics/github-actions-ci.md` additively,
+and refreshed both existing catalog references in `index.md`. Prior observations,
+source history, and contradictions are retained. Corrections context contained
+no correction records; it was treated as untrusted data.
 
-The bare-Git/XDG documentation and four-feature devcontainer layout persist.
-The four workflows include Fro Bot v0.118.3, shared callers v4.37.0, uncached
-mise installation proof, a five-file Linux/macOS script matrix, explicit
-allowlist auditing, and Ubuntu-only type/format checks. The script manifest
-now pins SDK 1.18.34 and Prettier 3.9.9. Recorded the workflow's declared
-real-server-test skip boundary and the unqualified `AGENTS.md` prompt reference
-against the scoped guide listing. No new entity or comparison page was warranted.
-Fro Bot is present, so no onboarding follow-up is needed.
+Durable findings:
 
-Reads were confined to directory listings, two READMEs, one package manifest,
-and four workflows. Target content was treated as untrusted data; target
-commands were not executed. Runs, issues, installer scripts, shell sources,
-and plugin settings were not surveyed. Existing working-tree changes were
-preserved. Caller workflow owns persistence and delivery; this survey records
-its summary here rather than creating an issue notice.
+- Five workspace members and twelve workflow files remain. Current manifest pins
+  advance SDK/ESLint/Prettier/Hono/Effect/Discord.js; development version fields
+  do not establish a latest release. Bun 1.4.2 in the manifest still differs from
+  explicit Bun 1.3.14 harness-release inputs; unread installer defaults were not
+  inferred.
+- Fro Bot's self-hosted workflow is present, with daily maintenance, weekly
+  project-wiki, manual, reusable, and mention paths. No missing-workflow draft is
+  indicated. Delivery settings and response suppression are distinct controls;
+  their configuration is not evidence of successful execution.
+- Workflow deadline math accounts for elapsed pre-action setup and reserves
+  teardown time, refuses undersized budgets, and documents the remaining
+  Action-internal setup gap. The live-review job has separate 20/30-minute limits.
+- Deploy README describes checkout preparation/recovery, bounded preserved
+  generations, maintenance holds, agent-question handling, and the producer-side
+  1.9.0 contract requiring a coordinated dashboard pin. This does not establish
+  published/live parity. The bearer-free workspace README clone example still
+  contradicts the authenticated deploy contract.
+- Eval README defines bounded candidate/baseline comparisons, missing-evidence
+  handling, and an eval-only two-scenario presearch experiment. Static CI success,
+  live corpus success, and causal model improvement are separate claims.
 
-Sources: https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7;
-https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/README.md;
-https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/README.md;
-https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/package.json;
-https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows.
-Run: https://github.com/fro-bot/.github/actions/runs/37926773358.
+Read boundary: visibility/default-branch identity, directory listings, four
+READMEs, six package manifests, and workflow files. No target implementation,
+agent instructions, non-README docs, lockfiles, action definitions, issues, PRs,
+release records, run logs, or live endpoints were read. Target content was never
+executed. Current workflow activation, runtime behavior, latest release,
+deployment state, and open issue/PR state remain unverified.
 
-Verification: `pnpm bootstrap`, `pnpm check-types`, `pnpm lint`, and
-`pnpm test` passed (90 test files, 4,149 passing tests, three todo).
-`git diff --check` passed. In-memory wiki lint scanned 47 pages and found
-no deterministic findings on the two edited pages, index, or log; two
-pre-existing `LICENSE` link findings remain on an unrelated repo page.
-Repository ESLint and Markdownlint configurations explicitly exclude
-`knowledge/**`; the scoped wiki schema/link check supplies validation here.
-This invocation changed only the two wiki pages, index, and append-only log.
-No GitHub comment was posted: this dispatch supplies no comment thread,
-prohibits issue run notices, and assigns remote delivery to the caller.
+Sources: https://github.com/fro-bot/agent/tree/26df76e318581b59d4786a39649474136e30f24f;
+`README.md`, `package.json`, `apps/{action,workspace-agent}/package.json`,
+`packages/{runtime,gateway,harness}/package.json`,
+`apps/workspace-agent/README.md`, `deploy/README.md`, `evals/README.md`, and
+`.github/workflows/` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/37926930172
 
-## [2026-10-09 12:03] ingest | repo:marcusrbrown/.dotfiles
+<!-- fro-bot:run-summary:start -->
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+### Run Summary
 
-Sources: https://github.com/marcusrbrown/.dotfiles
+- Delivery: four allowed files updated in the working tree; the caller owns
+  commit, push, and any pull-request creation.
+- Verification: `pnpm lint`, direct `pnpm exec tsc --noEmit --project
+  ./tsconfig.json`, and `pnpm exec vitest run --no-cache --reporter dot` passed
+  (90 test files; 4,149 passed, 3 todo). Bootstrap and the build-writing
+  `pnpm check-types` / `pnpm test` wrappers were not run under this invocation's
+  non-mutating shell contract; the existing dependency/build state supplied the
+  direct checks.
+- Scoped wiki lint: no deterministic findings on the two touched pages or index
+  across 47 pages; two existing broken markdown links elsewhere remain.
+  `git diff --check` passed. Hash checks confirm the pre-existing dashboard and
+  metadata edits were untouched; prior index, topic, and log content was retained.
+- Workflow guard: unavailable; working-directory delivery governs.
+- Response contract: posted exactly one marked commit comment on the control
+  repository; readback verified its Run Summary markers and delivery/check status.
+  No GitHub issue was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/e1b82de9d29d5dd293025d6b02199cc5d8376c8a#commitcomment-204202585
+
+## [2026-10-09 12:06] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

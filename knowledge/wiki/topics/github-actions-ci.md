@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-09
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 26df76e318581b59d4786a39649474136e30f24f
+    accessed: 2026-10-09
   - url: https://github.com/fro-bot/.github/actions/runs/37880112149
     sha: 8317e094c4a6065b02aac39f1ad61084f563be49
     accessed: 2026-10-09
@@ -276,6 +279,38 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Nested deadlines and response suppression are separate contracts (2026-10-09)
+
+At `26df76e3`, [[fro-bot--agent]]'s self-hosted `fro-bot.yaml` records job start
+before checkout and computes execution time as the remaining 75-minute job
+budget minus a 15-minute teardown reserve. Execution is capped at 60 minutes,
+narration at 10; less than five minutes available fails before launch rather
+than flooring the budget upward. This accounts for job-level setup, including
+network-bound evidence collection. The workflow explicitly notes that
+Action-internal setup still runs before the execution timer and remains outside
+this accounting. A reserve based on one phase boundary is not a proven end-to-end
+deadline. The separate `ci.yaml` live-review job sets a 20-minute Action timeout
+inside a 30-minute job cap. Neither configuration proves cleanup or publication
+succeeded on a particular run.
+
+Delivery and response settings are independent: the self-hosted workflow uses
+`branch-pr` for its project-wiki paths and `working-dir` for reusable custom
+prompts and correlation-tagged dispatches; correlation-tagged dispatches also
+force `response-mode: none`. The root README defines `none` as suppressing GitHub
+writes with the log as the response surface. Choosing a working-tree output mode
+alone does not specify whether a comment is posted.
+
+The same snapshot's `evals/README.md` separates outcome comparison from provenance:
+verdicts, result states, and gates are compared; model versions, duration, cost,
+and prompt hashes are provenance, not quality equality. Infrastructure-inconclusive
+results request reruns; mixed bounded repeats remain inconclusive. Its historical
+baseline lacks the stable projection, so candidate observations cannot backfill
+reviewed evidence. A green static test suite is not a live corpus result: real
+model runs remain gated by `FRO_BOT_EVAL=1`.
+
+Sources: `.github/workflows/fro-bot.yaml`, `.github/workflows/ci.yaml`, root
+`README.md`, and `evals/README.md` in `fro-bot/agent` at `26df76e3`.
 
 ## 2026-10-09 — recovered publication can increase the codification backlog
 
