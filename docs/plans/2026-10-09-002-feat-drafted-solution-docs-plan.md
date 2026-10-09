@@ -127,13 +127,16 @@ Proposals become durable knowledge only through a manual batch the operator star
 ## Key Technical Decisions
 
 - Separate weekly workflow, Monday after Sunday's capture run, plus `workflow_dispatch`: keeps capture's contract untouched; the schedule makes the two runs effectively sequential.
-- Generalize the wiki handoff validator to take a path policy; the drafted policy admits `docs/solutions/<category>/*.md` only and no deletions. Workflow and config paths are unreachable, so a drafted PR cannot alter the review rule that admits it.
+- Generalize the wiki handoff validator to take a path policy; the drafted policy admits `docs/solutions/<category>/*.md` only and no deletions. Workflow and config paths are unreachable, so a drafted PR cannot alter the review rule that admits it. Paths containing a backslash are rejected outright.
+- The drafted handoff is built from git objects, not workspace paths: stage `docs/solutions`, list staged entries, reject anything but mode 100644 regular files, and read bytes from blob SHAs. A symlink, symlinked parent, or file swapped after staging cannot leak another file's contents.
 - The publish job never rewrites the branch while its PR is open. With an open PR it re-reads the branch head at commit time and commits the handoff as a delta on top, preserving operator and update-branch commits. Without an open PR it points the branch at current `main` (creating or force-resetting it) and opens a new PR. Squash-only merging keeps `main` linear whatever the branch history is.
 - Coverage state lives in a fenced, schema-validated machine block in the PR body: per proposal, issue number, outcome, target doc, source SHA, evidence references (PR, review, CI run, or file the kept claims rest on), dropped/narrowed claims, and a hash of the proposal body. New-doc and extension rows require at least one evidence reference; nothing checks their truth beyond Fro Bot's and the operator's review. Publish renders the whole body from it; harvest reads it. An unparseable block fails the run closed and reports; it is never guessed.
 - A proposal counts as covered when the block lists it with the current body hash; an edited proposal is re-drafted.
 - Every digest proposal must map to exactly one evidence row, and every row to a digest proposal or an existing block row; any mismatch fails closed.
 - Existing block rows are re-authorized each run: each must name a `learning-proposal` issue authored by `fro-bot[bot]`, or the run fails closed.
 - A `covered` row must name a `docs/solutions` doc that exists on the drafted tree; an `unverified` row must name the gap. Direct closure stays reversible and its comment carries the reason.
+- Routing by outcome: `unverified` rows always close directly as not planned and never appear in the PR body. `covered` rows go into the PR body whenever a drafted PR is open or the run has doc changes, and close directly as completed only when neither holds. An open PR with only covered rows gets a body-only update, which also repairs a body update that failed after a branch write.
+- Closure comments carry a hidden per-issue marker; a retry skips posting when a `fro-bot[bot]` comment with that marker exists.
 - At most five proposals per run, oldest first, matching capture's weekly cap; overflow stays uncovered for the next run, bounding the agent session.
 - Privacy gate runs on all files, title, body, and comments before the first side effect; one hit blocks the whole publish.
 - One drafted-PR predicate everywhere: base repo is this repo, head repo is not a fork, head ref is the drafted branch, author is `fro-bot[bot]`. The review exception threads it through both bot-excluding clauses; harvest and publish use it to find the PR. The publish job requests a review from `fro-bot` after opening the PR so the review fires without an `opened` trigger; later pushes fire `synchronize`.
@@ -171,7 +174,9 @@ flowchart TB
   V --> G{privacy gate: files, title, body, comments}
   G -->|hit| F
   G --> D{doc changes?}
-  D -->|no| C[comment + close each proposal]
+  D -->|no, no PR| C[comment + close each proposal]
+  D -->|no, PR open| B[body-only PR update for covered rows]
+  G --> UV[unverified rows: comment + close as not planned]
   D -->|yes, PR open| U[commit delta on branch head, update body]
   D -->|yes, no PR| N[reset branch to main, commit, open PR, request fro-bot review]
 ```
@@ -215,7 +220,7 @@ flowchart TB
 - Test: `scripts/drafted-solutions-pr-body.test.ts`
 
 **Approach:**
-- Pure functions: parse block from a body (schema-validated, fail closed), merge new rows (replacing rows whose proposal was re-drafted), render body: short summary, evidence table with an evidence-references column, one `Closes #N` line per row, block last.
+- Pure functions: parse block from a body (schema-validated, fail closed), merge new rows (replacing rows whose proposal was re-drafted), render body: short summary, evidence table with an evidence-references column, one `Closes #N` line per row, block last. Unverified rows are never rendered or accepted in the block.
 
 **Test scenarios:**
 - Happy path: render then parse round-trips rows.
@@ -266,7 +271,7 @@ flowchart TB
 **Approach:**
 - Validate the handoff with the drafted policy and the evidence rows against the digest (exactly one row per digest proposal); check that each `covered` row's doc exists on the drafted tree. Load private tokens and redacted canonical IDs fail-closed (`loadPrivateTokensFromDisk` in `scripts/capture-learnings-privacy.ts`, `loadRedactedCanonicalIdsFromDisk` in `scripts/status-truth-proposals.ts`, `makePublicOutputTokens`); gate every file, the title, the rendered body, and every comment before any write.
 - Doc changes with an open PR: re-read branch head, Git Data API commit of the delta, update body. Without an open PR: point the branch at `main` head, commit, open PR, request review from `fro-bot`.
-- No doc changes: comment the outcome and close each processed proposal.
+- No doc changes and no open PR: comment the outcome and close each processed proposal. Unverified rows close directly in every mode; covered rows join an open PR's body.
 - Idempotent on retry: rediscover the PR with the shared predicate, treat a create-422 as update, skip already-closed issues.
 
 **Patterns to follow:** `commitWikiChanges` commit sequence; `merge-data-pr.ts` rediscovery; `capture-learnings-open.ts` gate-then-write ordering.
