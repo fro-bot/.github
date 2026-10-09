@@ -7341,3 +7341,54 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/b96b9904b20ed08
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-10-09 05:45] manual-edit | daily oversight evidence boundaries
+
+Updated `wiki/topics/github-actions-ci.md` and
+`wiki/repos/fro-bot--dashboard.md` additively, with dated sources, and refreshed
+their existing catalog references in `index.md`. Earlier observations remain.
+
+Capture Learnings' manual run delivered both artifacts through the deterministic
+publisher and opened three proposals; thirteen remain unauthored, ten aged
+18–25 days. Delivery recovery is distinct from codification progress and from
+the recurrence metrics' zero-backlog population.
+
+The Gateway tracker now has current contract/deployed-version anchors, but
+still labels two closed producer issues Open while Project 1 marks them Done.
+Commit comparisons distinguish the checkout fix included in agent v0.118.3
+from infrastructure's v0.118.2 pin, and the later question bridge not yet in
+v0.118.3. Health parity and successful dashboard deployment do not establish
+the remaining authenticated/runtime checks. No tracker or Project write occurred.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/37880112149;
+https://github.com/fro-bot/.github/issues/3962;
+https://github.com/fro-bot/.github/issues/3963;
+https://github.com/fro-bot/.github/issues/3964;
+https://github.com/fro-bot/.github/issues/3674;
+https://github.com/fro-bot/.github/issues/3512;
+https://github.com/users/fro-bot/projects/1;
+https://github.com/fro-bot/agent/pull/1743;
+https://github.com/fro-bot/agent/pull/1749;
+https://github.com/fro-bot/agent/releases/tag/v0.118.3;
+https://github.com/marcusrbrown/infra/pull/1499;
+https://github.com/marcusrbrown/infra/actions/runs/37804923983;
+https://dashboard.fro.bot/operator/health.
+Run: https://github.com/fro-bot/.github/actions/runs/37888679834
+
+Verification: scoped wiki lint found no deterministic findings on the two
+edited pages or index across 47 pages; two existing findings elsewhere remain.
+`pnpm lint`, direct no-emit TypeScript, and diff whitespace passed. The separate
+remediation pass verified all four required commands, including 4,080 tests.
+Only the two wiki pages, index, and this append-only log remain changed for
+caller ingestion; no metadata, workflow, code, branch, or Project mutation.
+
+Daily report: https://github.com/fro-bot/.github/issues/3966.
+Retirement notice: https://github.com/fro-bot/.github/issues/3958#issuecomment-6075150239.
+The prior daily issue was closed; publication readback verifies one open daily
+report. Exactly one marked comment was posted by this oversight invocation.
+
+## [2026-10-09 05:50] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@8317e094c4a6065b02aac39f1ad61084f563be49

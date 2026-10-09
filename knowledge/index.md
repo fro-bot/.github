@@ -2,6 +2,12 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-09 oversight: [[github-actions-ci]] records verified learning-artifact
+publication recovery alongside a thirteen-proposal codification backlog.
+[[fro-bot--dashboard]] distinguishes two closed producer issues from their
+release/deployment state and the stale Open claims in the reconciled tracker.
+Existing catalog entries and dated contradictions are retained.
+
 Catalog refreshed 2026-10-08: [[marcusrbrown--vbs]] (repo),
 [[github-actions-ci]] and [[github-pages]] (topics). Existing catalog entries
 and dated observations are retained; the canonical ingest record is in

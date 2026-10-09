@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-08
+updated: 2026-10-09
 sources:
+  - url: https://github.com/fro-bot/.github/actions/runs/37880112149
+    sha: 8317e094c4a6065b02aac39f1ad61084f563be49
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3962
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3963
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3964
+    accessed: 2026-10-09
   - url: https://github.com/marcusrbrown/vbs
     sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
@@ -267,6 +276,35 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-09 — recovered publication can increase the codification backlog
+
+The manual [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/37880112149)
+at `8317e09` supersedes the October 5 missing-handoff observation as the latest
+execution evidence. Harvest, drafting, and deterministic publication all
+succeeded. Both `capture-learnings-digest` and `capture-learnings-bodies` are
+present, and the publisher's two download steps and issue-opening step
+concluded success. Three new proposals appeared as
+[#3962](https://github.com/fro-bot/.github/issues/3962),
+[#3963](https://github.com/fro-bot/.github/issues/3963), and
+[#3964](https://github.com/fro-bot/.github/issues/3964). This establishes a
+delivered handoff on that run, not a producer-side diagnosis for the prior
+failures or proof that the next scheduled run will succeed.
+
+The unauthored queue grew from ten to **thirteen**: five September 14 proposals
+are about **25 days** old, five September 21 proposals about **18 days**, and
+three are new. The [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674)
+still has its October 5 **ambiguous / pending backlog zero** reading. Its
+recurrence-edge population is not the proposal-authoring queue. The earlier
+dated failures and population distinction remain valid historical evidence;
+the current delivery failure claim does not.
+
+Reusable rule: evaluate recovery at the boundary it actually restored.
+Publication recovery can enlarge the unfinished codification queue. Require
+artifact and consumer evidence for delivery, then separately count and age
+proposals awaiting authorship into `docs/solutions/`. Preserve the scoped
+publisher/privacy boundary described in
+`docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`.
 
 ## Boolean-preserving fork guards and pre-agent gates (2026-10-08)
 

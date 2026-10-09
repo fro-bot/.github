@@ -2,9 +2,31 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-08
+updated: 2026-10-09
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/.github/issues/3512
+    accessed: 2026-10-09
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/pull/1743
+    sha: a53a45de9151388853ea8cef5f9cbc6443d27f8b
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/pull/1749
+    sha: ff8c37b66a5f9337320666b1c9fe15406077c1dc
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.118.3
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/blob/3216bb06abb13bcedf8ca56f0feb52d5b212d201/apps/gateway/upstream.json
+    sha: 3216bb06abb13bcedf8ca56f0feb52d5b212d201
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/pull/1499
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37804923983
+    sha: 331997ff02dd0dc1c62e86f0fb649916444a6251
+    accessed: 2026-10-09
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-09
   - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105
     accessed: 2026-10-08
   - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949
@@ -117,6 +139,42 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-09 — issue closure, release inclusion, and deployment are different gates
+
+The [rollout tracker](https://github.com/fro-bot/.github/issues/3512) body now
+records live contract **1.8.0**, gateway **v0.118.2**, and dashboard
+**2026.10.15**. This supersedes the October 8 finding that its July version
+anchors had not been reconciled. A fresh public health probe still reports
+1.8.0; infrastructure [#1499](https://github.com/marcusrbrown/infra/pull/1499)
+merged the dashboard pin, and its
+[deployment](https://github.com/marcusrbrown/infra/actions/runs/37804923983)
+concluded success. These sources do not independently prove the serving
+digest or replay authenticated operator flows.
+
+Two finer-grained tracker claims have drifted. Agent
+[#1737](https://github.com/fro-bot/agent/issues/1737) closed through
+[#1743](https://github.com/fro-bot/agent/pull/1743) on October 8, and
+[#1736](https://github.com/fro-bot/agent/issues/1736) closed through the
+question bridge [#1749](https://github.com/fro-bot/agent/pull/1749) on October 9.
+Project 1 marks both issues **Done / ready now**, while #3512's producer table
+still calls them **Open**. The overall tracker remains **In Progress / waiting**,
+consistent with its unchecked production-verification criteria.
+
+GitHub commit comparisons place #1743's merge commit in the latest published
+agent **v0.118.3**, but not in infrastructure's current **v0.118.2** pin.
+#1749's merge commit is not included in v0.118.3. A closed source issue is
+therefore neither release inclusion nor deployment proof. Checkout-field
+verification still requires deploying a containing release; question-flow
+verification additionally requires one to be published. The tracker should
+distinguish **source fixed / released / deployed / runtime verified**, rather
+than flatten those states to Open or Done.
+
+The older producer-open observations below remain dated evidence. Approval
+decisions, cancellation, logout/CSRF, privacy confirmation, and the reported
+dashboard snapshot/Cancel regressions still need their production-shaped sweep.
+Do not infer completion from contract parity. Preserve the earlier
+volume-snapshot-plus-paired-image rollback requirement in [[marcusrbrown--infra]].
 
 ## 2026-10-08 — live parity closes the cutover gate, not every operator flow
 
