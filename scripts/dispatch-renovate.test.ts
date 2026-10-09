@@ -415,7 +415,7 @@ describe('dispatch-renovate.yaml workflow contract', () => {
     const steps = await loadWorkflowSteps()
     const ids = steps.map(step => step.id)
     const plan = steps.find(step => step.id === 'plan')
-    expect(plan?.run).toContain('scripts/dispatch-renovate.ts plan')
+    expect(plan?.run?.trim()).toBe('node scripts/dispatch-renovate.ts plan')
     expect(plan?.env?.GITHUB_TOKEN).toBe(gh('steps.discovery-token.outputs.token'))
     expect(JSON.stringify(plan)).not.toContain('dispatch-token')
     const planIndex = steps.indexOf(plan as ContractStep)
@@ -446,6 +446,7 @@ describe('dispatch-renovate.yaml workflow contract', () => {
     expect(dispatch?.env?.GITHUB_TOKEN).toBe(gh('steps.dispatch-token.outputs.token'))
     expect(dispatch?.env?.DISPATCH_REPOSITORIES).toBe(gh('steps.plan.outputs.repositories'))
     expect(JSON.stringify(dispatch)).not.toContain('discovery-token')
-    expect(dispatch?.run).toContain('scripts/dispatch-renovate.ts')
+    // Exact: `plan` here would make the dispatch step re-plan with the dispatch token instead of dispatching.
+    expect(dispatch?.run?.trim()).toBe('node scripts/dispatch-renovate.ts')
   })
 })
