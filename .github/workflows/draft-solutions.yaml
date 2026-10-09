@@ -271,18 +271,29 @@ jobs:
 
       # Overlay metadata/ from the data branch so the privacy gate reads the
       # authoritative private-repo list from metadata/repos.yaml.
-      # Hard-fail if the data branch exists but the overlay fails — the privacy
-      # gate cannot operate without metadata/repos.yaml (fail-closed by design).
-      # Tolerate a missing data branch (first run, fresh clone) like reconcile does.
+      # Separate "branch absent" from "probe failed": `git ls-remote --exit-code` exits 2 only
+      # when the ref does not exist, so only exit 2 may fall back to the checked-out metadata
+      # (first run, fresh clone). Any other nonzero exit (transport, authentication) would
+      # silently publish with stale privacy data, so it fails the step, as does a failing
+      # fetch or checkout.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to publish with unverified privacy metadata."
+              exit 1
+              ;;
+          esac
 
       # The digest comes from the harvest job, never from the agent job.
       - name: 📥 Download digest artifact
