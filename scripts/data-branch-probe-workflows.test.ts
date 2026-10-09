@@ -125,6 +125,79 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))('%s', (_key, 
   })
 })
 
+/** Git subcommands an overlay step runs against \`data\`, read from the step itself so the check follows the YAML. */
+const OVERLAY_SUBCOMMANDS = ['fetch', 'checkout', 'restore'] as const
+const subcommandsOf = (run: string): string[] =>
+  OVERLAY_SUBCOMMANDS.filter(sub => new RegExp(String.raw`git\s+${sub}\b`).test(run))
+
+/** Steps that announce the failure with a workflow command, not only a nonzero exit under \`set -e\`. */
+const ANNOUNCES_OVERLAY_FAILURE = new Set(
+  steps.filter(step => step.file === 'fro-bot.yaml' || step.file === 'survey-repo.yaml').map(step => step.key),
+)
+
+describe('no overlay step tolerates a failed fetch, checkout, or restore', () => {
+  it('discovers a fetch and a checkout or restore in every overlay step, so the cases below cannot be vacuous', () => {
+    for (const step of overlaySteps) {
+      const subcommands = subcommandsOf(step.run)
+      expect(subcommands, step.key).toContain('fetch')
+      expect(
+        subcommands.some(sub => sub === 'checkout' || sub === 'restore'),
+        step.key,
+      ).toBe(true)
+    }
+  })
+
+  it('no step swallows a data fetch, checkout, or restore with || true', () => {
+    for (const step of steps) {
+      const swallowed = step.run
+        .split('\n')
+        .filter(line => /git\s+(?:fetch|checkout|restore)\b/.test(line) && /\|\|\s*true\b/.test(line))
+      expect(swallowed, step.key).toStrictEqual([])
+    }
+  })
+
+  it('no step warns and continues on stale metadata', () => {
+    for (const step of steps) {
+      expect(step.run, step.key).not.toContain('continuing — counts will use stale')
+      expect(step.run, step.key).not.toMatch(/::warning::[^\n]*metadata overlay/)
+    }
+  })
+
+  it('the three formerly tolerant steps announce overlay failures with ::error::', () => {
+    expect([...ANNOUNCES_OVERLAY_FAILURE].sort()).toStrictEqual([
+      'fro-bot.yaml#fro-bot-observe#⤵ Overlay metadata from data branch',
+      'fro-bot.yaml#fro-bot-observe-announce#⤵ Overlay metadata from data branch',
+      'survey-repo.yaml#survey-repo#Check repo onboarded',
+    ])
+  })
+})
+
+describe.each(overlaySteps.map(step => [step.key, step] as const))(
+  '%s: failure after a successful probe',
+  (_key, step) => {
+    it.each(subcommandsOf(step.run))(
+      'a failed git %s fails the step before anything downstream runs',
+      (subcommand: string) => {
+        const result = runStepWithStubs(step.run, {lsRemoteExit: 0, failSubcommand: subcommand})
+
+        expect(result.status).not.toBe(0)
+        expect(result.trace.some(line => line.startsWith('node'))).toBe(false)
+        expect(result.stdout).not.toContain('continuing')
+        expect(`${result.stdout}${result.stderr}`).not.toMatch(/::warning::/)
+        if (ANNOUNCES_OVERLAY_FAILURE.has(step.key)) {
+          expect(result.stdout).toContain('::error::')
+        }
+      },
+    )
+
+    it('a failed git fetch never proceeds to the checkout or restore', () => {
+      const result = runStepWithStubs(step.run, {lsRemoteExit: 0, failSubcommand: 'fetch'})
+
+      expect(result.trace.some(line => /^git (?:checkout|restore)\b/.test(line))).toBe(false)
+    })
+  },
+)
+
 describe('exit 2 skip messages are unchanged', () => {
   it('every overlay step that announced a skip still announces it', () => {
     const silentByDesign = new Set(['survey-repo.yaml#survey-repo#Check repo onboarded'])

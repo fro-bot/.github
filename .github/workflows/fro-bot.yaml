@@ -1005,7 +1005,8 @@ jobs:
       # Overlay metadata/ from the data branch so this run can derive digest
       # counts and scan metadata/repos.yaml (category 6) from live data.
       # Mirrors the precedented guard in reconcile-repos.yaml: tolerate a
-      # missing data branch (skip, don't fail). Runs BEFORE solutions-query
+      # missing data branch (skip, don't fail); a failed probe, fetch, or checkout fails
+      # the step. Runs BEFORE solutions-query
       # so the privacy scan reads the freshest repos.yaml.
       - name: ⤵ Overlay metadata from data branch
         run: |
@@ -1017,7 +1018,8 @@ jobs:
               overlay_err=$(
                 { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
               ) || {
-                echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+                echo "::error::metadata overlay fetch/checkout failed: $(echo "$overlay_err" | head -c 200)"
+                exit 1
               }
               ;;
             2)
@@ -1161,7 +1163,8 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # Mirrors fro-bot-observe's own step: tolerate a missing data branch (skip, don't fail).
+      # Mirrors fro-bot-observe's own step: tolerate a missing data branch (skip, don't fail);
+      # a failed probe, fetch, or checkout fails the step.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
@@ -1172,7 +1175,8 @@ jobs:
               overlay_err=$(
                 { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
               ) || {
-                echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+                echo "::error::metadata overlay fetch/checkout failed: $(echo "$overlay_err" | head -c 200)"
+                exit 1
               }
               ;;
             2)

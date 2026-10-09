@@ -160,16 +160,17 @@ jobs:
       #
       # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
       # (authoritative runtime state) before running the check. If the branch is absent (probe
-      # exit 2) the script runs against the checked-out (main) metadata instead; a failed
-      # probe (any other nonzero exit) fails the step rather than trusting stale main metadata.
-      # A fetch or restore that fails after a successful probe still falls back to main. The private===false predicate in
-      # publicRepoEntryExists keeps this fallback fail-safe: only entries with explicit
-      # private===false in main's promoted metadata can yield onboarded=true, so a
+      # exit 2) the script runs against the checked-out (main) metadata instead. Any other
+      # failure (a failed probe, fetch, or restore) fails the step: stale main metadata could
+      # still say private===false for a repo that has since gone private, so the check never
+      # runs on metadata the overlay could not refresh. The private===false predicate in
+      # publicRepoEntryExists keeps the absent-branch fallback fail-safe: only entries with
+      # explicit private===false in main's promoted metadata can yield onboarded=true, so a
       # missing data branch cannot silently admit an un-promotable repo.
       #
-      # Once it runs, the node script always emits onboarded=true/false — it never
-      # hard-fails — so a fetch or restore error after the probe produces a clean
-      # onboarded=false skip rather than a red job for a legitimately un-onboarded manual dispatch.
+      # Once the overlay has run (or been skipped for an absent branch), the node script
+      # always emits onboarded=true/false and never hard-fails, so a legitimately
+      # un-onboarded manual dispatch is a clean onboarded=false skip, not a red job.
       - name: Check repo onboarded
         id: onboarded
         env:
@@ -180,8 +181,14 @@ jobs:
           git ls-remote --exit-code origin data >/dev/null || status=$?
           case "$status" in
             0)
-              git fetch origin data || true
-              git restore --source FETCH_HEAD --worktree -- metadata || true
+              git fetch origin data || {
+                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              git restore --source FETCH_HEAD --worktree -- metadata || {
+                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
               ;;
             2)
               # data branch absent: nothing to overlay.

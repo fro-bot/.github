@@ -24,13 +24,25 @@ export interface StepRun {
 export interface StepRunOptions {
   /** Exit code of the stubbed `git ls-remote`. */
   lsRemoteExit: number
+  /** A git subcommand that fails (exit 128, with a `fatal:` line on stderr) instead of succeeding. */
+  failSubcommand?: string
 }
 
 const STUB = (tool: string): string =>
   [
     '#!/bin/sh',
     `echo "${tool} $*" >> "$STUB_TRACE"`,
-    ...(tool === 'git' ? ['case "$1" in', '  ls-remote) exit "$STUB_GIT_LS_REMOTE_EXIT" ;;', 'esac'] : []),
+    ...(tool === 'git'
+      ? [
+          'case "$1" in',
+          '  ls-remote) exit "$STUB_GIT_LS_REMOTE_EXIT" ;;',
+          'esac',
+          'if [ -n "$STUB_GIT_FAIL_SUBCOMMAND" ] && [ "$1" = "$STUB_GIT_FAIL_SUBCOMMAND" ]; then',
+          '  echo "fatal: simulated $1 failure" >&2',
+          '  exit 128',
+          'fi',
+        ]
+      : []),
     'exit 0',
   ].join('\n')
 
@@ -58,6 +70,7 @@ export function runStepWithStubs(script: string, options: StepRunOptions): StepR
           PATH: `${dir}:${process.env.PATH ?? ''}`,
           STUB_TRACE: traceFile,
           STUB_GIT_LS_REMOTE_EXIT: String(options.lsRemoteExit),
+          STUB_GIT_FAIL_SUBCOMMAND: options.failSubcommand ?? '',
           GITHUB_OUTPUT: outputFile,
           RUNNER_TEMP: dir,
         },
