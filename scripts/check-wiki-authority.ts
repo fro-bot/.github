@@ -48,6 +48,11 @@ export interface GuardInput {
   // `unknown`, not `string`: the pure function is the trust boundary, so it narrows rather than
   // trusting the caller's type. See exact-match-trust-gates-need-type-discipline-2026-09-08.md.
   readonly headRef: unknown
+  // `unknown` for the same reason as `headRef`: the repository the PR's head branch lives in
+  // (`pull_request.head.repo.full_name`), absent/null for a deleted fork.
+  readonly headRepo: unknown
+  // The repository the guard runs in (`pull_request.base.repo.full_name`).
+  readonly baseRepo: string
   readonly files: readonly string[]
 }
 
@@ -57,10 +62,12 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * Pure decision function: should this PR be allowed to touch autonomously-managed files?
  *
  * Rules:
- * - A Fro Bot identity may touch guarded paths only from the `data` head branch (the
- *   writers all target `data`; `main` receives them through the promotion PR). Any guarded
- *   path on another head, or a `headRef` that is not exactly the string `data`, is blocked.
- *   Fro Bot with only unguarded paths is allowed on any head.
+ * - A Fro Bot identity may touch guarded paths only from the `data` head branch of THIS
+ *   repository (the writers all target `data`; `main` receives them through the promotion PR).
+ *   Any guarded path on another head, a `headRef` that is not exactly the string `data`, or a
+ *   `headRepo` that is not exactly the string `baseRepo` (a fork's `data`, a deleted fork, a
+ *   missing or non-string value) is blocked. Fro Bot with only unguarded paths is allowed on any
+ *   head.
  * - Any other author is blocked if any changed file matches a guarded pattern, whatever the
  *   head. The PR must split its guarded edits onto the `data` branch and let the promotion
  *   flow land them.
@@ -69,9 +76,10 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * paths in input order. Mixed PRs (some guarded, some not) still fail; splitting the PR is the
  * intended resolution.
  *
- * Gating a Fro Bot allow on a branch name is safe only because a Fro Bot identity never
- * originates from a fork: fork PRs carry an external author and take the non-Fro-Bot branch,
- * so a fork naming its branch `data` cannot reach the allow path.
+ * A branch name alone is not an origin: a fork can name its branch `data`, and GitHub PR
+ * authorship is not a claim about where the head lives. So the Fro Bot allow checks the head
+ * repository against the base repository as well, rather than assuming a Fro Bot identity never
+ * originates from a fork.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
   const patterns = guardedPatterns()
@@ -79,10 +87,16 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
   if (guardedFiles.length === 0) {
     return {ok: true}
   }
-  // Strict `===` against a string literal is the narrowing: it is true only for the primitive
-  // string `data` (not `['data']`, not a `String` object), so a separate `typeof` check would be
-  // dead code whose mutant is equivalent and unkillable.
-  if (frobotAuthors().has(input.author) && input.headRef === 'data') {
+  // Strict `===` against a string is the narrowing for both `unknown` fields: it is true only for
+  // the primitive string (not `['data']`, not a `String` object), so a separate `typeof` check
+  // would be dead code whose mutant is equivalent and unkillable. `baseRepo !== ''` keeps an
+  // unresolved base repo from matching an empty head repo.
+  if (
+    frobotAuthors().has(input.author) &&
+    input.headRef === 'data' &&
+    input.baseRepo !== '' &&
+    input.headRepo === input.baseRepo
+  ) {
     return {ok: true}
   }
   return {ok: false, blockedFiles: guardedFiles}
@@ -109,7 +123,7 @@ Blocked files:
 ${fileList}
 
 These paths are writable only by Fro Bot (\`fro-bot\` / \`fro-bot[bot]\`), and only from the \`data\`
-branch (enforced by the \`data\` branch ruleset). Authorized manual edits land like this:
+branch of this repository, never a fork's (enforced by the \`data\` branch ruleset). Authorized manual edits land like this:
 
   1. Check out \`data\` in a worktree (\`git worktree add ../worktree-data data\`)
   2. Make the edit there
@@ -123,7 +137,7 @@ interface PullRequestEventPayload {
   readonly pull_request?: {
     readonly number?: number
     readonly user?: {readonly login?: string} | null
-    readonly head?: {readonly ref?: string} | null
+    readonly head?: {readonly ref?: string; readonly repo?: {readonly full_name?: string} | null} | null
     readonly base?: {readonly repo?: {readonly full_name?: string} | null} | null
   }
 }
@@ -135,7 +149,7 @@ interface PullRequestEventPayload {
  */
 export async function readPullRequestContext(
   eventPath: string,
-): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
+): Promise<{prNumber: number; author: string; headRef: string; headRepo: unknown; fullName: string | null}> {
   // Buffer.toString() defaults to utf8; no encoding literal to mutate.
   const raw = await readFile(eventPath)
   const parsed = JSON.parse(raw.toString()) as PullRequestEventPayload
@@ -150,11 +164,15 @@ export async function readPullRequestContext(
   if (typeof headRef !== 'string' || headRef === '') {
     throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
   }
-  // pull_request is defined: prNumber above threw otherwise.
+  // pull_request and head are defined: the checks above threw otherwise. `headRepo` stays
+  // `unknown` and unvalidated on purpose; the guard compares it by strict equality, so a null
+  // `head.repo` (deleted fork) or a missing/non-string value simply never matches.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const headRepo: unknown = parsed.pull_request!.head!.repo?.full_name
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const rawFullName = parsed.pull_request!.base?.repo?.full_name
   const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
-  return {prNumber, author, headRef, fullName}
+  return {prNumber, author, headRef, headRepo, fullName}
 }
 
 /**
@@ -185,12 +203,12 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const {prNumber, author, headRef, fullName: eventFullName} = await readPullRequestContext(eventPath)
+  const {prNumber, author, headRef, headRepo, fullName: eventFullName} = await readPullRequestContext(eventPath)
   const fullName =
     eventFullName ??
     execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
   const files = fetchChangedFiles(prNumber, fullName)
-  const result = checkWikiAuthority({author, headRef, files})
+  const result = checkWikiAuthority({author, headRef, headRepo, baseRepo: fullName, files})
 
   if (result.ok) {
     process.stdout.write(`check-wiki-authority: ok (author=${author}, files_checked=${files.length})\n`)

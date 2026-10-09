@@ -880,6 +880,7 @@ function fakeGateDeps(overrides: Partial<ChangedFileGateDeps> = {}): ChangedFile
       prNumber: 42,
       author: 'someone',
       headRef: 'feature/x',
+      headRepo: 'fro-bot/.github',
       fullName: 'fro-bot/.github',
     }),
     fetchChangedFiles: () => [],
@@ -1041,7 +1042,15 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
     const result = await evaluateTriggerGate(
       fakeTriggerConfig(),
       PULL_REQUEST_EVENT,
-      fakeGateDeps({readPullRequestContext: async () => ({prNumber: 1, author: 'x', headRef: 'y', fullName: null})}),
+      fakeGateDeps({
+        readPullRequestContext: async () => ({
+          prNumber: 1,
+          author: 'x',
+          headRef: 'y',
+          headRepo: undefined,
+          fullName: null,
+        }),
+      }),
     )
     expect(result?.verdict).toBe('instrumentation-failed')
     expect(result?.mutants[0]?.reason).toContain('full_name')
