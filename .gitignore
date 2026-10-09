@@ -38,6 +38,10 @@ coverage
 .context/
 .review/
 
+# Digest/bodies handoff dirs the capture workflows place inside the workspace for the agent
+.capture-learnings/
+.capture-patterns/
+
 # Wiki lint local artifacts (CI uploads them to actions/upload-artifact; never tracked in git)
 wiki-lint-report.md
 wiki-lint-report.json
