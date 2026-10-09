@@ -363,8 +363,11 @@ jobs:
           exit 1
         shell: bash
 
+      # Two mints with mutually exclusive conditions, so a run holds exactly one token and a
+      # review-only run never holds contents or issues write.
       - id: get-workflow-app-token
         name: 🔑 Mint write token
+        if: needs.harvest.outputs.has_work == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
@@ -377,6 +380,20 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+
+      # Review-only runs (no proposal left to draft) only request a review, so their token carries
+      # pull-requests write and nothing else.
+      - id: get-review-app-token
+        name: 🔑 Mint review-request token
+        if: needs.harvest.outputs.has_work != 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — smallest blast radius.
+          repositories: ${{ github.event.repository.name }}
+          # drafted-solutions-publish.ts in review-only mode only calls pulls.requestReviewers.
+          permission-pull-requests: write
 
       - name: 📬 Publish drafted solution docs
         id: publish
@@ -398,7 +415,7 @@ jobs:
         id: review-only
         if: needs.harvest.outputs.has_work != 'true'
         env:
-          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.get-review-app-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DRAFTED_SOLUTIONS_MODE: review-only
           DRAFTED_SOLUTIONS_RESULT_PATH: ${{ runner.temp }}/drafted-solutions-result.json

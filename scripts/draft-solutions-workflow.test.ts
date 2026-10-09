@@ -149,31 +149,87 @@ describe('draft-solutions.yaml credential split', () => {
     expect(agentStep?.with?.prompt).toBe(gh('env.TASK_PROMPT'))
   })
 
-  it('only publish mints an App token, with exactly contents, pull-requests, and issues write', () => {
-    const mintJobs = Object.entries(workflow.jobs)
-      .filter(([, job]) => job.steps.some(isMint))
-      .map(([name]) => name)
-    expect(mintJobs).toStrictEqual(['publish'])
+  describe('App-token mints (least privilege per mode)', () => {
+    const hasWork = "needs.harvest.outputs.has_work == 'true'"
+    const noWork = "needs.harvest.outputs.has_work != 'true'"
+    const scopesOf = (step: WorkflowStep | undefined) =>
+      Object.fromEntries(Object.entries(step?.with ?? {}).filter(([key]) => key.startsWith('permission-')))
+    const publishMint = publishJob?.steps.find(step => step.id === 'get-workflow-app-token')
+    const reviewMint = publishJob?.steps.find(step => step.id === 'get-review-app-token')
 
-    const mintStep = publishJob?.steps.find(isMint)
-    const scopes = Object.fromEntries(
-      Object.entries(mintStep?.with ?? {}).filter(([key]) => key.startsWith('permission-')),
-    )
-    expect(scopes).toStrictEqual({
-      'permission-contents': 'write',
-      'permission-pull-requests': 'write',
-      'permission-issues': 'write',
+    it('only publish mints App tokens', () => {
+      const mintJobs = Object.entries(workflow.jobs)
+        .filter(([, job]) => job.steps.some(isMint))
+        .map(([name]) => name)
+      expect(mintJobs).toStrictEqual(['publish'])
+      expect(publishJob?.steps.filter(isMint).map(step => step.id)).toStrictEqual([
+        'get-workflow-app-token',
+        'get-review-app-token',
+      ])
     })
-    expect(mintStep?.with).not.toHaveProperty('permission-workflows')
-    expect(String(mintStep?.with?.repositories)).toContain('github.event.repository.name')
+
+    it('the publishing mint has exactly contents, pull-requests, and issues write, and runs only with work', () => {
+      expect(isMint(publishMint ?? {})).toBe(true)
+      expect(scopesOf(publishMint)).toStrictEqual({
+        'permission-contents': 'write',
+        'permission-pull-requests': 'write',
+        'permission-issues': 'write',
+      })
+      expect(publishMint?.if).toBe(hasWork)
+      expect(String(publishMint?.with?.repositories)).toContain('github.event.repository.name')
+    })
+
+    it('the review-only mint has exactly pull-requests write, scoped to this repo, and runs only without work', () => {
+      expect(isMint(reviewMint ?? {})).toBe(true)
+      expect(scopesOf(reviewMint)).toStrictEqual({'permission-pull-requests': 'write'})
+      expect(reviewMint?.if).toBe(noWork)
+      expect(String(reviewMint?.with?.repositories)).toContain('github.event.repository.name')
+      expect(reviewMint?.with?.['app-id']).toBe(gh('secrets.APPLICATION_ID'))
+      expect(reviewMint?.with?.['private-key']).toBe(gh('secrets.APPLICATION_PRIVATE_KEY'))
+    })
+
+    it('the two mints have mutually exclusive conditions, so a run mints exactly one token', () => {
+      // has_work == 'true' vs has_work != 'true' partition every value of the output.
+      const runsMint = (condition: string | undefined, work: string): boolean =>
+        condition === hasWork ? work === 'true' : condition === noWork ? work !== 'true' : false
+      for (const work of ['true', 'false', '']) {
+        const minted = [publishMint, reviewMint].filter(step => runsMint(step?.if, work))
+        expect(minted, `has_work=${JSON.stringify(work)}`).toHaveLength(1)
+      }
+    })
+
+    it('no mint includes a workflows scope or any scope beyond its own', () => {
+      for (const mint of publishJob?.steps.filter(isMint) ?? []) {
+        expect(mint.with).not.toHaveProperty('permission-workflows')
+        expect(mint.with).not.toHaveProperty('permission-administration')
+      }
+      expect(Object.keys(scopesOf(reviewMint))).toStrictEqual(['permission-pull-requests'])
+    })
+
+    it("each script step consumes only its own mint's token", () => {
+      const publishStep = publishJob?.steps.find(step => step.id === 'publish')
+      const reviewStep = publishJob?.steps.find(step => step.id === 'review-only')
+      expect(publishStep?.env?.GITHUB_TOKEN).toBe(gh('steps.get-workflow-app-token.outputs.token'))
+      expect(reviewStep?.env?.GITHUB_TOKEN).toBe(gh('steps.get-review-app-token.outputs.token'))
+      expect(JSON.stringify(publishStep)).not.toContain('get-review-app-token')
+      expect(JSON.stringify(reviewStep)).not.toContain('get-workflow-app-token')
+    })
+
+    it('both mints come after the artifact guard, before the script steps that use them', () => {
+      const steps = publishJob?.steps ?? []
+      const guardIndex = steps.findIndex(step => step.name === '🚨 Fail on missing agent handoff')
+      const indexOf = (id: string) => steps.findIndex(step => step.id === id)
+      expect(indexOf('get-workflow-app-token')).toBeGreaterThan(guardIndex)
+      expect(indexOf('get-review-app-token')).toBeGreaterThan(guardIndex)
+      expect(indexOf('publish')).toBeGreaterThan(indexOf('get-workflow-app-token'))
+      expect(indexOf('review-only')).toBeGreaterThan(indexOf('get-review-app-token'))
+    })
   })
 
-  it('publish has no agent step and uses the minted token for the publish and review-only steps only', () => {
+  it('publish has no agent step and the minted tokens reach only the publish and review-only script steps', () => {
     expect(publishJob?.steps.find(isAgent)).toBeUndefined()
-    const mintStep = publishJob?.steps.find(isMint)
     const publishStep = publishJob?.steps.find(step => step.id === 'publish')
     expect(publishStep?.run).toContain('scripts/drafted-solutions-publish.ts')
-    expect(String(publishStep?.env?.GITHUB_TOKEN)).toContain(`steps.${mintStep?.id}.outputs.token`)
 
     const tokenUsers = publishJob?.steps.filter(step => JSON.stringify(step).includes('.outputs.token')) ?? []
     // Exactly the two script steps (publish with work, review-only without); neither runs agent code.
@@ -315,17 +371,17 @@ describe('draft-solutions.yaml handoff plumbing', () => {
       expect(named('🚨 Fail on missing agent handoff')?.if).toContain(hasWork)
     })
 
-    it('publishes only with work, and requests the review with the same scoped token otherwise', () => {
+    it('publishes only with work, and requests the review with the review-only token otherwise', () => {
       const publish = publishSteps.find(step => step.id === 'publish')
       const reviewOnly = publishSteps.find(step => step.id === 'review-only')
-      const mintIndex = publishSteps.findIndex(isMint)
+      const mintIndex = publishSteps.findIndex(step => step.id === 'get-review-app-token')
 
       expect(publish?.if).toBe(hasWork)
       expect(reviewOnly?.if).toBe("needs.harvest.outputs.has_work != 'true'")
       expect(publishSteps.indexOf(reviewOnly as WorkflowStep)).toBeGreaterThan(mintIndex)
       expect(reviewOnly?.run).toBe('node scripts/drafted-solutions-publish.ts')
       expect(reviewOnly?.env?.DRAFTED_SOLUTIONS_MODE).toBe('review-only')
-      expect(reviewOnly?.env?.GITHUB_TOKEN).toBe(gh('steps.get-workflow-app-token.outputs.token'))
+      expect(reviewOnly?.env?.GITHUB_TOKEN).toBe(gh('steps.get-review-app-token.outputs.token'))
       expect(reviewOnly?.env?.GITHUB_REPOSITORY).toBe(gh('github.repository'))
       // Review-only reads no digest, handoff, or rows.
       for (const key of [
@@ -335,12 +391,6 @@ describe('draft-solutions.yaml handoff plumbing', () => {
       ]) {
         expect(reviewOnly?.env?.[key]).toBeUndefined()
       }
-    })
-
-    it('mints one token with the same three write scopes for both modes', () => {
-      const mints = publishSteps.filter(isMint)
-      expect(mints).toHaveLength(1)
-      expect(mints[0]?.if).toBeUndefined()
     })
   })
 
