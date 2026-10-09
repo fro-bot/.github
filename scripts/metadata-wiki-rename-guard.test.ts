@@ -288,6 +288,7 @@ describe('keepStrandedRows', () => {
     })
     expect(kept).toMatchObject({blockedRepos: 1, unverifiableRepos: 0})
     expect([...kept.keptNodeIds]).toEqual(['R_1'])
+    expect(kept).toMatchObject({keptRenamed: 1, keptMerged: 0})
   })
 
   it('evaluates repos independently: only the blocked rename is reverted', async () => {
@@ -312,6 +313,7 @@ describe('keepStrandedRows', () => {
     })
 
     expect(kept.next).toEqual(previous)
+    expect(kept).toMatchObject({keptRenamed: 0, keptMerged: 1})
   })
 
   it('counts one repo once when several of its old names are blocked', async () => {

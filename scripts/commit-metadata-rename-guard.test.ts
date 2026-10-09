@@ -92,6 +92,7 @@ interface FakeBranch {
   pageLookupStatus: number | undefined
   repos: () => unknown
   writes: unknown[]
+  messages: string[]
   pageLookups: string[]
   createWorkflowDispatch: ReturnType<typeof vi.fn>
 }
@@ -107,6 +108,7 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
     pageLookupStatus: options.pageLookupStatus,
     repos: () => repos,
     writes: [],
+    messages: [],
     pageLookups: [],
     createWorkflowDispatch: vi.fn(async () => undefined),
   }
@@ -151,7 +153,7 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
     throw apiError(404, 'Not Found')
   }
 
-  const createOrUpdateFileContents = async (params: {content: string}): Promise<unknown> => {
+  const createOrUpdateFileContents = async (params: {content: string; message: string}): Promise<unknown> => {
     if (conflicts > 0) {
       conflicts -= 1
       options.onConflict?.(branch)
@@ -160,6 +162,7 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
     repos = parse(Buffer.from(params.content, 'base64').toString('utf8'))
     revision += 1
     branch.writes.push(repos)
+    branch.messages.push(params.message)
     return {data: {commit: {sha: `commit-${revision}`}}}
   }
 
@@ -514,6 +517,47 @@ describe('reconcile writer', () => {
     expect(stored.map(row => row.name)).toEqual(['old-widget', 'fresh'])
     // The kept repo is not surveyed under the new name; the newcomer still is.
     expect(dispatchedNodeIds(branch)).toEqual(['R_kgDOFRESH'])
+  })
+
+  it('does not claim a rename in the commit message for a repo the guard kept', async () => {
+    const branch = createFakeBranch({repos: reposFile(dueWidget()), pages: {'acme--old-widget': ID_LESS_PAGE}})
+
+    await reconcile(branch, {access: [widgetNew, newcomer], goneNames: ['old-widget']})
+
+    expect(branch.messages).toHaveLength(1)
+    expect(branch.messages[0]).toContain('+1 new')
+    expect(branch.messages[0]).not.toMatch(/renamed|merged/)
+  })
+
+  it('does not claim a merge in the commit message for a repo the guard kept', async () => {
+    const duplicates = reposFile(repoRow({name: 'new-widget'}), repoRow({name: 'old-widget'}))
+    const branch = createFakeBranch({repos: duplicates, pages: {'acme--old-widget': ID_LESS_PAGE}})
+
+    await reconcile(branch, {access: [widgetNew, newcomer]})
+
+    expect(branch.messages[0]).not.toMatch(/renamed|merged/)
+  })
+
+  it('still claims a merge that was applied', async () => {
+    const duplicates = reposFile(repoRow({name: 'new-widget'}), repoRow({name: 'old-widget'}))
+    const branch = createFakeBranch({repos: duplicates})
+
+    await reconcile(branch, {access: [widgetNew]})
+
+    expect(branch.messages[0]).toMatch(/\+1 merged/)
+  })
+
+  it('counts only the applied rename when one of two renames is blocked', async () => {
+    const branch = createFakeBranch({
+      repos: reposFile(dueWidget(), dueGadget()),
+      pages: {'acme--old-widget': ID_LESS_PAGE},
+    })
+
+    await reconcile(branch, {access: [widgetNew, gadgetNew], goneNames: ['old-widget', 'old-gadget']})
+
+    expect(branch.messages).toHaveLength(1)
+    expect(branch.messages[0]).toContain('+1 renamed')
+    expect(branch.messages[0]).not.toContain('merged')
   })
 
   it('applies an unblocked rename while a blocked one is kept', async () => {

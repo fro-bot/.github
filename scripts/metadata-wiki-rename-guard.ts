@@ -146,6 +146,9 @@ export interface KeptRows {
   readonly unverifiableRepos: number
   /** Stable node IDs of kept repos, so callers can skip work that would fail on the new name. */
   readonly keptNodeIds: ReadonlySet<string>
+  /** Renames and merged-away rows that were reverted, for callers that report such counts. */
+  readonly keptRenamed: number
+  readonly keptMerged: number
 }
 
 /**
@@ -164,7 +167,7 @@ export async function keepStrandedRows(params: {
   const blockedSlugs = new Set([...blocked.present, ...blocked.unverifiable])
   const keptNodeIds = new Set<string>()
   if (blockedSlugs.size === 0 || !isRecord(params.next) || !Array.isArray(params.next.repos)) {
-    return {next: params.next, blockedRepos: 0, unverifiableRepos: 0, keptNodeIds}
+    return {next: params.next, blockedRepos: 0, unverifiableRepos: 0, keptNodeIds, keptRenamed: 0, keptMerged: 0}
   }
 
   // One group per repo: the old public rows of each blocked name plus any old row sharing their identity.
@@ -184,6 +187,8 @@ export async function keepStrandedRows(params: {
   }
 
   let repos = params.next.repos as unknown[]
+  let keptRenamed = 0
+  let keptMerged = 0
   for (const group of groups) {
     const members = [...group].sort((left, right) => previousRows.indexOf(left) - previousRows.indexOf(right))
     const keys = new Set(members.flatMap(row => row.identityKeys))
@@ -194,6 +199,7 @@ export async function keepStrandedRows(params: {
 
     // The first proposed row of this repo is replaced by the old rows; its other proposed rows are dropped.
     const restored: unknown[] = []
+    const proposed: RepoRow[] = []
     let inserted = false
     for (const entry of repos) {
       const row = rowOf(entry)
@@ -202,13 +208,23 @@ export async function keepStrandedRows(params: {
         (row.identityKeys.some(key => keys.has(key)) || (row.slug !== undefined && slugs.has(row.slug)))
       if (!matches) {
         restored.push(entry)
-      } else if (!inserted) {
+        continue
+      }
+      proposed.push(row)
+      if (!inserted) {
         restored.push(...members.map(member => member.raw))
         inserted = true
       }
     }
     if (!inserted) restored.push(...members.map(member => member.raw))
     repos = restored
+
+    // Counts the engine reported for this repo and that no longer apply: new names, and rows merged away.
+    if (proposed.length > 0) {
+      keptMerged += Math.max(0, members.length - proposed.length)
+      keptRenamed += new Set(proposed.flatMap(row => (row.slug === undefined || slugs.has(row.slug) ? [] : [row.slug])))
+        .size
+    }
   }
 
   const presentSlugs = new Set(blocked.present)
@@ -220,6 +236,8 @@ export async function keepStrandedRows(params: {
     blockedRepos,
     unverifiableRepos: groups.length - blockedRepos,
     keptNodeIds,
+    keptRenamed,
+    keptMerged,
   }
 }
 

@@ -1757,10 +1757,12 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   }
 
   const hasChanges = planHasChanges(plan)
-  let wikiGuard: {kept: number; unverifiable: number; nodeIds: ReadonlySet<string>} = {
+  let wikiGuard: {kept: number; unverifiable: number; nodeIds: ReadonlySet<string>; renamed: number; merged: number} = {
     kept: 0,
     unverifiable: 0,
     nodeIds: new Set<string>(),
+    renamed: 0,
+    merged: 0,
   }
   let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
   let committed = false
@@ -1798,7 +1800,14 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     const commitResult = await commitMetadataImpl({
       octokit: appOctokit,
       path: reposPath,
-      message: formatCommitMessage(plan.summary),
+      // Read at write time, after the mutator: rename/merge counts exclude repos the guard kept.
+      get message() {
+        return formatCommitMessage({
+          ...plan.summary,
+          renamed: Math.max(0, plan.summary.renamed - wikiGuard.renamed),
+          merged: Math.max(0, plan.summary.merged - wikiGuard.merged),
+        })
+      },
       mutator: async currentParsed => {
         assertReposFile(currentParsed, 'repos')
         // Re-verify data-branch integrity inside the mutator to close the TOCTOU window
@@ -1843,6 +1852,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
           kept: guarded.blockedRepos + guarded.unverifiableRepos,
           unverifiable: guarded.unverifiableRepos,
           nodeIds: guarded.keptNodeIds,
+          renamed: guarded.keptRenamed,
+          merged: guarded.keptMerged,
         }
         return guarded.next
       },
