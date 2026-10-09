@@ -54,12 +54,21 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; reconcile will bootstrap it."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; reconcile will bootstrap it."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       - name: 🔁 Reconcile repos
         env:

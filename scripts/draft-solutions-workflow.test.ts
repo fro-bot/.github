@@ -5,11 +5,8 @@
  * scripts/agent-post-step-credential-guard.test.ts for the repo-wide invariant.
  */
 
-import {execFileSync} from 'node:child_process'
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
-import {tmpdir} from 'node:os'
-import {join, resolve} from 'node:path'
-import process from 'node:process'
+import {readFileSync} from 'node:fs'
+import {resolve} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
@@ -17,6 +14,7 @@ import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from './drafted-solutio
 import {DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
 import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
+import {overlayWasAttempted, runStepWithStubs} from './workflow-step-test-helper.ts'
 
 interface WorkflowStep {
   name?: string
@@ -598,53 +596,14 @@ describe('draft-solutions.yaml agent prompt', () => {
 describe('draft-solutions.yaml publish metadata overlay probe', () => {
   const overlayStep = publishJob?.steps.find(step => step.name === '⤵ Overlay metadata from data branch')
   const script = String(overlayStep?.run ?? '')
-  // Stub `git`: logs every invocation and exits per subcommand with the configured code.
-  const stubGit = [
-    '#!/bin/sh',
-    'echo "$*" >> "$STUB_GIT_TRACE"',
-    'case "$1" in',
-    '  ls-remote) exit "$STUB_GIT_LS_REMOTE_EXIT" ;;',
-    '  *) exit 0 ;;',
-    'esac',
-  ].join('\n')
-
-  function runOverlay(lsRemoteExit: number): {status: number; stdout: string; trace: string[]} {
-    const dir = mkdtempSync(join(tmpdir(), 'draft-solutions-overlay-'))
-    try {
-      writeFileSync(join(dir, 'git'), stubGit)
-      chmodSync(join(dir, 'git'), 0o755)
-      const scriptPath = join(dir, 'step.sh')
-      writeFileSync(scriptPath, script)
-      const traceFile = join(dir, 'trace')
-      writeFileSync(traceFile, '')
-      let result: {status: number; stdout: string}
-      try {
-        const stdout = execFileSync('bash', [scriptPath], {
-          cwd: dir,
-          env: {
-            PATH: `${dir}:${process.env.PATH ?? ''}`,
-            STUB_GIT_TRACE: traceFile,
-            STUB_GIT_LS_REMOTE_EXIT: String(lsRemoteExit),
-          },
-          encoding: 'utf8',
-        })
-        result = {status: 0, stdout}
-      } catch (error: unknown) {
-        const failure = error as {status?: number; stdout?: string}
-        result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
-      }
-      return {...result, trace: readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)}
-    } finally {
-      rmSync(dir, {recursive: true, force: true})
-    }
-  }
+  const runOverlay = (lsRemoteExit: number) => runStepWithStubs(script, {lsRemoteExit})
 
   it('exit 0 (branch present): fetches data and checks out metadata/', () => {
     const result = runOverlay(0)
 
     expect(result.status).toBe(0)
-    expect(result.trace).toContain('fetch --no-tags origin data')
-    expect(result.trace).toContain('checkout origin/data -- metadata/')
+    expect(result.trace).toContain('git fetch --no-tags origin data')
+    expect(result.trace).toContain('git checkout origin/data -- metadata/')
   })
 
   it('exit 2 (branch absent): skips with the existing message and succeeds without fetching', () => {
@@ -652,7 +611,7 @@ describe('draft-solutions.yaml publish metadata overlay probe', () => {
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('data branch not yet established; skipping metadata overlay.')
-    expect(result.trace.some(line => line.startsWith('fetch') || line.startsWith('checkout'))).toBe(false)
+    expect(overlayWasAttempted(result.trace)).toBe(false)
   })
 
   it('exit 128 (probe failed): fails the step naming the exit code, with no overlay', () => {
@@ -661,7 +620,7 @@ describe('draft-solutions.yaml publish metadata overlay probe', () => {
     expect(result.status).not.toBe(0)
     expect(result.stdout).toContain('::error::')
     expect(result.stdout).toContain('128')
-    expect(result.trace.some(line => line.startsWith('fetch') || line.startsWith('checkout'))).toBe(false)
+    expect(overlayWasAttempted(result.trace)).toBe(false)
   })
 
   it.each([1, 255])('any other probe exit (%i) also fails the step', (code: number) => {

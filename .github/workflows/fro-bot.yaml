@@ -1010,15 +1010,24 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              overlay_err=$(
+                { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+              ) || {
+                echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+              }
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       - name: Query solutions context
         id: solutions-query
@@ -1156,15 +1165,24 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              overlay_err=$(
+                { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+              ) || {
+                echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+              }
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       # This job has no agent step, so minting here is safe (see
       # scripts/agent-post-step-credential-guard.test.ts). Repo-scoped, read-only —

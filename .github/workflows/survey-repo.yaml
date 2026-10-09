@@ -159,26 +159,38 @@ jobs:
       # unattributable to the promotion privacy gate and would block data -> main.
       #
       # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
-      # (authoritative runtime state) before running the check. If the fetch or restore
-      # fails (e.g. data branch absent, network blip), the script runs against the
-      # checked-out (main) metadata instead. The private===false predicate in
+      # (authoritative runtime state) before running the check. If the branch is absent (probe
+      # exit 2) the script runs against the checked-out (main) metadata instead; a failed
+      # probe (any other nonzero exit) fails the step rather than trusting stale main metadata.
+      # A fetch or restore that fails after a successful probe still falls back to main. The private===false predicate in
       # publicRepoEntryExists keeps this fallback fail-safe: only entries with explicit
       # private===false in main's promoted metadata can yield onboarded=true, so a
       # missing data branch cannot silently admit an un-promotable repo.
       #
-      # The node script always runs and always emits onboarded=true/false — it never
-      # hard-fails — so a git error here produces a clean onboarded=false skip rather
-      # than a red job for a legitimately un-onboarded manual dispatch.
+      # Once it runs, the node script always emits onboarded=true/false — it never
+      # hard-fails — so a fetch or restore error after the probe produces a clean
+      # onboarded=false skip rather than a red job for a legitimately un-onboarded manual dispatch.
       - name: Check repo onboarded
         id: onboarded
         env:
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
         run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data || true
-            git restore --source FETCH_HEAD --worktree -- metadata || true
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch origin data || true
+              git restore --source FETCH_HEAD --worktree -- metadata || true
+              ;;
+            2)
+              # data branch absent: nothing to overlay.
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
           node scripts/check-repo-onboarded.ts
 
       # Hashes the actual filesystem content of eligible scoped paths (not `git diff`/
