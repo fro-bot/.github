@@ -711,45 +711,72 @@ export async function publishDraftedSolutions(params: PublishParams): Promise<Pu
   }
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]
-  if (value === undefined || value === '') throw new DraftedSolutionsError(`${name} is required`)
-  return value
+/** Seams for {@link runCli}; the defaults are the real Octokit and the process streams. */
+export interface CliDeps {
+  createOctokit?: (token: string) => OctokitClient | Promise<OctokitClient>
+  stdout?: (text: string) => void
+  stderr?: (text: string) => void
 }
 
-async function main(): Promise<void> {
-  const [owner, repo, ...rest] = requiredEnv('GITHUB_REPOSITORY').split('/')
-  if (owner === undefined || repo === undefined || owner === '' || repo === '' || rest.length > 0) {
-    throw new DraftedSolutionsError('GITHUB_REPOSITORY must be "owner/repo"')
-  }
+async function createRealOctokit(token: string): Promise<OctokitClient> {
   const {Octokit} = await import('@octokit/rest')
-  const octokit = new Octokit({auth: requiredEnv('GITHUB_TOKEN')})
+  return new Octokit({auth: token})
+}
 
-  const result =
-    process.env.DRAFTED_SOLUTIONS_MODE === 'review-only'
-      ? await reviewOnlyDraftedSolutions({octokit, owner, repo})
-      : await publishDraftedSolutions({
-          octokit,
-          owner,
-          repo,
-          digestPath: requiredEnv('DRAFTED_SOLUTIONS_DIGEST_PATH'),
-          handoffDir: requiredEnv('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
-          rowsPath: requiredEnv('DRAFTED_SOLUTIONS_ROWS_PATH'),
-        })
+/**
+ * The CLI entry, with its environment and I/O injected. Returns the exit code instead of exiting.
+ * Review-only mode needs only `GITHUB_TOKEN` and `GITHUB_REPOSITORY`; its failures print only
+ * messages this module wrote (an unexpected API error is reduced to a fixed line, so no upstream
+ * text reaches the log). Publish mode's messages are already scrubbed by the privacy gate.
+ */
+export async function runCli(env: Record<string, string | undefined>, deps: CliDeps = {}): Promise<number> {
+  const stdout = deps.stdout ?? ((text: string) => process.stdout.write(text))
+  const stderr = deps.stderr ?? ((text: string) => process.stderr.write(text))
+  const reviewOnly = env.DRAFTED_SOLUTIONS_MODE === 'review-only'
 
-  const line = `${JSON.stringify(result)}\n`
-  process.stdout.write(line)
-  const resultPath = process.env.DRAFTED_SOLUTIONS_RESULT_PATH
-  if (resultPath !== undefined && resultPath !== '') await writeFile(resultPath, line, {flag: 'w'})
+  const required = (name: string): string => {
+    const value = env[name]
+    if (value === undefined || value === '') throw new DraftedSolutionsError(`${name} is required`)
+    return value
+  }
+
+  try {
+    const [owner, repo, ...rest] = required('GITHUB_REPOSITORY').split('/')
+    if (owner === undefined || repo === undefined || owner === '' || repo === '' || rest.length > 0) {
+      throw new DraftedSolutionsError('GITHUB_REPOSITORY must be "owner/repo"')
+    }
+    const octokit = await (deps.createOctokit ?? createRealOctokit)(required('GITHUB_TOKEN'))
+
+    let result: PublishResult
+    try {
+      result = reviewOnly
+        ? await reviewOnlyDraftedSolutions({octokit, owner, repo})
+        : await publishDraftedSolutions({
+            octokit,
+            owner,
+            repo,
+            digestPath: required('DRAFTED_SOLUTIONS_DIGEST_PATH'),
+            handoffDir: required('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
+            rowsPath: required('DRAFTED_SOLUTIONS_ROWS_PATH'),
+          })
+    } catch (error: unknown) {
+      if (reviewOnly && !(error instanceof DraftedSolutionsError)) {
+        throw new DraftedSolutionsError('review-only run failed unexpectedly')
+      }
+      throw error
+    }
+
+    const line = `${JSON.stringify(result)}\n`
+    stdout(line)
+    const resultPath = env.DRAFTED_SOLUTIONS_RESULT_PATH
+    if (resultPath !== undefined && resultPath !== '') await writeFile(resultPath, line, {flag: 'w'})
+    return 0
+  } catch (error: unknown) {
+    stderr(`::error::drafted-solutions-publish: ${error instanceof Error ? error.message : String(error)}\n`)
+    return 1
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    await main()
-  } catch (error: unknown) {
-    process.stderr.write(
-      `::error::drafted-solutions-publish: ${error instanceof Error ? error.message : String(error)}\n`,
-    )
-    process.exit(1)
-  }
+  process.exit(await runCli(process.env))
 }

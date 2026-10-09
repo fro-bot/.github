@@ -1,5 +1,5 @@
 import type {OctokitClient} from './capture-learnings-harvest.ts'
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 
@@ -19,6 +19,7 @@ import {
   DRAFTED_PR_TITLE,
   publishDraftedSolutions,
   reviewOnlyDraftedSolutions,
+  runCli,
   type PublishParams,
   type PublishResult,
 } from './drafted-solutions-publish.ts'
@@ -1907,6 +1908,118 @@ describe('reviewOnlyDraftedSolutions', () => {
 
     // 4. The next harvest sees the request and asks for nothing more.
     expect((await harvest()).reviewNeeded).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CLI entry: review-only mode needs no digest, handoff, or rows
+// ---------------------------------------------------------------------------
+
+async function cli(fake: Fake, env: Record<string, string>) {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const tokensSeen: string[] = []
+  const status = await runCli(env, {
+    createOctokit: token => {
+      tokensSeen.push(token)
+      return fake.octokit
+    },
+    stdout: text => stdout.push(text),
+    stderr: text => stderr.push(text),
+  })
+  return {status, stdout: stdout.join(''), stderr: stderr.join(''), tokensSeen}
+}
+
+describe('publish CLI entry (DRAFTED_SOLUTIONS_MODE=review-only)', () => {
+  // Only what the review-only workflow step sets: no digest, handoff, or rows variables.
+  const reviewOnlyEnv = (extra: Record<string, string> = {}): Record<string, string> => ({
+    GITHUB_TOKEN: 'review-only-token',
+    GITHUB_REPOSITORY: FULL_NAME,
+    DRAFTED_SOLUTIONS_MODE: 'review-only',
+    ...extra,
+  })
+
+  it('success: exits 0, prints the result JSON to stdout, and writes it to the result path', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'drafted-cli-test-'))
+    tempDirs.push(dir)
+    const resultPath = path.join(dir, 'result.json')
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+
+    const result = await cli(fake, reviewOnlyEnv({DRAFTED_SOLUTIONS_RESULT_PATH: resultPath}))
+
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toStrictEqual({mode: 'review-requested', prNumber: 900})
+    expect(await readFile(resultPath, 'utf8')).toBe(result.stdout)
+    expect(result.stderr).toBe('')
+    expect(result.tokensSeen).toStrictEqual(['review-only-token'])
+    expect(callsOf(fake, 'pulls.requestReviewers')[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
+  })
+
+  it('success without a result path: stdout only, still exit 0', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+
+    const result = await cli(fake, reviewOnlyEnv())
+
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({mode: 'review-requested'})
+  })
+
+  it('no open drafted PR: exits 0 with a noop result', async () => {
+    const fake = makeFake({issues: []})
+
+    const result = await cli(fake, reviewOnlyEnv())
+
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toStrictEqual({mode: 'noop'})
+  })
+
+  it('request failure: exits 1 with the fixed message and none of the upstream error text', async () => {
+    const fake = makeFake({
+      issues: [],
+      pulls: [makePull()],
+      reviewRequestError: Object.assign(new Error(`${PRIVATE_TOKEN} upstream detail`), {status: 500}),
+    })
+
+    const result = await cli(fake, reviewOnlyEnv())
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('::error::drafted-solutions-publish: requesting review on drafted PR #900 failed\n')
+    expect(result.stderr).not.toContain(PRIVATE_TOKEN)
+  })
+
+  it('an unexpected API error exits 1 without echoing its text', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+    vi.mocked(fake.octokit.rest.pulls.list).mockRejectedValueOnce(new Error(`boom ${PRIVATE_TOKEN}`))
+
+    const result = await cli(fake, reviewOnlyEnv())
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).not.toContain(PRIVATE_TOKEN)
+    expect(result.stderr).toContain('::error::drafted-solutions-publish:')
+  })
+
+  it('still requires GITHUB_TOKEN and a well-formed GITHUB_REPOSITORY', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+
+    const noToken = await cli(fake, {GITHUB_REPOSITORY: FULL_NAME, DRAFTED_SOLUTIONS_MODE: 'review-only'})
+    const badRepo = await cli(fake, reviewOnlyEnv({GITHUB_REPOSITORY: 'not-a-repo'}))
+
+    expect(noToken.status).toBe(1)
+    expect(noToken.stderr).toContain('GITHUB_TOKEN is required')
+    expect(badRepo.status).toBe(1)
+    expect(badRepo.stderr).toContain('GITHUB_REPOSITORY must be "owner/repo"')
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
+  })
+
+  it('without the mode, the digest, handoff, and rows variables are still required', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+
+    const result = await cli(fake, {GITHUB_TOKEN: 't', GITHUB_REPOSITORY: FULL_NAME})
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('DRAFTED_SOLUTIONS_DIGEST_PATH is required')
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
   })
 })
 
