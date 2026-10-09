@@ -53,9 +53,9 @@ nothing about whether that protection survives the merge.
 Review shared repository settings against the complete effective payload the sync will apply.
 
 1. **Identify the merge semantics at the pinned engine version.** Read the engine source or release
-   notes for the version the workflow pins, not documentation or memory. This repo pins
-   `bfra-me/.github` v4.34.0 in `.github/workflows/update-repo-settings.yaml`, and
-   `.github/settings.yml` records the `>= v4.32.0` floor for label merging.
+   notes for the version `.github/workflows/update-repo-settings.yaml` currently pins, not
+   documentation or memory. The semantics below start at `bfra-me/.github` v4.32.0, the floor that
+   `.github/settings.yml` records for label merging; check the pin before relying on them.
 
 2. **Compute the effective configuration before judging a deletion.** A child-file deletion is safe
    when the value is inherited and destructive when it is not. For labels at v4.32.0 and later,
@@ -67,7 +67,7 @@ Review shared repository settings against the complete effective payload the syn
 
 4. **Verify merge semantics per array, not once.** Do not extend the label rule to `branches`,
    `rulesets`, status-check lists, or restriction lists. The next section gives the `branches` rule
-   at v4.34.0.
+   from v4.32.0.
 
 5. **Treat the label list as a deletion-authoritative allow-list.** The label sync deletes labels
    that are absent from the applied entries, which strips them from existing issues and pull
@@ -82,10 +82,11 @@ Review shared repository settings against the complete effective payload the syn
    models the effective label set, rejects duplicate local names, rejects exact local copies of base
    labels, and checks code-declared label descriptors against the merged set.
 
-### Branch protection at v4.34.0
+### Branch protection from v4.32.0
 
-Source read at tag `v4.34.0` (`.github/actions/update-repository-settings/src/config.ts`), with the
-release note in the action's `CHANGELOG.md` (0.3.0, `bfra-me/.github#2771`):
+Source read at tags `v4.34.0` and `v4.37.0` (`.github/actions/update-repository-settings/src/config.ts`
+is byte-identical at both), with the release note in the action's `CHANGELOG.md` (0.3.0,
+`bfra-me/.github#2771`). Re-read `config.ts` at the pinned tag when the pin moves:
 
 - Top-level `branches` entries merge by exact name. A same-name child entry is deep-merged onto the
   base entry.
@@ -186,7 +187,7 @@ branches:
           - Test
 ```
 
-At v4.34.0 this entry is deep-merged onto the base `main` entry in `common-settings.yaml`. The
+From v4.32.0 this entry is deep-merged onto the base `main` entry in `common-settings.yaml`. The
 child's `contexts` array replaces the base's `contexts: []`. Fields the child does not declare come
 from the base: `enforce_admins: true`, `required_pull_request_reviews`, `required_linear_history:
 true`, and `restrictions: null`.

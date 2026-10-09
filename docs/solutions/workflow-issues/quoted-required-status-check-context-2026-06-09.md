@@ -100,25 +100,36 @@ for (const context of contexts ?? []) {
 }
 ```
 
-### Check that a job will report on every pull request before making it required
+### Check how a required context can go unreported or skipped
 
-A required context that is skipped leaves branch protection waiting. Before adding a job name to
-`required_status_checks.contexts`, confirm that it reports on every pull request:
+GitHub treats a skipped workflow and a skipped job differently
+("Handling skipped but required checks" in the GitHub docs):
 
-- The workflow has no `paths:` filter that can skip the whole run for ordinary PRs.
-- `pull_request.types` covers the lifecycle events the repo accepts for review (`opened`,
-  `ready_for_review`, `reopened`, `synchronize` in `main.yaml`).
-- Any job-level `if:` is true for pull requests. An applicability check that may decide "nothing to
-  do" belongs inside the job, not on it.
-- The internal gate exits `0` for a not-applicable result, so the context reports success instead of
-  staying pending.
-- Existing required jobs already run under the same trigger and checkout ref, or the new job's
-  differences are justified.
+| Cause | Required check |
+| --- | --- |
+| Workflow skipped by `paths`/`branches` filtering or a commit-message skip | Stays "Pending" and blocks merging |
+| Job skipped by `jobs.<job_id>.if` | Reports "Success" and satisfies the check without running anything |
 
-`Check Mutation Guards` follows this: the job's only condition is `github.event_name ==
-'pull_request'`, and the changed-file gate lives in `scripts/check-mutation-guards.ts`, where an
-unmatched change set returns `not-applicable`, which maps to exit code `0`. That is why the context
-can be required without blocking docs-only pull requests.
+A skipped workflow is the deadlock. A job-level `if:` that can be false on a PR is the opposite
+risk: a silent pass that validates nothing. Before adding a job name to
+`required_status_checks.contexts`:
+
+- Confirm the workflow has no `paths:` or `branches:` filter that can skip the whole run for
+  ordinary PRs, and that `pull_request.types` covers the lifecycle events the repo accepts for review
+  (`opened`, `ready_for_review`, `reopened`, `synchronize` in `main.yaml`). A missing context also
+  blocks the PR.
+- Confirm the workflow runs on an event GitHub evaluates for pull requests (such as `pull_request`),
+  not `workflow_dispatch`.
+- Do not put an applicability decision in a job-level `if:` that can be false on PRs. Put it inside
+  the job and exit `0` for "not applicable", so the decision is explicit and visible in the log.
+- Check that existing required jobs run under the same trigger and checkout ref, or justify the
+  difference.
+
+`Check Mutation Guards` is built this way. Its job-level condition is only
+`github.event_name == 'pull_request'`, because a push to `main` has no PR to diff against. The
+changed-file gate lives in `scripts/check-mutation-guards.ts`: an unmatched change set returns
+`not-applicable`, which maps to exit code `0`. A job-level skip would also report Success, but with
+no record of why validation did not run; the in-script gate leaves that decision in the job's output.
 
 ## Why This Matters
 
@@ -175,5 +186,7 @@ instead:
 
 ## Related
 
+- [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks) — GitHub docs: a workflow skipped by path/branch filtering leaves its checks pending, while a job skipped by a conditional reports Success.
+- [Using conditions to control job execution](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions) — GitHub docs: a skipped job reports "Success" and does not block a pull request, even when its check is required.
 - [Normalize redacted metadata YAML quoting before data promotion](../integration-issues/normalize-redacted-yaml-quotes-2026-05-09.md) — a sibling YAML-quoting trap (scalar quote *style*) where a green producer workflow wrote a shape that broke a later step.
 - [GitHub Actions step output interpolation](github-actions-step-output-interpolation-2026-04-21.md) — the same "keep the value byte-exact across surfaces" discipline in a workflow-shell context.
