@@ -6,12 +6,14 @@ module: github-actions-workflows
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
-last_updated: 2026-06-09
+last_updated: 2026-10-09
 verified: 2026-06-09
 applies_when:
   - Adding or renaming a required_status_checks.contexts entry in .github/settings.yml
   - Any settings.yml value contains a colon-space, slash, or other YAML-significant punctuation
   - A commit-status context must match byte-for-byte across the workflow POST, settings.yml, and docs
+  - Promoting a workflow job to a required branch-protection check
+  - A workflow-to-settings context contract could drift if both files restate the same literal
 root_cause: config_error
 resolution_type: config_change
 related_components:
@@ -67,6 +69,56 @@ in all three places:
 - operator docs (`metadata/README.md`)
 
 A mismatch leaves branch protection waiting forever on a context that never arrives.
+
+### Derive required-check contexts from the workflow
+
+When a workflow job becomes a required check, do not have a test restate the context string by hand.
+Parse the workflow, read the job's own `name`, and assert that `.github/settings.yml` contains that
+derived value. PR #3860 did this when it made `Check Mutation Guards` required
+(`scripts/main-workflow.test.ts`):
+
+```ts
+const job = parsedWorkflow.jobs['check-mutation-guards']
+
+it('lists the check-mutation-guards job name as a required status check context (byte-for-byte, not a repeated literal)', () => {
+  expect(job?.name).toBeDefined()
+  expect(mainBranch?.protection?.required_status_checks?.contexts).toContain(job?.name)
+})
+```
+
+The workflow is then the source of truth for the check name. Renaming the job without updating branch
+protection fails the test, and so does renaming the settings entry without the job. This covers the
+`check-mutation-guards` job; it is not a repo-wide assertion over every context, so a new required
+check needs its own derived assertion.
+
+Keep the sibling invariant from the quoting failure above: type `contexts` as `unknown[]` and assert
+that every entry is a string. A `string[]` type would assume away the failure this document is about.
+
+```ts
+for (const context of contexts ?? []) {
+  expect(typeof context, `context entry ${JSON.stringify(context)} is not a string`).toBe('string')
+}
+```
+
+### Check that a job will report on every pull request before making it required
+
+A required context that is skipped leaves branch protection waiting. Before adding a job name to
+`required_status_checks.contexts`, confirm that it reports on every pull request:
+
+- The workflow has no `paths:` filter that can skip the whole run for ordinary PRs.
+- `pull_request.types` covers the lifecycle events the repo accepts for review (`opened`,
+  `ready_for_review`, `reopened`, `synchronize` in `main.yaml`).
+- Any job-level `if:` is true for pull requests. An applicability check that may decide "nothing to
+  do" belongs inside the job, not on it.
+- The internal gate exits `0` for a not-applicable result, so the context reports success instead of
+  staying pending.
+- Existing required jobs already run under the same trigger and checkout ref, or the new job's
+  differences are justified.
+
+`Check Mutation Guards` follows this: the job's only condition is `github.event_name ==
+'pull_request'`, and the changed-file gate lives in `scripts/check-mutation-guards.ts`, where an
+unmatched change set returns `not-applicable`, which maps to exit code `0`. That is why the context
+can be required without blocking docs-only pull requests.
 
 ## Why This Matters
 
