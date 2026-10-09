@@ -7,9 +7,13 @@
  * Order (every step fails closed; nothing is written until step 6):
  *  1. load the privacy token sets (private repos + redacted canonical IDs);
  *  2. validate the handoff against the drafted-solutions path policy into a staging dir;
- *  3. validate the agent's evidence rows against the digest (exactly one row per proposal);
+ *  3. validate the agent's evidence rows against the digest (exactly one row per proposal), and
+ *     account for the handoff both ways: each new-doc/extension row's doc is in it, and each file in
+ *     it belongs to such a row;
  *  4. re-verify digest proposals and any open drafted PR against the API (the digest and PR body
- *     are not trusted);
+ *     are not trusted), resolve the commit that will back the PR, and check every covered row's doc
+ *     on that commit's tree plus the handoff: the live drafted-branch head when a PR is open, else
+ *     main's head;
  *  5. gate every file (path and content), the PR title, the commit message, the fully rendered PR
  *     body, and every comment;
  *  6. write.
@@ -21,7 +25,8 @@
  *                          body-only update (no commit, no ref write).
  *   unverified          -> always comment + close as not planned; never in the PR body or a
  *                          `Closes` line (a merge would close it as completed).
- * Closure comments carry a hidden per-issue marker so a retry never posts a second comment.
+ * Closure comments carry a hidden per-decision marker (issue, outcome, proposal body hash) so a
+ * retry of the same decision never posts a second comment.
  *
  * Error messages never echo agent-supplied text that failed the privacy gate.
  *
@@ -29,15 +34,15 @@
  * - env `GITHUB_TOKEN` (App token with contents, pull-requests, issues write), `GITHUB_REPOSITORY`,
  *   `DRAFTED_SOLUTIONS_DIGEST_PATH`, `DRAFTED_SOLUTIONS_HANDOFF_DIR` (manifest.json + files/),
  *   `DRAFTED_SOLUTIONS_ROWS_PATH` (the agent's evidence rows: a JSON array of coverage rows), and
- *   optionally `DRAFTED_SOLUTIONS_WORKSPACE` (checked-out drafted tree, default cwd) and
- *   `DRAFTED_SOLUTIONS_RESULT_PATH` (result JSON destination).
+ *   optionally `DRAFTED_SOLUTIONS_RESULT_PATH` (result JSON destination). Covered docs are verified
+ *   through the API, on the tree that will back the PR; no checkout is read.
  * - stdout: one-line JSON result. exit 0 on success, 1 on any fail-closed condition.
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
 import type {OctokitClient} from './capture-learnings-harvest.ts'
-import {access, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -94,8 +99,6 @@ export interface PublishParams {
   digestPath: string
   handoffDir: string
   rowsPath: string
-  /** Checked-out drafted tree (drafted branch head if a PR is open, else main), for covered-doc checks. */
-  workspaceDir: string
   loadTokens?: () => Promise<PublicOutputTokens>
   logger?: PublishLogger
   /** Overridable so tests can prove the title is gated. */
@@ -222,33 +225,65 @@ function prepareRows(raw: unknown, digest: DraftedDigest): CoverageRow[] {
   return validated.rows
 }
 
-async function docExists(workspaceDir: string, relativePath: string): Promise<boolean> {
-  try {
-    await access(path.join(workspaceDir, relativePath))
-    return true
-  } catch {
-    return false
+/**
+ * Rows and handoff must account for each other. Forward: every new-doc/extension row's doc is in the
+ * handoff. Inverse: every handoff file is the target doc of at least one new-doc/extension row, so
+ * nothing rides along that no row (and no reviewer-facing evidence) vouches for. Messages name an
+ * index or an issue, never an agent-supplied path.
+ */
+function checkRowsAgainstHandoff(rows: readonly CoverageRow[], files: readonly StagedFile[]): void {
+  const changed = new Set(files.map(file => file.path))
+  const draftedTargets = new Set<string>()
+  for (const row of rows) {
+    if (row.outcome !== 'new-doc' && row.outcome !== 'extension') continue
+    if (row.targetDoc === null || !changed.has(row.targetDoc)) {
+      throw new DraftedSolutionsError(`${row.outcome} row #${row.issue}: its target doc is not part of the handoff`)
+    }
+    draftedTargets.add(row.targetDoc)
+  }
+  for (const [index, file] of files.entries()) {
+    if (!draftedTargets.has(file.path)) {
+      throw new DraftedSolutionsError(
+        `handoff file #${index + 1} is not the target doc of any new-doc or extension row`,
+      )
+    }
   }
 }
 
-/** Rows must agree with the handoff: drafted docs are in it; covered docs exist in it or on the tree. */
-async function checkRowsAgainstTree(
+/** True when `relativePath` is a regular file in the tree of commit `commitSha` (read through the API). */
+async function docExistsAt(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  relativePath: string,
+): Promise<boolean> {
+  try {
+    const {data} = await octokit.rest.repos.getContent({owner, repo, path: relativePath, ref: commitSha})
+    return !Array.isArray(data) && data.type === 'file'
+  } catch (error: unknown) {
+    if (errorStatus(error) === 404) return false
+    throw error
+  }
+}
+
+/**
+ * Every covered row's doc must exist on the tree that will back the PR: the base commit's tree plus
+ * this handoff. Docs created by the handoff itself need no lookup.
+ */
+async function checkCoveredDocs(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  baseSha: string,
   rows: readonly CoverageRow[],
   files: readonly StagedFile[],
-  workspaceDir: string,
 ): Promise<void> {
-  const changed = new Set(files.map(file => file.path))
+  const inHandoff = new Set(files.map(file => file.path))
   for (const row of rows) {
-    if (row.outcome === 'new-doc' || row.outcome === 'extension') {
-      if (row.targetDoc === null || !changed.has(row.targetDoc)) {
-        throw new DraftedSolutionsError(`${row.outcome} row #${row.issue}: its target doc is not part of the handoff`)
-      }
-    } else if (row.outcome === 'covered') {
-      const present =
-        row.targetDoc !== null && (changed.has(row.targetDoc) || (await docExists(workspaceDir, row.targetDoc)))
-      if (!present) {
-        throw new DraftedSolutionsError(`covered row #${row.issue}: its doc does not exist on the drafted tree`)
-      }
+    if (row.outcome !== 'covered' || row.targetDoc === null || inHandoff.has(row.targetDoc)) continue
+    if (!(await docExistsAt(octokit, owner, repo, baseSha, row.targetDoc))) {
+      throw new DraftedSolutionsError(`covered row #${row.issue}: its doc does not exist on the tree being published`)
     }
   }
 }
@@ -281,9 +316,13 @@ async function verifyProposals(
   return states
 }
 
-/** Hidden per-issue marker: lets a retry see that the closure comment already landed. */
-export function closureMarker(issue: number): string {
-  return `<!-- fro-bot:drafted-solutions-closure v1 issue=${issue} -->`
+/**
+ * Hidden per-decision marker: the same issue, outcome, and proposal body. A retry of the same
+ * decision sees it and does not comment twice; a changed body or outcome is a new decision and
+ * gets its own comment.
+ */
+export function closureMarker(row: CoverageRow): string {
+  return `<!-- fro-bot:drafted-solutions-closure v2 issue=${row.issue} outcome=${row.outcome} body=${row.bodyHash} -->`
 }
 
 /** Agent text goes into a public comment: keep it from forging or terminating an HTML comment marker. */
@@ -305,7 +344,7 @@ function closingComment(row: CoverageRow): string {
           reason,
           'Closing as not planned. Reopen with a corrected body to have it considered again.',
         ]
-  return [...body, closureMarker(row.issue)].join('\n\n')
+  return [...body, closureMarker(row)].join('\n\n')
 }
 
 /** Throws on the first blocked surface. Names the surface by label, never by blocked text. */
@@ -383,6 +422,28 @@ async function existingRowsOf(
   return parsed.rows
 }
 
+/**
+ * The commit whose tree will back the PR: the live drafted-branch head when a PR is open (not the
+ * PR's recorded head, which operator or update-branch commits can outdate), else main's head.
+ */
+async function resolveBaseSha(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  openPr: OpenDraftedPr | null,
+): Promise<string> {
+  if (openPr !== null) {
+    const headSha = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
+    if (headSha === null) {
+      throw new DraftedSolutionsError(`drafted PR #${openPr.number} is open but ${DRAFTED_BRANCH} does not exist`)
+    }
+    return headSha
+  }
+  const baseSha = await readRefSha(octokit, owner, repo, `heads/${BASE_BRANCH}`)
+  if (baseSha === null) throw new DraftedSolutionsError(`${BASE_BRANCH} does not exist`)
+  return baseSha
+}
+
 type PrWrite =
   | {mode: 'created-pr'; prNumber: number; commitSha: string}
   | {mode: 'updated-pr'; prNumber: number; commitSha: string}
@@ -392,12 +453,18 @@ type PrWrite =
 async function writePr(
   params: PublishParams,
   tokens: PublicOutputTokens,
-  context: {openPr: OpenDraftedPr | null; files: readonly StagedFile[]; bodyRows: readonly CoverageRow[]; body: string},
+  context: {
+    openPr: OpenDraftedPr | null
+    baseSha: string
+    files: readonly StagedFile[]
+    bodyRows: readonly CoverageRow[]
+    body: string
+  },
 ): Promise<PrWrite> {
   const {octokit, owner, repo} = params
   const logger = params.logger ?? DEFAULT_LOGGER
   const title = params.prTitle ?? DRAFTED_PR_TITLE
-  const {openPr, files, bodyRows, body} = context
+  const {openPr, baseSha, files, bodyRows, body} = context
 
   if (openPr !== null && files.length === 0) {
     // Covered rows only: repair the PR body without touching the branch.
@@ -406,19 +473,14 @@ async function writePr(
   }
 
   if (openPr !== null) {
-    // The PR's recorded head may be stale (operator or update-branch commits); build on the ref now.
-    const headSha = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
-    if (headSha === null) {
-      throw new DraftedSolutionsError(`drafted PR #${openPr.number} is open but ${DRAFTED_BRANCH} does not exist`)
-    }
-    const commitSha = await commitFiles(octokit, owner, repo, headSha, files)
+    // baseSha is the live branch head (not the PR's possibly stale recorded head), read just before
+    // the gate; updateRef without force fails if the branch moves in between.
+    const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
     await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
     await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
     return {mode: 'updated-pr', prNumber: openPr.number, commitSha}
   }
 
-  const baseSha = await readRefSha(octokit, owner, repo, `heads/${BASE_BRANCH}`)
-  if (baseSha === null) throw new DraftedSolutionsError(`${BASE_BRANCH} does not exist`)
   const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
 
   const oldSha = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
@@ -455,7 +517,7 @@ async function writePr(
 
 /** Posts the closure comment unless the bot already left it, then closes the issue. */
 async function closeProposal(octokit: OctokitClient, owner: string, repo: string, row: CoverageRow): Promise<void> {
-  const marker = closureMarker(row.issue)
+  const marker = closureMarker(row)
   const existing = await octokit.paginate(octokit.rest.issues.listComments, {
     owner,
     repo,
@@ -488,7 +550,7 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
     return {mode: 'noop'}
   }
 
-  await checkRowsAgainstTree(rows, files, params.workspaceDir)
+  checkRowsAgainstHandoff(rows, files)
   const states = await verifyProposals(octokit, owner, repo, digest)
   const openPr = await findOpenDraftedPr(octokit, owner, repo)
   const existingRows = openPr === null ? [] : await existingRowsOf(octokit, owner, repo, openPr)
@@ -497,6 +559,13 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   // drafted PR is open or this run has doc changes. Closed directly: unverified rows always (they
   // must never close as completed on merge), and covered rows only when there is no PR to carry them.
   const hasDocChanges = files.length > 0
+
+  // Read-only: resolve the commit whose tree backs the PR, and verify covered docs on that tree
+  // (plus this handoff) before the gate and before any write.
+  const needsBase = hasDocChanges || rows.some(row => row.outcome === 'covered')
+  const baseSha = needsBase ? await resolveBaseSha(octokit, owner, repo, openPr) : null
+  if (baseSha !== null) await checkCoveredDocs(octokit, owner, repo, baseSha, rows, files)
+
   const bodyRows = rows.filter(
     row =>
       row.outcome === 'new-doc' ||
@@ -524,7 +593,9 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
     })),
   ])
 
-  const prWrite = writesPr ? await writePr(params, tokens, {openPr, files, bodyRows, body}) : null
+  if (writesPr && baseSha === null) throw new DraftedSolutionsError('internal: a PR write has no base commit')
+  const prWrite =
+    writesPr && baseSha !== null ? await writePr(params, tokens, {openPr, baseSha, files, bodyRows, body}) : null
 
   const closed: number[] = []
   for (const row of closeRows) {
@@ -574,7 +645,6 @@ async function main(): Promise<void> {
     digestPath: requiredEnv('DRAFTED_SOLUTIONS_DIGEST_PATH'),
     handoffDir: requiredEnv('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
     rowsPath: requiredEnv('DRAFTED_SOLUTIONS_ROWS_PATH'),
-    workspaceDir: process.env.DRAFTED_SOLUTIONS_WORKSPACE ?? process.cwd(),
   })
 
   const line = `${JSON.stringify(result)}\n`

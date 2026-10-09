@@ -117,6 +117,11 @@ interface FakeOptions {
   failNextIssueUpdate?: boolean
   /** The next pulls.update fails once (a PR-body update that did not land). */
   failNextPullUpdate?: boolean
+  /** Docs present on main's head tree / on the live drafted branch tree (served by repos.getContent). */
+  mainDocs?: string[]
+  branchDocs?: string[]
+  /** Paths that resolve to a directory (getContent returns an array), not a file. */
+  directoryPaths?: string[]
 }
 
 function makeFake(options: FakeOptions) {
@@ -133,6 +138,10 @@ function makeFake(options: FakeOptions) {
       list.map((comment, index) => ({id: 9000 + index, ...comment})),
     ]),
   )
+  const treeDocs = new Map<string, Set<string>>([
+    [MAIN_SHA, new Set(options.mainDocs ?? [])],
+    [BRANCH_SHA, new Set(options.branchDocs ?? [])],
+  ])
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -199,6 +208,14 @@ function makeFake(options: FakeOptions) {
         return record('pulls.requestReviewers', args, {data: {}})
       }),
     },
+    repos: {
+      getContent: vi.fn(async (args: {path: string; ref: string}) => {
+        record('repos.getContent', args, undefined)
+        if (options.directoryPaths?.includes(args.path) === true) return {data: [{type: 'file', path: args.path}]}
+        if (treeDocs.get(args.ref)?.has(args.path) !== true) throw notFound()
+        return {data: {type: 'file', path: args.path}}
+      }),
+    },
     git: {
       getRef: vi.fn(async (args: {ref: string}) => {
         const sha = refs.get(args.ref)
@@ -233,7 +250,7 @@ function makeFake(options: FakeOptions) {
     rest,
   } as unknown as OctokitClient
 
-  return {octokit, calls, pulls, issues, refs, comments}
+  return {octokit, calls, pulls, issues, refs, comments, treeDocs}
 }
 
 type Fake = ReturnType<typeof makeFake>
@@ -272,8 +289,6 @@ interface ArrangeOptions {
   /** path → content for docs the agent wrote; omitted means an empty handoff. */
   changed?: Record<string, string>
   manifest?: unknown
-  /** Docs that already exist on the checked-out drafted tree. */
-  workspaceDocs?: string[]
   /** Digest hash overrides, by issue (to simulate a body edited after harvest). */
   digestBodyOverride?: Record<number, string>
 }
@@ -282,9 +297,7 @@ async function arrange(options: ArrangeOptions) {
   const root = await mkdtemp(path.join(tmpdir(), 'drafted-publish-test-'))
   tempDirs.push(root)
   const handoffDir = path.join(root, 'handoff')
-  const workspaceDir = path.join(root, 'workspace')
   await mkdir(path.join(handoffDir, 'files'), {recursive: true})
-  await mkdir(workspaceDir, {recursive: true})
 
   const changed = options.changed ?? {}
   for (const [relativePath, content] of Object.entries(changed)) {
@@ -296,12 +309,6 @@ async function arrange(options: ArrangeOptions) {
     path.join(handoffDir, 'manifest.json'),
     JSON.stringify(options.manifest ?? {changed: Object.keys(changed), deleted: []}),
   )
-
-  for (const doc of options.workspaceDocs ?? []) {
-    const dest = path.join(workspaceDir, doc)
-    await mkdir(path.dirname(dest), {recursive: true})
-    await writeFile(dest, DOC_BODY)
-  }
 
   const digest: DraftedDigest = {
     version: DIGEST_VERSION,
@@ -323,7 +330,7 @@ async function arrange(options: ArrangeOptions) {
   await writeFile(digestPath, JSON.stringify(digest))
   await writeFile(rowsPath, typeof options.rows === 'string' ? options.rows : JSON.stringify(options.rows))
 
-  return {digestPath, handoffDir, rowsPath, workspaceDir}
+  return {digestPath, handoffDir, rowsPath}
 }
 
 const okTokens = async (): Promise<PublicOutputTokens> =>
@@ -535,12 +542,11 @@ describe('publishDraftedSolutions: no doc changes', () => {
   it('comments on and closes each processed proposal, with no branch or PR call', async () => {
     const covered = makeIssue(11)
     const unverified = makeIssue(12)
-    const fake = makeFake({issues: [covered, unverified]})
+    const fake = makeFake({issues: [covered, unverified], mainDocs: ['docs/solutions/best-practices/existing.md']})
 
     const result = await run(fake, {
       proposals: [covered, unverified],
       rows: [coveredRow(covered), unverifiedRow(unverified)],
-      workspaceDocs: ['docs/solutions/best-practices/existing.md'],
     })
 
     expect(result).toStrictEqual({mode: 'closed-proposals', closed: [11, 12], skipped: []})
@@ -609,13 +615,12 @@ describe('publishDraftedSolutions: mixed run (AE2)', () => {
   it('puts a new-doc row and a covered row in one PR and does not close the covered proposal directly', async () => {
     const drafted = makeIssue(11)
     const covered = makeIssue(12)
-    const fake = makeFake({issues: [drafted, covered]})
+    const fake = makeFake({issues: [drafted, covered], mainDocs: ['docs/solutions/best-practices/existing.md']})
 
     const result = await run(fake, {
       proposals: [drafted, covered],
       rows: [agentRow(drafted), coveredRow(covered)],
       changed: {[docPath(11)]: DOC_BODY},
-      workspaceDocs: ['docs/solutions/best-practices/existing.md'],
     })
 
     expect(result.mode).toBe('created-pr')
@@ -703,7 +708,12 @@ describe('publishDraftedSolutions: routing table (outcome x PR open x doc change
     async (outcome: 'new-doc' | 'covered' | 'unverified', prOpen: boolean, withDocs: boolean, expected) => {
       const target = makeIssue(11)
       const companion = makeIssue(20)
-      const fake = makeFake({issues: [target, companion], pulls: prOpen ? [makePull()] : []})
+      const fake = makeFake({
+        issues: [target, companion],
+        pulls: prOpen ? [makePull()] : [],
+        mainDocs: [EXISTING_DOC],
+        branchDocs: [EXISTING_DOC],
+      })
       const targetRow =
         outcome === 'new-doc' ? agentRow(target) : outcome === 'covered' ? coveredRow(target) : unverifiedRow(target)
       // A new-doc row needs its doc in the handoff; "with doc changes" is carried by a companion new-doc row.
@@ -713,7 +723,6 @@ describe('publishDraftedSolutions: routing table (outcome x PR open x doc change
         proposals: needsCompanion ? [target, companion] : [target],
         rows: needsCompanion ? [targetRow, agentRow(companion)] : [targetRow],
         changed: withDocs ? {[docPath(needsCompanion ? 20 : 11)]: DOC_BODY} : {},
-        workspaceDocs: [EXISTING_DOC],
       })
 
       const body = lastPrBody(fake)
@@ -737,13 +746,9 @@ describe('publishDraftedSolutions: routing table (outcome x PR open x doc change
 describe('publishDraftedSolutions: covered rows with an open PR and no doc changes', () => {
   it('updates only the PR body: no blob, tree, commit, or ref write', async () => {
     const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], pulls: [makePull()]})
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [EXISTING_DOC]})
 
-    const result = await run(fake, {
-      proposals: [issue],
-      rows: [coveredRow(issue)],
-      workspaceDocs: [EXISTING_DOC],
-    })
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
 
     expect(result).toMatchObject({mode: 'updated-pr-body', prNumber: 900})
     expect(fake.calls.filter(call => GIT_WRITE_OPS.includes(call.op))).toStrictEqual([])
@@ -766,11 +771,9 @@ describe('publishDraftedSolutions: covered rows with an open PR and no doc chang
 
     // Run 2: harvest lists #11 as uncovered again; the doc is already on the drafted tree, so the
     // agent marks it covered. Only the PR body is repaired; the proposal is not closed directly.
-    const result = await run(fake, {
-      proposals: [issue],
-      rows: [coveredRow(issue, docPath(11))],
-      workspaceDocs: [docPath(11)],
-    })
+    // The branch moved in run 1, so the doc is now on the live branch tree.
+    fake.treeDocs.set(fake.refs.get(BRANCH_REF) ?? '', new Set([docPath(11)]))
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue, docPath(11))]})
 
     expect(result).toMatchObject({mode: 'updated-pr-body', prNumber: 900})
     expect(callsOf(fake, 'git.updateRef')).toHaveLength(1)
@@ -787,19 +790,31 @@ describe('publishDraftedSolutions: covered rows with an open PR and no doc chang
 // Closure comments are idempotent
 // ---------------------------------------------------------------------------
 
-const MARKER_11 = '<!-- fro-bot:drafted-solutions-closure v1 issue=11 -->'
+/** The decision-scoped marker: same issue, same outcome, same proposal body. */
+function marker(issue: FakeIssue, outcome: 'covered' | 'unverified' = 'unverified', body = issue.body ?? ''): string {
+  return `<!-- fro-bot:drafted-solutions-closure v2 issue=${issue.number} outcome=${outcome} body=${hashProposalBody(body)} -->`
+}
 
-describe('publishDraftedSolutions: closure comments are idempotent', () => {
-  it('carries a hidden per-issue marker', async () => {
+describe('publishDraftedSolutions: closure comments are idempotent per decision', () => {
+  it('carries a hidden marker naming the issue, the outcome, and the proposal body hash', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue]})
 
     await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
 
-    expect(String(callsOf(fake, 'issues.createComment')[0]?.args.body)).toContain(MARKER_11)
+    expect(String(callsOf(fake, 'issues.createComment')[0]?.args.body)).toContain(marker(issue))
   })
 
-  it('a retry after a failed close posts no second comment, then closes the issue', async () => {
+  it('a covered closure carries outcome=covered', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], mainDocs: [EXISTING_DOC]})
+
+    await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
+
+    expect(String(callsOf(fake, 'issues.createComment')[0]?.args.body)).toContain(marker(issue, 'covered'))
+  })
+
+  it('an exact-match retry after a failed close posts no second comment, then closes the issue', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], failNextIssueUpdate: true})
     const options = {proposals: [issue], rows: [unverifiedRow(issue)]}
@@ -816,11 +831,65 @@ describe('publishDraftedSolutions: closure comments are idempotent', () => {
     expect(result).toMatchObject({mode: 'closed-proposals', closed: [11]})
   })
 
-  it('ignores a marker comment from another author', async () => {
+  it('skips the comment when the bot already left the exact marker, but still closes', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({
       issues: [issue],
-      existingComments: {11: [{body: `fake\n\n${MARKER_11}`, user: {login: 'mallory'}}]},
+      existingComments: {11: [{body: `earlier closure\n\n${marker(issue)}`, user: {login: 'fro-bot[bot]'}}]},
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+    expect(callsOf(fake, 'issues.update')).toHaveLength(1)
+  })
+
+  it('the same issue with a different body hash gets a fresh comment', async () => {
+    const issue = makeIssue(11, {body: 'Corrected lesson'})
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {
+        11: [{body: marker(issue, 'unverified', 'Original lesson'), user: {login: 'fro-bot[bot]'}}],
+      },
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+    expect(String(callsOf(fake, 'issues.createComment')[0]?.args.body)).toContain(marker(issue))
+  })
+
+  it('the same issue with a different outcome gets a fresh comment', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {11: [{body: marker(issue, 'covered'), user: {login: 'fro-bot[bot]'}}]},
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+  })
+
+  it('a v1 issue-only marker does not suppress', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {
+        11: [{body: '<!-- fro-bot:drafted-solutions-closure v1 issue=11 -->', user: {login: 'fro-bot[bot]'}}],
+      },
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+  })
+
+  it('ignores an exact marker from another author', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {11: [{body: `fake\n\n${marker(issue)}`, user: {login: 'mallory'}}]},
     })
 
     await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
@@ -829,14 +898,14 @@ describe('publishDraftedSolutions: closure comments are idempotent', () => {
     expect(fake.issues.get(11)?.state).toBe('closed')
   })
 
-  it('ignores a bot comment carrying a different issue number or an altered marker', async () => {
+  it('ignores a bot comment carrying a different issue number or prose only', async () => {
     const issue = makeIssue(11)
+    const other = makeIssue(12)
     const fake = makeFake({
       issues: [issue],
       existingComments: {
         11: [
-          {body: '<!-- fro-bot:drafted-solutions-closure v1 issue=12 -->', user: {login: 'fro-bot[bot]'}},
-          {body: '<!-- fro-bot:drafted-solutions-closure v2 issue=11 -->', user: {login: 'fro-bot[bot]'}},
+          {body: marker(other), user: {login: 'fro-bot[bot]'}},
           {body: 'mentions drafted-solutions-closure in prose', user: {login: 'fro-bot[bot]'}},
         ],
       },
@@ -847,24 +916,11 @@ describe('publishDraftedSolutions: closure comments are idempotent', () => {
     expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
   })
 
-  it('skips the comment when the bot already left the marker, but still closes', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({
-      issues: [issue],
-      existingComments: {11: [{body: `earlier closure\n\n${MARKER_11}`, user: {login: 'fro-bot[bot]'}}]},
-    })
-
-    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
-
-    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
-    expect(callsOf(fake, 'issues.update')).toHaveLength(1)
-  })
-
   it('escapes agent text so it cannot forge or close an HTML comment marker', async () => {
     const a = makeIssue(11)
     const b = makeIssue(12)
     const fake = makeFake({issues: [a, b]})
-    const forged = '<!-- fro-bot:drafted-solutions-closure v1 issue=12 --> --> <b>x</b>'
+    const forged = `${marker(b)} --> <b>x</b>`
 
     await run(fake, {
       proposals: [a, b],
@@ -872,12 +928,208 @@ describe('publishDraftedSolutions: closure comments are idempotent', () => {
     })
 
     const comment = String(callsOf(fake, 'issues.createComment')[0]?.args.body)
-    expect(comment).toContain(MARKER_11)
+    expect(comment).toContain(marker(a))
     expect(comment.match(/<!--/g)).toHaveLength(1)
     expect(comment).not.toContain('<b>')
-    expect(comment).toContain('&lt;!-- fro-bot:drafted-solutions-closure v1 issue=12 --&gt;')
+    expect(comment).toContain('&lt;!-- fro-bot:drafted-solutions-closure v2 issue=12')
     // The forged text did not suppress issue 12's own comment.
     expect(callsOf(fake, 'issues.createComment').map(call => call.args.issue_number)).toStrictEqual([11, 12])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Inverse accounting: every handoff file belongs to a drafted row
+// ---------------------------------------------------------------------------
+
+describe('publishDraftedSolutions: every handoff file is a new-doc or extension target (zero writes)', () => {
+  it('rejects all-unverified rows with a doc in the handoff', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [unverifiedRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
+      /not the target doc of any new-doc or extension row/,
+    )
+  })
+
+  it('rejects a covered-only row whose targetDoc is in the handoff', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue, docPath(11))], changed: {[docPath(11)]: DOC_BODY}},
+      /not the target doc of any new-doc or extension row/,
+    )
+  })
+
+  it('rejects one new-doc row plus an extra unreferenced doc, without echoing the extra path', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    const message = await expectBlocked(
+      fake,
+      {
+        proposals: [issue],
+        rows: [agentRow(issue)],
+        changed: {
+          [docPath(11)]: DOC_BODY,
+          'docs/solutions/best-practices/smuggled-extra-doc.md': DOC_BODY,
+        },
+      },
+      /not the target doc of any new-doc or extension row/,
+    )
+
+    expect(message).not.toContain('smuggled-extra-doc')
+  })
+
+  it('accepts an extension row as the owner of its doc, and one doc shared by two rows', async () => {
+    const a = makeIssue(11)
+    const b = makeIssue(12)
+    const fake = makeFake({issues: [a, b]})
+
+    const result = await run(fake, {
+      proposals: [a, b],
+      rows: [agentRow(a, {outcome: 'extension'}), agentRow(b, {targetDoc: docPath(11)})],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result.mode).toBe('created-pr')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Covered docs are verified on the tree that will back the PR (read through the API)
+// ---------------------------------------------------------------------------
+
+const contentRefs = (fake: Fake): unknown[] => callsOf(fake, 'repos.getContent').map(call => call.args.ref)
+
+describe('publishDraftedSolutions: covered docs are verified on the published tree', () => {
+  it('body-only update: rejects a doc present on main but not on the live branch tree, with zero writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], mainDocs: [EXISTING_DOC], branchDocs: []})
+
+    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+    expect(contentRefs(fake)).toStrictEqual([BRANCH_SHA])
+  })
+
+  it('body-only update: accepts a doc on the live branch tree, read at the live branch head', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
+
+    expect(result).toMatchObject({mode: 'updated-pr-body'})
+    expect(contentRefs(fake)).toStrictEqual([BRANCH_SHA])
+    expect(callsOf(fake, 'repos.getContent')[0]?.args).toMatchObject({path: EXISTING_DOC})
+  })
+
+  it('body-only update: a missing branch ref fails closed with zero writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchMissing: true, mainDocs: [EXISTING_DOC]})
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue)]},
+      /is open but docs\/drafted-solutions does not exist/,
+    )
+  })
+
+  it('direct close: rejects a covered row whose doc is missing on main', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], mainDocs: []})
+
+    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+    expect(contentRefs(fake)).toStrictEqual([MAIN_SHA])
+  })
+
+  it("direct close: accepts a doc on main's head tree", async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], mainDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
+
+    expect(result).toMatchObject({mode: 'closed-proposals', closed: [11]})
+    expect(contentRefs(fake)).toStrictEqual([MAIN_SHA])
+  })
+
+  it("commit path, new PR: base tree is main's head; a covered doc missing there is rejected", async () => {
+    const drafted = makeIssue(11)
+    const covered = makeIssue(12)
+    const fake = makeFake({issues: [drafted, covered], mainDocs: []})
+
+    await expectBlocked(
+      fake,
+      {
+        proposals: [drafted, covered],
+        rows: [agentRow(drafted), coveredRow(covered)],
+        changed: {[docPath(11)]: DOC_BODY},
+      },
+      /does not exist on the tree/,
+    )
+    expect(contentRefs(fake)).toStrictEqual([MAIN_SHA])
+  })
+
+  it('commit path, open PR: base tree is the live branch head, not main', async () => {
+    const drafted = makeIssue(11)
+    const covered = makeIssue(12)
+    const fake = makeFake({issues: [drafted, covered], pulls: [makePull()], mainDocs: [EXISTING_DOC], branchDocs: []})
+
+    await expectBlocked(
+      fake,
+      {
+        proposals: [drafted, covered],
+        rows: [agentRow(drafted), coveredRow(covered)],
+        changed: {[docPath(11)]: DOC_BODY},
+      },
+      /does not exist on the tree/,
+    )
+    expect(contentRefs(fake)).toStrictEqual([BRANCH_SHA])
+  })
+
+  it('commit path: a covered doc on the base tree is accepted alongside a drafted doc', async () => {
+    const drafted = makeIssue(11)
+    const covered = makeIssue(12)
+    const fake = makeFake({issues: [drafted, covered], mainDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {
+      proposals: [drafted, covered],
+      rows: [agentRow(drafted), coveredRow(covered)],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result.mode).toBe('created-pr')
+  })
+
+  it('a covered doc created by this same handoff needs no tree lookup', async () => {
+    const drafted = makeIssue(11)
+    const covered = makeIssue(12)
+    const fake = makeFake({issues: [drafted, covered]})
+
+    await run(fake, {
+      proposals: [drafted, covered],
+      rows: [agentRow(drafted), coveredRow(covered, docPath(11))],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
+  })
+
+  it('treats a directory at the path as a missing doc', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], mainDocs: [EXISTING_DOC], directoryPaths: [EXISTING_DOC]})
+
+    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+  })
+
+  it('makes no tree lookup when no row is covered', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
   })
 })
 

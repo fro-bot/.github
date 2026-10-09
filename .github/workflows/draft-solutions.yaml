@@ -248,8 +248,8 @@ jobs:
   # Publish job: trusted, deterministic. Validates the handoff and rows, privacy-gates
   # every public surface (fail-closed against metadata/repos.yaml), then writes under a
   # freshly minted, repo-scoped token. No agent step — the only job in this workflow
-  # allowed to mint an App token. Code runs from the default branch; the drafted tree
-  # is checked out separately and only read (covered-doc existence checks).
+  # allowed to mint an App token. Code runs from the default branch; the publish script
+  # verifies covered docs through the API, on the tree that will back the PR.
   # ---------------------------------------------------------------------------
   publish:
     name: Publish drafted solution docs
@@ -264,13 +264,6 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      - name: ⤵ Checkout drafted tree
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ needs.harvest.outputs.checkout_ref }}
-          path: .drafted-solutions/tree
           persist-credentials: false
 
       - name: 📦 Setup
@@ -346,7 +339,6 @@ jobs:
           DRAFTED_SOLUTIONS_DIGEST_PATH: ${{ github.workspace }}/.drafted-solutions/drafted-solutions-digest.json
           DRAFTED_SOLUTIONS_HANDOFF_DIR: ${{ github.workspace }}/.drafted-solutions/handoff
           DRAFTED_SOLUTIONS_ROWS_PATH: ${{ github.workspace }}/.drafted-solutions/rows.json
-          DRAFTED_SOLUTIONS_WORKSPACE: ${{ github.workspace }}/.drafted-solutions/tree
           DRAFTED_SOLUTIONS_RESULT_PATH: ${{ runner.temp }}/drafted-solutions-result.json
         run: node scripts/drafted-solutions-publish.ts
         shell: bash

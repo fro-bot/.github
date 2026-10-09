@@ -165,7 +165,7 @@ describe('draft-solutions.yaml credential split', () => {
 
   it('every checkout in every job sets persist-credentials: false', () => {
     const checkouts = Object.values(workflow.jobs).flatMap(job => job.steps.filter(isCheckout))
-    expect(checkouts).toHaveLength(4)
+    expect(checkouts).toHaveLength(3)
     for (const checkout of checkouts) expect(checkout.with?.['persist-credentials']).toBe(false)
   })
 })
@@ -176,12 +176,13 @@ describe('draft-solutions.yaml checkout refs', () => {
     expect(checkout?.with?.ref).toBe(gh('needs.harvest.outputs.checkout_ref'))
   })
 
-  it('publish runs code from the default branch and reads the drafted tree from a separate path', () => {
-    const [trusted, tree] = publishJob?.steps.filter(isCheckout) ?? []
-    expect(String(trusted?.with?.ref)).toContain('github.event.repository.default_branch')
-    expect(trusted?.with?.path).toBeUndefined()
-    expect(tree?.with?.ref).toBe(gh('needs.harvest.outputs.checkout_ref'))
-    expect(tree?.with?.path).toBe('.drafted-solutions/tree')
+  it('publish runs code from the default branch only; covered docs are verified through the API, not a checkout', () => {
+    const checkouts = publishJob?.steps.filter(isCheckout) ?? []
+    expect(checkouts).toHaveLength(1)
+    expect(String(checkouts[0]?.with?.ref)).toContain('github.event.repository.default_branch')
+    expect(checkouts[0]?.with?.path).toBeUndefined()
+    const publishEnv = publishJob?.steps.find(step => step.id === 'publish')?.env ?? {}
+    expect(publishEnv).not.toHaveProperty('DRAFTED_SOLUTIONS_WORKSPACE')
   })
 })
 
@@ -265,7 +266,6 @@ describe('draft-solutions.yaml handoff plumbing', () => {
     expect(env.DRAFTED_SOLUTIONS_DIGEST_PATH).toBe(`${WORKSPACE_DIR}/drafted-solutions-digest.json`)
     expect(env.DRAFTED_SOLUTIONS_HANDOFF_DIR).toBe(`${WORKSPACE_DIR}/handoff`)
     expect(env.DRAFTED_SOLUTIONS_ROWS_PATH).toBe(`${WORKSPACE_DIR}/rows.json`)
-    expect(env.DRAFTED_SOLUTIONS_WORKSPACE).toBe(`${WORKSPACE_DIR}/tree`)
   })
 
   it('git-ignores the workspace handoff directory', () => {
