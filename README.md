@@ -212,6 +212,7 @@ Fro Bot control plane:
 | --- | --- | --- |
 | **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
+| **Draft Solutions** | Draft `docs/solutions/` entries from open `learning-proposal` issues into one `docs/drafted-solutions` PR; Fro Bot reviews it, a human merges | Monday 06:00 UTC, dispatch |
 | **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos; auto-stars collab/contrib repos | Daily 05:17 UTC, dispatch |
@@ -359,6 +360,12 @@ Any single key missing produces zero PR actions; eligible findings fall back to 
 - Before any push, the corrected content is re-verified against the live base-branch file, not just the report snapshot — stale drift never gets force-corrected.
 - If a fingerprint's drift clears on a complete scan while its correction PR is still open, the bot closes its own PR with a brief comment and deletes the branch. If the linked proposal later gets a terminal label (`status-truth:rejected` or `status-truth:false-positive`), the same closure happens regardless of drift state. Merged PRs are never touched.
 - The bot never merges, approves, enables automerge, force-pushes, or retargets a correction PR — closing its own stale PRs and deleting its own branches are the only PR-state mutations it can make. A human always merges.
+
+### Drafted Solution Docs
+
+The **Draft Solutions** workflow turns open `learning-proposal` issues (up to five per run, oldest first) into `docs/solutions/` changes on one stable branch, `docs/drafted-solutions`, with one PR. A read-only agent verifies each claim against the merged PR, its reviews and CI runs, and current `main`, then drafts or extends docs; a separate no-agent job validates the handoff (only `docs/solutions/<category>/*.md`, no deletions), runs the private-repo gate on every file, the PR title and body, and every comment, and only then writes. The PR body carries a per-proposal evidence table and one `Closes #N` line per proposal.
+
+Runs that change no docs comment on and close each processed proposal instead of opening a PR. Fro Bot reviews the drafted PR (the only App-authored PR it reviews); nothing is auto-merged, so a human merges it, and merging closes the proposals.
 
 ### Recurring Pattern Proposals
 
