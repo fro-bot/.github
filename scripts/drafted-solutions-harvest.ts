@@ -10,9 +10,10 @@
  * - env `GITHUB_TOKEN` (read scopes), `GITHUB_REPOSITORY` (`owner/repo`),
  *   `DRAFTED_SOLUTIONS_DIGEST_PATH` (digest JSON destination, workspace-relative), and
  *   optionally `GITHUB_OUTPUT`.
- * - writes the digest file (always, even when there is no work) and appends `has_work=true|false`
- *   and `checkout_ref=<ref>` (the drafted branch when a PR is open, else `main`) to
- *   `$GITHUB_OUTPUT`; stdout gets a one-line counts summary.
+ * - writes the digest file (always, even when there is no work) and appends `has_work=true|false`,
+ *   `draft_base_sha=<sha>` (the commit the agent edits: the live drafted-branch head when a PR is
+ *   open, else main's head) and `main_sha=<sha>` (main's head) to `$GITHUB_OUTPUT`; stdout gets
+ *   a one-line counts summary.
  * - exits 0 on success, 1 on any fail-closed condition (message on stderr).
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
@@ -32,6 +33,7 @@ import {
   findOpenDraftedPr,
   isLearningProposalIssue,
   MAX_PROPOSALS_PER_RUN,
+  readRefSha,
   reauthorizeRows,
   type DraftedDigest,
   type DraftedPrState,
@@ -47,8 +49,6 @@ export interface HarvestParams {
 export interface HarvestResult {
   digest: DraftedDigest
   hasWork: boolean
-  /** Ref the agent and publish jobs check out: the drafted branch when a PR is open, else the base branch. */
-  checkoutRef: string
 }
 
 async function listOpenProposals(octokit: OctokitClient, owner: string, repo: string): Promise<ProposalDigestEntry[]> {
@@ -83,6 +83,19 @@ export async function harvestDraftedProposals(params: HarvestParams): Promise<Ha
   const proposals = await listOpenProposals(octokit, owner, repo)
   const openPr = await findOpenDraftedPr(octokit, owner, repo)
 
+  // Pin the drafting base to exact commits: the agent edits `draftBaseSha` and verifies "current
+  // main" against `mainSha`, and publish later detects lost updates against `draftBaseSha`.
+  const mainSha = await readRefSha(octokit, owner, repo, `heads/${BASE_BRANCH}`)
+  if (mainSha === null) throw new DraftedSolutionsError(`${BASE_BRANCH} does not exist`)
+  let draftBaseSha = mainSha
+  if (openPr !== null) {
+    const branchSha = await readRefSha(octokit, owner, repo, `heads/${DRAFTED_BRANCH}`)
+    if (branchSha === null) {
+      throw new DraftedSolutionsError(`drafted PR #${openPr.number} is open but ${DRAFTED_BRANCH} does not exist`)
+    }
+    draftBaseSha = branchSha
+  }
+
   let pr: DraftedPrState = {state: 'none'}
   const coveredHashes = new Map<number, string>()
   if (openPr !== null) {
@@ -99,9 +112,8 @@ export async function harvestDraftedProposals(params: HarvestParams): Promise<Ha
   const selected = uncovered.slice(0, MAX_PROPOSALS_PER_RUN)
 
   return {
-    digest: {version: DIGEST_VERSION, proposals: selected, pr},
+    digest: {version: DIGEST_VERSION, draftBaseSha, mainSha, proposals: selected, pr},
     hasWork: selected.length > 0,
-    checkoutRef: pr.state === 'open' ? DRAFTED_BRANCH : BASE_BRANCH,
   }
 }
 
@@ -121,12 +133,15 @@ async function main(): Promise<void> {
   const {Octokit} = await import('@octokit/rest')
   const octokit = new Octokit({auth: requiredEnv('GITHUB_TOKEN')})
 
-  const {digest, hasWork, checkoutRef} = await harvestDraftedProposals({octokit, owner, repo})
+  const {digest, hasWork} = await harvestDraftedProposals({octokit, owner, repo})
 
   await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
   const outputPath = process.env.GITHUB_OUTPUT
   if (outputPath !== undefined && outputPath !== '') {
-    await appendFile(outputPath, `has_work=${hasWork}\ncheckout_ref=${checkoutRef}\n`)
+    await appendFile(
+      outputPath,
+      `has_work=${hasWork}\ndraft_base_sha=${digest.draftBaseSha}\nmain_sha=${digest.mainSha}\n`,
+    )
   }
   process.stdout.write(`${JSON.stringify({hasWork, proposals: digest.proposals.length, prState: digest.pr.state})}\n`)
 }

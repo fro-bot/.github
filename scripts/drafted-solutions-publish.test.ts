@@ -23,6 +23,8 @@ const BRANCH_REF = 'heads/docs/drafted-solutions'
 const MAIN_SHA = '1'.repeat(40)
 const BRANCH_SHA = '2'.repeat(40)
 const STALE_PR_HEAD_SHA = '3'.repeat(40)
+const MOVED_MAIN_SHA = '4'.repeat(40)
+const MOVED_BRANCH_SHA = '5'.repeat(40)
 const SOURCE_SHA = 'a'.repeat(40)
 
 const PRIVATE_TOKEN = 'acme-private-repo'
@@ -142,6 +144,8 @@ function makeFake(options: FakeOptions) {
     [MAIN_SHA, new Set(options.mainDocs ?? [])],
     [BRANCH_SHA, new Set(options.branchDocs ?? [])],
   ])
+  /** Blob SHA overrides, keyed `<commit>:<path>`; the default is a stable per-path blob. */
+  const blobShas = new Map<string, string>()
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -213,7 +217,9 @@ function makeFake(options: FakeOptions) {
         record('repos.getContent', args, undefined)
         if (options.directoryPaths?.includes(args.path) === true) return {data: [{type: 'file', path: args.path}]}
         if (treeDocs.get(args.ref)?.has(args.path) !== true) throw notFound()
-        return {data: {type: 'file', path: args.path}}
+        return {
+          data: {type: 'file', path: args.path, sha: blobShas.get(`${args.ref}:${args.path}`) ?? `blob-${args.path}`},
+        }
       }),
     },
     git: {
@@ -250,7 +256,7 @@ function makeFake(options: FakeOptions) {
     rest,
   } as unknown as OctokitClient
 
-  return {octokit, calls, pulls, issues, refs, comments, treeDocs}
+  return {octokit, calls, pulls, issues, refs, comments, treeDocs, blobShas}
 }
 
 type Fake = ReturnType<typeof makeFake>
@@ -289,6 +295,8 @@ interface ArrangeOptions {
   /** path → content for docs the agent wrote; omitted means an empty handoff. */
   changed?: Record<string, string>
   manifest?: unknown
+  /** The harvest-pinned drafting base; defaults to main (no PR) or the branch head (PR open). */
+  draftBaseSha?: string
   /** Digest hash overrides, by issue (to simulate a body edited after harvest). */
   digestBodyOverride?: Record<number, string>
 }
@@ -312,6 +320,8 @@ async function arrange(options: ArrangeOptions) {
 
   const digest: DraftedDigest = {
     version: DIGEST_VERSION,
+    draftBaseSha: options.draftBaseSha ?? MAIN_SHA,
+    mainSha: MAIN_SHA,
     proposals: options.proposals.map(issue => {
       const body = options.digestBodyOverride?.[issue.number] ?? issue.body ?? ''
       return {
@@ -341,7 +351,7 @@ async function run(
   options: ArrangeOptions,
   overrides: Partial<PublishParams> = {},
 ): Promise<PublishResult> {
-  const paths = await arrange(options)
+  const paths = await arrange({draftBaseSha: fake.pulls.length > 0 ? BRANCH_SHA : MAIN_SHA, ...options})
   return publishDraftedSolutions({
     octokit: fake.octokit,
     owner: OWNER,
@@ -1258,6 +1268,140 @@ describe('publishDraftedSolutions: existing coverage rows are verified on the pu
     expect(result).toMatchObject({mode: 'closed-proposals', closed: [11]})
     expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
     expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Lost-update check: the drafted-from commit (digest) vs the live base
+// ---------------------------------------------------------------------------
+
+describe('publishDraftedSolutions: the drafted base must not move under a handoff file', () => {
+  const MOVED_MESSAGE = /drafted base moved under 1 handoff file\(s\); re-run to redraft/
+
+  it('rejects a same-file edit on the open PR branch made while drafting, with zero writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [docPath(11)]})
+    // The operator corrected the same doc on the branch after harvest pinned BRANCH_SHA.
+    fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    fake.treeDocs.set(BRANCH_SHA, new Set([docPath(11)]))
+    fake.treeDocs.set(MOVED_BRANCH_SHA, new Set([docPath(11)]))
+    fake.blobShas.set(`${MOVED_BRANCH_SHA}:${docPath(11)}`, 'operator-corrected-blob')
+
+    const message = await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue, {outcome: 'extension'})], changed: {[docPath(11)]: DOC_BODY}},
+      MOVED_MESSAGE,
+    )
+
+    expect(message).not.toContain(docPath(11))
+  })
+
+  it('proceeds when the branch moved only under files the handoff does not touch', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()]})
+    // An operator push to another file: the handoff path is absent at both commits.
+    fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    fake.treeDocs.set(MOVED_BRANCH_SHA, new Set(['docs/solutions/best-practices/operators-other-doc.md']))
+
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [agentRow(issue)],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr'})
+    expect(callsOf(fake, 'git.getCommit')[0]?.args).toMatchObject({commit_sha: MOVED_BRANCH_SHA})
+  })
+
+  it('proceeds when the handoff file is byte-identical at the drafted-from and live commits', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()]})
+    fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    fake.treeDocs.set(BRANCH_SHA, new Set([docPath(11)]))
+    fake.treeDocs.set(MOVED_BRANCH_SHA, new Set([docPath(11)]))
+
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [agentRow(issue, {outcome: 'extension'})],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr'})
+  })
+
+  it('rejects main moving under an extension target when no PR is open', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], mainDocs: [docPath(11)]})
+    fake.refs.set('heads/main', MOVED_MAIN_SHA)
+    fake.treeDocs.set(MOVED_MAIN_SHA, new Set([docPath(11)]))
+    fake.blobShas.set(`${MOVED_MAIN_SHA}:${docPath(11)}`, 'main-moved-blob')
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue, {outcome: 'extension'})], changed: {[docPath(11)]: DOC_BODY}},
+      MOVED_MESSAGE,
+    )
+  })
+
+  it('rejects a new-doc path that appeared on the live base after harvest', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+    fake.refs.set('heads/main', MOVED_MAIN_SHA)
+    fake.treeDocs.set(MOVED_MAIN_SHA, new Set([docPath(11)]))
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
+      MOVED_MESSAGE,
+    )
+  })
+
+  it('counts every conflicting file and never names one', async () => {
+    const a = makeIssue(11)
+    const b = makeIssue(12)
+    const fake = makeFake({issues: [a, b]})
+    fake.refs.set('heads/main', MOVED_MAIN_SHA)
+    fake.treeDocs.set(MOVED_MAIN_SHA, new Set([docPath(11), docPath(12)]))
+
+    await expectBlocked(
+      fake,
+      {
+        proposals: [a, b],
+        rows: [agentRow(a), agentRow(b)],
+        changed: {[docPath(11)]: DOC_BODY, [docPath(12)]: DOC_BODY},
+      },
+      /drafted base moved under 2 handoff file\(s\); re-run to redraft/,
+    )
+  })
+
+  it('takes the drafted-from commit from the digest, so a base that did not move needs no per-file lookups', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
+
+    expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
+  })
+
+  it("compares against the digest's pin, not the PR's recorded head", async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [docPath(11)]})
+    fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    fake.treeDocs.set(MOVED_BRANCH_SHA, new Set([docPath(11)]))
+    fake.blobShas.set(`${MOVED_BRANCH_SHA}:${docPath(11)}`, 'operator-corrected-blob')
+
+    // The digest pins the pre-move head. The PR's recorded head (STALE_PR_HEAD_SHA) is irrelevant.
+    await expectBlocked(
+      fake,
+      {
+        proposals: [issue],
+        rows: [agentRow(issue, {outcome: 'extension'})],
+        changed: {[docPath(11)]: DOC_BODY},
+        draftBaseSha: BRANCH_SHA,
+      },
+      MOVED_MESSAGE,
+    )
+    expect(callsOf(fake, 'repos.getContent').map(call => call.args.ref)).toStrictEqual([BRANCH_SHA, MOVED_BRANCH_SHA])
   })
 })
 

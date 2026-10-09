@@ -11,6 +11,8 @@ const OWNER = 'fro-bot'
 const REPO = '.github'
 const FULL_NAME = `${OWNER}/${REPO}`
 const MERGE_SHA = 'b'.repeat(40)
+const MAIN_SHA = '1'.repeat(40)
+const BRANCH_SHA = '2'.repeat(40)
 
 interface FakeIssue {
   number: number
@@ -69,7 +71,12 @@ function makePull(overrides: Partial<FakePull> = {}): FakePull {
   }
 }
 
-function makeOctokit(params: {openIssues: FakeIssue[]; allIssues?: FakeIssue[]; pulls?: FakePull[]}) {
+function makeOctokit(params: {
+  openIssues: FakeIssue[]
+  allIssues?: FakeIssue[]
+  pulls?: FakePull[]
+  refs?: Record<string, string>
+}) {
   const byNumber = new Map([...(params.allIssues ?? []), ...params.openIssues].map(issue => [issue.number, issue]))
   const listForRepo = vi.fn(async () => ({data: params.openIssues}))
   const get = vi.fn(async (args: {issue_number: number}) => {
@@ -78,11 +85,21 @@ function makeOctokit(params: {openIssues: FakeIssue[]; allIssues?: FakeIssue[]; 
     return {data: issue}
   })
   const list = vi.fn(async () => ({data: params.pulls ?? []}))
+  const refs: Record<string, string> = {
+    'heads/main': MAIN_SHA,
+    'heads/docs/drafted-solutions': BRANCH_SHA,
+    ...params.refs,
+  }
+  const getRef = vi.fn(async (args: {ref: string}) => {
+    const sha = refs[args.ref]
+    if (sha === undefined) throw Object.assign(new Error('Not Found'), {status: 404})
+    return {data: {object: {sha}}}
+  })
   const octokit = {
     paginate: vi.fn(async (fn: (p: unknown) => Promise<{data: unknown[]}>, p: unknown) => (await fn(p)).data),
-    rest: {issues: {listForRepo, get}, pulls: {list}},
+    rest: {issues: {listForRepo, get}, pulls: {list}, git: {getRef}},
   } as unknown as OctokitClient
-  return {octokit, listForRepo, get, list}
+  return {octokit, listForRepo, get, list, getRef}
 }
 
 async function harvest(octokit: OctokitClient) {
@@ -109,13 +126,48 @@ describe('harvestDraftedProposals', () => {
     })
   })
 
-  it('checks out main when no PR is open and the drafted branch when one is', async () => {
-    const issue = makeIssue(11)
-    const none = makeOctokit({openIssues: [issue]})
-    const open = makeOctokit({openIssues: [issue], pulls: [makePull()]})
+  it("pins the drafting base: main's head when no PR is open", async () => {
+    const {octokit} = makeOctokit({openIssues: [makeIssue(11)]})
 
-    expect((await harvest(none.octokit)).checkoutRef).toBe('main')
-    expect((await harvest(open.octokit)).checkoutRef).toBe('docs/drafted-solutions')
+    const {digest} = await harvest(octokit)
+
+    expect(digest.draftBaseSha).toBe(MAIN_SHA)
+    expect(digest.mainSha).toBe(MAIN_SHA)
+  })
+
+  it("pins the drafting base: the live drafted-branch head (not the PR's recorded head) when a PR is open", async () => {
+    const {octokit} = makeOctokit({openIssues: [makeIssue(11)], pulls: [makePull()]})
+
+    const {digest} = await harvest(octokit)
+
+    expect(digest.draftBaseSha).toBe(BRANCH_SHA)
+    expect(digest.mainSha).toBe(MAIN_SHA)
+    expect(digest.pr).toMatchObject({headSha: 'c'.repeat(40)})
+  })
+
+  it('the digest round-trips both SHAs through parseDigest', async () => {
+    const {octokit} = makeOctokit({openIssues: [makeIssue(11)], pulls: [makePull()]})
+
+    const {digest} = await harvest(octokit)
+
+    expect(parseDigest(JSON.parse(JSON.stringify(digest)))).toStrictEqual(digest)
+  })
+
+  it('fails closed when main cannot be read', async () => {
+    const {octokit, getRef} = makeOctokit({openIssues: [makeIssue(11)]})
+    getRef.mockRejectedValue(Object.assign(new Error('Not Found'), {status: 404}))
+
+    await expect(harvest(octokit)).rejects.toThrow(DraftedSolutionsError)
+  })
+
+  it('fails closed when a drafted PR is open but its branch ref is missing', async () => {
+    const {octokit, getRef} = makeOctokit({openIssues: [makeIssue(11)], pulls: [makePull()]})
+    getRef.mockImplementation(async (args: {ref: string}) => {
+      if (args.ref === 'heads/main') return {data: {object: {sha: MAIN_SHA}}}
+      throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+
+    await expect(harvest(octokit)).rejects.toThrow(/does not exist/)
   })
 
   it('records a null merge SHA when the capture marker is absent', async () => {
@@ -177,7 +229,13 @@ describe('harvestDraftedProposals', () => {
     const {digest, hasWork} = await harvest(octokit)
 
     expect(hasWork).toBe(false)
-    expect(digest).toStrictEqual({version: 1, proposals: [], pr: {state: 'none'}})
+    expect(digest).toStrictEqual({
+      version: 1,
+      draftBaseSha: MAIN_SHA,
+      mainSha: MAIN_SHA,
+      proposals: [],
+      pr: {state: 'none'},
+    })
   })
 
   it('seven uncovered proposals → the five oldest, in order', async () => {

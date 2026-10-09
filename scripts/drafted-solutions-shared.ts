@@ -160,8 +160,32 @@ export type DraftedPrState = {state: 'none'} | {state: 'open'; number: number; h
 /** What harvest hands to the agent and publish. */
 export interface DraftedDigest {
   version: typeof DIGEST_VERSION
+  /**
+   * The exact commit the agent edits: the live drafted-branch head when a PR is open, else main's
+   * head. Publish takes "drafted from" from here only, never from the agent, to detect lost updates.
+   */
+  draftBaseSha: string
+  /** Main's head at harvest: the snapshot the agent verifies "current main" claims against. */
+  mainSha: string
   proposals: ProposalDigestEntry[]
   pr: DraftedPrState
+}
+
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40,64}$/
+
+/** Reads a ref's commit SHA; null when the ref does not exist. */
+export async function readRefSha(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string | null> {
+  try {
+    return (await octokit.rest.git.getRef({owner, repo, ref})).data.object.sha
+  } catch (error: unknown) {
+    if (isRecord(error) && error.status === 404) return null
+    throw error
+  }
 }
 
 function parseProposalEntry(value: unknown, index: number): ProposalDigestEntry {
@@ -188,6 +212,14 @@ export function parseDigest(value: unknown): DraftedDigest {
   if (value.version !== DIGEST_VERSION) throw new DraftedSolutionsError(`digest version must be ${DIGEST_VERSION}`)
   if (!Array.isArray(value.proposals)) throw new DraftedSolutionsError('digest proposals must be an array')
 
+  const {draftBaseSha, mainSha} = value
+  if (typeof draftBaseSha !== 'string' || !COMMIT_SHA_PATTERN.test(draftBaseSha)) {
+    throw new DraftedSolutionsError('digest draftBaseSha must be a commit SHA')
+  }
+  if (typeof mainSha !== 'string' || !COMMIT_SHA_PATTERN.test(mainSha)) {
+    throw new DraftedSolutionsError('digest mainSha must be a commit SHA')
+  }
+
   const proposals = value.proposals.map((entry: unknown, index: number) => parseProposalEntry(entry, index))
   if (new Set(proposals.map(proposal => proposal.issue)).size !== proposals.length) {
     throw new DraftedSolutionsError('digest lists a proposal more than once')
@@ -195,7 +227,7 @@ export function parseDigest(value: unknown): DraftedDigest {
 
   const {pr} = value
   if (!isRecord(pr)) throw new DraftedSolutionsError('digest pr must be an object')
-  if (pr.state === 'none') return {version: DIGEST_VERSION, proposals, pr: {state: 'none'}}
+  if (pr.state === 'none') return {version: DIGEST_VERSION, draftBaseSha, mainSha, proposals, pr: {state: 'none'}}
   if (pr.state !== 'open') throw new DraftedSolutionsError('digest pr.state must be "none" or "open"')
   if (typeof pr.number !== 'number' || !Number.isSafeInteger(pr.number) || pr.number <= 0) {
     throw new DraftedSolutionsError('digest pr.number must be a positive integer')
@@ -207,6 +239,8 @@ export function parseDigest(value: unknown): DraftedDigest {
   if (!rows.ok) throw new DraftedSolutionsError(`digest pr.rows invalid: ${rows.reason}`)
   return {
     version: DIGEST_VERSION,
+    draftBaseSha,
+    mainSha,
     proposals,
     pr: {state: 'open', number: pr.number, headSha: pr.headSha, rows: rows.rows},
   }

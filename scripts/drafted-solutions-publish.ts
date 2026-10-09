@@ -65,6 +65,7 @@ import {
   findOpenDraftedPr,
   isLearningProposalIssue,
   parseDigest,
+  readRefSha,
   reauthorizeRows,
   type DraftedDigest,
   type OpenDraftedPr,
@@ -268,6 +269,51 @@ async function docExistsAt(
   }
 }
 
+/** The blob SHA of `relativePath` at `commitSha`; null when absent. Anything that is not a file is its own value. */
+async function blobShaAt(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  relativePath: string,
+): Promise<string | null> {
+  try {
+    const {data} = await octokit.rest.repos.getContent({owner, repo, path: relativePath, ref: commitSha})
+    return !Array.isArray(data) && data.type === 'file' ? data.sha : 'not-a-file'
+  } catch (error: unknown) {
+    if (errorStatus(error) === 404) return null
+    throw error
+  }
+}
+
+/**
+ * Lost-update guard. The agent edited whole files at the digest's `draftBaseSha` (D); the commit is
+ * built on the live base (B). If any handoff path differs between D and B (content changed, or the
+ * file appeared or vanished), publishing would silently overwrite whoever changed it, so fail
+ * closed. Both absent is fine; changes to other files do not matter. Counts only, never paths.
+ */
+async function checkDraftBaseUnmoved(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  draftBaseSha: string,
+  liveBaseSha: string,
+  files: readonly StagedFile[],
+): Promise<void> {
+  if (draftBaseSha === liveBaseSha) return
+  let moved = 0
+  for (const file of files) {
+    const [drafted, live] = await Promise.all([
+      blobShaAt(octokit, owner, repo, draftBaseSha, file.path),
+      blobShaAt(octokit, owner, repo, liveBaseSha, file.path),
+    ])
+    if (drafted !== live) moved += 1
+  }
+  if (moved > 0) {
+    throw new DraftedSolutionsError(`drafted base moved under ${moved} handoff file(s); re-run to redraft`)
+  }
+}
+
 /**
  * Every row that will claim a doc must point at one that exists on the tree that will back the PR:
  * the base commit's tree plus this handoff. Applies to all rows about to be rendered (this run's
@@ -399,15 +445,6 @@ async function commitFiles(
     parents: [parentSha],
   })
   return commit.data.sha
-}
-
-async function readRefSha(octokit: OctokitClient, owner: string, repo: string, ref: string): Promise<string | null> {
-  try {
-    return (await octokit.rest.git.getRef({owner, repo, ref})).data.object.sha
-  } catch (error: unknown) {
-    if (errorStatus(error) === 404) return null
-    throw error
-  }
 }
 
 async function requestReview(octokit: OctokitClient, owner: string, repo: string, prNumber: number): Promise<void> {
@@ -587,7 +624,10 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   // points at one that exists on that tree or in this handoff.
   const directCovered = directRows.filter(row => row.outcome === 'covered')
   const baseSha = writesPr || directCovered.length > 0 ? await resolveBaseSha(octokit, owner, repo, openPr) : null
-  if (baseSha !== null) await checkRowDocs(octokit, owner, repo, baseSha, [...mergedRows, ...directCovered], files)
+  if (baseSha !== null) {
+    await checkDraftBaseUnmoved(octokit, owner, repo, digest.draftBaseSha, baseSha, files)
+    await checkRowDocs(octokit, owner, repo, baseSha, [...mergedRows, ...directCovered], files)
+  }
 
   assertPublicSafe(tokens, [
     ...files.flatMap((file, index) => [

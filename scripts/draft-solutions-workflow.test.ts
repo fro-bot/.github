@@ -98,10 +98,11 @@ describe('draft-solutions.yaml job order', () => {
     expect(publishJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
   })
 
-  it('harvest exposes has_work and checkout_ref from its harvest step', () => {
+  it('harvest exposes has_work and the two pinned SHAs from its harvest step', () => {
     expect(harvestJob?.outputs).toStrictEqual({
       has_work: gh('steps.harvest.outputs.has_work'),
-      checkout_ref: gh('steps.harvest.outputs.checkout_ref'),
+      draft_base_sha: gh('steps.harvest.outputs.draft_base_sha'),
+      main_sha: gh('steps.harvest.outputs.main_sha'),
     })
     expect(harvestJob?.steps.find(step => step.id === 'harvest')).toBeDefined()
   })
@@ -174,9 +175,15 @@ describe('draft-solutions.yaml credential split', () => {
 })
 
 describe('draft-solutions.yaml checkout refs', () => {
-  it('the agent job checks out the harvest-chosen base (drafted branch or default branch)', () => {
+  it('the agent job checks out the pinned drafting base by SHA, not by branch name', () => {
     const checkout = draftJob?.steps.find(isCheckout)
-    expect(checkout?.with?.ref).toBe(gh('needs.harvest.outputs.checkout_ref'))
+    expect(checkout?.with?.ref).toBe(gh('needs.harvest.outputs.draft_base_sha'))
+    expect(JSON.stringify(workflow)).not.toContain('checkout_ref')
+  })
+
+  it('the agent checkout carries full history so the pinned main SHA is readable with git show', () => {
+    const checkout = draftJob?.steps.find(isCheckout)
+    expect(checkout?.with?.['fetch-depth']).toBe(0)
   })
 
   it('publish runs code from the default branch only; covered docs are verified through the API, not a checkout', () => {
@@ -303,6 +310,21 @@ describe('draft-solutions.yaml agent prompt', () => {
       'the merged pull request the proposal came from, its reviews and review comments, its CI runs, and current main',
     )
     expect(flatPrompt).toContain('depends on anything else is dropped or narrowed')
+  })
+
+  it('distinguishes the editing base from current main, each pinned by SHA', () => {
+    expect(flatPrompt).toContain('This checkout is the editing base, pinned at draftBaseSha')
+    expect(flatPrompt).toContain('not necessarily current main')
+    expect(flatPrompt).toContain('Current main is mainSha')
+    expect(flatPrompt).toContain('git show <mainSha>:<path>')
+    expect(flatPrompt).toContain('draftBaseSha')
+    expect(flatPrompt).toContain('mainSha')
+  })
+
+  it('verifies against mainSha, never the working tree, and cites mainSha in file evidence', () => {
+    expect(flatPrompt).toContain('and current main (mainSha, never the working tree)')
+    expect(flatPrompt).toContain('cite mainSha')
+    expect(flatPrompt).not.toContain('current main (this checkout)')
   })
 
   it('forbids naming or describing private repositories', () => {
