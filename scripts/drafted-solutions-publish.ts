@@ -88,6 +88,7 @@ export const DRAFTED_COMMIT_MESSAGE = 'docs(solutions): draft learnings from ope
 const REVIEWER = 'fro-bot'
 const DRAFTED_UPDATE_REF = `heads/${DRAFTED_BRANCH}`
 const DRAFTED_CREATE_REF = `refs/heads/${DRAFTED_BRANCH}`
+const PR_APPEARED_MESSAGE = 'drafted PR appeared during publish; the next run reconciles it'
 const WITHHELD = '[message withheld: matched the privacy gate]'
 
 export interface PublishLogger {
@@ -429,6 +430,7 @@ async function commitFiles(
   repo: string,
   parentSha: string,
   files: readonly StagedFile[],
+  extraParents: readonly string[] = [],
 ): Promise<string> {
   const parent = await octokit.rest.git.getCommit({owner, repo, commit_sha: parentSha})
   const tree: {path: string; mode: '100644'; type: 'blob'; sha: string}[] = []
@@ -442,7 +444,7 @@ async function commitFiles(
     repo,
     message: DRAFTED_COMMIT_MESSAGE,
     tree: createdTree.data.sha,
-    parents: [parentSha],
+    parents: [parentSha, ...extraParents],
   })
   return commit.data.sha
 }
@@ -499,19 +501,12 @@ type PrWrite =
 /** Commits the handoff and creates or updates the drafted PR. Branch writes happen only here. */
 async function writePr(
   params: PublishParams,
-  tokens: PublicOutputTokens,
-  context: {
-    openPr: OpenDraftedPr | null
-    baseSha: string
-    files: readonly StagedFile[]
-    bodyRows: readonly CoverageRow[]
-    body: string
-  },
+  context: {openPr: OpenDraftedPr | null; baseSha: string; files: readonly StagedFile[]; body: string},
 ): Promise<PrWrite> {
   const {octokit, owner, repo} = params
   const logger = params.logger ?? DEFAULT_LOGGER
   const title = params.prTitle ?? DRAFTED_PR_TITLE
-  const {openPr, baseSha, files, bodyRows, body} = context
+  const {openPr, baseSha, files, body} = context
 
   if (openPr !== null && files.length === 0) {
     // Covered rows only: repair the PR body without touching the branch.
@@ -528,14 +523,21 @@ async function writePr(
     return {mode: 'updated-pr', prNumber: openPr.number, commitSha}
   }
 
-  const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
+  // No open PR. The branch is never reset: a stale one (left by a closed PR) is fast-forwarded by a
+  // commit whose parents are [main, old head] and whose tree is main's tree plus the handoff, so the
+  // merge-base with main stays main's head and the PR diff is only the handoff. A non-forced
+  // updateRef is a compare-and-swap: it fails if the branch moved since we read it.
+  const oldHead = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
+  const commitSha = await commitFiles(octokit, owner, repo, baseSha, files, oldHead === null ? [] : [oldHead])
 
-  const oldSha = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
-  if (oldSha === null) {
+  // Immediately before the ref write: a PR opened or reopened since discovery owns the branch now.
+  if ((await findOpenDraftedPr(octokit, owner, repo)) !== null) throw new DraftedSolutionsError(PR_APPEARED_MESSAGE)
+
+  if (oldHead === null) {
     await octokit.rest.git.createRef({owner, repo, ref: DRAFTED_CREATE_REF, sha: commitSha})
   } else {
-    logger.info(`resetting ${DRAFTED_BRANCH} ${oldSha} -> ${commitSha}`)
-    await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: true})
+    logger.info(`fast-forwarding stale ${DRAFTED_BRANCH} ${oldHead} -> ${commitSha}`)
+    await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
   }
 
   try {
@@ -550,16 +552,11 @@ async function writePr(
     await requestReview(octokit, owner, repo, created.data.number)
     return {mode: 'created-pr', prNumber: created.data.number, commitSha}
   } catch (error: unknown) {
-    if (errorStatus(error) !== 422) throw error
+    // 422: a PR for this head already exists. Do not repair its body from here; the next run
+    // re-harvests, re-authorizes, and reconciles it against the tree it actually has.
+    if (errorStatus(error) === 422) throw new DraftedSolutionsError(PR_APPEARED_MESSAGE)
+    throw error
   }
-
-  // A PR appeared between discovery and create: treat the create as an update of that PR.
-  const raced = await findOpenDraftedPr(octokit, owner, repo)
-  if (raced === null) throw new DraftedSolutionsError('PR creation was rejected (422) and no drafted PR exists')
-  const racedBody = renderPrBody(mergeCoverageRows(await existingRowsOf(octokit, owner, repo, raced), bodyRows))
-  assertPublicSafe(tokens, [{surface: 'pr-body', label: 'PR body', content: racedBody}])
-  await octokit.rest.pulls.update({owner, repo, pull_number: raced.number, body: racedBody})
-  return {mode: 'updated-pr', prNumber: raced.number, commitSha}
 }
 
 /** Posts the closure comment unless the bot already left it, then closes the issue. */
@@ -645,8 +642,7 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   ])
 
   if (writesPr && baseSha === null) throw new DraftedSolutionsError('internal: a PR write has no base commit')
-  const prWrite =
-    writesPr && baseSha !== null ? await writePr(params, tokens, {openPr, baseSha, files, bodyRows, body}) : null
+  const prWrite = writesPr && baseSha !== null ? await writePr(params, {openPr, baseSha, files, body}) : null
 
   const closed: number[] = []
   for (const row of closeRows) {

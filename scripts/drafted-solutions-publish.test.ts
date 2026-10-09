@@ -144,6 +144,10 @@ function makeFake(options: FakeOptions) {
     [MAIN_SHA, new Set(options.mainDocs ?? [])],
     [BRANCH_SHA, new Set(options.branchDocs ?? [])],
   ])
+  /** Parents of every commit this run creates, so a non-forced updateRef can enforce fast-forward. */
+  const commitParents = new Map<string, string[]>()
+  /** Test hooks fired inside the fake at precise moments of a publish. */
+  const hooks: {afterCreateCommit?: () => void} = {}
   /** Blob SHA overrides, keyed `<commit>:<path>`; the default is a stable per-path blob. */
   const blobShas = new Map<string, string>()
   let counter = 0
@@ -237,14 +241,25 @@ function makeFake(options: FakeOptions) {
       createTree: vi.fn(async (args: Record<string, unknown>) =>
         record('git.createTree', args, {data: {sha: `tree-${++counter}`}}),
       ),
-      createCommit: vi.fn(async (args: Record<string, unknown>) =>
-        record('git.createCommit', args, {data: {sha: `${'9'.repeat(39)}${++counter % 10}`}}),
-      ),
+      createCommit: vi.fn(async (args: {parents: string[]}) => {
+        const sha = `${'9'.repeat(30)}${String(++counter).padStart(10, '0')}`
+        commitParents.set(sha, args.parents)
+        const result = record('git.createCommit', args, {data: {sha}})
+        hooks.afterCreateCommit?.()
+        return result
+      }),
       createRef: vi.fn(async (args: {ref: string; sha: string}) => {
-        refs.set(args.ref.replace(/^refs\//, ''), args.sha)
+        const name = args.ref.replace(/^refs\//, '')
+        if (refs.has(name)) throw Object.assign(new Error('Reference already exists'), {status: 422})
+        refs.set(name, args.sha)
         return record('git.createRef', args, {data: {}})
       }),
-      updateRef: vi.fn(async (args: {ref: string; sha: string}) => {
+      updateRef: vi.fn(async (args: {ref: string; sha: string; force?: boolean}) => {
+        const current = refs.get(args.ref)
+        // Real GitHub: a non-forced update must fast-forward, i.e. descend from the current ref.
+        if (args.force !== true && current !== undefined && !(commitParents.get(args.sha) ?? []).includes(current)) {
+          throw Object.assign(new Error('Update is not a fast forward'), {status: 422})
+        }
         refs.set(args.ref, args.sha)
         return record('git.updateRef', args, {data: {}})
       }),
@@ -256,7 +271,7 @@ function makeFake(options: FakeOptions) {
     rest,
   } as unknown as OctokitClient
 
-  return {octokit, calls, pulls, issues, refs, comments, treeDocs, blobShas}
+  return {octokit, calls, pulls, issues, refs, comments, treeDocs, blobShas, commitParents, hooks}
 }
 
 type Fake = ReturnType<typeof makeFake>
@@ -411,7 +426,7 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     expect(parsed.ok && parsed.rows[0]?.bodyHash).toBe(hashProposalBody(issue.body ?? ''))
   })
 
-  it('force-resets an existing branch with no open PR, logging old → new', async () => {
+  it('fast-forwards a stale branch (no open PR) with a two-parent commit and a non-forced update', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], branchExists: true})
     const info = vi.fn()
@@ -424,9 +439,75 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
 
     expect(result.mode).toBe('created-pr')
     expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
-    expect(callsOf(fake, 'git.updateRef')[0]?.args).toMatchObject({ref: BRANCH_REF, force: true})
+    // Tree is main's tree plus the handoff; parents are [main, old branch head], so the PR diff is only the handoff.
+    expect(callsOf(fake, 'git.createTree')[0]?.args).toMatchObject({base_tree: `tree-of-${MAIN_SHA}`})
+    expect(callsOf(fake, 'git.createCommit')[0]?.args).toMatchObject({parents: [MAIN_SHA, BRANCH_SHA]})
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(1)
+    expect(callsOf(fake, 'git.updateRef')[0]?.args).toMatchObject({ref: BRANCH_REF, force: false})
     expect(info).toHaveBeenCalledWith(expect.stringContaining(BRANCH_SHA))
     expect(callsOf(fake, 'pulls.create')).toHaveLength(1)
+  })
+
+  it('rejects when the stale branch moved during publish (the non-forced update is not a fast-forward)', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], branchExists: true})
+    fake.hooks.afterCreateCommit = () => {
+      fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    }
+
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/not a fast forward/)
+
+    expect(fake.refs.get(BRANCH_REF)).toBe(MOVED_BRANCH_SHA)
+    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
+  })
+
+  it('rejects when a drafted PR is reopened before the ref write, with zero ref writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], branchExists: true})
+    fake.hooks.afterCreateCommit = () => {
+      fake.pulls.push(makePull())
+    }
+
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/drafted PR appeared during publish; the next run reconciles it/)
+
+    expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
+    expect(fake.refs.get(BRANCH_REF)).toBe(BRANCH_SHA)
+  })
+
+  it('rejects when a drafted PR appears before the branch is first created, with zero ref writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+    fake.hooks.afterCreateCommit = () => {
+      fake.pulls.push(makePull())
+    }
+
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/drafted PR appeared during publish/)
+
+    expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(0)
+  })
+
+  it('rejects when the branch is created concurrently (createRef finds the ref already there)', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+    fake.hooks.afterCreateCommit = () => {
+      fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
+    }
+
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/already exists/)
+
+    expect(fake.refs.get(BRANCH_REF)).toBe(MOVED_BRANCH_SHA)
+    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
   })
 
   it('tolerates a 422 from the review request (already requested)', async () => {
@@ -447,19 +528,16 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     ).rejects.toThrow(/boom/)
   })
 
-  it('a create-422 falls back to updating the PR that appeared', async () => {
+  it('a create-422 because a PR appeared fails closed: no body repair, no PR update', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], createRace: true})
 
-    const result = await run(fake, {
-      proposals: [issue],
-      rows: [agentRow(issue)],
-      changed: {[docPath(11)]: DOC_BODY},
-    })
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/drafted PR appeared during publish; the next run reconciles it/)
 
-    expect(result).toMatchObject({mode: 'updated-pr', prNumber: 905})
-    expect(callsOf(fake, 'pulls.update')[0]?.args).toMatchObject({pull_number: 905})
-    expect((callsOf(fake, 'pulls.update')[0]?.args as {body: string}).body).toContain('Closes #11')
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
   })
 })
 
@@ -475,13 +553,13 @@ describe('publishDraftedSolutions: PR/branch inconsistencies', () => {
     )
   })
 
-  it('rejects a create-422 when no drafted PR appeared, and never updates a PR', async () => {
+  it('rejects any create-422 with the same fail-closed message, and never updates a PR', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], createRejectedWithoutPr: true})
 
     await expect(
       run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/PR creation was rejected \(422\) and no drafted PR exists/)
+    ).rejects.toThrow(/drafted PR appeared during publish; the next run reconciles it/)
     expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
     expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
   })
@@ -1789,6 +1867,33 @@ describe('publishDraftedSolutions: write targets', () => {
       // main is read (to base the branch on) but never written.
       expect(refWrites.some(ref => ref.endsWith('/main') || ref.endsWith('/data'))).toBe(false)
     }
+  })
+
+  it('never passes force: true to updateRef in any flow', async () => {
+    const issue = makeIssue(11)
+    const otherIssue = makeIssue(12)
+    const flows: Fake[] = []
+    const changed = {[docPath(11)]: DOC_BODY}
+
+    const fresh = makeFake({issues: [issue]})
+    await run(fresh, {proposals: [issue], rows: [agentRow(issue)], changed})
+    flows.push(fresh)
+
+    const stale = makeFake({issues: [issue], branchExists: true})
+    await run(stale, {proposals: [issue], rows: [agentRow(issue)], changed})
+    flows.push(stale)
+
+    const update = makeFake({issues: [issue], pulls: [makePull()]})
+    await run(update, {proposals: [issue], rows: [agentRow(issue)], changed})
+    flows.push(update)
+
+    const bodyOnly = makeFake({issues: [otherIssue], pulls: [makePull()], branchDocs: [EXISTING_DOC]})
+    await run(bodyOnly, {proposals: [otherIssue], rows: [coveredRow(otherIssue)]})
+    flows.push(bodyOnly)
+
+    const updates = flows.flatMap(fake => callsOf(fake, 'git.updateRef'))
+    expect(updates.length).toBeGreaterThan(0)
+    for (const update of updates) expect(update.args.force).not.toBe(true)
   })
 
   it('performs no write before validation completes (all gates precede the first write)', async () => {
