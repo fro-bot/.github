@@ -6,6 +6,7 @@ module: wiki-site
 problem_type: workflow_issue
 component: tooling
 severity: high
+last_updated: 2026-10-09
 applies_when:
   - "a tool installs dependencies from a lockfile but the build path does not verify the lockfile was honored"
   - "a dependency can be declared/enabled in config without a corresponding lock entry"
@@ -47,6 +48,39 @@ coverage gate (fail-closed) → lockfile install → HEAD == lock commit (fail-c
 ```
 
 Each gate's branch logic (orphan detection, source-shape rejection, drift-as-ref detection) belongs in a tested module, not inline workflow scripting — the gate is a security control and gets the same mutation-proof test discipline as any other (a tampered lock must fail the test suite).
+
+Two later rounds of hardening (PRs #3862 and #3865) added companion rules for the same gate.
+
+1. **Mirror the parser that produces the artifact being validated.** `checkLockfileCoverage`
+   validates `quartz.lock.json`, so its source classifier models `quartz/cli/plugin-data.js::parseGitSource`,
+   the parser the lockfile writer uses. It does not model `quartz/plugins/loader/gitLoader.ts::parsePluginSource`,
+   the build-time loader's parser. At the pinned Quartz commit (`jackyzha0/quartz@9cf87ff`) the writer
+   grammar accepts local paths, `github:`, `git+`, and `https://` sources and throws on anything else,
+   including a bare `owner/repo` shorthand that only the loader accepts. The gate therefore reports a
+   bare `owner/repo` as unparseable rather than as "missing from the lock". A wrong-parser divergence
+   that fails closed still misleads: the next maintainer goes looking for a lockfile problem that does
+   not exist. `scripts/wiki-lockfile-gates.ts` documents the grammar, and a golden test in
+   `scripts/wiki-lockfile-gates.test.ts` runs the gate against the real `quartz-site/quartz.config.yaml`
+   and `quartz.lock.json`.
+
+2. **Delete an exemption that keeps relocating to another untrusted field.** The exemption for
+   local-looking lock entries was first keyed on `commit`, then (#3862) on a path-shaped `source`,
+   then (#3864) on membership in a config-derived set. Each round moved the trust decision to a
+   different field of the same untrusted artifact, and a forged entry passed each time. The last
+   forgery set a `resolved` pointer that `plugin install` consumed and no gate read. PR #3865 removed the
+   exemption: a lock entry may never be local, because local plugins resolve from `quartz.config.yaml`
+   and never need a lock entry. Both gates now reject any local-looking lock entry before comparing
+   anything else. When a bypass has moved across fields more than once, the bypass is the defect.
+
+   Check whether an exemption ever fired before defending it. The committed lockfile had no
+   local-shaped entries, and the integrity gate had already run without a local exemption before the
+   exemption was added.
+
+3. **Keep "is this path-shaped?" separate from "is this path acceptable?"** `isLocalPluginSource`
+   mirrors Quartz's own classifier. `isLocalPluginSourceWithinRoot` is a separate predicate that
+   answers whether a config-side local path stays inside the directory holding `quartz.config.yaml`,
+   using resolved paths and a `resolvedRoot + sep` containment check rather than prefix matching.
+   One predicate answering both questions is how a trust decision gets folded into a classifier.
 
 ## Why This Matters
 
