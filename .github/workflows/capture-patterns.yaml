@@ -147,11 +147,14 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # The agent's file tools cannot reach outside the workspace (OpenCode's
+      # external_directory permission), so the digest and bodies files live in a
+      # gitignored workspace directory rather than under runner.temp.
       - name: 📥 Download digest artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: capture-patterns-digest
-          path: ${{ runner.temp }}
+          path: ${{ github.workspace }}/.capture-patterns
 
       # The agent's ONLY job: read the versioned candidate digest (fingerprint,
       # source IDs, SHA-pinned links, public-safe titles, evidence counts — no
@@ -165,7 +168,6 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
         uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
         env:
-          CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
           TASK_PROMPT: |
             You are authoring recurring-pattern proposal bodies. Each candidate in the
             digest represents two or more solution docs and/or learning-proposal issues
@@ -173,9 +175,9 @@ jobs:
             and fixed the same way, more than once.
 
             Your ONLY job in this step:
-            1. Read the candidate digest from $CAPTURE_PATTERNS_DIGEST_PATH (or
-               equivalently $RUNNER_TEMP/capture-patterns-digest.json). It is a JSON
-               array of candidates. Each candidate has:
+            1. Read the candidate digest from .capture-patterns/capture-patterns-digest.json
+               (relative to the workspace root). It is a JSON array of candidates.
+               Each candidate has:
                - fingerprint: opaque identity string (the ONLY identifier for this candidate)
                - sourceIds: opaque source identifiers (do not treat as prose)
                - sourceLinks: public-safe, dereferenceable links to each source
@@ -204,7 +206,7 @@ jobs:
                with a closed reason: "insufficient-evidence" or "different-behaviors".
 
             3. Write ALL candidate outcomes as a JSON object to
-               $RUNNER_TEMP/capture-patterns-bodies.json:
+               .capture-patterns/capture-patterns-bodies.json (relative to the workspace root):
                {
                  "schemaVersion": 1,
                  "bodies": {
@@ -224,7 +226,7 @@ jobs:
               digest fields given to you.
             - Never create issues yourself — the open step does that, only when armed
               for a live run.
-            - Never write to any path other than $RUNNER_TEMP/capture-patterns-bodies.json.
+            - Never write to any path other than .capture-patterns/capture-patterns-bodies.json.
             - Output only the bodies file. No summary issue. No comments.
         with:
           # The action requires a github-token input. The workflow's auto-provisioned
@@ -243,16 +245,18 @@ jobs:
       # job mints no write token and never calls the GitHub API itself. `warn` (not
       # a hard failure) when the agent didn't produce a bodies file: open-publish's
       # deterministic step already tracks that as `bodyFileReadFailed`, matching
-      # the pre-existing tolerant behavior.
+      # the pre-existing tolerant behavior. include-hidden-files is required
+      # because the bodies file sits in a dot-directory.
       - name: 📤 Upload bodies artifact
         id: upload-bodies
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: capture-patterns-bodies
-          path: ${{ runner.temp }}/capture-patterns-bodies.json
+          path: ${{ github.workspace }}/.capture-patterns/capture-patterns-bodies.json
           retention-days: 1
           if-no-files-found: warn
+          include-hidden-files: true
 
   # ---------------------------------------------------------------------------
   # Open-publish job: trusted, deterministic step that validates the agent's

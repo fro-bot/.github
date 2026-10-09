@@ -96,12 +96,38 @@ describe('capture-learnings.yaml harvest/draft/publish split', () => {
     expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
   })
 
-  it('publish job downloads both artifacts, tolerating a missing bodies artifact', () => {
+  it('publish job downloads both artifacts and fails loudly, before minting a token, when the bodies artifact is missing', () => {
     const digestDownload = publishJob?.steps.find(step => step.name === '📥 Download digest artifact')
-    const bodiesDownload = publishJob?.steps.find(step => step.name === '📥 Download bodies artifact')
+    const bodiesDownloadIndex = publishJob?.steps.findIndex(step => step.name === '📥 Download bodies artifact') ?? -1
+    const bodiesDownload = publishJob?.steps[bodiesDownloadIndex]
     expect(digestDownload?.with?.name).toBe('capture-learnings-digest')
     expect(bodiesDownload?.with?.name).toBe('capture-learnings-bodies')
-    expect((bodiesDownload as WorkflowStep & {'continue-on-error'?: boolean})?.['continue-on-error']).toBe(true)
+    expect(bodiesDownload?.id).toBe('download-bodies')
+
+    const guardIndex = publishJob?.steps.findIndex(step => step.name === '🚨 Fail on missing agent bodies') ?? -1
+    const mintIndex = publishJob?.steps.findIndex(step => step.id === 'get-workflow-app-token') ?? -1
+    const guardStep = publishJob?.steps[guardIndex]
+    expect(guardIndex).toBeGreaterThan(bodiesDownloadIndex)
+    expect(mintIndex).toBeGreaterThan(guardIndex)
+    expect(guardStep?.if).toBe("steps.download-bodies.outcome == 'failure'")
+    expect(guardStep?.run).toContain('exit 1')
+  })
+
+  it('hands the agent its digest and bodies inside the workspace, not runner.temp (OpenCode denies external directories)', () => {
+    const digestDownload = draftJob?.steps.find(step => step.name === '📥 Download digest artifact')
+    const bodiesUpload = draftJob?.steps.find(step => step.name === '📤 Upload bodies artifact')
+    const agentStep = draftJob?.steps.find(step => step.id === 'agent')
+    const prompt = String(agentStep?.env?.TASK_PROMPT ?? '')
+
+    expect(String(digestDownload?.with?.path)).toMatch(/^\$\{\{ github\.workspace \}\}\/\.capture-learnings$/u)
+    expect(String(bodiesUpload?.with?.path)).toMatch(
+      /^\$\{\{ github\.workspace \}\}\/\.capture-learnings\/capture-learnings-bodies\.json$/u,
+    )
+    expect(bodiesUpload?.with?.['include-hidden-files']).toBe(true)
+    expect(bodiesUpload?.with?.['retention-days']).toBe(1)
+    expect(prompt).toContain('.capture-learnings/capture-learnings-digest.json')
+    expect(prompt).toContain('.capture-learnings/capture-learnings-bodies.json')
+    expect(prompt).not.toContain('RUNNER_TEMP')
   })
 
   it('publish job mints its own App token and uses it for the open step, not any token from the draft job', () => {

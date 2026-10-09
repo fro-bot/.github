@@ -144,16 +144,20 @@ describe('capture-patterns.yaml workflow contract', () => {
     expect(String(digestPath)).toContain('runner.temp')
   })
 
-  it('the agent step and the open step receive the same digest path env var', () => {
+  it('hands the agent its digest and bodies inside the workspace, not runner.temp (OpenCode denies external directories)', () => {
+    const digestDownload = openJob?.steps.find(step => step.name === '📥 Download digest artifact')
+    const bodiesUpload = openJob?.steps.find(step => step.name === '📤 Upload bodies artifact')
     const agentStep = openJob?.steps.find(step => step.id === 'agent')
-    const openStep = publishJob?.steps.find(step => step.id === 'open')
-    expect(agentStep).toBeDefined()
-    expect(openStep).toBeDefined()
+    const prompt = String(agentStep?.env?.TASK_PROMPT ?? '')
 
-    const agentDigestPath = agentStep?.env?.CAPTURE_PATTERNS_DIGEST_PATH
-    const openDigestPath = openStep?.env?.CAPTURE_PATTERNS_DIGEST_PATH
-    expect(typeof agentDigestPath).toBe('string')
-    expect(agentDigestPath).toBe(openDigestPath)
+    expect(String(digestDownload?.with?.path)).toMatch(/^\$\{\{ github\.workspace \}\}\/\.capture-patterns$/u)
+    expect(String(bodiesUpload?.with?.path)).toMatch(
+      /^\$\{\{ github\.workspace \}\}\/\.capture-patterns\/capture-patterns-bodies\.json$/u,
+    )
+    expect(bodiesUpload?.with?.['include-hidden-files']).toBe(true)
+    expect(prompt).toContain('.capture-patterns/capture-patterns-digest.json')
+    expect(prompt).toContain('.capture-patterns/capture-patterns-bodies.json')
+    expect(prompt).not.toContain('RUNNER_TEMP')
   })
 
   it('the open step wires CAPTURE_PATTERNS_BODIES_PATH and CAPTURE_PATTERNS_RESULT_PATH under runner.temp', () => {
