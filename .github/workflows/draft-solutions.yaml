@@ -203,12 +203,26 @@ jobs:
             - droppedClaims is a list (use [] when none); evidence is a list (use [] when none).
             - Omit bodyHash. The publish step sets it.
 
+            Row field limits. The publish step rejects the whole batch if any row exceeds one:
+            - evidence: at most 3 entries.
+            - evidence ref: one line, at most 160 characters.
+            - droppedClaims: at most 3 entries.
+            - dropped claim: at most 100 characters.
+            - reason: at most 300 characters.
+            - targetDoc: at most 120 characters.
+            When more than 3 claims are dropped or narrowed, group related dropped or narrowed claims
+            into one entry (semicolon-separated, within the character cap) so every claim stays
+            recorded. Never omit a claim to fit; tighten the wording instead.
+
             Hard boundaries:
             - Edit only files under docs/solutions/<existing category>/ . No other paths, no new
               categories, no nested directories, no deletions or renames.
             - Do not create issues, comments, branches, commits, or PRs. Do not push. Do not modify
               workflows, scripts, or configuration.
             - Before finishing, run `pnpm lint` and fix every failure it reports in your docs.
+            - Before finishing, run `node scripts/drafted-solutions-validate-rows.ts` (offline; it reads
+              .drafted-solutions/rows.json and the digest) and fix every rejected row, then run it
+              again until it exits 0.
             - Write rows.json to exactly .drafted-solutions/rows.json. Output nothing else.
         with:
           # The action requires a github-token input. This is the workflow's auto-provisioned

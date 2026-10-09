@@ -245,3 +245,65 @@ export function parseDigest(value: unknown): DraftedDigest {
     pr: {state: 'open', number: pr.number, headSha: pr.headSha, rows: rows.rows},
   }
 }
+
+// ---------------------------------------------------------------------------
+// Agent rows
+// ---------------------------------------------------------------------------
+
+export type RowsCheck = {ok: true; rows: CoverageRow[]} | {ok: false; errors: string[]}
+
+/**
+ * The one row validation, shared by publish and the agent's local validator CLI: the agent's rows
+ * against the digest (exactly one row per digest proposal, none extra) and the coverage schema.
+ * `bodyHash` always comes from the digest (the agent cannot be trusted to hash, and must not be
+ * able to claim another body); `sourceSha` defaults to the proposal's capture marker when the agent
+ * omits it. Collects every error (each names its issue) instead of stopping at the first.
+ */
+export function checkAgentRows(raw: unknown, digest: DraftedDigest): RowsCheck {
+  if (!Array.isArray(raw)) return {ok: false, errors: ['rows file must be a JSON array of coverage rows']}
+
+  const proposals = new Map(digest.proposals.map(proposal => [proposal.issue, proposal]))
+  const errors: string[] = []
+  const seen = new Set<number>()
+  const usable: Record<string, unknown>[] = []
+  for (const [index, entry] of raw.entries()) {
+    if (!isRecord(entry) || typeof entry.issue !== 'number') {
+      errors.push(`rows[${index}] must be an object with a numeric issue`)
+      continue
+    }
+    if (!proposals.has(entry.issue)) {
+      errors.push(`row for #${entry.issue} is not in the digest`)
+      continue
+    }
+    if (seen.has(entry.issue)) {
+      errors.push(`duplicate row for issue #${entry.issue}`)
+      continue
+    }
+    seen.add(entry.issue)
+    usable.push(entry)
+  }
+  for (const proposal of digest.proposals) {
+    if (!seen.has(proposal.issue)) errors.push(`no evidence row for proposal #${proposal.issue}`)
+  }
+
+  const filled = usable.map(entry => {
+    const issue = entry.issue as number
+    const proposal = proposals.get(issue)
+    return {
+      ...entry,
+      issue,
+      bodyHash: proposal?.bodyHash,
+      ...(entry.sourceSha === undefined && proposal?.mergeSha != null ? {sourceSha: proposal.mergeSha} : {}),
+    }
+  })
+
+  // Validate row by row so every bad row is reported, each under its own issue number.
+  for (const row of filled) {
+    const result = validateCoverageRows([row])
+    if (!result.ok) errors.push(`#${row.issue}: ${result.reason.replace(/^rows\[\d+\](?: \(#\d+\))?: /, '')}`)
+  }
+  if (errors.length > 0) return {ok: false, errors}
+
+  const validated = validateCoverageRows(filled)
+  return validated.ok ? {ok: true, rows: validated.rows} : {ok: false, errors: [validated.reason]}
+}

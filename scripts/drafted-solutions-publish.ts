@@ -64,12 +64,12 @@ import {
   parseCoverageBlock,
   PR_BODY_MAX_LENGTH,
   renderPrBody,
-  validateCoverageRows,
   type CoverageRow,
 } from './drafted-solutions-pr-body.ts'
 import {
   BASE_BRANCH,
   BOT_LOGIN,
+  checkAgentRows,
   DRAFTED_BRANCH,
   DraftedSolutionsError,
   findOpenDraftedPr,
@@ -199,45 +199,11 @@ async function stageHandoff(handoffDir: string): Promise<StagedFile[]> {
   }
 }
 
-/**
- * Parses the agent's rows and reconciles them with the digest: exactly one row per digest
- * proposal, none extra. `bodyHash` always comes from the digest (the agent cannot be trusted to
- * hash, and must not be able to claim another body); `sourceSha` defaults to the proposal's
- * capture marker when the agent omits it.
- */
+/** The agent's rows against the digest; the checks live in {@link checkAgentRows}, shared with the agent's local validator. */
 function prepareRows(raw: unknown, digest: DraftedDigest): CoverageRow[] {
-  if (!Array.isArray(raw)) throw new DraftedSolutionsError('rows file must be a JSON array of coverage rows')
-
-  const proposals = new Map(digest.proposals.map(proposal => [proposal.issue, proposal]))
-  const seen = new Set<number>()
-  for (const [index, entry] of raw.entries()) {
-    if (!isRecord(entry) || typeof entry.issue !== 'number') {
-      throw new DraftedSolutionsError(`rows[${index}] must be an object with a numeric issue`)
-    }
-    if (!proposals.has(entry.issue)) {
-      throw new DraftedSolutionsError(`row for #${entry.issue} is not in the digest`)
-    }
-    if (seen.has(entry.issue)) throw new DraftedSolutionsError(`duplicate row for issue #${entry.issue}`)
-    seen.add(entry.issue)
-  }
-  for (const proposal of digest.proposals) {
-    if (!seen.has(proposal.issue)) {
-      throw new DraftedSolutionsError(`no evidence row for proposal #${proposal.issue}`)
-    }
-  }
-
-  const filled = raw.map((entry: Record<string, unknown>) => {
-    const proposal = proposals.get(entry.issue as number)
-    return {
-      ...entry,
-      bodyHash: proposal?.bodyHash,
-      ...(entry.sourceSha === undefined && proposal?.mergeSha != null ? {sourceSha: proposal.mergeSha} : {}),
-    }
-  })
-
-  const validated = validateCoverageRows(filled)
-  if (!validated.ok) throw new DraftedSolutionsError(validated.reason)
-  return validated.rows
+  const result = checkAgentRows(raw, digest)
+  if (!result.ok) throw new DraftedSolutionsError(result.errors.join('; '))
+  return result.rows
 }
 
 /**

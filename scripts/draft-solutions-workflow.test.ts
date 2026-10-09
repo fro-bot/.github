@@ -13,7 +13,9 @@ import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-import {COVERAGE_OUTCOMES, EVIDENCE_KINDS} from './drafted-solutions-pr-body.ts'
+import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from './drafted-solutions-pr-body.ts'
+import {DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
+import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 interface WorkflowStep {
@@ -325,6 +327,105 @@ describe('draft-solutions.yaml agent prompt', () => {
     expect(flatPrompt).toContain('and current main (mainSha, never the working tree)')
     expect(flatPrompt).toContain('cite mainSha')
     expect(flatPrompt).not.toContain('current main (this checkout)')
+  })
+
+  describe('row field limits and the local validator', () => {
+    const numberAfter = (pattern: RegExp): number => {
+      const match = pattern.exec(flatPrompt)
+      if (match?.[1] === undefined) throw new Error(`prompt does not state: ${pattern.source}`)
+      return Number(match[1])
+    }
+
+    it('states every FIELD_LIMITS value exactly as the exported constants define it', () => {
+      expect(numberAfter(/evidence: at most (\d+) entries/)).toBe(FIELD_LIMITS.maxEvidence)
+      expect(numberAfter(/evidence ref: one line, at most (\d+) characters/)).toBe(FIELD_LIMITS.maxRef)
+      expect(numberAfter(/droppedClaims: at most (\d+) entries/)).toBe(FIELD_LIMITS.maxClaims)
+      expect(numberAfter(/dropped claim: at most (\d+) characters/)).toBe(FIELD_LIMITS.maxClaim)
+      expect(numberAfter(/reason: at most (\d+) characters/)).toBe(FIELD_LIMITS.maxReason)
+      expect(numberAfter(/targetDoc: at most (\d+) characters/)).toBe(FIELD_LIMITS.maxTargetDoc)
+    })
+
+    it('tells the agent to group related claims so every claim is preserved within the caps', () => {
+      expect(flatPrompt).toContain('group related dropped or narrowed claims')
+      expect(flatPrompt).toContain('every claim stays recorded')
+    })
+
+    it('requires running the local validator, with pnpm lint, before finishing', () => {
+      expect(prompt).toContain('node scripts/drafted-solutions-validate-rows.ts')
+      expect(flatPrompt).toContain('fix every rejected row')
+      expect(flatPrompt).toContain('run `pnpm lint`')
+    })
+
+    const digest: DraftedDigest = {
+      version: DIGEST_VERSION,
+      draftBaseSha: 'a'.repeat(40),
+      mainSha: 'a'.repeat(40),
+      proposals: [11, 12].map(issue => ({
+        issue,
+        title: `Proposal ${issue}`,
+        body: `Lesson ${issue}`,
+        bodyHash: 'b'.repeat(64),
+        mergeSha: 'c'.repeat(40),
+        createdAt: '2026-10-01T00:00:00Z',
+      })),
+      pr: {state: 'none'},
+    }
+
+    it('a row set that follows the prompt (grouped claims, bodyHash omitted) passes the validator', () => {
+      const grouped = ['Claim one.', 'Claim two.', 'Claim three.'].join(' ')
+      const rows = [
+        {
+          issue: 11,
+          outcome: 'new-doc',
+          targetDoc: 'docs/solutions/best-practices/example-2026-10-09.md',
+          sourceSha: 'a'.repeat(40),
+          evidence: [{kind: 'file', ref: `${'a'.repeat(40)}:scripts/example.ts`}],
+          droppedClaims: [grouped, grouped, grouped],
+          reason: '',
+        },
+        {
+          issue: 12,
+          outcome: 'unverified',
+          targetDoc: null,
+          sourceSha: 'a'.repeat(40),
+          evidence: [],
+          droppedClaims: [],
+          reason: 'No merged PR found.',
+        },
+      ]
+
+      expect(validateDraftedRows(rows, digest)).toStrictEqual({ok: true, count: 2, errors: []})
+    })
+
+    it('four dropped claims, which the prompt tells the agent to group, fail with the count message', () => {
+      const rows = [
+        {
+          issue: 11,
+          outcome: 'unverified',
+          targetDoc: null,
+          sourceSha: 'a'.repeat(40),
+          evidence: [],
+          droppedClaims: ['a', 'b', 'c', 'd'],
+          reason: 'x',
+        },
+        {
+          issue: 12,
+          outcome: 'unverified',
+          targetDoc: null,
+          sourceSha: 'a'.repeat(40),
+          evidence: [],
+          droppedClaims: [],
+          reason: 'x',
+        },
+      ]
+
+      const result = validateDraftedRows(rows, digest)
+
+      expect(result.ok).toBe(false)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]).toContain('#11')
+      expect(result.errors[0]).toContain('droppedClaims has more than 3 entries')
+    })
   })
 
   it('forbids naming or describing private repositories', () => {
