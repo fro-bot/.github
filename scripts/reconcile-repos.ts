@@ -494,7 +494,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   let nextEntries: RepoEntry[] = currentRepos.repos.map(entry => {
     const key = repoKey(entry.owner, entry.name)
     trackedKeys.add(key)
-    const before = {renamed: summary.renamed, refreshed: summary.refreshed, dispatches: dispatches.length}
+    const before = {renamed: summary.renamed, refreshed: summary.refreshed}
     const classified = classifyTracked({
       entry,
       key,
@@ -511,7 +511,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       transitionIssues,
       now,
     })
-    return keepProtectedName({entry, classified, protectedAssociations, summary, dispatches, before})
+    return keepProtectedName({entry, classified, protectedAssociations, summary, before})
   })
 
   nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary, protectedAssociations)
@@ -523,6 +523,14 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     now,
   })
   dispatches.splice(0, dispatches.length, ...postMergeDispatches)
+
+  // A protected repo is never surveyed under a name the guard is keeping out of the plan, and its
+  // duplicate rows are skipped too (their survey write-back would hit the duplicate-identity check).
+  const protectedKeys = protectedIdentityKeys(nextEntries, protectedAssociations)
+  if (protectedKeys.size > 0) {
+    const surveyable = dispatches.filter(dispatch => !protectedKeys.has(`node_id:${dispatch.node_id}`))
+    dispatches.splice(0, dispatches.length, ...surveyable)
+  }
 
   let next: ReposFile = {...currentRepos, repos: nextEntries}
 
@@ -630,13 +638,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       if (access === undefined) continue
       const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
       if (entry.private !== false || accessPrivate) continue
-      // A kept (protected) old name is not surveyed under the repo's new name.
-      if (
-        protectedAssociations?.has(publicAssociationKey(entry.owner, entry.name)) === true &&
-        publicAssociationKey(access.owner, access.name) !== publicAssociationKey(entry.owner, entry.name)
-      ) {
-        continue
-      }
+      if (identityKeys(entry).some(key => protectedKeys.has(key))) continue
 
       // Gap-days: strict greater-than on whole-day count. A repo surveyed exactly
       // FLOOR_MIN_GAP_DAYS days ago is still inside the gap; only repos surveyed
@@ -807,6 +809,37 @@ function restrictGroupVisibility(entries: RepoEntry[], group: number[]): void {
   }
 }
 
+/**
+ * Stable identity keys of every repo that has a retained protected public association, closed over
+ * rows that share any key with it. Dispatch planning skips the whole identity, so a duplicate row
+ * of a protected repo is never surveyed regardless of row order.
+ */
+function protectedIdentityKeys(
+  entries: readonly RepoEntry[],
+  protectedAssociations: ReadonlySet<string> | undefined,
+): Set<string> {
+  const keys = new Set<string>()
+  if (protectedAssociations === undefined) return keys
+  for (const entry of entries) {
+    if (entry.private === false && protectedAssociations.has(publicAssociationKey(entry.owner, entry.name))) {
+      for (const key of identityKeys(entry)) keys.add(key)
+    }
+  }
+  if (keys.size === 0) return keys
+
+  for (let grew = true; grew;) {
+    grew = false
+    for (const entry of entries) {
+      const entryKeys = identityKeys(entry)
+      if (entryKeys.some(key => keys.has(key)) && entryKeys.some(key => !keys.has(key))) {
+        for (const key of entryKeys) keys.add(key)
+        grew = true
+      }
+    }
+  }
+  return keys
+}
+
 function isSameEntry(left: RepoEntry, right: RepoEntry): boolean {
   const leftKeys = Object.keys(left) as (keyof RepoEntry)[]
   return leftKeys.length === Object.keys(right).length && leftKeys.every(field => Object.is(left[field], right[field]))
@@ -815,18 +848,18 @@ function isSameEntry(left: RepoEntry, right: RepoEntry): boolean {
 /**
  * Undo a rename of a protected public association: when the classified result is still public
  * but moved off a protected owner/name, keep the previous owner/name and every other refreshed
- * field. Counters and dispatches recorded for the undone rename are rolled back so the plan
- * reflects only what is applied. Private/unknown results are returned as-is.
+ * field. Counters recorded for the undone rename are rolled back so the plan reflects only
+ * what is applied. Private/unknown results are returned as-is. Dispatch suppression for the
+ * protected identity happens once all rows are final (see `protectedIdentityKeys`).
  */
 function keepProtectedName(params: {
   entry: RepoEntry
   classified: RepoEntry
   protectedAssociations: ReadonlySet<string> | undefined
   summary: ReconcileSummary
-  dispatches: DispatchRequest[]
-  before: {renamed: number; refreshed: number; dispatches: number}
+  before: {renamed: number; refreshed: number}
 }): RepoEntry {
-  const {entry, classified, protectedAssociations, summary, dispatches, before} = params
+  const {entry, classified, protectedAssociations, summary, before} = params
   if (protectedAssociations === undefined || entry.private !== false || classified.private !== false) return classified
 
   const previousAssociation = publicAssociationKey(entry.owner, entry.name)
@@ -834,7 +867,6 @@ function keepProtectedName(params: {
   if (publicAssociationKey(classified.owner, classified.name) === previousAssociation) return classified
 
   if (summary.renamed > before.renamed) summary.renamed -= 1
-  dispatches.length = before.dispatches
   const kept: RepoEntry = {...classified, owner: entry.owner, name: entry.name}
   if (!isSameEntry(kept, entry)) return kept
 
@@ -1820,17 +1852,13 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   // 6. Run the pure engine to produce the change plan, guarded against stranding wiki pages.
   const lookupWikiPage = async (slug: string): Promise<WikiPageState> =>
     lookupRepoWikiPage({octokit: appOctokit, owner, repo, branch: 'data', slug})
-  const {plan, wikiGuard} = await planWithWikiGuard(
+  // Replaced by each commit attempt's re-plan, so everything after the commit uses the plan
+  // that was actually written (or, for a no-op or never-run commit, the last one computed).
+  let guarded = await planWithWikiGuard(
     {currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
     lookupWikiPage,
   )
-
-  // Counts-only (no names, slugs, or paths): this line lands in public workflow logs.
-  if (wikiGuard.kept > 0) {
-    logger.warn(
-      `reconcile: kept ${wikiGuard.kept} public repo name(s) unchanged because a rename or merge would strand a wiki page (${wikiGuard.unverifiable} unverifiable); repair the old wiki pages, then rerun`,
-    )
-  }
+  let plan = guarded.plan
 
   // Floor telemetry — counts-only, no per-repo identifiers (security invariant: see
   // docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md).
@@ -1898,7 +1926,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     const commitResult = await commitMetadataImpl({
       octokit: appOctokit,
       path: reposPath,
-      message: formatCommitMessage(plan.summary),
+      // Read by `commitMetadata` when it writes, after the mutator has re-planned, so the message
+      // describes the plan that is persisted rather than the pre-commit one.
+      get message() {
+        return formatCommitMessage(guarded.plan.summary)
+      },
       mutator: async currentParsed => {
         assertReposFile(currentParsed, 'repos')
         // Re-verify data-branch integrity inside the mutator to close the TOCTOU window
@@ -1925,14 +1957,24 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
           }
         }
         // Recomputed against the fresh snapshot and data tree on every attempt.
-        const rerun = await planWithWikiGuard(
+        guarded = await planWithWikiGuard(
           {currentRepos: currentParsed, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
           lookupWikiPage,
         )
-        return rerun.plan.nextRepos
+        return guarded.plan.nextRepos
       },
     })
     committed = commitResult.committed
+  }
+
+  // From here on, only the final guarded plan is used: dispatches, issues, reporting.
+  plan = guarded.plan
+  const wikiGuard = guarded.wikiGuard
+  // Counts-only (no names, slugs, or paths): this line lands in public workflow logs.
+  if (wikiGuard.kept > 0) {
+    logger.warn(
+      `reconcile: kept ${wikiGuard.kept} public repo name(s) unchanged because a rename or merge would strand a wiki page (${wikiGuard.unverifiable} unverifiable); repair the old wiki pages, then rerun`,
+    )
   }
 
   // 9. Dispatch loop. Prioritize candidates with null `last_survey_at` first
