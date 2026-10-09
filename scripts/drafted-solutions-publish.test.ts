@@ -111,6 +111,12 @@ interface FakeOptions {
   /** An open PR exists but the drafted branch ref does not. */
   branchMissing?: boolean
   reviewRequestError?: unknown
+  /** Comments already on proposal issues, by issue number. */
+  existingComments?: Record<number, {body: string; user: {login: string}}[]>
+  /** The next issues.update fails once (a close that did not land). */
+  failNextIssueUpdate?: boolean
+  /** The next pulls.update fails once (a PR-body update that did not land). */
+  failNextPullUpdate?: boolean
 }
 
 function makeFake(options: FakeOptions) {
@@ -121,6 +127,12 @@ function makeFake(options: FakeOptions) {
   if ((options.branchExists === true || pulls.length > 0) && options.branchMissing !== true) {
     refs.set(BRANCH_REF, BRANCH_SHA)
   }
+  const comments = new Map<number, {id: number; body: string; user: {login: string}}[]>(
+    Object.entries(options.existingComments ?? {}).map(([issue, list]) => [
+      Number(issue),
+      list.map((comment, index) => ({id: 9000 + index, ...comment})),
+    ]),
+  )
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -136,10 +148,20 @@ function makeFake(options: FakeOptions) {
         if (issue === undefined) throw notFound()
         return record('issues.get', args, {data: issue})
       }),
-      createComment: vi.fn(async (args: {issue_number: number; body: string}) =>
-        record('issues.createComment', args, {data: {id: ++counter}}),
+      listComments: vi.fn(async (args: {issue_number: number}) =>
+        record('issues.listComments', args, {data: comments.get(args.issue_number) ?? []}),
       ),
+      createComment: vi.fn(async (args: {issue_number: number; body: string}) => {
+        const list = comments.get(args.issue_number) ?? []
+        list.push({id: ++counter, body: args.body, user: {login: 'fro-bot[bot]'}})
+        comments.set(args.issue_number, list)
+        return record('issues.createComment', args, {data: {id: counter}})
+      }),
       update: vi.fn(async (args: {issue_number: number; state?: string}) => {
+        if (options.failNextIssueUpdate === true) {
+          options.failNextIssueUpdate = false
+          throw Object.assign(new Error('update failed'), {status: 500})
+        }
         const issue = issues.get(args.issue_number)
         if (issue !== undefined && args.state === 'closed') issue.state = 'closed'
         return record('issues.update', args, {data: {}})
@@ -164,6 +186,10 @@ function makeFake(options: FakeOptions) {
         return record('pulls.create', args, {data: {number: pull.number, html_url: 'https://example.test/901'}})
       }),
       update: vi.fn(async (args: {pull_number: number; body?: string}) => {
+        if (options.failNextPullUpdate === true) {
+          options.failNextPullUpdate = false
+          throw Object.assign(new Error('pull update failed'), {status: 500})
+        }
         const pull = pulls.find(candidate => candidate.number === args.pull_number)
         if (pull !== undefined && args.body !== undefined) pull.body = args.body
         return record('pulls.update', args, {data: {}})
@@ -207,7 +233,7 @@ function makeFake(options: FakeOptions) {
     rest,
   } as unknown as OctokitClient
 
-  return {octokit, calls, pulls, issues, refs}
+  return {octokit, calls, pulls, issues, refs, comments}
 }
 
 type Fake = ReturnType<typeof makeFake>
@@ -611,6 +637,247 @@ describe('publishDraftedSolutions: mixed run (AE2)', () => {
     })
 
     expect(result.mode).toBe('created-pr')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Routing: outcome x PR open x doc changes
+// ---------------------------------------------------------------------------
+
+const GIT_WRITE_OPS = ['git.createBlob', 'git.createTree', 'git.createCommit', 'git.createRef', 'git.updateRef']
+const EXISTING_DOC = 'docs/solutions/best-practices/existing.md'
+
+/** The body of the last PR create/update, or null when the run never wrote a PR body. */
+function lastPrBody(fake: Fake): string | null {
+  const bodies = fake.calls
+    .filter(call => call.op === 'pulls.create' || call.op === 'pulls.update')
+    .map(call => String(call.args.body))
+  return bodies.at(-1) ?? null
+}
+
+describe('publishDraftedSolutions: unverified proposals are always closed directly as not planned', () => {
+  it.each([
+    ['no PR, with doc changes', false, true],
+    ['an open PR, with doc changes', true, true],
+    ['an open PR, without doc changes', true, false],
+    ['no PR, without doc changes', false, false],
+  ])('%s', async (_label: string, prOpen: boolean, withDocs: boolean) => {
+    const drafted = makeIssue(20)
+    const unverified = makeIssue(11)
+    const fake = makeFake({issues: [drafted, unverified], pulls: prOpen ? [makePull()] : []})
+
+    await run(fake, {
+      proposals: withDocs ? [drafted, unverified] : [unverified],
+      rows: withDocs ? [agentRow(drafted), unverifiedRow(unverified)] : [unverifiedRow(unverified)],
+      changed: withDocs ? {[docPath(20)]: DOC_BODY} : {},
+    })
+
+    const body = lastPrBody(fake)
+    if (body !== null) {
+      expect(body).not.toContain('Closes #11')
+      const parsed = parseCoverageBlock(body, 'existing-pr')
+      expect(parsed.ok && parsed.rows.map(row => row.issue)).not.toContain(11)
+    }
+    expect(callsOf(fake, 'issues.createComment').map(call => call.args.issue_number)).toStrictEqual([11])
+    expect(callsOf(fake, 'issues.update').map(call => call.args)).toMatchObject([
+      {issue_number: 11, state: 'closed', state_reason: 'not_planned'},
+    ])
+  })
+})
+
+describe('publishDraftedSolutions: routing table (outcome x PR open x doc changes)', () => {
+  // inBody: the proposal gets a row + `Closes #N` in the PR body. direct: it is commented on and closed now.
+  it.each([
+    ['new-doc', false, true, {inBody: true, direct: false}],
+    ['new-doc', true, true, {inBody: true, direct: false}],
+    ['covered', false, true, {inBody: true, direct: false}],
+    ['covered', true, true, {inBody: true, direct: false}],
+    ['covered', true, false, {inBody: true, direct: false}],
+    ['covered', false, false, {inBody: false, direct: true}],
+    ['unverified', false, true, {inBody: false, direct: true}],
+    ['unverified', true, true, {inBody: false, direct: true}],
+    ['unverified', true, false, {inBody: false, direct: true}],
+    ['unverified', false, false, {inBody: false, direct: true}],
+  ] as const)(
+    '%s, PR open=%s, doc changes=%s',
+    async (outcome: 'new-doc' | 'covered' | 'unverified', prOpen: boolean, withDocs: boolean, expected) => {
+      const target = makeIssue(11)
+      const companion = makeIssue(20)
+      const fake = makeFake({issues: [target, companion], pulls: prOpen ? [makePull()] : []})
+      const targetRow =
+        outcome === 'new-doc' ? agentRow(target) : outcome === 'covered' ? coveredRow(target) : unverifiedRow(target)
+      // A new-doc row needs its doc in the handoff; "with doc changes" is carried by a companion new-doc row.
+      const needsCompanion = withDocs && outcome !== 'new-doc'
+
+      await run(fake, {
+        proposals: needsCompanion ? [target, companion] : [target],
+        rows: needsCompanion ? [targetRow, agentRow(companion)] : [targetRow],
+        changed: withDocs ? {[docPath(needsCompanion ? 20 : 11)]: DOC_BODY} : {},
+        workspaceDocs: [EXISTING_DOC],
+      })
+
+      const body = lastPrBody(fake)
+      if (expected.inBody) {
+        expect(body).toContain('Closes #11')
+        const parsed = parseCoverageBlock(body, 'existing-pr')
+        expect(parsed.ok && parsed.rows.map(row => row.issue)).toContain(11)
+      } else {
+        expect(body ?? '').not.toContain('Closes #11')
+      }
+      const closedDirectly = callsOf(fake, 'issues.update').some(call => call.args.issue_number === 11)
+      expect(closedDirectly).toBe(expected.direct)
+      expect(callsOf(fake, 'issues.createComment').some(call => call.args.issue_number === 11)).toBe(expected.direct)
+      if (expected.direct && outcome === 'covered') {
+        expect(callsOf(fake, 'issues.update')[0]?.args).toMatchObject({state_reason: 'completed'})
+      }
+    },
+  )
+})
+
+describe('publishDraftedSolutions: covered rows with an open PR and no doc changes', () => {
+  it('updates only the PR body: no blob, tree, commit, or ref write', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()]})
+
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [coveredRow(issue)],
+      workspaceDocs: [EXISTING_DOC],
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr-body', prNumber: 900})
+    expect(fake.calls.filter(call => GIT_WRITE_OPS.includes(call.op))).toStrictEqual([])
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(1)
+    expect((callsOf(fake, 'pulls.update')[0]?.args as {body: string}).body).toContain('Closes #11')
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+    expect(callsOf(fake, 'issues.update')).toHaveLength(0)
+  })
+
+  it('recovers after a PR-body update failed following a successful ref update', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], failNextPullUpdate: true})
+
+    // Run 1: the branch moves, then the PR-body update fails.
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/pull update failed/)
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(1)
+    expect(fake.pulls[0]?.body ?? '').not.toContain('Closes #11')
+
+    // Run 2: harvest lists #11 as uncovered again; the doc is already on the drafted tree, so the
+    // agent marks it covered. Only the PR body is repaired; the proposal is not closed directly.
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [coveredRow(issue, docPath(11))],
+      workspaceDocs: [docPath(11)],
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr-body', prNumber: 900})
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(1)
+    expect(callsOf(fake, 'git.createCommit')).toHaveLength(1)
+    expect(fake.pulls[0]?.body).toContain('Closes #11')
+    const parsed = parseCoverageBlock(fake.pulls[0]?.body, 'existing-pr')
+    expect(parsed.ok && parsed.rows.map(row => [row.issue, row.outcome])).toStrictEqual([[11, 'covered']])
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+    expect(callsOf(fake, 'issues.update')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Closure comments are idempotent
+// ---------------------------------------------------------------------------
+
+const MARKER_11 = '<!-- fro-bot:drafted-solutions-closure v1 issue=11 -->'
+
+describe('publishDraftedSolutions: closure comments are idempotent', () => {
+  it('carries a hidden per-issue marker', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue]})
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(String(callsOf(fake, 'issues.createComment')[0]?.args.body)).toContain(MARKER_11)
+  })
+
+  it('a retry after a failed close posts no second comment, then closes the issue', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], failNextIssueUpdate: true})
+    const options = {proposals: [issue], rows: [unverifiedRow(issue)]}
+
+    await expect(run(fake, options)).rejects.toThrow(/update failed/)
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+    expect(fake.issues.get(11)?.state).toBe('open')
+
+    const result = await run(fake, options)
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+    expect(callsOf(fake, 'issues.update')).toHaveLength(1)
+    expect(fake.issues.get(11)?.state).toBe('closed')
+    expect(result).toMatchObject({mode: 'closed-proposals', closed: [11]})
+  })
+
+  it('ignores a marker comment from another author', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {11: [{body: `fake\n\n${MARKER_11}`, user: {login: 'mallory'}}]},
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+    expect(fake.issues.get(11)?.state).toBe('closed')
+  })
+
+  it('ignores a bot comment carrying a different issue number or an altered marker', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {
+        11: [
+          {body: '<!-- fro-bot:drafted-solutions-closure v1 issue=12 -->', user: {login: 'fro-bot[bot]'}},
+          {body: '<!-- fro-bot:drafted-solutions-closure v2 issue=11 -->', user: {login: 'fro-bot[bot]'}},
+          {body: 'mentions drafted-solutions-closure in prose', user: {login: 'fro-bot[bot]'}},
+        ],
+      },
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(1)
+  })
+
+  it('skips the comment when the bot already left the marker, but still closes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({
+      issues: [issue],
+      existingComments: {11: [{body: `earlier closure\n\n${MARKER_11}`, user: {login: 'fro-bot[bot]'}}]},
+    })
+
+    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+    expect(callsOf(fake, 'issues.update')).toHaveLength(1)
+  })
+
+  it('escapes agent text so it cannot forge or close an HTML comment marker', async () => {
+    const a = makeIssue(11)
+    const b = makeIssue(12)
+    const fake = makeFake({issues: [a, b]})
+    const forged = '<!-- fro-bot:drafted-solutions-closure v1 issue=12 --> --> <b>x</b>'
+
+    await run(fake, {
+      proposals: [a, b],
+      rows: [{...unverifiedRow(a), reason: forged}, unverifiedRow(b)],
+    })
+
+    const comment = String(callsOf(fake, 'issues.createComment')[0]?.args.body)
+    expect(comment).toContain(MARKER_11)
+    expect(comment.match(/<!--/g)).toHaveLength(1)
+    expect(comment).not.toContain('<b>')
+    expect(comment).toContain('&lt;!-- fro-bot:drafted-solutions-closure v1 issue=12 --&gt;')
+    // The forged text did not suppress issue 12's own comment.
+    expect(callsOf(fake, 'issues.createComment').map(call => call.args.issue_number)).toStrictEqual([11, 12])
   })
 })
 

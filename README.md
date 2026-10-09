@@ -363,9 +363,9 @@ Any single key missing produces zero PR actions; eligible findings fall back to 
 
 ### Drafted Solution Docs
 
-The **Draft Solutions** workflow turns open `learning-proposal` issues (up to five per run, oldest first) into `docs/solutions/` changes on one stable branch, `docs/drafted-solutions`, with one PR. A read-only agent verifies each claim against the merged PR, its reviews and CI runs, and current `main`, then drafts or extends docs; a separate no-agent job validates the handoff (only `docs/solutions/<category>/*.md`, no deletions), runs the private-repo gate on every file, the PR title and body, and every comment, and only then writes. The PR body carries a per-proposal evidence table and one `Closes #N` line per proposal.
+The **Draft Solutions** workflow turns open `learning-proposal` issues (up to five per run, oldest first) into `docs/solutions/` changes on one stable branch, `docs/drafted-solutions`, with one PR. A read-only agent verifies each claim against the merged PR, its reviews and CI runs, and current `main`, then drafts or extends docs; a separate no-agent job validates the handoff (only `docs/solutions/<category>/*.md`, no deletions), runs the private-repo gate on every file, the PR title and body, and every comment, and only then writes. The PR body carries a per-proposal evidence table and one `Closes #N` line per recorded proposal.
 
-Runs that change no docs comment on and close each processed proposal instead of opening a PR. Fro Bot reviews the drafted PR (the only App-authored PR it reviews); nothing is auto-merged, so a human merges it, and merging closes the proposals.
+Proposals whose claims cannot be verified are commented on and closed as not planned right away, never recorded in the PR. Proposals an existing doc already covers are recorded in the PR when one is open or the run changes docs, and are otherwise commented on and closed as completed. Fro Bot reviews the drafted PR (the only App-authored PR it reviews); nothing is auto-merged, so a human merges it, and merging closes the proposals.
 
 ### Recurring Pattern Proposals
 

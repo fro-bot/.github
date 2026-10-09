@@ -14,6 +14,15 @@
  *     body, and every comment;
  *  6. write.
  *
+ * Routing (outcome x drafted PR open x doc changes):
+ *   new-doc / extension -> always in the PR body (they require doc changes in the handoff).
+ *   covered             -> in the PR body when a PR is open or the run has doc changes; otherwise
+ *                          comment + close as completed. A PR open with no doc changes gets a
+ *                          body-only update (no commit, no ref write).
+ *   unverified          -> always comment + close as not planned; never in the PR body or a
+ *                          `Closes` line (a merge would close it as completed).
+ * Closure comments carry a hidden per-issue marker so a retry never posts a second comment.
+ *
  * Error messages never echo agent-supplied text that failed the privacy gate.
  *
  * CLI contract:
@@ -44,6 +53,7 @@ import {
 } from './drafted-solutions-pr-body.ts'
 import {
   BASE_BRANCH,
+  BOT_LOGIN,
   DRAFTED_BRANCH,
   DraftedSolutionsError,
   findOpenDraftedPr,
@@ -51,6 +61,7 @@ import {
   parseDigest,
   reauthorizeRows,
   type DraftedDigest,
+  type OpenDraftedPr,
 } from './drafted-solutions-shared.ts'
 import {loadRedactedCanonicalIdsFromDisk} from './status-truth-proposals.ts'
 import {
@@ -91,11 +102,18 @@ export interface PublishParams {
   prTitle?: string
 }
 
+/** Proposals closed directly this run, and proposals skipped because they were already closed. */
+interface DirectClosures {
+  closed: number[]
+  skipped: number[]
+}
+
 export type PublishResult =
   | {mode: 'noop'}
-  | {mode: 'created-pr'; prNumber: number; commitSha: string}
-  | {mode: 'updated-pr'; prNumber: number; commitSha: string}
-  | {mode: 'closed-proposals'; closed: number[]; skipped: number[]}
+  | ({mode: 'created-pr'; prNumber: number; commitSha: string} & DirectClosures)
+  | ({mode: 'updated-pr'; prNumber: number; commitSha: string} & DirectClosures)
+  | ({mode: 'updated-pr-body'; prNumber: number} & DirectClosures)
+  | ({mode: 'closed-proposals'} & DirectClosures)
 
 interface StagedFile {
   path: string
@@ -263,19 +281,31 @@ async function verifyProposals(
   return states
 }
 
+/** Hidden per-issue marker: lets a retry see that the closure comment already landed. */
+export function closureMarker(issue: number): string {
+  return `<!-- fro-bot:drafted-solutions-closure v1 issue=${issue} -->`
+}
+
+/** Agent text goes into a public comment: keep it from forging or terminating an HTML comment marker. */
+function escapeCommentText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
 function closingComment(row: CoverageRow): string {
-  if (row.outcome === 'covered') {
-    return [
-      `Reviewed against the merged change, its reviews, and current main: this lesson is already documented in \`${row.targetDoc}\`.`,
-      row.reason,
-      'Closing as completed.',
-    ].join('\n\n')
-  }
-  return [
-    "Could not verify this proposal's claims against the merged change and current main, so no doc was drafted.",
-    row.reason,
-    'Closing as not planned. Reopen with a corrected body to have it considered again.',
-  ].join('\n\n')
+  const reason = escapeCommentText(row.reason)
+  const body =
+    row.outcome === 'covered'
+      ? [
+          `Reviewed against the merged change, its reviews, and current main: this lesson is already documented in \`${escapeCommentText(row.targetDoc ?? '')}\`.`,
+          reason,
+          'Closing as completed.',
+        ]
+      : [
+          "Could not verify this proposal's claims against the merged change and current main, so no doc was drafted.",
+          reason,
+          'Closing as not planned. Reopen with a corrected body to have it considered again.',
+        ]
+  return [...body, closureMarker(row.issue)].join('\n\n')
 }
 
 /** Throws on the first blocked surface. Names the surface by label, never by blocked text. */
@@ -353,60 +383,26 @@ async function existingRowsOf(
   return parsed.rows
 }
 
-async function publishCore(params: PublishParams, tokens: PublicOutputTokens): Promise<PublishResult> {
+type PrWrite =
+  | {mode: 'created-pr'; prNumber: number; commitSha: string}
+  | {mode: 'updated-pr'; prNumber: number; commitSha: string}
+  | {mode: 'updated-pr-body'; prNumber: number}
+
+/** Commits the handoff and creates or updates the drafted PR. Branch writes happen only here. */
+async function writePr(
+  params: PublishParams,
+  tokens: PublicOutputTokens,
+  context: {openPr: OpenDraftedPr | null; files: readonly StagedFile[]; bodyRows: readonly CoverageRow[]; body: string},
+): Promise<PrWrite> {
   const {octokit, owner, repo} = params
   const logger = params.logger ?? DEFAULT_LOGGER
   const title = params.prTitle ?? DRAFTED_PR_TITLE
+  const {openPr, files, bodyRows, body} = context
 
-  const digest = parseDigest(await readJson(params.digestPath, 'digest'))
-  const files = await stageHandoff(params.handoffDir)
-  const rows = prepareRows(await readJson(params.rowsPath, 'rows file'), digest)
-
-  if (digest.proposals.length === 0) {
-    if (files.length > 0) throw new DraftedSolutionsError('the handoff has doc changes but the digest has no proposals')
-    return {mode: 'noop'}
-  }
-
-  await checkRowsAgainstTree(rows, files, params.workspaceDir)
-  const states = await verifyProposals(octokit, owner, repo, digest)
-  const openPr = await findOpenDraftedPr(octokit, owner, repo)
-  const existingRows = openPr === null ? [] : await existingRowsOf(octokit, owner, repo, openPr)
-
-  const hasDocChanges = files.length > 0
-  const mergedRows = mergeCoverageRows(existingRows, rows)
-  const body = hasDocChanges ? renderPrBody(mergedRows) : ''
-  const commentRows = hasDocChanges ? [] : rows.filter(row => states.get(row.issue) !== 'closed')
-
-  assertPublicSafe(tokens, [
-    ...files.flatMap((file, index) => [
-      {surface: 'pr-body' as const, label: `file #${index + 1} path`, content: file.path},
-      {surface: 'pr-body' as const, label: `file #${index + 1} content`, content: file.content},
-    ]),
-    {surface: 'pr-title', label: 'PR title', content: title},
-    {surface: 'pr-commit-message', label: 'commit message', content: DRAFTED_COMMIT_MESSAGE},
-    {surface: 'pr-body', label: 'PR body', content: body},
-    ...commentRows.map(row => ({
-      surface: 'proposal-comment' as const,
-      label: `comment for #${row.issue}`,
-      content: closingComment(row),
-    })),
-  ])
-
-  if (!hasDocChanges) {
-    const closed: number[] = []
-    for (const row of commentRows) {
-      await octokit.rest.issues.createComment({owner, repo, issue_number: row.issue, body: closingComment(row)})
-      await octokit.rest.issues.update({
-        owner,
-        repo,
-        issue_number: row.issue,
-        state: 'closed',
-        state_reason: row.outcome === 'covered' ? 'completed' : 'not_planned',
-      })
-      closed.push(row.issue)
-    }
-    const skipped = rows.filter(row => states.get(row.issue) === 'closed').map(row => row.issue)
-    return {mode: 'closed-proposals', closed, skipped}
+  if (openPr !== null && files.length === 0) {
+    // Covered rows only: repair the PR body without touching the branch.
+    await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
+    return {mode: 'updated-pr-body', prNumber: openPr.number}
   }
 
   if (openPr !== null) {
@@ -451,11 +447,92 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   // A PR appeared between discovery and create: treat the create as an update of that PR.
   const raced = await findOpenDraftedPr(octokit, owner, repo)
   if (raced === null) throw new DraftedSolutionsError('PR creation was rejected (422) and no drafted PR exists')
-  const racedRows = mergeCoverageRows(await existingRowsOf(octokit, owner, repo, raced), rows)
-  const racedBody = renderPrBody(racedRows)
+  const racedBody = renderPrBody(mergeCoverageRows(await existingRowsOf(octokit, owner, repo, raced), bodyRows))
   assertPublicSafe(tokens, [{surface: 'pr-body', label: 'PR body', content: racedBody}])
   await octokit.rest.pulls.update({owner, repo, pull_number: raced.number, body: racedBody})
   return {mode: 'updated-pr', prNumber: raced.number, commitSha}
+}
+
+/** Posts the closure comment unless the bot already left it, then closes the issue. */
+async function closeProposal(octokit: OctokitClient, owner: string, repo: string, row: CoverageRow): Promise<void> {
+  const marker = closureMarker(row.issue)
+  const existing = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: row.issue,
+    per_page: 100,
+  })
+  const alreadyCommented = existing.some(comment => comment.user?.login === BOT_LOGIN && comment.body?.includes(marker))
+  if (!alreadyCommented) {
+    await octokit.rest.issues.createComment({owner, repo, issue_number: row.issue, body: closingComment(row)})
+  }
+  await octokit.rest.issues.update({
+    owner,
+    repo,
+    issue_number: row.issue,
+    state: 'closed',
+    state_reason: row.outcome === 'covered' ? 'completed' : 'not_planned',
+  })
+}
+
+async function publishCore(params: PublishParams, tokens: PublicOutputTokens): Promise<PublishResult> {
+  const {octokit, owner, repo} = params
+  const title = params.prTitle ?? DRAFTED_PR_TITLE
+
+  const digest = parseDigest(await readJson(params.digestPath, 'digest'))
+  const files = await stageHandoff(params.handoffDir)
+  const rows = prepareRows(await readJson(params.rowsPath, 'rows file'), digest)
+
+  if (digest.proposals.length === 0) {
+    if (files.length > 0) throw new DraftedSolutionsError('the handoff has doc changes but the digest has no proposals')
+    return {mode: 'noop'}
+  }
+
+  await checkRowsAgainstTree(rows, files, params.workspaceDir)
+  const states = await verifyProposals(octokit, owner, repo, digest)
+  const openPr = await findOpenDraftedPr(octokit, owner, repo)
+  const existingRows = openPr === null ? [] : await existingRowsOf(octokit, owner, repo, openPr)
+
+  // Routing. Recorded in the PR body (closing on merge): drafted docs, and covered rows whenever a
+  // drafted PR is open or this run has doc changes. Closed directly: unverified rows always (they
+  // must never close as completed on merge), and covered rows only when there is no PR to carry them.
+  const hasDocChanges = files.length > 0
+  const bodyRows = rows.filter(
+    row =>
+      row.outcome === 'new-doc' ||
+      row.outcome === 'extension' ||
+      (row.outcome === 'covered' && (openPr !== null || hasDocChanges)),
+  )
+  const directRows = rows.filter(row => !bodyRows.includes(row))
+  const closeRows = directRows.filter(row => states.get(row.issue) !== 'closed')
+  const skipped = directRows.filter(row => states.get(row.issue) === 'closed').map(row => row.issue)
+  const writesPr = hasDocChanges || (openPr !== null && bodyRows.length > 0)
+  const body = writesPr ? renderPrBody(mergeCoverageRows(existingRows, bodyRows)) : ''
+
+  assertPublicSafe(tokens, [
+    ...files.flatMap((file, index) => [
+      {surface: 'pr-body' as const, label: `file #${index + 1} path`, content: file.path},
+      {surface: 'pr-body' as const, label: `file #${index + 1} content`, content: file.content},
+    ]),
+    {surface: 'pr-title', label: 'PR title', content: title},
+    {surface: 'pr-commit-message', label: 'commit message', content: DRAFTED_COMMIT_MESSAGE},
+    {surface: 'pr-body', label: 'PR body', content: body},
+    ...closeRows.map(row => ({
+      surface: 'proposal-comment' as const,
+      label: `comment for #${row.issue}`,
+      content: closingComment(row),
+    })),
+  ])
+
+  const prWrite = writesPr ? await writePr(params, tokens, {openPr, files, bodyRows, body}) : null
+
+  const closed: number[] = []
+  for (const row of closeRows) {
+    await closeProposal(octokit, owner, repo, row)
+    closed.push(row.issue)
+  }
+
+  return prWrite === null ? {mode: 'closed-proposals', closed, skipped} : {...prWrite, closed, skipped}
 }
 
 /** Validates, gates, then writes. See the module header for the contract. */

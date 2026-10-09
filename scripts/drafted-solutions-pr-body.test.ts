@@ -63,19 +63,12 @@ describe('renderPrBody / parseCoverageBlock round trip', () => {
         evidence: [],
         reason: 'Existing doc states the same rule.',
       }),
-      makeRow({
-        issue: 404,
-        outcome: 'unverified',
-        targetDoc: null,
-        evidence: [],
-        reason: 'The merged PR no longer exists.',
-      }),
     ]
 
     const body = renderPrBody(rows)
     const parsed = parseCoverageBlock(body, 'existing-pr')
 
-    expect(parsed).toStrictEqual({ok: true, rows: [rows[1], rows[0], rows[2], rows[3]]})
+    expect(parsed).toStrictEqual({ok: true, rows: [rows[1], rows[0], rows[2]]})
   })
 
   it('survives a CRLF rewrite of the body', () => {
@@ -106,6 +99,37 @@ describe('renderPrBody / parseCoverageBlock round trip', () => {
 
     expect(body.trimEnd().endsWith('-->')).toBe(true)
     expect(body.lastIndexOf(BLOCK_START)).toBeGreaterThan(body.lastIndexOf('Closes #'))
+  })
+})
+
+describe('unverified rows are never recorded in the PR body', () => {
+  const unverified = makeRow({
+    issue: 404,
+    outcome: 'unverified',
+    targetDoc: null,
+    evidence: [],
+    reason: 'The merged PR no longer exists.',
+  })
+
+  it('refuses to render an unverified row, so it can never get a Closes line or a block entry', () => {
+    expect(() => renderPrBody([makeRow(), unverified])).toThrow(/unverified/)
+  })
+
+  it('fails closed on a block that contains an unverified row', () => {
+    const payload = JSON.stringify({version: 1, rows: [unverified]})
+
+    const result = parseCoverageBlock(bodyWithPayload(payload), 'existing-pr')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/unverified/)
+  })
+
+  it('still validates an unverified row as agent output (it is closed directly, not recorded)', () => {
+    expect(validateCoverageRows([unverified]).ok).toBe(true)
+  })
+
+  it('the rendered summary does not mention unverified proposals', () => {
+    expect(renderPrBody([makeRow()])).not.toMatch(/unverified/i)
   })
 })
 

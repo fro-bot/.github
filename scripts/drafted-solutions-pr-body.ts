@@ -224,7 +224,22 @@ export function parseCoverageBlock(body: string | null | undefined, context: Bod
   if (mismatch !== undefined) return fail(`coverage block payload has ${mismatch}`)
   if (payload.version !== BLOCK_VERSION) return fail(`coverage block version must be ${BLOCK_VERSION}`)
 
-  return validateCoverageRows(payload.rows)
+  const validated = validateCoverageRows(payload.rows)
+  return validated.ok ? rejectUnrecordable(validated.rows) : validated
+}
+
+/**
+ * `unverified` proposals are closed directly (not planned) and never recorded: a `Closes #N` line
+ * would close them as completed on merge, and a block entry would claim them as covered.
+ */
+function rejectUnrecordable(rows: CoverageRow[]): CoverageResult {
+  const unverified = rows.find(row => row.outcome === 'unverified')
+  if (unverified !== undefined) {
+    return fail(
+      `row #${unverified.issue}: unverified proposals are closed directly and are never recorded in the PR body`,
+    )
+  }
+  return {ok: true, rows}
 }
 
 function sortByIssue(rows: readonly CoverageRow[]): CoverageRow[] {
@@ -277,7 +292,9 @@ function renderRow(row: CoverageRow): string {
 export function renderPrBody(rows: readonly CoverageRow[]): string {
   const validated = validateCoverageRows(rows)
   if (!validated.ok) throw new Error(`cannot render invalid coverage rows: ${validated.reason}`)
-  const sorted = sortByIssue(validated.rows)
+  const recordable = rejectUnrecordable(validated.rows)
+  if (!recordable.ok) throw new Error(`cannot render coverage rows: ${recordable.reason}`)
+  const sorted = sortByIssue(recordable.rows)
 
   const count = (outcome: CoverageOutcome): number => sorted.filter(row => row.outcome === outcome).length
   const sections = [
@@ -285,8 +302,8 @@ export function renderPrBody(rows: readonly CoverageRow[]): string {
     sorted.length === 0
       ? 'No learning proposals are covered yet.'
       : `Drafted from ${sorted.length} learning ${sorted.length === 1 ? 'proposal' : 'proposals'}: ` +
-        `${count('new-doc')} new, ${count('extension')} extended, ${count('covered')} already covered, ` +
-        `${count('unverified')} unverified. Review the evidence, then merge manually; merging closes the proposals below.`,
+        `${count('new-doc')} new, ${count('extension')} extended, ${count('covered')} already covered. ` +
+        `Review the evidence, then merge manually; merging closes the proposals below.`,
   ]
 
   if (sorted.length > 0) {
