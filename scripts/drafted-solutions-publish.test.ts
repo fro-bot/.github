@@ -33,6 +33,7 @@ const STALE_PR_HEAD_SHA = '3'.repeat(40)
 const MOVED_MAIN_SHA = '4'.repeat(40)
 const MOVED_BRANCH_SHA = '5'.repeat(40)
 const SOURCE_SHA = 'a'.repeat(40)
+const EXISTING_DOC = 'docs/solutions/best-practices/existing.md'
 
 const PRIVATE_TOKEN = 'acme-private-repo'
 const REDACTED_ID = 'R_kgDOSecretNodeId'
@@ -156,7 +157,7 @@ function makeFake(options: FakeOptions) {
   /** Parents of every commit this run creates, so a non-forced updateRef can enforce fast-forward. */
   const commitParents = new Map<string, string[]>()
   /** Test hooks fired inside the fake at precise moments of a publish. */
-  const hooks: {afterCreateCommit?: () => void} = {}
+  const hooks: {afterCreateCommit?: () => void; beforeCreateRef?: () => void} = {}
   /** Blob SHA overrides, keyed `<commit>:<path>`; the default is a stable per-path blob. */
   const blobShas = new Map<string, string>()
   let counter = 0
@@ -263,6 +264,7 @@ function makeFake(options: FakeOptions) {
         return result
       }),
       createRef: vi.fn(async (args: {ref: string; sha: string}) => {
+        hooks.beforeCreateRef?.()
         const name = args.ref.replace(/^refs\//, '')
         if (refs.has(name)) throw Object.assign(new Error('Reference already exists'), {status: 422})
         refs.set(name, args.sha)
@@ -440,58 +442,76 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     expect(parsed.ok && parsed.rows[0]?.bodyHash).toBe(hashProposalBody(issue.body ?? ''))
   })
 
-  it('fast-forwards a stale branch (no open PR) with a two-parent commit and a non-forced update', async () => {
+  it("creates the branch with a single-parent commit on main's tree plus the handoff, never touching an existing ref", async () => {
     const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], branchExists: true})
-    const info = vi.fn()
+    const fake = makeFake({issues: [issue]})
 
-    const result = await run(
-      fake,
-      {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
-      {logger: {info}},
-    )
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [agentRow(issue)],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
 
     expect(result.mode).toBe('created-pr')
-    expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
-    // Tree is main's tree plus the handoff; parents are [main, old branch head], so the PR diff is only the handoff.
     expect(callsOf(fake, 'git.createTree')[0]?.args).toMatchObject({base_tree: `tree-of-${MAIN_SHA}`})
-    expect(callsOf(fake, 'git.createCommit')[0]?.args).toMatchObject({parents: [MAIN_SHA, BRANCH_SHA]})
-    expect(callsOf(fake, 'git.updateRef')).toHaveLength(1)
-    expect(callsOf(fake, 'git.updateRef')[0]?.args).toMatchObject({ref: BRANCH_REF, force: false})
-    expect(info).toHaveBeenCalledWith(expect.stringContaining(BRANCH_SHA))
-    expect(callsOf(fake, 'pulls.create')).toHaveLength(1)
+    expect(callsOf(fake, 'git.createCommit')[0]?.args).toMatchObject({parents: [MAIN_SHA]})
+    expect(callsOf(fake, 'git.createRef')).toHaveLength(1)
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(0)
   })
 
-  it('rejects when the stale branch moved during publish (the non-forced update is not a fast-forward)', async () => {
+  it('rejects a stale branch with no open PR and doc changes, with zero writes', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], branchExists: true})
-    fake.hooks.afterCreateCommit = () => {
-      fake.refs.set(BRANCH_REF, MOVED_BRANCH_SHA)
-    }
 
-    await expect(
-      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/not a fast forward/)
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
+      /^stale docs\/drafted-solutions branch exists with no open drafted PR; delete the branch to resume$/,
+    )
 
-    expect(fake.refs.get(BRANCH_REF)).toBe(MOVED_BRANCH_SHA)
+    expect(fake.refs.get(BRANCH_REF)).toBe(BRANCH_SHA)
+  })
+
+  it('a stale branch does not block direct closes when the run has no doc changes', async () => {
+    const unverified = makeIssue(11)
+    const covered = makeIssue(12)
+    const fake = makeFake({issues: [unverified, covered], branchExists: true, mainDocs: [EXISTING_DOC]})
+
+    const result = await run(fake, {
+      proposals: [unverified, covered],
+      rows: [unverifiedRow(unverified), coveredRow(covered)],
+    })
+
+    expect(result).toMatchObject({mode: 'closed-proposals', closed: [11, 12]})
+    expect(callsOf(fake, 'issues.update').map(call => call.args.state_reason)).toStrictEqual([
+      'not_planned',
+      'completed',
+    ])
+    expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
+    expect(callsOf(fake, 'git.updateRef')).toHaveLength(0)
     expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
+    expect(fake.refs.get(BRANCH_REF)).toBe(BRANCH_SHA)
   })
 
-  it('rejects when a drafted PR is reopened before the ref write, with zero ref writes', async () => {
+  it('a PR reopened after the final lookup cannot have its tree replaced: the branch is never reused', async () => {
     const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], branchExists: true})
-    fake.hooks.afterCreateCommit = () => {
+    const fake = makeFake({issues: [issue]})
+    // The reopen lands between the last PR lookup and the ref write: the branch ref (with a PR-only
+    // doc on it) and its PR reappear just before createRef.
+    fake.hooks.beforeCreateRef = () => {
+      fake.refs.set(BRANCH_REF, BRANCH_SHA)
       fake.pulls.push(makePull())
     }
 
     await expect(
       run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/drafted PR appeared during publish; the next run reconciles it/)
+    ).rejects.toThrow(/already exists/)
 
-    expect(callsOf(fake, 'git.createRef')).toHaveLength(0)
+    // createRef refused (the ref exists); no update could replace the reopened branch's tree.
     expect(callsOf(fake, 'git.updateRef')).toHaveLength(0)
-    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
     expect(fake.refs.get(BRANCH_REF)).toBe(BRANCH_SHA)
+    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
   })
 
   it('rejects when a drafted PR appears before the branch is first created, with zero ref writes', async () => {
@@ -753,7 +773,6 @@ describe('publishDraftedSolutions: mixed run (AE2)', () => {
 // ---------------------------------------------------------------------------
 
 const GIT_WRITE_OPS = ['git.createBlob', 'git.createTree', 'git.createCommit', 'git.createRef', 'git.updateRef']
-const EXISTING_DOC = 'docs/solutions/best-practices/existing.md'
 
 /** The body of the last PR create/update, or null when the run never wrote a PR body. */
 function lastPrBody(fake: Fake): string | null {
@@ -2148,17 +2167,13 @@ describe('publishDraftedSolutions: trust re-established from the API (zero write
 })
 
 describe('publishDraftedSolutions: write targets', () => {
-  it('never writes any ref other than the drafted branch (new PR, reset, and update flows)', async () => {
+  it('never writes any ref other than the drafted branch (new PR and update flows)', async () => {
     const issue = makeIssue(11)
     const flows: Fake[] = []
 
     const fresh = makeFake({issues: [issue]})
     await run(fresh, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
     flows.push(fresh)
-
-    const reset = makeFake({issues: [issue], branchExists: true})
-    await run(reset, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
-    flows.push(reset)
 
     const update = makeFake({issues: [issue], pulls: [makePull()]})
     await run(update, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
@@ -2184,10 +2199,6 @@ describe('publishDraftedSolutions: write targets', () => {
     const fresh = makeFake({issues: [issue]})
     await run(fresh, {proposals: [issue], rows: [agentRow(issue)], changed})
     flows.push(fresh)
-
-    const stale = makeFake({issues: [issue], branchExists: true})
-    await run(stale, {proposals: [issue], rows: [agentRow(issue)], changed})
-    flows.push(stale)
 
     const update = makeFake({issues: [issue], pulls: [makePull()]})
     await run(update, {proposals: [issue], rows: [agentRow(issue)], changed})

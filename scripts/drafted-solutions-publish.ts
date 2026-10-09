@@ -20,10 +20,11 @@
  *     fit GitHub's 65536-character limit;
  *  5. gate every file (path and content), the PR title, the commit message, the fully rendered PR
  *     body, and every comment;
- *  6. write. The drafted branch is never forced: a new one is created, a stale one is
- *     fast-forwarded by a two-parent commit (a non-forced update is a compare-and-swap), and an
- *     open PR gets a delta commit. A PR that appears or reappears before the ref write, or a
- *     create-422, fails the run closed; the next run reconciles. A Fro Bot review is requested
+ *  6. write. The drafted branch is never forced or reused: with no open PR the branch must not
+ *     exist (a leftover from a PR closed without merging fails the run closed until the operator
+ *     deletes it) and is created at a single-parent commit on main; an open PR gets a delta
+ *     commit with a non-forced update. A PR that appears or reappears before the ref write,
+ *     a createRef conflict, or a create-422 fails the run closed; the next run reconciles. A Fro Bot review is requested
  *     after every PR write (create, delta commit, body-only update); a failure other than 422
  *     fails the run after the write landed, and the next write retries it.
  *
@@ -98,6 +99,7 @@ const REVIEWER = 'fro-bot'
 const DRAFTED_UPDATE_REF = `heads/${DRAFTED_BRANCH}`
 const DRAFTED_CREATE_REF = `refs/heads/${DRAFTED_BRANCH}`
 const PR_BODY_TOO_LONG_MESSAGE = `rendered PR body exceeds GitHub's ${PR_BODY_MAX_LENGTH}-character limit; merge or close the drafted PR`
+const STALE_BRANCH_MESSAGE = `stale ${DRAFTED_BRANCH} branch exists with no open drafted PR; delete the branch to resume`
 const PR_APPEARED_MESSAGE = 'drafted PR appeared during publish; the next run reconciles it'
 const WITHHELD = '[message withheld: matched the privacy gate]'
 
@@ -547,22 +549,16 @@ async function writePr(
     return {mode: 'updated-pr', prNumber: openPr.number, commitSha}
   }
 
-  // No open PR. The branch is never reset: a stale one (left by a closed PR) is fast-forwarded by a
-  // commit whose parents are [main, old head] and whose tree is main's tree plus the handoff, so the
-  // merge-base with main stays main's head and the PR diff is only the handoff. A non-forced
-  // updateRef is a compare-and-swap: it fails if the branch moved since we read it.
-  const oldHead = await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)
-  const commitSha = await commitFiles(octokit, owner, repo, baseSha, files, oldHead === null ? [] : [oldHead])
+  // No open PR, and (checked before the gate) no branch: create it at a commit whose only parent is
+  // main's head. A branch is never reused, so a PR that is reopened after our last lookup cannot have
+  // its tree replaced: createRef fails if the ref exists, and no update is ever issued here.
+  const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
 
   // Immediately before the ref write: a PR opened or reopened since discovery owns the branch now.
   if ((await findOpenDraftedPr(octokit, owner, repo)) !== null) throw new DraftedSolutionsError(PR_APPEARED_MESSAGE)
 
-  if (oldHead === null) {
-    await octokit.rest.git.createRef({owner, repo, ref: DRAFTED_CREATE_REF, sha: commitSha})
-  } else {
-    logger.info(`fast-forwarding stale ${DRAFTED_BRANCH} ${oldHead} -> ${commitSha}`)
-    await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
-  }
+  logger.info(`creating ${DRAFTED_BRANCH} at ${commitSha}`)
+  await octokit.rest.git.createRef({owner, repo, ref: DRAFTED_CREATE_REF, sha: commitSha})
 
   let createdNumber: number
   try {
@@ -624,6 +620,14 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   const states = await verifyProposals(octokit, owner, repo, digest)
   const openPr = await findOpenDraftedPr(octokit, owner, repo)
   const existingRows = openPr === null ? [] : await existingRowsOf(octokit, owner, repo, openPr)
+
+  // A run that would create the PR needs a free branch. One left over from a PR closed without
+  // merging (merged ones auto-delete) is never reused: reusing it would mean replacing its tree, and
+  // a PR reopened mid-run could then lose its docs. The operator retires it. Direct-close-only
+  // runs never touch the branch, so they proceed.
+  if (openPr === null && files.length > 0 && (await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)) !== null) {
+    throw new DraftedSolutionsError(STALE_BRANCH_MESSAGE)
+  }
 
   // Routing. Recorded in the PR body (closing on merge): drafted docs, and covered rows whenever a
   // drafted PR is open or this run has doc changes. Closed directly: unverified rows always (they
