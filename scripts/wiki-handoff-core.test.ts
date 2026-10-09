@@ -7,6 +7,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   assertSafeHandoffPath,
   assertSafeWikiHandoffPath,
+  buildHandoffFromGitIndex,
   buildWikiHandoff,
   captureWikiBaseline,
   DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
@@ -19,6 +20,7 @@ import {
   WIKI_HANDOFF_MAX_TOTAL_BYTES,
   WIKI_HANDOFF_POLICY,
   WikiHandoffValidationError,
+  type GitRunner,
 } from './wiki-handoff-core.ts'
 
 /** Join porcelain -z records with NUL separators, plus a trailing NUL (git's actual output shape). */
@@ -967,5 +969,183 @@ describe('buildWikiHandoff source checks', () => {
 
     expect(result.changed).toStrictEqual(['knowledge/wiki/repos/ok.md'])
     expect(mocks.copyFileImpl).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('backslash handoff paths', () => {
+  const draftedPaths = [String.raw`docs\solutions\best-practices\x.md`, String.raw`docs/solutions/best-practices\x.md`]
+  const wikiPaths = [
+    String.raw`knowledge\wiki\repos\x.md`,
+    String.raw`knowledge/wiki/repos\x.md`,
+    String.raw`knowledge\index.md`,
+  ]
+
+  it.each(draftedPaths)('the drafted predicate and path check reject %s', (candidate: string) => {
+    expect(isAllowedDraftedSolutionPath(candidate)).toBe(false)
+    expect(() => assertSafeHandoffPath(candidate, DRAFTED_SOLUTIONS_HANDOFF_POLICY)).toThrow(/backslash/)
+  })
+
+  it.each(wikiPaths)('the wiki path check rejects %s', (candidate: string) => {
+    expect(() => assertSafeHandoffPath(candidate, WIKI_HANDOFF_POLICY)).toThrow(/backslash/)
+    expect(() => assertSafeWikiHandoffPath(candidate)).toThrow(WikiHandoffValidationError)
+  })
+
+  it.each(draftedPaths)('apply rejects %s under the drafted policy with nothing written', async (rejected: string) => {
+    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/ok.md', rejected], deleted: []}))
+
+    await expect(applyDrafted(mocks)).rejects.toThrow(/backslash/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+    expect(mocks.removed).toStrictEqual([])
+  })
+
+  it.each(wikiPaths)('apply rejects %s under the wiki policy with nothing written', async (rejected: string) => {
+    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/ok.md': {size: 1}})
+    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/ok.md'], deleted: [rejected]}))
+
+    await expect(
+      validateAndApplyWikiHandoff({
+        handoffDir: '/handoff',
+        workspaceDir: '/workspace',
+        mkdirImpl: mocks.mkdirImpl,
+        readdirImpl: mocks.readdirImpl,
+        lstatImpl: mocks.lstatImpl,
+        readFileImpl: mocks.readFileImpl,
+        writeFileImpl: mocks.writeFileImpl,
+        rmImpl: mocks.rmImpl,
+      }),
+    ).rejects.toThrow(/backslash/)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
+    expect(mocks.removed).toStrictEqual([])
+  })
+
+  it('the status-based wiki build treats a backslash path as out of scope and copies nothing', async () => {
+    const copyFileImpl = vi.fn(async () => undefined)
+
+    await expect(
+      buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        runGitStatus: async () => nulRecords(String.raw`?? knowledge\wiki\repos\x.md`),
+        copyFileImpl,
+        mkdirImpl: vi.fn(async () => undefined),
+        writeFileImpl: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow('out-of-scope paths')
+    expect(copyFileImpl).not.toHaveBeenCalled()
+  })
+})
+
+function rawEntry(status: string, newMode: string, sha: string, relativePath: string): string {
+  return `:100644 ${newMode} ${'0'.repeat(40)} ${sha} ${status}\0${relativePath}\0`
+}
+
+function recordingRunner(diffOutput: string, blobs: Record<string, string> = {}) {
+  const calls: string[][] = []
+  const runGit: GitRunner = async args => {
+    calls.push([...args])
+    if (args[0] === 'diff') return Buffer.from(diffOutput)
+    if (args[0] === 'cat-file') return Buffer.from(blobs[args[2] ?? ''] ?? '')
+    return Buffer.alloc(0)
+  }
+  return {runGit, calls}
+}
+
+function writers() {
+  const written: Record<string, string> = {}
+  return {
+    written,
+    mkdirImpl: vi.fn(async () => undefined) as unknown as typeof fs.mkdir,
+    writeFileImpl: vi.fn(async (target: unknown, data: unknown) => {
+      written[String(target)] = Buffer.isBuffer(data) ? data.toString('utf8') : String(data)
+    }) as unknown as typeof fs.writeFile,
+  }
+}
+
+describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
+  const SHA_A = 'a'.repeat(40)
+
+  it('stages with an argv array, lists staged changes against HEAD, and reads each blob by SHA', async () => {
+    const {runGit, calls} = recordingRunner(rawEntry('A', '100644', SHA_A, 'knowledge/wiki/repos/new.md'), {
+      [SHA_A]: 'blob content',
+    })
+    const io = writers()
+
+    const result = await buildHandoffFromGitIndex({
+      cwd: '/repo',
+      outDir: '/out',
+      pathspec: 'knowledge',
+      policy: WIKI_HANDOFF_POLICY,
+      runGit,
+      ...io,
+    })
+
+    expect(result).toStrictEqual({changed: ['knowledge/wiki/repos/new.md'], deleted: []})
+    expect(calls).toStrictEqual([
+      ['add', '-A', '--', 'knowledge'],
+      ['diff', '--cached', '--raw', '-z', '--no-renames', '--no-abbrev', '--', 'knowledge'],
+      ['cat-file', 'blob', SHA_A],
+    ])
+    expect(io.written['/out/files/knowledge/wiki/repos/new.md']).toBe('blob content')
+  })
+
+  it('under a policy that allows deletions, reports them in the manifest', async () => {
+    const {runGit} = recordingRunner(`:100644 000000 ${SHA_A} ${'0'.repeat(40)} D\0knowledge/log.md\0`)
+    const io = writers()
+
+    const result = await buildHandoffFromGitIndex({
+      cwd: '/repo',
+      outDir: '/out',
+      pathspec: 'knowledge',
+      policy: WIKI_HANDOFF_POLICY,
+      runGit,
+      ...io,
+    })
+
+    expect(result).toStrictEqual({changed: [], deleted: ['knowledge/log.md']})
+  })
+
+  it.each([
+    ['a symlink (120000)', rawEntry('A', '120000', SHA_A, 'docs/solutions/best-practices/x.md'), /120000/],
+    ['a gitlink (160000)', rawEntry('A', '160000', SHA_A, 'docs/solutions/best-practices/x.md'), /160000/],
+    ['an executable (100755)', rawEntry('A', '100755', SHA_A, 'docs/solutions/best-practices/x.md'), /100755/],
+    ['a type change', rawEntry('T', '120000', SHA_A, 'docs/solutions/best-practices/x.md'), /120000/],
+    ['a deletion', `:100644 000000 ${SHA_A} ${'0'.repeat(40)} D\0docs/solutions/best-practices/x.md\0`, /deletions/],
+    ['an out-of-policy path', rawEntry('A', '100644', SHA_A, 'docs/plans/x.md'), /outside the allowed/],
+    ['a backslash path', rawEntry('A', '100644', SHA_A, String.raw`docs/solutions/best-practices\x.md`), /backslash/],
+    ['a malformed record', ':100644 100644 nonsense\0docs/solutions/best-practices/x.md\0', /unexpected/],
+  ])('rejects %s before writing anything', async (_label: string, diffOutput: string, pattern: RegExp) => {
+    const {runGit} = recordingRunner(diffOutput)
+    const io = writers()
+
+    await expect(
+      buildHandoffFromGitIndex({
+        cwd: '/repo',
+        outDir: '/out',
+        pathspec: 'docs/solutions',
+        policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+        runGit,
+        ...io,
+      }),
+    ).rejects.toThrow(pattern)
+    expect(io.mkdirImpl).not.toHaveBeenCalled()
+    expect(io.writeFileImpl).not.toHaveBeenCalled()
+  })
+
+  it('wraps a failing git command in a validation error that names the command', async () => {
+    const runGit: GitRunner = async () => {
+      throw new Error('fatal: nope')
+    }
+
+    await expect(
+      buildHandoffFromGitIndex({
+        cwd: '/repo',
+        outDir: '/out',
+        pathspec: 'docs/solutions',
+        policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+        runGit,
+        ...writers(),
+      }),
+    ).rejects.toThrow(/git add failed/)
   })
 })
