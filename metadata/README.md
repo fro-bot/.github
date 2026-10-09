@@ -232,6 +232,7 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data â
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
+- Reconcile won't drop a public `owner/name` from `metadata/repos.yaml` while its wiki page exists on `data` or can't be read: it keeps the old name (and both rows of a blocked merge), skips that repo's dispatch, and logs a counts-only warning. Downgrades to private/unknown always apply. Other writers rely on the promotion privacy gate. To release a kept rename, repair the old page on `data` via an App-backed write, then rerun reconcile.
 - Manual edits to `metadata/*.{yaml,yml}` also target `data` and are promoted via the `Merge Data Branch` workflow â€” see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 
