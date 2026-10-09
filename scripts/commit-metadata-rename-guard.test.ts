@@ -67,6 +67,9 @@ function apiError(status: number, message = 'API error'): Error {
   return Object.assign(new Error(message), {status})
 }
 
+/** A page body with no `node_id` frontmatter: lookup must key on the path, not page identity. */
+const ID_LESS_PAGE = '---\ntitle: Old Widget\ntype: repo\n---\n\nHistorical notes.\n'
+
 interface FakeBranchOptions {
   repos: unknown
   /** Wiki repo pages present on the branch, by slug, with their content. */
@@ -75,6 +78,8 @@ interface FakeBranchOptions {
   pageLookupStatus?: number
   /** Path the fake serves as the metadata file under test. */
   metadataPath?: string
+  /** Wiki pages appear once this many lookups have been answered. */
+  pageAppearsAfterLookups?: number
   /** Number of 409s returned before a write is accepted. */
   conflictsBeforeWrite?: number
   /** Runs when a 409 is returned, so a test can change the branch between attempts. */
@@ -121,6 +126,12 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
 
     const page = /^knowledge\/wiki\/repos\/(.+)\.md$/.exec(path)
     if (page?.[1] !== undefined) {
+      if (
+        options.pageAppearsAfterLookups !== undefined &&
+        branch.pageLookups.length >= options.pageAppearsAfterLookups
+      ) {
+        branch.pages[page[1]] = ID_LESS_PAGE
+      }
       branch.pageLookups.push(page[1])
       if (branch.pageLookupStatus !== undefined) {
         // Mirrors Octokit, whose request errors embed the request path in their message.
@@ -188,9 +199,6 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
 
   return branch
 }
-
-/** A page body with no `node_id` frontmatter: lookup must key on the path, not page identity. */
-const ID_LESS_PAGE = '---\ntitle: Old Widget\ntype: repo\n---\n\nHistorical notes.\n'
 
 function expectRedacted(text: string): void {
   for (const fragment of FORBIDDEN_IN_PUBLIC_OUTPUT) {
@@ -391,29 +399,42 @@ describe('commitMetadata rename guard', () => {
 // Writer: reconcile
 // ---------------------------------------------------------------------------
 
+function dispatchedNodeIds(branch: FakeBranch): string[] {
+  return branch.createWorkflowDispatch.mock.calls.map(
+    call => (call as unknown as [{inputs: {node_id: string}}])[0].inputs.node_id,
+  )
+}
+
+function warnings(logger: {warn: {mock: {calls: unknown[][]}}}): string[] {
+  return logger.warn.mock.calls.map(call => String(call[0])).filter(message => message.includes('wiki page'))
+}
+
 describe('reconcile writer', () => {
-  const allowlist = {version: 1, approved_inviters: []}
+  const allowlist = {version: 1, approved_inviters: [{username: 'acme', added: '2026-01-01', role: 'owner'}]}
+  const ROW_B_NODE = 'R_kgDOGADGET'
+
+  interface AccessEntry {
+    owner: string
+    name: string
+    private: boolean
+    node_id: string
+  }
 
   interface UserScenario {
     /** Live access list as GitHub reports it. */
-    access: {owner: string; name: string; private: boolean; node_id: string}[]
-    /** Stored name that GitHub no longer serves directly (renamed away). */
-    goneName?: string
-    /** Where a node ID lookup resolves to. */
-    resolvedTo?: {owner: string; name: string}
+    access: AccessEntry[]
+    /** Stored names that GitHub no longer serves directly (renamed away). */
+    goneNames?: string[]
   }
 
   function makeUserOctokit(scenario: UserScenario): OctokitClient {
-    const current = scenario.access[0]
+    const first = scenario.access[0]
     return {
       paginate: async (fn: (opts: unknown) => Promise<{data: unknown[]}>, opts: unknown) => (await fn(opts)).data,
-      graphql: async () => ({
-        node: {
-          __typename: 'Repository',
-          name: scenario.resolvedTo?.name ?? current?.name,
-          owner: {login: scenario.resolvedTo?.owner ?? current?.owner},
-        },
-      }),
+      graphql: async (_query: string, variables: {id: string}) => {
+        const resolved = scenario.access.find(entry => entry.node_id === variables.id) ?? first
+        return {node: {__typename: 'Repository', name: resolved?.name, owner: {login: resolved?.owner}}}
+      },
       rest: {
         repos: {
           listForAuthenticatedUser: async () => ({
@@ -426,14 +447,15 @@ describe('reconcile writer', () => {
             })),
           }),
           get: async ({repo}: {repo: string}) => {
-            if (repo === scenario.goneName) throw apiError(404, 'Not Found')
+            if (scenario.goneNames?.includes(repo) === true) throw apiError(404, 'Not Found')
+            const served = scenario.access.find(entry => entry.name === repo) ?? first
             return {
               data: {
-                private: current?.private ?? false,
-                node_id: current?.node_id ?? NODE_ID,
+                private: served?.private ?? false,
+                node_id: served?.node_id ?? NODE_ID,
                 id: 4242,
-                name: current?.name,
-                owner: {login: current?.owner},
+                name: served?.name,
+                owner: {login: served?.owner},
               },
             }
           },
@@ -450,6 +472,7 @@ describe('reconcile writer', () => {
   }
 
   async function reconcile(branch: FakeBranch, scenario: UserScenario) {
+    const logger = {warn: vi.fn<(message: string) => void>(), info: vi.fn<(message: string) => void>()}
     const params: HandleReconcileParams = {
       userOctokit: makeUserOctokit(scenario),
       appOctokit: branch.octokit,
@@ -463,86 +486,157 @@ describe('reconcile writer', () => {
       dispatchTimeoutMs: 100,
       dispatchStaggerMs: 0,
       maxDispatchesPerRun: 0,
-      logger: {warn: vi.fn(), info: vi.fn()},
+      logger,
       workflowFile: 'survey-repo.yaml',
       workflowRef: 'main',
     }
-    return handleReconcile(params)
+    return {result: await handleReconcile(params), logger}
   }
 
-  const renamedAway: UserScenario = {
-    access: [{owner: 'acme', name: 'new-widget', private: false, node_id: NODE_ID}],
-    goneName: 'old-widget',
-  }
+  const widgetNew: AccessEntry = {owner: 'acme', name: 'new-widget', private: false, node_id: NODE_ID}
+  const gadgetNew: AccessEntry = {owner: 'acme', name: 'new-gadget', private: false, node_id: ROW_B_NODE}
+  const newcomer: AccessEntry = {owner: 'acme', name: 'fresh', private: false, node_id: 'R_kgDOFRESH'}
+  /** Past-due eligibility, so a renamed widget would be dispatched under its new name. */
+  const dueWidget = (overrides: Record<string, unknown> = {}) =>
+    repoRow({next_survey_eligible_at: '2026-04-01', ...overrides})
+  const dueGadget = (overrides: Record<string, unknown> = {}) =>
+    dueWidget({name: 'old-gadget', node_id: ROW_B_NODE, ...overrides})
 
-  it('blocks a single-row rename while the old page exists (even without page identity)', async () => {
-    const branch = createFakeBranch({repos: reposFile(repoRow()), pages: {'acme--old-widget': ID_LESS_PAGE}})
+  it('keeps the old row of a blocked rename and still commits other changes', async () => {
+    const original = dueWidget()
+    const branch = createFakeBranch({repos: reposFile(original), pages: {'acme--old-widget': ID_LESS_PAGE}})
 
-    const error = await caught(reconcile(branch, renamedAway))
+    const {result} = await reconcile(branch, {access: [widgetNew, newcomer], goneNames: ['old-widget']})
 
-    expect(error).toMatchObject({code: 'WIKI_PAGE_RENAME_BLOCKED'})
-    expectRedacted((error as Error).message)
-    expect(branch.writes).toEqual([])
-    expect(branch.repos()).toMatchObject({repos: [{name: 'old-widget'}]})
-    expect(branch.createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 0})
+    const stored = (branch.repos() as {repos: Record<string, unknown>[]}).repos
+    expect(stored[0]).toEqual(original)
+    expect(stored.map(row => row.name)).toEqual(['old-widget', 'fresh'])
+    // The kept repo is not surveyed under the new name; the newcomer still is.
+    expect(dispatchedNodeIds(branch)).toEqual(['R_kgDOFRESH'])
+  })
+
+  it('applies an unblocked rename while a blocked one is kept', async () => {
+    const branch = createFakeBranch({
+      repos: reposFile(dueWidget(), dueGadget()),
+      pages: {'acme--old-widget': ID_LESS_PAGE},
+    })
+
+    const {result} = await reconcile(branch, {access: [widgetNew, gadgetNew], goneNames: ['old-widget', 'old-gadget']})
+
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 1})
+    const stored = (branch.repos() as {repos: Record<string, unknown>[]}).repos
+    expect(stored.map(row => [row.name, row.node_id])).toEqual([
+      ['old-widget', NODE_ID],
+      ['new-gadget', ROW_B_NODE],
+    ])
+    expect(branch.pageLookups.toSorted()).toContain('acme--old-gadget')
+    expect(dispatchedNodeIds(branch)).toEqual([ROW_B_NODE])
   })
 
   it('commits the rename once the old page is verifiably absent', async () => {
-    const branch = createFakeBranch({repos: reposFile(repoRow())})
+    const branch = createFakeBranch({repos: reposFile(dueWidget())})
 
-    const result = await reconcile(branch, renamedAway)
+    const {result, logger} = await reconcile(branch, {access: [widgetNew], goneNames: ['old-widget']})
 
-    expect(result.committed).toBe(true)
-    expect(branch.pageLookups).toEqual(['acme--old-widget'])
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 0, wikiGuardUnverifiable: 0})
     expect(branch.repos()).toMatchObject({repos: [{owner: 'acme', name: 'new-widget', node_id: NODE_ID}]})
+    expect(dispatchedNodeIds(branch)).toEqual([NODE_ID])
+    expect(warnings(logger)).toEqual([])
   })
 
-  it('blocks a duplicate-row merge that would drop a name whose page still exists', async () => {
+  it('keeps both rows of a duplicate-row merge whose dropped name still has a page', async () => {
     const duplicates = reposFile(repoRow({name: 'new-widget'}), repoRow({name: 'old-widget'}))
     const branch = createFakeBranch({repos: duplicates, pages: {'acme--old-widget': ID_LESS_PAGE}})
 
-    const error = await caught(
-      reconcile(branch, {access: [{owner: 'acme', name: 'new-widget', private: false, node_id: NODE_ID}]}),
-    )
+    const {result} = await reconcile(branch, {access: [widgetNew, newcomer]})
 
-    expect(error).toMatchObject({code: 'WIKI_PAGE_RENAME_BLOCKED'})
-    expect(branch.writes).toEqual([])
-    expect((branch.repos() as {repos: unknown[]}).repos).toHaveLength(2)
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 1})
+    const stored = (branch.repos() as {repos: Record<string, unknown>[]}).repos
+    expect(stored.map(row => row.name)).toEqual(['new-widget', 'old-widget', 'fresh'])
+    expect(stored.slice(0, 2)).toEqual(duplicates.repos)
   })
 
   it('merges duplicate rows once the dropped name has no page', async () => {
     const duplicates = reposFile(repoRow({name: 'new-widget'}), repoRow({name: 'old-widget'}))
     const branch = createFakeBranch({repos: duplicates})
 
-    const result = await reconcile(branch, {
-      access: [{owner: 'acme', name: 'new-widget', private: false, node_id: NODE_ID}],
-    })
+    const {result} = await reconcile(branch, {access: [widgetNew]})
 
-    expect(result.committed).toBe(true)
-    expect(branch.repos()).toMatchObject({repos: [{name: 'new-widget'}]})
-    expect((branch.repos() as {repos: unknown[]}).repos).toHaveLength(1)
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 0})
+    expect((branch.repos() as {repos: unknown[]}).repos).toMatchObject([{name: 'new-widget'}])
   })
 
-  it('fails closed when the data-tree page lookup is unreadable', async () => {
-    const branch = createFakeBranch({repos: reposFile(repoRow()), pageLookupStatus: 500})
+  it('keeps the old row when wiki state is unverifiable, and counts it as such', async () => {
+    const original = dueWidget()
+    const branch = createFakeBranch({repos: reposFile(original), pageLookupStatus: 500})
 
-    const error = await caught(reconcile(branch, renamedAway))
+    const {result} = await reconcile(branch, {access: [widgetNew, newcomer], goneNames: ['old-widget']})
 
-    expect(error).toMatchObject({code: 'WIKI_STATE_UNVERIFIABLE'})
-    expectRedacted((error as Error).message)
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 1})
+    const stored = (branch.repos() as {repos: Record<string, unknown>[]}).repos
+    expect(stored[0]).toEqual(original)
+    expect(stored.map(row => row.name)).toEqual(['old-widget', 'fresh'])
+  })
+
+  it('writes nothing when the only change is a blocked rename', async () => {
+    const branch = createFakeBranch({repos: reposFile(repoRow()), pages: {'acme--old-widget': ID_LESS_PAGE}})
+
+    const {result} = await reconcile(branch, {access: [widgetNew], goneNames: ['old-widget']})
+
+    expect(result).toMatchObject({committed: false, wikiGuardKept: 1})
     expect(branch.writes).toEqual([])
   })
 
   it('still records a public → private downgrade while the old page exists', async () => {
     const branch = createFakeBranch({repos: reposFile(repoRow()), pages: {'acme--old-widget': ID_LESS_PAGE}})
 
-    const result = await reconcile(branch, {
+    const {result} = await reconcile(branch, {
       access: [{owner: 'acme', name: 'old-widget', private: true, node_id: NODE_ID}],
     })
 
-    expect(result.committed).toBe(true)
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 0})
     expect(branch.pageLookups).toEqual([])
     expect(branch.repos()).toMatchObject({repos: [{owner: '[REDACTED]', name: NODE_ID, private: true}]})
+  })
+
+  it('emits one counts-only warning with no names, slugs, paths, or API error text', async () => {
+    const branch = createFakeBranch({repos: reposFile(repoRow()), pageLookupStatus: 500})
+
+    const {logger} = await reconcile(branch, {access: [widgetNew, newcomer], goneNames: ['old-widget']})
+
+    const [warning, ...rest] = warnings(logger)
+    expect(rest).toEqual([])
+    expect(warning).toBe(
+      'reconcile: kept 1 repo(s) unchanged because a rename or merge would strand a wiki page (1 unverifiable); repair the old wiki pages, then rerun',
+    )
+    expectRedacted(logger.warn.mock.calls.map(call => String(call[0])).join('\n'))
+    expect(logger.warn.mock.calls.map(call => String(call[0])).join('\n')).not.toContain('500')
+  })
+
+  it('revalidates on a commit retry: a page that appears after a conflict keeps the row', async () => {
+    const branch = createFakeBranch({
+      repos: reposFile(dueWidget()),
+      conflictsBeforeWrite: 1,
+      onConflict: current => {
+        current.pages['acme--old-widget'] = ID_LESS_PAGE
+      },
+    })
+
+    const {result} = await reconcile(branch, {access: [widgetNew, newcomer], goneNames: ['old-widget']})
+
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 1})
+    const stored = (branch.repos() as {repos: Record<string, unknown>[]}).repos
+    expect(stored.map(row => row.name)).toEqual(['old-widget', 'fresh'])
+  })
+
+  it('leaves commitMetadata as the backstop when a page appears after reconcile checked', async () => {
+    const branch = createFakeBranch({repos: reposFile(dueWidget()), pageAppearsAfterLookups: 1})
+
+    const error = await caught(reconcile(branch, {access: [widgetNew], goneNames: ['old-widget']}))
+
+    expect(error).toMatchObject({code: 'WIKI_PAGE_RENAME_BLOCKED'})
+    expect(branch.writes).toEqual([])
   })
 })
 

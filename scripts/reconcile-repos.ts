@@ -54,6 +54,7 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {keepStrandedRows, lookupRepoWikiPage} from './metadata-wiki-rename-guard.ts'
 import {
   addRepoEntry,
   CHANNEL_INTERVAL_DAYS,
@@ -1645,6 +1646,10 @@ export interface HandleReconcileResult {
   starsAlreadyPresent: number
   /** Count of star check or star call failures this run (non-blocking; loop continues). */
   starFailures: number
+  /** Repos whose rename/merge was skipped (old rows kept) because the old wiki page exists or could not be checked. */
+  wikiGuardKept: number
+  /** Subset of `wikiGuardKept` skipped because wiki state could not be verified. */
+  wikiGuardUnverifiable: number
 }
 
 /**
@@ -1752,6 +1757,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   }
 
   const hasChanges = planHasChanges(plan)
+  let wikiGuard: {kept: number; unverifiable: number; nodeIds: ReadonlySet<string>} = {
+    kept: 0,
+    unverifiable: 0,
+    nodeIds: new Set<string>(),
+  }
   let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
   let committed = false
 
@@ -1823,10 +1833,26 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
           accessChannelByKey,
           now,
         })
-        return rerun.nextRepos
+        // Keep the old rows of any repo whose rename/merge would strand its wiki page; recomputed per attempt.
+        const guarded = await keepStrandedRows({
+          previous: currentParsed,
+          next: rerun.nextRepos,
+          lookup: async slug => lookupRepoWikiPage({octokit: appOctokit, owner, repo, branch: 'data', slug}),
+        })
+        wikiGuard = {
+          kept: guarded.blockedRepos + guarded.unverifiableRepos,
+          unverifiable: guarded.unverifiableRepos,
+          nodeIds: guarded.keptNodeIds,
+        }
+        return guarded.next
       },
     })
     committed = commitResult.committed
+    if (wikiGuard.kept > 0) {
+      logger.warn(
+        `reconcile: kept ${wikiGuard.kept} repo(s) unchanged because a rename or merge would strand a wiki page (${wikiGuard.unverifiable} unverifiable); repair the old wiki pages, then rerun`,
+      )
+    }
   }
 
   // 9. Dispatch loop. Prioritize candidates with null `last_survey_at` first
@@ -1834,7 +1860,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    `maxDispatchesPerRun` so a single run stays inside the workflow job budget and
   //    bounds peak concurrent surveys against the shared upstream seat. Deferred
   //    candidates become eligible again on the next run via the staleness gate.
-  const prioritizedDispatches = prioritizeDispatches(plan.dispatches, plan.nextRepos.repos)
+  // Kept repos are not surveyed under the new name: the write-back would hit the same guard.
+  const prioritizedDispatches = prioritizeDispatches(
+    plan.dispatches.filter(dispatch => !wikiGuard.nodeIds.has(dispatch.node_id)),
+    plan.nextRepos.repos,
+  )
   const dispatchCap = maxDispatchesPerRun > 0 ? maxDispatchesPerRun : prioritizedDispatches.length
 
   // Rotate within the never-surveyed (null last_survey_at) leading group so that all
@@ -1976,6 +2006,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     starsAdded: starOutcome.starsAdded,
     starsAlreadyPresent: starOutcome.starsAlreadyPresent,
     starFailures: starOutcome.starFailures,
+    wikiGuardKept: wikiGuard.kept,
+    wikiGuardUnverifiable: wikiGuard.unverifiable,
   }
 }
 

@@ -4,7 +4,9 @@ import {describe, expect, it, vi} from 'vitest'
 
 import {
   evaluateRenameGuard,
+  findBlockedPublicSlugs,
   findRemovedPublicSlugs,
+  keepStrandedRows,
   lookupRepoWikiPage,
   REPOS_METADATA_PATH,
   type WikiPageState,
@@ -225,6 +227,135 @@ describe('evaluateRenameGuard', () => {
     const {verdict} = await evaluate({'acme--one': 'unverifiable', 'acme--two': 'absent'}, prev, file())
 
     expect(verdict).toEqual({kind: 'unverifiable', count: 1})
+  })
+})
+
+describe('findBlockedPublicSlugs', () => {
+  it('splits removed names by page state and ignores verified-absent ones', async () => {
+    const previous = file(
+      row({name: 'a', node_id: 'R_a'}),
+      row({name: 'b', node_id: 'R_b'}),
+      row({name: 'c', node_id: 'R_c'}),
+    )
+    const states: Record<string, WikiPageState> = {
+      'acme--a': 'present',
+      'acme--b': 'unverifiable',
+      'acme--c': 'absent',
+    }
+
+    const blocked = await findBlockedPublicSlugs({
+      previous,
+      next: file(),
+      lookup: async slug => states[slug] ?? 'absent',
+    })
+
+    expect(blocked).toEqual({present: ['acme--a'], unverifiable: ['acme--b']})
+  })
+})
+
+describe('keepStrandedRows', () => {
+  const lookupWith =
+    (states: Record<string, WikiPageState>) =>
+    async (slug: string): Promise<WikiPageState> =>
+      states[slug] ?? 'absent'
+
+  it('returns the proposed file untouched when nothing is blocked', async () => {
+    const previous = file(row({name: 'old', node_id: 'R_1'}))
+    const next = file(row({name: 'new', node_id: 'R_1'}))
+
+    const kept = await keepStrandedRows({previous, next, lookup: lookupWith({})})
+
+    expect(kept.next).toBe(next)
+    expect(kept).toMatchObject({blockedRepos: 0, unverifiableRepos: 0})
+    expect(kept.keptNodeIds.size).toBe(0)
+  })
+
+  it('restores a blocked rename in place and keeps unrelated proposed changes', async () => {
+    const stuck = row({name: 'old', node_id: 'R_1'})
+    const other = row({name: 'other', node_id: 'R_2', last_survey_at: null})
+    const previous = file(stuck, other)
+    const next = file(
+      row({name: 'new', node_id: 'R_1', database_id: 7}),
+      {...other, last_survey_at: '2026-04-16'},
+      row({name: 'fresh', node_id: 'R_3'}),
+    )
+
+    const kept = await keepStrandedRows({previous, next, lookup: lookupWith({'acme--old': 'present'})})
+
+    expect(kept.next).toEqual({
+      version: 1,
+      repos: [stuck, {...other, last_survey_at: '2026-04-16'}, row({name: 'fresh', node_id: 'R_3'})],
+    })
+    expect(kept).toMatchObject({blockedRepos: 1, unverifiableRepos: 0})
+    expect([...kept.keptNodeIds]).toEqual(['R_1'])
+  })
+
+  it('evaluates repos independently: only the blocked rename is reverted', async () => {
+    const previous = file(row({name: 'old-a', node_id: 'R_a'}), row({name: 'old-b', node_id: 'R_b'}))
+    const next = file(row({name: 'new-a', node_id: 'R_a'}), row({name: 'new-b', node_id: 'R_b'}))
+
+    const kept = await keepStrandedRows({previous, next, lookup: lookupWith({'acme--old-a': 'unverifiable'})})
+
+    expect(kept.next).toEqual(file(row({name: 'old-a', node_id: 'R_a'}), row({name: 'new-b', node_id: 'R_b'})))
+    expect(kept).toMatchObject({blockedRepos: 0, unverifiableRepos: 1})
+  })
+
+  it('restores every old row of a blocked duplicate-row merge, in their original order', async () => {
+    const keep = row({name: 'new', node_id: 'R_1'})
+    const dropped = row({name: 'old', node_id: 'R_1'})
+    const previous = file(keep, dropped)
+
+    const kept = await keepStrandedRows({
+      previous,
+      next: file({...keep, last_survey_at: '2026-04-16'}),
+      lookup: lookupWith({'acme--old': 'present'}),
+    })
+
+    expect(kept.next).toEqual(previous)
+  })
+
+  it('counts one repo once when several of its old names are blocked', async () => {
+    const previous = file(
+      row({name: 'one', node_id: 'R_1'}),
+      row({name: 'two', node_id: 'R_1'}),
+      row({name: 'three', node_id: 'R_1'}),
+    )
+
+    const kept = await keepStrandedRows({
+      previous,
+      next: file(row({name: 'three', node_id: 'R_1'})),
+      lookup: lookupWith({'acme--one': 'present', 'acme--two': 'unverifiable'}),
+    })
+
+    expect(kept.next).toEqual(previous)
+    expect(kept).toMatchObject({blockedRepos: 1, unverifiableRepos: 0})
+  })
+
+  it('re-adds the old row when the proposed file dropped the repo entirely', async () => {
+    const previous = file(row({name: 'old', node_id: 'R_1'}))
+
+    const kept = await keepStrandedRows({previous, next: file(), lookup: lookupWith({'acme--old': 'present'})})
+
+    expect(kept.next).toEqual(previous)
+  })
+
+  it('never restores a stale public row over a visibility downgrade', async () => {
+    const previous = file(row({name: 'old', node_id: 'R_1'}))
+    const next = file(row({owner: '[REDACTED]', name: 'R_1', private: true, node_id: 'R_1'}))
+
+    const kept = await keepStrandedRows({previous, next, lookup: lookupWith({'acme--old': 'present'})})
+
+    expect(kept.next).toBe(next)
+    expect(kept.blockedRepos).toBe(0)
+  })
+
+  it('leaves a malformed proposed file for the commitMetadata backstop', async () => {
+    const previous = file(row({name: 'old', node_id: 'R_1'}))
+
+    const kept = await keepStrandedRows({previous, next: 'garbage', lookup: lookupWith({'acme--old': 'present'})})
+
+    expect(kept.next).toBe('garbage')
+    expect(kept.blockedRepos).toBe(0)
   })
 })
 

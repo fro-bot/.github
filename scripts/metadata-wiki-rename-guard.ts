@@ -42,9 +42,16 @@ export type RenameGuardVerdict =
   | {readonly kind: 'unverifiable'; readonly count: number}
 
 interface RepoRow {
+  readonly raw: Record<string, unknown>
   readonly slug: string | undefined
   readonly isPublic: boolean
   readonly identityKeys: readonly string[]
+}
+
+/** Blocked removals, split by why they are blocked. Slugs stay internal; callers publish counts. */
+export interface BlockedSlugs {
+  readonly present: readonly string[]
+  readonly unverifiable: readonly string[]
 }
 
 /**
@@ -105,38 +112,131 @@ export async function lookupRepoWikiPage(params: {
   }
 }
 
+/** Removed public names whose wiki page is not verified absent. */
+export async function findBlockedPublicSlugs(params: {
+  previous: unknown
+  next: unknown
+  lookup: (slug: string) => Promise<WikiPageState>
+}): Promise<BlockedSlugs> {
+  const removed = findRemovedPublicSlugs(params.previous, params.next)
+  const states = await Promise.all(removed.map(async slug => params.lookup(slug)))
+  return {
+    present: removed.filter((_slug, index) => states[index] === 'present'),
+    unverifiable: removed.filter((_slug, index) => states[index] === 'unverifiable'),
+  }
+}
+
 export async function evaluateRenameGuard(params: {
   previous: unknown
   next: unknown
   lookup: (slug: string) => Promise<WikiPageState>
 }): Promise<RenameGuardVerdict> {
-  const removed = findRemovedPublicSlugs(params.previous, params.next)
-  if (removed.length === 0) return {kind: 'allow'}
-
-  const states = await Promise.all(removed.map(async slug => params.lookup(slug)))
-  const present = states.filter(state => state === 'present').length
-  if (present > 0) return {kind: 'page-present', count: present}
-
-  const unverifiable = states.filter(state => state !== 'absent').length
-  if (unverifiable > 0) return {kind: 'unverifiable', count: unverifiable}
-
+  const blocked = await findBlockedPublicSlugs(params)
+  if (blocked.present.length > 0) return {kind: 'page-present', count: blocked.present.length}
+  if (blocked.unverifiable.length > 0) return {kind: 'unverifiable', count: blocked.unverifiable.length}
   return {kind: 'allow'}
+}
+
+export interface KeptRows {
+  /** The proposed file with every blocked repo's old rows restored in place. */
+  readonly next: unknown
+  /** Repos kept unchanged because their old page exists. */
+  readonly blockedRepos: number
+  /** Repos kept unchanged because wiki state could not be verified. */
+  readonly unverifiableRepos: number
+  /** Stable node IDs of kept repos, so callers can skip work that would fail on the new name. */
+  readonly keptNodeIds: ReadonlySet<string>
+}
+
+/**
+ * Per-repo variant of the guard for writers that can tolerate a skip: restores the old rows of
+ * each repo whose rename or merge would strand a page, leaving every other change in `next`.
+ * Repos are evaluated independently, so one stuck rename never blocks another. Restrictive
+ * downgrades are never flagged, so a stale public row is never restored over them.
+ * `commitMetadata` still enforces the same policy as the fail-closed backstop.
+ */
+export async function keepStrandedRows(params: {
+  previous: unknown
+  next: unknown
+  lookup: (slug: string) => Promise<WikiPageState>
+}): Promise<KeptRows> {
+  const blocked = await findBlockedPublicSlugs(params)
+  const blockedSlugs = new Set([...blocked.present, ...blocked.unverifiable])
+  const keptNodeIds = new Set<string>()
+  if (blockedSlugs.size === 0 || !isRecord(params.next) || !Array.isArray(params.next.repos)) {
+    return {next: params.next, blockedRepos: 0, unverifiableRepos: 0, keptNodeIds}
+  }
+
+  // One group per repo: the old public rows of each blocked name plus any old row sharing their identity.
+  const previousRows = readRows(params.previous)
+  const groups: Set<RepoRow>[] = []
+  for (const slug of blockedSlugs) {
+    const members = new Set(previousRows.filter(row => row.isPublic && row.slug === slug))
+    const keys = new Set([...members].flatMap(row => row.identityKeys))
+    for (const row of previousRows) {
+      if (row.identityKeys.some(key => keys.has(key))) members.add(row)
+    }
+    for (const group of groups.filter(existing => [...existing].some(row => members.has(row)))) {
+      for (const row of group) members.add(row)
+      groups.splice(groups.indexOf(group), 1)
+    }
+    groups.push(members)
+  }
+
+  let repos = params.next.repos as unknown[]
+  for (const group of groups) {
+    const members = [...group].sort((left, right) => previousRows.indexOf(left) - previousRows.indexOf(right))
+    const keys = new Set(members.flatMap(row => row.identityKeys))
+    const slugs = new Set(members.flatMap(row => (row.slug === undefined ? [] : [row.slug])))
+    for (const key of keys) {
+      if (key.startsWith('node_id:')) keptNodeIds.add(key.slice('node_id:'.length))
+    }
+
+    // The first proposed row of this repo is replaced by the old rows; its other proposed rows are dropped.
+    const restored: unknown[] = []
+    let inserted = false
+    for (const entry of repos) {
+      const row = rowOf(entry)
+      const matches =
+        row !== undefined &&
+        (row.identityKeys.some(key => keys.has(key)) || (row.slug !== undefined && slugs.has(row.slug)))
+      if (!matches) {
+        restored.push(entry)
+      } else if (!inserted) {
+        restored.push(...members.map(member => member.raw))
+        inserted = true
+      }
+    }
+    if (!inserted) restored.push(...members.map(member => member.raw))
+    repos = restored
+  }
+
+  const presentSlugs = new Set(blocked.present)
+  const blockedRepos = groups.filter(group =>
+    [...group].some(row => row.slug !== undefined && presentSlugs.has(row.slug)),
+  ).length
+  return {
+    next: {...params.next, repos},
+    blockedRepos,
+    unverifiableRepos: groups.length - blockedRepos,
+    keptNodeIds,
+  }
 }
 
 function readRows(file: unknown): RepoRow[] {
   if (!isRecord(file) || !Array.isArray(file.repos)) return []
+  return (file.repos as unknown[]).flatMap(entry => rowOf(entry) ?? [])
+}
 
-  const rows: RepoRow[] = []
-  for (const entry of file.repos as unknown[]) {
-    if (!isRecord(entry) || typeof entry.owner !== 'string' || typeof entry.name !== 'string') continue
-    rows.push({
-      slug: slugOrUndefined(entry.owner, entry.name),
-      // Strict `=== false`, mirroring `buildPublicSlugMap`: absent/non-boolean is treated as not public.
-      isPublic: entry.private === false,
-      identityKeys: identityKeysOf(entry),
-    })
+function rowOf(entry: unknown): RepoRow | undefined {
+  if (!isRecord(entry) || typeof entry.owner !== 'string' || typeof entry.name !== 'string') return undefined
+  return {
+    raw: entry,
+    slug: slugOrUndefined(entry.owner, entry.name),
+    // Strict `=== false`, mirroring `buildPublicSlugMap`: absent/non-boolean is treated as not public.
+    isPublic: entry.private === false,
+    identityKeys: identityKeysOf(entry),
   }
-  return rows
 }
 
 function identityKeysOf(entry: Record<string, unknown>): string[] {
