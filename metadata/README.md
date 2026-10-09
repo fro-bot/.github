@@ -206,9 +206,9 @@ The legacy daily-oversight Discord webhook keeps running until a separate follow
 
 ## Editing metadata files
 
-All `metadata/*.{yaml,yml}` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
+All `metadata/*.{yaml,yml}` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]` **and** opened from the `data` head branch. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
 
-`repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
+The `data`-head requirement applies to every guarded path, not just `repos.yaml`: a Fro Bot–authored PR from any other head branch that modifies a guarded file is blocked, and so is a PR whose head ref is anything other than exactly `data`. Fro Bot–authored PRs that touch only unguarded paths are unaffected. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts (for `repos.yaml`, see the sole-writer rule above).
 
 A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `Security: Private Leak Scan` commit status to the PR head SHA.
 

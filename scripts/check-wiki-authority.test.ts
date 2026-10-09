@@ -102,16 +102,16 @@ describe('checkWikiAuthority', () => {
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
-    it('allows fro-bot editing metadata/allowlist.yaml from a non-data branch (only repos.yaml has head rule)', () => {
-      // #given fro-bot on a feature branch touching a metadata yaml that is NOT repos.yaml
+    it('blocks fro-bot editing metadata/allowlist.yaml from a non-data branch (every guarded path needs data)', () => {
+      // #given fro-bot on a feature branch touching a guarded metadata yaml that is NOT repos.yaml
       // #when the guard evaluates the PR
-      // #then the edit is allowed — only repos.yaml carries the head-ref restriction
+      // #then the edit is blocked — the head-ref requirement covers every guarded path, not only repos.yaml
       const result = checkWikiAuthority({
         author: 'fro-bot',
         headRef: 'fix/something',
         files: ['metadata/allowlist.yaml'],
       })
-      expect(result).toEqual({ok: true})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/allowlist.yaml']})
     })
 
     it('allows fro-bot on data branch editing other guarded files (wiki, index, log)', () => {
@@ -124,6 +124,86 @@ describe('checkWikiAuthority', () => {
         files: ['knowledge/wiki/topics/x.md', 'knowledge/index.md', 'knowledge/log.md'],
       })
       expect(result).toEqual({ok: true})
+    })
+  })
+
+  describe('Fro Bot authors: every guarded path requires the data head (truth table)', () => {
+    // One representative file per guardedPatterns() entry, so a dropped or reordered pattern
+    // changes a specific row instead of hiding behind the others.
+    const guardedByPattern = [
+      ['knowledge/wiki/<subdir>/*.md', 'knowledge/wiki/topics/x.md'],
+      ['knowledge/index.md', 'knowledge/index.md'],
+      ['knowledge/log.md', 'knowledge/log.md'],
+      ['knowledge/corrections.yaml', CORRECTIONS_PATH],
+      ['metadata/*.yaml', 'metadata/repos.yaml'],
+      ['metadata/*.yaml (non-repos)', 'metadata/allowlist.yaml'],
+      ['metadata/*.yml', 'metadata/social.yml'],
+    ] as const
+    const authors = ['fro-bot', 'fro-bot[bot]'] as const
+
+    describe.each(guardedByPattern)('%s', (_label, file) => {
+      it.each(authors)('allows %s on the data head', author => {
+        expect(checkWikiAuthority({author, headRef: 'data', files: [file]})).toEqual({ok: true})
+      })
+
+      it.each(authors)('blocks %s on a non-data head, listing exactly the file', author => {
+        expect(checkWikiAuthority({author, headRef: 'fix/something', files: [file]})).toEqual({
+          ok: false,
+          blockedFiles: [file],
+        })
+      })
+
+      it('still blocks a non-Fro-Bot author on the data head', () => {
+        expect(checkWikiAuthority({author: 'marcusrbrown', headRef: 'data', files: [file]})).toEqual({
+          ok: false,
+          blockedFiles: [file],
+        })
+      })
+    })
+
+    it.each(authors)('allows %s with only unguarded paths on any head', author => {
+      const files = ['scripts/foo.ts', 'knowledge/schema.md', 'metadata/README.md', 'metadata/sub/x.yaml']
+      expect(checkWikiAuthority({author, headRef: 'fix/something', files})).toEqual({ok: true})
+      expect(checkWikiAuthority({author, headRef: 'data', files})).toEqual({ok: true})
+    })
+
+    it('allows a promotion PR (fro-bot[bot], head data, mixed guarded and unguarded paths)', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot]',
+        headRef: 'data',
+        files: ['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/wiki/repos/x.md', 'docs/a.md', CORRECTIONS_PATH],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('lists only the guarded files, in input order, when mixed with unguarded files on a non-data head', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'fix/something',
+        files: ['scripts/foo.ts', 'metadata/repos.yaml', 'README.md', 'knowledge/index.md', 'metadata/sub/x.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml', 'knowledge/index.md']})
+    })
+
+    it('lists every guarded pattern in input order on a non-data head', () => {
+      const files = guardedByPattern.map(([, file]) => file)
+      expect(checkWikiAuthority({author: 'fro-bot', headRef: 'fix/something', files})).toEqual({
+        ok: false,
+        blockedFiles: files,
+      })
+    })
+
+    it.each([
+      ['a one-element array', ['data']],
+      ['undefined', undefined],
+      ['null', null],
+      ['a differently-cased string', 'Data'],
+      ['a string with trailing whitespace', 'data '],
+      ['the empty string', ''],
+      ['a String object', new Object('data')],
+    ])('blocks a guarded path when headRef is %s (exact string match only)', (_label, headRef) => {
+      const result = checkWikiAuthority({author: 'fro-bot', headRef, files: ['metadata/repos.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
   })
 

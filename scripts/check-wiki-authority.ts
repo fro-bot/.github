@@ -24,9 +24,9 @@ function frobotAuthors(): ReadonlySet<string> {
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
  * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal.
  * - `knowledge/corrections.yaml` is system-owned sidecar state for marked corrections.
- * - `metadata/*.{yaml,yml}` are all auto-managed state. Manual edits to allowlist.yaml or
- *   any other metadata YAML still land via the `data` branch and are promoted by the
- *   `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
+ * - `metadata/*.{yaml,yml}` are all auto-managed state (including `repos.yaml`). Manual edits
+ *   to allowlist.yaml or any other metadata YAML still land via the `data` branch and are
+ *   promoted by the `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
  *
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
@@ -45,7 +45,9 @@ function guardedPatterns(): readonly RegExp[] {
 
 export interface GuardInput {
   readonly author: string
-  readonly headRef: string
+  // `unknown`, not `string`: the pure function is the trust boundary, so it narrows rather than
+  // trusting the caller's type. See exact-match-trust-gates-need-type-discipline-2026-09-08.md.
+  readonly headRef: unknown
   readonly files: readonly string[]
 }
 
@@ -55,35 +57,35 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * Pure decision function: should this PR be allowed to touch autonomously-managed files?
  *
  * Rules:
- * - If the author is a Fro Bot identity, always allow. Fro Bot is the legitimate writer.
- * - Otherwise, reject if any changed file matches a guarded pattern. The PR must split
- *   its guarded edits onto the `data` branch and let the promotion flow land them.
+ * - A Fro Bot identity may touch guarded paths only from the `data` head branch (the
+ *   writers all target `data`; `main` receives them through the promotion PR). Any guarded
+ *   path on another head, or a `headRef` that is not exactly the string `data`, is blocked.
+ *   Fro Bot with only unguarded paths is allowed on any head.
+ * - Any other author is blocked if any changed file matches a guarded pattern, whatever the
+ *   head. The PR must split its guarded edits onto the `data` branch and let the promotion
+ *   flow land them.
  *
- * Returns `{ok: true}` on allow, `{ok: false, blockedFiles}` listing the offending paths
- * in input order. Mixed PRs (some guarded, some not) still fail; splitting the PR is the
+ * Returns `{ok: true}` on allow, `{ok: false, blockedFiles}` listing the offending (guarded)
+ * paths in input order. Mixed PRs (some guarded, some not) still fail; splitting the PR is the
  * intended resolution.
+ *
+ * Gating a Fro Bot allow on a branch name is safe only because a Fro Bot identity never
+ * originates from a fork: fork PRs carry an external author and take the non-Fro-Bot branch,
+ * so a fork naming its branch `data` cannot reach the allow path.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
-  if (frobotAuthors().has(input.author)) {
-    // metadata/repos.yaml may only arrive via the `data` promotion branch.
-    // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
-    // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
-    // fro-bot identity never originates from a fork — fork PRs carry an external author and
-    // fall through to the guardedPatterns() check below, so a fork naming its branch `data`
-    // cannot reach this allow path. Deliberately a literal, not the `.ya?ml` glob below: the
-    // canonical filename is hardcoded in every reader (commit-metadata, check-private-leak,
-    // cross-repo-dispatch, ...), so a `.yml` variant is an orphan no pipeline consumes.
-    if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
-      return {ok: false, blockedFiles: ['metadata/repos.yaml']}
-    }
-    return {ok: true}
-  }
   const patterns = guardedPatterns()
-  const blockedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
-  if (blockedFiles.length === 0) {
+  const guardedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
+  if (guardedFiles.length === 0) {
     return {ok: true}
   }
-  return {ok: false, blockedFiles}
+  // Strict `===` against a string literal is the narrowing: it is true only for the primitive
+  // string `data` (not `['data']`, not a `String` object), so a separate `typeof` check would be
+  // dead code whose mutant is equivalent and unkillable.
+  if (frobotAuthors().has(input.author) && input.headRef === 'data') {
+    return {ok: true}
+  }
+  return {ok: false, blockedFiles: guardedFiles}
 }
 
 /**
@@ -106,8 +108,8 @@ export function formatBlockMessage(result: {readonly ok: false; readonly blocked
 Blocked files:
 ${fileList}
 
-These paths are writable only by the Fro Bot App (\`fro-bot[bot]\`), enforced by the \`data\`
-branch ruleset. Authorized manual edits land like this:
+These paths are writable only by Fro Bot (\`fro-bot\` / \`fro-bot[bot]\`), and only from the \`data\`
+branch (enforced by the \`data\` branch ruleset). Authorized manual edits land like this:
 
   1. Check out \`data\` in a worktree (\`git worktree add ../worktree-data data\`)
   2. Make the edit there
