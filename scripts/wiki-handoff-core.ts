@@ -143,6 +143,8 @@ export interface BuildWikiHandoffParams {
   runGitStatus: () => Promise<string>
   /** Baseline from {@link captureWikiBaseline}; when set, scopes the manifest to post-baseline changes only. */
   baselinePath?: string
+  /** Build-side scope check; defaults to the wiki allowlist. Drafted-solutions passes its own. */
+  isAllowedPath?: (relativePath: string) => boolean
   readFileImpl?: typeof fs.readFile
   writeFileImpl?: typeof fs.writeFile
   mkdirImpl?: typeof fs.mkdir
@@ -247,7 +249,8 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
   const statusOutput = await params.runGitStatus()
   const {changed: rawChanged, deleted: rawDeleted} = parseGitStatusPorcelainZ(statusOutput)
 
-  const outOfScope = [...rawChanged, ...rawDeleted].filter(p => !isAllowedWikiHandoffPath(p))
+  const isAllowedPath = params.isAllowedPath ?? isAllowedWikiHandoffPath
+  const outOfScope = [...rawChanged, ...rawDeleted].filter(p => !isAllowedPath(p))
   if (outOfScope.length > 0) {
     throw new Error(`wiki-handoff-build: git status reported out-of-scope paths: ${outOfScope.join(', ')}`)
   }

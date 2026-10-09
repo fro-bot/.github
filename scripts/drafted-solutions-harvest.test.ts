@@ -109,6 +109,15 @@ describe('harvestDraftedProposals', () => {
     })
   })
 
+  it('checks out main when no PR is open and the drafted branch when one is', async () => {
+    const issue = makeIssue(11)
+    const none = makeOctokit({openIssues: [issue]})
+    const open = makeOctokit({openIssues: [issue], pulls: [makePull()]})
+
+    expect((await harvest(none.octokit)).checkoutRef).toBe('main')
+    expect((await harvest(open.octokit)).checkoutRef).toBe('docs/drafted-solutions')
+  })
+
   it('records a null merge SHA when the capture marker is absent', async () => {
     const {octokit} = makeOctokit({openIssues: [makeIssue(11, {body: 'no marker here'})]})
 

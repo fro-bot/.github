@@ -11,7 +11,8 @@
  *   `DRAFTED_SOLUTIONS_DIGEST_PATH` (digest JSON destination, workspace-relative), and
  *   optionally `GITHUB_OUTPUT`.
  * - writes the digest file (always, even when there is no work) and appends `has_work=true|false`
- *   to `$GITHUB_OUTPUT`; stdout gets a one-line counts summary.
+ *   and `checkout_ref=<ref>` (the drafted branch when a PR is open, else `main`) to
+ *   `$GITHUB_OUTPUT`; stdout gets a one-line counts summary.
  * - exits 0 on success, 1 on any fail-closed condition (message on stderr).
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
@@ -24,7 +25,9 @@ import process from 'node:process'
 import {LEARNING_PROPOSAL_LABEL, parseMergeShaMarker} from './capture-learnings-harvest.ts'
 import {hashProposalBody, parseCoverageBlock} from './drafted-solutions-pr-body.ts'
 import {
+  BASE_BRANCH,
   DIGEST_VERSION,
+  DRAFTED_BRANCH,
   DraftedSolutionsError,
   findOpenDraftedPr,
   isLearningProposalIssue,
@@ -44,6 +47,8 @@ export interface HarvestParams {
 export interface HarvestResult {
   digest: DraftedDigest
   hasWork: boolean
+  /** Ref the agent and publish jobs check out: the drafted branch when a PR is open, else the base branch. */
+  checkoutRef: string
 }
 
 async function listOpenProposals(octokit: OctokitClient, owner: string, repo: string): Promise<ProposalDigestEntry[]> {
@@ -93,7 +98,11 @@ export async function harvestDraftedProposals(params: HarvestParams): Promise<Ha
   const uncovered = proposals.filter(proposal => coveredHashes.get(proposal.issue) !== proposal.bodyHash)
   const selected = uncovered.slice(0, MAX_PROPOSALS_PER_RUN)
 
-  return {digest: {version: DIGEST_VERSION, proposals: selected, pr}, hasWork: selected.length > 0}
+  return {
+    digest: {version: DIGEST_VERSION, proposals: selected, pr},
+    hasWork: selected.length > 0,
+    checkoutRef: pr.state === 'open' ? DRAFTED_BRANCH : BASE_BRANCH,
+  }
 }
 
 function requiredEnv(name: string): string {
@@ -112,12 +121,12 @@ async function main(): Promise<void> {
   const {Octokit} = await import('@octokit/rest')
   const octokit = new Octokit({auth: requiredEnv('GITHUB_TOKEN')})
 
-  const {digest, hasWork} = await harvestDraftedProposals({octokit, owner, repo})
+  const {digest, hasWork, checkoutRef} = await harvestDraftedProposals({octokit, owner, repo})
 
   await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
   const outputPath = process.env.GITHUB_OUTPUT
   if (outputPath !== undefined && outputPath !== '') {
-    await appendFile(outputPath, `has_work=${hasWork}\n`)
+    await appendFile(outputPath, `has_work=${hasWork}\ncheckout_ref=${checkoutRef}\n`)
   }
   process.stdout.write(`${JSON.stringify({hasWork, proposals: digest.proposals.length, prState: digest.pr.state})}\n`)
 }
