@@ -12,8 +12,9 @@
  *   optionally `GITHUB_OUTPUT`.
  * - writes the digest file (always, even when there is no work) and appends `has_work=true|false`,
  *   `draft_base_sha=<sha>` (the commit the agent edits: the live drafted-branch head when a PR is
- *   open, else main's head) and `main_sha=<sha>` (main's head) to `$GITHUB_OUTPUT`; stdout gets
- *   a one-line counts summary.
+ *   open, else main's head), `main_sha=<sha>` (main's head) and `review_needed=true|false` (an
+ *   open drafted PR that `fro-bot` is neither requested on nor has reviewed at its current head)
+ *   to `$GITHUB_OUTPUT`; stdout gets a one-line counts summary.
  * - exits 0 on success, 1 on any fail-closed condition (message on stderr).
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
@@ -35,6 +36,8 @@ import {
   MAX_PROPOSALS_PER_RUN,
   readRefSha,
   reauthorizeRows,
+  REVIEWER_LOGIN,
+  REVIEWER_REVIEW_LOGINS,
   type DraftedDigest,
   type DraftedPrState,
   type ProposalDigestEntry,
@@ -49,6 +52,11 @@ export interface HarvestParams {
 export interface HarvestResult {
   digest: DraftedDigest
   hasWork: boolean
+  /**
+   * An open drafted PR still lacks its Fro Bot review: not requested, and none on the current head.
+   * Independent of `hasWork`, so a failed review request is repaired even when no proposal is left.
+   */
+  reviewNeeded: boolean
 }
 
 async function listOpenProposals(octokit: OctokitClient, owner: string, repo: string): Promise<ProposalDigestEntry[]> {
@@ -74,6 +82,35 @@ async function listOpenProposals(octokit: OctokitClient, owner: string, repo: st
       }
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.issue - b.issue)
+}
+
+/** True when an open drafted PR has neither a pending Fro Bot review request nor a review on its head. */
+async function needsReview(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  pr: {number: number; headSha: string},
+): Promise<boolean> {
+  const {data: requested} = await octokit.rest.pulls.listRequestedReviewers({
+    owner,
+    repo,
+    pull_number: pr.number,
+    per_page: 100,
+  })
+  if (requested.users.some(user => user.login.toLowerCase() === REVIEWER_LOGIN)) return false
+
+  const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+    owner,
+    repo,
+    pull_number: pr.number,
+    per_page: 100,
+  })
+  return !reviews.some(
+    review =>
+      review.commit_id === pr.headSha &&
+      review.user !== null &&
+      REVIEWER_REVIEW_LOGINS.includes(review.user.login.toLowerCase()),
+  )
 }
 
 /** Builds the digest: the five oldest proposals the open drafted PR (if any) does not cover. */
@@ -114,6 +151,7 @@ export async function harvestDraftedProposals(params: HarvestParams): Promise<Ha
   return {
     digest: {version: DIGEST_VERSION, draftBaseSha, mainSha, proposals: selected, pr},
     hasWork: selected.length > 0,
+    reviewNeeded: openPr !== null && (await needsReview(octokit, owner, repo, openPr)),
   }
 }
 
@@ -133,17 +171,19 @@ async function main(): Promise<void> {
   const {Octokit} = await import('@octokit/rest')
   const octokit = new Octokit({auth: requiredEnv('GITHUB_TOKEN')})
 
-  const {digest, hasWork} = await harvestDraftedProposals({octokit, owner, repo})
+  const {digest, hasWork, reviewNeeded} = await harvestDraftedProposals({octokit, owner, repo})
 
   await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
   const outputPath = process.env.GITHUB_OUTPUT
   if (outputPath !== undefined && outputPath !== '') {
     await appendFile(
       outputPath,
-      `has_work=${hasWork}\ndraft_base_sha=${digest.draftBaseSha}\nmain_sha=${digest.mainSha}\n`,
+      `has_work=${hasWork}\ndraft_base_sha=${digest.draftBaseSha}\nmain_sha=${digest.mainSha}\nreview_needed=${reviewNeeded}\n`,
     )
   }
-  process.stdout.write(`${JSON.stringify({hasWork, proposals: digest.proposals.length, prState: digest.pr.state})}\n`)
+  process.stdout.write(
+    `${JSON.stringify({hasWork, reviewNeeded, proposals: digest.proposals.length, prState: digest.pr.state})}\n`,
+  )
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

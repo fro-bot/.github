@@ -76,6 +76,10 @@ function makeOctokit(params: {
   allIssues?: FakeIssue[]
   pulls?: FakePull[]
   refs?: Record<string, string>
+  /** Logins currently requested as reviewers on the PR. */
+  requestedReviewers?: string[]
+  /** Reviews on the PR: reviewer login and the commit the review was left on. */
+  reviews?: {login: string; commitId: string}[]
 }) {
   const byNumber = new Map([...(params.allIssues ?? []), ...params.openIssues].map(issue => [issue.number, issue]))
   const listForRepo = vi.fn(async () => ({data: params.openIssues}))
@@ -95,11 +99,21 @@ function makeOctokit(params: {
     if (sha === undefined) throw Object.assign(new Error('Not Found'), {status: 404})
     return {data: {object: {sha}}}
   })
+  const listRequestedReviewers = vi.fn(async () => ({
+    data: {users: (params.requestedReviewers ?? []).map(login => ({login})), teams: []},
+  }))
+  const listReviews = vi.fn(async () => ({
+    data: (params.reviews ?? []).map(review => ({
+      user: {login: review.login},
+      commit_id: review.commitId,
+      state: 'CHANGES_REQUESTED',
+    })),
+  }))
   const octokit = {
     paginate: vi.fn(async (fn: (p: unknown) => Promise<{data: unknown[]}>, p: unknown) => (await fn(p)).data),
-    rest: {issues: {listForRepo, get}, pulls: {list}, git: {getRef}},
+    rest: {issues: {listForRepo, get}, pulls: {list, listRequestedReviewers, listReviews}, git: {getRef}},
   } as unknown as OctokitClient
-  return {octokit, listForRepo, get, list, getRef}
+  return {octokit, listForRepo, get, list, getRef, listRequestedReviewers, listReviews}
 }
 
 async function harvest(octokit: OctokitClient) {
@@ -168,6 +182,93 @@ describe('harvestDraftedProposals', () => {
     })
 
     await expect(harvest(octokit)).rejects.toThrow(/does not exist/)
+  })
+
+  describe('review_needed (review-request reconciliation, independent of new work)', () => {
+    const HEAD = 'c'.repeat(40)
+
+    it('is false and makes no review lookups when no drafted PR is open', async () => {
+      const {octokit, listRequestedReviewers, listReviews} = makeOctokit({openIssues: [makeIssue(11)]})
+
+      const result = await harvest(octokit)
+
+      expect(result.reviewNeeded).toBe(false)
+      expect(listRequestedReviewers).not.toHaveBeenCalled()
+      expect(listReviews).not.toHaveBeenCalled()
+    })
+
+    it('is true when a drafted PR is open, fro-bot is not requested, and has not reviewed the head', async () => {
+      const {octokit} = makeOctokit({openIssues: [], pulls: [makePull()]})
+
+      const result = await harvest(octokit)
+
+      expect(result.reviewNeeded).toBe(true)
+      expect(result.hasWork).toBe(false)
+    })
+
+    it('is true when fro-bot only reviewed an older commit', async () => {
+      const {octokit} = makeOctokit({
+        openIssues: [],
+        pulls: [makePull()],
+        reviews: [{login: 'fro-bot', commitId: 'd'.repeat(40)}],
+      })
+
+      expect((await harvest(octokit)).reviewNeeded).toBe(true)
+    })
+
+    it('is true when only someone else reviewed the head', async () => {
+      const {octokit} = makeOctokit({
+        openIssues: [],
+        pulls: [makePull()],
+        reviews: [{login: 'someone-else', commitId: HEAD}],
+      })
+
+      expect((await harvest(octokit)).reviewNeeded).toBe(true)
+    })
+
+    it('is false when fro-bot has reviewed the current head', async () => {
+      const {octokit} = makeOctokit({
+        openIssues: [],
+        pulls: [makePull()],
+        reviews: [{login: 'fro-bot', commitId: HEAD}],
+      })
+
+      expect((await harvest(octokit)).reviewNeeded).toBe(false)
+    })
+
+    it('treats the app login fro-bot[bot] as fro-bot for an existing review', async () => {
+      const {octokit} = makeOctokit({
+        openIssues: [],
+        pulls: [makePull()],
+        reviews: [{login: 'fro-bot[bot]', commitId: HEAD}],
+      })
+
+      expect((await harvest(octokit)).reviewNeeded).toBe(false)
+    })
+
+    it('is false when fro-bot is already a requested reviewer', async () => {
+      const {octokit} = makeOctokit({openIssues: [], pulls: [makePull()], requestedReviewers: ['fro-bot']})
+
+      expect((await harvest(octokit)).reviewNeeded).toBe(false)
+    })
+
+    it('is independent of new work: true alongside uncovered proposals too', async () => {
+      const {octokit} = makeOctokit({openIssues: [makeIssue(11)], pulls: [makePull()]})
+
+      const result = await harvest(octokit)
+
+      expect(result.hasWork).toBe(true)
+      expect(result.reviewNeeded).toBe(true)
+    })
+
+    it('ignores a PR that fails the drafted-PR predicate (it aborts instead)', async () => {
+      const {octokit} = makeOctokit({
+        openIssues: [],
+        pulls: [makePull({user: {login: 'someone-else'}})],
+      })
+
+      await expect(harvest(octokit)).rejects.toThrow(DraftedSolutionsError)
+    })
   })
 
   it('records a null merge SHA when the capture marker is absent', async () => {

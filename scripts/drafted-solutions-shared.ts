@@ -22,6 +22,10 @@ export const BOT_LOGIN = 'fro-bot[bot]'
 /** Matches capture's weekly cap; overflow waits for the next run. */
 export const MAX_PROPOSALS_PER_RUN = 5
 export const DIGEST_VERSION = 1
+/** The reviewer requested on every drafted PR write. */
+export const REVIEWER_LOGIN = 'fro-bot'
+/** Logins a review by the reviewer can appear under (the user, or its app identity). */
+export const REVIEWER_REVIEW_LOGINS: readonly string[] = [REVIEWER_LOGIN, `${REVIEWER_LOGIN}[bot]`]
 
 /** A fail-closed condition: the run must stop and report, never guess. */
 export class DraftedSolutionsError extends Error {

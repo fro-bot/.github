@@ -76,6 +76,15 @@ const prompt = String(agentStep?.env?.TASK_PROMPT ?? '')
 /** The prompt with line wraps collapsed, for phrase assertions. */
 const flatPrompt = prompt.replaceAll(/\s+/g, ' ')
 const WORKSPACE_DIR = `${gh('github.workspace')}/.drafted-solutions`
+/**
+ * Publish runs when there is new work (and only after a successful draft) or when only the review
+ * request is owed (the draft job is then skipped, which must not block it). !cancelled() replaces
+ * the implicit success() so a skipped draft does not skip publish; a failed or cancelled draft
+ * still blocks it whenever has_work is true.
+ */
+const PUBLISH_IF = gh(
+  "!cancelled() && needs.harvest.result == 'success' && (needs.harvest.outputs.has_work == 'true' || needs.harvest.outputs.review_needed == 'true') && (needs.draft.result == 'success' || needs.harvest.outputs.has_work != 'true')",
+)
 
 describe('draft-solutions.yaml triggers and workflow-level contract', () => {
   it('runs Monday 06:00 UTC and on manual dispatch', () => {
@@ -97,12 +106,13 @@ describe('draft-solutions.yaml job order', () => {
     expect(draftJob?.needs).toBe('harvest')
     expect(draftJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
     expect(publishJob?.needs).toStrictEqual(['harvest', 'draft'])
-    expect(publishJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
+    expect(publishJob?.if).toBe(PUBLISH_IF)
   })
 
   it('harvest exposes has_work and the two pinned SHAs from its harvest step', () => {
     expect(harvestJob?.outputs).toStrictEqual({
       has_work: gh('steps.harvest.outputs.has_work'),
+      review_needed: gh('steps.harvest.outputs.review_needed'),
       draft_base_sha: gh('steps.harvest.outputs.draft_base_sha'),
       main_sha: gh('steps.harvest.outputs.main_sha'),
     })
@@ -158,7 +168,7 @@ describe('draft-solutions.yaml credential split', () => {
     expect(String(mintStep?.with?.repositories)).toContain('github.event.repository.name')
   })
 
-  it('publish has no agent step and uses the minted token for the publish step only', () => {
+  it('publish has no agent step and uses the minted token for the publish and review-only steps only', () => {
     expect(publishJob?.steps.find(isAgent)).toBeUndefined()
     const mintStep = publishJob?.steps.find(isMint)
     const publishStep = publishJob?.steps.find(step => step.id === 'publish')
@@ -166,7 +176,8 @@ describe('draft-solutions.yaml credential split', () => {
     expect(String(publishStep?.env?.GITHUB_TOKEN)).toContain(`steps.${mintStep?.id}.outputs.token`)
 
     const tokenUsers = publishJob?.steps.filter(step => JSON.stringify(step).includes('.outputs.token')) ?? []
-    expect(tokenUsers.map(step => step.id)).toStrictEqual([publishStep?.id])
+    // Exactly the two script steps (publish with work, review-only without); neither runs agent code.
+    expect(tokenUsers.map(step => step.id)).toStrictEqual([publishStep?.id, 'review-only'])
   })
 
   it('every checkout in every job sets persist-credentials: false', () => {
@@ -257,10 +268,80 @@ describe('draft-solutions.yaml handoff plumbing', () => {
     expect(guardIndex).toBeGreaterThan(Math.max(handoffIndex, rowsIndex))
     expect(mintIndex).toBeGreaterThan(guardIndex)
     expect(steps[guardIndex]?.if).toBe(
-      "steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure'",
+      "needs.harvest.outputs.has_work == 'true' && (steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure')",
     )
     expect(steps[guardIndex]?.run).toContain('exit 1')
     expect(steps.filter(isDownload).every(step => String(step.with?.path).startsWith(WORKSPACE_DIR))).toBe(true)
+  })
+
+  describe('publish job condition and review-only mode', () => {
+    const hasWork = "needs.harvest.outputs.has_work == 'true'"
+    const publishSteps = publishJob?.steps ?? []
+    const named = (name: string) => publishSteps.find(step => step.name === name)
+
+    it('runs for new work after a successful draft, or for review-only when the draft is skipped', () => {
+      const condition = String(publishJob?.if)
+      expect(condition).toContain('!cancelled()')
+      expect(condition).not.toContain('always()')
+      expect(condition).toContain("needs.harvest.result == 'success'")
+      expect(condition).toContain(
+        "needs.harvest.outputs.has_work == 'true' || needs.harvest.outputs.review_needed == 'true'",
+      )
+      // A skipped draft only passes when there is no work; with work, the draft must have succeeded.
+      expect(condition).toContain("needs.draft.result == 'success' || needs.harvest.outputs.has_work != 'true'")
+    })
+
+    it('a failed or cancelled draft still blocks publish when there is work', () => {
+      // Evaluate the draft clause for each draft result with has_work true / false.
+      const draftClause = (result: string, work: boolean) => result === 'success' || !work
+      for (const result of ['failure', 'cancelled', 'skipped']) expect(draftClause(result, true)).toBe(false)
+      expect(draftClause('success', true)).toBe(true)
+      expect(draftClause('skipped', false)).toBe(true)
+    })
+
+    it('the draft job itself still only runs for new work', () => {
+      expect(draftJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
+    })
+
+    it('skips the metadata overlay and every artifact download or guard in review-only mode', () => {
+      for (const name of [
+        '⤵ Overlay metadata from data branch',
+        '📥 Download digest artifact',
+        '📥 Download handoff artifact',
+        '📥 Download rows artifact',
+      ]) {
+        expect(named(name)?.if, name).toBe(hasWork)
+      }
+      expect(named('🚨 Fail on missing agent handoff')?.if).toContain(hasWork)
+    })
+
+    it('publishes only with work, and requests the review with the same scoped token otherwise', () => {
+      const publish = publishSteps.find(step => step.id === 'publish')
+      const reviewOnly = publishSteps.find(step => step.id === 'review-only')
+      const mintIndex = publishSteps.findIndex(isMint)
+
+      expect(publish?.if).toBe(hasWork)
+      expect(reviewOnly?.if).toBe("needs.harvest.outputs.has_work != 'true'")
+      expect(publishSteps.indexOf(reviewOnly as WorkflowStep)).toBeGreaterThan(mintIndex)
+      expect(reviewOnly?.run).toBe('node scripts/drafted-solutions-publish.ts')
+      expect(reviewOnly?.env?.DRAFTED_SOLUTIONS_MODE).toBe('review-only')
+      expect(reviewOnly?.env?.GITHUB_TOKEN).toBe(gh('steps.get-workflow-app-token.outputs.token'))
+      expect(reviewOnly?.env?.GITHUB_REPOSITORY).toBe(gh('github.repository'))
+      // Review-only reads no digest, handoff, or rows.
+      for (const key of [
+        'DRAFTED_SOLUTIONS_DIGEST_PATH',
+        'DRAFTED_SOLUTIONS_HANDOFF_DIR',
+        'DRAFTED_SOLUTIONS_ROWS_PATH',
+      ]) {
+        expect(reviewOnly?.env?.[key]).toBeUndefined()
+      }
+    })
+
+    it('mints one token with the same three write scopes for both modes', () => {
+      const mints = publishSteps.filter(isMint)
+      expect(mints).toHaveLength(1)
+      expect(mints[0]?.if).toBeUndefined()
+    })
   })
 
   it('publish overlays metadata from data before the privacy-gated publish step, fail-closed', () => {

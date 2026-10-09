@@ -6,6 +6,7 @@ import path from 'node:path'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildMergeShaMarker} from './capture-learnings-harvest.ts'
+import {harvestDraftedProposals} from './drafted-solutions-harvest.ts'
 import {
   FIELD_LIMITS,
   hashProposalBody,
@@ -17,6 +18,7 @@ import {
 import {
   DRAFTED_PR_TITLE,
   publishDraftedSolutions,
+  reviewOnlyDraftedSolutions,
   type PublishParams,
   type PublishResult,
 } from './drafted-solutions-publish.ts'
@@ -160,6 +162,8 @@ function makeFake(options: FakeOptions) {
   const hooks: {afterCreateCommit?: () => void; beforeCreateRef?: () => void} = {}
   /** Blob SHA overrides, keyed `<commit>:<path>`; the default is a stable per-path blob. */
   const blobShas = new Map<string, string>()
+  /** Logins requested as reviewers, per PR number. */
+  const requestedReviewers = new Map<number, string[]>()
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -170,6 +174,7 @@ function makeFake(options: FakeOptions) {
 
   const rest = {
     issues: {
+      listForRepo: vi.fn(async () => ({data: [...issues.values()].filter(issue => issue.state === 'open')})),
       get: vi.fn(async (args: {issue_number: number}) => {
         const issue = issues.get(args.issue_number)
         if (issue === undefined) throw notFound()
@@ -221,13 +226,21 @@ function makeFake(options: FakeOptions) {
         if (pull !== undefined && args.body !== undefined) pull.body = args.body
         return record('pulls.update', args, {data: {}})
       }),
-      requestReviewers: vi.fn(async (args: Record<string, unknown>) => {
+      listRequestedReviewers: vi.fn(async (args: {pull_number: number}) => ({
+        data: {users: (requestedReviewers.get(args.pull_number) ?? []).map(login => ({login})), teams: []},
+      })),
+      listReviews: vi.fn(async () => ({data: []})),
+      requestReviewers: vi.fn(async (args: {pull_number: number; reviewers: string[]}) => {
         record('pulls.requestReviewers', args, undefined)
         if (options.reviewRequestError !== undefined) throw options.reviewRequestError
         if ((options.reviewRequestFailures ?? 0) > 0) {
           options.reviewRequestFailures = (options.reviewRequestFailures ?? 0) - 1
           throw Object.assign(new Error('review request unavailable'), {status: 500})
         }
+        requestedReviewers.set(args.pull_number, [
+          ...(requestedReviewers.get(args.pull_number) ?? []),
+          ...args.reviewers,
+        ])
         return {data: {}}
       }),
     },
@@ -1805,6 +1818,95 @@ describe('publishDraftedSolutions: the review request follows every drafted PR w
 
     expect(failure).toBeInstanceOf(DraftedSolutionsError)
     expect((failure as Error).message).toBe('drafted PR #901 opened but requesting review failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Review-only reconciliation (no new work)
+// ---------------------------------------------------------------------------
+
+describe('reviewOnlyDraftedSolutions', () => {
+  const reviewOnly = async (fake: Fake) =>
+    reviewOnlyDraftedSolutions({octokit: fake.octokit, owner: OWNER, repo: REPO, logger: {info: () => undefined}})
+
+  it('requests the review on the open drafted PR and writes nothing else', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull()]})
+
+    const result = await reviewOnly(fake)
+
+    expect(result).toStrictEqual({mode: 'review-requested', prNumber: 900})
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(1)
+    expect(callsOf(fake, 'pulls.requestReviewers')[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
+    // No ref, commit, blob, tree, PR body, or issue write of any kind.
+    expect(fake.calls.filter(call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers')).toStrictEqual([])
+    expect(callsOf(fake, 'issues.update')).toHaveLength(0)
+    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
+  })
+
+  it('tolerates a 422 (already requested)', async () => {
+    const fake = makeFake({
+      issues: [],
+      pulls: [makePull()],
+      reviewRequestError: Object.assign(new Error('already requested'), {status: 422}),
+    })
+
+    await expect(reviewOnly(fake)).resolves.toStrictEqual({mode: 'review-requested', prNumber: 900})
+  })
+
+  it('fails the run on any other request failure, with a message that carries no upstream text', async () => {
+    const fake = makeFake({
+      issues: [],
+      pulls: [makePull()],
+      reviewRequestError: Object.assign(new Error(PRIVATE_TOKEN), {status: 500}),
+    })
+
+    await expect(reviewOnly(fake)).rejects.toThrow(/^requesting review on drafted PR #900 failed$/)
+  })
+
+  it('does nothing when no drafted PR is open', async () => {
+    const fake = makeFake({issues: []})
+
+    await expect(reviewOnly(fake)).resolves.toStrictEqual({mode: 'noop'})
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
+  })
+
+  it('aborts on a PR on the drafted branch that fails the shared predicate, requesting nothing', async () => {
+    const fake = makeFake({issues: [], pulls: [makePull({user: {login: 'someone-else'}})]})
+
+    await expect(reviewOnly(fake)).rejects.toThrow(DraftedSolutionsError)
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
+  })
+
+  it('recovers an initial request failure with no new work: harvest flags review_needed, review-only requests it', async () => {
+    const proposal = makeIssue(11)
+    const fake = makeFake({issues: [proposal], reviewRequestFailures: 1})
+
+    // 1. The doc-changing run creates the PR and records coverage, but the review request fails.
+    await expect(
+      run(fake, {proposals: [proposal], rows: [agentRow(proposal)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
+    expect(fake.pulls).toHaveLength(1)
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(1)
+
+    // 2. Next harvest: the proposal is covered, so there is no work, but the review is still owed.
+    const harvest = async () => harvestDraftedProposals({octokit: fake.octokit, owner: OWNER, repo: REPO})
+    const afterFailure = await harvest()
+    expect(afterFailure.hasWork).toBe(false)
+    expect(afterFailure.reviewNeeded).toBe(true)
+
+    // 3. Review-only publish requests it, writing nothing else.
+    const writesBefore = fake.calls.filter(
+      call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers',
+    ).length
+    await reviewOnly(fake)
+    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(2)
+    expect(fake.calls.filter(call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers')).toHaveLength(
+      writesBefore,
+    )
+
+    // 4. The next harvest sees the request and asks for nothing more.
+    expect((await harvest()).reviewNeeded).toBe(false)
   })
 })
 
