@@ -1,90 +1,81 @@
 /**
- * Rename guard for `metadata/repos.yaml` writes.
+ * Detects `metadata/repos.yaml` changes that would strand a wiki page, for reconcile.
  *
  * The `data → main` promotion gate (`check-wiki-private-presence.ts`) admits a wiki repo page
- * only when its slug maps to a repo entry with an explicit `private: false`. A metadata write that
- * drops a public name (a rename, or a duplicate-row merge that keeps only the new name) while the
- * old-name page still exists on `data` strands that page: the gate then refuses to promote it and
- * the weekly `data → main` merge stays red until an operator repairs the wiki by hand.
+ * only when its slug maps to a repo entry with an explicit `private: false` and its sources
+ * attribute the page to that entry's exact owner/name. Dropping a public owner/name while the
+ * old-name page still exists on `data` leaves a page the gate refuses to promote.
  *
- * This module is the shared policy `commitMetadata` applies to every writer of that file
- * (reconcile, invitation acceptance, survey results, survey resets). It is deliberately small:
- * no alias registry, no tombstones, no cross-writer coordination. The promotion gate remains the
- * backstop for the residual race between a metadata write and a concurrent wiki write.
+ * Associations are compared by case-insensitive `owner/name`. Slugs are used only to find the
+ * page file, so repos that share a slug (`alpha.beta` / `alpha-beta`) are still decided
+ * independently. The module is deliberately small: no alias registry, no tombstones. The
+ * promotion gate stays the backstop for the race between a metadata write and a wiki write.
  *
- * Policy:
- * - A previously public name (`private === false`) that is absent from the proposed public set is
- *   "removed". Removal is allowed only when no page exists at that name's slug on the branch.
- * - Restrictive updates are never blocked: when every successor row for the removed name is
- *   private or of unknown visibility, the write is a visibility downgrade, not a rename. Blocking
- *   it would force stale public status to be kept.
- * - Fail closed: an unreadable or ambiguous page lookup blocks the write.
- *
- * Outputs carry counts only. Names, slugs, and paths never leave this module, because the failure
- * surfaces in public workflow logs.
+ * Results carry normalized association keys for the caller to act on; callers must publish
+ * counts only.
  */
 import type {OctokitClient} from './commit-metadata.ts'
 
 import {computeRepoSlug} from './wiki-slug.ts'
 import {WIKI_ROOT} from './wiki-utils.ts'
 
-/** The only metadata file this guard applies to. Matched exactly, never by pattern. */
-export const REPOS_METADATA_PATH = 'metadata/repos.yaml'
-
 const REDACTED_OWNER = '[REDACTED]'
 
 /** Outcome of looking up one repo page on the target branch. */
 export type WikiPageState = 'present' | 'absent' | 'unverifiable'
 
-export type RenameGuardVerdict =
-  | {readonly kind: 'allow'}
-  | {readonly kind: 'page-present'; readonly count: number}
-  | {readonly kind: 'unverifiable'; readonly count: number}
+/** Removed public associations whose old page is not verified absent. */
+export interface BlockedAssociations {
+  readonly present: readonly string[]
+  readonly unverifiable: readonly string[]
+}
 
 interface RepoRow {
-  readonly raw: Record<string, unknown>
+  readonly association: string
   readonly slug: string | undefined
   readonly isPublic: boolean
   readonly identityKeys: readonly string[]
 }
 
-/** Blocked removals, split by why they are blocked. Slugs stay internal; callers publish counts. */
-export interface BlockedSlugs {
-  readonly present: readonly string[]
-  readonly unverifiable: readonly string[]
+/** Normalized public association key: case-insensitive `owner/name`. */
+export function publicAssociationKey(owner: string, name: string): string {
+  return `${owner}/${name}`.toLowerCase()
 }
 
 /**
- * Names that the proposed file would remove from the public set, excluding restrictive
- * (private/unknown) downgrades of the same repo. Returns slugs, sorted for determinism.
+ * Public associations the proposed file removes, excluding restrictive (private/unknown)
+ * downgrades of the same repo. A successor continues a removed association only by the exact
+ * normalized association or a shared stable identity (`node_id` / `database_id`), never by slug.
  *
- * Reads both files leniently: malformed rows are skipped rather than thrown on. A malformed
- * proposed* row therefore cannot keep a name public, so garbage output fails closed.
+ * Reads both files leniently: malformed rows are skipped rather than thrown on, so a malformed
+ * proposed row cannot keep an association public and garbage output fails closed. Associations
+ * that cannot form a slug cannot name a page file and are not reported.
  */
-export function findRemovedPublicSlugs(previous: unknown, next: unknown): string[] {
+export function findRemovedPublicAssociations(
+  previous: unknown,
+  next: unknown,
+): {readonly association: string; readonly slug: string}[] {
   const nextRows = readRows(next)
-  const nextPublicSlugs = new Set<string>()
-  for (const row of nextRows) {
-    if (row.isPublic && row.slug !== undefined) nextPublicSlugs.add(row.slug)
-  }
+  const nextPublic = new Set(nextRows.filter(row => row.isPublic).map(row => row.association))
 
-  const removed = new Map<string, Set<string>>()
+  const removed = new Map<string, {slug: string; keys: Set<string>}>()
   for (const row of readRows(previous)) {
-    if (!row.isPublic || row.slug === undefined || nextPublicSlugs.has(row.slug)) continue
-    const keys = removed.get(row.slug) ?? new Set<string>()
-    for (const key of row.identityKeys) keys.add(key)
-    removed.set(row.slug, keys)
+    if (!row.isPublic || row.slug === undefined || nextPublic.has(row.association)) continue
+    const entry = removed.get(row.association) ?? {slug: row.slug, keys: new Set<string>()}
+    for (const key of row.identityKeys) entry.keys.add(key)
+    removed.set(row.association, entry)
   }
 
-  const stranding: string[] = []
-  for (const [slug, keys] of removed) {
-    // Successors: rows that continue the same repo, by stable identity or by the same name.
-    const successors = nextRows.filter(row => row.slug === slug || row.identityKeys.some(key => keys.has(key)))
+  const result: {association: string; slug: string}[] = []
+  for (const [association, {slug, keys}] of removed) {
+    const successors = nextRows.filter(
+      row => row.association === association || row.identityKeys.some(key => keys.has(key)),
+    )
     const isDowngradeOnly = successors.length > 0 && successors.every(row => !row.isPublic)
-    if (!isDowngradeOnly) stranding.push(slug)
+    if (!isDowngradeOnly) result.push({association, slug})
   }
 
-  return stranding.sort((left, right) => left.localeCompare(right))
+  return result.sort((left, right) => left.association.localeCompare(right.association))
 }
 
 /**
@@ -112,133 +103,29 @@ export async function lookupRepoWikiPage(params: {
   }
 }
 
-/** Removed public names whose wiki page is not verified absent. */
-export async function findBlockedPublicSlugs(params: {
-  previous: unknown
-  next: unknown
-  lookup: (slug: string) => Promise<WikiPageState>
-}): Promise<BlockedSlugs> {
-  const removed = findRemovedPublicSlugs(params.previous, params.next)
-  const states = await Promise.all(removed.map(async slug => params.lookup(slug)))
-  return {
-    present: removed.filter((_slug, index) => states[index] === 'present'),
-    unverifiable: removed.filter((_slug, index) => states[index] === 'unverifiable'),
-  }
-}
-
-export async function evaluateRenameGuard(params: {
-  previous: unknown
-  next: unknown
-  lookup: (slug: string) => Promise<WikiPageState>
-}): Promise<RenameGuardVerdict> {
-  const blocked = await findBlockedPublicSlugs(params)
-  if (blocked.present.length > 0) return {kind: 'page-present', count: blocked.present.length}
-  if (blocked.unverifiable.length > 0) return {kind: 'unverifiable', count: blocked.unverifiable.length}
-  return {kind: 'allow'}
-}
-
-export interface KeptRows {
-  /** The proposed file with every blocked repo's old rows restored in place. */
-  readonly next: unknown
-  /** Repos kept unchanged because their old page exists. */
-  readonly blockedRepos: number
-  /** Repos kept unchanged because wiki state could not be verified. */
-  readonly unverifiableRepos: number
-  /** Stable node IDs of kept repos, so callers can skip work that would fail on the new name. */
-  readonly keptNodeIds: ReadonlySet<string>
-  /** Renames and merged-away rows that were reverted, for callers that report such counts. */
-  readonly keptRenamed: number
-  readonly keptMerged: number
-}
-
 /**
- * Per-repo variant of the guard for writers that can tolerate a skip: restores the old rows of
- * each repo whose rename or merge would strand a page, leaving every other change in `next`.
- * Repos are evaluated independently, so one stuck rename never blocks another. Restrictive
- * downgrades are never flagged, so a stale public row is never restored over them.
- * `commitMetadata` still enforces the same policy as the fail-closed backstop.
+ * Removed public associations whose page is present or unverifiable. Lookups are deduplicated by
+ * slug; decisions are made per association, so a slug shared by two repos never merges their fates.
  */
-export async function keepStrandedRows(params: {
+export async function findBlockedPublicAssociations(params: {
   previous: unknown
   next: unknown
   lookup: (slug: string) => Promise<WikiPageState>
-}): Promise<KeptRows> {
-  const blocked = await findBlockedPublicSlugs(params)
-  const blockedSlugs = new Set([...blocked.present, ...blocked.unverifiable])
-  const keptNodeIds = new Set<string>()
-  if (blockedSlugs.size === 0 || !isRecord(params.next) || !Array.isArray(params.next.repos)) {
-    return {next: params.next, blockedRepos: 0, unverifiableRepos: 0, keptNodeIds, keptRenamed: 0, keptMerged: 0}
+}): Promise<BlockedAssociations> {
+  const removed = findRemovedPublicAssociations(params.previous, params.next)
+  const lookups = new Map<string, Promise<WikiPageState>>()
+  for (const {slug} of removed) {
+    if (!lookups.has(slug)) lookups.set(slug, params.lookup(slug))
   }
 
-  // One group per repo: the old public rows of each blocked name plus any old row sharing their identity.
-  const previousRows = readRows(params.previous)
-  const groups: Set<RepoRow>[] = []
-  for (const slug of blockedSlugs) {
-    const members = new Set(previousRows.filter(row => row.isPublic && row.slug === slug))
-    const keys = new Set([...members].flatMap(row => row.identityKeys))
-    for (const row of previousRows) {
-      if (row.identityKeys.some(key => keys.has(key))) members.add(row)
-    }
-    for (const group of groups.filter(existing => [...existing].some(row => members.has(row)))) {
-      for (const row of group) members.add(row)
-      groups.splice(groups.indexOf(group), 1)
-    }
-    groups.push(members)
+  const present: string[] = []
+  const unverifiable: string[] = []
+  for (const {association, slug} of removed) {
+    const state = await lookups.get(slug)
+    if (state === 'present') present.push(association)
+    else if (state !== 'absent') unverifiable.push(association)
   }
-
-  let repos = params.next.repos as unknown[]
-  let keptRenamed = 0
-  let keptMerged = 0
-  for (const group of groups) {
-    const members = [...group].sort((left, right) => previousRows.indexOf(left) - previousRows.indexOf(right))
-    const keys = new Set(members.flatMap(row => row.identityKeys))
-    const slugs = new Set(members.flatMap(row => (row.slug === undefined ? [] : [row.slug])))
-    for (const key of keys) {
-      if (key.startsWith('node_id:')) keptNodeIds.add(key.slice('node_id:'.length))
-    }
-
-    // The first proposed row of this repo is replaced by the old rows; its other proposed rows are dropped.
-    const restored: unknown[] = []
-    const proposed: RepoRow[] = []
-    let inserted = false
-    for (const entry of repos) {
-      const row = rowOf(entry)
-      const matches =
-        row !== undefined &&
-        (row.identityKeys.some(key => keys.has(key)) || (row.slug !== undefined && slugs.has(row.slug)))
-      if (!matches) {
-        restored.push(entry)
-        continue
-      }
-      proposed.push(row)
-      if (!inserted) {
-        restored.push(...members.map(member => member.raw))
-        inserted = true
-      }
-    }
-    if (!inserted) restored.push(...members.map(member => member.raw))
-    repos = restored
-
-    // Counts the engine reported for this repo and that no longer apply: new names, and rows merged away.
-    if (proposed.length > 0) {
-      keptMerged += Math.max(0, members.length - proposed.length)
-      keptRenamed += new Set(proposed.flatMap(row => (row.slug === undefined || slugs.has(row.slug) ? [] : [row.slug])))
-        .size
-    }
-  }
-
-  const presentSlugs = new Set(blocked.present)
-  const blockedRepos = groups.filter(group =>
-    [...group].some(row => row.slug !== undefined && presentSlugs.has(row.slug)),
-  ).length
-  return {
-    next: {...params.next, repos},
-    blockedRepos,
-    unverifiableRepos: groups.length - blockedRepos,
-    keptNodeIds,
-    keptRenamed,
-    keptMerged,
-  }
+  return {present, unverifiable}
 }
 
 function readRows(file: unknown): RepoRow[] {
@@ -249,7 +136,7 @@ function readRows(file: unknown): RepoRow[] {
 function rowOf(entry: unknown): RepoRow | undefined {
   if (!isRecord(entry) || typeof entry.owner !== 'string' || typeof entry.name !== 'string') return undefined
   return {
-    raw: entry,
+    association: publicAssociationKey(entry.owner, entry.name),
     slug: slugOrUndefined(entry.owner, entry.name),
     // Strict `=== false`, mirroring `buildPublicSlugMap`: absent/non-boolean is treated as not public.
     isPublic: entry.private === false,

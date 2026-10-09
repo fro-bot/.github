@@ -27,7 +27,7 @@ The ordinary survey handoff ignores deletions, so merely asking its agent to del
 
 ## 2. Prevent the known recurrence
 
-After the live repair, make a separate, focused code change at `scripts/commit-metadata.ts`. For writes to **exactly** `metadata/repos.yaml`, compare the old and proposed stable-identity/name associations. If a rename or duplicate merge would remove an old public name while its wiki page still exists on the current `data` tree, keep that attribution or reject the change with a redacted blocked result. This applies to reconciliation, invitation acceptance, survey results, and survey resets; a reconcile-only check misses the other writers.
+After the live repair, make a separate, focused code change in `scripts/reconcile-repos.ts`. For writes to `metadata/repos.yaml`, compare the old and proposed stable-identity/name associations. If a rename or duplicate merge would remove an old public name while its wiki page still exists on the current `data` tree, keep that attribution and report the skip with a redacted, counts-only warning. The guard is reconcile-only, the sole writer that renames or merges rows; invitation acceptance, survey results, and survey resets are unguarded and rely on the promotion privacy gate.
 
 Preserve restrictive private/unknown visibility updates rather than restoring stale public status. Recheck on metadata retries; only verified absence of the old page permits the rename, while unreadable or ambiguous state blocks it. No persistent alias registry or cross-writer transaction coordinator. The existing privacy gate remains the backstop for the small residual race between metadata and wiki writes. Add a stale-ingest guard only if that race recurs; it is **not** a prerequisite for this repair.
 
