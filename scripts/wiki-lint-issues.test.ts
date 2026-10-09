@@ -541,14 +541,17 @@ describe('wiki-lint.yaml workflow', () => {
     expect(permissions.contents).toBe('read')
   })
 
-  it('27. app-token step has permission-issues:write and permission-contents:read', () => {
+  it('27. app-token step has permission-issues:write only, scoped to this repository', () => {
     const syncJob = jobs['wiki-lint-issue-sync'] as Record<string, unknown>
     const steps = syncJob.steps as Record<string, unknown>[]
     const appTokenStep = steps.find(s => typeof s.uses === 'string' && s.uses.includes('create-github-app-token'))
     expect(appTokenStep).toBeDefined()
     const withBlock = appTokenStep?.with as Record<string, unknown> | undefined
     expect(withBlock).toBeDefined()
+    // wiki-lint-issues.ts makes issues.* calls only; no contents permission is needed.
+    const permissions = Object.keys(withBlock ?? {}).filter(name => name.startsWith('permission-'))
+    expect(permissions).toStrictEqual(['permission-issues'])
     expect(withBlock?.['permission-issues']).toBe('write')
-    expect(withBlock?.['permission-contents']).toBe('read')
+    expect(withBlock?.repositories).toBe('$' + '{{ github.event.repository.name }}')
   })
 })
