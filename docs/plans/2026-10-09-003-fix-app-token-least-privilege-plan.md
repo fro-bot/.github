@@ -239,7 +239,7 @@ A misrouted probe returns 403 or 404 and wrongly marks a tracked repo as `lost-a
 
 ## Implementation Units
 
-- [ ] **Unit 1: Repo-wide App-token mint contract test**
+- [x] **Unit 1: Repo-wide App-token mint contract test**
 
 **Goal:** Pin every mint's scope and reach. Fail closed on drift, omission, or owner-wide mints that are not on the exemption list.
 
@@ -280,7 +280,7 @@ Edge cases:
 
 **Verification:** The test enumerates every mint and pins it to the target table. It goes green only after Units 2–5.
 
-- [ ] **Unit 2: Scope the config-only mints**
+- [x] **Unit 2: Scope the config-only mints**
 
 **Goal:** Explicit permissions and repository reach for the mints whose consumers need no script change.
 
@@ -308,7 +308,7 @@ Edge cases:
 
 **Verification:** Unit 1 rows for these files pass, and `actionlint` is clean.
 
-- [ ] **Unit 3: dispatch-renovate planned reach**
+- [x] **Unit 3: dispatch-renovate planned reach**
 
 **Goal:** The dispatch token reaches only the Renovate targets the installation still covers.
 
@@ -349,7 +349,7 @@ Integration (workflow contract):
 
 **Verification:** The planning tests and Unit 1 rows pass. An empty list provably produces no mint.
 
-- [ ] **Unit 4: update-metadata discovery and writer split**
+- [x] **Unit 4: update-metadata discovery and writer split**
 
 **Goal:** Owner-wide reads use a read-only token. The `data` write uses a repo-scoped `contents: write` token.
 
@@ -384,7 +384,7 @@ Integration (workflow contract):
 
 **Verification:** Tests pass under both adversarial mocks, and the Unit 1 rows pass.
 
-- [ ] **Unit 5: reconcile-repos discovery and writer split**
+- [x] **Unit 5: reconcile-repos discovery and writer split**
 
 **Goal:** Same split as Unit 4, for reconcile, following the routing rule above.
 
@@ -424,7 +424,7 @@ Happy path:
 
 **Verification:** The existing reconcile suite passes unchanged in behavior, and the routing tests pass under both adversarial mocks.
 
-- [ ] **Unit 6: Guarded paths require data for Fro Bot**
+- [x] **Unit 6: Guarded paths require data for Fro Bot**
 
 **Goal:** Close the authority gap.
 
