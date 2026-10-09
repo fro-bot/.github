@@ -311,6 +311,21 @@ env:
        unavailable to the token, note "security alerts unavailable" under "Needs
        Human Attention" — do not guess.
 
+       Override floors are the exception to one-PR-per-package: `pnpm lint` runs
+       `node scripts/check-override-floors.ts`, which audits every live advisory
+       against the pnpm overrides in pnpm-workspace.yaml at once, so a PR fixing
+       only some flagged packages stays red and cannot merge. Run it on a clean
+       checkout of main, collect every package it flags, and fix them all in ONE
+       combined PR on the stable branch `fix/security-override-floors` (raise
+       each override floor to its patched version, each with an advisory
+       comment). Before opening, look for an open Fro-Bot-authored PR for this
+       root cause (head `fix/security-override-floors` or an earlier
+       per-package override-floor PR); if one exists, push to it, extend it to
+       cover every flagged package, and update its description instead of
+       opening another. Open or update the PR only when
+       `node scripts/check-override-floors.ts` exits 0 on that branch; if it
+       still fails, log it under "Needs Human Attention".
+
     3. CONTROL-PLANE INTEGRITY (highest-value for this repo)
        a. SHA pinning: every third-party action in .github/workflows/*.yaml and
           .github/actions/**/action.yaml must be pinned to a full commit SHA with
