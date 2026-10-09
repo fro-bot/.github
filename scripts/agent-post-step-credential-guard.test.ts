@@ -284,8 +284,8 @@ describe('agent post-step credential guard', () => {
   it('finds the expected number of jobs containing a fro-bot/agent step (non-vacuity check)', () => {
     // fro-bot.yaml: fro-bot, fro-bot-remediate, fro-bot-observe (3). survey-repo.yaml:
     // survey-repo (1). capture-learnings.yaml: capture-learnings (1). capture-patterns.yaml:
-    // open (1). Total: 6.
-    expect(agentJobs).toHaveLength(6)
+    // open (1). draft-solutions.yaml: agent (1). Total: 7.
+    expect(agentJobs).toHaveLength(7)
   })
 
   it.each(agentJobs.length > 0 ? agentJobs.map(ref => [ref] as const) : [])(

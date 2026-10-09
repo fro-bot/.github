@@ -23,13 +23,13 @@ import {
   collectSolutionDocSources,
   fetchExistingPatternProposals,
   parsePatternProposalSourceIds,
-  SOLUTION_SUBDIRS,
   type ExistingPatternProposalIssue,
   type ExistingPatternProposals,
   type LearningProposalIssueInput,
   type PatternProposalOctokitClient,
   type PatternSourceSignals,
 } from './capture-patterns-synthesis.ts'
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------

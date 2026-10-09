@@ -9,20 +9,11 @@
 import {parse} from 'yaml'
 
 import {isRecord} from './capture-learnings-privacy.ts'
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Canonical `docs/solutions/` subdirectories eligible as source artifacts. */
-export const SOLUTION_SUBDIRS = [
-  'best-practices',
-  'documentation-gaps',
-  'integration-issues',
-  'runtime-errors',
-  'security-issues',
-  'workflow-issues',
-] as const
 
 const SOLUTIONS_ROOT = 'docs/solutions'
 
