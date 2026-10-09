@@ -11,9 +11,10 @@
  *     account for the handoff both ways: each new-doc/extension row's doc is in it, and each file in
  *     it belongs to such a row;
  *  4. re-verify digest proposals and any open drafted PR against the API (the digest and PR body
- *     are not trusted), resolve the commit that will back the PR, and check every covered row's doc
- *     on that commit's tree plus the handoff: the live drafted-branch head when a PR is open, else
- *     main's head;
+ *     are not trusted), resolve the commit that will back the PR, and check that every row about to
+ *     claim a doc (the whole merged PR body, existing rows included, plus covered rows closed
+ *     directly) points at one on that commit's tree or in the handoff: the live drafted-branch head
+ *     when a PR is open, else main's head;
  *  5. gate every file (path and content), the PR title, the commit message, the fully rendered PR
  *     body, and every comment;
  *  6. write.
@@ -268,10 +269,12 @@ async function docExistsAt(
 }
 
 /**
- * Every covered row's doc must exist on the tree that will back the PR: the base commit's tree plus
- * this handoff. Docs created by the handoff itself need no lookup.
+ * Every row that will claim a doc must point at one that exists on the tree that will back the PR:
+ * the base commit's tree plus this handoff. Applies to all rows about to be rendered (this run's
+ * and the open PR's existing ones) and to covered rows about to be closed directly. Docs this
+ * handoff writes need no lookup; each distinct path is looked up once. Names the issue only.
  */
-async function checkCoveredDocs(
+async function checkRowDocs(
   octokit: OctokitClient,
   owner: string,
   repo: string,
@@ -280,10 +283,17 @@ async function checkCoveredDocs(
   files: readonly StagedFile[],
 ): Promise<void> {
   const inHandoff = new Set(files.map(file => file.path))
+  const verdicts = new Map<string, boolean>()
   for (const row of rows) {
-    if (row.outcome !== 'covered' || row.targetDoc === null || inHandoff.has(row.targetDoc)) continue
-    if (!(await docExistsAt(octokit, owner, repo, baseSha, row.targetDoc))) {
-      throw new DraftedSolutionsError(`covered row #${row.issue}: its doc does not exist on the tree being published`)
+    const doc = row.targetDoc
+    if (doc === null || inHandoff.has(doc)) continue
+    let exists = verdicts.get(doc)
+    if (exists === undefined) {
+      exists = await docExistsAt(octokit, owner, repo, baseSha, doc)
+      verdicts.set(doc, exists)
+    }
+    if (!exists) {
+      throw new DraftedSolutionsError(`coverage row for #${row.issue} points at a doc missing from the published tree`)
     }
   }
 }
@@ -559,13 +569,6 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   // drafted PR is open or this run has doc changes. Closed directly: unverified rows always (they
   // must never close as completed on merge), and covered rows only when there is no PR to carry them.
   const hasDocChanges = files.length > 0
-
-  // Read-only: resolve the commit whose tree backs the PR, and verify covered docs on that tree
-  // (plus this handoff) before the gate and before any write.
-  const needsBase = hasDocChanges || rows.some(row => row.outcome === 'covered')
-  const baseSha = needsBase ? await resolveBaseSha(octokit, owner, repo, openPr) : null
-  if (baseSha !== null) await checkCoveredDocs(octokit, owner, repo, baseSha, rows, files)
-
   const bodyRows = rows.filter(
     row =>
       row.outcome === 'new-doc' ||
@@ -576,7 +579,15 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   const closeRows = directRows.filter(row => states.get(row.issue) !== 'closed')
   const skipped = directRows.filter(row => states.get(row.issue) === 'closed').map(row => row.issue)
   const writesPr = hasDocChanges || (openPr !== null && bodyRows.length > 0)
-  const body = writesPr ? renderPrBody(mergeCoverageRows(existingRows, bodyRows)) : ''
+  const mergedRows = writesPr ? mergeCoverageRows(existingRows, bodyRows) : []
+  const body = writesPr ? renderPrBody(mergedRows) : ''
+
+  // Read-only, before the gate and any write: resolve the commit whose tree backs the PR and verify
+  // that every row about to claim a doc (the whole merged body, plus covered rows closed directly)
+  // points at one that exists on that tree or in this handoff.
+  const directCovered = directRows.filter(row => row.outcome === 'covered')
+  const baseSha = writesPr || directCovered.length > 0 ? await resolveBaseSha(octokit, owner, repo, openPr) : null
+  if (baseSha !== null) await checkRowDocs(octokit, owner, repo, baseSha, [...mergedRows, ...directCovered], files)
 
   assertPublicSafe(tokens, [
     ...files.flatMap((file, index) => [

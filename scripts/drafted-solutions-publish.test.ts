@@ -492,7 +492,8 @@ describe('publishDraftedSolutions: doc changes with an open PR', () => {
       reason: '',
     }
     const pull = makePull({body: renderPrBody([existingRow])})
-    const fake = makeFake({issues: [earlier, issue], pulls: [pull]})
+    // The existing row's doc is on the live branch tree, so its claim is still true.
+    const fake = makeFake({issues: [earlier, issue], pulls: [pull], branchDocs: [docPath(9)]})
 
     const result = await run(fake, {
       proposals: [issue],
@@ -1010,7 +1011,11 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], pulls: [makePull()], mainDocs: [EXISTING_DOC], branchDocs: []})
 
-    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue)]},
+      /points at a doc missing from the published tree/,
+    )
     expect(contentRefs(fake)).toStrictEqual([BRANCH_SHA])
   })
 
@@ -1040,7 +1045,11 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], mainDocs: []})
 
-    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue)]},
+      /points at a doc missing from the published tree/,
+    )
     expect(contentRefs(fake)).toStrictEqual([MAIN_SHA])
   })
 
@@ -1066,7 +1075,7 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
         rows: [agentRow(drafted), coveredRow(covered)],
         changed: {[docPath(11)]: DOC_BODY},
       },
-      /does not exist on the tree/,
+      /points at a doc missing from the published tree/,
     )
     expect(contentRefs(fake)).toStrictEqual([MAIN_SHA])
   })
@@ -1083,7 +1092,7 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
         rows: [agentRow(drafted), coveredRow(covered)],
         changed: {[docPath(11)]: DOC_BODY},
       },
-      /does not exist on the tree/,
+      /points at a doc missing from the published tree/,
     )
     expect(contentRefs(fake)).toStrictEqual([BRANCH_SHA])
   })
@@ -1120,7 +1129,11 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], mainDocs: [EXISTING_DOC], directoryPaths: [EXISTING_DOC]})
 
-    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist on the tree/)
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue)]},
+      /points at a doc missing from the published tree/,
+    )
   })
 
   it('makes no tree lookup when no row is covered', async () => {
@@ -1130,6 +1143,121 @@ describe('publishDraftedSolutions: covered docs are verified on the published tr
     await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
 
     expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Existing coverage-block rows are verified too: the whole merged body must be true
+// ---------------------------------------------------------------------------
+
+function blockRow(
+  issue: FakeIssue,
+  outcome: 'new-doc' | 'covered',
+  targetDoc: string,
+  overrides: Partial<CoverageRow> = {},
+): CoverageRow {
+  return {
+    issue: issue.number,
+    outcome,
+    targetDoc,
+    sourceSha: SOURCE_SHA,
+    evidence: outcome === 'covered' ? [] : [{kind: 'pr', ref: '#1'}],
+    droppedClaims: [],
+    bodyHash: hashProposalBody(issue.body ?? ''),
+    reason: outcome === 'covered' ? 'Already documented.' : '',
+    ...overrides,
+  }
+}
+
+describe('publishDraftedSolutions: existing coverage rows are verified on the published tree', () => {
+  const MISSING_PATTERN = /coverage row for #9 points at a doc missing from the published tree/
+
+  it('body-only update: rejects an existing covered row whose doc is gone, with zero writes', async () => {
+    const earlier = makeIssue(9, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(earlier, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [earlier, issue], pulls: [pull], branchDocs: [docPath(11)]})
+
+    const message = await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [coveredRow(issue, docPath(11))]},
+      MISSING_PATTERN,
+    )
+
+    expect(message).not.toContain(EXISTING_DOC)
+  })
+
+  it('commit path: rejects an existing new-doc row whose doc was deleted from the branch, with zero writes', async () => {
+    const earlier = makeIssue(9, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(earlier, 'new-doc', docPath(9))])})
+    const fake = makeFake({issues: [earlier, issue], pulls: [pull], branchDocs: []})
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
+      MISSING_PATTERN,
+    )
+  })
+
+  it('happy path: existing rows whose docs are present on the branch are kept and the update lands', async () => {
+    const a = makeIssue(8, {state: 'closed'})
+    const b = makeIssue(9, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({
+      body: renderPrBody([blockRow(a, 'covered', EXISTING_DOC), blockRow(b, 'new-doc', docPath(9))]),
+    })
+    const fake = makeFake({
+      issues: [a, b, issue],
+      pulls: [pull],
+      branchDocs: [EXISTING_DOC, docPath(9), docPath(11)],
+    })
+
+    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue, docPath(11))]})
+
+    expect(result).toMatchObject({mode: 'updated-pr-body'})
+    const parsed = parseCoverageBlock(fake.pulls[0]?.body, 'existing-pr')
+    expect(parsed.ok && parsed.rows.map(row => row.issue)).toStrictEqual([8, 9, 11])
+  })
+
+  it('looks each distinct path up once, however many rows point at it', async () => {
+    const a = makeIssue(8, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(a, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [a, issue], pulls: [pull], branchDocs: [EXISTING_DOC]})
+
+    await run(fake, {proposals: [issue], rows: [coveredRow(issue, EXISTING_DOC)]})
+
+    expect(callsOf(fake, 'repos.getContent').map(call => call.args.path)).toStrictEqual([EXISTING_DOC])
+  })
+
+  it('an existing row whose doc this handoff writes needs no lookup', async () => {
+    const earlier = makeIssue(9, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(earlier, 'new-doc', docPath(11))])})
+    const fake = makeFake({issues: [earlier, issue], pulls: [pull], branchDocs: []})
+
+    const result = await run(fake, {
+      proposals: [issue],
+      rows: [agentRow(issue)],
+      changed: {[docPath(11)]: DOC_BODY},
+    })
+
+    expect(result).toMatchObject({mode: 'updated-pr'})
+    expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
+  })
+
+  it('does not inspect existing rows when the run writes nothing to the PR', async () => {
+    const earlier = makeIssue(9, {state: 'closed'})
+    const issue = makeIssue(11)
+    const pull = makePull({body: renderPrBody([blockRow(earlier, 'covered', EXISTING_DOC)])})
+    const fake = makeFake({issues: [earlier, issue], pulls: [pull], branchDocs: []})
+
+    const result = await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
+
+    expect(result).toMatchObject({mode: 'closed-proposals', closed: [11]})
+    expect(callsOf(fake, 'repos.getContent')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
   })
 })
 
@@ -1301,7 +1429,7 @@ describe('publishDraftedSolutions: validation (zero writes)', () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue]})
 
-    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /does not exist/)
+    await expectBlocked(fake, {proposals: [issue], rows: [coveredRow(issue)]}, /points at a doc missing/)
   })
 
   it('rejects a new-doc row whose target doc is not in the handoff', async () => {
