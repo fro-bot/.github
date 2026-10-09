@@ -5,12 +5,19 @@
  * checks if their Renovate workflow is already running, and dispatches workflow_dispatch
  * for idle repos. Mirrors the bfra-me/.github central Renovate dispatch pattern.
  *
- * Architecture: pure buildDispatchPlan() + async dispatchRenovate() + thin main() shell.
+ * Two modes, so the `actions: write` token reaches only the repos it will dispatch to:
+ *   - `plan`: with the read-only discovery token, intersect metadata/renovate.yaml with the
+ *     repositories the installation can access, clean the result, and write it to GITHUB_OUTPUT.
+ *     A failed discovery fails the step; it never falls back to an unfiltered list.
+ *   - default: dispatch to the planned list (DISPATCH_REPOSITORIES) with the dispatch token.
+ *
+ * Architecture: pure buildDispatchPlan()/cleanRepoNames() + async planDispatchRepositories() /
+ * dispatchRenovate() + thin main() shell.
  */
 
 import type {Octokit} from '@octokit/rest'
 
-import {readFile} from 'node:fs/promises'
+import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {parse} from 'yaml'
@@ -40,6 +47,21 @@ export interface DispatchRenovateResult {
   failed: {name: string; error: string}[]
 }
 
+export interface PlanParams {
+  /** Discovery client: read-only, owner-wide. */
+  octokit: OctokitClient
+  /** Raw `with-renovate` entries from metadata/renovate.yaml. */
+  requested: readonly string[]
+  owner?: string
+}
+
+export interface RunPlanParams {
+  octokit: OctokitClient
+  renovatePath: string
+  outputPath: string
+  owner?: string
+}
+
 // ─── Pure engine ────────────────────────────────────────────────────────────
 
 /**
@@ -52,6 +74,62 @@ export function buildDispatchPlan(repoNames: string[], owner = DEFAULT_OWNER): E
     name,
     workflowPath: DEFAULT_WORKFLOW_ID,
   }))
+}
+
+/**
+ * Trim, drop empties and dedupe, keeping first-seen order. The cleaned list is what the dispatch
+ * mint receives as `repositories:`, so an empty result must stay empty (an empty `repositories:`
+ * would otherwise widen an owner-scoped mint to every repo).
+ */
+export function cleanRepoNames(names: readonly string[]): string[] {
+  const cleaned: string[] = []
+  for (const name of names) {
+    const trimmed = name.trim()
+    if (trimmed !== '' && !cleaned.includes(trimmed)) cleaned.push(trimmed)
+  }
+  return cleaned
+}
+
+// ─── Planning (discovery client) ────────────────────────────────────────────
+
+/**
+ * Intersect the requested Renovate repos with the repositories the installation can access under
+ * `owner`. Stale entries are dropped here so they never reach the mint, which would reject the
+ * whole list. Discovery errors propagate.
+ */
+export async function planDispatchRepositories(params: PlanParams): Promise<string[]> {
+  const requested = cleanRepoNames(params.requested)
+  if (requested.length === 0) return []
+
+  const owner = params.owner ?? DEFAULT_OWNER
+  const accessible = await params.octokit.paginate(params.octokit.rest.apps.listReposAccessibleToInstallation, {
+    per_page: 100,
+  })
+  const names = new Set(accessible.filter(repo => repo.owner.login === owner).map(repo => repo.name))
+  return requested.filter(name => names.has(name))
+}
+
+/** Plan mode: read renovate.yaml, plan, and append `repositories=<csv>` to the output file. */
+export async function runPlanMode(params: RunPlanParams): Promise<string[]> {
+  const requested = await readRequestedRepos(params.renovatePath)
+  const plan = await planDispatchRepositories({octokit: params.octokit, requested, owner: params.owner})
+  await appendFile(params.outputPath, `repositories=${plan.join(',')}\n`)
+  return plan
+}
+
+/**
+ * Read the `with-renovate` list. A missing file is expected on first run and means nothing to
+ * dispatch; parse/validation errors must surface so corrupted state isn't silently ignored.
+ */
+async function readRequestedRepos(path: string): Promise<string[]> {
+  try {
+    const raw: unknown = parse(await readFile(path, 'utf8'))
+    assertRenovateFile(raw, 'renovate')
+    return raw.repositories['with-renovate']
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error)) return []
+    throw error
+  }
 }
 
 // ─── Async dispatch engine ──────────────────────────────────────────────────
@@ -125,22 +203,19 @@ async function main(): Promise<void> {
 
   const octokit = new Octokit({auth: token})
 
-  // Read renovate.yaml for the list of fro-bot repos with Renovate
-  let repoNames: string[] = []
-  try {
-    const raw: unknown = parse(await readFile('metadata/renovate.yaml', 'utf8'))
-    assertRenovateFile(raw, 'renovate')
-    repoNames = raw.repositories['with-renovate']
-  } catch (error: unknown) {
-    // Missing file is expected on first run — no repos to dispatch.
-    // Parse/validation errors must surface so corrupted state isn't silently ignored.
-    if (!isFileNotFoundError(error)) throw error
-  }
-
-  if (repoNames.length === 0) {
-    process.stdout.write('{"eligible":0,"dispatched":0,"skippedRunning":0,"failed":0}\n')
+  if (process.argv[2] === 'plan') {
+    // GITHUB_TOKEN here is the read-only discovery token; the plan lists, never dispatches.
+    const outputPath = process.env.GITHUB_OUTPUT
+    if (outputPath === undefined || outputPath === '') throw new Error('GITHUB_OUTPUT is required in plan mode')
+    const plan = await runPlanMode({octokit, renovatePath: 'metadata/renovate.yaml', outputPath})
+    process.stdout.write(`dispatch-renovate: planned ${plan.length} repositories\n`)
     return
   }
+
+  // GITHUB_TOKEN here is the dispatch token, minted only for the planned list. Never re-read
+  // renovate.yaml: dispatching beyond the planned list would fall outside the token's reach.
+  const repoNames = cleanRepoNames((process.env.DISPATCH_REPOSITORIES ?? '').split(','))
+  if (repoNames.length === 0) throw new Error('DISPATCH_REPOSITORIES is required and must name at least one repository')
 
   const eligible = buildDispatchPlan(repoNames)
   const result = await dispatchRenovate({octokit, eligible})
