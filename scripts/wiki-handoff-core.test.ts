@@ -911,3 +911,61 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
     await expect(applyDrafted(mocks)).rejects.toThrow(/unexpected top-level entries/)
   })
 })
+
+function sourceMocks(entry: {symlink?: boolean; isDir?: boolean}) {
+  return {
+    mkdirImpl: vi.fn(async () => undefined),
+    copyFileImpl: vi.fn(async () => undefined),
+    writeFileImpl: vi.fn(async () => undefined),
+    lstatImpl: vi.fn(async () => ({
+      isSymbolicLink: () => entry.symlink === true,
+      isFile: () => entry.symlink !== true && entry.isDir !== true,
+    })) as unknown as typeof fs.lstat,
+  }
+}
+
+describe('buildWikiHandoff source checks', () => {
+  it('refuses a symlinked source at an allowed wiki path before copying or writing anything', async () => {
+    const mocks = sourceMocks({symlink: true})
+
+    await expect(
+      buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/ok.md', '?? knowledge/wiki/repos/leak.md'),
+        ...mocks,
+      }),
+    ).rejects.toThrow(/refusing symlink source/)
+    expect(mocks.copyFileImpl).not.toHaveBeenCalled()
+    expect(mocks.writeFileImpl).not.toHaveBeenCalled()
+    expect(mocks.mkdirImpl).not.toHaveBeenCalled()
+  })
+
+  it('refuses a non-regular source', async () => {
+    const mocks = sourceMocks({isDir: true})
+
+    await expect(
+      buildWikiHandoff({
+        cwd: '/repo',
+        outDir: '/tmp/handoff',
+        runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/dir.md'),
+        ...mocks,
+      }),
+    ).rejects.toThrow(WikiHandoffValidationError)
+    expect(mocks.copyFileImpl).not.toHaveBeenCalled()
+  })
+
+  it('copies a regular source as before', async () => {
+    const mocks = sourceMocks({})
+
+    const result = await buildWikiHandoff({
+      cwd: '/repo',
+      outDir: '/tmp/handoff',
+      runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/ok.md'),
+      ...mocks,
+    })
+
+    expect(result.changed).toStrictEqual(['knowledge/wiki/repos/ok.md'])
+    expect(mocks.copyFileImpl).toHaveBeenCalledTimes(1)
+  })
+})

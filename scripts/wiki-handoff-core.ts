@@ -149,6 +149,7 @@ export interface BuildWikiHandoffParams {
   writeFileImpl?: typeof fs.writeFile
   mkdirImpl?: typeof fs.mkdir
   copyFileImpl?: typeof fs.copyFile
+  lstatImpl?: typeof fs.lstat
   existsImpl?: (absolutePath: string) => Promise<boolean>
   hashImpl?: (contents: Buffer) => string
 }
@@ -234,6 +235,30 @@ async function scopeToBaseline(params: {
 }
 
 /**
+ * Rejects a symlink or any non-regular source. A missing source passes here: it cannot be a link,
+ * and the copy itself then fails loudly.
+ */
+async function assertRegularSource(
+  sourcePath: string,
+  relativePath: string,
+  lstatImpl: typeof fs.lstat,
+): Promise<void> {
+  let stats
+  try {
+    stats = await lstatImpl(sourcePath)
+  } catch (error: unknown) {
+    if ((error as {code?: unknown} | null)?.code === 'ENOENT') return
+    throw error
+  }
+  if (stats.isSymbolicLink()) {
+    throw new WikiHandoffValidationError(`wiki-handoff-build: refusing symlink source: ${relativePath}`)
+  }
+  if (!stats.isFile()) {
+    throw new WikiHandoffValidationError(`wiki-handoff-build: source is not a regular file: ${relativePath}`)
+  }
+}
+
+/**
  * Builds `files/<path>` + `manifest.json` for changed/deleted paths; never writes ingest
  * metadata. Throws on any out-of-scope path from git status — should be unreachable, fails
  * closed on workflow drift.
@@ -241,6 +266,7 @@ async function scopeToBaseline(params: {
 export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<BuildWikiHandoffResult> {
   const mkdirImpl = params.mkdirImpl ?? fs.mkdir
   const copyFileImpl = params.copyFileImpl ?? fs.copyFile
+  const lstatImpl = params.lstatImpl ?? fs.lstat
   const writeFileImpl = params.writeFileImpl ?? fs.writeFile
   const readFileImpl = params.readFileImpl ?? fs.readFile
   const existsImpl = params.existsImpl ?? defaultExists
@@ -271,6 +297,12 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
     })
     changed = scoped.changed
     deleted = scoped.deleted
+  }
+
+  // copyFile dereferences symlinks, so an allowed path that is a link to any runner-readable file
+  // would smuggle that file's content into the artifact. Check every source before writing anything.
+  for (const relativePath of changed) {
+    await assertRegularSource(path.join(params.cwd, relativePath), relativePath, lstatImpl)
   }
 
   await mkdirImpl(path.join(params.outDir, 'files'), {recursive: true})

@@ -1,8 +1,17 @@
 import type {promises as fs} from 'node:fs'
 
-import {describe, expect, it, vi} from 'vitest'
+import {access, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import path from 'node:path'
+
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildDraftedHandoff} from './drafted-solutions-handoff-build.ts'
+
+const tempDirs: string[] = []
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map(async dir => rm(dir, {recursive: true, force: true})))
+})
 
 /** Join porcelain -z records with NUL separators, plus a trailing NUL (git's actual output shape). */
 function nulRecords(...records: string[]): string {
@@ -105,5 +114,46 @@ describe('buildDraftedHandoff', () => {
         ...io,
       }),
     ).rejects.toThrow(/deletions are not allowed/)
+  })
+})
+
+async function arrange() {
+  const root = await mkdtemp(path.join(tmpdir(), 'drafted-handoff-build-test-'))
+  tempDirs.push(root)
+  const cwd = path.join(root, 'checkout')
+  await mkdir(path.join(cwd, 'docs/solutions/best-practices'), {recursive: true})
+  await writeFile(path.join(root, 'outside-secret.txt'), 'runner-readable secret')
+  return {root, cwd, outDir: path.join(root, 'handoff')}
+}
+
+describe('buildDraftedHandoff against the real filesystem', () => {
+  it('fails before producing any artifact when a solution doc is a symlink to an out-of-scope file', async () => {
+    const {root, cwd, outDir} = await arrange()
+    await writeFile(path.join(cwd, 'docs/solutions/best-practices/ok.md'), '# ok\n')
+    await symlink(path.join(root, 'outside-secret.txt'), path.join(cwd, 'docs/solutions/best-practices/leak.md'))
+
+    await expect(
+      buildDraftedHandoff({
+        cwd,
+        outDir,
+        runGitStatus: async () =>
+          nulRecords('?? docs/solutions/best-practices/ok.md', '?? docs/solutions/best-practices/leak.md'),
+      }),
+    ).rejects.toThrow(/refusing symlink source/)
+    await expect(access(outDir)).rejects.toThrow()
+  })
+
+  it('builds from regular files on the real filesystem', async () => {
+    const {cwd, outDir} = await arrange()
+    await writeFile(path.join(cwd, 'docs/solutions/best-practices/ok.md'), '# ok\n')
+
+    const result = await buildDraftedHandoff({
+      cwd,
+      outDir,
+      runGitStatus: async () => nulRecords('?? docs/solutions/best-practices/ok.md'),
+    })
+
+    expect(result.changed).toStrictEqual(['docs/solutions/best-practices/ok.md'])
+    expect(await readFile(path.join(outDir, 'files/docs/solutions/best-practices/ok.md'), 'utf8')).toBe('# ok\n')
   })
 })

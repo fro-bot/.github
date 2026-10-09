@@ -106,6 +106,10 @@ interface FakeOptions {
   branchExists?: boolean
   /** The first pulls.create loses a race: a PR appears and the call fails with 422. */
   createRace?: boolean
+  /** pulls.create fails with 422 but no PR ever appears. */
+  createRejectedWithoutPr?: boolean
+  /** An open PR exists but the drafted branch ref does not. */
+  branchMissing?: boolean
   reviewRequestError?: unknown
 }
 
@@ -114,7 +118,9 @@ function makeFake(options: FakeOptions) {
   const pulls = [...(options.pulls ?? [])]
   const issues = new Map(options.issues.map(issue => [issue.number, {...issue}]))
   const refs = new Map<string, string>([['heads/main', MAIN_SHA]])
-  if (options.branchExists === true || pulls.length > 0) refs.set(BRANCH_REF, BRANCH_SHA)
+  if ((options.branchExists === true || pulls.length > 0) && options.branchMissing !== true) {
+    refs.set(BRANCH_REF, BRANCH_SHA)
+  }
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -142,6 +148,9 @@ function makeFake(options: FakeOptions) {
     pulls: {
       list: vi.fn(async () => ({data: pulls})),
       create: vi.fn(async (args: {body: string; title: string}) => {
+        if (options.createRejectedWithoutPr === true) {
+          throw Object.assign(new Error('Validation Failed'), {status: 422})
+        }
         if (options.createRace === true) {
           options.createRace = false
           pulls.push(makePull({number: 905}))
@@ -408,6 +417,30 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     expect(result).toMatchObject({mode: 'updated-pr', prNumber: 905})
     expect(callsOf(fake, 'pulls.update')[0]?.args).toMatchObject({pull_number: 905})
     expect((callsOf(fake, 'pulls.update')[0]?.args as {body: string}).body).toContain('Closes #11')
+  })
+})
+
+describe('publishDraftedSolutions: PR/branch inconsistencies', () => {
+  it('rejects an open drafted PR whose branch ref does not exist, with zero writes', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], pulls: [makePull()], branchMissing: true})
+
+    await expectBlocked(
+      fake,
+      {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}},
+      /is open but docs\/drafted-solutions does not exist/,
+    )
+  })
+
+  it('rejects a create-422 when no drafted PR appeared, and never updates a PR', async () => {
+    const issue = makeIssue(11)
+    const fake = makeFake({issues: [issue], createRejectedWithoutPr: true})
+
+    await expect(
+      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
+    ).rejects.toThrow(/PR creation was rejected \(422\) and no drafted PR exists/)
+    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
+    expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
   })
 })
 
