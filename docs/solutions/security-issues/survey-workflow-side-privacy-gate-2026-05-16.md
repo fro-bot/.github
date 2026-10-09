@@ -70,7 +70,7 @@ on:
 run-name: Survey Repo  # static; do NOT echo inputs.node_id
 ```
 
-**2. Mint an App installation token for the gate's GraphQL lookup, then resolve and verify as the first step** before any other step exposes identity. The gate's only question is "is this node a public repository?" — that's a public read, but it must work for repos in any org the dispatch lands on, including orgs whose policy forbids long-lived fine-grained PATs (e.g., bfra-me requires ≤366d lifetime; see `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the diagnostic loop that surfaced this). An installation token minted for the calling repo's owner sidesteps PAT policy entirely while still permitting public-read GraphQL:
+**2. Mint an App installation token for the gate's GraphQL lookup, then resolve and verify as the first step** before any other step exposes identity. The gate's only question is "is this node a public repository?" — that's a public read, but it must work for repos in any org the dispatch lands on, including orgs whose policy forbids long-lived fine-grained PATs (e.g., bfra-me requires ≤366d lifetime; see `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the diagnostic loop that surfaced this). An installation token minted for the calling repo's owner sidesteps PAT policy entirely while still permitting public-read GraphQL. Scope it to `permission-metadata: read` — the lookup is a visibility read, so the token needs nothing wider (the later `recheck-token` mint uses the same owner-scoped, metadata-read shape):
 
 ```yaml
 - name: Mint App token for privacy gate
@@ -80,6 +80,8 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     app-id: ${{ secrets.APPLICATION_ID }}
     private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
     owner: ${{ github.repository_owner }}
+    # Only used for a public-node GraphQL visibility read — narrow to metadata.
+    permission-metadata: read
 
 - name: 🔒 Resolve and verify
   id: resolve
