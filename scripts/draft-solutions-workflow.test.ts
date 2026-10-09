@@ -10,8 +10,8 @@ import {resolve} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-import {SOLUTION_SUBDIRS} from './capture-patterns-synthesis.ts'
 import {COVERAGE_OUTCOMES, EVIDENCE_KINDS} from './drafted-solutions-pr-body.ts'
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 interface WorkflowStep {
   name?: string

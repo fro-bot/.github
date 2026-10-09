@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {promises as fs} from 'node:fs'
 import path from 'node:path'
 
-import {SOLUTION_SUBDIRS} from './capture-patterns-synthesis.ts'
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 /**
  * Untrusted agent job builds a manifest.json + files/ delta (no ingest metadata — that's
