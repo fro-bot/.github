@@ -100,4 +100,5 @@ The fix belongs at extraction, not at the comparison. `parseFrontmatterSources` 
 
 - [`repair-before-a-trust-gate-not-inside-it`](repair-before-a-trust-gate-not-inside-it-2026-07-06.md) — where input normalisation belongs relative to the gate
 - [`enumerate-mutator-variants-before-a-stryker-directive`](enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md) — why a surviving mutant gets a test rather than a directive
+- [The wiki authority guard trusted a branch name without checking which repository it lives in](../security-issues/wiki-authority-guard-branch-name-spoofable-2026-10-10.md) — a gate whose only consumer is a strict `===`, where the `typeof` conjunct was dropped on purpose.
 - Merge commit `91388ec`
