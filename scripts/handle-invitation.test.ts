@@ -4,6 +4,8 @@ import type {OctokitClient, RepositoryInvitation} from './handle-invitation.ts'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
+import YAML from 'yaml'
+
 import {
   countPublicAcceptedInvitations,
   formatInvitationGithubOutput,
@@ -1269,5 +1271,220 @@ describe('formatInvitationGithubOutput', () => {
     // must round-trip
     const parsed = JSON.parse(reposJson) as unknown[]
     expect(parsed).toEqual([{owner: 'fro-bot', name: 'my-repo'}])
+  })
+})
+
+/** commitMetadata stand-in that runs the real mutator against an in-memory repos file. */
+function inMemoryCommit(initial: unknown) {
+  const state: {file: unknown} = {file: initial}
+  const commitMetadata = vi.fn<CommitMetadataMock>(async params => {
+    state.file = params.mutator(state.file)
+    return {committed: true, sha: 'commit-sha', attempts: 1}
+  })
+  return {state, commitMetadata}
+}
+
+describe('handleInvitations — identity-only write-back', () => {
+  const NODE_ID = 'R_kgDOJt6i0Q'
+
+  function trackedUnderOldName() {
+    return {
+      version: 1,
+      repos: [
+        {
+          owner: 'marcusrbrown',
+          name: 'panthe.ai',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-09-01',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: '2026-10-01',
+          node_id: NODE_ID,
+          database_id: 111,
+          private: false,
+        },
+      ],
+    }
+  }
+
+  async function runInvitationFor(
+    repoName: string,
+    initial: unknown,
+    invitedNodeId = NODE_ID,
+    options: {isPrivate?: boolean; retryOnce?: boolean} = {},
+  ) {
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const {state, commitMetadata: single} = inMemoryCommit(initial)
+    // A 409 retry re-runs the mutator against fresh `data` content; the first result is discarded.
+    const commitMetadata = options.retryOnce
+      ? vi.fn<CommitMetadataMock>(async params => {
+          params.mutator(initial)
+          return single(params)
+        })
+      : single
+    const isPrivate = options.isPrivate === true
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 202,
+            inviter: {login: 'marcusrbrown'},
+            repository: {name: repoName, node_id: invitedNodeId, private: isPrivate, owner: {login: 'marcusrbrown'}},
+          },
+        ],
+      }),
+      getRepo: async () => ({data: {node_id: invitedNodeId, private: isPrivate}}),
+      createWorkflowDispatch,
+    })
+
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const result = await handleInvitations({
+        octokit,
+        metadataOctokit: octokit,
+        allowlistPath: 'metadata/allowlist.yaml',
+        reposPath: 'metadata/repos.yaml',
+        now: new Date('2026-10-09T12:00:00.000Z'),
+        workflowFile: 'survey.yaml',
+        workflowRef: 'main',
+        commitMetadata,
+        bootstrapDataBranch: vi.fn(async () => ({})),
+        readMetadata: readTestMetadata,
+      })
+      const warnings = stderr.mock.calls.map(call => String(call[0]))
+      return {result, createWorkflowDispatch, state, warnings}
+    } finally {
+      stderr.mockRestore()
+    }
+  }
+
+  it('leaves the row unchanged and dispatches no survey for an existing node under a new name', async () => {
+    const initial = trackedUnderOldName()
+
+    const {result, createWorkflowDispatch, state, warnings} = await runInvitationFor('panthea', initial)
+
+    expect(result.processed[0]).toMatchObject({status: 'accepted'})
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+    const persisted = YAML.parse(YAML.stringify(state.file)) as typeof initial
+    expect(persisted.repos).toHaveLength(1)
+    expect(persisted.repos[0]).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: NODE_ID,
+      database_id: 111,
+      private: false,
+      last_survey_status: 'success',
+    })
+    const warning = warnings.find(line => line.startsWith('handle-invitation:'))
+    expect(warning).toContain('survey dispatch skipped')
+    expect(warning).not.toContain('panthe')
+    expect(warning).not.toContain(NODE_ID)
+  })
+
+  describe('a private invitation for a node tracked publicly under a different name', () => {
+    // The repository went private (and was renamed) after it was tracked: the public row must be
+    // redacted, whatever the name conflict, but nothing about the new name may be stored.
+    it.each([
+      ['on the first attempt', {}],
+      ['after a 409 retry', {retryOnce: true}],
+    ])('redacts the row, stores no new name and dispatches no survey %s', async (_label, retry) => {
+      const initial = trackedUnderOldName()
+
+      const {createWorkflowDispatch, state, warnings} = await runInvitationFor('panthea', initial, NODE_ID, {
+        isPrivate: true,
+        ...retry,
+      })
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: Record<string, unknown>[]}
+      expect(persisted.repos).toHaveLength(1)
+      expect(persisted.repos[0]).toMatchObject({owner: '[REDACTED]', name: NODE_ID, private: true, node_id: NODE_ID})
+      expect(JSON.stringify(persisted)).not.toContain('panthea')
+      expect(JSON.stringify(persisted)).not.toContain('panthe.ai')
+      const warning = warnings.find(line => line.startsWith('handle-invitation:'))
+      expect(warning).not.toContain('panthe')
+      expect(warning).not.toContain(NODE_ID)
+    })
+
+    it('never takes the held-by-another-node path: a private input is stored redacted under its node ID', async () => {
+      const initial = trackedUnderOldName()
+
+      const {createWorkflowDispatch, state, warnings} = await runInvitationFor('panthe.ai', initial, 'R_kgDOPRIVATE2', {
+        isPrivate: true,
+      })
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: Record<string, unknown>[]}
+      expect(persisted.repos.map(row => row.owner)).toEqual(['marcusrbrown', '[REDACTED]'])
+      expect(warnings.some(line => line.includes('held by a different tracked node'))).toBe(false)
+    })
+  })
+
+  describe('a recreated repository whose name is held by a different node', () => {
+    const RECREATED_NODE_ID = 'R_kgDORECREATED'
+
+    it("leaves the file unchanged and dispatches no survey, so the old node's page is never written into", async () => {
+      const initial = trackedUnderOldName()
+
+      const {result, createWorkflowDispatch, state, warnings} = await runInvitationFor(
+        'panthe.ai',
+        initial,
+        RECREATED_NODE_ID,
+      )
+
+      expect(result.processed[0]).toMatchObject({status: 'accepted'})
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(state.file).toBe(initial)
+      const warning = warnings.find(line => line.startsWith('handle-invitation:'))
+      expect(warning).toContain('survey dispatch skipped')
+      // The new node's ID is the only identifier: no owner, name or the old node's ID.
+      expect(warning).toContain(RECREATED_NODE_ID)
+      expect(warning).not.toContain('panthe')
+      expect(warning).not.toContain('marcusrbrown')
+      expect(warning).not.toContain(NODE_ID)
+    })
+
+    it('still adds and surveys the recreated node when its name is free', async () => {
+      const {createWorkflowDispatch, state} = await runInvitationFor(
+        'panthea',
+        trackedUnderOldName(),
+        RECREATED_NODE_ID,
+      )
+
+      expect(createWorkflowDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({inputs: {node_id: RECREATED_NODE_ID}}),
+      )
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: {name: string}[]}
+      expect(persisted.repos.map(row => row.name)).toEqual(['panthe.ai', 'panthea'])
+    })
+  })
+
+  it('adds a row and dispatches a survey for a node that is not tracked yet (regression)', async () => {
+    const {result, createWorkflowDispatch, state, warnings} = await runInvitationFor('panthea', {
+      version: 1,
+      repos: [],
+    })
+
+    expect(result.processed[0]).toMatchObject({status: 'accepted'})
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(expect.objectContaining({inputs: {node_id: NODE_ID}}))
+    const persisted = YAML.parse(YAML.stringify(state.file)) as {
+      repos: {owner: string; name: string; node_id: string}[]
+    }
+    expect(persisted.repos).toEqual([
+      expect.objectContaining({owner: 'marcusrbrown', name: 'panthea', node_id: NODE_ID}),
+    ])
+    expect(warnings.some(line => line.startsWith('handle-invitation:'))).toBe(false)
+  })
+
+  it('still dispatches when the invitation matches the tracked name exactly (idempotent re-accept)', async () => {
+    const initial = trackedUnderOldName()
+
+    const {createWorkflowDispatch, state} = await runInvitationFor('panthe.ai', initial)
+
+    expect(createWorkflowDispatch).toHaveBeenCalledOnce()
+    expect(state.file).toBe(initial)
   })
 })

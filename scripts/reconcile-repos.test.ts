@@ -2,12 +2,14 @@ import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata
 import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
 import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
 import {Buffer} from 'node:buffer'
+import {readFileSync} from 'node:fs'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
 
 import {
   containsFroBotAgentReference,
+  detectRenames,
   DISPATCH_DEFAULTS,
   fetchFieldProbes,
   fetchPerRepoStatus,
@@ -28,6 +30,7 @@ import {
   type FieldProbe,
   type HandleReconcileParams,
   type IssuePayload,
+  type IssueQueueEntry,
   type OctokitClient,
   type ReconcileInput,
   type ReconcileLogger,
@@ -565,7 +568,7 @@ describe('reconcileRepos', () => {
   })
 
   describe('tracked entries — still accessible', () => {
-    it('detects a renamed repo from a node_id mismatch and preserves survey history', () => {
+    it('detects a renamed repo from a node_id mismatch, keeps the stored name and survey history, and reports it pending', () => {
       const entry = makeEntry({
         owner: 'alice',
         name: 'old-name',
@@ -604,14 +607,16 @@ describe('reconcileRepos', () => {
 
       expect(result.nextRepos.repos[0]).toMatchObject({
         owner: 'alice',
-        name: 'current-name',
+        name: 'old-name',
         node_id: 'R_old',
         added: '2025-12-01',
         last_survey_at: '2026-01-15',
         last_survey_status: 'success',
         next_survey_eligible_at: '2026-02-15',
       })
-      expect(result.summary.renamed).toBe(1)
+      expect(result.summary.renamed).toBe(0)
+      expect(result.pendingRenames).toEqual(['R_old'])
+      expect(result.dispatches).toEqual([])
     })
 
     it('routes an unresolvable stored node_id through lost-access without adding a newcomer', () => {
@@ -2564,7 +2569,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     expect(graphql).toHaveBeenCalledWith(expect.stringContaining('node(id: $id)'), {id: 'R_old'})
   })
 
-  it('repairs a rename when REST probing fails but stored node_id resolves through GraphQL', async () => {
+  it('reports a rename as pending (without applying it) when REST probing fails but stored node_id resolves through GraphQL', async () => {
     const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
     const userOctokit = makeFieldProbeOctokit({
       reposGet: async () => {
@@ -2591,8 +2596,9 @@ describe('fetchFieldProbes — database_id capture', () => {
       resolved_owner: 'alice',
       resolved_name: 'current-name',
     })
-    expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'current-name', node_id: 'R_old'})
-    expect(result.summary).toMatchObject({renamed: 1, lostAccess: 0})
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'old-name', node_id: 'R_old'})
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 0})
+    expect(result.pendingRenames).toEqual(['R_old'])
   })
 
   it('preserves an entry when GraphQL returns no node without an HTTP 404', async () => {
@@ -9140,5 +9146,811 @@ describe('handleReconcile — discovery/writer client routing', () => {
     const logged = [...logger.warn.mock.calls, ...logger.info.mock.calls].map(c => c[0]).join('\n')
     expect(logged).toContain('status=500')
     expect(logged).not.toContain(BODY_MARKER)
+  })
+})
+
+// ─── Rename detection: reconcile reports renames, never applies them ─────────
+//
+// Plan: docs/plans/2026-10-09-004-fix-reconcile-redirect-rename-plan.md (Unit 2).
+
+const REDACTED = '[REDACTED]'
+
+function publicRow(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return makeEntry({
+    owner: 'alice',
+    name: 'old-name',
+    node_id: 'R_old',
+    private: false,
+    onboarding_status: 'onboarded',
+    last_survey_at: '2026-01-15',
+    last_survey_status: 'success',
+    next_survey_eligible_at: '2026-02-15',
+    ...overrides,
+  })
+}
+
+function redactedRow(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return makeEntry({
+    owner: REDACTED,
+    name: 'R_old',
+    node_id: 'R_old',
+    private: true,
+    onboarding_status: 'onboarded',
+    last_survey_at: '2026-01-15',
+    last_survey_status: 'success',
+    next_survey_eligible_at: '2026-02-15',
+    ...overrides,
+  })
+}
+
+function renamedAccess(overrides: Partial<AccessListEntry> = {}): AccessListEntry {
+  return makeAccess({owner: 'alice', name: 'new-name', node_id: 'R_old', private: false, ...overrides})
+}
+
+function probeFor(key: string, probe: Partial<FieldProbe> = {}): Map<string, FieldProbe> {
+  return new Map([[key, {has_fro_bot_workflow: false, has_renovate: false, ...probe}]])
+}
+
+function plan(
+  entries: RepoEntry[],
+  accessList: AccessListEntry[],
+  extra: Partial<ReconcileInput> = {},
+): ReturnType<typeof reconcileRepos> {
+  return reconcileRepos(
+    makeInput({
+      currentRepos: {version: 1, repos: entries},
+      accessList,
+      allowlist: makeAllowlist(['alice']),
+      ...extra,
+    }),
+  )
+}
+
+describe('rename detection', () => {
+  describe('access-list path', () => {
+    it('reports a same-owner rename as pending, leaves the row untouched, and dispatches nothing', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess()], {fieldProbes: probeFor('alice/old-name')})
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.pendingRenames).toEqual(['R_old'])
+      expect(result.dispatches).toEqual([])
+      expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 0, refreshed: 0})
+      expect(result.issues).toEqual([{kind: 'rename-pending', node_id: 'R_old'}])
+    })
+
+    it('still applies unrelated field drift, but never the new owner/name', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess()], {
+        fieldProbes: probeFor('alice/old-name', {has_renovate: true}),
+      })
+
+      expect(result.nextRepos.repos[0]).toEqual({...row, has_renovate: true})
+      expect(result.summary.refreshed).toBe(1)
+      expect(result.summary.renamed).toBe(0)
+      expect(result.pendingRenames).toEqual(['R_old'])
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('keeps the stored name when there is no field probe at all', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess()])
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.pendingRenames).toEqual(['R_old'])
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('treats a case-only name change as a rename (strict name comparison)', () => {
+      const result = plan([publicRow({name: 'Old-Name'})], [renamedAccess({name: 'old-name'})])
+
+      expect(result.pendingRenames).toEqual(['R_old'])
+    })
+
+    it('does not report anything for a row that already matches', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess({name: 'old-name'})], {fieldProbes: probeFor('alice/old-name')})
+
+      expect(result.pendingRenames).toEqual([])
+      expect(result.issues).toEqual([])
+      expect(result.summary.unchanged).toBe(1)
+    })
+  })
+
+  describe('identity-probe path', () => {
+    it('reports a redirect to the same node under a different name as pending', () => {
+      const row = publicRow()
+      // The access list still carries the stored name; only the identity probe saw the redirect.
+      const result = plan([row], [renamedAccess({name: 'old-name'})], {
+        fieldProbes: probeFor('alice/old-name', {
+          identity: {
+            returned_node_id: 'R_old',
+            returned_owner: 'alice',
+            returned_name: 'new-name',
+            resolution: 'matched',
+          },
+        }),
+      })
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.pendingRenames).toEqual(['R_old'])
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.renamed).toBe(0)
+    })
+
+    it('treats a missing probe value as no information, never as a rename', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess({name: 'old-name'})], {
+        fieldProbes: probeFor('alice/old-name', {
+          identity: {returned_node_id: 'R_old', returned_owner: 'alice', resolution: 'matched'},
+        }),
+      })
+
+      expect(result.pendingRenames).toEqual([])
+      expect(result.issues).toEqual([])
+    })
+
+    it('ignores identity evidence from a different node', () => {
+      const row = publicRow()
+
+      const result = plan([row], [renamedAccess({name: 'old-name'})], {
+        fieldProbes: probeFor('alice/old-name', {
+          identity: {
+            returned_node_id: 'R_other',
+            returned_owner: 'alice',
+            returned_name: 'new-name',
+            resolution: 'matched',
+          },
+        }),
+      })
+
+      expect(result.pendingRenames).toEqual([])
+    })
+  })
+
+  describe('owner changes are blocked as transfers', () => {
+    const transferred = (overrides: Partial<AccessListEntry> = {}) =>
+      renamedAccess({owner: 'bob', name: 'moved', ...overrides})
+
+    it('access path with field drift: no owner write, no dispatch, counted once', () => {
+      const row = publicRow()
+
+      const result = plan([row], [transferred()], {fieldProbes: probeFor('alice/old-name', {has_renovate: true})})
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.summary).toMatchObject({transferBlocked: 1, renamed: 0, refreshed: 0})
+      expect(result.dispatches).toEqual([])
+      expect(result.pendingRenames).toEqual([])
+      expect(result.issues).toEqual([])
+    })
+
+    it('regain path: the row stays lost-access and nothing is dispatched', () => {
+      const row = publicRow({onboarding_status: 'lost-access'})
+
+      const result = plan([row], [transferred()])
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.summary).toMatchObject({transferBlocked: 1, regained: 0})
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('archived path: no owner write and no lost-access flip', () => {
+      const row = publicRow()
+
+      const result = plan([row], [transferred({archived: true})])
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.summary).toMatchObject({transferBlocked: 1, lostAccess: 0})
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('an owner change that is only a case change is not a transfer', () => {
+      const result = plan([publicRow()], [renamedAccess({owner: 'Alice', name: 'old-name'})])
+
+      expect(result.summary.transferBlocked).toBe(0)
+    })
+
+    it('floor never picks a transfer-blocked row', () => {
+      const row = publicRow({last_survey_at: '2026-03-01', next_survey_eligible_at: '2026-12-31'})
+
+      const result = plan([row], [transferred()])
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.flooredDispatches).toBe(0)
+    })
+  })
+
+  describe('a pending rename is never dispatched', () => {
+    it('regain path', () => {
+      const row = publicRow({onboarding_status: 'lost-access'})
+      const control = plan([row], [renamedAccess({name: 'old-name'})])
+      expect(control.dispatches).toHaveLength(1) // proves the fixture regains and dispatches
+
+      const result = plan([row], [renamedAccess()])
+
+      expect(result.summary.regained).toBe(1)
+      expect(result.dispatches).toEqual([])
+      expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'old-name', onboarding_status: 'pending'})
+    })
+
+    it('floor pass', () => {
+      const row = publicRow({last_survey_at: '2026-03-01', next_survey_eligible_at: '2026-12-31'})
+      const control = plan([row], [renamedAccess({name: 'old-name'})])
+      expect(control.summary.flooredDispatches).toBe(1) // proves the fixture is a floor candidate
+
+      const result = plan([row], [renamedAccess()])
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.flooredDispatches).toBe(0)
+    })
+
+    it('pending branch with a stale survey that ignores the cadence date', () => {
+      const row = publicRow({
+        onboarding_status: 'pending',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-12-31',
+      })
+      const control = plan([row], [renamedAccess({name: 'old-name'})])
+      expect(control.dispatches).toHaveLength(1) // proves the pending branch dispatches regardless of cadence
+
+      const result = plan([row], [renamedAccess()])
+
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('threshold path, while other repos still dispatch', () => {
+      const other = publicRow({name: 'other', node_id: 'R_other'})
+      const result = plan(
+        [publicRow(), other],
+        [renamedAccess(), makeAccess({owner: 'alice', name: 'other', node_id: 'R_other', private: false})],
+      )
+
+      expect(result.dispatches).toEqual([{owner: 'alice', repo: 'other', node_id: 'R_other'}])
+      expect(result.pendingRenames).toEqual(['R_old'])
+    })
+  })
+
+  describe('un-redaction is the only planner name write', () => {
+    const publicAccess = () => makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+
+    it('access path without a field probe restores the real name and counts neither rename nor transfer', () => {
+      const result = plan([redactedRow()], [publicAccess()])
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'old-name',
+        private: false,
+        node_id: 'R_old',
+      })
+      expect(result.pendingRenames).toEqual([])
+      expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 0})
+    })
+
+    it('access path with a field probe restores the real name', () => {
+      const result = plan([redactedRow()], [publicAccess()], {
+        fieldProbes: probeFor('[REDACTED]/R_old', {has_renovate: true}),
+      })
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'old-name',
+        private: false,
+        has_renovate: true,
+      })
+      expect(result.pendingRenames).toEqual([])
+      expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 0})
+    })
+
+    it('un-redacts a row whose node now lives under a different name than any earlier one (no rename issue)', () => {
+      const result = plan([redactedRow()], [renamedAccess({name: 'whatever-it-is-now'})])
+
+      expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'whatever-it-is-now'})
+      expect(result.issues).toEqual([])
+    })
+
+    it('regain path restores the real name', () => {
+      const result = plan([redactedRow({onboarding_status: 'lost-access'})], [publicAccess()])
+
+      expect(result.summary).toMatchObject({regained: 1, renamed: 0, transferBlocked: 0})
+      expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'old-name', private: false})
+      expect(result.pendingRenames).toEqual([])
+    })
+
+    it('a redacted row whose node is still private gets no write and no count', () => {
+      const row = redactedRow()
+
+      const result = plan([row], [makeAccess({owner: 'alice', name: 'secret', node_id: 'R_old', private: true})])
+
+      expect(result.nextRepos.repos).toEqual([row])
+      expect(result.pendingRenames).toEqual([])
+      expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 0, refreshed: 0})
+    })
+  })
+
+  describe('detectRenames', () => {
+    it('returns pending renames and transfers keyed by node ID, skipping private, redacted and ID-less rows', () => {
+      const rows = [
+        publicRow({name: 'a', node_id: 'R_a'}),
+        publicRow({name: 'b', node_id: 'R_b'}),
+        publicRow({name: 'c', node_id: 'R_c', private: true}),
+        redactedRow({name: 'R_d', node_id: 'R_d'}),
+        publicRow({name: 'e', node_id: undefined}),
+      ]
+      const access = [
+        makeAccess({owner: 'alice', name: 'a2', node_id: 'R_a', private: false}),
+        makeAccess({owner: 'bob', name: 'b', node_id: 'R_b', private: false}),
+        makeAccess({owner: 'alice', name: 'c2', node_id: 'R_c', private: false}),
+        makeAccess({owner: 'alice', name: 'd2', node_id: 'R_d', private: false}),
+        makeAccess({owner: 'alice', name: 'e2', node_id: 'R_e', private: false}),
+      ]
+
+      const result = detectRenames({rows, accessList: access, fieldProbes: new Map()})
+
+      expect(result.pending).toEqual([{key: 'alice/a', node_id: 'R_a'}])
+      expect(result.transfers).toEqual([{key: 'alice/b', node_id: 'R_b'}])
+    })
+
+    it('skips access entries that are archived (rename) or ambiguous (duplicate node)', () => {
+      const rows = [publicRow({name: 'a', node_id: 'R_a'}), publicRow({name: 'b', node_id: 'R_b'})]
+      const access = [
+        makeAccess({owner: 'alice', name: 'a2', node_id: 'R_a', private: false, archived: true}),
+        makeAccess({owner: 'alice', name: 'b2', node_id: 'R_b', private: false}),
+        makeAccess({owner: 'alice', name: 'b3', node_id: 'R_b', private: false}),
+      ]
+
+      const result = detectRenames({rows, accessList: access, fieldProbes: new Map()})
+
+      expect(result).toEqual({pending: [], transfers: []})
+    })
+
+    it('rebuilds its tables per call: no state leaks between invocations', () => {
+      const first = detectRenames({
+        rows: [publicRow()],
+        accessList: [renamedAccess()],
+        fieldProbes: new Map(),
+      })
+      const second = detectRenames({rows: [publicRow()], accessList: [], fieldProbes: new Map()})
+
+      expect(first.pending).toHaveLength(1)
+      expect(second).toEqual({pending: [], transfers: []})
+    })
+  })
+
+  describe('rename-pending issue payload', () => {
+    it('carries the node ID and the dispatch command, and no owner/name', () => {
+      const payload = renderIssuePayload({kind: 'rename-pending', node_id: 'R_kgDOJt6i0Q'}, 'fro-bot', '.github')
+      const text = `${payload.title}\n${payload.body}`
+
+      expect(payload.title).toContain('R_kgDOJt6i0Q')
+      expect(payload.body).toContain('<!-- reconcile:subject:node_id=R_kgDOJt6i0Q -->')
+      expect(payload.body).toContain('gh workflow run rename-tracked-repo.yaml -f node_id=R_kgDOJt6i0Q')
+      expect(payload.labels).toEqual(['reconcile:rename-pending'])
+      expect(text).not.toMatch(/panthe|alice|old-name|new-name|github\.com\//)
+    })
+
+    it('fails loudly on an unhandled issue kind', () => {
+      expect(() => renderIssuePayload({kind: 'bogus'} as unknown as IssueQueueEntry, 'fro-bot', '.github')).toThrow(
+        /unhandled issue kind/,
+      )
+    })
+  })
+
+  describe('handleReconcile', () => {
+    interface Harness {
+      userOctokit: OctokitClient
+      writer: OctokitClient
+      issuesCreate: ReturnType<typeof vi.fn>
+      issuesUpdate: ReturnType<typeof vi.fn>
+      issuesListForRepo: ReturnType<typeof vi.fn>
+      createWorkflowDispatch: ReturnType<typeof vi.fn>
+      logger: ReturnType<typeof silentLogger>
+      committed: ReposFile[]
+      failFieldProbes: () => void
+      run: () => ReturnType<typeof handleReconcile>
+    }
+
+    function harness(options: {
+      rows: RepoEntry[]
+      collab: AccessListApiEntry[]
+      redirect?: {name: string; owner?: string}
+      openIssues?: IssueListEntry[]
+      /** Node ID the identity probe reports. Defaults to the fixture's `R_old`. */
+      probeNodeId?: string
+      /** Makes the App-installation (owned-channel) enumeration fail. */
+      ownedEnumerationFails?: boolean
+      /** Makes contrib enumeration fail with this status, for one allowlisted repo. */
+      contribProbeStatus?: number
+    }): Harness {
+      const issuesCreate = vi.fn(async (_params: unknown) => ({data: {number: 1}}))
+      const issuesUpdate = vi.fn(async (_params: unknown) => ({}))
+      const issuesListForRepo = vi.fn(async (params: unknown) => {
+        const label = (params as {labels?: string}).labels
+        const open = options.openIssues ?? []
+        return {data: label === undefined ? open : open.filter(issue => issue.labels.some(l => l.name === label))}
+      })
+      const createWorkflowDispatch = vi.fn(async (_params: unknown) => undefined)
+      const committed: ReposFile[] = []
+      let failProbes = false
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({data: options.collab}),
+        getContent: async () => {
+          throw apiError(failProbes ? 500 : 404, failProbes ? 'probe down' : 'Not Found')
+        },
+        reposGet: async () => {
+          return {
+            data: {
+              private: false,
+              node_id: options.probeNodeId ?? 'R_old',
+              id: 77,
+              name: options.redirect?.name ?? 'old-name',
+              owner: {login: options.redirect?.owner ?? 'alice'},
+            },
+          } as unknown as {data: RepoGetResponse}
+        },
+      })
+      const writer = mockOctokit({issuesCreate, issuesUpdate, issuesListForRepo, createWorkflowDispatch})
+      const logger = silentLogger()
+      const run = async () =>
+        handleReconcile(
+          baseParams({
+            userOctokit,
+            writerOctokit: writer,
+            discoveryOctokit: mockOctokit({
+              paginate: async () => {
+                if (options.ownedEnumerationFails === true) throw apiError(500, 'enumeration down')
+                return []
+              },
+              ...(options.contribProbeStatus === undefined
+                ? {}
+                : {
+                    reposGet: async () => {
+                      throw apiError(options.contribProbeStatus ?? 500, 'contrib probe')
+                    },
+                  }),
+            }),
+            logger,
+            readMetadata: makeReadMetadata({
+              allowlist: {
+                ...makeAllowlist(['alice']),
+                ...(options.contribProbeStatus === undefined ? {} : {approved_contrib_repos: ['bob/tool']}),
+              },
+              repos: {version: 1, repos: options.rows},
+            }),
+            commitMetadata: vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+              committed.push((await params.mutator({version: 1, repos: options.rows})) as ReposFile)
+              return {committed: true, sha: 'sha', attempts: 1}
+            }),
+          }),
+        )
+      return {
+        userOctokit,
+        writer,
+        issuesCreate,
+        issuesUpdate,
+        issuesListForRepo,
+        createWorkflowDispatch,
+        logger,
+        committed,
+        failFieldProbes: () => {
+          failProbes = true
+        },
+        run,
+      }
+    }
+
+    const renamedCollab: AccessListApiEntry = {
+      owner: {login: 'alice'},
+      name: 'new-name',
+      archived: false,
+      private: false,
+      node_id: 'R_old',
+    }
+
+    it('files one node-ID-only issue for a pending rename, never dispatches it, and reports counts only', async () => {
+      const h = harness({rows: [publicRow()], collab: [renamedCollab]})
+
+      const result = await h.run()
+
+      expect(result.renamesPending).toBe(1)
+      expect(result.transferBlocked).toBe(0)
+      expect(h.createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(h.issuesCreate).toHaveBeenCalledTimes(1)
+      const created = h.issuesCreate.mock.calls[0]?.[0] as IssuePayload
+      expect(created.labels).toEqual(['reconcile:rename-pending'])
+      expect(`${created.title}\n${created.body}`).toContain('R_old')
+      expect(`${created.title}\n${created.body}`).not.toMatch(/alice|old-name|new-name/)
+      const logged = [...h.logger.warn.mock.calls, ...h.logger.info.mock.calls].map(call => String(call[0])).join('\n')
+      expect(logged).toContain('1 rename(s) pending operator action')
+      expect(logged).not.toMatch(/alice|old-name|new-name/)
+    })
+
+    it('never persists a rename: the committed row keeps its stored owner and name', async () => {
+      const h = harness({
+        rows: [publicRow()],
+        collab: [renamedCollab, {...renamedCollab, name: 'fresh', node_id: 'R_fresh'}],
+      })
+
+      await h.run()
+
+      expect(h.committed).toHaveLength(1)
+      const stored = h.committed[0]?.repos.find(row => row.node_id === 'R_old')
+      expect(stored).toMatchObject({owner: 'alice', name: 'old-name'})
+    })
+
+    it('also detects the rename through the identity probe when the access list still shows the stored name', async () => {
+      const h = harness({
+        rows: [publicRow()],
+        collab: [{...renamedCollab, name: 'old-name'}],
+        redirect: {name: 'new-name'},
+      })
+
+      const result = await h.run()
+
+      expect(result.renamesPending).toBe(1)
+      expect(h.createWorkflowDispatch).not.toHaveBeenCalled()
+    })
+
+    it('does not file a second issue when an open one already carries the node marker', async () => {
+      const h = harness({
+        rows: [publicRow()],
+        collab: [renamedCollab],
+        openIssues: [
+          {
+            number: 41,
+            title: 'anything',
+            body: '<!-- reconcile:subject:node_id=R_old -->\nbody',
+            state: 'open',
+            labels: [{name: 'reconcile:rename-pending'}],
+          },
+        ],
+      })
+
+      const result = await h.run()
+
+      expect(h.issuesCreate).not.toHaveBeenCalled()
+      expect(h.issuesUpdate).not.toHaveBeenCalled()
+      expect(result.renamePendingIssues).toBe(0)
+      expect(result.renamePendingDuplicatesSkipped).toBe(1)
+    })
+
+    it('does not file a duplicate when the issue search itself fails, and counts the failure', async () => {
+      const h = harness({rows: [publicRow()], collab: [renamedCollab]})
+      h.issuesListForRepo.mockRejectedValue(apiError(500, 'boom'))
+
+      const result = await h.run()
+
+      expect(h.issuesCreate).not.toHaveBeenCalled()
+      expect(result.issuesFailed).toBeGreaterThanOrEqual(1)
+    })
+
+    it('closes marker issues whose node is no longer pending, and keeps those still pending', async () => {
+      const h = harness({
+        rows: [publicRow({name: 'new-name'})],
+        collab: [renamedCollab],
+        redirect: {name: 'new-name'},
+        openIssues: [
+          {
+            number: 41,
+            title: 'resolved',
+            body: '<!-- reconcile:subject:node_id=R_old -->',
+            state: 'open',
+            labels: [{name: 'reconcile:rename-pending'}],
+          },
+          {
+            number: 42,
+            title: 'unrelated marker',
+            body: '<!-- reconcile:subject:node_id=R_gone -->',
+            state: 'open',
+            labels: [{name: 'reconcile:rename-pending'}],
+          },
+        ],
+      })
+
+      const result = await h.run()
+
+      expect(result.renamesPending).toBe(0)
+      expect(h.issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 41, state: 'closed'}))
+      expect(h.issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
+      expect(result.closedRenamePendingIssues).toBe(2)
+    })
+
+    it('does not close an issue whose node is still pending', async () => {
+      const h = harness({
+        rows: [publicRow()],
+        collab: [renamedCollab],
+        openIssues: [
+          {
+            number: 41,
+            title: 'pending',
+            body: '<!-- reconcile:subject:node_id=R_old -->',
+            state: 'open',
+            labels: [{name: 'reconcile:rename-pending'}],
+          },
+        ],
+      })
+
+      const result = await h.run()
+
+      expect(h.issuesUpdate).not.toHaveBeenCalled()
+      expect(result.closedRenamePendingIssues).toBe(0)
+    })
+
+    it('skips the close pass when a field probe failed, so a missing probe never closes an issue', async () => {
+      const h = harness({
+        rows: [publicRow({name: 'new-name'})],
+        collab: [renamedCollab],
+        redirect: {name: 'new-name'},
+        openIssues: [
+          {
+            number: 41,
+            title: 'pending',
+            body: '<!-- reconcile:subject:node_id=R_old -->',
+            state: 'open',
+            labels: [{name: 'reconcile:rename-pending'}],
+          },
+        ],
+      })
+      h.failFieldProbes()
+
+      const result = await h.run()
+
+      expect(result.probesFailed).toBeGreaterThan(0)
+      expect(h.issuesUpdate).not.toHaveBeenCalled()
+      expect(result.closedRenamePendingIssues).toBe(0)
+    })
+
+    describe.each<[string, {ownedEnumerationFails?: boolean; contribProbeStatus?: number}]>([
+      ['an owned-channel enumeration that failed', {ownedEnumerationFails: true}],
+      ['a contrib probe that failed transiently', {contribProbeStatus: 502}],
+    ])('with %s', (_label, degraded) => {
+      const stillOpen = (): IssueListEntry[] => [
+        {
+          number: 41,
+          title: 'pending',
+          body: '<!-- reconcile:subject:node_id=R_old -->',
+          state: 'open',
+          labels: [{name: 'reconcile:rename-pending'}],
+        },
+      ]
+
+      it('does not close a rename issue, because a partial access list cannot prove the rename was applied', async () => {
+        const h = harness({
+          rows: [publicRow({name: 'new-name'})],
+          collab: [renamedCollab],
+          redirect: {name: 'new-name'},
+          openIssues: stillOpen(),
+          ...degraded,
+        })
+
+        const result = await h.run()
+
+        expect(result.renamesPending).toBe(0)
+        expect(h.issuesUpdate).not.toHaveBeenCalled()
+        expect(result.closedRenamePendingIssues).toBe(0)
+      })
+
+      it('closes the same issue once enumeration is complete (the control for the case above)', async () => {
+        const h = harness({
+          rows: [publicRow({name: 'new-name'})],
+          collab: [renamedCollab],
+          redirect: {name: 'new-name'},
+          openIssues: stillOpen(),
+          ...(degraded.contribProbeStatus === undefined ? {} : {contribProbeStatus: 404}),
+        })
+
+        const result = await h.run()
+
+        expect(result.closedRenamePendingIssues).toBe(1)
+      })
+    })
+
+    describe("with a legacy '='-padded node ID", () => {
+      const PADDED = 'MDEwOlJlcG9zaXRvcnk3Nzc3Nzc='
+      const paddedCollab: AccessListApiEntry = {...renamedCollab, node_id: PADDED}
+      const paddedRow = () => publicRow({node_id: PADDED})
+      const marker = `<!-- reconcile:subject:node_id=${PADDED} -->`
+      const openPadded = (): IssueListEntry[] => [
+        {number: 41, title: 'pending', body: marker, state: 'open', labels: [{name: 'reconcile:rename-pending'}]},
+      ]
+
+      it('files the issue, carrying the whole ID in the marker, title and command', async () => {
+        const h = harness({rows: [paddedRow()], collab: [paddedCollab], probeNodeId: PADDED})
+
+        const result = await h.run()
+
+        expect(result.renamesPending).toBe(1)
+        expect(result.renamePendingIssues).toBe(1)
+        const created = h.issuesCreate.mock.calls[0]?.[0] as IssuePayload
+        expect(created.title).toContain(PADDED)
+        expect(created.body).toContain(marker)
+        expect(created.body).toContain(`gh workflow run rename-tracked-repo.yaml -f node_id=${PADDED}`)
+      })
+
+      it('dedupes against an open issue that already carries the padded marker', async () => {
+        const h = harness({
+          rows: [paddedRow()],
+          collab: [paddedCollab],
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+
+        const result = await h.run()
+
+        expect(h.issuesCreate).not.toHaveBeenCalled()
+        expect(result.renamePendingDuplicatesSkipped).toBe(1)
+      })
+
+      it('keeps the issue open while pending, and closes it once the rename is applied', async () => {
+        const pending = harness({
+          rows: [paddedRow()],
+          collab: [paddedCollab],
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+        await pending.run()
+        expect(pending.issuesUpdate).not.toHaveBeenCalled()
+
+        const applied = harness({
+          rows: [publicRow({node_id: PADDED, name: 'new-name'})],
+          collab: [paddedCollab],
+          redirect: {name: 'new-name'},
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+        const result = await applied.run()
+
+        expect(applied.issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 41, state: 'closed'}))
+        expect(result.closedRenamePendingIssues).toBe(1)
+      })
+    })
+
+    it('exposes every rename counter the workflow step summary reads from the result JSON', async () => {
+      const h = harness({rows: [publicRow()], collab: [renamedCollab]})
+      const result = await h.run()
+      const workflow = readFileSync(new URL('../.github/workflows/reconcile-repos.yaml', import.meta.url), 'utf8')
+
+      const keys = [
+        'renamesPending',
+        'renamePendingIssues',
+        'renamePendingDuplicatesSkipped',
+        'closedRenamePendingIssues',
+        'transferBlocked',
+      ]
+      for (const key of keys) {
+        expect(workflow).toContain(`jq '.${key} // 0'`)
+        expect(result).toHaveProperty(key)
+      }
+    })
+
+    it('a transfer is counted in transferBlocked only: no issue and no dispatch', async () => {
+      const h = harness({
+        rows: [publicRow()],
+        collab: [{...renamedCollab, owner: {login: 'bob'}, name: 'moved'}],
+        redirect: {name: 'moved', owner: 'bob'},
+      })
+
+      const result = await h.run()
+
+      expect(result.transferBlocked).toBe(1)
+      expect(result.renamesPending).toBe(0)
+      expect(h.issuesCreate).not.toHaveBeenCalled()
+      expect(h.createWorkflowDispatch).not.toHaveBeenCalled()
+    })
+
+    it('drops excluded nodes from the final dispatch list even if the planner emitted them', async () => {
+      const h = harness({
+        rows: [publicRow({onboarding_status: 'pending', last_survey_status: 'failure'})],
+        collab: [renamedCollab],
+      })
+
+      await h.run()
+
+      expect(h.createWorkflowDispatch).not.toHaveBeenCalled()
+    })
   })
 })

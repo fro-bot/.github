@@ -148,8 +148,14 @@ narrative above is left as-is for the incident record.
 Fix B's aggregate expression above (agent success + wiki-commit success-or-skipped) has
 also been superseded: `SURVEY_STATUS` now additionally requires
 `needs.survey-repo.outputs.wiki-changed == 'true'` and `needs.survey-repo.result == 'success'`,
-and only accepts a skipped wiki commit when the target isn't onboarded
-(`needs.survey-repo.outputs.onboarded != 'true'`) rather than treating any skip as valid.
+and no longer accepts a skipped wiki commit at all. It requires
+`needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success'`,
+so a survey whose persistence was skipped records `failure`, never `success`.
+The wiki commit itself is now gated on a second onboarded check, run in `survey-persist`
+against `data` right before the commit (`steps.onboarded-persist.outputs.onboarded == 'true'`).
+The first check runs when the survey starts, and a rename applied to `data` in between would
+otherwise let the commit recreate the old-slug page; when the second check refuses, the commit
+is skipped and the result is `failure` through the same expression.
 `survey-repo` also retries a no-op agent attempt up to twice and fails the job outright if
 every attempt makes no wiki changes. This closes a related but distinct false-success path
 — an agent that exits cleanly without making the required wiki changes — that Fix B's

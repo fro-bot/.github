@@ -13,7 +13,7 @@ import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 import {LEARNING_PROPOSAL_LABEL_DESCRIPTOR} from './capture-learnings-open.ts'
 import {PATTERN_PROPOSAL_REQUIRED_LABELS} from './capture-patterns-synthesis.ts'
-import {TRANSITION_LABELS} from './reconcile-repos.ts'
+import {RENAME_PENDING_LABELS, TRANSITION_LABELS} from './reconcile-repos.ts'
 import {REQUIRED_LABELS} from './status-truth-proposals.ts'
 
 interface Label {
@@ -92,7 +92,7 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     expect(redundant).toEqual([])
   })
 
-  // Table-driven: add a fifth code-declared descriptor set by appending one entry here.
+  // Table-driven: add a sixth code-declared descriptor set by appending one entry here.
   const codeLabelSources: {
     source: string
     descriptors: readonly {name: string; color: string; description: string}[]
@@ -100,16 +100,17 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     {source: 'REQUIRED_LABELS', descriptors: REQUIRED_LABELS},
     {source: 'PATTERN_PROPOSAL_REQUIRED_LABELS', descriptors: PATTERN_PROPOSAL_REQUIRED_LABELS},
     {source: 'TRANSITION_LABELS', descriptors: TRANSITION_LABELS},
+    {source: 'RENAME_PENDING_LABELS', descriptors: RENAME_PENDING_LABELS},
     {source: 'LEARNING_PROPOSAL_LABEL_DESCRIPTOR', descriptors: [LEARNING_PROPOSAL_LABEL_DESCRIPTOR]},
   ]
 
-  it('contributes at least one descriptor per source, totaling 16 (non-vacuity guard)', () => {
+  it('contributes at least one descriptor per source, totaling 17 (non-vacuity guard)', () => {
     for (const {source, descriptors} of codeLabelSources) {
       expect(descriptors.length, `"${source}": expected at least one descriptor`).toBeGreaterThan(0)
     }
 
     const total = codeLabelSources.reduce((sum, {descriptors}) => sum + descriptors.length, 0)
-    expect(total, 'update this count when adding or removing a code-declared label').toBe(16)
+    expect(total, 'update this count when adding or removing a code-declared label').toBe(17)
   })
 
   it('keeps every code-declared label descriptor in sync with the effective merged label set (base + .github/settings.yml, merged by name)', () => {

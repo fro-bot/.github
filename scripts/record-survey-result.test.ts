@@ -1,10 +1,15 @@
+import type {RepoEntry, ReposFile} from './schemas.ts'
+
 import {describe, expect, it} from 'vitest'
+import YAML from 'yaml'
 
 import {
   buildRecordSurveyResultInput,
+  createSurveyWriteBack,
   formatRecordSurveyResultError,
   formatRecordSurveyResultNonFatalOutcome,
   formatSurveyResultTarget,
+  formatSurveyWriteBackWarning,
 } from './record-survey-result.ts'
 import {DuplicateRepoIdentityError, RepoEntryNotFoundError} from './repos-metadata.ts'
 
@@ -141,5 +146,127 @@ describe('formatRecordSurveyResultNonFatalOutcome', () => {
         'record-survey-result: duplicate repo identity match during metadata write-back (node_id=R_duplicate); scheduled reconcile run owns the repair (non-fatal)\n',
       stdout: `${JSON.stringify({committed: false, outcome: 'duplicate-identity', target: 'R_duplicate', status: 'success'})}\n`,
     })
+  })
+})
+
+describe('survey write-back outcome', () => {
+  const NODE_ID = 'R_kgDOJt6i0Q'
+
+  function trackedRow(overrides: Partial<RepoEntry> = {}): ReposFile {
+    return {
+      version: 1,
+      repos: [
+        {
+          owner: 'marcusrbrown',
+          name: 'panthe.ai',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          node_id: NODE_ID,
+          private: false,
+          ...overrides,
+        },
+      ],
+    }
+  }
+
+  function inputFor(repo: string) {
+    return buildRecordSurveyResultInput({
+      REPO_OWNER: 'marcusrbrown',
+      REPO_NAME: repo,
+      REPO_PRIVATE: 'false',
+      REPO_NODE_ID: NODE_ID,
+      SURVEY_STATUS: 'success',
+      SURVEY_AT: '2026-10-09T12:00:00Z',
+    })
+  }
+
+  it('records failure keyed by node ID and keeps the stored name when the survey target was renamed', () => {
+    const writeBack = createSurveyWriteBack(inputFor('panthea'))
+
+    const next = YAML.parse(YAML.stringify(writeBack.mutator(trackedRow()))) as ReposFile
+
+    expect(writeBack.outcome()).toBe('name-mismatch')
+    expect(next.repos[0]).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: NODE_ID,
+      last_survey_at: '2026-10-09',
+      last_survey_status: 'failure',
+    })
+  })
+
+  it('records the requested status when the target matches the row', () => {
+    const writeBack = createSurveyWriteBack(inputFor('panthe.ai'))
+
+    const next = YAML.parse(YAML.stringify(writeBack.mutator(trackedRow()))) as ReposFile
+
+    expect(writeBack.outcome()).toBe('recorded')
+    expect(next.repos[0]?.last_survey_status).toBe('success')
+  })
+
+  it('reports no outcome before the mutator has run, and the latest outcome after a retry', () => {
+    const writeBack = createSurveyWriteBack(inputFor('panthea'))
+    expect(writeBack.outcome()).toBeUndefined()
+
+    writeBack.mutator(trackedRow())
+    expect(writeBack.outcome()).toBe('name-mismatch')
+
+    writeBack.mutator(trackedRow({name: 'panthea'}))
+    expect(writeBack.outcome()).toBe('recorded')
+  })
+
+  it.each([undefined, ''])('rejects REPO_NODE_ID %j at the env boundary, before any write-back is built', nodeId => {
+    expect(() =>
+      buildRecordSurveyResultInput({
+        REPO_OWNER: 'marcusrbrown',
+        REPO_NAME: 'panthe.ai',
+        REPO_NODE_ID: nodeId,
+        SURVEY_STATUS: 'success',
+      }),
+    ).toThrow('REPO_NODE_ID is required')
+  })
+
+  it('keeps owner, name and node ID out of the mismatch warning', () => {
+    const warning = formatSurveyWriteBackWarning('name-mismatch')
+
+    expect(warning).toContain('pending rename or transfer')
+    expect(warning).not.toContain('marcusrbrown')
+    expect(warning).not.toContain('panthe')
+    expect(warning).not.toContain(NODE_ID)
+    expect(formatSurveyWriteBackWarning('recorded')).toBeUndefined()
+  })
+
+  it('reports the status the mutator actually wrote, and none when nothing was written', () => {
+    const matching = createSurveyWriteBack(inputFor('panthe.ai'))
+    const renamed = createSurveyWriteBack(inputFor('panthea'))
+    const visibility = createSurveyWriteBack(inputFor('panthe.ai'))
+
+    expect(matching.written()).toBeUndefined()
+
+    matching.mutator(trackedRow())
+    renamed.mutator(trackedRow())
+    // The survey says public; the stored row is private. Nothing may be recorded.
+    visibility.mutator(trackedRow({private: true}))
+
+    expect(matching.written()).toBe('success')
+    expect(renamed.written()).toBe('failure')
+    expect(visibility.outcome()).toBe('visibility-mismatch')
+    expect(visibility.written()).toBeUndefined()
+  })
+
+  it('does not report a stale status after a retry finds nothing to write', () => {
+    const writeBack = createSurveyWriteBack(inputFor('panthe.ai'))
+
+    writeBack.mutator(trackedRow())
+    expect(writeBack.written()).toBe('success')
+
+    writeBack.mutator(trackedRow({private: true}))
+    expect(writeBack.written()).toBeUndefined()
   })
 })
