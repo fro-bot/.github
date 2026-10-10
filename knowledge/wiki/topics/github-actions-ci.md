@@ -2,8 +2,23 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-08
+updated: 2026-10-10
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: fd3c553691ae162846c4163060a26289fc224277
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/agent
+    sha: 26df76e318581b59d4786a39649474136e30f24f
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/actions/runs/37880112149
+    sha: 8317e094c4a6065b02aac39f1ad61084f563be49
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3962
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3963
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/.github/issues/3964
+    accessed: 2026-10-09
   - url: https://github.com/marcusrbrown/vbs
     sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
@@ -267,6 +282,97 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Candidate-image checks do not establish Main or deployment success (2026-10-10)
+
+At `fd3c5536`, [[fro-bot--dashboard]] has separate Main and Release workflows.
+Release runs on runtime-relevant pushes or manual dispatch, not on successful
+Main completion. Its candidate image is pushed by digest before smoke checks;
+those checks cover host and sibling-container health reachability, the public
+PWA manifest, CSP, non-root UID, production environment, and absence of package
+managers and their filesystem residue. They do not execute Main's lint,
+type-check, unit-test, design, or strip-only-load jobs.
+
+The security stages also have different contracts: the first Trivy scan emits
+HIGH/CRITICAL SARIF with `exit-code: '0'`; the second blocks fixed
+HIGH/CRITICAL findings with `ignore-unfixed: true` and `exit-code: '1'`.
+Reporting coverage is broader than blocking coverage. Successful publication
+would not mean the image has no HIGH/CRITICAL findings.
+
+After publication, the infra-dispatch job is best-effort for the whole job.
+A successful release is therefore neither verified deploy dispatch nor a
+completed deployment. Verify each boundary separately rather than treating a
+green release as end-to-end delivery. This source snapshot establishes configured
+checks only; no runs or deployed images were inspected.
+
+The Fro Bot workflow also narrows PR concurrency to head SHA specifically on
+`pull_request` events. Issue and review-comment events keep their own keys,
+avoiding accidental collapse onto a shared PR SHA. This is a declared queue
+policy, not observed proof that pending runs are never dropped.
+
+Sources: `.github/workflows/{main,release,fro-bot}.yaml` in `fro-bot/dashboard`
+at `fd3c553691ae162846c4163060a26289fc224277`.
+
+## Nested deadlines and response suppression are separate contracts (2026-10-09)
+
+At `26df76e3`, [[fro-bot--agent]]'s self-hosted `fro-bot.yaml` records job start
+before checkout and computes execution time as the remaining 75-minute job
+budget minus a 15-minute teardown reserve. Execution is capped at 60 minutes,
+narration at 10; less than five minutes available fails before launch rather
+than flooring the budget upward. This accounts for job-level setup, including
+network-bound evidence collection. The workflow explicitly notes that
+Action-internal setup still runs before the execution timer and remains outside
+this accounting. A reserve based on one phase boundary is not a proven end-to-end
+deadline. The separate `ci.yaml` live-review job sets a 20-minute Action timeout
+inside a 30-minute job cap. Neither configuration proves cleanup or publication
+succeeded on a particular run.
+
+Delivery and response settings are independent: the self-hosted workflow uses
+`branch-pr` for its project-wiki paths and `working-dir` for reusable custom
+prompts and correlation-tagged dispatches; correlation-tagged dispatches also
+force `response-mode: none`. The root README defines `none` as suppressing GitHub
+writes with the log as the response surface. Choosing a working-tree output mode
+alone does not specify whether a comment is posted.
+
+The same snapshot's `evals/README.md` separates outcome comparison from provenance:
+verdicts, result states, and gates are compared; model versions, duration, cost,
+and prompt hashes are provenance, not quality equality. Infrastructure-inconclusive
+results request reruns; mixed bounded repeats remain inconclusive. Its historical
+baseline lacks the stable projection, so candidate observations cannot backfill
+reviewed evidence. A green static test suite is not a live corpus result: real
+model runs remain gated by `FRO_BOT_EVAL=1`.
+
+Sources: `.github/workflows/fro-bot.yaml`, `.github/workflows/ci.yaml`, root
+`README.md`, and `evals/README.md` in `fro-bot/agent` at `26df76e3`.
+
+## 2026-10-09 — recovered publication can increase the codification backlog
+
+The manual [Capture Learnings run](https://github.com/fro-bot/.github/actions/runs/37880112149)
+at `8317e09` supersedes the October 5 missing-handoff observation as the latest
+execution evidence. Harvest, drafting, and deterministic publication all
+succeeded. Both `capture-learnings-digest` and `capture-learnings-bodies` are
+present, and the publisher's two download steps and issue-opening step
+concluded success. Three new proposals appeared as
+[#3962](https://github.com/fro-bot/.github/issues/3962),
+[#3963](https://github.com/fro-bot/.github/issues/3963), and
+[#3964](https://github.com/fro-bot/.github/issues/3964). This establishes a
+delivered handoff on that run, not a producer-side diagnosis for the prior
+failures or proof that the next scheduled run will succeed.
+
+The unauthored queue grew from ten to **thirteen**: five September 14 proposals
+are about **25 days** old, five September 21 proposals about **18 days**, and
+three are new. The [Improvement Metrics report](https://github.com/fro-bot/.github/issues/3674)
+still has its October 5 **ambiguous / pending backlog zero** reading. Its
+recurrence-edge population is not the proposal-authoring queue. The earlier
+dated failures and population distinction remain valid historical evidence;
+the current delivery failure claim does not.
+
+Reusable rule: evaluate recovery at the boundary it actually restored.
+Publication recovery can enlarge the unfinished codification queue. Require
+artifact and consumer evidence for delivery, then separately count and age
+proposals awaiting authorship into `docs/solutions/`. Preserve the scoped
+publisher/privacy boundary described in
+`docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`.
 
 ## Boolean-preserving fork guards and pre-agent gates (2026-10-08)
 

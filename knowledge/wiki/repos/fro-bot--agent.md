@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-09-26
+updated: 2026-10-09
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 26df76e318581b59d4786a39649474136e30f24f
+    accessed: 2026-10-09
   - url: https://github.com/fro-bot/agent
     sha: 72f11faaf0bae1fc4b96979b279abd49e394eccc
     accessed: 2026-09-26
@@ -155,6 +158,84 @@ against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
 
 ## Overview
+
+### Bounded source snapshot (2026-10-09)
+
+The public `main` tree resolves independently to
+`26df76e318581b59d4786a39649474136e30f24f`, beyond the September 25–26
+`72f11fa` observations. Directory listings still show five workspace members
+and twelve workflow files. Root and workspace manifests retain Bun, ESM,
+TypeScript, shared runtime exports, the private Action/workspace/gateway
+packages, and the publicly publishable `@fro.bot/harness` CLI. Manifest versions
+are development placeholders, not evidence of the latest published release.
+September's release, issue, PR, and runtime-version rows below remain historical;
+this snapshot does not revalidate them.
+
+Current manifest pins include `@opencode-ai/sdk` 1.18.34, ESLint 10.12.0,
+Prettier 3.9.9, TypeScript 6.0.3, and Vitest 4.1.11. Gateway/workspace manifests
+both declare Hono 4.13.13 and `@hono/node-server` 2.1.3; gateway declares Effect
+3.22.2 and Discord.js 14.27.0. Root `packageManager` remains `bun@1.4.2`, while
+`harness-release.yaml` explicitly passes Bun 1.3.14 to the shared setup action
+for native build and publication. This confirms a manifest/workflow pin split;
+the setup action, runtime constants, and Dockerfiles were not read, so the older
+claim about every installer is not independently reconfirmed.
+
+**Fro Bot workflow present.** `.github/workflows/fro-bot.yaml` still invokes
+`uses: ./`, with daily `30 15 * * *` maintenance, Sunday `0 20 * * 0` project-wiki
+updates, manual inputs, reusable calls, and trusted mention/issue gates.
+Scheduled and manual wiki paths explicitly select `branch-pr`; reusable custom
+prompts and correlation-tagged dispatches select `working-dir`. Correlation-tagged
+dispatches force `response-mode: none`, while reusable callers can supply that
+response input. S3 backup is explicitly enabled with AES256. These are configured
+paths, not evidence of current workflow activation or successful delivery. No
+missing-workflow follow-up draft is indicated.
+
+**Deadline accounting is an explicit workflow contract.** The self-hosted job
+has a 75-minute cap and records its start before checkout. Before invoking the
+Action, it subtracts elapsed setup time and a 15-minute teardown reserve,
+caps execution at 60 minutes (10 for narration), and refuses admission below
+five minutes. Its own comments identify the remaining boundary: Action-internal
+setup precedes the execution timer and is not included in this calculation.
+The separate live PR-review job sets `timeout: '1200000'` against a 30-minute
+job cap. See [[github-actions-ci]] for the nested-deadline evidence rule.
+
+**Operator documentation now describes checkout recovery and questions.**
+`deploy/README.md` documents per-run default-branch preparation through a
+root-owned bare mirror, checked remote provenance, refusal rather than discarding
+dirty/diverged checkouts, confirmation-gated quarantine recovery, and a retention
+cap of five generations or 10 GiB without automatic eviction. Unconfirmed
+subprocess termination places the repository on a maintenance hold until workspace
+restart. Its deployment contract is now **1.9.0**, including question frames,
+routes, and `waiting_for_question`; it requires the [[fro-bot--dashboard]] contract
+pin to advance together because the SSE reader fails closed on version mismatch.
+This is a producer-side documentation snapshot, not proof that a release or live
+deployment carries 1.9.0.
+
+The same README distinguishes fail-closed tool approvals from fail-soft unanswered
+questions. Questions are answerable through the operator web surface or the
+originating Discord thread; unanswered questions receive an empty answer at the
+deadline, and requests with 90 seconds or less remaining are skipped. Pending
+questions are held in memory and do not survive gateway restart. Gateway and
+workspace images must still roll together for the shared control-API bearer.
+The workspace-agent README's `/clone` example still lacks that bearer, preserving
+the September 25 contradiction: its example does not satisfy the deploy README's
+authenticated :9100 contract.
+
+**Eval comparison documents its proof limits.** `evals/README.md` now describes
+a six-scenario candidate/baseline projection over observed verdicts, result states,
+and outcome gates. Safety/response-contract failures block without stochastic
+retries; infrastructure-inconclusive outcomes request a rerun. Stochastic quality
+failures permit at most four candidate and four baseline samples per affected
+scenario. The historical `u1.json` baseline is documented as predating the stable
+projection; missing observations stay missing rather than being copied from the
+candidate. The two-scenario session-presearch experiment is eval-only, dependency
+injected, and explicitly has no Action input or general feature flag. Passing
+both modes does not establish causal improvement. These are documented evaluation
+contracts; no target tests or baseline artifact were read or executed.
+
+Sources: root/workspace `package.json`, `README.md`,
+`apps/workspace-agent/README.md`, `deploy/README.md`, `evals/README.md`, and
+`.github/workflows/{fro-bot,ci,harness-release}.yaml` at `26df76e3`.
 
 | Attribute              | Value                                                               |
 | ---------------------- | ------------------------------------------------------------------- |

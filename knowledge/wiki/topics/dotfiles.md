@@ -2,8 +2,11 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-09-25
+updated: 2026-10-09
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 61447f9a4817963afc88a9158b72bd93b86e6db7
+    accessed: 2026-10-09
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 5a890eef0d2ecb0b9310c3ccf87c29059c86733a
     accessed: 2026-09-25
@@ -193,6 +196,34 @@ This pattern — dotfiles as AI agent configuration — is distinctive: the home
 There is also now a **non-preference reason to care which model family the config routes to**: OpenCode's explicit prompt-cache anchoring only applies to Anthropic-family models, so a routing flip is also a cache-economics decision (see [[opencode-plugins]]). The config's habitual provider churn is not free.
 
 A distinctive move from 2026-08-26: the repo's **operational agent-tooling scripts now have CI-enforced unit tests**. The Bun/TypeScript maintenance scripts under `.config/opencode/scripts/` (`opencode-doctor`, `ollama-distill`) are exercised by a `Script Tests` matrix on **both Linux and macOS** in the repo's `Main` workflow, with a stable aggregator status context wired into branch protection. Treating home-directory agent scripts as first-class, cross-platform-tested software — rather than throwaway glue — is a step beyond typical dotfiles hygiene. It also shows the config's churn is not monotonic: the same window that added test rigor also **reverted** two July decisions (active preset `openai` → `mixed`; re-adding the `opencode-copilot-delegate` plugin), a reminder that these are live-tuned experiments, not one-way migrations.
+
+### 2026-10-09 inventory and verification boundaries
+
+A bounded re-survey of [[marcusrbrown--dotfiles]] at `61447f9` corrects two
+undated inventory claims above without removing their history:
+
+- **Scoped guidance, not a home-root inventory:** `.dotfiles/README.md`
+  describes `.dotfiles/AGENTS.md` as failure-oriented guidance; the directory
+  listing contains no root `AGENTS.md`. The maintenance/review workflow still
+  asks to read `AGENTS.md` without that path. A guide's existence and a
+  caller's ability to discover it are separate facts.
+- **Three tracked global skill bundles, not only Copilot:** the listing
+  contains `copilot-cli`, `openai-imagegen`, and `probing-mcp-oauth` under
+  `.agents/skills/`. The earlier “sole bundle” description is superseded.
+  Listing a bundle does not establish its installation or availability to a
+  running agent; skill contents were outside this survey's read scope.
+
+The current `main.yaml` still runs five named Bun test files on Linux and
+macOS, explicit allowlist auditing, and Ubuntu-only type/format checks using
+the frozen `.dotfiles/` toolchain. Its doctor-test comment also states that
+real-server tests skip when no OpenCode binary resolves, and the job installs
+none. **A cross-platform matrix proves only the checks it actually executes.**
+Keep the pure-script gate and server-integration coverage distinct when
+describing maintenance tooling; no run outcomes were inspected in this pass.
+
+Sources: [scoped-guide README](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/README.md),
+[CI workflow](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows/main.yaml),
+[skill directory](https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7/.agents/skills).
 
 ## Related Technologies
 

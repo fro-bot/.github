@@ -2,6 +2,20 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-10: [[marcusrbrown--github]] (repo) and
+[[probot-settings]] (topic). Both existing catalog entries and dated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
+
+Catalog refreshed 2026-10-09: [[fro-bot--agent]] (repo) and
+[[github-actions-ci]] (topic). Their existing catalog entries and dated evidence
+are retained; the canonical survey record is in `knowledge/log.md`.
+
+2026-10-09 oversight: [[github-actions-ci]] records verified learning-artifact
+publication recovery alongside a thirteen-proposal codification backlog.
+[[fro-bot--dashboard]] distinguishes two closed producer issues from their
+release/deployment state and the stale Open claims in the reconciled tracker.
+Existing catalog entries and dated contradictions are retained.
+
 Catalog refreshed 2026-10-08: [[marcusrbrown--vbs]] (repo),
 [[github-actions-ci]] and [[github-pages]] (topics). Existing catalog entries
 and dated observations are retained; the canonical ingest record is in

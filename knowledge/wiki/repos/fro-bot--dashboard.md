@@ -2,9 +2,34 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-08
+updated: 2026-10-10
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: fd3c553691ae162846c4163060a26289fc224277
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/issues/3512
+    accessed: 2026-10-09
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/pull/1743
+    sha: a53a45de9151388853ea8cef5f9cbc6443d27f8b
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/pull/1749
+    sha: ff8c37b66a5f9337320666b1c9fe15406077c1dc
+    accessed: 2026-10-09
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.118.3
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/blob/3216bb06abb13bcedf8ca56f0feb52d5b212d201/apps/gateway/upstream.json
+    sha: 3216bb06abb13bcedf8ca56f0feb52d5b212d201
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/pull/1499
+    accessed: 2026-10-09
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37804923983
+    sha: 331997ff02dd0dc1c62e86f0fb649916444a6251
+    accessed: 2026-10-09
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-09
   - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046709105
     accessed: 2026-10-08
   - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6046735949
@@ -117,6 +142,106 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-10 — bounded source snapshot and documented consumer boundaries
+
+This public-repository snapshot is pinned to `main` commit
+`fd3c553691ae162846c4163060a26289fc224277`. Evidence is limited to directory
+listings, README files, package/workspace manifests, and seven workflow files.
+Earlier source, issue, release, and live-deployment observations remain dated
+evidence; this pass does not refresh those external states.
+
+The root README still describes a Node 24 strip-only Hono server and a Vite-built
+React PWA, read-only toward GitHub by default. Its authority statement remains
+explicit: `wiki-writer/` is implemented but **not deployed or integrated**, with
+no current web/runtime GitHub write authority. This is a README claim rather
+than an implementation or production audit. The workspace lists only
+`wiki-writer`; its manifest still pins `@fro-bot/wiki-write-core` to
+`37abb495df047e6b8beb690017ac6d217978fb9c`. The historical stale-gate concern
+therefore remains unresolved at the dependency-reference level; this survey
+does not re-evaluate upstream fixes or establish their current count.
+
+Current manifest declarations are pnpm **11.28.5**, Node **>=24**, React
+**19.3.0**, Vite **8.3.3**, ESLint **10.12.0**, shared ESLint config **0.54.0**,
+and OpenCode plugin **1.18.35**. TypeScript **6.0.3**, Vitest **4.1.11**, and
+Workbox **7.4.1** remain. These declarations supersede the older version
+snapshots below as manifest evidence, not installed-version measurements.
+The workspace currently includes six override selectors: `brace-expansion@2`,
+`brace-expansion@5`, `fast-uri@3`, `katex@0`, `toml@4`, and `undici@7`.
+Neither their presence nor this limited read proves a clean advisory state.
+The older Dockerfile pnpm mismatch was not rechecked because Dockerfiles are
+outside this survey's permitted content boundary.
+
+The operator-contract README now names `version.ts` as the sole version source
+rather than hand-typing a contract number or upstream release tag. This
+supersedes the historical stale `Contract: 1.5.0` header finding as a current
+README claim. It documents `provenance.ts`, including fresh contract-field-only
+parser objects, exported vocabulary sets for coverage, and an exact refusal-set
+type check. It also states that the server reader applies **no length caps or
+sanitizing**: the browser is the sanitization boundary, so future server-side
+consumers need equivalent caps. These are documented boundaries, not verified
+parser behavior. No current contract number is inferred without reading the
+excluded implementation. The privacy README likewise keeps Gateway-owned
+processing claims separate from dashboard rendering and says Gateway sources
+must be re-surveyed before changing those claims.
+
+**Fro Bot workflow is present**, SHA-pinned to agent **v0.119.0**, with daily
+midnight UTC, manual, issue/PR, and trusted-mention paths. Schedule/dispatch
+explicitly request `branch-pr`; other events use `auto`. The concurrency key
+uses PR head SHA only for `pull_request` events and retains separate issue/daily
+keys, with cancellation disabled. This is target configuration evidence, not
+the delivery mode for this ingest or proof that those runs executed successfully.
+No missing-workflow follow-up is indicated.
+
+Main CI still declares six jobs: lint, design check, types, tests, workflow
+validation, and recursive `src/` strip-only loading. Release remains a distinct
+push/dispatch workflow with no `needs` edge to Main. It smoke-tests a candidate
+digest, emits HIGH/CRITICAL SARIF, blocks fixed HIGH/CRITICAL vulnerabilities,
+then promotes image tags and creates a release. Its infra dispatch is
+best-effort (`continue-on-error: true`) after publication. Consequently candidate
+checks, PR/Main checks, publication, and deployment remain separate evidence
+boundaries; see [[github-actions-ci]] and [[marcusrbrown--infra]]. Live operator
+parity and the October 9 unfinished production sweep are not reclassified here.
+
+Sources: `README.md`, `package.json`, `pnpm-workspace.yaml`,
+`wiki-writer/package.json`, `src/gateway/operator-contract/README.md`,
+`web/src/privacy/README.md`, and `.github/workflows/` at `fd3c5536`.
+
+## 2026-10-09 — issue closure, release inclusion, and deployment are different gates
+
+The [rollout tracker](https://github.com/fro-bot/.github/issues/3512) body now
+records live contract **1.8.0**, gateway **v0.118.2**, and dashboard
+**2026.10.15**. This supersedes the October 8 finding that its July version
+anchors had not been reconciled. A fresh public health probe still reports
+1.8.0; infrastructure [#1499](https://github.com/marcusrbrown/infra/pull/1499)
+merged the dashboard pin, and its
+[deployment](https://github.com/marcusrbrown/infra/actions/runs/37804923983)
+concluded success. These sources do not independently prove the serving
+digest or replay authenticated operator flows.
+
+Two finer-grained tracker claims have drifted. Agent
+[#1737](https://github.com/fro-bot/agent/issues/1737) closed through
+[#1743](https://github.com/fro-bot/agent/pull/1743) on October 8, and
+[#1736](https://github.com/fro-bot/agent/issues/1736) closed through the
+question bridge [#1749](https://github.com/fro-bot/agent/pull/1749) on October 9.
+Project 1 marks both issues **Done / ready now**, while #3512's producer table
+still calls them **Open**. The overall tracker remains **In Progress / waiting**,
+consistent with its unchecked production-verification criteria.
+
+GitHub commit comparisons place #1743's merge commit in the latest published
+agent **v0.118.3**, but not in infrastructure's current **v0.118.2** pin.
+#1749's merge commit is not included in v0.118.3. A closed source issue is
+therefore neither release inclusion nor deployment proof. Checkout-field
+verification still requires deploying a containing release; question-flow
+verification additionally requires one to be published. The tracker should
+distinguish **source fixed / released / deployed / runtime verified**, rather
+than flatten those states to Open or Done.
+
+The older producer-open observations below remain dated evidence. Approval
+decisions, cancellation, logout/CSRF, privacy confirmation, and the reported
+dashboard snapshot/Cancel regressions still need their production-shaped sweep.
+Do not infer completion from contract parity. Preserve the earlier
+volume-snapshot-plus-paired-image rollback requirement in [[marcusrbrown--infra]].
 
 ## 2026-10-08 — live parity closes the cutover gate, not every operator flow
 
