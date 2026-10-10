@@ -38,6 +38,9 @@ jobs:
   rename-tracked-repo:
     name: Rename the tracked repo and move its wiki page
     runs-on: ubuntu-latest
+    # Checkout reads this repository. The write goes through the App token, not this grant.
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - name: ⤵ Checkout Branch

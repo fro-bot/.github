@@ -60,13 +60,14 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
     expect(inputs.old_name).toMatchObject({required: false, type: 'string'})
   })
 
-  it('grants no workflow-level permissions and serializes runs without cancelling a write', async () => {
+  it('grants nothing at workflow level, only contents:read to the job, and serializes runs without cancelling a write', async () => {
     const workflow = await loadWorkflow()
 
     expect(workflow.permissions).toEqual({})
     expect(workflow.concurrency).toEqual({group: 'rename-tracked-repo', 'cancel-in-progress': false})
+    // The job re-grants only what checkout needs; the write uses the App token, not GITHUB_TOKEN.
     const job = Object.values(workflow.jobs ?? {})[0]
-    expect(job).not.toHaveProperty('permissions')
+    expect(job?.permissions).toEqual({contents: 'read'})
     expect(job?.['timeout-minutes']).toBeLessThanOrEqual(10)
   })
 
