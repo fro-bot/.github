@@ -492,6 +492,7 @@ describe('recordSurveyResult', () => {
       recordSurveyResult(EMPTY_REPOS, {
         owner: 'private-owner',
         repo: 'secret-repo',
+        node_id: '',
         private: true,
         at: NOW,
         status: 'success',
@@ -1821,12 +1822,13 @@ describe('recordSurveyResult — identity-only write-back', () => {
     expect(JSON.stringify(decodePersisted(result))).not.toContain('panthe.ai')
   })
 
-  it('throws a status-only error when node_id is absent', () => {
+  it.each(['', '   '])('throws a status-only error when node_id is blank (%j)', nodeId => {
     let message = ''
     try {
       recordSurveyResult(trackedPantheon(), {
         owner: 'marcusrbrown',
         repo: 'panthe.ai',
+        node_id: nodeId,
         at: NOW,
         status: 'success',
       })

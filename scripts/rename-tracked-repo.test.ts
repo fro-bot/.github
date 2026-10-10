@@ -1,6 +1,6 @@
 import type {GitDataFake} from './git-data-fake.ts'
 import {Buffer} from 'node:buffer'
-import {describe, expect, it, vi, type Mock} from 'vitest'
+import {describe, expect, expectTypeOf, it, vi, type Mock} from 'vitest'
 import {parse, stringify} from 'yaml'
 import {createGitDataFake} from './git-data-fake.ts'
 import {
@@ -9,6 +9,8 @@ import {
   RenameError,
   renameTrackedRepo,
   runCli,
+  type GitDataClient,
+  type RenameChange,
   type RenameDeps,
   type RenameOutcome,
   type RenameTransport,
@@ -281,6 +283,26 @@ describe('renameTrackedRepo: the happy path', () => {
     const after = fake.files()
     const changed = Object.keys({...before, ...after}).filter(path => before[path] !== after[path])
     expect(changed).toEqual([REPOS_PATH])
+  })
+
+  it('reads the whole data tree recursively, so collision and overwrite checks see nested pages', async () => {
+    const fake = createGitDataFake({files: worldFiles()})
+
+    await rename(fake)
+
+    const reads = fake.calls.filter(call => call.method === 'getTree')
+    expect(reads).toHaveLength(1)
+    expect(reads[0]?.args).toMatchObject({recursive: 'true'})
+  })
+
+  it('only ever sends a non-force ref update, and the seam cannot express a forced one', async () => {
+    const fake = createGitDataFake({files: worldFiles()})
+
+    await rename(fake)
+
+    expect(fake.calls.filter(call => call.method === 'updateRef').map(call => call.args.force)).toEqual([false])
+    type UpdateRefParams = Parameters<GitDataClient['rest']['git']['updateRef']>[0]
+    expectTypeOf<UpdateRefParams['force']>().toEqualTypeOf<false | undefined>()
   })
 
   it('reads the data tree at the head sha it will build on, and builds the tree on that base', async () => {
@@ -844,6 +866,19 @@ describe('assertChangePolicy', () => {
     }
   })
 
+  it('fails closed on an op the policy does not know, rather than letting it through', () => {
+    // The union is closed at compile time; this is the runtime backstop if a new op is added to the
+    // planner without a policy rule. The cast is the only way to hand the policy an op it lacks.
+    const unknown = {op: 'chmod-page', path: NEW_PAGE_PATH, content: 'x'} as unknown as RenameChange
+
+    expect(() => assertChangePolicy([unknown], context())).toThrow(RenameError)
+    try {
+      assertChangePolicy([unknown], context())
+    } catch (error: unknown) {
+      expect(error).toMatchObject({code: 'PATH_POLICY', phase: 'policy'})
+    }
+  })
+
   it('rejects an in-place edit of a page that belongs to another node', () => {
     const files = {...snapshot(), [OLD_PAGE_PATH]: oldRepoPage({nodeId: 'R_someoneElse'})}
 
@@ -1083,7 +1118,7 @@ describe('runCli', () => {
 // ---------------------------------------------------------------------------
 
 describe('createGitDataFake', () => {
-  it('rejects a non-fast-forward updateRef with 422 unless forced', async () => {
+  it('rejects a non-fast-forward updateRef with 422', async () => {
     const fake = createGitDataFake({files: {'a.md': 'a'}})
     const base = fake.head()
     const tree = (await fake.client.rest.git.getCommit({owner: 'o', repo: 'r', commit_sha: base})).data.tree.sha
@@ -1111,6 +1146,21 @@ describe('createGitDataFake', () => {
         tree: [{path: 'ghost.md', mode: '100644', type: 'blob', sha: null}],
       }),
     ).rejects.toMatchObject({status: 422})
+  })
+
+  it('returns only direct children unless the read is recursive, like the real API', async () => {
+    const fake = createGitDataFake({files: {'top.md': 't', 'dir/a.md': 'a', 'dir/sub/b.md': 'b'}})
+    const treeSha = (await fake.client.rest.git.getCommit({owner: 'o', repo: 'r', commit_sha: fake.head()})).data.tree
+      .sha
+
+    const flat = await fake.client.rest.git.getTree({owner: 'o', repo: 'r', tree_sha: treeSha})
+    const deep = await fake.client.rest.git.getTree({owner: 'o', repo: 'r', tree_sha: treeSha, recursive: 'true'})
+
+    expect(flat.data.tree.map(entry => [entry.path, entry.type])).toEqual([
+      ['dir', 'tree'],
+      ['top.md', 'blob'],
+    ])
+    expect(deep.data.tree.map(entry => entry.path)).toEqual(['dir/a.md', 'dir/sub/b.md', 'top.md'])
   })
 
   it('stores and returns blobs as base64', async () => {

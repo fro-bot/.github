@@ -222,21 +222,15 @@ describe('survey write-back outcome', () => {
     expect(writeBack.outcome()).toBe('recorded')
   })
 
-  it('fails with a status-only error when REPO_NODE_ID is absent', () => {
-    const input = buildRecordSurveyResultInput({
-      REPO_OWNER: 'marcusrbrown',
-      REPO_NAME: 'panthe.ai',
-      SURVEY_STATUS: 'success',
-    })
-
-    let message = ''
-    try {
-      createSurveyWriteBack(input).mutator(trackedRow())
-    } catch (error: unknown) {
-      message = error instanceof Error ? error.message : ''
-    }
-
-    expect(message).toBe('node_id is required for survey write-back')
+  it.each([undefined, ''])('rejects REPO_NODE_ID %j at the env boundary, before any write-back is built', nodeId => {
+    expect(() =>
+      buildRecordSurveyResultInput({
+        REPO_OWNER: 'marcusrbrown',
+        REPO_NAME: 'panthe.ai',
+        REPO_NODE_ID: nodeId,
+        SURVEY_STATUS: 'success',
+      }),
+    ).toThrow('REPO_NODE_ID is required')
   })
 
   it('keeps owner, name and node ID out of the mismatch warning', () => {
