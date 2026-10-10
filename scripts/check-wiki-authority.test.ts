@@ -31,13 +31,22 @@ function writeTempEvent(prefix: string, payload: unknown): {eventPath: string; c
   return {eventPath, cleanup: () => rmSync(tmpDir, {recursive: true, force: true})}
 }
 
+// The repository the guard runs in; a Fro Bot allow additionally requires the PR's head repo to be it.
+const THIS_REPO = 'fro-bot/.github'
+
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
     it('allows fro-bot[bot] editing a guarded metadata yaml', () => {
       // #given the App installation author touching metadata/repos.yaml
       // #when the guard evaluates the PR
       // #then the edit is allowed (fro-bot[bot] is the promotion-PR identity)
-      const result = checkWikiAuthority({author: 'fro-bot[bot]', headRef: 'data', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot]',
+        headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -48,6 +57,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot',
         headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['knowledge/wiki/topics/home-assistant.md'],
       })
       expect(result).toEqual({ok: true})
@@ -60,6 +71,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot[bot]',
         headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: [
           'knowledge/wiki/repos/marcusrbrown--x.md',
           'metadata/allowlist.yaml',
@@ -74,7 +87,13 @@ describe('checkWikiAuthority', () => {
       // #given fro-bot on the `data` branch touching metadata/repos.yaml
       // #when the guard evaluates the PR
       // #then the edit is allowed — this is the legitimate promotion path
-      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'data', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -85,6 +104,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot',
         headRef: 'fix/something',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -97,21 +118,25 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot[bot]',
         headRef: 'feature/something',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
-    it('allows fro-bot editing metadata/allowlist.yaml from a non-data branch (only repos.yaml has head rule)', () => {
-      // #given fro-bot on a feature branch touching a metadata yaml that is NOT repos.yaml
+    it('blocks fro-bot editing metadata/allowlist.yaml from a non-data branch (every guarded path needs data)', () => {
+      // #given fro-bot on a feature branch touching a guarded metadata yaml that is NOT repos.yaml
       // #when the guard evaluates the PR
-      // #then the edit is allowed — only repos.yaml carries the head-ref restriction
+      // #then the edit is blocked — the head-ref requirement covers every guarded path, not only repos.yaml
       const result = checkWikiAuthority({
         author: 'fro-bot',
         headRef: 'fix/something',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/allowlist.yaml'],
       })
-      expect(result).toEqual({ok: true})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/allowlist.yaml']})
     })
 
     it('allows fro-bot on data branch editing other guarded files (wiki, index, log)', () => {
@@ -121,7 +146,193 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot',
         headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['knowledge/wiki/topics/x.md', 'knowledge/index.md', 'knowledge/log.md'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+  })
+
+  describe('Fro Bot authors: every guarded path requires the data head (truth table)', () => {
+    // One representative file per guardedPatterns() entry, so a dropped or reordered pattern
+    // changes a specific row instead of hiding behind the others.
+    const guardedByPattern = [
+      ['knowledge/wiki/<subdir>/*.md', 'knowledge/wiki/topics/x.md'],
+      ['knowledge/index.md', 'knowledge/index.md'],
+      ['knowledge/log.md', 'knowledge/log.md'],
+      ['knowledge/corrections.yaml', CORRECTIONS_PATH],
+      ['metadata/*.yaml', 'metadata/repos.yaml'],
+      ['metadata/*.yaml (non-repos)', 'metadata/allowlist.yaml'],
+      ['metadata/*.yml', 'metadata/social.yml'],
+    ] as const
+    const authors = ['fro-bot', 'fro-bot[bot]'] as const
+
+    describe.each(guardedByPattern)('%s', (_label, file) => {
+      it.each(authors)('allows %s on the data head', author => {
+        expect(
+          checkWikiAuthority({author, headRef: 'data', headRepo: THIS_REPO, baseRepo: THIS_REPO, files: [file]}),
+        ).toEqual({ok: true})
+      })
+
+      it.each(authors)('blocks %s on a non-data head, listing exactly the file', author => {
+        expect(
+          checkWikiAuthority({
+            author,
+            headRef: 'fix/something',
+            headRepo: THIS_REPO,
+            baseRepo: THIS_REPO,
+            files: [file],
+          }),
+        ).toEqual({
+          ok: false,
+          blockedFiles: [file],
+        })
+      })
+
+      it.each(authors)('blocks %s on the data head when the PR comes from a different repository', author => {
+        expect(
+          checkWikiAuthority({
+            author,
+            headRef: 'data',
+            headRepo: 'contributor-fork/.github',
+            baseRepo: THIS_REPO,
+            files: [file],
+          }),
+        ).toEqual({ok: false, blockedFiles: [file]})
+      })
+
+      it('still blocks a non-Fro-Bot author on the data head', () => {
+        expect(
+          checkWikiAuthority({
+            author: 'marcusrbrown',
+            headRef: 'data',
+            headRepo: THIS_REPO,
+            baseRepo: THIS_REPO,
+            files: [file],
+          }),
+        ).toEqual({
+          ok: false,
+          blockedFiles: [file],
+        })
+      })
+    })
+
+    it.each(authors)('allows %s with only unguarded paths on any head', author => {
+      const files = ['scripts/foo.ts', 'knowledge/schema.md', 'metadata/README.md', 'metadata/sub/x.yaml']
+      expect(
+        checkWikiAuthority({author, headRef: 'fix/something', headRepo: THIS_REPO, baseRepo: THIS_REPO, files}),
+      ).toEqual({ok: true})
+      expect(checkWikiAuthority({author, headRef: 'data', headRepo: THIS_REPO, baseRepo: THIS_REPO, files})).toEqual({
+        ok: true,
+      })
+    })
+
+    it('allows a promotion PR (fro-bot[bot], head data, mixed guarded and unguarded paths)', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot]',
+        headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/wiki/repos/x.md', 'docs/a.md', CORRECTIONS_PATH],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('lists only the guarded files, in input order, when mixed with unguarded files on a non-data head', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'fix/something',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['scripts/foo.ts', 'metadata/repos.yaml', 'README.md', 'knowledge/index.md', 'metadata/sub/x.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml', 'knowledge/index.md']})
+    })
+
+    it('lists every guarded pattern in input order on a non-data head', () => {
+      const files = guardedByPattern.map(([, file]) => file)
+      expect(
+        checkWikiAuthority({
+          author: 'fro-bot',
+          headRef: 'fix/something',
+          headRepo: THIS_REPO,
+          baseRepo: THIS_REPO,
+          files,
+        }),
+      ).toEqual({
+        ok: false,
+        blockedFiles: files,
+      })
+    })
+
+    it.each([
+      ['a one-element array', ['data']],
+      ['undefined', undefined],
+      ['null', null],
+      ['a differently-cased string', 'Data'],
+      ['a string with trailing whitespace', 'data '],
+      ['the empty string', ''],
+      ['a String object', new Object('data')],
+    ])('blocks a guarded path when headRef is %s (exact string match only)', (_label, headRef) => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef,
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it.each([
+      ['undefined (no head repo in the payload)', undefined],
+      ['null (deleted fork)', null],
+      ['a one-element array holding the base repo', [THIS_REPO]],
+      ['a differently-cased repo name', 'Fro-Bot/.github'],
+      ['the base repo with trailing whitespace', `${THIS_REPO} `],
+      ['a same-named repo under another owner', 'contributor-fork/.github'],
+      ['a String object', new Object(THIS_REPO)],
+    ])('blocks a guarded path on the data head when headRepo is %s (exact string match only)', (_label, headRepo) => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'data',
+        headRepo,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('blocks when both repos are the empty string (an unresolved base repo never matches)', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'data',
+        headRepo: '',
+        baseRepo: '',
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it("allows a promotion from this repository's own data branch (head repo equals base repo)", () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot]',
+        headRef: 'data',
+        headRepo: 'fro-bot/.github',
+        baseRepo: 'fro-bot/.github',
+        files: ['metadata/repos.yaml', 'knowledge/index.md', 'scripts/foo.ts'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('allows a fork-origin PR that touches only unguarded paths (the repo check gates guarded paths only)', () => {
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'data',
+        headRepo: 'contributor-fork/.github',
+        baseRepo: THIS_REPO,
+        files: ['scripts/foo.ts'],
       })
       expect(result).toEqual({ok: true})
     })
@@ -132,7 +343,13 @@ describe('checkWikiAuthority', () => {
       // #given a human PR touching only application code and top-level docs
       // #when the guard evaluates the PR
       // #then the edit is allowed (no guarded paths present)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['README.md', 'src/foo.ts']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['README.md', 'src/foo.ts'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -140,7 +357,13 @@ describe('checkWikiAuthority', () => {
       // #given a PR whose file list is empty (edge case)
       // #when the guard evaluates the PR
       // #then the guard does not fire (nothing to check)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: []})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: [],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -148,7 +371,13 @@ describe('checkWikiAuthority', () => {
       // #given the Karpathy-style conventions doc edited by a human
       // #when the guard evaluates the PR
       // #then the edit is allowed (schema is intentionally outside the guard)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/schema.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/schema.md'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -156,7 +385,13 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the knowledge directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (READMEs are human-editable)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/README.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/README.md'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -164,7 +399,13 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the wiki directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (README is outside the auto-managed wiki content)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/wiki/README.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/wiki/README.md'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -172,7 +413,13 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the metadata directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (only *.yaml files in metadata/ are guarded)
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/README.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/README.md'],
+      })
       expect(result).toEqual({ok: true})
     })
   })
@@ -182,7 +429,13 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching an auto-managed metadata yaml
       // #when the guard evaluates the PR
       // #then the edit is blocked and the file is listed
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
@@ -193,6 +446,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['knowledge/wiki/topics/home-assistant.md'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/topics/home-assistant.md']})
@@ -202,7 +457,13 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the wiki catalog
       // #when the guard evaluates the PR
       // #then the edit is blocked
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/index.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/index.md'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/index.md']})
     })
 
@@ -210,7 +471,13 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the append-only wiki log
       // #when the guard evaluates the PR
       // #then the edit is blocked
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/log.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/log.md'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/log.md']})
     })
 
@@ -221,6 +488,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['src/foo.ts', 'metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -231,7 +500,13 @@ describe('checkWikiAuthority', () => {
       // #when the guard evaluates the PR
       // #then blockedFiles lists every guarded path in the original order
       const files = ['metadata/repos.yaml', 'knowledge/wiki/repos/x.md', 'knowledge/index.md', 'knowledge/log.md']
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files,
+      })
       expect(result).toEqual({ok: false, blockedFiles: files})
     })
 
@@ -242,6 +517,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'github-actions[bot]',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -251,7 +528,13 @@ describe('checkWikiAuthority', () => {
       // #given a random bot identity touching a guarded file
       // #when the guard evaluates the PR
       // #then the edit is blocked — the guard fails closed on unknown identities
-      const result = checkWikiAuthority({author: 'dependabot[bot]', headRef: 'main', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'dependabot[bot]',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
@@ -262,6 +545,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'fro-bot[bot] ',
         headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -271,7 +556,13 @@ describe('checkWikiAuthority', () => {
       // #given a differently-cased spelling of a real identity
       // #when the guard evaluates the PR
       // #then the edit is blocked — identity matching is case-sensitive
-      const result = checkWikiAuthority({author: 'Fro-Bot', headRef: 'data', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'Fro-Bot',
+        headRef: 'data',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
@@ -279,7 +570,13 @@ describe('checkWikiAuthority', () => {
       // #given fro-bot on a branch whose name merely starts with "data"
       // #when the guard evaluates the PR touching metadata/repos.yaml
       // #then the edit is blocked — headRef must equal "data" exactly, not merely start with it
-      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'datab', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'datab',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
@@ -287,14 +584,26 @@ describe('checkWikiAuthority', () => {
       // #given fro-bot on the main branch touching metadata/repos.yaml
       // #when the guard evaluates the PR
       // #then the edit is blocked — only the literal "data" branch is exempt
-      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'main', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
   })
 
   describe('path-matching edge cases', () => {
     it('guards the system-owned corrections sidecar path', () => {
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: [CORRECTIONS_PATH]})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: [CORRECTIONS_PATH],
+      })
       expect(result).toEqual({ok: false, blockedFiles: [CORRECTIONS_PATH]})
     })
 
@@ -305,6 +614,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['knowledge/wiki/comparisons/x-vs-y.md'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/comparisons/x-vs-y.md']})
@@ -314,7 +625,13 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the allowlist
       // #when the guard evaluates the PR
       // #then the edit is blocked — even human-curated allowlist edits land via data branch
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/allowlist.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/allowlist.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/allowlist.yaml']})
     })
 
@@ -322,7 +639,13 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the renovate dispatch list
       // #when the guard evaluates the PR
       // #then the edit is blocked — renovate.yaml is rebuilt by the metadata workflow
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/renovate.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/renovate.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/renovate.yaml']})
     })
 
@@ -330,7 +653,13 @@ describe('checkWikiAuthority', () => {
       // #given a new yaml file added to metadata/ in the future
       // #when the guard evaluates the PR
       // #then the edit is blocked by default — new metadata files inherit the data-branch contract
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/new-thing.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/new-thing.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/new-thing.yaml']})
     })
 
@@ -341,6 +670,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/social-cooldowns.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/social-cooldowns.yaml']})
@@ -350,7 +681,13 @@ describe('checkWikiAuthority', () => {
       // #given a hypothetical nested metadata file
       // #when the guard evaluates the PR
       // #then the edit is NOT blocked — if nested metadata is added later, the glob is revisited
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/subdir/x.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/subdir/x.yaml'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -358,7 +695,13 @@ describe('checkWikiAuthority', () => {
       // #given a yaml file using the short .yml extension
       // #when the guard evaluates the PR
       // #then the edit IS blocked — metadata/*.{yaml,yml} are both auto-managed state
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yml']})
     })
 
@@ -366,7 +709,13 @@ describe('checkWikiAuthority', () => {
       // #given a filename that merely starts with the guarded extension
       // #when the guard evaluates the PR
       // #then the edit is NOT blocked — the pattern is anchored at the end with $
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.ymlx']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.ymlx'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -374,7 +723,13 @@ describe('checkWikiAuthority', () => {
       // #given a filename missing the trailing "l" of either guarded extension
       // #when the guard evaluates the PR
       // #then the edit is NOT blocked — `ya?ml` requires the full "yaml" or "yml" spelling
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yam']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['metadata/repos.yam'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -385,6 +740,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['docs/knowledge/index.md', 'backup/metadata/repos.yaml', 'src/knowledge/wiki/x.md'],
       })
       expect(result).toEqual({ok: true})
@@ -397,6 +754,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['knowledge/wiki/topics/home-assistant.md.bak'],
       })
       expect(result).toEqual({ok: true})
@@ -409,23 +768,43 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['src/knowledge/wiki/topics/home-assistant.md'],
       })
       expect(result).toEqual({ok: true})
     })
 
     it('does not block knowledge/index.md with an extra suffix (trailing-anchor discrimination)', () => {
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/index.md.bak']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/index.md.bak'],
+      })
       expect(result).toEqual({ok: true})
     })
 
     it('does not block knowledge/log.md with an extra suffix (trailing-anchor discrimination)', () => {
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/log.md.bak']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['knowledge/log.md.bak'],
+      })
       expect(result).toEqual({ok: true})
     })
 
     it('does not block knowledge/log.md embedded mid-string (leading-anchor discrimination)', () => {
-      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['src/knowledge/log.md']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
+        files: ['src/knowledge/log.md'],
+      })
       expect(result).toEqual({ok: true})
     })
 
@@ -433,6 +812,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: [`${CORRECTIONS_PATH}.bak`],
       })
       expect(result).toEqual({ok: true})
@@ -442,6 +823,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: [`src/${CORRECTIONS_PATH}`],
       })
       expect(result).toEqual({ok: true})
@@ -451,6 +834,8 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
         headRef: 'main',
+        headRepo: THIS_REPO,
+        baseRepo: THIS_REPO,
         files: ['metadata/repos.yaml.bak'],
       })
       expect(result).toEqual({ok: true})
@@ -536,6 +921,85 @@ describe('readPullRequestContext (base vs head repo)', () => {
       expect(context.fullName).not.toBe('contributor-fork/.github')
     } finally {
       rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+})
+
+describe('readPullRequestContext (head repo for the authority guard)', () => {
+  it('returns the head repo full_name alongside the base repo full_name', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-head-repo-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'fro-bot[bot]'},
+        head: {ref: 'data', repo: {full_name: 'fro-bot/.github'}},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.headRepo).toBe('fro-bot/.github')
+      expect(context.fullName).toBe('fro-bot/.github')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('carries a fork head repo through unchanged, and the guard blocks a fork-origin data branch', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-fork-data-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'fro-bot'},
+        head: {ref: 'data', repo: {full_name: 'contributor-fork/.github'}},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.headRepo).toBe('contributor-fork/.github')
+      const result = checkWikiAuthority({
+        author: context.author,
+        headRef: context.headRef,
+        headRepo: context.headRepo,
+        baseRepo: context.fullName ?? '',
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('yields an undefined head repo (not a throw) when head.repo is null, as for a deleted fork', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-null-head-repo-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'fro-bot'},
+        head: {ref: 'data', repo: null},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.headRepo).toBeUndefined()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('yields an undefined head repo when head.repo is absent from the payload', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-no-head-repo-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'fro-bot'},
+        head: {ref: 'data'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.headRepo).toBeUndefined()
+    } finally {
+      cleanup()
     }
   })
 })
@@ -700,7 +1164,13 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
     expect(files).toContain('metadata/repos.yaml')
 
     // #and a non-data-branch human author is correctly blocked
-    const guardResult = checkWikiAuthority({author: 'marcusrbrown', headRef: 'feature/x', files})
+    const guardResult = checkWikiAuthority({
+      author: 'marcusrbrown',
+      headRef: 'feature/x',
+      headRepo: THIS_REPO,
+      baseRepo: THIS_REPO,
+      files,
+    })
     expect(guardResult).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
   })
 
@@ -713,6 +1183,62 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
     expect(files).toEqual(['foo.ts', 'bar.ts'])
   })
 })
+
+// Drives main() end to end for a Fro Bot PR on the `data` head so the head-repo / base-repo
+// wiring (event payload -> checkWikiAuthority) is observable, not just the pure function.
+async function runMainAsFroBot(options: {
+  suffix: string
+  headRepo: {full_name: string} | null
+  base: {repo: {full_name: string}} | undefined
+  mockedGh: string[]
+}): Promise<{exited: boolean; stderr: string; stdout: string}> {
+  const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+  const originalArgv = [...process.argv]
+  const originalEventPath = process.env.GITHUB_EVENT_PATH
+  const {eventPath, cleanup} = writeTempEvent(`check-wiki-authority-${options.suffix}-`, {
+    pull_request: {
+      number: 5,
+      user: {login: 'fro-bot[bot]'},
+      head: {ref: 'data', repo: options.headRepo},
+      base: options.base,
+    },
+  })
+  const stderrOutput: string[] = []
+  const stdoutOutput: string[] = []
+  vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+    stderrOutput.push(String(msg))
+    return true
+  })
+  vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+    stdoutOutput.push(String(msg))
+    return true
+  })
+  vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('process.exit called')
+  })
+  mockExecFileSync.mockReset()
+  for (const value of options.mockedGh) mockExecFileSync.mockReturnValueOnce(value)
+
+  process.env.GITHUB_EVENT_PATH = eventPath
+  process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+  let exited = false
+  try {
+    await import(`${modulePath.href}?guard-test-${options.suffix}`)
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || error.message !== 'process.exit called') throw error
+    exited = true
+  } finally {
+    vi.restoreAllMocks()
+    process.argv = originalArgv
+    cleanup()
+    if (originalEventPath === undefined) {
+      delete process.env.GITHUB_EVENT_PATH
+    } else {
+      process.env.GITHUB_EVENT_PATH = originalEventPath
+    }
+  }
+  return {exited, stderr: stderrOutput.join(''), stdout: stdoutOutput.join('')}
+}
 
 // ---------------------------------------------------------------------------
 // CLI self-invoke guard (import.meta.url === file://<argv[1]>)
@@ -891,6 +1417,60 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
         process.env.GITHUB_EVENT_PATH = originalEventPath
       }
     }
+  })
+
+  it('main() blocks a Fro Bot data-branch PR whose head repo is a fork of the base repo', async () => {
+    const result = await runMainAsFroBot({
+      suffix: 'fork-data',
+      headRepo: {full_name: 'contributor-fork/.github'},
+      base: {repo: {full_name: 'fro-bot/.github'}},
+      mockedGh: ['metadata/repos.yaml\n'],
+    })
+    expect(result.exited).toBe(true)
+    expect(result.stderr).toContain('metadata/repos.yaml')
+    expect(result.stdout).toBe('')
+  })
+
+  it('main() blocks a Fro Bot data-branch PR whose head repo was deleted (null head.repo)', async () => {
+    const result = await runMainAsFroBot({
+      suffix: 'null-head-repo',
+      headRepo: null,
+      base: {repo: {full_name: 'fro-bot/.github'}},
+      mockedGh: ['metadata/repos.yaml\n'],
+    })
+    expect(result.exited).toBe(true)
+    expect(result.stderr).toContain('metadata/repos.yaml')
+  })
+
+  it("main() allows this repository's own data-branch promotion PR", async () => {
+    const result = await runMainAsFroBot({
+      suffix: 'own-data',
+      headRepo: {full_name: 'fro-bot/.github'},
+      base: {repo: {full_name: 'fro-bot/.github'}},
+      mockedGh: ['metadata/repos.yaml\nknowledge/index.md\n'],
+    })
+    expect(result.exited).toBe(false)
+    expect(result.stdout).toContain('check-wiki-authority: ok (author=fro-bot[bot], files_checked=2)')
+  })
+
+  it('main() compares the head repo against the gh-resolved base repo when the payload omits base.repo', async () => {
+    const same = await runMainAsFroBot({
+      suffix: 'fallback-same',
+      headRepo: {full_name: 'fro-bot/.github'},
+      base: undefined,
+      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+    })
+    expect(same.exited).toBe(false)
+    expect(same.stdout).toContain('check-wiki-authority: ok')
+
+    const different = await runMainAsFroBot({
+      suffix: 'fallback-different',
+      headRepo: {full_name: 'contributor-fork/.github'},
+      base: undefined,
+      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+    })
+    expect(different.exited).toBe(true)
+    expect(different.stderr).toContain('metadata/repos.yaml')
   })
 
   it('falls back to `gh repo view` for fullName, trimmed, when the event payload omits base.repo.full_name', async () => {

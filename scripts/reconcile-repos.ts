@@ -21,9 +21,23 @@
  *
  * `handleReconcile` accepts injectable dependencies (Octokit clients, readMetadata,
  * commitMetadata, bootstrapDataBranch, logger) so the entire outer layer is testable
- * with handcrafted mocks. Production uses `main()` which reads `FRO_BOT_POLL_PAT` and
- * `GITHUB_TOKEN` from env, constructs both Octokit clients, and delegates. Token values
- * never appear in logs or error messages — error paths reference env-var names only.
+ * with handcrafted mocks. Production uses `main()` which reads `FRO_BOT_POLL_PAT`,
+ * `RECONCILE_DISCOVERY_TOKEN` and `RECONCILE_WRITER_TOKEN` from env, constructs the three
+ * Octokit clients, and delegates. Token values never appear in logs or error messages —
+ * error paths reference env-var names only.
+ *
+ * ## Client routing (least-privilege App tokens)
+ *
+ * - `userOctokit` (`FRO_BOT_POLL_PAT`): collaborator access, collab status, field,
+ *   identity and rename probes, star sync. Unchanged.
+ * - `discoveryOctokit` (App, owner-wide, metadata:read + contents:read): installation
+ *   enumeration and the owned/contrib probes (`repos.get`, `.github/workflows/fro-bot.yaml`
+ *   content). Never writes. Response bodies are parsed, never logged or persisted.
+ * - `writerOctokit` (App, this repo only, contents/issues/actions:write): `bootstrapDataBranch`,
+ *   `commitMetadata`, data-branch integrity reads, issues/labels/integrity alerts, the
+ *   `survey-repo.yaml` dispatch, and same-repo reads inside those flows (issue dedup lists,
+ *   wiki page lookup on `data`). Never enumerates the installation or reads other repos.
+ * A misrouted probe returns 403/404 and would wrongly mark a tracked repo `lost-access`.
  *
  * Commit-before-dispatch: `commitMetadata` runs before the dispatch/issue loops. A
  * commit failure is fatal (bubbled up). Dispatch/issue failures are non-blocking: they
@@ -54,6 +68,12 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {
+  findBlockedPublicAssociations,
+  lookupRepoWikiPage,
+  publicAssociationKey,
+  type WikiPageState,
+} from './metadata-wiki-rename-guard.ts'
 import {
   addRepoEntry,
   CHANNEL_INTERVAL_DAYS,
@@ -171,6 +191,13 @@ export interface ReconcileInput {
    * surfaced contrib repos as `'contrib'`.
    */
   accessChannelByKey?: Map<string, DiscoveryChannel>
+  /**
+   * Normalized (`owner/name`, lowercase) public associations whose old wiki page still exists or
+   * could not be checked. A tracked row whose classified result is still public keeps its previous
+   * owner/name instead of being renamed or merged away; refreshed fields and ID enrichment still
+   * apply. Private/unknown results bypass protection, so a public name is never resurrected.
+   */
+  protectedPublicAssociations?: ReadonlySet<string>
   now: Date
 }
 
@@ -477,10 +504,12 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
 
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
+  const protectedAssociations = input.protectedPublicAssociations
   let nextEntries: RepoEntry[] = currentRepos.repos.map(entry => {
     const key = repoKey(entry.owner, entry.name)
     trackedKeys.add(key)
-    return classifyTracked({
+    const before = {renamed: summary.renamed, refreshed: summary.refreshed}
+    const classified = classifyTracked({
       entry,
       key,
       accessByKey,
@@ -496,9 +525,10 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       transitionIssues,
       now,
     })
+    return keepProtectedName({entry, classified, protectedAssociations, summary, before})
   })
 
-  nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary)
+  nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary, protectedAssociations)
   const postMergeDispatches = filterDispatchesAfterMerge({
     dispatches,
     nextEntries,
@@ -507,6 +537,14 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     now,
   })
   dispatches.splice(0, dispatches.length, ...postMergeDispatches)
+
+  // A protected repo is never surveyed under a name the guard is keeping out of the plan, and its
+  // duplicate rows are skipped too (their survey write-back would hit the duplicate-identity check).
+  const protectedKeys = protectedIdentityKeys(nextEntries, protectedAssociations)
+  if (protectedKeys.size > 0) {
+    const surveyable = dispatches.filter(dispatch => !protectedKeys.has(`node_id:${dispatch.node_id}`))
+    dispatches.splice(0, dispatches.length, ...surveyable)
+  }
 
   let next: ReposFile = {...currentRepos, repos: nextEntries}
 
@@ -614,6 +652,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       if (access === undefined) continue
       const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
       if (entry.private !== false || accessPrivate) continue
+      if (identityKeys(entry).some(key => protectedKeys.has(key))) continue
 
       // Gap-days: strict greater-than on whole-day count. A repo surveyed exactly
       // FLOOR_MIN_GAP_DAYS days ago is still inside the gap; only repos surveyed
@@ -762,10 +801,101 @@ function mergeRepoEntries(left: RepoEntry, right: RepoEntry): boolean {
   return identityKeys(left).some(key => identityKeys(right).includes(key))
 }
 
+/**
+ * Duplicate rows of one identity must agree on visibility. When any row is restrictive
+ * (private/unknown), every public sibling is downgraded in place so none survives a downgrade.
+ */
+function restrictGroupVisibility(entries: RepoEntry[], group: number[]): void {
+  const rows = group.flatMap(index => entries[index] ?? [])
+  if (!rows.some(row => row.private !== false) || !rows.some(row => row.private === false)) return
+
+  const groupNodeId = rows.map(row => storedRepoNodeId(row)).find(nodeId => nodeId !== undefined)
+  for (const index of group) {
+    const row = entries[index]
+    if (row === undefined || row.private !== false) continue
+    const nodeId = storedRepoNodeId(row) ?? groupNodeId
+    if (nodeId === undefined) {
+      // No node ID to redact with: drop the flag so visibility is unknown (never admitted as public).
+      entries[index] = Object.fromEntries(Object.entries(row).filter(([field]) => field !== 'private')) as RepoEntry
+    } else {
+      entries[index] = normalizeRepoEntryForStorage(row, {private: true, node_id: nodeId})
+    }
+  }
+}
+
+/**
+ * Stable identity keys of every repo that has a retained protected public association, closed over
+ * rows that share any key with it. Dispatch planning skips the whole identity, so a duplicate row
+ * of a protected repo is never surveyed regardless of row order.
+ */
+function protectedIdentityKeys(
+  entries: readonly RepoEntry[],
+  protectedAssociations: ReadonlySet<string> | undefined,
+): Set<string> {
+  const keys = new Set<string>()
+  if (protectedAssociations === undefined) return keys
+  for (const entry of entries) {
+    if (entry.private === false && protectedAssociations.has(publicAssociationKey(entry.owner, entry.name))) {
+      for (const key of identityKeys(entry)) keys.add(key)
+    }
+  }
+  if (keys.size === 0) return keys
+
+  for (let grew = true; grew;) {
+    grew = false
+    for (const entry of entries) {
+      const entryKeys = identityKeys(entry)
+      if (entryKeys.some(key => keys.has(key)) && entryKeys.some(key => !keys.has(key))) {
+        for (const key of entryKeys) keys.add(key)
+        grew = true
+      }
+    }
+  }
+  return keys
+}
+
+function isSameEntry(left: RepoEntry, right: RepoEntry): boolean {
+  const leftKeys = Object.keys(left) as (keyof RepoEntry)[]
+  return leftKeys.length === Object.keys(right).length && leftKeys.every(field => Object.is(left[field], right[field]))
+}
+
+/**
+ * Undo a rename of a protected public association: when the classified result is still public
+ * but moved off a protected owner/name, keep the previous owner/name and every other refreshed
+ * field. Counters recorded for the undone rename are rolled back so the plan reflects only
+ * what is applied. Private/unknown results are returned as-is. Dispatch suppression for the
+ * protected identity happens once all rows are final (see `protectedIdentityKeys`).
+ */
+function keepProtectedName(params: {
+  entry: RepoEntry
+  classified: RepoEntry
+  protectedAssociations: ReadonlySet<string> | undefined
+  summary: ReconcileSummary
+  before: {renamed: number; refreshed: number}
+}): RepoEntry {
+  const {entry, classified, protectedAssociations, summary, before} = params
+  if (protectedAssociations === undefined || entry.private !== false || classified.private !== false) return classified
+
+  const previousAssociation = publicAssociationKey(entry.owner, entry.name)
+  if (!protectedAssociations.has(previousAssociation)) return classified
+  if (publicAssociationKey(classified.owner, classified.name) === previousAssociation) return classified
+
+  if (summary.renamed > before.renamed) summary.renamed -= 1
+  const kept: RepoEntry = {...classified, owner: entry.owner, name: entry.name}
+  if (!isSameEntry(kept, entry)) return kept
+
+  if (summary.refreshed > before.refreshed) {
+    summary.refreshed -= 1
+    summary.unchanged += 1
+  }
+  return entry
+}
+
 function mergeDuplicateEntries(
   entries: RepoEntry[],
   accessList: AccessListEntry[],
   summary: ReconcileSummary,
+  protectedAssociations?: ReadonlySet<string>,
 ): RepoEntry[] {
   const currentNameByNodeId = new Map(accessList.map(access => [access.node_id, repoKey(access.owner, access.name)]))
   const groups: number[][] = []
@@ -791,20 +921,26 @@ function mergeDuplicateEntries(
     }
   })
 
+  // Duplicates of one identity must agree on visibility: a restrictive row wins over a public sibling.
+  const working = [...entries]
+  for (const group of groups) {
+    if (group.length >= 2) restrictGroupVisibility(working, group)
+  }
+
   const mergedByIndex = new Map<number, RepoEntry>()
   const removed = new Set<number>()
   for (const group of groups) {
     if (group.length < 2) continue
 
     const currentNameMatch = group
-      .map(index => ({index, entry: entries[index]}))
+      .map(index => ({index, entry: working[index]}))
       .filter((item): item is {index: number; entry: RepoEntry} => item.entry !== undefined)
       .find(({entry}) => {
         const nodeId = storedRepoNodeId(entry)
         return nodeId !== undefined && currentNameByNodeId.get(nodeId) === repoKey(entry.owner, entry.name)
       })
     const freshestCandidates = group
-      .map(index => ({index, entry: entries[index]}))
+      .map(index => ({index, entry: working[index]}))
       .filter((item): item is {index: number; entry: RepoEntry} => item.entry !== undefined)
       .sort((left, right) => {
         const freshness = surveyDateRank(right.entry.last_survey_at) - surveyDateRank(left.entry.last_survey_at)
@@ -821,12 +957,24 @@ function mergeDuplicateEntries(
       ...survivor.entry,
       added:
         group
-          .map(index => entries[index]?.added)
+          .map(index => working[index]?.added)
           .filter((value): value is string => value !== undefined)
           .sort()[0] ?? survivor.entry.added,
       last_survey_at: freshestSurvey.last_survey_at,
       last_survey_status: freshestSurvey.last_survey_status,
       next_survey_eligible_at: freshestSurvey.next_survey_eligible_at,
+    }
+
+    // Merging must not remove a protected public association: keep every classified row.
+    if (protectedAssociations !== undefined) {
+      const mergedAssociation = publicAssociationKey(merged.owner, merged.name)
+      const dropsProtected = group.some(index => {
+        const row = working[index]
+        if (row === undefined || row.private !== false) return false
+        const association = publicAssociationKey(row.owner, row.name)
+        return association !== mergedAssociation && protectedAssociations.has(association)
+      })
+      if (dropsProtected) continue
     }
 
     mergedByIndex.set(firstIndex, merged)
@@ -836,7 +984,7 @@ function mergeDuplicateEntries(
     summary.merged += group.length - 1
   }
 
-  return entries.flatMap((entry, index) => {
+  return working.flatMap((entry, index) => {
     if (removed.has(index)) return []
     return [mergedByIndex.get(index) ?? entry]
   })
@@ -1568,7 +1716,10 @@ export interface ReconcileLogger {
 
 export interface HandleReconcileParams {
   userOctokit?: OctokitClient
-  appOctokit?: OctokitClient
+  /** App token, owner-wide, read-only: installation enumeration + owned/contrib probes. */
+  discoveryOctokit?: OctokitClient
+  /** App token, this repo only, write: data-branch commits, issues, labels, survey dispatch. */
+  writerOctokit?: OctokitClient
   owner?: string
   repo?: string
   allowlistPath?: string
@@ -1645,6 +1796,10 @@ export interface HandleReconcileResult {
   starsAlreadyPresent: number
   /** Count of star check or star call failures this run (non-blocking; loop continues). */
   starFailures: number
+  /** Public names kept unchanged because renaming or merging them away would strand a wiki page. */
+  wikiGuardKept: number
+  /** Subset of `wikiGuardKept` kept because wiki state could not be verified. */
+  wikiGuardUnverifiable: number
 }
 
 /**
@@ -1670,14 +1825,15 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
   const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
   const userOctokit = params.userOctokit ?? (await createOctokitFromEnv('FRO_BOT_POLL_PAT'))
-  const appOctokit = params.appOctokit ?? (await createOctokitFromEnv('GITHUB_TOKEN'))
+  const discoveryOctokit = params.discoveryOctokit ?? (await createOctokitFromEnv('RECONCILE_DISCOVERY_TOKEN'))
+  const writerOctokit = params.writerOctokit ?? (await createOctokitFromEnv('RECONCILE_WRITER_TOKEN'))
 
   // 1. Bootstrap data branch (idempotent). On first run, this creates `data` from `main`'s
   //    HEAD. The new branch inherits `main`'s history, so its tip commit is authored by
   //    whoever merged the most recent PR — not `fro-bot[bot]`. Track the `created` flag so
   //    we can skip the author-integrity check on bootstrap runs; once fro-bot makes its
   //    first commit on `data`, subsequent runs enforce the check normally.
-  const bootstrapResult = await bootstrap({octokit: appOctokit, owner, repo})
+  const bootstrapResult = await bootstrap({octokit: writerOctokit, owner, repo})
   const justBootstrapped = bootstrapResult.created === true
 
   // 2. Read metadata from disk (main branch checkout).
@@ -1695,8 +1851,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
   //    `validateAccessList` (which rejects duplicates) doesn't throw.
   const collabAccess = await fetchAccessList(userOctokit)
-  const ownedAccess = await fetchOwnedRepos(appOctokit, owner, logger)
-  const contribAccess = await fetchContribRepos(appOctokit, allowlist, logger)
+  const ownedAccess = await fetchOwnedRepos(discoveryOctokit, owner, logger)
+  const contribAccess = await fetchContribRepos(discoveryOctokit, allowlist, logger)
   const {accessList, accessChannelByKey} = mergeAccessChannels({
     collab: collabAccess,
     owned: ownedAccess,
@@ -1711,16 +1867,16 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const fieldProbes = fieldProbeOutcome.probes
   const probesFailed = fieldProbeOutcome.failed
 
-  // 6. Run the pure engine to produce the change plan.
-  const plan = reconcileRepos({
-    currentRepos,
-    accessList,
-    perRepoStatus,
-    allowlist,
-    fieldProbes,
-    accessChannelByKey,
-    now,
-  })
+  // 6. Run the pure engine to produce the change plan, guarded against stranding wiki pages.
+  const lookupWikiPage = async (slug: string): Promise<WikiPageState> =>
+    lookupRepoWikiPage({octokit: writerOctokit, owner, repo, branch: 'data', slug})
+  // Replaced by each commit attempt's re-plan, so everything after the commit uses the plan
+  // that was actually written (or, for a no-op or never-run commit, the last one computed).
+  let guarded = await planWithWikiGuard(
+    {currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
+    lookupWikiPage,
+  )
+  let plan = guarded.plan
 
   // Floor telemetry — counts-only, no per-repo identifiers (security invariant: see
   // docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md).
@@ -1763,10 +1919,10 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     if (justBootstrapped) {
       integrityCheck = 'skipped-just-bootstrapped'
     } else {
-      const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
+      const integrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
       if (!integrity.ok) {
         await fileIntegrityAlert({
-          appOctokit,
+          writerOctokit,
           owner,
           repo,
           authorLogin: integrity.authorLogin,
@@ -1786,9 +1942,13 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     // 8. Commit via mutator closure. Mutator re-runs reconcileRepos on each invocation,
     //    so 409-retry in commitMetadata absorbs concurrent writes correctly.
     const commitResult = await commitMetadataImpl({
-      octokit: appOctokit,
+      octokit: writerOctokit,
       path: reposPath,
-      message: formatCommitMessage(plan.summary),
+      // Read by `commitMetadata` when it writes, after the mutator has re-planned, so the message
+      // describes the plan that is persisted rather than the pre-commit one.
+      get message() {
+        return formatCommitMessage(guarded.plan.summary)
+      },
       mutator: async currentParsed => {
         assertReposFile(currentParsed, 'repos')
         // Re-verify data-branch integrity inside the mutator to close the TOCTOU window
@@ -1796,10 +1956,10 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         // also re-verifies, catching any tamper that lands during the retry loop. Skipped
         // on bootstrap runs for the same reason as the initial check.
         if (!justBootstrapped) {
-          const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
+          const retryIntegrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
           if (!retryIntegrity.ok) {
             await fileIntegrityAlert({
-              appOctokit,
+              writerOctokit,
               owner,
               repo,
               authorLogin: retryIntegrity.authorLogin,
@@ -1814,19 +1974,25 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
             })
           }
         }
-        const rerun = reconcileRepos({
-          currentRepos: currentParsed,
-          accessList,
-          perRepoStatus,
-          allowlist,
-          fieldProbes,
-          accessChannelByKey,
-          now,
-        })
-        return rerun.nextRepos
+        // Recomputed against the fresh snapshot and data tree on every attempt.
+        guarded = await planWithWikiGuard(
+          {currentRepos: currentParsed, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
+          lookupWikiPage,
+        )
+        return guarded.plan.nextRepos
       },
     })
     committed = commitResult.committed
+  }
+
+  // From here on, only the final guarded plan is used: dispatches, issues, reporting.
+  plan = guarded.plan
+  const wikiGuard = guarded.wikiGuard
+  // Counts-only (no names, slugs, or paths): this line lands in public workflow logs.
+  if (wikiGuard.kept > 0) {
+    logger.warn(
+      `reconcile: kept ${wikiGuard.kept} public repo name(s) unchanged because a rename or merge would strand a wiki page (${wikiGuard.unverifiable} unverifiable); repair the old wiki pages, then rerun`,
+    )
   }
 
   // 9. Dispatch loop. Prioritize candidates with null `last_survey_at` first
@@ -1877,7 +2043,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const dispatchOutcome = await runDispatches({
     staggerMs: dispatchStaggerMs,
     sleep: params.dispatchSleep,
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     workflowFile,
@@ -1890,7 +2056,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 10. Issue-creation loop (serial, non-blocking on failure).
   const issueOutcome = await runIssueQueue({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     issues: plan.issues,
@@ -1899,7 +2065,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 11. Auto-close stale `reconcile:pending-review` issues.
   const closedStaleIssues = await autoCloseStaleIssues({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     nextRepos: plan.nextRepos,
@@ -1917,7 +2083,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
   )
   const {created: healedRollups, raceSuppressed} = await selfHealRollups({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     nextRepos: plan.nextRepos,
@@ -1931,7 +2097,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   // 13. Star sync — star collab/contrib repos not yet starred by @fro-bot. Non-blocking:
   //     failures increment starFailures and the run still returns. Owned repos are excluded
   //     (fro-bot owns them; self-starring is pointless). A star is a user action — uses
-  //     userOctokit (FRO_BOT_POLL_PAT), never appOctokit. Counts-only telemetry.
+  //     userOctokit (FRO_BOT_POLL_PAT), never an App client. Counts-only telemetry.
   const starCandidates = accessList.filter(entry => {
     const channel = accessChannelByKey.get(`${entry.owner}/${entry.name}`)
     return channel === 'collab' || channel === 'contrib'
@@ -1976,6 +2142,58 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     starsAdded: starOutcome.starsAdded,
     starsAlreadyPresent: starOutcome.starsAlreadyPresent,
     starFailures: starOutcome.starFailures,
+    wikiGuardKept: wikiGuard.kept,
+    wikiGuardUnverifiable: wikiGuard.unverifiable,
+  }
+}
+
+/**
+ * Plan a reconcile run without stranding wiki pages. Plans a candidate, finds public names it
+ * would remove whose old page exists (or cannot be checked), and re-plans with those names
+ * protected. Re-checks the guarded plan until no unprotected removal remains. Page lookups are
+ * cached by slug for the whole call, and a lookup failure counts as unverifiable (kept).
+ */
+async function planWithWikiGuard(
+  input: ReconcileInput,
+  lookup: (slug: string) => Promise<WikiPageState>,
+): Promise<{plan: ReconcileResult; wikiGuard: {kept: number; unverifiable: number}}> {
+  const lookups = new Map<string, Promise<WikiPageState>>()
+  const cachedLookup = async (slug: string): Promise<WikiPageState> => {
+    const cached = lookups.get(slug)
+    if (cached !== undefined) return cached
+    const pending = lookup(slug)
+    lookups.set(slug, pending)
+    return pending
+  }
+
+  let plan = reconcileRepos(input)
+  const protectedAssociations = new Set<string>()
+  const unverifiable = new Set<string>()
+  for (;;) {
+    const blocked = await findBlockedPublicAssociations({
+      previous: input.currentRepos,
+      next: plan.nextRepos,
+      lookup: cachedLookup,
+    })
+    const added = [...blocked.present, ...blocked.unverifiable].filter(
+      association => !protectedAssociations.has(association),
+    )
+    if (added.length === 0) break
+    for (const association of added) protectedAssociations.add(association)
+    for (const association of blocked.unverifiable) unverifiable.add(association)
+    plan = reconcileRepos({...input, protectedPublicAssociations: protectedAssociations})
+  }
+
+  // Counted from the final plan: a protected name only counts when it actually survived.
+  const kept = new Set(
+    plan.nextRepos.repos
+      .filter(entry => entry.private === false)
+      .map(entry => publicAssociationKey(entry.owner, entry.name))
+      .filter(association => protectedAssociations.has(association)),
+  )
+  return {
+    plan,
+    wikiGuard: {kept: kept.size, unverifiable: [...kept].filter(association => unverifiable.has(association)).length},
   }
 }
 
@@ -2542,13 +2760,13 @@ function isFroBotAgentUses(value: string): boolean {
  * the authoritative signal for repo presence.
  */
 async function fetchOwnedRepos(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   logger: ReconcileLogger,
 ): Promise<AccessListEntry[]> {
   let allRepos: InstallationRepo[]
   try {
-    allRepos = await appOctokit.paginate(appOctokit.rest.apps.listReposAccessibleToInstallation, {
+    allRepos = await discoveryOctokit.paginate(discoveryOctokit.rest.apps.listReposAccessibleToInstallation, {
       per_page: 100,
     })
   } catch (error: unknown) {
@@ -2595,7 +2813,7 @@ async function fetchOwnedRepos(
  * warn so the operator knows the field is being ignored.
  */
 async function fetchContribRepos(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   allowlist: AllowlistFile,
   logger: ReconcileLogger,
 ): Promise<AccessListEntry[]> {
@@ -2617,10 +2835,10 @@ async function fetchContribRepos(
     const directName = ownerRepo.slice(slashIndex + 1)
     const key = `${directOwner}/${directName}`
     if (seen.has(key)) continue
-    const meta = await probeContribRepoMetadata(appOctokit, directOwner, directName, logger)
+    const meta = await probeContribRepoMetadata(discoveryOctokit, directOwner, directName, logger)
     if (meta === null) continue
     if (meta.archived || meta.fork) continue
-    const probe = await probeContribWorkflow(appOctokit, directOwner, directName, logger)
+    const probe = await probeContribWorkflow(discoveryOctokit, directOwner, directName, logger)
     if (probe === null) continue
     if (!containsFroBotAgentReference(probe)) continue
     entries.push({
@@ -2645,13 +2863,13 @@ async function fetchContribRepos(
  * about.
  */
 async function probeContribRepoMetadata(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
 ): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null> {
   try {
-    const response = await appOctokit.rest.repos.get({owner, repo: name})
+    const response = await discoveryOctokit.rest.repos.get({owner, repo: name})
     return {
       private: response.data.private === true,
       node_id: response.data.node_id,
@@ -2677,13 +2895,13 @@ async function probeContribRepoMetadata(
  * visibility contract as `probeContribRepoMetadata`.
  */
 async function probeContribWorkflow(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
 ): Promise<string | null> {
   try {
-    const response = await appOctokit.rest.repos.getContent({
+    const response = await discoveryOctokit.rest.repos.getContent({
       owner,
       repo: name,
       path: FRO_BOT_WORKFLOW_PATH,
@@ -2759,12 +2977,12 @@ interface IntegrityCheckFailResult {
 }
 
 async function verifyDataBranchIntegrity(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
 }): Promise<IntegrityCheckOkResult | IntegrityCheckFailResult> {
   try {
-    const response = await params.appOctokit.rest.repos.getBranch({
+    const response = await params.writerOctokit.rest.repos.getBranch({
       owner: params.owner,
       repo: params.repo,
       branch: 'data',
@@ -2784,7 +3002,7 @@ async function verifyDataBranchIntegrity(params: {
 }
 
 async function fileIntegrityAlert(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   authorLogin: string | null
@@ -2792,7 +3010,7 @@ async function fileIntegrityAlert(params: {
   logger: ReconcileLogger
 }): Promise<void> {
   try {
-    await callIssuesCreate(params.appOctokit, {
+    await callIssuesCreate(params.writerOctokit, {
       owner: params.owner,
       repo: params.repo,
       title: `Reconcile integrity alert: unexpected author on data branch`,
@@ -2837,7 +3055,7 @@ async function fileIntegrityAlert(params: {
  *
  * Telemetry is counts-only; canonical owner/name never appears in any log or warn message.
  *
- * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
+ * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never an App token.
  *
  * Exported for unit tests; the sole production caller is `handleReconcile`.
  *
@@ -2914,7 +3132,7 @@ export async function syncStars(params: {
 }
 
 async function runDispatches(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   workflowFile: string
@@ -2968,7 +3186,7 @@ async function runDispatches(params: {
     try {
       await dispatchWithTimeout(
         async () =>
-          params.appOctokit.rest.actions.createWorkflowDispatch({
+          params.writerOctokit.rest.actions.createWorkflowDispatch({
             owner: params.owner,
             repo: params.repo,
             workflow_id: params.workflowFile,
@@ -3058,7 +3276,7 @@ async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number)
 type ListForRepoResponseItem = RestEndpointMethodTypes['issues']['listForRepo']['response']['data'][number]
 
 async function runIssueQueue(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   issues: IssueQueueEntry[]
@@ -3111,7 +3329,7 @@ async function runIssueQueue(params: {
         // to create — better to risk a duplicate than to silently drop the alert.
         let existing: ListForRepoResponseItem[] = []
         try {
-          existing = await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+          existing = await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
             owner: params.owner,
             repo: params.repo,
             state: 'open',
@@ -3146,7 +3364,7 @@ async function runIssueQueue(params: {
         let confirmedLabels: Set<string>
         if (cachedConfirmedLabels === null) {
           const labels = await ensureLabelsExist(
-            params.appOctokit,
+            params.writerOctokit,
             params.owner,
             params.repo,
             TRANSITION_LABELS,
@@ -3169,13 +3387,13 @@ async function runIssueQueue(params: {
             `reconcile: all labels unconfirmed for visibility-transition issue (node_id=${issue.node_id}); shipping unlabeled.`,
           )
         }
-        await callIssuesCreate(params.appOctokit, filteredPayload)
+        await callIssuesCreate(params.writerOctokit, filteredPayload)
         // Mark as successfully created — only after the create call succeeds.
         // This ensures a failed create does not suppress a subsequent retry for the same node_id.
         attemptedTransitionNodeIds.add(issue.node_id)
       } else {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
-        await callIssuesCreate(params.appOctokit, payload)
+        await callIssuesCreate(params.writerOctokit, payload)
       }
       /**
        * Counter semantics: these counts reflect issues.create API acknowledgements, not
@@ -3384,7 +3602,7 @@ interface OpenIssueEntry {
 }
 
 async function autoCloseStaleIssues(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   nextRepos: ReposFile
@@ -3407,7 +3625,7 @@ async function autoCloseStaleIssues(params: {
 
   let closed = 0
   try {
-    const issues = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+    const issues = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
       owner: params.owner,
       repo: params.repo,
       state: 'open',
@@ -3435,7 +3653,7 @@ async function autoCloseStaleIssues(params: {
       if (!stale) continue
 
       try {
-        await params.appOctokit.rest.issues.update({
+        await params.writerOctokit.rest.issues.update({
           owner: params.owner,
           repo: params.repo,
           issue_number: issue.number,
@@ -3472,7 +3690,7 @@ async function autoCloseStaleIssues(params: {
  * workflow scheduler, not from this code.
  */
 async function selfHealRollups(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   nextRepos: ReposFile
@@ -3499,7 +3717,7 @@ async function selfHealRollups(params: {
   // Kept separate from currentRunRollupOwners so each skip path is observable independently.
   let existingRollupOwners: Set<string>
   try {
-    const openRollups = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+    const openRollups = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
       owner: params.owner,
       repo: params.repo,
       state: 'open',
@@ -3552,7 +3770,7 @@ async function selfHealRollups(params: {
       reason: 'unsolicited-new',
     }
     try {
-      await callIssuesCreate(params.appOctokit, renderIssuePayload(rollupIssue, params.owner, params.repo))
+      await callIssuesCreate(params.writerOctokit, renderIssuePayload(rollupIssue, params.owner, params.repo))
       created += 1
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
@@ -3572,7 +3790,9 @@ async function callIssuesCreate(octokit: OctokitClient, payload: IssuePayload): 
   await octokit.rest.issues.create(payload as unknown as Parameters<OctokitClient['rest']['issues']['create']>[0])
 }
 
-async function createOctokitFromEnv(envVar: 'FRO_BOT_POLL_PAT' | 'GITHUB_TOKEN'): Promise<OctokitClient> {
+async function createOctokitFromEnv(
+  envVar: 'FRO_BOT_POLL_PAT' | 'RECONCILE_DISCOVERY_TOKEN' | 'RECONCILE_WRITER_TOKEN',
+): Promise<OctokitClient> {
   const token = process.env[envVar]
   if (token === undefined || token === '') {
     throw new ReconcileError({

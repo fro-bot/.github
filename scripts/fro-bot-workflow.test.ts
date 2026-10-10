@@ -309,6 +309,16 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
     expect(remediateCategories).toContain('push to that PR branch')
   })
 
+  it('the remediate prompt batches override-floor fixes into one PR gated on a passing check-override-floors', () => {
+    // check-override-floors audits every advisory at once, so per-package PRs stay red and cannot merge.
+    const security = (env.REMEDIATE_CATEGORIES ?? '').replaceAll(/\s+/g, ' ')
+    expect(security).toContain('ONE combined PR')
+    expect(security).toContain('`fix/security-override-floors`')
+    expect(security).toContain('push to it')
+    expect(security).toContain('instead of opening another')
+    expect(security).toContain('only when `node scripts/check-override-floors.ts` exits 0')
+  })
+
   it('both the remediate and observe prompts state the guarded-paths boundary explicitly', () => {
     const remediateIntro = env.REMEDIATE_INTRO ?? ''
     const observeIntro = env.OBSERVE_INTRO ?? ''
@@ -330,6 +340,153 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
   })
 })
 
+const draftedBranch = 'docs/drafted-solutions'
+
+interface PullRequestFixture {
+  login: string
+  ref: string
+  fork?: boolean
+  fullName?: string
+}
+
+function pullRequestEvent({login, ref, fork = false, fullName = 'fro-bot/.github'}: PullRequestFixture): unknown {
+  return {
+    github: {
+      event_name: 'pull_request',
+      repository: 'fro-bot/.github',
+      event: {pull_request: {user: {login}, head: {ref, repo: {fork, full_name: fullName}}}},
+    },
+  }
+}
+
+/**
+ * Minimal GitHub Actions expression evaluator, just enough for the content-trigger `if:`:
+ * `||`, `&&`, `!`, `==`, `!=`, parentheses, string literals, dotted property access (missing
+ * paths are null), and the endsWith/contains/fromJSON functions. `||`/`&&` return operand
+ * values like Actions does; string comparison is case-insensitive.
+ */
+const truthy = (value: unknown): boolean => value !== null && value !== undefined && value !== '' && value !== false
+const lower = (value: unknown): unknown => (typeof value === 'string' ? value.toLowerCase() : value)
+
+function callFunction(name: string, args: unknown[]): unknown {
+  const [first, second] = args
+  switch (name) {
+    case 'endsWith':
+      return String(first).toLowerCase().endsWith(String(second).toLowerCase())
+    case 'contains':
+      return Array.isArray(first)
+        ? first.some(item => lower(item) === lower(second))
+        : String(first).toLowerCase().includes(String(second).toLowerCase())
+    case 'fromJSON':
+      return JSON.parse(String(first)) as unknown
+    default:
+      throw new Error(`unsupported function ${name}`)
+  }
+}
+
+// Recursive-descent parser; methods (not closures) so the mutually recursive productions satisfy no-use-before-define.
+class ExpressionEvaluator {
+  private readonly tokens: string[]
+  private readonly context: unknown
+  private position = 0
+
+  constructor(source: string, context: unknown) {
+    this.tokens = source.match(/'(?:[^']|'')*'|[a-z_][\w.-]*|\|\||&&|!=|==|[!(),]/gi) ?? []
+    this.context = context
+  }
+
+  evaluate(): boolean {
+    const result = this.parseOr()
+    if (this.position !== this.tokens.length) throw new Error(`unparsed tokens from ${this.position}`)
+    return truthy(result)
+  }
+
+  private peek(): string | undefined {
+    return this.tokens[this.position]
+  }
+
+  private take(expected?: string): string {
+    const token = this.tokens[this.position++]
+    if (token === undefined || (expected !== undefined && token !== expected)) {
+      throw new Error(`expected ${expected ?? 'token'} at ${this.position}, got ${String(token)}`)
+    }
+    return token
+  }
+
+  private lookup(path: string): unknown {
+    let current: unknown = this.context
+    for (const key of path.split('.')) {
+      if (typeof current !== 'object' || current === null) return null
+      current = (current as Record<string, unknown>)[key] ?? null
+    }
+    return current
+  }
+
+  private parseOr(): unknown {
+    let left = this.parseAnd()
+    while (this.peek() === '||') {
+      this.take()
+      const right = this.parseAnd()
+      left = truthy(left) ? left : right
+    }
+    return left
+  }
+
+  private parseAnd(): unknown {
+    let left = this.parseEquality()
+    while (this.peek() === '&&') {
+      this.take()
+      const right = this.parseEquality()
+      left = truthy(left) ? right : left
+    }
+    return left
+  }
+
+  private parseEquality(): unknown {
+    const left = this.parseUnary()
+    if (this.peek() === '==' || this.peek() === '!=') {
+      const operator = this.take()
+      const equal = lower(left) === lower(this.parseUnary())
+      return operator === '==' ? equal : !equal
+    }
+    return left
+  }
+
+  private parseUnary(): unknown {
+    if (this.peek() === '!') {
+      this.take()
+      return !truthy(this.parseUnary())
+    }
+    return this.parsePrimary()
+  }
+
+  private parsePrimary(): unknown {
+    const token = this.take()
+    if (token === '(') {
+      const value = this.parseOr()
+      this.take(')')
+      return value
+    }
+    if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'")
+    if (token === 'null') return null
+    if (this.peek() === '(') {
+      this.take('(')
+      const args: unknown[] = []
+      while (this.peek() !== ')') {
+        args.push(this.parseOr())
+        if (this.peek() === ',') this.take()
+      }
+      this.take(')')
+      return callFunction(token, args)
+    }
+    return this.lookup(token)
+  }
+}
+
+function evaluateExpression(source: string, context: unknown): boolean {
+  return new ExpressionEvaluator(source, context).evaluate()
+}
+
 describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
   const contentJob = froBotParsed.jobs['fro-bot']
   const contentIf = String(contentJob?.if ?? '')
@@ -345,7 +502,14 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+          (
+            !endsWith(github.event.pull_request.user.login || '', '[bot]') ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         )
       ) && (
         (
@@ -356,8 +520,17 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         ) ||
         (
           github.event_name == 'pull_request' &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-          (github.event.pull_request.user.login || '') != 'fro-bot'
+          (
+            (
+              !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+              (github.event.pull_request.user.login || '') != 'fro-bot'
+            ) ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         ) ||
         (
           (github.event_name == 'issue_comment' ||
@@ -371,6 +544,61 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     `
 
     expect(contentIf.replaceAll(/\s+/g, ' ').trim()).toBe(expectedIf.replaceAll(/\s+/g, ' ').trim())
+  })
+
+  it('conjoins the drafted-PR exception with author, head ref, same-repo head, and the not-fork guard', () => {
+    const normalized = contentIf.replaceAll(/\s+/g, ' ')
+    const exception =
+      "( github.event.pull_request.user.login == 'fro-bot[bot]' && " +
+      "github.event.pull_request.head.ref == 'docs/drafted-solutions' && " +
+      'github.event.pull_request.head.repo.full_name == github.repository )'
+
+    // Both bot-excluding places carry the exception, each as an OR alternative to the bot exclusion.
+    expect(normalized.split(exception)).toHaveLength(3)
+    expect(normalized).toContain(
+      `!github.event.pull_request.head.repo.fork && ( !endsWith(github.event.pull_request.user.login || '', '[bot]') || ${exception} )`,
+    )
+    expect(normalized).toContain(
+      `github.event_name == 'pull_request' && ( ( !endsWith(github.event.pull_request.user.login || '', '[bot]') && (github.event.pull_request.user.login || '') != 'fro-bot' ) || ${exception} )`,
+    )
+  })
+
+  it('still excludes other [bot] authors and the fro-bot user outside the drafted exception', () => {
+    // The only literal bot login admitted is fro-bot[bot], and only inside the exception.
+    expect(contentIf.match(/'[^']*\[bot\]'/g)).toStrictEqual([
+      "'[bot]'", // outer guard
+      "'fro-bot[bot]'", // outer drafted exception
+      "'[bot]'", // issues branch
+      "'[bot]'", // pull_request branch
+      "'fro-bot[bot]'", // pull_request drafted exception
+    ])
+    expect(contentIf).toContain(`(github.event.pull_request.user.login || '') != 'fro-bot'`)
+    expect(contentIf).not.toContain("user.login == 'fro-bot' ")
+  })
+
+  it.each([
+    ['renovate/* by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: 'renovate/foo'}), false],
+    ['data by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: 'data'}), false],
+    ['docs/drafted-solutions by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch}), true],
+    [
+      'docs/drafted-solutions by fro-bot[bot] from a fork',
+      pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch, fork: true, fullName: 'someone/.github'}),
+      false,
+    ],
+    [
+      'docs/drafted-solutions by fro-bot[bot] from another repo (non-fork flag)',
+      pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch, fullName: 'someone/.github'}),
+      false,
+    ],
+    [
+      'docs/drafted-solutions by dependabot[bot]',
+      pullRequestEvent({login: 'dependabot[bot]', ref: draftedBranch}),
+      false,
+    ],
+    ['docs/drafted-solutions by the fro-bot user', pullRequestEvent({login: 'fro-bot', ref: draftedBranch}), false],
+    ['human PR', pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x'}), true],
+  ])('evaluates the content-trigger predicate against a fixture: %s', (_name, event, expected) => {
+    expect(evaluateExpression(contentIf, event)).toBe(expected)
   })
 
   it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {

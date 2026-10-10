@@ -159,26 +159,45 @@ jobs:
       # unattributable to the promotion privacy gate and would block data -> main.
       #
       # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
-      # (authoritative runtime state) before running the check. If the fetch or restore
-      # fails (e.g. data branch absent, network blip), the script runs against the
-      # checked-out (main) metadata instead. The private===false predicate in
-      # publicRepoEntryExists keeps this fallback fail-safe: only entries with explicit
-      # private===false in main's promoted metadata can yield onboarded=true, so a
+      # (authoritative runtime state) before running the check. If the branch is absent (probe
+      # exit 2) the script runs against the checked-out (main) metadata instead. Any other
+      # failure (a failed probe, fetch, or restore) fails the step: stale main metadata could
+      # still say private===false for a repo that has since gone private, so the check never
+      # runs on metadata the overlay could not refresh. The private===false predicate in
+      # publicRepoEntryExists keeps the absent-branch fallback fail-safe: only entries with
+      # explicit private===false in main's promoted metadata can yield onboarded=true, so a
       # missing data branch cannot silently admit an un-promotable repo.
       #
-      # The node script always runs and always emits onboarded=true/false — it never
-      # hard-fails — so a git error here produces a clean onboarded=false skip rather
-      # than a red job for a legitimately un-onboarded manual dispatch.
+      # Once the overlay has run (or been skipped for an absent branch), the node script
+      # always emits onboarded=true/false and never hard-fails, so a legitimately
+      # un-onboarded manual dispatch is a clean onboarded=false skip, not a red job.
       - name: Check repo onboarded
         id: onboarded
         env:
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
         run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data || true
-            git restore --source FETCH_HEAD --worktree -- metadata || true
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch origin data || {
+                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              git restore --source FETCH_HEAD --worktree -- metadata || {
+                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              ;;
+            2)
+              # data branch absent: nothing to overlay.
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
           node scripts/check-repo-onboarded.ts
 
       # Hashes the actual filesystem content of eligible scoped paths (not `git diff`/
@@ -260,7 +279,7 @@ jobs:
       # action's post phase, which the agent timeout does not cover.
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
@@ -302,7 +321,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
@@ -344,7 +363,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}

@@ -6,10 +6,13 @@ module: github-workflows
 problem_type: best_practice
 component: development_workflow
 severity: medium
+last_updated: 2026-10-09
 applies_when:
   - "related workflow entry points intentionally use different failure semantics"
   - "a script can fail before or after a public side effect such as an issue mutation"
   - "the same small type guard or predicate appears in more than one module of a feature"
+  - "a guard consumes optional fields from an external report or schema"
+  - "a helper can return the same nullable value for read failure and valid empty state"
 related_components:
   - tooling
   - testing_framework
@@ -19,6 +22,9 @@ tags:
   - shared-module
   - drift-detection
   - pure-core
+  - fail-open
+  - mutation-testing
+  - optional-schema-fields
 ---
 
 # Make failure boundaries and shared predicates explicit
@@ -58,16 +64,22 @@ so this is not a claim that every `isRecord` in `scripts/` is globally deduplica
    untrusted input could make a write unsafe, fail hard before the API mutation. If the step only
    produces an optional intermediate artifact, a documented empty result may be the correct
    fail-soft behavior.
-3. **Make sibling asymmetries visible in code.** A comment at `main()` is enough when it names the
+3. **Do not let one nullable return value mean two failure states.** If a helper consumes an
+   optional field from an external report or schema, distinguish at least three states: the report
+   could not be read, the report was readable but the field was absent, and the field was present
+   with data. A merge-gating guard that returns `undefined` for both "could not inspect" and
+   "inspected and found no signal" has a fail-open built into its type. Use a discriminated result
+   or separate sentinel statuses, then decide deliberately which states fail closed.
+4. **Make sibling asymmetries visible in code.** A comment at `main()` is enough when it names the
    sibling behavior and the invariant preserved by the difference. Do not make reviewers infer
    policy from the absence of a `try/catch`.
-4. **Choose one canonical implementation for a feature-local predicate.** Import a shared
+5. **Choose one canonical implementation for a feature-local predicate.** Import a shared
    `isRecord` or equivalent guard rather than copying its three-line body. If the predicate truly
    belongs to separate bounded contexts, keep the copies separate and document that boundary.
-5. **Check the whole feature when consolidating.** Search definitions and imports, then verify
+6. **Check the whole feature when consolidating.** Search definitions and imports, then verify
    that every call site uses the canonical module. A partial consolidation creates the illusion of
    one source of truth while leaving a drift path behind.
-6. **Test both contracts.** Exercise the fail-soft fallback and the fail-hard propagation path,
+7. **Test both contracts.** Exercise the fail-soft fallback and the fail-hard propagation path,
    and test the shared predicate through the real consumers rather than asserting only that an
    export exists.
 
@@ -164,6 +176,53 @@ That is intentional fail-closed behavior: malformed input or an unavailable clie
 step before `openPatternProposalIssues` can mutate issues. The difference from detect is policy,
 not an accidental missing wrapper.
 
+### Separate unreadable, absent, and empty report state
+
+PR #3830 added the `TestFileNotExecuted` rule to `scripts/check-mutation-guards.ts` after a live
+mutation run showed Stryker silently dropping configured test files from collection while still
+writing a readable report. Review found a second fail-open in the new rule: the extraction helper,
+`extractReportTestFileCounts`, returned `undefined` both when the report could not be inspected and
+when it was readable but lacked the optional top-level `testFiles` map. The caller treated
+`undefined` as "skip this check", so a readable report with no `testFiles` map and two dropped tests
+classified as clean. The review demonstrated this by running the classifier on such a report. The
+report schema marks `testFiles` optional, so an upstream reporting change could have disabled the
+guard without any error.
+
+The docstring justified the skip as mirroring an adjacent check. The mirror did not hold: the
+adjacent check skips only when the report is unreadable, which already fails on its own, while the
+new skip fired on a readable report.
+
+The current classifier separates the states:
+
+```ts
+const reportTestFileCounts = extractReportTestFileCounts(reportJson)
+
+const hasTestFilesMapMissing =
+  configuredTestFiles.length > 0 && flat !== undefined && reportTestFileCounts === undefined
+```
+
+and gives the unverifiable state its own sentinel:
+
+```ts
+const testFilesMapMissingMutant: LocatedMutant[] = hasTestFilesMapMissing
+  ? [
+      {
+        file: reportPath,
+        line: 0,
+        col: 0,
+        mutator: 'report',
+        status: 'TestFilesMapMissing',
+        reason:
+          `report has no top-level "testFiles" map, so ${String(configuredTestFiles.length)} configured ` +
+          'test file(s) cannot be verified as executed',
+      },
+    ]
+  : []
+```
+
+A regression test in `scripts/check-mutation-guards.test.ts` pins the distinction: a readable report
+with configured tests and no `testFiles` map yields `instrumentation-failed`, not `clean`.
+
 ### One canonical `isRecord` for capture-patterns
 
 The current shared definition is in `scripts/capture-learnings-privacy.ts`:
@@ -206,3 +265,5 @@ every same-named helper in the repository.
 - [Pure-core privacy gates with a shared module and mutation-proof tests](pure-core-privacy-gates-shared-module-2026-06-22.md) — the shared-module and fail-closed pattern used by the capture pipeline.
 - [Byte-exact gateway signing and fail-soft telemetry](byte-exact-gateway-signing-and-fail-soft-telemetry-2026-06-04.md) — a separate fail-soft boundary whose safe output contract is explicit.
 - [Test the integration seam, not the endpoints](test-the-integration-seam-not-the-endpoints-2026-07-06.md) — verify the behavior at the boundary where the policy matters.
+- [An exact-match trust gate needs type discipline — establish shape before a coercing consumer sees the value](exact-match-trust-gates-need-type-discipline-2026-09-08.md) — the same fail-open family, caused by coercion in exact-match gates.
+- [jq // operator silently coalesces false to fallback in shell-driven gates](../workflow-issues/jq-falsy-coalesce-trap-in-shell-gates-2026-05-17.md) — a different operator collapsing different states into one in a shell gate.

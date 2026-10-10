@@ -23,16 +23,30 @@ jobs:
     # for GitHub API jitter without permitting a truly-stuck run.
     timeout-minutes: 25
     steps:
-      - id: get-workflow-app-token
-        name: Get Workflow Access Token
+      # Discovery: owner-wide and read-only — installation enumeration and the owned/contrib
+      # probes (repo metadata, `.github/workflows/fro-bot.yaml` content) in `scripts/reconcile-repos.ts`.
+      - id: discovery-token
+        name: Get Discovery Access Token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          # Scope the token to the whole installation, not just this repo, so cross-org
-          # contrib probes (`scripts/reconcile-repos.ts`) and any future App calls outside
-          # this repo can succeed. Mirrors update-metadata.yaml and dispatch-renovate.yaml.
           owner: ${{ github.repository_owner }}
+          permission-metadata: read
+          permission-contents: read
+
+      # Writer: this repo only — data-branch commits (contents), issues and labels (issues),
+      # and the survey-repo.yaml dispatch (actions).
+      - id: writer-token
+        name: Get Writer Access Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-issues: write
+          permission-actions: write
 
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -54,17 +68,27 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; reconcile will bootstrap it."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; reconcile will bootstrap it."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       - name: 🔁 Reconcile repos
         env:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
-          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          RECONCILE_DISCOVERY_TOKEN: ${{ steps.discovery-token.outputs.token }}
+          RECONCILE_WRITER_TOKEN: ${{ steps.writer-token.outputs.token }}
           # Stagger between Survey Repo dispatches. Each survey run holds upstream LLM
           # capacity for ~5 minutes; 90 seconds between starts keeps the single seat from
           # saturating under fan-out (see marcusrbrown/infra#144).

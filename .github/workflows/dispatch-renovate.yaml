@@ -19,13 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - id: get-workflow-app-token
-        name: Get Workflow Access Token
+      # Read-only, owner-wide: GET /installation/repositories lists only repos the token can access.
+      - id: discovery-token
+        name: Get Discovery Access Token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          owner: fro-bot
+          permission-metadata: read
 
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -33,7 +35,30 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: 🔄 Dispatch Renovate
+      # Intersects metadata/renovate.yaml with the installation's repos; a discovery failure fails the step.
+      - id: plan
+        name: 🗺 Plan Renovate targets
         env:
-          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.discovery-token.outputs.token }}
+        run: node scripts/dispatch-renovate.ts plan
+
+      # actions: write covers listWorkflowRuns and createWorkflowDispatch on the planned repos only.
+      # An empty plan skips this mint, so `repositories:` can never resolve empty (owner-wide).
+      - id: dispatch-token
+        if: steps.plan.outputs.repositories != ''
+        name: Get Dispatch Access Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: fro-bot
+          repositories: ${{ steps.plan.outputs.repositories }}
+          permission-actions: write
+
+      - id: dispatch
+        if: steps.plan.outputs.repositories != ''
+        name: 🔄 Dispatch Renovate
+        env:
+          GITHUB_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          DISPATCH_REPOSITORIES: ${{ steps.plan.outputs.repositories }}
         run: node scripts/dispatch-renovate.ts

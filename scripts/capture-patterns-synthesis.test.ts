@@ -25,11 +25,11 @@ import {
   PATTERN_PROPOSAL_LABEL,
   PATTERN_PROPOSAL_OUTCOME_LABELS,
   PATTERN_PROPOSAL_REQUIRED_LABELS,
-  SOLUTION_SUBDIRS,
   type ExistingPatternProposalIssue,
   type LearningProposalIssueInput,
   type PatternProposalOctokitClient,
 } from './capture-patterns-synthesis.ts'
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------
 // Marker helpers

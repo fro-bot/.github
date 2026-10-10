@@ -1,4 +1,5 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
+import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
 import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
@@ -3171,10 +3172,19 @@ function silentLogger(): {
   }
 }
 
-function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleReconcileParams {
+/**
+ * Legacy single-App-client shorthand for the pre-split suite: `appOctokit` fans out to both the
+ * discovery and writer seams. Routing itself is proven by the adversarial two-mock suite below,
+ * which passes distinct clients and never uses this shorthand.
+ */
+type BaseParamsOverrides = Partial<HandleReconcileParams> & {appOctokit?: OctokitClient}
+
+function baseParams(overrides: BaseParamsOverrides = {}): HandleReconcileParams {
+  const sharedApp = overrides.appOctokit ?? mockOctokit()
   return {
     userOctokit: overrides.userOctokit ?? mockOctokit(),
-    appOctokit: overrides.appOctokit ?? mockOctokit(),
+    discoveryOctokit: overrides.discoveryOctokit ?? sharedApp,
+    writerOctokit: overrides.writerOctokit ?? sharedApp,
     owner: overrides.owner ?? 'fro-bot',
     repo: overrides.repo ?? '.github',
     allowlistPath: overrides.allowlistPath ?? 'metadata/allowlist.yaml',
@@ -4680,7 +4690,8 @@ describe('handleReconcile (I/O shell)', () => {
       delete process.env.FRO_BOT_POLL_PAT
       try {
         const caught = await handleReconcile({
-          appOctokit: mockOctokit(),
+          discoveryOctokit: mockOctokit(),
+          writerOctokit: mockOctokit(),
           owner: 'fro-bot',
           repo: '.github',
           readMetadata: makeReadMetadata(),
@@ -4701,11 +4712,19 @@ describe('handleReconcile (I/O shell)', () => {
       }
     })
 
-    it('throws MISSING_TOKEN when GITHUB_TOKEN is missing (app token not minted)', async () => {
-      const savedUser = process.env.FRO_BOT_POLL_PAT
-      const savedApp = process.env.GITHUB_TOKEN
+    it.each([
+      {missing: 'RECONCILE_DISCOVERY_TOKEN', other: 'RECONCILE_WRITER_TOKEN'},
+      {missing: 'RECONCILE_WRITER_TOKEN', other: 'RECONCILE_DISCOVERY_TOKEN'},
+    ] as const)('throws MISSING_TOKEN when $missing is missing (app token not minted)', async ({missing, other}) => {
+      const saved = {
+        user: process.env.FRO_BOT_POLL_PAT,
+        discovery: process.env.RECONCILE_DISCOVERY_TOKEN,
+        writer: process.env.RECONCILE_WRITER_TOKEN,
+      }
       process.env.FRO_BOT_POLL_PAT = 'fake-pat-value-for-test'
-      delete process.env.GITHUB_TOKEN
+      process.env[other] = 'fake-app-token-for-test'
+      delete process.env[missing]
+      const bootstrap = vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'}))
       try {
         const caught = await handleReconcile({
           userOctokit: mockOctokit(),
@@ -4713,21 +4732,29 @@ describe('handleReconcile (I/O shell)', () => {
           repo: '.github',
           readMetadata: makeReadMetadata(),
           commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
-          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})),
+          bootstrapDataBranch: bootstrap,
         }).catch((error: unknown) => error)
 
         expect(caught).toBeInstanceOf(ReconcileError)
         const re = caught as ReconcileError
         expect(re.code).toBe('MISSING_TOKEN')
-        expect(re.message).toContain('GITHUB_TOKEN')
+        expect(re.message).toContain(missing)
         expect(re.message).not.toContain('fake-pat-value-for-test')
+        expect(re.message).not.toContain('fake-app-token-for-test')
+        // Fails before any write-side work starts.
+        expect(bootstrap).not.toHaveBeenCalled()
       } finally {
-        if (savedUser === undefined) {
-          delete process.env.FRO_BOT_POLL_PAT
-        } else {
-          process.env.FRO_BOT_POLL_PAT = savedUser
+        for (const [key, value] of [
+          ['FRO_BOT_POLL_PAT', saved.user],
+          ['RECONCILE_DISCOVERY_TOKEN', saved.discovery],
+          ['RECONCILE_WRITER_TOKEN', saved.writer],
+        ] as const) {
+          if (value === undefined) {
+            delete process.env[key]
+          } else {
+            process.env[key] = value
+          }
         }
-        if (savedApp !== undefined) process.env.GITHUB_TOKEN = savedApp
       }
     })
   })
@@ -8634,5 +8661,484 @@ jobs:
       expect(starRepo).toHaveBeenCalledOnce()
       expect(starRepo).toHaveBeenCalledWith({owner: 'bfra-me', repo: '.github'})
     })
+  })
+})
+
+// ─── Discovery / writer client routing (least-privilege App tokens) ──────────
+//
+// Two adversarial App mocks. The discovery mock is owner-wide + read-only: it answers the installation
+// listing, repo metadata and the fixed fro-bot.yaml probe, and treats everything else as a violation. The
+// writer mock is scoped to fro-bot/.github: it answers writes and same-repo reads, and treats the
+// installation listing and any other repo as a violation. Every attempt is recorded BEFORE it throws, so a
+// misroute that a non-blocking catch block swallows still fails the test.
+
+const BODY_MARKER = 'SECRET-RESPONSE-BODY-MARKER'
+
+interface RoutedCall {
+  client: 'discovery' | 'writer' | 'user'
+  method: string
+  owner?: string
+  repo?: string
+  path?: string
+}
+
+interface RoutingHarness {
+  calls: RoutedCall[]
+  violations: string[]
+  discovery: OctokitClient
+  writer: OctokitClient
+  user: OctokitClient
+  userReposGet: ReturnType<typeof vi.fn>
+  issuesCreate: ReturnType<typeof vi.fn>
+  createWorkflowDispatch: ReturnType<typeof vi.fn>
+}
+
+const ROUTING_TRUSTED_WORKFLOW = `# ${BODY_MARKER}
+name: Fro Bot
+on: [issues]
+jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@v0.42.1
+`
+
+function makeRoutingHarness(
+  options: {
+    installationRepos?: unknown[]
+    contribOwnerRepos?: string[]
+    collabRepos?: unknown[]
+  } = {},
+): RoutingHarness {
+  const calls: RoutedCall[] = []
+  const violations: string[] = []
+  const installationRepos = options.installationRepos ?? []
+  const contribOwnerRepos = new Set(options.contribOwnerRepos ?? [])
+
+  const reject = (client: 'discovery' | 'writer', method: string, why: string, call: Partial<RoutedCall> = {}) => {
+    calls.push({client, method, ...call})
+    const message = `${client} client violation: ${method} (${why})`
+    violations.push(message)
+    throw new Error(message)
+  }
+
+  // ── discovery: owner-wide, read-only ──
+  const discoveryListInstallation = async () => ({data: installationRepos})
+  const discoveryForbidden = (method: string) => async (args?: {owner?: string; repo?: string}) =>
+    reject('discovery', method, 'discovery must not use this', {owner: args?.owner, repo: args?.repo})
+  const discovery = {
+    paginate: async (fn: unknown, opts: unknown) => {
+      if (fn !== discoveryListInstallation) {
+        return reject('discovery', 'paginate', 'only installation enumeration may paginate')
+      }
+      calls.push({client: 'discovery', method: 'apps.listReposAccessibleToInstallation'})
+      return (await (fn as (o: unknown) => Promise<{data: unknown[]}>)(opts)).data
+    },
+    rest: {
+      apps: {listReposAccessibleToInstallation: discoveryListInstallation},
+      repos: {
+        get: async (args: {owner: string; repo: string}) => {
+          const key = `${args.owner}/${args.repo}`
+          if (!contribOwnerRepos.has(key)) {
+            return reject('discovery', 'repos.get', 'not a contrib probe target', args)
+          }
+          calls.push({client: 'discovery', method: 'repos.get', owner: args.owner, repo: args.repo})
+          return {
+            data: {archived: false, fork: false, private: false, node_id: `R_${args.repo}`, description: BODY_MARKER},
+          }
+        },
+        getContent: async (args: {owner: string; repo: string; path: string}) => {
+          if (args.path !== '.github/workflows/fro-bot.yaml') {
+            return reject('discovery', 'repos.getContent', `non-probe path ${args.path}`, args)
+          }
+          calls.push({client: 'discovery', method: 'repos.getContent', ...args})
+          return {
+            data: {
+              type: 'file',
+              encoding: 'base64',
+              content: Buffer.from(ROUTING_TRUSTED_WORKFLOW, 'utf8').toString('base64'),
+            },
+          }
+        },
+        getBranch: discoveryForbidden('repos.getBranch'),
+        createOrUpdateFileContents: discoveryForbidden('repos.createOrUpdateFileContents'),
+      },
+      git: {createRef: discoveryForbidden('git.createRef'), getRef: discoveryForbidden('git.getRef')},
+      issues: {
+        create: discoveryForbidden('issues.create'),
+        update: discoveryForbidden('issues.update'),
+        listForRepo: discoveryForbidden('issues.listForRepo'),
+        getLabel: discoveryForbidden('issues.getLabel'),
+        createLabel: discoveryForbidden('issues.createLabel'),
+        addLabels: discoveryForbidden('issues.addLabels'),
+      },
+      actions: {createWorkflowDispatch: discoveryForbidden('actions.createWorkflowDispatch')},
+    },
+  } as unknown as OctokitClient
+
+  // ── writer: this repo only, write-capable ──
+  const issuesCreate = vi.fn(async (args: {owner: string; repo: string}) => {
+    calls.push({client: 'writer', method: 'issues.create', owner: args.owner, repo: args.repo})
+    return {data: {number: 1, body: BODY_MARKER}}
+  })
+  const createWorkflowDispatch = vi.fn(async (args: {owner: string; repo: string}) => {
+    calls.push({client: 'writer', method: 'actions.createWorkflowDispatch', owner: args.owner, repo: args.repo})
+    return undefined
+  })
+  const writerOnlyThisRepo = (method: string, args: {owner: string; repo: string}) => {
+    if (args.owner !== 'fro-bot' || args.repo !== '.github') {
+      return reject('writer', method, `other repo ${args.owner}/${args.repo}`, args)
+    }
+    calls.push({client: 'writer', method, owner: args.owner, repo: args.repo})
+    return undefined
+  }
+  const writerListInstallation = async () =>
+    reject('writer', 'apps.listReposAccessibleToInstallation', 'writer must not enumerate the installation')
+  const writer = {
+    paginate: async (fn: unknown, opts: unknown) => {
+      if (fn === writerListInstallation) {
+        return reject('writer', 'paginate', 'writer must not enumerate the installation')
+      }
+      return (await (fn as (o: unknown) => Promise<{data: unknown[]}>)(opts)).data
+    },
+    rest: {
+      apps: {listReposAccessibleToInstallation: writerListInstallation},
+      repos: {
+        get: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('repos.get', args)
+          return {data: {archived: false, private: false, node_id: 'R_self', description: BODY_MARKER}}
+        },
+        getContent: async (args: {owner: string; repo: string; path: string}) => {
+          writerOnlyThisRepo('repos.getContent', args)
+          throw apiError(404, 'Not Found')
+        },
+        getBranch: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('repos.getBranch', args)
+          return {
+            data: {name: 'data', commit: {sha: 'data-tip', author: {login: 'fro-bot[bot]'}, message: BODY_MARKER}},
+          }
+        },
+        createOrUpdateFileContents: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('repos.createOrUpdateFileContents', args)
+          return {data: {commit: {sha: 'x'}}}
+        },
+      },
+      git: {createRef: async () => ({data: {}})},
+      issues: {
+        create: issuesCreate,
+        update: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('issues.update', args)
+          return {data: {}}
+        },
+        listForRepo: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('issues.listForRepo', args)
+          return {data: []}
+        },
+        getLabel: async () => ({data: {name: 'label'}}),
+        createLabel: async () => ({data: {name: 'label'}}),
+      },
+      actions: {createWorkflowDispatch},
+    },
+  } as unknown as OctokitClient
+
+  // ── user PAT: collaborator listing, status/field/identity probes, stars ──
+  const userReposGet = vi.fn(async (args: {owner: string; repo: string}) => {
+    calls.push({client: 'user', method: 'repos.get', owner: args.owner, repo: args.repo})
+    return {data: {archived: false, private: false, node_id: `R_${args.repo}`, description: BODY_MARKER}}
+  })
+  const user = mockOctokit({
+    listForAuthenticatedUser: async () => ({data: (options.collabRepos ?? []) as AccessListApiEntry[]}),
+    reposGet: userReposGet,
+  })
+
+  return {calls, violations, discovery, writer, user, userReposGet, issuesCreate, createWorkflowDispatch}
+}
+
+describe('handleReconcile — discovery/writer client routing', () => {
+  const collabVisible = {
+    owner: {login: 'marcusrbrown'},
+    name: 'collab-visible',
+    archived: false,
+    private: false,
+    node_id: 'R_collab_visible',
+  }
+  const ownedInstallation = {
+    owner: {login: 'fro-bot'},
+    name: 'owned-repo',
+    archived: false,
+    fork: false,
+    private: false,
+    node_id: 'R_owned',
+  }
+
+  function routingScenario() {
+    const harness = makeRoutingHarness({
+      installationRepos: [ownedInstallation],
+      contribOwnerRepos: ['bfra-me/contrib-repo'],
+      collabRepos: [
+        collabVisible,
+        {owner: {login: 'hidden-owner'}, name: 'hidden-collab', archived: false, private: true, node_id: 'R_hidden'},
+      ],
+    })
+    // hidden-collab: a tracked private collaborator repo. Only the user PAT can see it; neither App client can.
+    const hidden = makeEntry({owner: 'hidden-owner', name: 'hidden-collab', last_survey_at: '2026-04-16T00:00:00Z'})
+    const readMetadata = makeReadMetadata({
+      allowlist: {
+        version: 1,
+        approved_inviters: [{username: 'marcusrbrown', added: '2026-01-01', role: 'owner'}],
+        approved_contrib_repos: ['bfra-me/contrib-repo'],
+      },
+      repos: {version: 1, repos: [hidden]},
+    })
+    return {harness, readMetadata, hidden}
+  }
+
+  it('completes a full owned + contrib + collaborator reconcile under both adversarial mocks', async () => {
+    // #given distinct, adversarial discovery and writer clients
+    const {harness, readMetadata} = routingScenario()
+    const bootstrap = vi.fn(async (params: DataBranchBootstrapParams): Promise<DataBranchBootstrapResult> => {
+      expect(params.octokit).toBe(harness.writer)
+      return {created: false, ref: 'refs/heads/data', sha: 'x'}
+    })
+    let committedRepos: ReposFile | undefined
+    const commit = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+      expect(params.octokit).toBe(harness.writer)
+      committedRepos = (await params.mutator({
+        version: 1,
+        repos: ((await readMetadata('repos.yaml')) as ReposFile).repos,
+      })) as ReposFile
+      return {committed: true, sha: 'commit-sha', attempts: 1}
+    })
+
+    // #when reconcile runs end to end
+    const result = await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.discovery,
+        writerOctokit: harness.writer,
+        readMetadata,
+        bootstrapDataBranch: bootstrap,
+        commitMetadata: commit,
+      }),
+    )
+
+    // #then no client ever attempted a call outside its lane
+    expect(harness.violations).toEqual([])
+    expect(bootstrap).toHaveBeenCalledOnce()
+    expect(commit).toHaveBeenCalledOnce()
+    expect(result.committed).toBe(true)
+    // all three channels were discovered
+    const channels = new Map(committedRepos?.repos.map(r => [`${r.owner}/${r.name}`, r.discovery_channel]))
+    expect(channels.get('fro-bot/owned-repo')).toBe('owned')
+    expect(channels.get('bfra-me/contrib-repo')).toBe('contrib')
+    expect(channels.get('marcusrbrown/collab-visible')).toBe('collab')
+    // survey dispatches went through the writer and only the writer
+    expect(harness.createWorkflowDispatch).toHaveBeenCalled()
+    const dispatchCalls = harness.calls.filter(c => c.method === 'actions.createWorkflowDispatch')
+    expect(dispatchCalls.length).toBeGreaterThan(0)
+    expect(dispatchCalls.every(c => c.client === 'writer' && c.owner === 'fro-bot' && c.repo === '.github')).toBe(true)
+  })
+
+  it('routes discovery-only calls to discovery and never to the writer', async () => {
+    const {harness, readMetadata} = routingScenario()
+    await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.discovery,
+        writerOctokit: harness.writer,
+        readMetadata,
+      }),
+    )
+
+    const methodsBy = (client: RoutedCall['client']) =>
+      new Set(harness.calls.filter(c => c.client === client).map(c => c.method))
+    // enumeration + contrib probes: discovery only
+    expect(methodsBy('discovery')).toEqual(
+      new Set(['apps.listReposAccessibleToInstallation', 'repos.get', 'repos.getContent']),
+    )
+    const discoveryProbes = harness.calls.filter(
+      c => c.client === 'discovery' && c.method !== 'apps.listReposAccessibleToInstallation',
+    )
+    expect(discoveryProbes.every(c => c.owner === 'bfra-me' && c.repo === 'contrib-repo')).toBe(true)
+    expect(methodsBy('writer')).not.toContain('apps.listReposAccessibleToInstallation')
+    // writes + same-repo reads: writer only, always fro-bot/.github
+    expect(methodsBy('writer')).toContain('actions.createWorkflowDispatch')
+    expect(
+      harness.calls.filter(c => c.client === 'writer').every(c => c.owner === 'fro-bot' && c.repo === '.github'),
+    ).toBe(true)
+  })
+
+  it('probes a collaborator repo the App cannot see through userOctokit and does NOT mark it lost-access', async () => {
+    // #given a tracked private collab repo that the user PAT lists and that both App clients cannot see
+    const {harness, readMetadata, hidden} = routingScenario()
+    let committedRepos: ReposFile | undefined
+    const commit = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+      committedRepos = (await params.mutator({version: 1, repos: [hidden]})) as ReposFile
+      return {committed: true, sha: 'commit-sha', attempts: 1}
+    })
+
+    // #when reconcile runs
+    const result = await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.discovery,
+        writerOctokit: harness.writer,
+        readMetadata,
+        commitMetadata: commit,
+      }),
+    )
+
+    // #then the field probes ran on the user PAT, no App client touched the repo, and it was not demoted
+    expect(harness.userReposGet).toHaveBeenCalledWith(
+      expect.objectContaining({owner: 'hidden-owner', repo: 'hidden-collab'}),
+    )
+    expect(harness.calls.filter(c => c.client !== 'user' && c.owner === 'hidden-owner')).toEqual([])
+    expect(harness.violations).toEqual([])
+    expect(result.summary.lostAccess).toBe(0)
+    expect(result.summary.byChannel.collab.lostAccess).toBe(0)
+    // Private repos are persisted in redacted form (node ID as the name), so match on that.
+    const entry = committedRepos?.repos.find(r => r.name === 'R_hidden')
+    expect(entry).toBeDefined()
+    expect(entry?.onboarding_status).toBe('onboarded')
+  })
+
+  it('files issues, integrity reads and stale-issue handling through the writer only', async () => {
+    // #given an unapproved collaborator that triggers a pending-review issue
+    const harness = makeRoutingHarness({
+      collabRepos: [{...collabVisible, owner: {login: 'stranger'}, name: 'unapproved'}],
+    })
+    const readMetadata = makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])})
+
+    // #when reconcile runs
+    await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.discovery,
+        writerOctokit: harness.writer,
+        readMetadata,
+      }),
+    )
+
+    // #then issue creation, branch integrity and issue listing all landed on the writer
+    expect(harness.violations).toEqual([])
+    expect(harness.issuesCreate).toHaveBeenCalled()
+    const writerMethods = new Set(harness.calls.filter(c => c.client === 'writer').map(c => c.method))
+    expect(writerMethods).toContain('issues.create')
+    expect(writerMethods).toContain('repos.getBranch')
+    expect(writerMethods).toContain('issues.listForRepo')
+  })
+
+  it('files the tamper alert through the writer when the data branch tip has an unexpected author', async () => {
+    const harness = makeRoutingHarness({collabRepos: [collabVisible]})
+    const tampered = {
+      ...(harness.writer as unknown as {rest: {repos: Record<string, unknown>}}).rest.repos,
+    }
+    expect(tampered).toBeDefined()
+    // swap the writer's getBranch so the tip author is unexpected, keeping every other adversarial guard
+    ;(harness.writer as unknown as {rest: {repos: {getBranch: unknown}}}).rest.repos.getBranch = async () => ({
+      data: {name: 'data', commit: {sha: 'evil', author: {login: 'mallory'}}},
+    })
+
+    await expect(
+      handleReconcile(
+        baseParams({
+          userOctokit: harness.user,
+          discoveryOctokit: harness.discovery,
+          writerOctokit: harness.writer,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      ),
+    ).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+    expect(harness.violations).toEqual([])
+    expect(harness.issuesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: 'fro-bot',
+        repo: '.github',
+        title: expect.stringContaining('integrity alert') as string,
+      }),
+    )
+  })
+
+  it('the adversarial mocks catch misrouting: swapped clients are recorded as violations', async () => {
+    // #given discovery and writer deliberately swapped
+    const {harness, readMetadata} = routingScenario()
+    const outcome = await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.writer,
+        writerOctokit: harness.discovery,
+        readMetadata,
+      }),
+    ).catch((error: unknown) => error)
+
+    // #then the harness flags it (either via a thrown error or recorded attempts)
+    expect(harness.violations.length).toBeGreaterThan(0)
+    expect(outcome).toBeDefined()
+  })
+
+  it('never logs a response body from either App client', async () => {
+    const {harness, readMetadata} = routingScenario()
+    const logger = silentLogger()
+    const streamWrites: string[] = []
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+      streamWrites.push(String(chunk))
+      return true
+    })
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(chunk => {
+      streamWrites.push(String(chunk))
+      return true
+    })
+    const consoleSpies = [
+      vi.spyOn(console, 'log'),
+      vi.spyOn(console, 'info'),
+      vi.spyOn(console, 'warn'),
+      vi.spyOn(console, 'error'),
+    ]
+    try {
+      await handleReconcile(
+        baseParams({
+          userOctokit: harness.user,
+          discoveryOctokit: harness.discovery,
+          writerOctokit: harness.writer,
+          readMetadata,
+          logger,
+        }),
+      )
+      const logged = [
+        ...logger.warn.mock.calls.map(c => c[0]),
+        ...logger.info.mock.calls.map(c => c[0]),
+        ...streamWrites,
+        ...consoleSpies.flatMap(spy => spy.mock.calls.map(c => c.join(' '))),
+      ].join('\n')
+      expect(logged).not.toContain(BODY_MARKER)
+    } finally {
+      stderr.mockRestore()
+      stdout.mockRestore()
+      for (const spy of consoleSpies) spy.mockRestore()
+    }
+  })
+
+  it('logs only status for a discovery failure, not the error body', async () => {
+    // #given a contrib probe that fails with a body-bearing message
+    const harness = makeRoutingHarness({contribOwnerRepos: ['bfra-me/contrib-repo']})
+    ;(harness.discovery as unknown as {rest: {repos: {get: unknown}}}).rest.repos.get = async () => {
+      throw Object.assign(new Error(BODY_MARKER), {status: 500})
+    }
+    const logger = silentLogger()
+
+    await handleReconcile(
+      baseParams({
+        userOctokit: harness.user,
+        discoveryOctokit: harness.discovery,
+        writerOctokit: harness.writer,
+        logger,
+        readMetadata: makeReadMetadata({
+          allowlist: {version: 1, approved_inviters: [], approved_contrib_repos: ['bfra-me/contrib-repo']},
+        }),
+      }),
+    )
+
+    const logged = [...logger.warn.mock.calls, ...logger.info.mock.calls].map(c => c[0]).join('\n')
+    expect(logged).toContain('status=500')
+    expect(logged).not.toContain(BODY_MARKER)
   })
 })

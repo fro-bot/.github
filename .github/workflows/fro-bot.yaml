@@ -311,6 +311,21 @@ env:
        unavailable to the token, note "security alerts unavailable" under "Needs
        Human Attention" — do not guess.
 
+       Override floors are the exception to one-PR-per-package: `pnpm lint` runs
+       `node scripts/check-override-floors.ts`, which audits every live advisory
+       against the pnpm overrides in pnpm-workspace.yaml at once, so a PR fixing
+       only some flagged packages stays red and cannot merge. Run it on a clean
+       checkout of main, collect every package it flags, and fix them all in ONE
+       combined PR on the stable branch `fix/security-override-floors` (raise
+       each override floor to its patched version, each with an advisory
+       comment). Before opening, look for an open Fro-Bot-authored PR for this
+       root cause (head `fix/security-override-floors` or an earlier
+       per-package override-floor PR); if one exists, push to it, extend it to
+       cover every flagged package, and update its description instead of
+       opening another. Open or update the PR only when
+       `node scripts/check-override-floors.ts` exits 0 on that branch; if it
+       still fails, log it under "Needs Human Attention".
+
     3. CONTROL-PLANE INTEGRITY (highest-value for this repo)
        a. SHA pinning: every third-party action in .github/workflows/*.yaml and
           .github/actions/**/action.yaml must be pinned to a full commit SHA with
@@ -391,7 +406,12 @@ env:
        open issues labeled `learning-proposal`: the expected action for each
        is authoring the learning into `docs/solutions/`, so any older than 14
        days, or two or more open at once, means the compounding pipeline has
-       stalled. Report the count and ages. Do not treat a `healthy` reading on
+        stalled. Exception: an open PR on head `docs/drafted-solutions` authored
+        by `fro-bot[bot]` covers the open proposals named in the `Closes #N`
+        line of its body; report that PR and its age instead of calling those
+        proposals stalled. Proposals it does not cover keep the 14-day and
+        two-or-more rule. Report the count and ages. Do not treat a `healthy`
+        reading on
        the Improvement Metrics report (#3674) as evidence this is fine —
        unauthored proposals never become classes there, so that report stays
        green precisely while this is stalled. Report under "Progressive
@@ -467,7 +487,14 @@ jobs:
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+          (
+            !endsWith(github.event.pull_request.user.login || '', '[bot]') ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         )
       ) && (
         (
@@ -478,8 +505,17 @@ jobs:
         ) ||
         (
           github.event_name == 'pull_request' &&
-          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-          (github.event.pull_request.user.login || '') != 'fro-bot'
+          (
+            (
+              !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+              (github.event.pull_request.user.login || '') != 'fro-bot'
+            ) ||
+            (
+              github.event.pull_request.user.login == 'fro-bot[bot]' &&
+              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+              github.event.pull_request.head.repo.full_name == github.repository
+            )
+          )
         ) ||
         (
           (github.event_name == 'issue_comment' ||
@@ -579,7 +615,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -836,7 +872,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -969,20 +1005,31 @@ jobs:
       # Overlay metadata/ from the data branch so this run can derive digest
       # counts and scan metadata/repos.yaml (category 6) from live data.
       # Mirrors the precedented guard in reconcile-repos.yaml: tolerate a
-      # missing data branch (skip, don't fail). Runs BEFORE solutions-query
+      # missing data branch (skip, don't fail); a failed probe, fetch, or checkout fails
+      # the step. Runs BEFORE solutions-query
       # so the privacy scan reads the freshest repos.yaml.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              overlay_err=$(
+                { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+              ) || {
+                echo "::error::metadata overlay fetch/checkout failed: $(echo "$overlay_err" | head -c 200)"
+                exit 1
+              }
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       - name: Query solutions context
         id: solutions-query
@@ -996,7 +1043,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1116,19 +1163,30 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # Mirrors fro-bot-observe's own step: tolerate a missing data branch (skip, don't fail).
+      # Mirrors fro-bot-observe's own step: tolerate a missing data branch (skip, don't fail);
+      # a failed probe, fetch, or checkout fails the step.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              overlay_err=$(
+                { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+              ) || {
+                echo "::error::metadata overlay fetch/checkout failed: $(echo "$overlay_err" | head -c 200)"
+                exit 1
+              }
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       # This job has no agent step, so minting here is safe (see
       # scripts/agent-post-step-credential-guard.test.ts). Repo-scoped, read-only —

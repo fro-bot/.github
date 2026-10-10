@@ -1,8 +1,12 @@
 import type {Buffer} from 'node:buffer'
 
+import {execFile} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import {promises as fs} from 'node:fs'
 import path from 'node:path'
+import {promisify} from 'node:util'
+
+import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 /**
  * Untrusted agent job builds a manifest.json + files/ delta (no ingest metadata — that's
@@ -18,6 +22,23 @@ export function isAllowedWikiHandoffPath(relativePath: string): boolean {
   const normalized = relativePath.replaceAll('\\', '/')
   if (normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md') return true
   return normalized.startsWith('knowledge/wiki/') && normalized.endsWith('.md')
+}
+
+const SOLUTION_CATEGORIES: ReadonlySet<string> = new Set(SOLUTION_SUBDIRS)
+
+/**
+ * Drafted-solutions path allowlist: a direct `.md` child of one canonical `docs/solutions/<category>/`
+ * directory. The category list is the repo's canonical {@link SOLUTION_SUBDIRS}; a new category is a
+ * deliberate code change, not something an agent can create.
+ */
+export function isAllowedDraftedSolutionPath(relativePath: string): boolean {
+  // No backslash normalization: a path is only ever written as-is, so it is only ever judged as-is.
+  const segments = relativePath.split('/')
+  if (segments.length !== 4) return false
+  const [root, solutions, category, file] = segments
+  if (root !== 'docs' || solutions !== 'solutions') return false
+  if (category === undefined || !SOLUTION_CATEGORIES.has(category)) return false
+  return file !== undefined && file.length > '.md'.length && file.endsWith('.md')
 }
 
 export interface GitStatusChanges {
@@ -125,10 +146,13 @@ export interface BuildWikiHandoffParams {
   runGitStatus: () => Promise<string>
   /** Baseline from {@link captureWikiBaseline}; when set, scopes the manifest to post-baseline changes only. */
   baselinePath?: string
+  /** Build-side scope check; defaults to the wiki allowlist. Drafted-solutions passes its own. */
+  isAllowedPath?: (relativePath: string) => boolean
   readFileImpl?: typeof fs.readFile
   writeFileImpl?: typeof fs.writeFile
   mkdirImpl?: typeof fs.mkdir
   copyFileImpl?: typeof fs.copyFile
+  lstatImpl?: typeof fs.lstat
   existsImpl?: (absolutePath: string) => Promise<boolean>
   hashImpl?: (contents: Buffer) => string
 }
@@ -214,6 +238,30 @@ async function scopeToBaseline(params: {
 }
 
 /**
+ * Rejects a symlink or any non-regular source. A missing source passes here: it cannot be a link,
+ * and the copy itself then fails loudly.
+ */
+async function assertRegularSource(
+  sourcePath: string,
+  relativePath: string,
+  lstatImpl: typeof fs.lstat,
+): Promise<void> {
+  let stats
+  try {
+    stats = await lstatImpl(sourcePath)
+  } catch (error: unknown) {
+    if ((error as {code?: unknown} | null)?.code === 'ENOENT') return
+    throw error
+  }
+  if (stats.isSymbolicLink()) {
+    throw new WikiHandoffValidationError(`wiki-handoff-build: refusing symlink source: ${relativePath}`)
+  }
+  if (!stats.isFile()) {
+    throw new WikiHandoffValidationError(`wiki-handoff-build: source is not a regular file: ${relativePath}`)
+  }
+}
+
+/**
  * Builds `files/<path>` + `manifest.json` for changed/deleted paths; never writes ingest
  * metadata. Throws on any out-of-scope path from git status — should be unreachable, fails
  * closed on workflow drift.
@@ -221,6 +269,7 @@ async function scopeToBaseline(params: {
 export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<BuildWikiHandoffResult> {
   const mkdirImpl = params.mkdirImpl ?? fs.mkdir
   const copyFileImpl = params.copyFileImpl ?? fs.copyFile
+  const lstatImpl = params.lstatImpl ?? fs.lstat
   const writeFileImpl = params.writeFileImpl ?? fs.writeFile
   const readFileImpl = params.readFileImpl ?? fs.readFile
   const existsImpl = params.existsImpl ?? defaultExists
@@ -229,7 +278,8 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
   const statusOutput = await params.runGitStatus()
   const {changed: rawChanged, deleted: rawDeleted} = parseGitStatusPorcelainZ(statusOutput)
 
-  const outOfScope = [...rawChanged, ...rawDeleted].filter(p => !isAllowedWikiHandoffPath(p))
+  const isAllowedPath = params.isAllowedPath ?? isAllowedWikiHandoffPath
+  const outOfScope = [...rawChanged, ...rawDeleted].filter(p => p.includes('\\') || !isAllowedPath(p))
   if (outOfScope.length > 0) {
     throw new Error(`wiki-handoff-build: git status reported out-of-scope paths: ${outOfScope.join(', ')}`)
   }
@@ -252,6 +302,12 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
     deleted = scoped.deleted
   }
 
+  // copyFile dereferences symlinks, so an allowed path that is a link to any runner-readable file
+  // would smuggle that file's content into the artifact. Check every source before writing anything.
+  for (const relativePath of changed) {
+    await assertRegularSource(path.join(params.cwd, relativePath), relativePath, lstatImpl)
+  }
+
   await mkdirImpl(path.join(params.outDir, 'files'), {recursive: true})
   for (const relativePath of changed) {
     const dest = path.join(params.outDir, 'files', relativePath)
@@ -259,6 +315,152 @@ export async function buildWikiHandoff(params: BuildWikiHandoffParams): Promise<
     await copyFileImpl(path.join(params.cwd, relativePath), dest)
   }
 
+  await writeFileImpl(
+    path.join(params.outDir, 'manifest.json'),
+    `${JSON.stringify({changed, deleted}, null, 2)}\n`,
+    'utf8',
+  )
+
+  return {changed, deleted}
+}
+
+const execFileAsync = promisify(execFile)
+
+/** Runs `git <args>` (an argv array, never a shell) and returns stdout. Throws on non-zero exit or overflow. */
+export type GitRunner = (args: readonly string[], options: {maxBuffer: number}) => Promise<Buffer>
+
+export function createGitRunner(cwd: string): GitRunner {
+  return async (args, options) => {
+    const {stdout} = await execFileAsync('git', [...args], {cwd, maxBuffer: options.maxBuffer, encoding: 'buffer'})
+    return stdout
+  }
+}
+
+export interface BuildHandoffFromGitIndexParams {
+  cwd: string
+  outDir: string
+  /** Directory (or file) whose staged changes become the handoff, e.g. `docs/solutions`. */
+  pathspec: string
+  policy: HandoffPolicy
+  runGit?: GitRunner
+  mkdirImpl?: typeof fs.mkdir
+  writeFileImpl?: typeof fs.writeFile
+}
+
+interface StagedEntry {
+  status: string
+  newMode: string
+  newSha: string
+  path: string
+}
+
+function parseRawDiffZ(output: string): StagedEntry[] {
+  const fields = output.split('\0')
+  if (fields.at(-1) === '') fields.pop()
+  const entries: StagedEntry[] = []
+  for (let index = 0; index < fields.length; index += 2) {
+    const meta = /^:(\d{6}) (\d{6}) ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) ([A-Z])$/.exec(fields[index] ?? '')
+    const entryPath = fields[index + 1]
+    if (meta === null || entryPath === undefined || entryPath === '') {
+      throw new WikiHandoffValidationError('wiki-handoff-build: unexpected `git diff --cached --raw` output')
+    }
+    entries.push({status: meta[5] ?? '', newMode: meta[2] ?? '', newSha: meta[4] ?? '', path: entryPath})
+  }
+  return entries
+}
+
+function isMaxBufferError(error: unknown): boolean {
+  return (error as {code?: unknown} | null)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+}
+
+/**
+ * Builds `files/<path>` + `manifest.json` from GIT OBJECTS, not working-tree paths.
+ *
+ * The agent's runner keeps running whatever it started, so a path checked and then copied can be
+ * swapped (or its parent directory replaced) for a symlink in between. Instead: stage the pathspec
+ * (`git add` stores a symlink as a link, and refuses paths beyond a symlinked directory), list the
+ * staged changes against HEAD, and read each file's bytes from its recorded blob SHA. Blobs are
+ * content-addressed and immutable, so nothing on disk can alter what is copied.
+ *
+ * Only regular files (mode 100644) are accepted: symlinks (120000), gitlinks (160000) and
+ * executables (100755) are rejected. Deletions are rejected unless the policy allows them; renames
+ * are reported as deletion plus addition (`--no-renames`). Everything is validated and read before
+ * anything is written.
+ */
+export async function buildHandoffFromGitIndex(
+  params: BuildHandoffFromGitIndexParams,
+): Promise<BuildWikiHandoffResult> {
+  const {policy} = params
+  const runGit = params.runGit ?? createGitRunner(params.cwd)
+  const mkdirImpl = params.mkdirImpl ?? fs.mkdir
+  const writeFileImpl = params.writeFileImpl ?? fs.writeFile
+
+  const git = async (args: readonly string[], maxBuffer: number): Promise<Buffer> => {
+    try {
+      return await runGit(args, {maxBuffer})
+    } catch (error: unknown) {
+      if (isMaxBufferError(error)) {
+        throw new WikiHandoffValidationError(
+          `${policy.name} handoff exceeds the ${policy.maxTotalBytes}-byte size cap (during git ${args[0]})`,
+        )
+      }
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new WikiHandoffValidationError(`wiki-handoff-build: git ${args[0]} failed: ${detail}`)
+    }
+  }
+
+  await git(['add', '-A', '--', params.pathspec], policy.maxTotalBytes)
+  const listing = await git(
+    ['diff', '--cached', '--raw', '-z', '--no-renames', '--no-abbrev', '--', params.pathspec],
+    policy.maxTotalBytes,
+  )
+
+  const toRead: StagedEntry[] = []
+  const deleted: string[] = []
+  for (const entry of parseRawDiffZ(listing.toString('utf8'))) {
+    assertSafeHandoffPath(entry.path, policy)
+    if (entry.status === 'D') {
+      if (!policy.allowDeletions) {
+        throw new WikiHandoffValidationError(
+          `wiki-handoff-build: ${policy.name} handoff deletions are not allowed: ${entry.path}`,
+        )
+      }
+      deleted.push(entry.path)
+      continue
+    }
+    if (entry.status !== 'A' && entry.status !== 'M' && entry.status !== 'T') {
+      throw new WikiHandoffValidationError(
+        `wiki-handoff-build: unexpected change status ${entry.status} for ${entry.path}`,
+      )
+    }
+    if (entry.newMode !== '100644') {
+      throw new WikiHandoffValidationError(
+        `wiki-handoff-build: ${entry.path} has mode ${entry.newMode}; only regular files (100644) are allowed`,
+      )
+    }
+    toRead.push(entry)
+  }
+
+  const blobs: {path: string; bytes: Buffer}[] = []
+  let totalBytes = 0
+  for (const entry of toRead) {
+    const bytes = await git(['cat-file', 'blob', entry.newSha], policy.maxTotalBytes - totalBytes + 1)
+    totalBytes += bytes.length
+    if (totalBytes > policy.maxTotalBytes) {
+      throw new WikiHandoffValidationError(
+        `${policy.name} handoff exceeds the ${policy.maxTotalBytes}-byte size cap (running total ${totalBytes})`,
+      )
+    }
+    blobs.push({path: entry.path, bytes})
+  }
+
+  const changed = blobs.map(blob => blob.path)
+  await mkdirImpl(path.join(params.outDir, 'files'), {recursive: true})
+  for (const blob of blobs) {
+    const dest = path.join(params.outDir, 'files', blob.path)
+    await mkdirImpl(path.dirname(dest), {recursive: true})
+    await writeFileImpl(dest, blob.bytes)
+  }
   await writeFileImpl(
     path.join(params.outDir, 'manifest.json'),
     `${JSON.stringify({changed, deleted}, null, 2)}\n`,
@@ -280,25 +482,69 @@ export class WikiHandoffValidationError extends Error {
   }
 }
 
+/**
+ * What a caller is willing to accept from an untrusted handoff. Traversal, symlink, and
+ * regular-file checks are not policy: they always apply.
+ */
+export interface HandoffPolicy {
+  /** Names the handoff in error messages ("wiki handoff path is empty"). */
+  name: string
+  /** Receives a path already normalized to forward slashes and checked for traversal. */
+  isAllowedPath: (normalizedPath: string) => boolean
+  /** When false, any non-empty `deleted` list is rejected before anything is written. */
+  allowDeletions: boolean
+  maxTotalBytes: number
+}
+
 /** Generous cap for a wiki-page delta; catches a runaway or malicious artifact early. */
 export const WIKI_HANDOFF_MAX_TOTAL_BYTES = 5 * 1024 * 1024
 
-/** Rejects traversal segments, absolute paths, and anything outside the wiki allowlist. */
-export function assertSafeWikiHandoffPath(relativePath: string): void {
+export const WIKI_HANDOFF_POLICY: HandoffPolicy = {
+  name: 'wiki',
+  isAllowedPath: isAllowedWikiHandoffPath,
+  allowDeletions: true,
+  maxTotalBytes: WIKI_HANDOFF_MAX_TOTAL_BYTES,
+}
+
+/** A drafted run holds at most five proposals' docs; 1 MiB is far above that and still catches runaway output. */
+export const DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES = 1024 * 1024
+
+export const DRAFTED_SOLUTIONS_HANDOFF_POLICY: HandoffPolicy = {
+  name: 'drafted-solutions',
+  isAllowedPath: isAllowedDraftedSolutionPath,
+  allowDeletions: false,
+  maxTotalBytes: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
+}
+
+/** Rejects traversal segments, absolute paths, and anything outside the policy's allowlist. */
+export function assertSafeHandoffPath(relativePath: string, policy: HandoffPolicy): void {
   if (relativePath === '') {
-    throw new WikiHandoffValidationError('wiki handoff path is empty')
+    throw new WikiHandoffValidationError(`${policy.name} handoff path is empty`)
+  }
+  // Checked before any normalization: validating a slash-normalized copy while writing the raw
+  // string would let `a\\b` be judged as `a/b` and written as a differently-named path.
+  if (relativePath.includes('\\')) {
+    throw new WikiHandoffValidationError(`${policy.name} handoff path contains a backslash: ${relativePath}`)
   }
   if (path.isAbsolute(relativePath)) {
-    throw new WikiHandoffValidationError(`wiki handoff path must be relative: ${relativePath}`)
+    throw new WikiHandoffValidationError(`${policy.name} handoff path must be relative: ${relativePath}`)
   }
-  const normalized = relativePath.replaceAll('\\', '/')
-  const segments = normalized.split('/')
+  const segments = relativePath.split('/')
   if (segments.includes('..') || segments.includes('.') || segments.includes('')) {
-    throw new WikiHandoffValidationError(`wiki handoff path contains traversal or empty segments: ${relativePath}`)
+    throw new WikiHandoffValidationError(
+      `${policy.name} handoff path contains traversal or empty segments: ${relativePath}`,
+    )
   }
-  if (!isAllowedWikiHandoffPath(normalized)) {
-    throw new WikiHandoffValidationError(`wiki handoff path is outside the allowed wiki scope: ${relativePath}`)
+  if (!policy.isAllowedPath(relativePath)) {
+    throw new WikiHandoffValidationError(
+      `${policy.name} handoff path is outside the allowed ${policy.name} scope: ${relativePath}`,
+    )
   }
+}
+
+/** Rejects traversal segments, absolute paths, and anything outside the wiki allowlist. */
+export function assertSafeWikiHandoffPath(relativePath: string): void {
+  assertSafeHandoffPath(relativePath, WIKI_HANDOFF_POLICY)
 }
 
 function assertManifestShape(value: unknown): asserts value is WikiHandoffManifest {
@@ -333,12 +579,22 @@ export interface ApplyWikiHandoffResult {
   deleted: string[]
 }
 
-/**
- * Validates a {@link buildWikiHandoff} artifact (allowlist, traversal, symlinks,
- * non-regular files, size cap) and only then applies it. Nothing is written until every
- * entry passes.
- */
+export interface ApplyHandoffParams extends ApplyWikiHandoffParams {
+  policy: HandoffPolicy
+}
+
+/** Validates and applies a wiki handoff: {@link validateAndApplyHandoff} under {@link WIKI_HANDOFF_POLICY}. */
 export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams): Promise<ApplyWikiHandoffResult> {
+  return validateAndApplyHandoff({...params, policy: WIKI_HANDOFF_POLICY})
+}
+
+/**
+ * Validates a {@link buildWikiHandoff}-shaped artifact against `policy` (allowlist, deletions,
+ * traversal, symlinks, non-regular files, size cap) and only then applies it. Nothing is
+ * written until every entry passes.
+ */
+export async function validateAndApplyHandoff(params: ApplyHandoffParams): Promise<ApplyWikiHandoffResult> {
+  const {policy} = params
   const readFileImpl = params.readFileImpl ?? fs.readFile
   const lstatImpl = params.lstatImpl ?? fs.lstat
   const writeFileImpl = params.writeFileImpl ?? fs.writeFile
@@ -350,7 +606,7 @@ export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams
   const unexpectedEntries = topLevelEntries.filter(entry => !ALLOWED_TOP_LEVEL_ENTRIES.has(entry))
   if (unexpectedEntries.length > 0) {
     throw new WikiHandoffValidationError(
-      `wiki handoff artifact contains unexpected top-level entries: ${unexpectedEntries.join(', ')}`,
+      `${policy.name} handoff artifact contains unexpected top-level entries: ${unexpectedEntries.join(', ')}`,
     )
   }
 
@@ -374,8 +630,14 @@ export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams
   }
   assertManifestShape(manifest)
 
+  if (!policy.allowDeletions && manifest.deleted.length > 0) {
+    throw new WikiHandoffValidationError(
+      `${policy.name} handoff does not allow deletions: ${manifest.deleted.join(', ')}`,
+    )
+  }
+
   for (const relativePath of [...manifest.changed, ...manifest.deleted]) {
-    assertSafeWikiHandoffPath(relativePath)
+    assertSafeHandoffPath(relativePath, policy)
   }
 
   let totalBytes = 0
@@ -383,15 +645,15 @@ export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams
     const sourcePath = path.join(params.handoffDir, 'files', relativePath)
     const stats = await lstatImpl(sourcePath)
     if (stats.isSymbolicLink()) {
-      throw new WikiHandoffValidationError(`refusing symlink in wiki handoff: ${relativePath}`)
+      throw new WikiHandoffValidationError(`refusing symlink in ${policy.name} handoff: ${relativePath}`)
     }
     if (!stats.isFile()) {
-      throw new WikiHandoffValidationError(`wiki handoff entry is not a regular file: ${relativePath}`)
+      throw new WikiHandoffValidationError(`${policy.name} handoff entry is not a regular file: ${relativePath}`)
     }
     totalBytes += stats.size
-    if (totalBytes > WIKI_HANDOFF_MAX_TOTAL_BYTES) {
+    if (totalBytes > policy.maxTotalBytes) {
       throw new WikiHandoffValidationError(
-        `wiki handoff exceeds the ${WIKI_HANDOFF_MAX_TOTAL_BYTES}-byte size cap (running total ${totalBytes})`,
+        `${policy.name} handoff exceeds the ${policy.maxTotalBytes}-byte size cap (running total ${totalBytes})`,
       )
     }
   }

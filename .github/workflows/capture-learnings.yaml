@@ -49,12 +49,21 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       # Harvest merged PRs where Fro Bot's substantive reviews meet the predicate
       # (substantiveReviewCount >= 2 AND correctionSignalCount >= 1), dedup against
@@ -159,7 +168,7 @@ jobs:
       # a credential.
       - name: 🤖 Author proposal bodies
         id: agent
-        uses: fro-bot/agent@e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6 # v0.117.0
+        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
         env:
           TASK_PROMPT: |
             You are authoring learning-proposal bodies. Each body distills a reusable
@@ -305,12 +314,21 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch --no-tags origin data
+              git checkout origin/data -- metadata/
+              ;;
+            2)
+              echo "data branch not yet established; skipping metadata overlay."
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
 
       - name: 📥 Download digest artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

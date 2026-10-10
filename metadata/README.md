@@ -206,9 +206,9 @@ The legacy daily-oversight Discord webhook keeps running until a separate follow
 
 ## Editing metadata files
 
-All `metadata/*.{yaml,yml}` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
+All `metadata/*.{yaml,yml}` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]` **and** opened from the `data` head branch of this repository (a fork's `data` branch does not count). This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
 
-`repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
+The `data`-head requirement applies to every guarded path, not just `repos.yaml`: a Fro Bot–authored PR from any other head branch that modifies a guarded file is blocked, and so is a PR whose head ref is anything other than exactly `data`, or whose head repository is not exactly this one. Fro Bot–authored PRs that touch only unguarded paths are unaffected. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts (for `repos.yaml`, see the sole-writer rule above).
 
 A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `Security: Private Leak Scan` commit status to the PR head SHA.
 
@@ -232,6 +232,7 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
+- Reconcile won't drop a public `owner/name` from `metadata/repos.yaml` while its wiki page exists on `data` or can't be read: it keeps the old name (and both rows of a blocked merge), skips that repo's dispatch, and logs a counts-only warning. Downgrades to private/unknown always apply. Other writers rely on the promotion privacy gate. To release a kept rename, repair the old page on `data` via an App-backed write, then rerun reconcile.
 - Manual edits to `metadata/*.{yaml,yml}` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 
