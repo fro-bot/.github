@@ -7558,3 +7558,9 @@ https://dashboard.fro.bot/operator/health.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@02323969d734075d178dfe8a477f7398089bc2f7
+
+## [2026-10-10 11:05] manual-edit | repo:marcusrbrown/panthea
+
+Renamed `marcusrbrown/panthe.ai` to `marcusrbrown/panthea`. Moved the repo page from `marcusrbrown--panthe-ai.md` to `marcusrbrown--panthea.md` and repaired wikilinks and related entries.
+
+Sources: none
