@@ -126,12 +126,15 @@ export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurv
   if (privateFlag === true && nodeId === undefined) {
     throw new Error('REPO_NODE_ID is required when REPO_PRIVATE is true')
   }
+  // Write-backs match rows by node ID only, so reject its absence here rather than on every
+  // commit retry inside the mutator.
+  const requiredNodeId = requiredEnvFrom(env, 'REPO_NODE_ID')
 
   return {
     owner: requiredEnvFrom(env, 'REPO_OWNER'),
     repo: requiredEnvFrom(env, 'REPO_NAME'),
     ...(privateFlag === undefined ? {} : {private: privateFlag}),
-    ...(nodeId === undefined ? {} : {node_id: nodeId}),
+    node_id: requiredNodeId,
     at: parseAt(env.SURVEY_AT),
     status: parseStatus(requiredEnvFrom(env, 'SURVEY_STATUS')),
   }

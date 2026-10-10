@@ -365,8 +365,8 @@ export interface RecordSurveyResultInput {
   owner: string
   repo: string
   private?: boolean
-  /** Required at write time: survey write-backs match rows by node ID only. */
-  node_id?: string
+  /** Survey write-backs match rows by node ID only. */
+  node_id: string
   at: Date
   status: SurveyStatus
 }

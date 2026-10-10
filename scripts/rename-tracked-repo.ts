@@ -116,7 +116,8 @@ export interface GitDataClient {
         repo: string
         ref: string
         sha: string
-        force?: boolean
+        /** Non-force only: a forced update would overwrite a concurrent `data` commit. */
+        force?: false
       }) => Promise<{data: unknown}>
     }
   }
@@ -494,8 +495,16 @@ export function assertChangePolicy(changes: readonly RenameChange[], context: Po
       case 'write-row':
         if (change.path !== REPOS_PATH || !context.paths.has(REPOS_PATH)) policyViolation('PATH_POLICY')
         break
+      default:
+        // Exhaustiveness guard: a new op must get a rule above. At compile time this fails to
+        // type-check; at runtime it rejects rather than letting an unreviewed op through.
+        rejectUnhandledOp(change)
     }
   }
+}
+
+function rejectUnhandledOp(_change: never): never {
+  return policyViolation('PATH_POLICY')
 }
 
 function isAttributedPage(content: string | undefined, context: PolicyContext): boolean {

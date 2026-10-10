@@ -108,7 +108,7 @@ export interface FakeClient {
         repo: string
         ref: string
         sha: string
-        force?: boolean
+        force?: false
       }) => Promise<{data: {object: {sha: string}}}>
     }
   }
@@ -120,6 +120,20 @@ function sha1(...parts: string[]): string {
   const hash = createHash('sha1')
   for (const part of parts) hash.update(`${part.length}:${part}`)
   return hash.digest('hex')
+}
+
+function directChildren(entries: readonly FakeTreeEntry[]): FakeTreeEntry[] {
+  const children = new Map<string, FakeTreeEntry>()
+  for (const entry of entries) {
+    const slash = entry.path.indexOf('/')
+    if (slash === -1) {
+      children.set(entry.path, entry)
+      continue
+    }
+    const directory = entry.path.slice(0, slash)
+    children.set(directory, {path: directory, mode: '040000', type: 'tree', sha: sha1('tree', directory)})
+  }
+  return [...children.values()].sort((left, right) => left.path.localeCompare(right.path))
 }
 
 function httpError(status: number, message: string): Error {
@@ -237,7 +251,10 @@ export function createGitDataFake(options: GitDataFakeOptions = {}): GitDataFake
           record('getTree', params)
           const tree = trees.get(params.tree_sha)
           if (tree === undefined) throw httpError(404, 'Not Found')
-          const entries = [...tree.values()].sort((left, right) => left.path.localeCompare(right.path))
+          const all = [...tree.values()].sort((left, right) => left.path.localeCompare(right.path))
+          // Like the real API: without `recursive` only direct children come back, with nested
+          // directories as `tree` entries. A reader that forgets `recursive` therefore goes blind.
+          const entries = params.recursive === 'true' ? all : directChildren(all)
           const visible = truncated ? entries.slice(0, Math.max(1, Math.floor(entries.length / 2))) : entries
           return {data: {sha: params.tree_sha, truncated, tree: visible.map(entry => ({...entry}))}}
         },
@@ -288,8 +305,9 @@ export function createGitDataFake(options: GitDataFakeOptions = {}): GitDataFake
           record('updateRef', params)
           if (params.ref !== `heads/${branch}`) throw httpError(404, 'Not Found')
           requireCommit(params.sha)
-          // A non-fast-forward update is rejected unless forced, exactly like GitHub.
-          if (params.force !== true && !isAncestor(headSha, params.sha)) {
+          // A non-fast-forward update is rejected, exactly like GitHub does for an unforced one.
+          // The client type admits only `force: false`, so there is no forced path to model.
+          if (!isAncestor(headSha, params.sha)) {
             throw httpError(422, 'Update is not a fast forward')
           }
           headSha = params.sha
