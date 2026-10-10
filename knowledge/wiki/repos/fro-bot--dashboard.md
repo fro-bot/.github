@@ -5,6 +5,25 @@ created: 2026-06-15
 updated: 2026-10-10
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/.github/issues/3512
+    accessed: 2026-10-10
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.119.0
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/agent/pull/1767
+    sha: 432de95828d99f5fb36f8d82ebe2f11a5aedc883
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra/pull/1502
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37895560601
+    sha: 3216bb06abb13bcedf8ca56f0feb52d5b212d201
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra
+    sha: 9e5e289fb0c70cba2dfe2adc8cb09237a4040d93
+    accessed: 2026-10-10
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/dashboard
     sha: fd3c553691ae162846c4163060a26289fc224277
     accessed: 2026-10-10
@@ -142,6 +161,35 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-10 — deployment execution can precede the audit pin
+
+The rollout body in [#3512](https://github.com/fro-bot/.github/issues/3512)
+still names agent issues #1736, #1737, and #1740 as **Open**. Live issue state
+is **Closed**, and Project 1 marks each **Done / ready now**. The third mismatch
+is new since yesterday: OAuth default landing closed through
+[#1767](https://github.com/fro-bot/agent/pull/1767). The overall rollout remains
+**Open / In Progress / waiting**, consistent with unfinished production checks.
+
+Latest published agent **v0.119.0** contains the merge commits for checkout
+projection (#1743) and question handling (#1749), as established by GitHub
+commit comparisons. #1767's merge commit is not its ancestor. Infrastructure's
+gateway source pin remains **v0.118.2**. Release inclusion therefore improved
+for question handling since the October 9 snapshot, but neither that comparison
+nor source closure establishes production behavior.
+
+Dashboard [deploy run 37895560601](https://github.com/marcusrbrown/infra/actions/runs/37895560601)
+completed successfully for **2026.10.17**. Its
+[audit PR #1502](https://github.com/marcusrbrown/infra/pull/1502) is still open,
+while infrastructure main's compose pin and #3512's deployment table still say
+**2026.10.15**. This is a deploy-then-record workflow: the main-branch pin is
+an audit ledger that can lag executed deployment, not an independent serving
+version oracle. Fresh public health returns contract **1.8.0**, which does not
+identify a running image digest. No authenticated regression sweep was replayed.
+
+Keep source fixed, release included, deploy executed, audit recorded, and runtime
+verified separate. Dedicated tracker ownership and the volume-snapshot/paired-image
+rollback requirement remain; earlier dated snapshots are preserved below.
 
 ## 2026-10-10 — bounded source snapshot and documented consumer boundaries
 

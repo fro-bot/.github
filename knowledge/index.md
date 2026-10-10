@@ -2,6 +2,12 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-10 oversight: [[github-actions-ci]] records the merged thirteen-proposal
+codification recovery and distinguishes the new drafting workflow's empty-queue
+run from verified drafting/publication. [[fro-bot--dashboard]] records a third
+source-state mismatch and separates successful deployment from a pending audit
+pin and live image verification. Existing entries and dated evidence are retained.
+
 Catalog refreshed 2026-10-10: [[marcusrbrown--github]] (repo) and
 [[probot-settings]] (topic). Both existing catalog entries and dated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.

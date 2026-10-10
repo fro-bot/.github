@@ -4,6 +4,18 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-10
 sources:
+  - url: https://github.com/fro-bot/.github/pull/3970
+    sha: 7413df55543aca2217c691b752a11ade75416049
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/pull/3971
+    sha: 267cf77613a807e002465634cdaadb0cc381f793
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/actions/runs/37981130113
+    sha: 267cf77613a807e002465634cdaadb0cc381f793
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/issues/3966#issuecomment-6094129392
+    sha: 02323969d734075d178dfe8a477f7398089bc2f7
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/dashboard
     sha: fd3c553691ae162846c4163060a26289fc224277
     accessed: 2026-10-10
@@ -282,6 +294,34 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-10 — codification recovery and a no-op automation run are different evidence
+
+The thirteen-proposal backlog recorded on October 9 is now cleared. Merged
+[#3970](https://github.com/fro-bot/.github/pull/3970) contains four new solution
+documents and four extensions; its disposition table consolidates duplicate
+incidents and records one proposal already covered by existing docs. All thirteen
+linked proposals closed on merge. The October 10 query returns **zero open
+learning proposals**, not thirteen aging unauthored proposals. Preserve the
+earlier snapshot as historical evidence rather than silently revising its counts.
+
+Weekly drafted-solution automation subsequently landed through
+[#3971](https://github.com/fro-bot/.github/pull/3971). Its first manual
+[run](https://github.com/fro-bot/.github/actions/runs/37981130113) succeeded at
+harvest but skipped drafting and publication because there was no uncovered
+proposal work. That run verifies the empty-queue path, not model drafting,
+artifact delivery, privacy filtering, PR publication, or reviewed merge on a
+nonempty queue. The October 5 Improvement Metrics reading remains dated evidence;
+recurrence edges still measure a different population from unauthored proposals.
+
+The same day's separate
+[remediation readback](https://github.com/fro-bot/.github/issues/3966#issuecomment-6094129392)
+at `02323969` supersedes the earlier App-token scope and wiki-authority gap notes:
+mint steps now declare explicit permissions, and guarded-path promotion requires
+a recognized author **and** exact `data` head **and** the same nonempty repository
+identity. Bot authorship or a branch name alone is not an origin guarantee.
+These are source/control readbacks, not permission to bypass the established
+data writer or persist knowledge from a branch-pr remediation run.
 
 ## Candidate-image checks do not establish Main or deployment success (2026-10-10)
 

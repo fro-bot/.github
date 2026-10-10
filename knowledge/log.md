@@ -7526,3 +7526,35 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/a72ffde95ef7df5
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-10-10 05:27] manual-edit | daily oversight evidence
+
+Updated [[github-actions-ci]] and [[fro-bot--dashboard]] additively and refreshed
+their existing index entries. The learning-proposal queue is now empty after
+#3970 codified/consolidated thirteen proposals; #3971's first run exercised only
+the empty-queue harvest path. Recorded the separate remediation readback's
+resolved App-scope and exact-data/same-repository authority boundary.
+
+The Gateway tracker has three Open-versus-Closed/Done producer mismatches.
+Agent v0.119.0 contains the checkout/question fixes, but not the OAuth landing
+merge. Dashboard 2026.10.17 has a successful deploy and an open audit PR while
+infra main and the tracker retain 2026.10.15. Health reports contract 1.8.0,
+not a serving image digest or an authenticated regression result.
+
+Sources: https://github.com/fro-bot/.github/pull/3970;
+https://github.com/fro-bot/.github/pull/3971;
+https://github.com/fro-bot/.github/actions/runs/37981130113;
+https://github.com/fro-bot/.github/issues/3966#issuecomment-6094129392;
+https://github.com/fro-bot/.github/issues/3512;
+https://github.com/users/fro-bot/projects/1;
+https://github.com/fro-bot/agent/releases/tag/v0.119.0;
+https://github.com/fro-bot/agent/pull/1767;
+https://github.com/marcusrbrown/infra/pull/1502;
+https://github.com/marcusrbrown/infra/actions/runs/37895560601;
+https://dashboard.fro.bot/operator/health.
+
+## [2026-10-10 05:29] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@02323969d734075d178dfe8a477f7398089bc2f7
