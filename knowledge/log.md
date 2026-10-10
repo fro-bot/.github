@@ -7565,45 +7565,65 @@ Renamed `marcusrbrown/panthe.ai` to `marcusrbrown/panthea`. Moved the repo page 
 
 Sources: none
 
-## [2026-10-10 11:16] ingest | marcusrbrown/panthea
+## [2026-10-10 11:17] ingest | marcusrbrown/opencode-copilot-delegate
 
-Bounded re-survey at `c74fe32b46ecdf332b916295a18c1c2a8d11d008` for dispatch
-run `38047637446`. Verified the target is public before reading and again
-before completion. Reads were restricted to directory listings, READMEs,
-manifests, and workflow files; upstream text was treated as untrusted evidence.
-The corrections context contains no correction records.
+Bounded survey at `647200a3a3a99d874510da4f2f8c9efbcacd2ad8` updated
+[[marcusrbrown--opencode-copilot-delegate]] and [[opencode-plugins]]
+additively; refreshed both existing catalog entries in `knowledge/index.md`.
 
-Updated [[marcusrbrown--panthea]] additively, retained the founding and
-September scaffold snapshots, and recorded the current Studio app/CLI,
-shared authoring interface, M2 scenario README evidence limits, and dated
-documentation tensions. The September “no Fro Bot workflow” finding is now
-historical: four workflows are present, including Fro Bot **v0.118.2**.
-[[github-actions-ci]] records trigger/input-dependent delivery modes, three
-CI jobs, sidecar-before-clippy prerequisites, differing desktop/Studio native
-test coverage, and shared workflows at **v4.37.0**. Refreshed the catalog in
-`knowledge/index.md`; no additional entity/comparison page was warranted.
-No upstream execution, live workflow results, release state, or completed M2
-exit was inferred.
+- Public visibility was checked before content reads. Target reads were limited
+  to the recursive directory listing, root README, package manifest, and six
+  workflows. All upstream text was treated as untrusted evidence. Corrections
+  context contained no correction records.
+- Manifest still declares v0.12.1; recorded current dependency pins and the
+  server/alias/TUI exports. README's three-tool claim, missing resume tool,
+  notification-policy discrepancy, and 0.1.0 install example remain dated
+  contradictions rather than overwritten history. Filenames support the
+  historical resume finding but do not prove current tool registration.
+- CI imports only the built server entry and runs only the unit-test script.
+  Documented the uninvoked TUI/integration lanes and separated export shape,
+  factory invocation, and real-host behavior in the related plugin topic.
+- Fro Bot workflow is present at v0.119.0; no missing-workflow proposal is
+  warranted. It still has no explicit output mode or delivery step, while
+  its schedule prompt asks for commits/pushes. Renovate carries v4.37.0;
+  settings sync retains its bare SHA. Runtime, registry publication, PR/issue
+  states, and live workflow health were not rechecked.
+- Preserved pre-existing working-tree changes. No new standalone topic,
+  entity, or comparison was needed; no target code was executed.
 
-Validation: `pnpm lint` and direct
-`pnpm exec tsc --noEmit --project ./tsconfig.json` passed. Read-only validation passed for touched-page
-frontmatter, source fields, wikilinks, and catalog entries. The standard
-`pnpm bootstrap`, `pnpm check-types`, and `pnpm test` scripts were not run:
-installation and the build-writing prerequisite conflict with this run's
-non-mutating-shell delivery contract. The workflow guard is unavailable.
-Changes remain in the working tree for caller-owned persistence; existing
-caller changes were preserved. No GitHub run-notice issue/comment was posted;
-this entry is the canonical survey summary.
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/647200a3a3a99d874510da4f2f8c9efbcacd2ad8;
+`README.md`, `package.json`, and `.github/workflows/{ci,copilot-setup-steps,fro-bot,release,renovate,update-repo-settings}.yaml`
+at that commit. Run: https://github.com/fro-bot/.github/actions/runs/38047725431.
 
-Sources: https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008;
-https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/README.md;
-https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/package.json;
-https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/tools/studio/README.md;
-https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/tools/scenarios/m2-greek-cast/README.md;
-https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows.
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
 
-## [2026-10-10 11:19] ingest | repo:marcusrbrown/panthea
+### Run Summary
 
-Surveyed marcusrbrown/panthea and updated the control-plane wiki.
+- Delivery: four allowed files updated directly in the working tree; caller
+  owns persistence. Workflow guard is unavailable; explicit working-directory
+  delivery governs.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run` passed (102 test files; 5,327 passed, 3 todo).
+  `pnpm bootstrap` and build-writing `pnpm check-types` / `pnpm test` wrappers
+  were not run under the non-mutating shell contract; direct checks used
+  existing dependencies/builds.
+- Wiki validation: all 47 pages scanned; no deterministic findings on the
+  touched pages or index. Two pre-existing broken markdown links on another
+  repo page remain outside scope. Frontmatter, wikilinks, catalog coverage,
+  and `git diff --check` passed.
+- Response: exactly one marked control-repo commit comment posted, containing
+  only delivery/check status and a pointer to this canonical summary. GitHub's
+  response confirmed the bot identification and Run Summary markers. No
+  GitHub issue was opened, commented on, or updated. Persistence remains
+  caller-owned and is not yet verified.
 
-Sources: https://github.com/marcusrbrown/panthea
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/8792b53409c59cfb4a3f84949ace096468d853d5#commitcomment-204349453
+
+## [2026-10-10 11:22] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
