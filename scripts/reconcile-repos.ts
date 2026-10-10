@@ -1804,9 +1804,10 @@ export const TRANSITION_LABELS = [
     description: 'Integrity alert requiring manual operator review',
   },
 ] as const
-// Not part of TRANSITION_LABELS: those descriptors are pinned against `.github/settings.yml`
-// by `settings-labels-effective-set.test.ts`. This label is created on demand like the others.
-const RENAME_PENDING_LABELS = [
+// Kept apart from TRANSITION_LABELS so the visibility/integrity paths still create exactly their
+// own two labels. Like them, it is declared in `.github/settings.yml` (the settings sync deletes
+// undeclared labels) and pinned against it by `settings-labels-effective-set.test.ts`.
+export const RENAME_PENDING_LABELS = [
   {
     name: RENAME_PENDING_LABEL,
     color: '0ea5e9',
