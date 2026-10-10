@@ -7,7 +7,7 @@ import {parse} from 'yaml'
 
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 import {bootstrapDataBranch, type DataBranchBootstrapParams} from './data-branch-bootstrap.ts'
-import {addRepoEntry, findNodeNameConflict} from './repos-metadata.ts'
+import {addRepoEntry, findNameHeldByOtherNode, findNodeNameConflict} from './repos-metadata.ts'
 import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -254,6 +254,7 @@ async function processInvitation(params: {
     // transfer: the row stays untouched and no survey is dispatched for it (the survey would only
     // record a mismatch). Reconcile's node-ID issue is where the operator acts.
     let nameConflict = false
+    let nameHeldByOtherNode = false
     await params.commitMetadata({
       octokit: params.metadataOctokit,
       path: params.reposPath,
@@ -261,6 +262,9 @@ async function processInvitation(params: {
       mutator: current => {
         assertReposFile(current, 'repos')
         nameConflict = findNodeNameConflict(current.repos, entryInput)
+        // The same hold-off for a recreated repository: a new node whose owner/name another node's row
+        // still holds. `addRepoEntry` would leave the file alone, but a survey must not run either.
+        nameHeldByOtherNode = !nameConflict && findNameHeldByOtherNode(current.repos, entryInput)
         return nameConflict ? current : addRepoEntry(current, entryInput)
       },
     })
@@ -269,7 +273,12 @@ async function processInvitation(params: {
         'handle-invitation: an accepted invitation is tracked under a different owner/name (pending rename or transfer); row unchanged, survey dispatch skipped.\n',
       )
     }
-    if (acceptedPrivacy.kind !== 'private' && !nameConflict) {
+    if (nameHeldByOtherNode) {
+      process.stderr.write(
+        `handle-invitation: an accepted invitation's owner/name is held by a different tracked node (node_id=${acceptedPrivacy.nodeId}); row unchanged, survey dispatch skipped.\n`,
+      )
+    }
+    if (acceptedPrivacy.kind !== 'private' && !nameConflict && !nameHeldByOtherNode) {
       await params.octokit.rest.actions.createWorkflowDispatch({
         owner: params.owner,
         repo: params.repo,

@@ -1310,7 +1310,7 @@ describe('handleInvitations — identity-only write-back', () => {
     }
   }
 
-  async function runInvitationFor(repoName: string, initial: unknown) {
+  async function runInvitationFor(repoName: string, initial: unknown, invitedNodeId = NODE_ID) {
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const {state, commitMetadata} = inMemoryCommit(initial)
     const octokit = mockOctokit({
@@ -1319,11 +1319,11 @@ describe('handleInvitations — identity-only write-back', () => {
           {
             id: 202,
             inviter: {login: 'marcusrbrown'},
-            repository: {name: repoName, node_id: NODE_ID, private: false, owner: {login: 'marcusrbrown'}},
+            repository: {name: repoName, node_id: invitedNodeId, private: false, owner: {login: 'marcusrbrown'}},
           },
         ],
       }),
-      getRepo: async () => ({data: {node_id: NODE_ID, private: false}}),
+      getRepo: async () => ({data: {node_id: invitedNodeId, private: false}}),
       createWorkflowDispatch,
     })
 
@@ -1369,6 +1369,45 @@ describe('handleInvitations — identity-only write-back', () => {
     expect(warning).toContain('survey dispatch skipped')
     expect(warning).not.toContain('panthe')
     expect(warning).not.toContain(NODE_ID)
+  })
+
+  describe('a recreated repository whose name is held by a different node', () => {
+    const RECREATED_NODE_ID = 'R_kgDORECREATED'
+
+    it("leaves the file unchanged and dispatches no survey, so the old node's page is never written into", async () => {
+      const initial = trackedUnderOldName()
+
+      const {result, createWorkflowDispatch, state, warnings} = await runInvitationFor(
+        'panthe.ai',
+        initial,
+        RECREATED_NODE_ID,
+      )
+
+      expect(result.processed[0]).toMatchObject({status: 'accepted'})
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(state.file).toBe(initial)
+      const warning = warnings.find(line => line.startsWith('handle-invitation:'))
+      expect(warning).toContain('survey dispatch skipped')
+      // The new node's ID is the only identifier: no owner, name or the old node's ID.
+      expect(warning).toContain(RECREATED_NODE_ID)
+      expect(warning).not.toContain('panthe')
+      expect(warning).not.toContain('marcusrbrown')
+      expect(warning).not.toContain(NODE_ID)
+    })
+
+    it('still adds and surveys the recreated node when its name is free', async () => {
+      const {createWorkflowDispatch, state} = await runInvitationFor(
+        'panthea',
+        trackedUnderOldName(),
+        RECREATED_NODE_ID,
+      )
+
+      expect(createWorkflowDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({inputs: {node_id: RECREATED_NODE_ID}}),
+      )
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: {name: string}[]}
+      expect(persisted.repos.map(row => row.name)).toEqual(['panthe.ai', 'panthea'])
+    })
   })
 
   it('adds a row and dispatches a survey for a node that is not tracked yet (regression)', async () => {

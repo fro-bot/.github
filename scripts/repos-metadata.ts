@@ -131,6 +131,34 @@ export function findNodeNameConflict(repos: readonly RepoEntry[], input: RepoIde
   return match.owner !== input.owner || match.name !== input.repo
 }
 
+/**
+ * Pure predicate: true iff a public `input` with a `node_id` matches no stored node but its
+ * owner/name is held by a row for a DIFFERENT node (a repository deleted and recreated under the
+ * same name). `addRepoEntry` leaves the file unchanged in that case, so the caller must not
+ * dispatch a survey either: the survey would be keyed on the new node while the tracked page
+ * belongs to the old one.
+ *
+ * Never true for a private input (it is stored redacted under its node ID), for a node that matches
+ * a row (that is {@link findNodeNameConflict}'s case), for a redacted stored row (its name is a node
+ * ID, not a repo name) or for a row without a `node_id` (nothing to disagree with).
+ */
+export function findNameHeldByOtherNode(repos: readonly RepoEntry[], input: RepoIdentityInput): boolean {
+  if (input.private === true || input.node_id === undefined) {
+    return false
+  }
+  if (findRepoEntryIndex(repos, input, {identityOnly: true}) !== -1) {
+    return false
+  }
+
+  return repos.some(
+    entry =>
+      entry.owner !== REDACTED_OWNER &&
+      entry.node_id !== undefined &&
+      entry.owner === input.owner &&
+      entry.name === input.repo,
+  )
+}
+
 export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<RepoIdentityInput> = {}): RepoEntry {
   const nextPrivate = input.private ?? entry.private
   const nextNodeId = input.node_id ?? entry.node_id ?? (entry.owner === REDACTED_OWNER ? entry.name : undefined)

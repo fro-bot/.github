@@ -8,6 +8,7 @@ import {
   applySurveyResult,
   computeNextEligibleAt,
   DuplicateRepoIdentityError,
+  findNameHeldByOtherNode,
   findNodeNameConflict,
   normalizeRepoEntryForStorage,
   publicRepoEntryExists,
@@ -1981,6 +1982,49 @@ describe('addRepoEntry — identity-only matching', () => {
     })
 
     expect(decodePersisted(result).repos.map(entry => entry.name)).toEqual(['panthe.ai', 'brand-new'])
+  })
+})
+
+describe('findNameHeldByOtherNode', () => {
+  const RECREATED_NODE_ID = 'R_kgDO_RECREATED'
+  const input = {owner: 'marcusrbrown', repo: 'panthe.ai', node_id: RECREATED_NODE_ID, private: false}
+
+  it('reports a new public node whose owner/name is held by a row for a different node (delete-and-recreate)', () => {
+    expect(findNameHeldByOtherNode(trackedPantheon().repos, input)).toBe(true)
+  })
+
+  it('does not report the node that holds the name', () => {
+    expect(findNameHeldByOtherNode(trackedPantheon().repos, {...input, node_id: RENAMED_NODE_ID})).toBe(false)
+  })
+
+  it('does not report a name that nothing holds', () => {
+    expect(findNameHeldByOtherNode(trackedPantheon().repos, {...input, repo: 'brand-new'})).toBe(false)
+  })
+
+  it('leaves a node match to findNodeNameConflict, even when the name is held elsewhere', () => {
+    const repos = [...trackedPantheon().repos, repoEntry({name: 'panthea', node_id: 'R_other'})]
+
+    expect(findNameHeldByOtherNode(repos, {...input, repo: 'panthea', node_id: 'R_other'})).toBe(false)
+  })
+
+  it('does not report a row with no node_id, which has no identity to disagree with', () => {
+    const repos = [repoEntry({name: 'panthe.ai', node_id: undefined})]
+
+    expect(findNameHeldByOtherNode(repos, input)).toBe(false)
+  })
+
+  it('does not report an input without a node_id', () => {
+    expect(findNameHeldByOtherNode(trackedPantheon().repos, {owner: 'marcusrbrown', repo: 'panthe.ai'})).toBe(false)
+  })
+
+  it('does not report a private input, which is stored redacted under its node ID', () => {
+    expect(findNameHeldByOtherNode(trackedPantheon().repos, {...input, private: true})).toBe(false)
+  })
+
+  it('never reports through a redacted stored row, whose name is its node ID', () => {
+    const repos = [repoEntry({owner: '[REDACTED]', name: PRIVATE_NODE_ID, private: true, node_id: PRIVATE_NODE_ID})]
+
+    expect(findNameHeldByOtherNode(repos, {...input, owner: '[REDACTED]', repo: PRIVATE_NODE_ID})).toBe(false)
   })
 })
 
