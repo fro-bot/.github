@@ -1139,7 +1139,9 @@ describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () =>
       fallback: false,
     },
     {
-      label: 'not onboarded, with changes, commit skipped, result success',
+      // R5: a survey whose persistence was skipped (the onboarded gate said no, e.g. the target
+      // was renamed so its owner/name no longer matches the row) must never record 'success'.
+      label: 'not onboarded, with changes, commit skipped, result success → failure (persistence skipped)',
       context: {
         'needs.survey-repo.outputs.agent-conclusion': 'success',
         'needs.survey-repo.outputs.wiki-changed': 'true',
@@ -1150,7 +1152,7 @@ describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () =>
         'needs.survey-resolve.outputs.resolve-outcome': 'success',
         'steps.record-result.outcome': 'success',
       },
-      expectedStatus: 'success',
+      expectedStatus: 'failure',
       record: true,
       announce: false,
       fallback: false,
@@ -1303,7 +1305,8 @@ describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () =>
     expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.wiki-changed == 'true'")
     expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.result == 'success'")
     expect(SURVEY_STATUS_EXPR).toContain("steps.recheck.conclusion == 'success'")
-    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.onboarded != 'true'")
+    expect(SURVEY_STATUS_EXPR).toContain("needs.survey-repo.outputs.onboarded == 'true'")
+    expect(SURVEY_STATUS_EXPR).not.toContain("needs.survey-repo.outputs.onboarded != 'true'")
     expect(SURVEY_STATUS_EXPR).toContain("steps.wiki-commit.conclusion == 'success'")
   })
 

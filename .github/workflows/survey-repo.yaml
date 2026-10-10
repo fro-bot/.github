@@ -673,8 +673,11 @@ jobs:
       # Write the survey outcome back to metadata/repos.yaml so the reconcile staleness
       # gate can filter this repo out of tomorrow's candidate list. 'success' needs the
       # final attempt's own success + wiki change, survey-repo's job success, a passed
-      # recheck, and (when onboarded) a successful wiki commit (KTD2). Anything else —
-      # including a clean no-op exhaustion — records 'failure'.
+      # recheck, an onboarded target, and a successful wiki commit (KTD2). Anything else —
+      # including a clean no-op exhaustion, and a survey whose persistence the onboarded gate
+      # skipped (e.g. the target was renamed, so its owner/name no longer matches the row) —
+      # records 'failure'. A skipped persist is never a success. record-survey-result.ts also
+      # matches the row by REPO_NODE_ID only and downgrades a name mismatch to 'failure' itself.
       #
       # `resolve-outcome == 'success'` in this step's `if:` guards against an empty
       # REPO_OWNER/REPO_NAME: if survey-repo ended before the final attempt ran at all
@@ -694,7 +697,7 @@ jobs:
           SURVEY_STATUS:
             ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
             needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
-            (needs.survey-repo.outputs.onboarded != 'true' || steps.wiki-commit.conclusion == 'success')) && 'success' || 'failure' }}
+            needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success') && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
       # Best-effort Discord presence: announce the completed survey to the gateway,
