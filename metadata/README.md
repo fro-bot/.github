@@ -241,7 +241,7 @@ A rename is pending when a public row's node ID and owner are unchanged but GitH
 - stops dispatching surveys for that row, on every path, until the rename is applied;
 - counts it in `renamesPending` (and `renamePendingIssues`, `renamePendingDuplicatesSkipped`, `closedRenamePendingIssues`) in the run summary, counts only.
 
-The issue stays open until the rename is applied. Reconcile closes it on a later run once the row matches GitHub, and it skips that close pass in any run where a probe failed. `summary.renamed` is always 0: reconcile reports renames, it does not make them. The `reconcile:rename-pending` label is declared in `.github/settings.yml`.
+The issue stays open until the rename is applied. Reconcile closes it on a later run once the row matches GitHub, and it skips that close pass in any run where a probe failed or where owned-channel or contrib enumeration did not complete, since a partial access list cannot show that a rename was applied. `summary.renamed` is always 0: reconcile reports renames, it does not make them. The `reconcile:rename-pending` label is declared in `.github/settings.yml`.
 
 An owner change is a transfer, not a rename. It is never applied and never dispatched, and appears only in the `transferBlocked` count. Transfers are not migrated by this workflow.
 
@@ -259,7 +259,7 @@ The workflow reads `GET /repositories/{database_id}` for the row and proceeds on
 - rebuilds `knowledge/index.md`;
 - appends one `manual-edit` entry to `knowledge/log.md` naming only the public old and new names.
 
-The write uses a contents-write App token scoped to this repository. If another writer moves `data` mid-run, the workflow rebuilds from the new head and retries, up to 3 attempts. Run `Merge Data Branch` afterwards (or wait for the weekly run) to promote the change to `main`.
+The workflow runs only from `main` (a dispatch from any other ref skips the job before the token is minted). The write uses a contents-write App token scoped to this repository. If another writer moves `data` mid-run, the workflow rebuilds from the new head and retries, up to 3 attempts. Run `Merge Data Branch` afterwards (or wait for the weekly run) to promote the change to `main`.
 
 ### The `old_name` residue input
 
@@ -273,14 +273,13 @@ The workflow then requires that `GET /repos/<owner>/<old-name>` still redirects 
 
 ### Outcomes and blocked states
 
-A run that finds the rename already applied exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
+A run that finds the rename already applied (the row holds the new name and the page at the new slug carries this node's ID, with no other page for the node left behind) exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
 
 | Reason | Meaning | Next step |
 | --- | --- | --- |
-| `both-pages-present` | Pages exist at both the old and the new slug. | Compare the two pages on `data`, remove the one that should not survive, then dispatch again. No merge is attempted. |
+| `both-pages-present` | Pages exist at both the old and the new slug, including when the rename otherwise looks applied. | Compare the two pages on `data`, remove the one that should not survive, then dispatch again. No merge is attempted. |
 | `page-ahead-of-row` | A page already sits at the new slug while the row still holds the old name. | Rename the row by hand on `data` (see [Editing metadata files](#editing-metadata-files)), then dispatch again. |
 | `slug-collision` | Another row, public or redacted, maps to the old or new slug. | Resolve the colliding row first. |
-| `private-name-collision` | The new name matches a private repository's name tokens. | Do not rename; investigate before any page is published under that name. |
 | `old-page-not-attributed` | The old page carries another node ID, or has none and its structured `sources` do not list the exact old URL. | Fix the page's frontmatter on `data`, then dispatch again. The body is never used as evidence. |
 | `target-page-occupied` | The new slug holds a page that is not this repository's. | Resolve the page on `data`, then dispatch again. |
 | `unparseable-page`, `invalid-index`, `invalid-wikilinks` | The wiki snapshot would not validate after the move. | Repair the named class of problem on `data` (a broken page, an index entry, or a wikilink such as `[[old#heading]]` that is neither a page slug nor a repairable link), then dispatch again. |
@@ -291,9 +290,14 @@ A run that finds the rename already applied exits 0 and prints `{"result":"noop"
 
 Operational failures (a Git Data call failing, a truncated tree, a path or overwrite check, exhausted retries) exit non-zero with a code, a phase and an HTTP status, and nothing else.
 
+### Private-name collisions
+
+This workflow does not check a new name against private repository names: private rows are stored redacted and the workflow never reads the access list, so it has none to compare. The promotion privacy gate (`check-wiki-private-presence`) owns that check. A page it cannot attribute to a known-public repository blocks `data → main`, so a public rename onto a private repository's name is stopped there rather than here.
+
 ### Staleness window and manual follow-ups
 
 - **Page body:** the move rewrites links and frontmatter, not prose. The body can keep the old name until the next scheduled survey refreshes it, up to one survey cadence interval (14, 21 or 30 days, by discovery channel).
+- **In-flight surveys:** a survey that started before the rename lands re-checks the tracked row against `data` just before its wiki commit. It finds the old name gone, skips the commit and records `failure`, so it cannot recreate the old-slug page.
 - **`allowlist.yaml`:** it is operator-edited and not rewritten. If a renamed repo is listed in `approved_contrib_repos`, re-list it under its new name on `data`.
 - **`reset-survey-status`:** it matches rows by exact `owner/name`. After a rename, pass the new name.
 - **Survey and invitation write-backs** match rows by node ID only and never change a row's owner or name. A survey whose target no longer matches its row records `failure`, not `success`.
