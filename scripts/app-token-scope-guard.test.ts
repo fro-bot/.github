@@ -28,6 +28,33 @@ import {parse} from 'yaml'
 /** Builds a GitHub Actions expression without tripping no-template-curly-in-string. */
 const gh = (inner: string): string => `$${'{{'} ${inner} }}`
 
+/**
+ * Every spelling of `steps.<id>.outputs.token` other than the canonical dot form that GitHub's
+ * expression parser accepts: bracket notation with either quote style, mixed notation, extra
+ * whitespace and any letter case (contexts are case-insensitive).
+ */
+const BRACKET_TOKEN_FORMS = (id: string): [string, string][] =>
+  [
+    `steps['${id}'].outputs.token`,
+    `steps["${id}"].outputs.token`,
+    `steps['${id}']['outputs']['token']`,
+    `steps["${id}"]["outputs"]["token"]`,
+    `steps.${id}['outputs'].token`,
+    `steps.${id}.outputs["token"]`,
+    `steps['${id}'].outputs['token']`,
+    `steps [ '${id}' ] . outputs [ "token" ]`,
+    `STEPS.${id.toUpperCase()}.OUTPUTS.TOKEN`,
+  ].map(expression => [expression, expression])
+
+/** Leaks that are not the `token` output but still read a mint's outputs. */
+const OTHER_OUTPUT_FORMS = (id: string): [string, string][] =>
+  [`toJSON(steps['${id}'].outputs)`, `steps['${id}'].outputs.other`, `toJSON(steps.${id}.outputs)`].map(expression => [
+    expression,
+    expression,
+  ])
+
+const LEAK_FORMS = (id: string): [string, string][] => [...BRACKET_TOKEN_FORMS(id), ...OTHER_OUTPUT_FORMS(id)]
+
 const MINT_USES_PREFIX = 'actions/create-github-app-token@'
 const PERMISSION_PREFIX = 'permission-'
 const FORBIDDEN_PERMISSIONS = new Set(['workflows', 'administration'])
@@ -378,6 +405,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+// ─── Step-output references (dot and bracket notation) ──────────────────────
+
+const escapeRegExp = (text: string): string => text.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)
+
+/** One property access in a GitHub expression: `.name`, `['name']` or `["name"]`, whitespace-tolerant. */
+const accessor = (name: string): string => {
+  const escaped = escapeRegExp(name)
+  return String.raw`(?:\s*\.\s*${escaped}|\s*\[\s*(?:'${escaped}'|"${escaped}")\s*\])`
+}
+
+/**
+ * Matches `steps.<stepId>.outputs` (and, when `output` is given, `.<output>`) in every notation
+ * GitHub's expression parser accepts: dot or bracket access with either quote style, mixed
+ * notation, spaces, and any letter case. Without `output`, any property of `outputs` (or the
+ * `outputs` object itself) matches. Matches the identifier exactly, never a prefix of a longer id.
+ */
+function stepOutputPattern(stepId: string, output?: string): RegExp {
+  const tail = output === undefined ? String.raw`(?![\w-])` : `${accessor(output)}(?![\w-])`
+  return new RegExp(String.raw`(?<![\w.-])steps${accessor(stepId)}${accessor('outputs')}${tail}`, 'gi')
+}
+
+/** Every string (keys and leaves) in a parsed YAML value, unescaped; JSON.stringify would escape quotes. */
+function stringsIn(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(item => stringsIn(item))
+  if (isRecord(value)) return Object.entries(value).flatMap(([key, item]) => [key, ...stringsIn(item)])
+  return []
+}
+
+/** How many times `value` references a step's outputs, in any notation. */
+function countStepOutputRefs(value: unknown, stepId: string, output?: string): number {
+  const pattern = stepOutputPattern(stepId, output)
+  return stringsIn(value).reduce((total, text) => total + [...text.matchAll(pattern)].length, 0)
+}
+
 const keyOf = (file: string, job: string, id: string | undefined): string => `${file}#${job}#${id ?? '(no step id)'}`
 
 /** Collects every create-github-app-token step from already-parsed workflows, keyed by file name. */
@@ -492,15 +554,14 @@ function consumerViolations(mint: Mint, row: Extract<Row, {kind: 'computed list'
   if (consumer.if !== row.guard) {
     violations.push(`${mint.key}: consuming step ${row.consumer} lacks the non-empty guard ${row.guard}`)
   }
-  const consumerText = JSON.stringify(consumer)
   const tokenRef = `steps.${mint.id}.outputs.token`
-  if (!consumerText.includes(tokenRef)) {
+  if (mint.id === undefined || countStepOutputRefs(consumer, mint.id, 'token') === 0) {
     violations.push(`${mint.key}: consuming step ${row.consumer} does not use ${tokenRef}`)
   }
   for (const other of mint.steps) {
     if (!isRecord(other) || typeof other.uses !== 'string' || !other.uses.startsWith(MINT_USES_PREFIX)) continue
     if (typeof other.id !== 'string' || other.id === mint.id) continue
-    if (consumerText.includes(`steps.${other.id}.outputs.token`)) {
+    if (countStepOutputRefs(consumer, other.id) > 0) {
       violations.push(`${mint.key}: consuming step ${row.consumer} also uses another mint's token (${other.id})`)
     }
   }
@@ -895,6 +956,32 @@ describe('app-token scope guard: each rule fails against an in-memory fixture', 
       expect(sibling.join('\n')).toContain("also uses another mint's token (discovery)")
     })
 
+    it.each(LEAK_FORMS('discovery'))(
+      'fails when the consumer also uses a sibling mint token written as %s',
+      (_label, expression) => {
+        const violations = violationsFor(
+          fixtureWorkflow(
+            mintStep('discovery', {owner: 'fro-bot', 'permission-metadata': 'read'}),
+            mintStep('mint', mintWith, {if: guard}),
+            consumer({env: {GITHUB_TOKEN: gh('steps.mint.outputs.token'), OTHER: gh(expression)}}),
+          ),
+          [row],
+        )
+        expect(violations.join('\n')).toContain("also uses another mint's token (discovery)")
+      },
+    )
+
+    it.each(BRACKET_TOKEN_FORMS('mint'))(
+      'counts the mint token as used when the consumer writes it as %s',
+      (_label, expression) => {
+        const violations = violationsFor(
+          fixtureWorkflow(mintStep('mint', mintWith, {if: guard}), consumer({env: {GITHUB_TOKEN: gh(expression)}})),
+          [row],
+        )
+        expect(violations).toStrictEqual([])
+      },
+    )
+
     it('fails a wrong repositories expression or owner', () => {
       const wrongList = violationsFor(
         fixtureWorkflow(mintStep('mint', {...mintWith, repositories: 'a,b'}, {if: guard}), consumer()),
@@ -989,7 +1076,6 @@ function bindingViolations(workflow: unknown, spec: BindingSpec): string[] {
 
   const violations: string[] = []
   const envNames = new Set(spec.bindings.map(binding => binding.env))
-  const outputRefs = spec.bindings.map(binding => `steps.${binding.mintId}.outputs`)
   const consumers = steps.filter(
     step => isRecord(step) && isRecord(step.env) && Object.keys(step.env).some(name => envNames.has(name)),
   )
@@ -1024,13 +1110,14 @@ function bindingViolations(workflow: unknown, spec: BindingSpec): string[] {
     ['job-level fields', jobRest],
     ...steps.map((step, index): [string, unknown] => [`step #${index}`, step]),
   ]
-  for (const ref of outputRefs) {
-    const referencing = scopes.filter(([, scope]) => JSON.stringify(scope).includes(ref)).map(([name]) => name)
+  for (const {mintId} of spec.bindings) {
+    const ref = `steps.${mintId}.outputs`
+    const referencing = scopes.filter(([, scope]) => countStepOutputRefs(scope, mintId) > 0).map(([name]) => name)
     if (referencing.length !== 1 || !referencing[0]?.startsWith('step #')) {
       violations.push(
         `${where}: ${ref} must be referenced only by the consuming step, found in [${referencing.join(', ')}]`,
       )
-    } else if (JSON.stringify(consumers[0]).split(ref).length - 1 !== 1) {
+    } else if (countStepOutputRefs(consumers[0], mintId) !== 1) {
       violations.push(`${where}: ${ref} must be referenced once in the consuming step`)
     }
   }
@@ -1096,6 +1183,67 @@ describe('app-token scope guard: discovery and writer token bindings', () => {
       expect(bindingViolations(workflowOf(good, [extra]), spec).join('\n')).toContain(
         'must be referenced only by the consuming step',
       )
+    })
+
+    it.each(LEAK_FORMS('writer-token'))(
+      'fails when another step references the writer token as %s',
+      (_label, expression) => {
+        const leak = {name: 'leak', env: {GH_TOKEN: gh(expression)}}
+        expect(bindingViolations(workflowOf(good, [leak]), spec).join('\n')).toContain(
+          'steps.writer-token.outputs must be referenced only by the consuming step',
+        )
+      },
+    )
+
+    it.each(LEAK_FORMS('discovery-token'))(
+      'fails when another step references the discovery token as %s (with, run and if)',
+      (_label, expression) => {
+        for (const leak of [
+          {uses: 'y', with: {token: gh(expression)}},
+          {run: `echo ${gh(expression)}`},
+          {if: expression, run: 'true'},
+        ]) {
+          expect(bindingViolations(workflowOf(good, [leak]), spec).join('\n')).toContain(
+            'steps.discovery-token.outputs must be referenced only by the consuming step',
+          )
+        }
+      },
+    )
+
+    it.each(LEAK_FORMS('writer-token'))(
+      'fails when the consuming step references the writer token a second time as %s',
+      (_label, expression) => {
+        const doubled = {...good, EXTRA: gh(expression)}
+        expect(bindingViolations(workflowOf(doubled), spec).join('\n')).toContain(
+          'steps.writer-token.outputs must be referenced once in the consuming step',
+        )
+      },
+    )
+
+    it.each(LEAK_FORMS('writer-token'))(
+      'fails when job-level env references the writer token as %s',
+      (_label, expression) => {
+        const withJobEnv = workflowOf(good, [], {env: {X: gh(expression)}})
+        expect(bindingViolations(withJobEnv, spec).join('\n')).toContain('job-level fields')
+      },
+    )
+
+    it('keeps the exact binding strict: a bracket-form env value is not the canonical dot form', () => {
+      const bracketBinding = {D: gh("steps['discovery-token'].outputs.token"), W: good.W}
+      const violations = bindingViolations(workflowOf(bracketBinding), spec)
+      expect(violations.join('\n')).toContain('D must be exactly')
+    })
+
+    it('does not flag references to other steps, other step fields or lookalike ids', () => {
+      const benign = [
+        {name: 'a', if: "steps.writer-token.outcome == 'success'", run: 'true'},
+        {name: 'b', env: {X: gh('steps.writer-token2.outputs.token')}},
+        {name: 'c', env: {X: gh("steps['writer'].outputs.token")}},
+        {name: 'd', env: {X: gh('mysteps.writer-token.outputs.token')}},
+        {name: 'e', env: {X: gh('steps.writer-token.outputsx.token')}},
+        {name: 'f', env: {X: gh('steps.other.outputs.token')}},
+      ]
+      expect(bindingViolations(workflowOf(good, benign), spec)).toStrictEqual([])
     })
 
     it('fails when another step passes a token via with or run', () => {
