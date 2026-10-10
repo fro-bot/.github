@@ -119,6 +119,11 @@ export declare function rebuildWikiIndex(params: {
  * forcing operators to hand-merge conflict markers.
  */
 export declare function mergeWikiLogs(logs: (string | undefined)[]): string;
+/**
+ * Append one entry to `knowledge/log.md`, keeping the existing text byte-for-byte. The log is
+ * append-only; callers must never rewrite history. Exported for the operator rename path.
+ */
+export declare function appendLogEntry(existingLog: string | undefined, params: Pick<BuildWikiIngestChangesParams, 'operation' | 'target' | 'summary' | 'timestamp' | 'sources'>): string;
 export declare function pageTypeFromPath(path: string): WikiPageType;
 declare function getChangedWikiPaths(): Promise<string[]>;
 /**

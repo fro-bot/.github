@@ -1,0 +1,689 @@
+import type {RepoEntry} from './schemas.ts'
+import {
+  applyPageChanges,
+  mergeWikiLogs,
+  planRepoPageMove,
+  validateWikilinks,
+  type PageChange,
+  type PlanRepoPageMoveParams,
+  type RepoPageMovePlan,
+} from '@fro-bot/wiki-write-core'
+import {describe, expect, it} from 'vitest'
+import {parse} from 'yaml'
+import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'
+import {buildPrivateTokenSet, computeRepoSlug} from './wiki-slug.ts'
+
+// ---------------------------------------------------------------------------
+// Fixtures: redacted-shape copies of the live panthe.ai page and the topic page
+// that references it (`related:` entry and body wikilink). The prose is elided; the frontmatter
+// keys, source-entry shape, table row and link forms are the live ones.
+// ---------------------------------------------------------------------------
+
+const NODE_ID = 'R_kgDOJt6i0Q'
+const OWNER = 'marcusrbrown'
+const OLD_NAME = 'panthe.ai'
+const NEW_NAME = 'panthea'
+const OLD_SLUG = 'marcusrbrown--panthe-ai'
+const NEW_SLUG = 'marcusrbrown--panthea'
+const OLD_URL = 'https://github.com/marcusrbrown/panthe.ai'
+const NEW_URL = 'https://github.com/marcusrbrown/panthea'
+
+const INDEX_PATH = 'knowledge/index.md'
+const LOG_PATH = 'knowledge/log.md'
+const README_PATH = 'knowledge/wiki/README.md'
+const OLD_PAGE_PATH = `knowledge/wiki/repos/${OLD_SLUG}.md`
+const NEW_PAGE_PATH = `knowledge/wiki/repos/${NEW_SLUG}.md`
+const TOPIC_PATH = 'knowledge/wiki/topics/github-actions-ci.md'
+const MOTHERSHIP_PATH = 'knowledge/wiki/repos/marcusrbrown--mothership.md'
+
+function oldRepoPage(overrides: {nodeId?: string | null; sourceUrls?: string[] | null; body?: string} = {}): string {
+  const nodeId = overrides.nodeId === undefined ? null : overrides.nodeId
+  const sourceUrls = overrides.sourceUrls === undefined ? [OLD_URL, OLD_URL] : overrides.sourceUrls
+  const lines = [
+    '---',
+    'type: repo',
+    'title: marcusrbrown/panthe.ai',
+    'created: 2026-09-26',
+    'updated: 2026-09-26',
+    ...(nodeId === null ? [] : [`node_id: ${nodeId}`]),
+    ...(sourceUrls === null
+      ? []
+      : [
+          'sources:',
+          ...sourceUrls.flatMap((url, index) => [
+            `  - url: ${url}`,
+            `    sha: ${String(index).repeat(40)}`,
+            '    accessed: 2026-09-26',
+          ]),
+        ]),
+    'tags:',
+    '  - repository-stub',
+    '  - bun',
+    'related:',
+    '  - github-actions-ci',
+    '  - marcusrbrown--mothership',
+    '---',
+    '',
+    '# marcusrbrown/panthe.ai',
+    '',
+    overrides.body ?? 'Scaffold survey notes. See [[marcusrbrown--mothership]] for another Tauri app.',
+    '',
+    'The automation status is recorded in [[github-actions-ci]].',
+    '',
+  ]
+  return lines.join('\n')
+}
+
+function topicPage(related: string[] = [OLD_SLUG, 'marcusrbrown--mothership'], tableLink = `[[${OLD_SLUG}]]`): string {
+  return [
+    '---',
+    'type: topic',
+    'title: GitHub Actions CI',
+    'created: 2026-06-01',
+    'updated: 2026-10-07',
+    'tags:',
+    '  - ci',
+    'related:',
+    ...related.map(entry => `  - ${entry}`),
+    '---',
+    '',
+    '# GitHub Actions CI',
+    '',
+    '| Repo | Status | Notes |',
+    '| --- | --- | --- |',
+    `| ${tableLink} | Present at the second survey | N/A |`,
+    '| [[marcusrbrown--mothership]] | Present | N/A |',
+    '',
+  ].join('\n')
+}
+
+function mothershipPage(): string {
+  return [
+    '---',
+    'type: repo',
+    'title: marcusrbrown/mothership',
+    'created: 2026-07-06',
+    'updated: 2026-10-07',
+    'node_id: R_kgDOTOX0_A',
+    'sources:',
+    '  - url: https://github.com/marcusrbrown/mothership',
+    `    sha: ${'a'.repeat(40)}`,
+    '    accessed: 2026-10-07',
+    'related:',
+    '  - github-actions-ci',
+    '---',
+    '',
+    '# marcusrbrown/mothership',
+    '',
+    'Tauri desktop shell.',
+    '',
+  ].join('\n')
+}
+
+const LOG_HISTORY = [
+  '# Wiki Log',
+  '',
+  'Chronological record of all wiki operations.',
+  '',
+  '---',
+  '',
+  '_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._',
+  '',
+  '## [2026-09-26 23:00] ingest | marcusrbrown/panthe.ai',
+  '',
+  `Survey of the repo. Linked [[${OLD_SLUG}]] from [[github-actions-ci]].`,
+  '',
+  `Sources: ${OLD_URL}`,
+  '',
+].join('\n')
+
+const INDEX_PAGE = [
+  '# Wiki Index',
+  '',
+  'Master catalog of all wiki pages, organized by type.',
+  '',
+  '## Repos',
+  '',
+  `- [[${OLD_SLUG}]] — Placeholder scaffold with a curated description.`,
+  '- [[marcusrbrown--mothership]] — marcusrbrown/mothership',
+  '',
+  '## Topics',
+  '',
+  '- [[github-actions-ci]] — GitHub Actions CI',
+  '',
+  '## Entities',
+  '',
+  '_No entity pages yet. Pages will appear here as tools and services are documented._',
+  '',
+  '## Comparisons',
+  '',
+  '_No comparison pages yet. Pages will appear here as alternatives are analyzed._',
+  '',
+  '---',
+  '',
+  '_This index is maintained automatically by wiki ingest operations. Manual edits are preserved across updates._',
+  '',
+].join('\n')
+
+const README_BODY = `# Wiki\n\nHuman scaffolding. Mentions [[${OLD_SLUG}]] on purpose; it is never rewritten.\n`
+
+function snapshot(overrides: Record<string, string | null> = {}): Record<string, string> {
+  const files: Record<string, string> = {
+    [INDEX_PATH]: INDEX_PAGE,
+    [LOG_PATH]: LOG_HISTORY,
+    [README_PATH]: README_BODY,
+    [OLD_PAGE_PATH]: oldRepoPage(),
+    [MOTHERSHIP_PATH]: mothershipPage(),
+    [TOPIC_PATH]: topicPage(),
+  }
+  for (const [path, content] of Object.entries(overrides)) {
+    if (content === null) delete files[path]
+    else files[path] = content
+  }
+  return files
+}
+
+const TIMESTAMP = new Date('2026-10-10T12:34:56Z')
+
+function moveParams(overrides: Partial<PlanRepoPageMoveParams> = {}): PlanRepoPageMoveParams {
+  return {
+    files: snapshot(),
+    nodeId: NODE_ID,
+    owner: OWNER,
+    oldName: OLD_NAME,
+    newName: NEW_NAME,
+    rowName: OLD_NAME,
+    otherRows: [{owner: OWNER, name: 'mothership'}],
+    privateTokens: new Set<string>(),
+    timestamp: TIMESTAMP,
+    ...overrides,
+  }
+}
+
+function changesOf(plan: RepoPageMovePlan): readonly PageChange[] {
+  if (plan.outcome !== 'moved' && plan.outcome !== 'edited-in-place') {
+    throw new Error(`expected a change set, got ${plan.outcome}`)
+  }
+  return plan.changes
+}
+
+function applied(plan: RepoPageMovePlan, files: Record<string, string> = snapshot()): Record<string, string> {
+  return applyPageChanges(files, changesOf(plan))
+}
+
+function frontmatterOf(content: string): Record<string, unknown> {
+  const match = /^---\n([\s\S]+?)\n---/u.exec(content)
+  const parsed: unknown = parse(match?.[1] ?? '')
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('not frontmatter')
+  return parsed as Record<string, unknown>
+}
+
+function repoSnapshots(files: Record<string, string>): WikiPageSnapshot[] {
+  return Object.entries(files)
+    .filter(([path]) => path.startsWith('knowledge/wiki/repos/') && path.endsWith('.md'))
+    .map(([path, content]) => {
+      const filename = path.slice(path.lastIndexOf('/') + 1)
+      return {filename, stem: filename.replace(/\.md$/u, ''), hash: `hash-${filename}`, content}
+    })
+}
+
+function publicRows(names: string[]): RepoEntry[] {
+  return names.map((name, index) => ({
+    owner: OWNER,
+    name,
+    added: '2026-09-26',
+    onboarding_status: 'onboarded',
+    last_survey_at: null,
+    last_survey_status: null,
+    has_fro_bot_workflow: true,
+    has_renovate: true,
+    discovery_channel: 'collab',
+    next_survey_eligible_at: null,
+    private: false,
+    node_id: `NODE_${index}`,
+    database_id: index + 1,
+  }))
+}
+
+function leaksFor(files: Record<string, string>, publicNames: string[]) {
+  return detectPrivateWikiLeaks({
+    dataWikiPages: repoSnapshots(files),
+    publicSlugMap: buildPublicSlugMap(publicRows(publicNames)),
+    grandfatherPages: [],
+  })
+}
+
+function expectBlocked(plan: RepoPageMovePlan, reason: string): void {
+  expect(plan).toEqual({outcome: 'blocked', reason})
+}
+
+describe('planRepoPageMove: moving a repo page to a new slug', () => {
+  it('moves the page, sets node_id and the new title, and adds the new-name source without aliases', () => {
+    // #given the live-shaped legacy page (no node_id) whose sources name the old repository URL
+    // #when the rename to marcusrbrown/panthea is planned
+    const plan = planRepoPageMove(moveParams())
+    const next = applied(plan)
+
+    // #then the page lives at the new slug and the old path is gone
+    expect(plan.outcome).toBe('moved')
+    expect(next[NEW_PAGE_PATH]).toBeDefined()
+    expect(next[OLD_PAGE_PATH]).toBeUndefined()
+    const values = frontmatterOf(next[NEW_PAGE_PATH] ?? '')
+    expect(values.node_id).toBe(NODE_ID)
+    expect(values.title).toBe('marcusrbrown/panthea')
+    expect(values).not.toHaveProperty('aliases')
+    const urls = (values.sources as {url: string}[]).map(source => source.url)
+    expect(urls).toContain(NEW_URL)
+    expect(urls.filter(url => url === OLD_URL)).toHaveLength(2)
+    expect(values.created).toBe('2026-09-26')
+    expect(values.updated).toBe('2026-09-26')
+    // node_id sits right after `updated`, where the ingest writer puts it
+    expect(Object.keys(values).slice(0, 6)).toEqual(['type', 'title', 'created', 'updated', 'node_id', 'sources'])
+  })
+
+  it('records the deletion of the old page and creation of the new page as separate operations', () => {
+    const changes = changesOf(planRepoPageMove(moveParams()))
+
+    expect(changes.filter(change => change.op === 'create-page').map(change => change.path)).toEqual([NEW_PAGE_PATH])
+    expect(changes.filter(change => change.op === 'delete-page').map(change => change.path)).toEqual([OLD_PAGE_PATH])
+  })
+
+  it('repairs related: entries and body wikilinks in other pages, leaving unrelated frontmatter bytes alone', () => {
+    const next = applied(planRepoPageMove(moveParams()))
+
+    const topic = next[TOPIC_PATH] ?? ''
+    expect(frontmatterOf(topic).related).toEqual([NEW_SLUG, 'marcusrbrown--mothership'])
+    expect(topic).toContain(`| [[${NEW_SLUG}]] | Present at the second survey | N/A |`)
+    expect(topic).not.toContain(OLD_SLUG)
+    // every other line of the topic page is byte-identical
+    const before = topicPage().split('\n')
+    const after = topic.split('\n')
+    expect(after).toHaveLength(before.length)
+    const differing = after.flatMap((line, index) => (line === before[index] ? [] : [index]))
+    expect(differing).toHaveLength(2)
+  })
+
+  it('repairs the links inside the moved page itself', () => {
+    const files = snapshot({
+      [OLD_PAGE_PATH]: oldRepoPage({body: `Self reference [[${OLD_SLUG}]] and [[github-actions-ci]].`}),
+    })
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[NEW_PAGE_PATH]).toContain(`Self reference [[${NEW_SLUG}]]`)
+    expect(next[NEW_PAGE_PATH]).not.toContain(`[[${OLD_SLUG}]]`)
+  })
+
+  it.each([
+    ['[[OLD]]', '[[NEW]]'],
+    ['[[OLD|the panthea page]]', '[[NEW|the panthea page]]'],
+    ['[[ OLD ]]', '[[ NEW ]]'],
+    ['[[ OLD | spaced label ]]', '[[ NEW | spaced label ]]'],
+  ])('repairs the link form %s keeping its whitespace and label', (before, after) => {
+    const body = `Intro ${before.replace('OLD', OLD_SLUG)} and more.`
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${body}\n`})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[TOPIC_PATH]).toContain(`Intro ${after.replace('NEW', NEW_SLUG)} and more.`)
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+  })
+
+  it('does not touch a link to a different page whose slug merely starts with the old slug', () => {
+    const files = snapshot({
+      [TOPIC_PATH]: `${topicPage()}\nSee [[${OLD_SLUG}-extra]] and [[x${OLD_SLUG}]].\n`,
+      'knowledge/wiki/repos/marcusrbrown--panthe-ai-extra.md': mothershipPage().replace('R_kgDOTOX0_A', 'R_other'),
+      [`knowledge/wiki/repos/x${OLD_SLUG}.md`]: mothershipPage().replace('R_kgDOTOX0_A', 'R_other2'),
+    })
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[TOPIC_PATH]).toContain(`[[${OLD_SLUG}-extra]] and [[x${OLD_SLUG}]]`)
+  })
+
+  it('appends exactly one manual-edit entry naming only the public old and new names, never rewriting history', () => {
+    const next = applied(planRepoPageMove(moveParams()))
+
+    const log = next[LOG_PATH] ?? ''
+    expect(log.startsWith(LOG_HISTORY)).toBe(true)
+    const appended = log.slice(LOG_HISTORY.length)
+    expect(appended.match(/^## \[/gmu)).toHaveLength(1)
+    expect(appended).toContain('## [2026-10-10 12:34] manual-edit | repo:marcusrbrown/panthea')
+    expect(appended).toContain('marcusrbrown/panthe.ai')
+    expect(appended).toContain('marcusrbrown/panthea')
+    expect(appended).not.toContain(NODE_ID)
+    // the historical line that mentions the old slug is untouched
+    expect(log).toContain(`Linked [[${OLD_SLUG}]] from [[github-actions-ci]].`)
+    // the log parser accepts the new entry
+    expect(mergeWikiLogs([log])).toContain('manual-edit | repo:marcusrbrown/panthea')
+  })
+
+  it('rebuilds the index with the new slug, keeping the curated description and other entries', () => {
+    const next = applied(planRepoPageMove(moveParams()))
+
+    const index = next[INDEX_PATH] ?? ''
+    expect(index).toContain(`- [[${NEW_SLUG}]] — Placeholder scaffold with a curated description.`)
+    expect(index).not.toContain(OLD_SLUG)
+    expect(index).toContain('- [[marcusrbrown--mothership]] — marcusrbrown/mothership')
+    expect(index).toContain('- [[github-actions-ci]] — GitHub Actions CI')
+  })
+
+  it('never touches README.md, even when it mentions the old slug', () => {
+    const changes = changesOf(planRepoPageMove(moveParams()))
+
+    expect(changes.map(change => change.path)).not.toContain(README_PATH)
+    expect(applied(planRepoPageMove(moveParams()))[README_PATH]).toBe(README_BODY)
+  })
+
+  it('touches only pages that contain a rewritten reference, plus the page, index and log', () => {
+    const changes = changesOf(planRepoPageMove(moveParams()))
+
+    const byOp = (left: string[], right: string[]): number => (left[0] ?? '').localeCompare(right[0] ?? '')
+    expect(changes.map(change => [change.op, change.path]).sort(byOp)).toEqual(
+      [
+        ['create-page', NEW_PAGE_PATH],
+        ['delete-page', OLD_PAGE_PATH],
+        ['repair-links', TOPIC_PATH],
+        ['write-index', INDEX_PATH],
+        ['append-log', LOG_PATH],
+      ].sort(byOp),
+    )
+    // the mothership page links only to the topic, so it is not rewritten
+    expect(changes.map(change => change.path)).not.toContain(MOTHERSHIP_PATH)
+  })
+
+  it('produces a snapshot that passes validateWikilinks and the promotion attribution check', () => {
+    const next = applied(planRepoPageMove(moveParams({rowName: NEW_NAME})))
+
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+    expect(leaksFor(next, [NEW_NAME, 'mothership'])).toEqual([])
+    // the same oracle flags the page when the attribution evidence is missing
+    const unattributed = {
+      ...next,
+      [NEW_PAGE_PATH]: (next[NEW_PAGE_PATH] ?? '').replace(NEW_URL, 'https://github.com/x/y'),
+    }
+    expect(leaksFor(unattributed, [NEW_NAME, 'mothership'])).toEqual([
+      {filename: `${NEW_SLUG}.md`, reason: 'unattributable-page'},
+    ])
+  })
+
+  it('is deterministic', () => {
+    expect(planRepoPageMove(moveParams())).toEqual(planRepoPageMove(moveParams()))
+  })
+
+  it('handles the residue state: the row already holds the new name and the page is still at the old slug', () => {
+    const plan = planRepoPageMove(moveParams({rowName: NEW_NAME}))
+
+    expect(plan.outcome).toBe('moved')
+    expect(applied(plan)[NEW_PAGE_PATH]).toBeDefined()
+  })
+
+  it('adopts a legacy page whose structured sources contain the exact old repository URL, and an id-bearing page', () => {
+    for (const files of [
+      snapshot({[OLD_PAGE_PATH]: oldRepoPage({nodeId: null})}),
+      snapshot({[OLD_PAGE_PATH]: oldRepoPage({nodeId: NODE_ID, sourceUrls: ['https://github.com/someone/else']})}),
+    ]) {
+      expect(planRepoPageMove(moveParams({files})).outcome).toBe('moved')
+    }
+  })
+
+  it('keeps related lists in flow style repairable and deduplicates when both slugs are present', () => {
+    const flowTopic = topicPage().replace(
+      /related:\n {2}- .*\n {2}- .*\n/u,
+      `related: [${OLD_SLUG}, ${NEW_SLUG}, marcusrbrown--mothership]\n`,
+    )
+    const files = snapshot({[TOPIC_PATH]: flowTopic})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(frontmatterOf(next[TOPIC_PATH] ?? '').related).toEqual([NEW_SLUG, 'marcusrbrown--mothership'])
+  })
+
+  it('repairs quoted related entries and keeps their quoting', () => {
+    const quotedTopic = topicPage([`'${OLD_SLUG}'`, `"marcusrbrown--mothership"`])
+    const files = snapshot({[TOPIC_PATH]: quotedTopic})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[TOPIC_PATH]).toContain(`  - '${NEW_SLUG}'`)
+    expect(frontmatterOf(next[TOPIC_PATH] ?? '').related).toEqual([NEW_SLUG, 'marcusrbrown--mothership'])
+  })
+})
+
+describe('planRepoPageMove: same-slug renames edit the page in place', () => {
+  const SAME_SLUG_NAME = 'panthe-ai'
+
+  it('edits the page in place: node_id, title and the added new-name source, with no move', () => {
+    const plan = planRepoPageMove(moveParams({newName: SAME_SLUG_NAME}))
+    const next = applied(plan)
+
+    expect(plan.outcome).toBe('edited-in-place')
+    expect(changesOf(plan).map(change => change.op)).toEqual(['edit-page', 'append-log'])
+    const values = frontmatterOf(next[OLD_PAGE_PATH] ?? '')
+    expect(values.node_id).toBe(NODE_ID)
+    expect(values.title).toBe('marcusrbrown/panthe-ai')
+    expect((values.sources as {url: string}[]).map(source => source.url)).toContain(
+      'https://github.com/marcusrbrown/panthe-ai',
+    )
+    expect(next[INDEX_PATH]).toBe(INDEX_PAGE)
+  })
+
+  it('passes the promotion attribution oracle where the unedited page would not', () => {
+    const plan = planRepoPageMove(moveParams({newName: SAME_SLUG_NAME}))
+
+    expect(leaksFor(snapshot(), [SAME_SLUG_NAME, 'mothership'])).toEqual([
+      {filename: `${OLD_SLUG}.md`, reason: 'unattributable-page'},
+    ])
+    expect(leaksFor(applied(plan), [SAME_SLUG_NAME, 'mothership'])).toEqual([])
+  })
+
+  it('treats a case-only rename the same way', () => {
+    const plan = planRepoPageMove(moveParams({newName: 'Panthe.AI'}))
+
+    expect(computeRepoSlug(OWNER, 'Panthe.AI')).toBe(OLD_SLUG)
+    expect(plan.outcome).toBe('edited-in-place')
+  })
+
+  it('is already applied when the page, the sources and the row all carry the new name', () => {
+    const edited = applied(planRepoPageMove(moveParams({newName: SAME_SLUG_NAME})))
+    const plan = planRepoPageMove(moveParams({newName: SAME_SLUG_NAME, rowName: SAME_SLUG_NAME, files: edited}))
+
+    expect(plan).toEqual({outcome: 'already-applied'})
+  })
+
+  it('blocks as page-ahead-of-row when the page was already edited but the row still holds the old name', () => {
+    const edited = applied(planRepoPageMove(moveParams({newName: SAME_SLUG_NAME})))
+
+    expectBlocked(
+      planRepoPageMove(moveParams({newName: SAME_SLUG_NAME, rowName: OLD_NAME, files: edited})),
+      'page-ahead-of-row',
+    )
+  })
+
+  it('rewrites nothing else: no link repair is needed when the slug does not change', () => {
+    const changes = changesOf(planRepoPageMove(moveParams({newName: SAME_SLUG_NAME})))
+
+    expect(changes.map(change => change.path)).toEqual([OLD_PAGE_PATH, LOG_PATH])
+  })
+})
+
+describe('planRepoPageMove: preconditions', () => {
+  it('blocks a legacy page whose body names the old repo but whose sources name another repository', () => {
+    const files = snapshot({
+      [OLD_PAGE_PATH]: oldRepoPage({
+        sourceUrls: ['https://github.com/someone/else'],
+        body: `Notes about ${OLD_URL} in prose only.`,
+      }),
+    })
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'old-page-not-attributed')
+  })
+
+  it('blocks a legacy page with no structured sources, even when the body contains the URL', () => {
+    const files = snapshot({[OLD_PAGE_PATH]: oldRepoPage({sourceUrls: null, body: `Notes about ${OLD_URL}.`})})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'old-page-not-attributed')
+  })
+
+  it('blocks a page whose sources contain only a prefix, a different case or a different path of the old URL', () => {
+    for (const url of [`${OLD_URL}/blob/main/README.md`, OLD_URL.toUpperCase(), `${OLD_URL}-fork`]) {
+      const files = snapshot({[OLD_PAGE_PATH]: oldRepoPage({sourceUrls: [url]})})
+      expectBlocked(planRepoPageMove(moveParams({files})), 'old-page-not-attributed')
+    }
+  })
+
+  it('blocks a page that carries a different node_id, whatever its sources say', () => {
+    const files = snapshot({[OLD_PAGE_PATH]: oldRepoPage({nodeId: 'R_someoneElse'})})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'old-page-not-attributed')
+  })
+
+  it('blocks when the target page exists with a different node_id, with no node_id, or with the same node_id and the row unrenamed', () => {
+    const cases: [string | null, string, string][] = [
+      ['R_someoneElse', OLD_NAME, 'both-pages-present'],
+      [null, OLD_NAME, 'both-pages-present'],
+      [NODE_ID, OLD_NAME, 'both-pages-present'],
+    ]
+    for (const [nodeId, rowName, reason] of cases) {
+      const target = oldRepoPage({nodeId}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+      expectBlocked(planRepoPageMove(moveParams({files: snapshot({[NEW_PAGE_PATH]: target}), rowName})), reason)
+    }
+  })
+
+  it('blocks as page-ahead-of-row when only the target page exists and the row still holds the old name', () => {
+    const target = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+    const files = snapshot({[OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: target})
+
+    expectBlocked(planRepoPageMove(moveParams({files, rowName: OLD_NAME})), 'page-ahead-of-row')
+  })
+
+  it('blocks when only the target page exists, the row holds the new name, and the page belongs to someone else', () => {
+    for (const nodeId of ['R_someoneElse', null]) {
+      const target = oldRepoPage({nodeId}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+      const files = snapshot({[OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: target})
+
+      expectBlocked(planRepoPageMove(moveParams({files, rowName: NEW_NAME})), 'target-page-occupied')
+    }
+  })
+
+  it('is already applied when only the target page exists, carries the row node_id, and the row holds the new name', () => {
+    const target = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+    const files = snapshot({[OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: target})
+
+    expect(planRepoPageMove(moveParams({files, rowName: NEW_NAME}))).toEqual({outcome: 'already-applied'})
+  })
+
+  it('blocks when another row maps to the old slug', () => {
+    const otherRows = [{owner: OWNER, name: 'Panthe-AI'}]
+
+    expectBlocked(planRepoPageMove(moveParams({otherRows})), 'slug-collision')
+  })
+
+  it('blocks when another row maps to the new slug', () => {
+    const otherRows = [{owner: OWNER, name: 'PANTHEA'}]
+
+    expectBlocked(planRepoPageMove(moveParams({otherRows})), 'slug-collision')
+  })
+
+  it('does not treat a redacted row as a slug collision', () => {
+    const otherRows = [{owner: '[REDACTED]', name: 'R_kgDOabc'}]
+
+    expect(planRepoPageMove(moveParams({otherRows})).outcome).toBe('moved')
+  })
+
+  it('blocks when the new name matches a private repository token', () => {
+    const privateTokens = buildPrivateTokenSet(['marcusrbrown/panthea'])
+
+    expectBlocked(planRepoPageMove(moveParams({privateTokens})), 'private-name-collision')
+  })
+
+  it('blocks a case variant of a private token', () => {
+    const privateTokens = buildPrivateTokenSet(['MarcusRBrown/PANTHEA'])
+
+    expectBlocked(planRepoPageMove(moveParams({privateTokens})), 'private-name-collision')
+  })
+
+  it('blocks when only the slug form of the new name matches a private token', () => {
+    const privateTokens = buildPrivateTokenSet(['marcusrbrown/Pan.thea'])
+    const plan = planRepoPageMove(moveParams({newName: 'pan-thea', privateTokens}))
+
+    expectBlocked(plan, 'private-name-collision')
+  })
+
+  it('does not block on unrelated private tokens', () => {
+    const privateTokens = buildPrivateTokenSet(['marcusrbrown/secret-project'])
+
+    expect(planRepoPageMove(moveParams({privateTokens})).outcome).toBe('moved')
+  })
+
+  it('never puts a private token in its output, even when it blocks on one', () => {
+    const privateName = 'marcusrbrown/panthea'
+    const plan = planRepoPageMove(moveParams({privateTokens: buildPrivateTokenSet([privateName])}))
+
+    // the reason is a fixed code; the private identifier is not echoed
+    expect(JSON.stringify(plan)).toBe('{"outcome":"blocked","reason":"private-name-collision"}')
+  })
+
+  it('returns metadata-only when the old page is absent', () => {
+    const files = snapshot({[OLD_PAGE_PATH]: null})
+
+    expect(planRepoPageMove(moveParams({files}))).toEqual({outcome: 'metadata-only'})
+  })
+
+  it('blocks when any page fails to parse', () => {
+    const files = snapshot({'knowledge/wiki/topics/broken.md': 'no frontmatter here\n'})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'unparseable-page')
+  })
+
+  it('blocks when the frontmatter YAML is invalid', () => {
+    const files = snapshot({'knowledge/wiki/topics/broken.md': '---\nkey: [unterminated\n---\n\nBody.\n'})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'unparseable-page')
+  })
+
+  it('blocks when the repaired snapshot fails wikilink validation (a heading link to the old slug)', () => {
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\nSee [[${OLD_SLUG}#history]].\n`})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'invalid-wikilinks')
+  })
+
+  it('blocks when a page lacks the frontmatter fields the index needs', () => {
+    const files = snapshot({'knowledge/wiki/topics/thin.md': '---\ntitle: Thin\n---\n\nBody.\n'})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'invalid-index')
+  })
+
+  it('blocks a name that sanitizes to an empty slug', () => {
+    expectBlocked(planRepoPageMove(moveParams({newName: '...'})), 'invalid-name')
+  })
+
+  it('ignores non-page files and pages outside the four wiki sections', () => {
+    const files = snapshot({
+      'knowledge/wiki/repos/.gitkeep': '',
+      'knowledge/wiki/notes/stray.md': 'no frontmatter\n',
+      'metadata/repos.yaml': 'version: 1\n',
+    })
+
+    expect(planRepoPageMove(moveParams({files})).outcome).toBe('moved')
+  })
+})
+
+describe('applyPageChanges', () => {
+  it('applies writes and deletions without mutating its input', () => {
+    const input = {'a.md': 'a', 'b.md': 'b'}
+
+    const next = applyPageChanges(input, [
+      {op: 'create-page', path: 'c.md', content: 'c'},
+      {op: 'delete-page', path: 'a.md'},
+    ])
+
+    expect(next).toEqual({'b.md': 'b', 'c.md': 'c'})
+    expect(input).toEqual({'a.md': 'a', 'b.md': 'b'})
+  })
+})
+
+function wikiPagesOnly(files: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(files).filter(([path]) => /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\//u.test(path)),
+  )
+}

@@ -715,7 +715,14 @@ function parseIndexEntryLines(index: string): Map<string, string> {
   return entries
 }
 
-function appendLogEntry(existingLog: string | undefined, params: BuildWikiIngestChangesParams): string {
+/**
+ * Append one entry to `knowledge/log.md`, keeping the existing text byte-for-byte. The log is
+ * append-only; callers must never rewrite history. Exported for the operator rename path.
+ */
+export function appendLogEntry(
+  existingLog: string | undefined,
+  params: Pick<BuildWikiIngestChangesParams, 'operation' | 'target' | 'summary' | 'timestamp' | 'sources'>,
+): string {
   const base =
     existingLog === undefined || existingLog === ''
       ? '# Wiki Log\n\nChronological record of all wiki operations.\n\n---\n\n_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._\n'

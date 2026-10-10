@@ -26,6 +26,29 @@ export interface SplitFrontmatterResult {
 export declare function splitFrontmatter(content: string): SplitFrontmatterResult;
 /** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
 export declare function collectWikilinks(content: string): string[];
+/** One wikilink located in a string, with enough detail to rewrite its target in place. */
+export interface WikilinkSpan {
+    /** Offset of the opening `[[`. */
+    readonly start: number;
+    /** Offset just past the closing `]]`. */
+    readonly end: number;
+    /** The target with surrounding whitespace removed. */
+    readonly target: string;
+    /** Whitespace between `[[` and the target. */
+    readonly leading: string;
+    /** Whitespace between the target and the `|` or `]]`. */
+    readonly trailing: string;
+    /** The label exactly as written (including its own whitespace), or `undefined`. */
+    readonly label: string | undefined;
+}
+/**
+ * Locate wikilinks with the same grammar as {@link collectWikilinks}, keeping the original
+ * whitespace and label so a caller can rewrite the target without disturbing the rest.
+ *
+ * Heading links (`[[target#heading]]`) are excluded: no wiki page slug contains `#`, so they
+ * never resolve and are not rewritable as page references.
+ */
+export declare function findWikilinkSpans(content: string): WikilinkSpan[];
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */
 export declare function parseWikiPage(path: string, content: string): WikiPage;
 /** Collect all `knowledge/wiki/**.md` pages from a path→content file map. */

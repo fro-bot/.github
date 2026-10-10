@@ -2,7 +2,7 @@
   "not-mutated": [
     {
       "path": "packages/wiki-write-core/src/frontmatter.ts",
-      "reason": "Throws on missing/invalid frontmatter, but no gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Only wiki-write-core.test.ts exercises reconstructFrontmatter, and only its happy path."
+      "reason": "Throws on missing/invalid frontmatter, but no mutated gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Its one production consumer is repo-page-move.ts (itself not-mutated, below), which imports parseFrontmatterDocument/renderFrontmatterDocument; the page-move tests reach it through the built dist, not a same-tree import. wiki-write-core.test.ts additionally exercises reconstructFrontmatter, and only its happy path."
     },
     {
       "path": "packages/wiki-write-core/src/rendering-policy.ts",
@@ -10,7 +10,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/wiki-utils.ts",
-      "reason": "splitFrontmatter's error field is the only rejection-shaped output here, and its sole consumer is wiki-lint.ts, itself not-mutated pending relocation. collectWikiPages/collectWikilinks, consumed by the mutated corrections-survival.ts and wiki-ingest.ts, are non-rejecting collection helpers."
+      "reason": "splitFrontmatter's error field is the only rejection-shaped output here, and its sole consumer is wiki-lint.ts, itself not-mutated pending relocation. collectWikiPages/collectWikilinks, consumed by the mutated corrections-survival.ts and wiki-ingest.ts, are non-rejecting collection helpers, and findWikilinkSpans (consumed by repo-page-move.ts, itself not-mutated) is the same scan with offsets."
     },
     {
       "path": "packages/wiki-write-core/src/markdown-links.ts",
@@ -39,6 +39,10 @@
     {
       "path": "packages/wiki-write-core/src/schemas.ts",
       "reason": "Has a real rejection path (assertReposFile throws SchemaValidationError) a gate depends on, but its real test is scripts/schemas.test.ts, which imports the built dist/ output through the scripts/schemas.ts re-export shell (`export * from '@fro-bot/wiki-write-core/schemas'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's indirect exercise of assertReposFile. Relocating scripts/schemas.test.ts beside this module flips this entry to mutate."
+    },
+    {
+      "path": "packages/wiki-write-core/src/repo-page-move.ts",
+      "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is scripts/repo-page-move.test.ts, which imports the built dist/ output through the @fro-bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
     },
     {
       "path": "packages/wiki-write-core/src/correction-text.ts",
