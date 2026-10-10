@@ -1,0 +1,70 @@
+---
+name: Rename Tracked Repo
+
+# Operator tool: applies a repository rename that reconcile has detected but never applies.
+#
+# It first proves the rename from GitHub itself (`GET /repositories/{database_id}` must return the
+# same node ID, the same owner, and `private === false`; its `name` is the new name), then lands ONE
+# non-force Git Data commit on `fro-bot/.github@data` that renames the `metadata/repos.yaml` row,
+# moves the repo's wiki page to its new slug, repairs `[[old]]` wikilinks and `related:` entries,
+# rebuilds `knowledge/index.md` and appends a single `manual-edit` entry to `knowledge/log.md`.
+#
+# Manual dispatch only. Script-only: there is no agent step. The evidence reads use the unprivileged
+# `GITHUB_TOKEN` (public repository metadata needs no grant); only the write step receives the
+# App token, scoped to this repository with contents: write.
+#
+# `old_name` is needed only when the row already holds the new name (residue of an earlier
+# partial write): then the old `owner/name` must still redirect to the same node.
+on:
+  workflow_dispatch:
+    inputs:
+      node_id:
+        description: GitHub GraphQL node ID of the renamed repository, as named in the reconcile rename issue.
+        required: true
+        type: string
+      old_name:
+        description: Previous `owner/name`. Only for the residue state, where the row already holds the new name.
+        required: false
+        default: ''
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: rename-tracked-repo
+  cancel-in-progress: false
+
+jobs:
+  rename-tracked-repo:
+    name: Rename the tracked repo and move its wiki page
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # contents: write covers the Git Data commit on the `data` branch; the token reaches only the
+      # rename step below, and only this repository.
+      - id: writer-token
+        name: Get Writer Access Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      # Inputs reach the script through env, never through `run:` interpolation, and are
+      # regex-validated before use.
+      - name: 🏷️ Rename tracked repo
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RENAME_WRITER_TOKEN: ${{ steps.writer-token.outputs.token }}
+          NODE_ID: ${{ inputs.node_id }}
+          OLD_NAME: ${{ inputs.old_name }}
+        run: node scripts/rename-tracked-repo.ts

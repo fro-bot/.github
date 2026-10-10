@@ -283,6 +283,13 @@ const EXPECTED_ROWS: readonly Row[] = [
     permissions: {contents: 'write', issues: 'write', actions: 'write'},
   },
   {
+    file: 'rename-tracked-repo.yaml',
+    job: 'rename-tracked-repo',
+    id: 'writer-token',
+    kind: 'repo',
+    permissions: {contents: 'write'},
+  },
+  {
     file: 'reset-survey-status.yaml',
     job: 'reset-survey-status',
     id: 'get-workflow-app-token',
@@ -379,10 +386,10 @@ const OWNER_WIDE_WRITE_ALLOWED: readonly {readonly key: string; readonly owner: 
 ]
 
 /** Row count and file count the scan must cover; a refactor that stops matching mints fails loudly. */
-const EXPECTED_ROW_COUNT = 34
-const EXPECTED_MINT_FILE_COUNT = 17
+const EXPECTED_ROW_COUNT = 35
+const EXPECTED_MINT_FILE_COUNT = 18
 /** Mint census before this change (31); the tree must never scan fewer. */
-const MINT_CENSUS_FLOOR = 31
+const MINT_CENSUS_FLOOR = 32
 
 // ─── Scanner ────────────────────────────────────────────────────────────────
 
