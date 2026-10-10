@@ -28,6 +28,7 @@ import process from 'node:process'
 import {
   assertBranchWritable,
   attributesPageTo,
+  pageReflectsRename,
   pageSourceUrls,
   parseFrontmatterDocument,
   planRepoPageMove,
@@ -673,7 +674,11 @@ function hasStrayNodePage(
   })
 }
 
-/** A page at the new slug that already carries this node's ID means the move has been applied. */
+/**
+ * A page at the new slug that already carries this node's ID, the new title and the new URL means the
+ * move has been applied. A page with the node's ID but the old frontmatter (a same-slug residue) does
+ * not: it falls through to the planner, which repairs it in place.
+ */
 function newPageIsThisNodes(
   files: Readonly<Record<string, string>>,
   owner: string,
@@ -684,7 +689,7 @@ function newPageIsThisNodes(
   const content = slug === undefined ? undefined : files[`knowledge/wiki/repos/${slug}.md`]
   if (content === undefined) return false
   try {
-    return parseFrontmatterDocument(content).values.node_id === nodeId
+    return pageReflectsRename(parseFrontmatterDocument(content), nodeId, owner, newName)
   } catch {
     return false
   }

@@ -3,6 +3,7 @@ import {
   applyPageChanges,
   attributesPageTo,
   mergeWikiLogs,
+  pageReflectsRename,
   pageSourceUrls,
   parseFrontmatterDocument,
   planRepoPageMove,
@@ -345,6 +346,29 @@ describe('attributesPageTo: the one ownership rule the planner, the policy and t
     ].join('\n')
 
     expect(pageSourceUrls(parseFrontmatterDocument(page))).toEqual(['https://a.test'])
+  })
+})
+
+describe('pageReflectsRename: the one already-applied definition', () => {
+  const reflects = (page: string, nodeId = NODE_ID) =>
+    pageReflectsRename(parseFrontmatterDocument(page), nodeId, OWNER, NEW_NAME)
+  const applied = () => oldRepoPage({nodeId: NODE_ID}).replaceAll(`${OWNER}/${OLD_NAME}`, `${OWNER}/${NEW_NAME}`)
+
+  it('is true only when node_id, title and the new source URL are all present', () => {
+    expect(reflects(applied())).toBe(true)
+  })
+
+  it.each([
+    ['another node_id', applied(), 'R_other'],
+    ['no node_id', applied().replace(`node_id: ${NODE_ID}\n`, ''), NODE_ID],
+    ['the old title', applied().replace(`title: ${OWNER}/${NEW_NAME}`, `title: ${OWNER}/${OLD_NAME}`), NODE_ID],
+    [
+      'only the old source URL',
+      oldRepoPage({nodeId: NODE_ID}).replace(`title: ${OWNER}/${OLD_NAME}`, `title: ${OWNER}/${NEW_NAME}`),
+      NODE_ID,
+    ],
+  ])('is false with %s', (_label, page, nodeId) => {
+    expect(reflects(page, nodeId)).toBe(false)
   })
 })
 

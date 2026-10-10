@@ -124,7 +124,7 @@ export function planRepoPageMove(params: PlanRepoPageMoveParams): RepoPageMovePl
   if (oldSlug === newSlug) {
     if (oldPage === undefined) return {outcome: 'metadata-only'}
     if (!attributesPageTo(oldPage.document, params.nodeId, target.oldUrl)) return blocked('old-page-not-attributed')
-    if (isUpdated(oldPage.document, params.nodeId, target)) {
+    if (pageReflectsRename(oldPage.document, params.nodeId, params.owner, params.newName)) {
       return params.rowName === params.newName ? {outcome: 'already-applied'} : blocked('page-ahead-of-row')
     }
     return buildChanges({params, pages, oldSlug, newSlug, oldPage, target, moving: false})
@@ -211,11 +211,21 @@ export function attributesPageTo(document: FrontmatterDocument, nodeId: string, 
   return pageSourceUrls(document).includes(oldUrl)
 }
 
-function isUpdated(document: FrontmatterDocument, nodeId: string, target: Target): boolean {
+/**
+ * Whether a parsed repo page already carries everything a rename gives it: this node's ID, the new
+ * title and the new repository URL in its structured sources. The planner's already-applied decision
+ * for a same-slug rename, and the writer's early already-applied check, both use this one definition.
+ */
+export function pageReflectsRename(
+  document: FrontmatterDocument,
+  nodeId: string,
+  owner: string,
+  newName: string,
+): boolean {
   return (
     document.values.node_id === nodeId &&
-    document.values.title === target.newTitle &&
-    pageSourceUrls(document).includes(target.newUrl)
+    document.values.title === `${owner}/${newName}` &&
+    pageSourceUrls(document).includes(`https://github.com/${owner}/${newName}`)
   )
 }
 

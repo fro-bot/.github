@@ -56,7 +56,7 @@ export function planRepoPageMove(params) {
             return { outcome: 'metadata-only' };
         if (!attributesPageTo(oldPage.document, params.nodeId, target.oldUrl))
             return blocked('old-page-not-attributed');
-        if (isUpdated(oldPage.document, params.nodeId, target)) {
+        if (pageReflectsRename(oldPage.document, params.nodeId, params.owner, params.newName)) {
             return params.rowName === params.newName ? { outcome: 'already-applied' } : blocked('page-ahead-of-row');
         }
         return buildChanges({ params, pages, oldSlug, newSlug, oldPage, target, moving: false });
@@ -130,10 +130,15 @@ export function attributesPageTo(document, nodeId, oldUrl) {
         return existing === nodeId;
     return pageSourceUrls(document).includes(oldUrl);
 }
-function isUpdated(document, nodeId, target) {
+/**
+ * Whether a parsed repo page already carries everything a rename gives it: this node's ID, the new
+ * title and the new repository URL in its structured sources. The planner's already-applied decision
+ * for a same-slug rename, and the writer's early already-applied check, both use this one definition.
+ */
+export function pageReflectsRename(document, nodeId, owner, newName) {
     return (document.values.node_id === nodeId &&
-        document.values.title === target.newTitle &&
-        pageSourceUrls(document).includes(target.newUrl));
+        document.values.title === `${owner}/${newName}` &&
+        pageSourceUrls(document).includes(`https://github.com/${owner}/${newName}`));
 }
 /** The `url` of every structured `sources` entry of a parsed page. */
 export function pageSourceUrls(document) {

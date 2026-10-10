@@ -77,5 +77,11 @@ export declare function planRepoPageMove(params: PlanRepoPageMoveParams): RepoPa
  * CLI's already-applied check all call it, so they cannot disagree about a page.
  */
 export declare function attributesPageTo(document: FrontmatterDocument, nodeId: string, oldUrl: string): boolean;
+/**
+ * Whether a parsed repo page already carries everything a rename gives it: this node's ID, the new
+ * title and the new repository URL in its structured sources. The planner's already-applied decision
+ * for a same-slug rename, and the writer's early already-applied check, both use this one definition.
+ */
+export declare function pageReflectsRename(document: FrontmatterDocument, nodeId: string, owner: string, newName: string): boolean;
 /** The `url` of every structured `sources` entry of a parsed page. */
 export declare function pageSourceUrls(document: FrontmatterDocument): string[];

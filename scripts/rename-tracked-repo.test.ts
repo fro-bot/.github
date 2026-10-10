@@ -416,7 +416,7 @@ describe('renameTrackedRepo: residue (the row already holds the new name)', () =
 
 describe('renameTrackedRepo: already applied and named blocks', () => {
   const appliedFiles = () => {
-    const page = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+    const page = oldRepoPage({nodeId: NODE_ID}).replaceAll('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
     return worldFiles({[OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: page}, [repoRow({name: NEW_NAME}), ...otherRows()])
   }
 
@@ -452,6 +452,59 @@ describe('renameTrackedRepo: already applied and named blocks', () => {
 
     expect(outcome).toEqual({result: 'blocked', reason: 'both-pages-present'})
     expectNoWrite(fake, before)
+  })
+
+  describe('a same-slug rename whose row was renamed but whose page keeps its old frontmatter', () => {
+    const SAME_SLUG_NAME = 'panthe-ai'
+    const residueFiles = () =>
+      worldFiles({[OLD_PAGE_PATH]: oldRepoPage({nodeId: NODE_ID})}, [repoRow({name: SAME_SLUG_NAME}), ...otherRows()])
+    const sameSlugTransport = () =>
+      transportFor({
+        byId: async () => githubRepo({name: SAME_SLUG_NAME}),
+        byName: async () => githubRepo({name: SAME_SLUG_NAME}),
+      })
+    const oldName = `${OWNER}/${OLD_NAME}`
+
+    it('repairs the page in place instead of reporting noop, then is a noop on a rerun', async () => {
+      const fake = createGitDataFake({files: residueFiles()})
+
+      const first = await rename(fake, sameSlugTransport(), {oldName})
+
+      expect(first).toMatchObject({result: 'renamed', page: 'edited-in-place'})
+      const page = fake.files()[OLD_PAGE_PATH] ?? ''
+      expect(page).toContain(`title: ${OWNER}/${SAME_SLUG_NAME}`)
+      expect(page).toContain(`https://github.com/${OWNER}/${SAME_SLUG_NAME}`)
+      expect(page).toContain(`node_id: ${NODE_ID}`)
+      // The row already held the new name, so the commit touches no row.
+      expect(repoRows(fake.files()).find(row => row.node_id === NODE_ID)?.name).toBe(SAME_SLUG_NAME)
+
+      const head = fake.head()
+      const second = await rename(fake, sameSlugTransport(), {oldName})
+
+      expect(second).toEqual({result: 'noop'})
+      expect(fake.head()).toBe(head)
+    })
+
+    it('does not guess without old_name: the page cannot be shown to be current', async () => {
+      const fake = createGitDataFake({files: residueFiles()})
+      const before = fake.head()
+
+      const outcome = await rename(fake, sameSlugTransport())
+
+      expect(outcome).toEqual({result: 'blocked', reason: 'old-name-required'})
+      expectNoWrite(fake, before)
+    })
+
+    it('stays a noop when the page already reflects the rename', async () => {
+      const fake = createGitDataFake({files: residueFiles()})
+      await rename(fake, sameSlugTransport(), {oldName})
+      const head = fake.head()
+
+      const outcome = await rename(fake, sameSlugTransport())
+
+      expect(outcome).toEqual({result: 'noop'})
+      expect(fake.head()).toBe(head)
+    })
   })
 
   it('treats an unparseable page at the old slug as stray when old_name names it', async () => {
@@ -749,7 +802,7 @@ describe('renameTrackedRepo: rebuilding from head', () => {
     const fake = createGitDataFake({files: worldFiles()})
     fake.beforeUpdateRef(1, () => {
       const rows = repoRows(fake.files()).map(row => (row.node_id === NODE_ID ? {...row, name: NEW_NAME} : row))
-      const page = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+      const page = oldRepoPage({nodeId: NODE_ID}).replaceAll('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
       fake.advance({[REPOS_PATH]: reposYaml(rows), [OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: page})
     })
 
@@ -1059,7 +1112,7 @@ describe('runCli', () => {
   })
 
   it('prints {"result":"noop"} with exit 0 when already applied', async () => {
-    const page = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
+    const page = oldRepoPage({nodeId: NODE_ID}).replaceAll('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
     const fake = createGitDataFake({
       files: worldFiles({[OLD_PAGE_PATH]: null, [NEW_PAGE_PATH]: page}, [repoRow({name: NEW_NAME}), ...otherRows()]),
     })
