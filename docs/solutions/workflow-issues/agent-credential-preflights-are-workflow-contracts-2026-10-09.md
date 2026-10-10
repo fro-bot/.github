@@ -1,6 +1,7 @@
 ---
 title: Agent credential preflights make checkout persistence a workflow contract
 date: 2026-10-09
+last_updated: 2026-10-10
 category: workflow-issues
 module: github-actions-workflows
 problem_type: workflow_issue
@@ -174,6 +175,66 @@ fi
 
 An absent `data` branch is a bootstrap case (`git ls-remote --exit-code` exits 2). Any other probe
 failure is an unsafe ambiguity.
+
+### One contract for every metadata overlay
+
+The same contract covers every step that overlays `metadata/` from `data`. At `8792b53` there are
+15 overlay steps across the workflows, plus one exempt step, the `wiki-lint` restore. The canonical
+form is in `.github/workflows/draft-solutions.yaml:315-329`:
+
+```bash
+status=0
+git ls-remote --exit-code origin data >/dev/null || status=$?
+case "$status" in
+  0)
+    git fetch --no-tags origin data
+    git checkout origin/data -- metadata/
+    ;;
+  2)
+    echo "data branch not yet established; skipping metadata overlay."
+    ;;
+  *)
+    echo "::error::git ls-remote origin data failed with exit code $status; refusing to publish with unverified privacy metadata."
+    exit 1
+    ;;
+esac
+```
+
+The overlay form was introduced for the privacy-gated publish path in PR #3971 and applied to the
+older sites in PR #3973 (merge `0ec42a907fc1ca3f5c200bd3ac68376065e2feb7`). PR #3977 added one more
+site, the persist-time onboarded re-check (`.github/workflows/survey-repo.yaml:655`).
+
+**After exit 0, a failed fetch, checkout or restore must also fail the step.** Before #3973, the
+onboarded check in `survey-repo.yaml` ran `git fetch origin data || true` and
+`git restore --source FETCH_HEAD --worktree -- metadata || true` behind an
+`if git ls-remote --exit-code origin data` guard (`git show 0ec42a9^:.github/workflows/survey-repo.yaml`,
+lines 178-181). In `fro-bot.yaml` a failed overlay printed a `::warning::` and continued with stale
+or missing metadata (lines 1013-1021 at the same parent). Two things were wrong in both: the `if`
+treated every probe failure as "branch absent", and the post-probe failures were swallowed. For
+`survey-repo.yaml` and `fro-bot.yaml` the fix is verified in the current files; the other sites were
+checked only through the test below.
+
+**The enforcement test is `scripts/data-branch-probe-workflows.test.ts`.** It finds every workflow
+step whose `run` matches `git ls-remote.*\sorigin\s+data\b` (lines 34-59), then runs each overlay
+step under bash with stub `git` and `node` binaries from `scripts/workflow-step-test-helper.ts`:
+
+- exit 0 overlays;
+- exit 2 skips without fetching;
+- exit 1, 128 and 255 fail with `::error::` naming the exit code, before any overlay runs and before
+  any `node` step;
+- a failing fetch, checkout or restore after exit 0 fails the step, and a failing fetch never
+  proceeds to the checkout or restore.
+
+Exemptions are keyed `file#job#step` (lines 65-68) and each must say why. The only one is
+`wiki-lint.yaml#wiki-lint#Restore wiki from data branch`, which treats an absent branch as fatal
+too. The test also fails if the old tolerant `if git ls-remote --exit-code origin data` form
+reappears anywhere except an exempt step.
+
+A local check confirms the exit codes the form relies on: an absent ref exits 2 and an unreachable
+remote exits 128. The exit code for an authentication failure was not tested.
+
+One nullable value must not carry two failure states; see Guidance 3 of
+[Make failure boundaries and shared predicates explicit](../best-practices/make-failure-boundaries-and-predicates-explicit-2026-08-25.md).
 
 ## Related
 

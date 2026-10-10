@@ -6,7 +6,7 @@ module: github-actions-workflows
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
-last_updated: 2026-10-09
+last_updated: 2026-10-10
 verified: 2026-06-09
 applies_when:
   - Adding or renaming a required_status_checks.contexts entry in .github/settings.yml
@@ -130,6 +130,30 @@ risk: a silent pass that validates nothing. Before adding a job name to
 changed-file gate lives in `scripts/check-mutation-guards.ts`: an unmatched change set returns
 `not-applicable`, which maps to exit code `0`. A job-level skip would also report Success, but with
 no record of why validation did not run; the in-script gate leaves that decision in the job's output.
+
+### A second worked example: a job-level `if:` that skips on purpose
+
+The required `Fro Bot` job (`.github/workflows/fro-bot.yaml`, listed in `.github/settings.yml`) is the
+deliberate exception to the rule above. Its job-level `if:` skips bot-authored PRs. Fro Bot does not
+review them, Renovate PRs report skipped, and the maintainer approves them manually. A skipped job
+reports Success, which satisfies the required check, so this is a silent pass by design.
+
+The weekly drafted-docs PR is opened by `fro-bot[bot]` and does need a review, so the exception is
+narrowed with an exact predicate instead of being removed (`fro-bot.yaml:491-496`):
+
+```text
+!endsWith(github.event.pull_request.user.login || '', '[bot]') ||
+(
+  github.event.pull_request.user.login == 'fro-bot[bot]' &&
+  github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
+  github.event.pull_request.head.repo.full_name == github.repository
+)
+```
+
+The bot, the branch and the repository must all match, so no other bot PR gains a review and the
+skip stays explicit. If a job-level `if:` has to skip a required check, make it this narrow and name
+the reason where it is written. The surrounding pipeline is described in
+[Agent drafts, trusted job publishes](../best-practices/agent-drafts-trusted-publish-split-2026-10-10.md).
 
 ## Why This Matters
 
