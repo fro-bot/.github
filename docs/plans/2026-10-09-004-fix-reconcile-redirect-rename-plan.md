@@ -286,7 +286,7 @@ rename-tracked-repo.yaml (workflow_dispatch: node_id, old_name?)
 
 ## Implementation Units
 
-- [ ] **Unit 1: Write-backs never change identity**
+- [x] **Unit 1: Write-backs never change identity**
 
 **Goal:** Close the survey and invitation rename paths, make the survey outcome honest, and stop invitations from dispatching surveys that would conflict.
 
@@ -322,7 +322,7 @@ rename-tracked-repo.yaml (workflow_dispatch: node_id, old_name?)
 
 **Verification:** No path outside the rename workflow and the un-redaction transform changes a row's identity or visibility fields.
 
-- [ ] **Unit 2: Reconcile detects renames and never applies them**
+- [x] **Unit 2: Reconcile detects renames and never applies them**
 
 **Goal:** Pure rename detection, transfers blocked, one dispatch chokepoint, and a node-ID-only operator issue.
 
@@ -365,7 +365,7 @@ rename-tracked-repo.yaml (workflow_dispatch: node_id, old_name?)
 
 **Verification:** Reconcile changes no tracked public row's owner or name in any test except un-redaction. Every pending rename is visible and never dispatched.
 
-- [ ] **Unit 3: Pure repo page move**
+- [x] **Unit 3: Pure repo page move**
 
 **Goal:** A pure function that turns a wiki snapshot plus a proven rename into the next file map, or into a typed block reason.
 
@@ -404,7 +404,7 @@ rename-tracked-repo.yaml (workflow_dispatch: node_id, old_name?)
 
 **Verification:** The function is deterministic. Its output passes `validateWikilinks` and the promotion attribution check. `pnpm check:wiki-write-core-dist` is clean.
 
-- [ ] **Unit 4: Operator rename workflow and atomic writer**
+- [x] **Unit 4: Operator rename workflow and atomic writer**
 
 **Goal:** Prove the rename from GitHub, then commit the row, page and links as one non-force commit, rebuilt from head on every attempt.
 
@@ -458,7 +458,7 @@ rename-tracked-repo.yaml (workflow_dispatch: node_id, old_name?)
 
 **Verification:** No code path can leave metadata renamed without its page move. The workflow is inert until it is dispatched.
 
-- [ ] **Unit 5: Docs**
+- [x] **Unit 5: Docs**
 
 **Goal:** The operator knows how renames are detected and how to apply them.
 
