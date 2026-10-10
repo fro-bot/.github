@@ -45,6 +45,10 @@
       "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is scripts/repo-page-move.test.ts, which imports the built dist/ output through the @fro-bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
     },
     {
+      "path": "scripts/rename-tracked-repo.ts",
+      "reason": "Operator-dispatched writer, never run on a schedule: it commits to data only after a human dispatches it and GitHub itself proves the rename (same node ID, same owner, public). It does have real rejection paths (every evidence and row block, the branch and tip-author checks, a truncated tree, the path and no-overwrite policy, the 3-attempt retry), and each is pinned by a decision-table test in scripts/rename-tracked-repo.test.ts against an in-memory Git Data fake that enforces fast-forward updates. The page-move decisions it delegates to live in packages/wiki-write-core/src/repo-page-move.ts, classified separately. It is not in the mutate list because the module's boundary is its injected clients rather than a pure predicate, so a Stryker run would mostly score transport glue. Re-evaluate if it gains an unattended caller."
+    },
+    {
       "path": "packages/wiki-write-core/src/correction-text.ts",
       "reason": "Pure normalization helper (whitespace collapse) with no rejection path of its own; consumed by the already-mutated corrections-survival.ts gate."
     },

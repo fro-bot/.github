@@ -229,6 +229,75 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data â
 
 `metadata/README.md` (this file) and other human documentation remain editable through normal PRs to `main` â€” the guard targets only `metadata/*.{yaml,yml}`.
 
+## Applying a rename
+
+When a tracked public repository is renamed on GitHub and its old name still redirects, reconcile detects it and reports it. Reconcile never renames a row: the `metadata/repos.yaml` row and the repo's wiki page change together, in one commit, only when an operator dispatches the **Rename Tracked Repo** workflow.
+
+### Detection
+
+A rename is pending when a public row's node ID and owner are unchanged but GitHub reports a different repository name, either in the collaborator access list or when the stored name redirects. Reconcile then:
+
+- opens one issue labelled `reconcile:rename-pending`, titled `[RENAME] Pending repository rename for <node_id>`. The title and body name the node ID and the dispatch command only, never an owner or repository name. Reconcile finds an existing issue by its `<!-- reconcile:subject:node_id=<id> -->` marker, so a second run does not open a duplicate;
+- stops dispatching surveys for that row, on every path, until the rename is applied;
+- counts it in `renamesPending` (and `renamePendingIssues`, `renamePendingDuplicatesSkipped`, `closedRenamePendingIssues`) in the run summary, counts only.
+
+The issue stays open until the rename is applied. Reconcile closes it on a later run once the row matches GitHub, and it skips that close pass in any run where a probe failed. `summary.renamed` is always 0: reconcile reports renames, it does not make them. The `reconcile:rename-pending` label is declared in `.github/settings.yml`.
+
+An owner change is a transfer, not a rename. It is never applied and never dispatched, and appears only in the `transferBlocked` count. Transfers are not migrated by this workflow.
+
+### Dispatching the rename
+
+```bash
+gh workflow run rename-tracked-repo.yaml -f node_id=<node_id>
+```
+
+The workflow reads `GET /repositories/{database_id}` for the row and proceeds only if GitHub returns the same node ID and the same owner, and `private` is `false`. The name GitHub returns becomes the new name; it is never an operator input. It then lands one non-force commit on `fro-bot/.github@data` that:
+
+- renames the row, changing only `name`;
+- moves the repo page to its new slug, or edits it in place when the slug does not change (case-only and punctuation-only renames);
+- repairs `[[old-slug]]` wikilinks and `related:` entries under `knowledge/wiki/`;
+- rebuilds `knowledge/index.md`;
+- appends one `manual-edit` entry to `knowledge/log.md` naming only the public old and new names.
+
+The write uses a contents-write App token scoped to this repository. If another writer moves `data` mid-run, the workflow rebuilds from the new head and retries, up to 3 attempts. Run `Merge Data Branch` afterwards (or wait for the weekly run) to promote the change to `main`.
+
+### The `old_name` residue input
+
+If an earlier partial write already renamed the row but the page is still at the old slug, the row holds the new name and the workflow cannot tell the old name from the row alone. Pass it:
+
+```bash
+gh workflow run rename-tracked-repo.yaml -f node_id=<node_id> -f old_name=<owner>/<old-name>
+```
+
+The workflow then requires that `GET /repos/<owner>/<old-name>` still redirects to the same node, and that the page at the old slug lists exactly that old repository URL in its structured `sources`. If another repository has since taken the old name, the redirect no longer points at this node and the run blocks (`old-name-reused`). That is a dead end for the workflow: move the page by hand on `data` (below).
+
+### Outcomes and blocked states
+
+A run that finds the rename already applied exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
+
+| Reason | Meaning | Next step |
+| --- | --- | --- |
+| `both-pages-present` | Pages exist at both the old and the new slug. | Compare the two pages on `data`, remove the one that should not survive, then dispatch again. No merge is attempted. |
+| `page-ahead-of-row` | A page already sits at the new slug while the row still holds the old name. | Rename the row by hand on `data` (see [Editing metadata files](#editing-metadata-files)), then dispatch again. |
+| `slug-collision` | Another row, public or redacted, maps to the old or new slug. | Resolve the colliding row first. |
+| `private-name-collision` | The new name matches a private repository's name tokens. | Do not rename; investigate before any page is published under that name. |
+| `old-page-not-attributed` | The old page carries another node ID, or has none and its structured `sources` do not list the exact old URL. | Fix the page's frontmatter on `data`, then dispatch again. The body is never used as evidence. |
+| `target-page-occupied` | The new slug holds a page that is not this repository's. | Resolve the page on `data`, then dispatch again. |
+| `unparseable-page`, `invalid-index`, `invalid-wikilinks` | The wiki snapshot would not validate after the move. | Repair the named class of problem on `data` (a broken page, an index entry, or a wikilink such as `[[old#heading]]` that is neither a page slug nor a repairable link), then dispatch again. |
+| `old-name-required` | The row holds the new name and no `old_name` was given. | Dispatch with `old_name`. |
+| `old-name-mismatch`, `old-name-unverifiable`, `old-name-reused`, `residue-unproven` | `old_name` is for another owner, does not redirect to this node, now belongs to another repository, or the old page does not list its URL in `sources`. | Correct `old_name`, or move the page by hand on `data`. |
+| `node-mismatch`, `owner-mismatch`, `repository-private`, `evidence-malformed` | GitHub's record does not prove a public same-owner rename of this node. | Do not retry; check the repository on GitHub. |
+| `row-not-found`, `row-not-public`, `row-missing-database-id`, `row-name-unexpected` | The row is absent, private or redacted, lacks a `database_id`, or changed to an unexpected name during the run. | Check `metadata/repos.yaml` on `data`. Private and redacted rows never take part in a rename. |
+
+Operational failures (a Git Data call failing, a truncated tree, a path or overwrite check, exhausted retries) exit non-zero with a code, a phase and an HTTP status, and nothing else.
+
+### Staleness window and manual follow-ups
+
+- **Page body:** the move rewrites links and frontmatter, not prose. The body can keep the old name until the next scheduled survey refreshes it, up to one survey cadence interval (14, 21 or 30 days, by discovery channel).
+- **`allowlist.yaml`:** it is operator-edited and not rewritten. If a renamed repo is listed in `approved_contrib_repos`, re-list it under its new name on `data`.
+- **`reset-survey-status`:** it matches rows by exact `owner/name`. After a rename, pass the new name.
+- **Survey and invitation write-backs** match rows by node ID only and never change a row's owner or name. A survey whose target no longer matches its row records `failure`, not `success`.
+
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
