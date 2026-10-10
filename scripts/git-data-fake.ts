@@ -7,6 +7,7 @@
  * support only: no production module imports it.
  */
 
+import type {GitDataClient} from './rename-tracked-repo.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 
@@ -39,7 +40,6 @@ export interface GitDataFakeOptions {
 }
 
 export interface GitDataFake {
-  /** Structurally compatible with the rename writer's client type. */
   readonly client: FakeClient
   /** Every API call, in order. */
   readonly calls: readonly FakeCall[]
@@ -62,57 +62,11 @@ export interface GitDataFake {
   failNext: (method: string, status: number, message?: string) => void
 }
 
-export interface FakeClient {
-  rest: {
-    repos: {
-      getBranch: (params: {owner: string; repo: string; branch: string}) => Promise<{
-        data: {
-          protected?: boolean
-          protection?: {enabled?: boolean}
-          commit: {sha: string; author?: {login?: string} | null}
-        }
-      }>
-    }
-    git: {
-      getRef: (params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>
-      getCommit: (params: {owner: string; repo: string; commit_sha: string}) => Promise<{
-        data: {sha: string; tree: {sha: string}}
-      }>
-      getTree: (params: {owner: string; repo: string; tree_sha: string; recursive?: string}) => Promise<{
-        data: {sha: string; truncated: boolean; tree: {path?: string; mode?: string; type?: string; sha?: string}[]}
-      }>
-      getBlob: (params: {owner: string; repo: string; file_sha: string}) => Promise<{
-        data: {content: string; encoding: string}
-      }>
-      createBlob: (params: {
-        owner: string
-        repo: string
-        content: string
-        encoding?: string
-      }) => Promise<{data: {sha: string}}>
-      createTree: (params: {
-        owner: string
-        repo: string
-        base_tree?: string
-        tree: {path?: string; mode?: string; type?: string; sha?: string | null}[]
-      }) => Promise<{data: {sha: string}}>
-      createCommit: (params: {
-        owner: string
-        repo: string
-        message: string
-        tree: string
-        parents?: string[]
-      }) => Promise<{data: {sha: string}}>
-      updateRef: (params: {
-        owner: string
-        repo: string
-        ref: string
-        sha: string
-        force?: false
-      }) => Promise<{data: {object: {sha: string}}}>
-    }
-  }
-}
+/**
+ * The client the fake presents is the writer's own `GitDataClient`, not a second hand-written copy of
+ * its call shapes, so a change to what the writer calls fails here at compile time.
+ */
+export type FakeClient = GitDataClient
 
 const EMPTY_TREE = new Map<string, FakeTreeEntry>()
 

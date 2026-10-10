@@ -54,7 +54,7 @@ export function planRepoPageMove(params) {
     if (oldSlug === newSlug) {
         if (oldPage === undefined)
             return { outcome: 'metadata-only' };
-        if (!isAttributed(oldPage.document, params.nodeId, target.oldUrl))
+        if (!attributesPageTo(oldPage.document, params.nodeId, target.oldUrl))
             return blocked('old-page-not-attributed');
         if (isUpdated(oldPage.document, params.nodeId, target)) {
             return params.rowName === params.newName ? { outcome: 'already-applied' } : blocked('page-ahead-of-row');
@@ -72,7 +72,7 @@ export function planRepoPageMove(params) {
     }
     if (newPage !== undefined)
         return blocked('both-pages-present');
-    if (!isAttributed(oldPage.document, params.nodeId, target.oldUrl))
+    if (!attributesPageTo(oldPage.document, params.nodeId, target.oldUrl))
         return blocked('old-page-not-attributed');
     return buildChanges({ params, pages, oldSlug, newSlug, oldPage, target, moving: true });
 }
@@ -118,19 +118,25 @@ function matchesPrivateToken(params) {
 function repoPagePath(slug) {
     return `${REPOS_DIR}/${slug}.md`;
 }
-/** A page with a node_id belongs to exactly that node; one without belongs to whoever its sources name. */
-function isAttributed(document, nodeId, oldUrl) {
+/**
+ * Whether a parsed repo page belongs to `nodeId`: a page with a `node_id` belongs to exactly that
+ * node; one without belongs to whoever its structured `sources` name (`oldUrl`, exact). The body is
+ * never consulted. This is the one ownership rule: the planner, the writer's path policy and the
+ * CLI's already-applied check all call it, so they cannot disagree about a page.
+ */
+export function attributesPageTo(document, nodeId, oldUrl) {
     const existing = document.values.node_id;
     if (existing !== undefined)
         return existing === nodeId;
-    return sourceUrls(document).includes(oldUrl);
+    return pageSourceUrls(document).includes(oldUrl);
 }
 function isUpdated(document, nodeId, target) {
     return (document.values.node_id === nodeId &&
         document.values.title === target.newTitle &&
-        sourceUrls(document).includes(target.newUrl));
+        pageSourceUrls(document).includes(target.newUrl));
 }
-function sourceUrls(document) {
+/** The `url` of every structured `sources` entry of a parsed page. */
+export function pageSourceUrls(document) {
     const sources = document.values.sources;
     if (!Array.isArray(sources))
         return [];

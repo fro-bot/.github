@@ -1,3 +1,4 @@
+export * from './branch-safety.ts'
 export * from './corrections.ts'
 export * from './frontmatter.ts'
 export * from './gate-contract.ts'

@@ -7,7 +7,8 @@
  * Architecture: a pure decision core (`@fro-bot/wiki-write-core`'s `planRepoPageMove`) plus this
  * module's evidence checks and atomic writer, with every client injected. Nothing here calls
  * `commitWikiChanges` or `commitMetadata`: the former replays on conflict and skips deletions on a
- * truncated tree, the latter cannot express a multi-file commit.
+ * truncated tree, the latter cannot express a multi-file commit. This is the one metadata writer
+ * outside `commitMetadata`, by design: the row and the page move must land in a single commit.
  *
  * Safety properties:
  * - The target is the literal `fro-bot/.github@data`. There is no override.
@@ -21,8 +22,12 @@ import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
 import {
+  assertBranchWritable,
+  attributesPageTo,
+  pageSourceUrls,
   parseFrontmatterDocument,
   planRepoPageMove,
+  type BranchProtectionClient,
   type PageChange,
   type PlanRepoPageMoveParams,
   type RepoPageMoveBlockReason,
@@ -121,11 +126,6 @@ export interface GitDataClient {
       }) => Promise<{data: unknown}>
     }
   }
-}
-
-type BranchClient = Pick<GitDataClient['rest'], 'repos'>
-interface BranchClientLike {
-  rest: BranchClient
 }
 
 /** A row rewrite, alongside the page operations from the pure planner. */
@@ -266,24 +266,20 @@ function serializeYaml(value: unknown): string {
 // ─── Branch safety ──────────────────────────────────────────────────────────
 
 /**
- * Same semantics as the private `assertWritableBranch` in `commit-metadata.ts` and `wiki-ingest.ts`:
- * never `main`; never a protected branch except the canonical `fro-bot/.github@data`, whose ruleset
- * reports it as protected while bypassing the App by actor.
+ * The shared branch-safety rule (`assertBranchWritable` in wiki-write-core, also used by
+ * `commit-metadata.ts` and `wiki-ingest.ts`), reported as this module's status-only error.
  */
 export async function assertWritableBranch(
-  client: BranchClientLike,
+  client: BranchProtectionClient,
   owner: string,
   repo: string,
   branch: string,
 ): Promise<void> {
-  if (branch === 'main') throw new RenameError({code: 'PROTECTED_BRANCH', phase: 'integrity'})
-
-  const response = await guarded('integrity', 'READ_FAILED', async () =>
-    client.rest.repos.getBranch({owner, repo, branch}),
+  await guarded('integrity', 'READ_FAILED', async () =>
+    assertBranchWritable(client, owner, repo, branch, () => {
+      throw new RenameError({code: 'PROTECTED_BRANCH', phase: 'integrity'})
+    }),
   )
-  const protectedBranch = response.data.protected === true || response.data.protection?.enabled === true
-  const canonical = owner === TARGET_OWNER && repo === TARGET_REPO && branch === TARGET_BRANCH
-  if (protectedBranch && !canonical) throw new RenameError({code: 'PROTECTED_BRANCH', phase: 'integrity'})
 }
 
 /** The tip commit must be authored by Fro Bot, and must be the head this attempt builds on. */
@@ -510,12 +506,7 @@ function rejectUnhandledOp(_change: never): never {
 function isAttributedPage(content: string | undefined, context: PolicyContext): boolean {
   if (content === undefined) return false
   try {
-    const {values} = parseFrontmatterDocument(content)
-    if (values.node_id !== undefined) return values.node_id === context.nodeId
-    const sources = values.sources
-    return (
-      Array.isArray(sources) && sources.some((source: unknown) => isRecord(source) && source.url === context.oldUrl)
-    )
+    return attributesPageTo(parseFrontmatterDocument(content), context.nodeId, context.oldUrl)
   } catch {
     return false
   }
@@ -635,8 +626,7 @@ function oldPageNamesUrl(files: Readonly<Record<string, string>>, oldSlug: strin
   const content = files[`knowledge/wiki/repos/${oldSlug}.md`]
   if (content === undefined) return true
   try {
-    const sources = parseFrontmatterDocument(content).values.sources
-    return Array.isArray(sources) && sources.some((source: unknown) => isRecord(source) && source.url === oldUrl)
+    return pageSourceUrls(parseFrontmatterDocument(content)).includes(oldUrl)
   } catch {
     return false
   }

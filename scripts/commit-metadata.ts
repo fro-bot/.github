@@ -2,6 +2,7 @@ import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
+import {assertBranchWritable} from '@fro-bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
@@ -339,30 +340,21 @@ async function assertWritableBranch(
   repo: string,
   branch: string,
 ): Promise<void> {
-  if (branch === 'main') {
-    throw new CommitMetadataError({
-      code: 'PROTECTED_BRANCH',
-      message: 'commitMetadata refuses to write to main; use the data branch',
-      remediation: 'Target the data branch. Merges to main go through the weekly data-branch merge PR.',
-    })
-  }
-
-  const response = await octokit.rest.repos.getBranch({owner, repo, branch})
-
-  // Check both the top-level `protected` boolean and the nested `protection.enabled`
-  // field. GitHub's REST API surfaces branch protection via both; older clients
-  // only check the latter, which misses repos configured via the newer rulesets API.
-  if (
-    (response.data.protected === true || response.data.protection?.enabled === true) &&
-    !(owner === DEFAULT_OWNER && repo === DEFAULT_REPO && branch === DEFAULT_BRANCH)
-  ) {
+  await assertBranchWritable(octokit, owner, repo, branch, reason => {
+    if (reason === 'main') {
+      throw new CommitMetadataError({
+        code: 'PROTECTED_BRANCH',
+        message: 'commitMetadata refuses to write to main; use the data branch',
+        remediation: 'Target the data branch. Merges to main go through the weekly data-branch merge PR.',
+      })
+    }
     throw new CommitMetadataError({
       code: 'PROTECTED_BRANCH',
       message: `commitMetadata refuses to write to protected branch "${branch}"`,
       remediation:
         'Target the canonical fro-bot/.github data branch or another unprotected branch. Review the ruleset and branch protection if this target should be writable.',
     })
-  }
+  })
 }
 
 async function readExistingMetadataFile(params: {

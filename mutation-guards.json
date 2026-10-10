@@ -49,6 +49,10 @@
       "reason": "Operator-dispatched writer, never run on a schedule: it commits to data only after a human dispatches it and GitHub itself proves the rename (same node ID, same owner, public). It does have real rejection paths (every evidence and row block, the branch and tip-author checks, a truncated tree, the path and no-overwrite policy, the 3-attempt retry), and each is pinned by a decision-table test in scripts/rename-tracked-repo.test.ts against an in-memory Git Data fake that enforces fast-forward updates. The page-move decisions it delegates to live in packages/wiki-write-core/src/repo-page-move.ts, classified separately. It is not in the mutate list because the module's boundary is its injected clients rather than a pure predicate, so a Stryker run would mostly score transport glue. Re-evaluate if it gains an unattended caller."
     },
     {
+      "path": "packages/wiki-write-core/src/branch-safety.ts",
+      "reason": "The one branch-safety rule shared by commit-metadata.ts, wiki-ingest.ts and rename-tracked-repo.ts (never main; never a protected branch except the canonical fro-bot/.github@data). It has a real rejection path, so it is pinned by a truth table in scripts/branch-safety.test.ts (both protection flags, every one-field deviation from the canonical target, the main short-circuit, and lookup failure propagating), and each consumer's suite pins its own refusal shape. It is not in the mutate list because its tests import it through the built dist, as repo-page-move.ts's do. Re-evaluate if the rule gains another exemption."
+    },
+    {
       "path": "packages/wiki-write-core/src/correction-text.ts",
       "reason": "Pure normalization helper (whitespace collapse) with no rejection path of its own; consumed by the already-mutated corrections-survival.ts gate."
     },

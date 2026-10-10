@@ -1,3 +1,4 @@
+export * from "./branch-safety.js";
 export * from "./corrections.js";
 export * from "./frontmatter.js";
 export * from "./gate-contract.js";

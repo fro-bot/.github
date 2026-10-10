@@ -13,6 +13,7 @@
  *   repository URL. The body is never consulted.
  * - `log.md` history and `knowledge/wiki/README.md` are never rewritten.
  */
+import { type FrontmatterDocument } from './frontmatter.js';
 /**
  * One file operation in a planned rename. The op says why the path is touched, so the committing
  * writer can hold each operation to its own rule (e.g. `create-page` must not overwrite anything).
@@ -65,3 +66,12 @@ export type RepoPageMovePlan = {
 /** Apply a change set to a file map, returning a new map. */
 export declare function applyPageChanges(files: Readonly<Record<string, string>>, changes: readonly PageChange[]): Record<string, string>;
 export declare function planRepoPageMove(params: PlanRepoPageMoveParams): RepoPageMovePlan;
+/**
+ * Whether a parsed repo page belongs to `nodeId`: a page with a `node_id` belongs to exactly that
+ * node; one without belongs to whoever its structured `sources` name (`oldUrl`, exact). The body is
+ * never consulted. This is the one ownership rule: the planner, the writer's path policy and the
+ * CLI's already-applied check all call it, so they cannot disagree about a page.
+ */
+export declare function attributesPageTo(document: FrontmatterDocument, nodeId: string, oldUrl: string): boolean;
+/** The `url` of every structured `sources` entry of a parsed page. */
+export declare function pageSourceUrls(document: FrontmatterDocument): string[];

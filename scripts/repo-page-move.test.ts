@@ -1,7 +1,10 @@
 import type {RepoEntry} from './schemas.ts'
 import {
   applyPageChanges,
+  attributesPageTo,
   mergeWikiLogs,
+  pageSourceUrls,
+  parseFrontmatterDocument,
   planRepoPageMove,
   validateWikilinks,
   type PageChange,
@@ -300,6 +303,138 @@ describe('planRepoPageMove: moving a repo page to a new slug', () => {
 
     expect(next[TOPIC_PATH]).toContain(`  - '${NEW_SLUG}'`)
     expect(frontmatterOf(next[TOPIC_PATH] ?? '').related).toEqual([NEW_SLUG, 'marcusrbrown--mothership'])
+  })
+})
+
+describe('attributesPageTo: the one ownership rule the planner, the policy and the CLI share', () => {
+  const OTHER_URL = 'https://github.com/someone/else'
+  const doc = (nodeId: string | null, urls: string[] | null) =>
+    parseFrontmatterDocument(oldRepoPage({nodeId, sourceUrls: urls}))
+
+  it.each([
+    ['its own node_id, whatever the sources say', doc(NODE_ID, [OTHER_URL]), true],
+    ['its own node_id with no sources', doc(NODE_ID, null), true],
+    ['another node_id, even when the sources name the old URL', doc('R_other', [OLD_URL]), false],
+    ['no node_id, with the old URL in sources', doc(null, [OLD_URL]), true],
+    ['no node_id, with the old URL among others', doc(null, [OTHER_URL, OLD_URL]), true],
+    ['no node_id, with only another URL', doc(null, [OTHER_URL]), false],
+    ['no node_id and no sources', doc(null, null), false],
+    ['no node_id, with a near-miss URL', doc(null, [`${OLD_URL}/`]), false],
+  ])('%s', (_label, document, expected) => {
+    expect(attributesPageTo(document, NODE_ID, OLD_URL)).toBe(expected)
+  })
+
+  it('ignores a URL that appears only in the body', () => {
+    const page = `${oldRepoPage({nodeId: null, sourceUrls: [OTHER_URL]})}\nSee ${OLD_URL}.\n`
+
+    expect(attributesPageTo(parseFrontmatterDocument(page), NODE_ID, OLD_URL)).toBe(false)
+  })
+
+  it('reads structured source URLs only, skipping entries without a string url', () => {
+    const page = [
+      '---',
+      'type: repo',
+      'sources:',
+      '  - url: https://a.test',
+      '  - note: no url',
+      '  - 7',
+      '---',
+      '',
+      'x',
+      '',
+    ].join('\n')
+
+    expect(pageSourceUrls(parseFrontmatterDocument(page))).toEqual(['https://a.test'])
+  })
+})
+
+describe('planRepoPageMove: the bytes of a repaired related: list, per layout', () => {
+  const MOTHERSHIP = 'marcusrbrown--mothership'
+
+  /** The fixture topic with its `related:` lines replaced; the body link is left on the mothership. */
+  function topicWith(relatedLines: readonly string[]): string {
+    return topicPage([], `[[${MOTHERSHIP}]]`).replace('related:\n---', `${relatedLines.join('\n')}\n---`)
+  }
+
+  function repairedTopic(relatedLines: readonly string[]): string {
+    const files = snapshot({[TOPIC_PATH]: topicWith(relatedLines)})
+    return applied(planRepoPageMove(moveParams({files})), files)[TOPIC_PATH] ?? ''
+  }
+
+  // Layouts the text editor recognizes keep every other byte of the page; only the related lines change.
+  it.each([
+    {
+      layout: 'block sequence',
+      before: ['related:', `  - ${OLD_SLUG}`, `  - ${MOTHERSHIP}`],
+      after: ['related:', `  - ${NEW_SLUG}`, `  - ${MOTHERSHIP}`],
+    },
+    {
+      layout: 'block sequence with quotes and a trailing comment',
+      before: ['related:', `  - '${OLD_SLUG}' # keep me`, `  - "${MOTHERSHIP}"`],
+      after: ['related:', `  - '${NEW_SLUG}' # keep me`, `  - "${MOTHERSHIP}"`],
+    },
+    {
+      layout: 'block sequence holding both slugs (deduplicated, first position wins)',
+      before: ['related:', `  - ${OLD_SLUG}`, `  - ${NEW_SLUG}`, `  - ${MOTHERSHIP}`],
+      after: ['related:', `  - ${NEW_SLUG}`, `  - ${MOTHERSHIP}`],
+    },
+    {
+      layout: 'flow sequence',
+      before: [`related: [${OLD_SLUG}, ${MOTHERSHIP}]`],
+      after: [`related: [${NEW_SLUG}, ${MOTHERSHIP}]`],
+    },
+    {
+      layout: 'flow sequence with quotes',
+      before: [`related: ["${OLD_SLUG}", '${MOTHERSHIP}']`],
+      after: [`related: ["${NEW_SLUG}", '${MOTHERSHIP}']`],
+    },
+    {
+      layout: 'flow sequence holding both slugs',
+      before: [`related: [${OLD_SLUG}, ${NEW_SLUG}, ${MOTHERSHIP}]`],
+      after: [`related: [${NEW_SLUG}, ${MOTHERSHIP}]`],
+    },
+  ])('edits the text in place for a $layout', ({before, after}) => {
+    expect(repairedTopic(before)).toBe(topicWith(after))
+  })
+
+  // A layout the editor does not recognize is re-rendered from the parsed document: the list is right,
+  // and the frontmatter is normalized (block style) with the body trimmed to one trailing newline.
+  it('re-renders the whole frontmatter for a layout the text editor does not recognize', () => {
+    const unrecognized = ['related:', `  [${OLD_SLUG}, ${MOTHERSHIP}]`]
+
+    const next = repairedTopic(unrecognized)
+
+    expect(next).toBe(
+      [
+        '---',
+        'type: topic',
+        'title: GitHub Actions CI',
+        'created: 2026-06-01',
+        'updated: 2026-10-07',
+        'tags:',
+        '  - ci',
+        'related:',
+        `  - ${NEW_SLUG}`,
+        `  - ${MOTHERSHIP}`,
+        '---',
+        '',
+        '# GitHub Actions CI',
+        '',
+        '| Repo | Status | Notes |',
+        '| --- | --- | --- |',
+        `| [[${MOTHERSHIP}]] | Present at the second survey | N/A |`,
+        `| [[${MOTHERSHIP}]] | Present | N/A |`,
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('leaves a page untouched when its related: list does not name the old slug', () => {
+    const files = snapshot({[TOPIC_PATH]: topicWith(['related:', `  - ${MOTHERSHIP}`])})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[TOPIC_PATH]).toBe(files[TOPIC_PATH])
   })
 })
 
