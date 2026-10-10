@@ -1,4 +1,4 @@
-import type {PlanClient} from './dispatch-renovate.ts'
+import type {CliClient, DispatchClient, PlanClient} from './dispatch-renovate.ts'
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -18,29 +18,14 @@ import {parse} from 'yaml'
 //       - if idle → dispatches workflow_dispatch
 //       - if API error → records failure
 
-const {mocks, mockOctokit} = vi.hoisted(() => {
-  const mocks = {
+const {mocks} = vi.hoisted(() => ({
+  mocks: {
     listWorkflowRuns: vi.fn(),
     createWorkflowDispatch: vi.fn(),
     listReposAccessibleToInstallation: vi.fn(),
     paginate: vi.fn(),
-  }
-  return {
-    mocks,
-    mockOctokit: {
-      paginate: mocks.paginate,
-      rest: {
-        actions: {
-          listWorkflowRuns: mocks.listWorkflowRuns,
-          createWorkflowDispatch: mocks.createWorkflowDispatch,
-        },
-        apps: {
-          listReposAccessibleToInstallation: mocks.listReposAccessibleToInstallation,
-        },
-      },
-    },
-  }
-})
+  },
+}))
 
 // Narrow structural client for the plan path: only what planning calls. `satisfies` keeps the mock
 // honest against the production type with no cast.
@@ -48,6 +33,19 @@ const planClient = {
   paginate: mocks.paginate,
   rest: {apps: {listReposAccessibleToInstallation: mocks.listReposAccessibleToInstallation}},
 } satisfies PlanClient
+
+// Narrow doubles typed against the production seams; no casts. The full client covers both modes.
+const dispatchClient = {
+  rest: {actions: {listWorkflowRuns: mocks.listWorkflowRuns, createWorkflowDispatch: mocks.createWorkflowDispatch}},
+} satisfies DispatchClient
+
+const cliClient = {
+  paginate: mocks.paginate,
+  rest: {
+    apps: {listReposAccessibleToInstallation: mocks.listReposAccessibleToInstallation},
+    actions: {listWorkflowRuns: mocks.listWorkflowRuns, createWorkflowDispatch: mocks.createWorkflowDispatch},
+  },
+} satisfies CliClient
 
 describe('buildDispatchPlan', () => {
   it('maps repo names to EligibleRepo with fro-bot owner', async () => {
@@ -70,7 +68,6 @@ describe('buildDispatchPlan', () => {
   })
 })
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 describe('dispatchRenovate', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -78,7 +75,7 @@ describe('dispatchRenovate', () => {
 
   it('returns empty result for empty eligible list', async () => {
     const {dispatchRenovate} = await import('./dispatch-renovate.ts')
-    const result = await dispatchRenovate({octokit: mockOctokit as any, eligible: []})
+    const result = await dispatchRenovate({octokit: dispatchClient, eligible: []})
     expect(result.dispatched).toHaveLength(0)
     expect(result.skippedRunning).toHaveLength(0)
     expect(result.failed).toHaveLength(0)
@@ -92,7 +89,7 @@ describe('dispatchRenovate', () => {
     mocks.createWorkflowDispatch.mockResolvedValueOnce({status: 204})
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [{owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'}],
     })
 
@@ -113,7 +110,7 @@ describe('dispatchRenovate', () => {
     })
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [{owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'}],
     })
 
@@ -130,7 +127,7 @@ describe('dispatchRenovate', () => {
     })
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [{owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'}],
     })
 
@@ -147,7 +144,7 @@ describe('dispatchRenovate', () => {
     mocks.createWorkflowDispatch.mockRejectedValueOnce(new Error('API 500'))
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [{owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'}],
     })
 
@@ -160,7 +157,7 @@ describe('dispatchRenovate', () => {
     mocks.listWorkflowRuns.mockRejectedValueOnce(new Error('API 403'))
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [{owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'}],
     })
 
@@ -182,7 +179,7 @@ describe('dispatchRenovate', () => {
     mocks.createWorkflowDispatch.mockRejectedValueOnce(new Error('timeout'))
 
     const result = await dispatchRenovate({
-      octokit: mockOctokit as any,
+      octokit: dispatchClient,
       eligible: [
         {owner: 'fro-bot', name: 'agent', workflowPath: 'renovate.yaml'},
         {owner: 'fro-bot', name: '.github', workflowPath: 'renovate.yaml'},
@@ -196,7 +193,6 @@ describe('dispatchRenovate', () => {
     expect(result.failed[0]?.name).toBe('tokentoilet')
   })
 })
-/* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
 // BDD: planning mode
 // Given: the discovery client (installation repos) and the parsed metadata/renovate.yaml list
@@ -379,6 +375,117 @@ describe('runPlanMode', () => {
 
     await expect(runPlanMode({octokit: planClient, renovatePath: path, outputPath: join(dir, 'o')})).rejects.toThrow()
   })
+})
+
+describe('runCli (mode selection and inputs)', () => {
+  let dir = ''
+  let outputPath = ''
+  let renovatePath = ''
+  const createOctokit = vi.fn(async (_token: string) => cliClient)
+  const out: string[] = []
+  const stdout = (text: string) => {
+    out.push(text)
+  }
+
+  beforeEach(async () => {
+    vi.resetAllMocks()
+    out.length = 0
+    createOctokit.mockImplementation(async () => cliClient)
+    if (dir !== '') await rm(dir, {recursive: true, force: true})
+    dir = await mkdtemp(join(tmpdir(), 'dispatch-renovate-cli-'))
+    outputPath = join(dir, 'output')
+    renovatePath = join(dir, 'renovate.yaml')
+    await writeFile(renovatePath, 'repositories:\n  with-renovate: ["agent", ".github", "stale"]\n')
+  })
+
+  const planEnv = () => ({GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: outputPath})
+  const dispatchEnv = () => ({GITHUB_TOKEN: 'dispatch-token', DISPATCH_REPOSITORIES: 'agent,.github'})
+
+  it('runs plan mode for the `plan` argument: lists, writes the output, never dispatches', async () => {
+    const {runCli} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce(installation('agent', '.github'))
+
+    // DISPATCH_REPOSITORIES is set on purpose: plan mode must ignore it.
+    await runCli(['plan'], {...planEnv(), DISPATCH_REPOSITORIES: 'other'}, {createOctokit, stdout, renovatePath})
+
+    expect(createOctokit).toHaveBeenCalledExactlyOnceWith('discovery-token')
+    expect(await readFile(outputPath, 'utf8')).toBe('repositories=agent,.github\n')
+    expect(out.join('')).toBe('dispatch-renovate: planned 2 repositories\n')
+    expect(mocks.listWorkflowRuns).not.toHaveBeenCalled()
+    expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('runs dispatch mode when there is no argument: dispatches the planned list, never lists the installation', async () => {
+    const {runCli} = await import('./dispatch-renovate.ts')
+    mocks.listWorkflowRuns.mockResolvedValue({data: {total_count: 0}})
+    mocks.createWorkflowDispatch.mockResolvedValue({status: 204})
+
+    await runCli([], dispatchEnv(), {createOctokit, stdout})
+
+    expect(createOctokit).toHaveBeenCalledExactlyOnceWith('dispatch-token')
+    expect(mocks.createWorkflowDispatch).toHaveBeenCalledTimes(2)
+    expect(mocks.createWorkflowDispatch).toHaveBeenCalledWith({
+      owner: 'fro-bot',
+      repo: 'agent',
+      workflow_id: 'renovate.yaml',
+      ref: 'main',
+    })
+    expect(mocks.paginate).not.toHaveBeenCalled()
+    expect(JSON.parse(out.join(''))).toEqual({eligible: 2, dispatched: 2, skippedRunning: 0, failed: 0})
+  })
+
+  it.each([['Plan'], ['dispatch'], ['plan '], ['']])(
+    'treats %j as dispatch mode (only the exact `plan` selects planning)',
+    async arg => {
+      const {runCli} = await import('./dispatch-renovate.ts')
+      await expect(runCli([arg], planEnv(), {createOctokit, stdout, renovatePath})).rejects.toThrow(
+        /DISPATCH_REPOSITORIES is required/,
+      )
+      expect(mocks.paginate).not.toHaveBeenCalled()
+      await expect(readFile(outputPath, 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
+    },
+  )
+
+  it('selects plan mode only from the first argument', async () => {
+    const {runCli} = await import('./dispatch-renovate.ts')
+    await expect(runCli(['other', 'plan'], planEnv(), {createOctokit, stdout, renovatePath})).rejects.toThrow(
+      /DISPATCH_REPOSITORIES is required/,
+    )
+  })
+
+  it.each([
+    ['plan', ['plan']],
+    ['dispatch', []],
+  ])('%s mode fails without GITHUB_TOKEN, before building any client', async (_mode, argv) => {
+    const {runCli} = await import('./dispatch-renovate.ts')
+    for (const token of [undefined, '']) {
+      await expect(
+        runCli(argv, {GITHUB_TOKEN: token, GITHUB_OUTPUT: outputPath, DISPATCH_REPOSITORIES: 'agent'}, {createOctokit}),
+      ).rejects.toThrow('GITHUB_TOKEN is required')
+    }
+    expect(createOctokit).not.toHaveBeenCalled()
+  })
+
+  it.each([[undefined], ['']])('plan mode fails without GITHUB_OUTPUT (%j) and makes no API call', async output => {
+    const {runCli} = await import('./dispatch-renovate.ts')
+    await expect(
+      runCli(['plan'], {GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: output}, {createOctokit, renovatePath}),
+    ).rejects.toThrow('GITHUB_OUTPUT is required in plan mode')
+    expect(mocks.paginate).not.toHaveBeenCalled()
+  })
+
+  it.each([[undefined], [''], ['   '], [' , ,']])(
+    'dispatch mode fails when DISPATCH_REPOSITORIES is %j and dispatches nothing',
+    async repositories => {
+      const {runCli} = await import('./dispatch-renovate.ts')
+      await expect(
+        runCli([], {GITHUB_TOKEN: 'dispatch-token', DISPATCH_REPOSITORIES: repositories}, {createOctokit, stdout}),
+      ).rejects.toThrow('DISPATCH_REPOSITORIES is required and must name at least one repository')
+      expect(mocks.listWorkflowRuns).not.toHaveBeenCalled()
+      expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(out).toEqual([])
+    },
+  )
 })
 
 // ─── Workflow contract ──────────────────────────────────────────────────────

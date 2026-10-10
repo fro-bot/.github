@@ -57,8 +57,24 @@ export interface EligibleRepo {
   workflowPath: string
 }
 
+type ListWorkflowRunsParams = RestEndpointMethodTypes['actions']['listWorkflowRuns']['parameters']
+type CreateWorkflowDispatchParams = RestEndpointMethodTypes['actions']['createWorkflowDispatch']['parameters']
+
+/**
+ * Exactly what dispatching calls: the in-flight run probe and the dispatch itself. The real
+ * `Octokit` satisfies it structurally; test doubles need not fake the rest of the SDK.
+ */
+export interface DispatchClient {
+  rest: {
+    actions: {
+      listWorkflowRuns: (params: ListWorkflowRunsParams) => Promise<{data: {total_count: number}}>
+      createWorkflowDispatch: (params: CreateWorkflowDispatchParams) => Promise<unknown>
+    }
+  }
+}
+
 export interface DispatchRenovateParams {
-  octokit: OctokitClient
+  octokit: DispatchClient
   eligible: EligibleRepo[]
 }
 
@@ -192,7 +208,7 @@ export async function dispatchRenovate(params: DispatchRenovateParams): Promise<
  * Check if a Renovate workflow is currently in_progress or queued in the target repo.
  * Checks both statuses to avoid dispatching when a run is waiting or executing.
  */
-async function isRenovateActive(octokit: OctokitClient, repo: EligibleRepo): Promise<boolean> {
+async function isRenovateActive(octokit: DispatchClient, repo: EligibleRepo): Promise<boolean> {
   for (const status of ['in_progress', 'queued'] as const) {
     const runs = await octokit.rest.actions.listWorkflowRuns({
       owner: repo.owner,
@@ -216,26 +232,48 @@ function isFileNotFoundError(error: unknown): boolean {
 
 // ─── CLI entrypoint ─────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  const {Octokit} = await import('@octokit/rest')
+/** Both modes run from one client type; the real `Octokit` satisfies it. */
+export type CliClient = PlanClient & DispatchClient
 
-  const token = process.env.GITHUB_TOKEN
+/** Seams for {@link runCli}; the defaults are the real Octokit, the process streams and the real file. */
+export interface CliDeps {
+  createOctokit?: (token: string) => CliClient | Promise<CliClient>
+  stdout?: (text: string) => void
+  renovatePath?: string
+}
+
+async function createRealOctokit(token: string): Promise<CliClient> {
+  const {Octokit} = await import('@octokit/rest')
+  return new Octokit({auth: token})
+}
+
+/**
+ * The CLI entry, with argv (arguments after the script path), environment and I/O injected.
+ * `plan` runs plan mode; anything else runs dispatch mode. Missing inputs throw before any API call.
+ */
+export async function runCli(
+  argv: readonly string[],
+  env: Record<string, string | undefined>,
+  deps: CliDeps = {},
+): Promise<void> {
+  const stdout = deps.stdout ?? ((text: string) => process.stdout.write(text))
+  const token = env.GITHUB_TOKEN
   if (token === undefined || token === '') throw new Error('GITHUB_TOKEN is required')
 
-  const octokit = new Octokit({auth: token})
+  const octokit = await (deps.createOctokit ?? createRealOctokit)(token)
 
-  if (process.argv[2] === 'plan') {
+  if (argv[0] === 'plan') {
     // GITHUB_TOKEN here is the read-only discovery token; the plan lists, never dispatches.
-    const outputPath = process.env.GITHUB_OUTPUT
+    const outputPath = env.GITHUB_OUTPUT
     if (outputPath === undefined || outputPath === '') throw new Error('GITHUB_OUTPUT is required in plan mode')
-    const plan = await runPlanMode({octokit, renovatePath: 'metadata/renovate.yaml', outputPath})
-    process.stdout.write(`dispatch-renovate: planned ${plan.length} repositories\n`)
+    const plan = await runPlanMode({octokit, renovatePath: deps.renovatePath ?? 'metadata/renovate.yaml', outputPath})
+    stdout(`dispatch-renovate: planned ${plan.length} repositories\n`)
     return
   }
 
   // GITHUB_TOKEN here is the dispatch token, minted only for the planned list. Never re-read
   // renovate.yaml: dispatching beyond the planned list would fall outside the token's reach.
-  const repoNames = cleanRepoNames((process.env.DISPATCH_REPOSITORIES ?? '').split(','))
+  const repoNames = cleanRepoNames((env.DISPATCH_REPOSITORIES ?? '').split(','))
   if (repoNames.length === 0) throw new Error('DISPATCH_REPOSITORIES is required and must name at least one repository')
 
   const eligible = buildDispatchPlan(repoNames)
@@ -251,9 +289,9 @@ async function main(): Promise<void> {
     skippedRunning: result.skippedRunning.length,
     failed: result.failed.length,
   }
-  process.stdout.write(`${JSON.stringify(summary)}\n`)
+  stdout(`${JSON.stringify(summary)}\n`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  await runCli(process.argv.slice(2), process.env)
 }
