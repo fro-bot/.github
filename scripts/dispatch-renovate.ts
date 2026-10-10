@@ -5,18 +5,46 @@
  * checks if their Renovate workflow is already running, and dispatches workflow_dispatch
  * for idle repos. Mirrors the bfra-me/.github central Renovate dispatch pattern.
  *
- * Architecture: pure buildDispatchPlan() + async dispatchRenovate() + thin main() shell.
+ * Two modes, so the `actions: write` token reaches only the repos it will dispatch to:
+ *   - `plan`: with the read-only discovery token, intersect metadata/renovate.yaml with the
+ *     repositories the installation can access, clean the result, and write it to GITHUB_OUTPUT.
+ *     A failed discovery fails the step; it never falls back to an unfiltered list.
+ *   - default: dispatch to the planned list (DISPATCH_REPOSITORIES) with the dispatch token.
+ *
+ * Architecture: pure buildDispatchPlan()/cleanRepoNames() + async planDispatchRepositories() /
+ * dispatchRenovate() + thin main() shell.
  */
 
-import type {Octokit} from '@octokit/rest'
+import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 
-import {readFile} from 'node:fs/promises'
+import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {parse} from 'yaml'
 import {assertRenovateFile} from './schemas.ts'
 
 export type OctokitClient = Octokit
+
+// A bare callable, not the SDK's endpoint-method type: that type also carries `defaults` and
+// `endpoint`, which a test double has no reason to fake. The real endpoint methods satisfy it.
+type EndpointRoute = (...args: never[]) => unknown
+
+// Derived from the real Octokit response so SDK drift becomes a compile error. Projected to the
+// fields planning reads, so the narrow client type (and its test doubles) need not fake the rest.
+type FullInstallationRepo =
+  RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
+type InstallationRepo = Pick<FullInstallationRepo, 'name'> & {owner: Pick<FullInstallationRepo['owner'], 'login'>}
+
+/**
+ * Exactly what planning calls: paginated installation listing. Narrower than `OctokitClient` so
+ * the plan step cannot reach (and tests need not fake) anything that dispatches. The real
+ * `Octokit` satisfies it structurally.
+ */
+export interface PlanClient {
+  // Method syntax (bivariant parameters) so the SDK's generic `paginate` overloads still match.
+  paginate: (route: EndpointRoute, params: {per_page: number}) => Promise<InstallationRepo[]>
+  rest: {apps: {listReposAccessibleToInstallation: EndpointRoute}}
+}
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_WORKFLOW_ID = 'renovate.yaml'
@@ -29,8 +57,24 @@ export interface EligibleRepo {
   workflowPath: string
 }
 
+type ListWorkflowRunsParams = RestEndpointMethodTypes['actions']['listWorkflowRuns']['parameters']
+type CreateWorkflowDispatchParams = RestEndpointMethodTypes['actions']['createWorkflowDispatch']['parameters']
+
+/**
+ * Exactly what dispatching calls: the in-flight run probe and the dispatch itself. The real
+ * `Octokit` satisfies it structurally; test doubles need not fake the rest of the SDK.
+ */
+export interface DispatchClient {
+  rest: {
+    actions: {
+      listWorkflowRuns: (params: ListWorkflowRunsParams) => Promise<{data: {total_count: number}}>
+      createWorkflowDispatch: (params: CreateWorkflowDispatchParams) => Promise<unknown>
+    }
+  }
+}
+
 export interface DispatchRenovateParams {
-  octokit: OctokitClient
+  octokit: DispatchClient
   eligible: EligibleRepo[]
 }
 
@@ -38,6 +82,21 @@ export interface DispatchRenovateResult {
   dispatched: string[]
   skippedRunning: string[]
   failed: {name: string; error: string}[]
+}
+
+export interface PlanParams {
+  /** Discovery client: read-only, owner-wide. */
+  octokit: PlanClient
+  /** Raw `with-renovate` entries from metadata/renovate.yaml. */
+  requested: readonly string[]
+  owner?: string
+}
+
+export interface RunPlanParams {
+  octokit: PlanClient
+  renovatePath: string
+  outputPath: string
+  owner?: string
 }
 
 // ─── Pure engine ────────────────────────────────────────────────────────────
@@ -52,6 +111,62 @@ export function buildDispatchPlan(repoNames: string[], owner = DEFAULT_OWNER): E
     name,
     workflowPath: DEFAULT_WORKFLOW_ID,
   }))
+}
+
+/**
+ * Trim, drop empties and dedupe, keeping first-seen order. The cleaned list is what the dispatch
+ * mint receives as `repositories:`, so an empty result must stay empty (an empty `repositories:`
+ * would otherwise widen an owner-scoped mint to every repo).
+ */
+export function cleanRepoNames(names: readonly string[]): string[] {
+  const cleaned: string[] = []
+  for (const name of names) {
+    const trimmed = name.trim()
+    if (trimmed !== '' && !cleaned.includes(trimmed)) cleaned.push(trimmed)
+  }
+  return cleaned
+}
+
+// ─── Planning (discovery client) ────────────────────────────────────────────
+
+/**
+ * Intersect the requested Renovate repos with the repositories the installation can access under
+ * `owner`. Stale entries are dropped here so they never reach the mint, which would reject the
+ * whole list. Discovery errors propagate.
+ */
+export async function planDispatchRepositories(params: PlanParams): Promise<string[]> {
+  const requested = cleanRepoNames(params.requested)
+  if (requested.length === 0) return []
+
+  const owner = params.owner ?? DEFAULT_OWNER
+  const accessible = await params.octokit.paginate(params.octokit.rest.apps.listReposAccessibleToInstallation, {
+    per_page: 100,
+  })
+  const names = new Set(accessible.filter(repo => repo.owner.login === owner).map(repo => repo.name))
+  return requested.filter(name => names.has(name))
+}
+
+/** Plan mode: read renovate.yaml, plan, and append `repositories=<csv>` to the output file. */
+export async function runPlanMode(params: RunPlanParams): Promise<string[]> {
+  const requested = await readRequestedRepos(params.renovatePath)
+  const plan = await planDispatchRepositories({octokit: params.octokit, requested, owner: params.owner})
+  await appendFile(params.outputPath, `repositories=${plan.join(',')}\n`)
+  return plan
+}
+
+/**
+ * Read the `with-renovate` list. A missing file is expected on first run and means nothing to
+ * dispatch; parse/validation errors must surface so corrupted state isn't silently ignored.
+ */
+async function readRequestedRepos(path: string): Promise<string[]> {
+  try {
+    const raw: unknown = parse(await readFile(path, 'utf8'))
+    assertRenovateFile(raw, 'renovate')
+    return raw.repositories['with-renovate']
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error)) return []
+    throw error
+  }
 }
 
 // ─── Async dispatch engine ──────────────────────────────────────────────────
@@ -93,7 +208,7 @@ export async function dispatchRenovate(params: DispatchRenovateParams): Promise<
  * Check if a Renovate workflow is currently in_progress or queued in the target repo.
  * Checks both statuses to avoid dispatching when a run is waiting or executing.
  */
-async function isRenovateActive(octokit: OctokitClient, repo: EligibleRepo): Promise<boolean> {
+async function isRenovateActive(octokit: DispatchClient, repo: EligibleRepo): Promise<boolean> {
   for (const status of ['in_progress', 'queued'] as const) {
     const runs = await octokit.rest.actions.listWorkflowRuns({
       owner: repo.owner,
@@ -117,30 +232,49 @@ function isFileNotFoundError(error: unknown): boolean {
 
 // ─── CLI entrypoint ─────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  const {Octokit} = await import('@octokit/rest')
+/** Both modes run from one client type; the real `Octokit` satisfies it. */
+export type CliClient = PlanClient & DispatchClient
 
-  const token = process.env.GITHUB_TOKEN
+/** Seams for {@link runCli}; the defaults are the real Octokit, the process streams and the real file. */
+export interface CliDeps {
+  createOctokit?: (token: string) => CliClient | Promise<CliClient>
+  stdout?: (text: string) => void
+  renovatePath?: string
+}
+
+async function createRealOctokit(token: string): Promise<CliClient> {
+  const {Octokit} = await import('@octokit/rest')
+  return new Octokit({auth: token})
+}
+
+/**
+ * The CLI entry, with argv (arguments after the script path), environment and I/O injected.
+ * `plan` runs plan mode; anything else runs dispatch mode. Missing inputs throw before any API call.
+ */
+export async function runCli(
+  argv: readonly string[],
+  env: Record<string, string | undefined>,
+  deps: CliDeps = {},
+): Promise<void> {
+  const stdout = deps.stdout ?? ((text: string) => process.stdout.write(text))
+  const token = env.GITHUB_TOKEN
   if (token === undefined || token === '') throw new Error('GITHUB_TOKEN is required')
 
-  const octokit = new Octokit({auth: token})
+  const octokit = await (deps.createOctokit ?? createRealOctokit)(token)
 
-  // Read renovate.yaml for the list of fro-bot repos with Renovate
-  let repoNames: string[] = []
-  try {
-    const raw: unknown = parse(await readFile('metadata/renovate.yaml', 'utf8'))
-    assertRenovateFile(raw, 'renovate')
-    repoNames = raw.repositories['with-renovate']
-  } catch (error: unknown) {
-    // Missing file is expected on first run — no repos to dispatch.
-    // Parse/validation errors must surface so corrupted state isn't silently ignored.
-    if (!isFileNotFoundError(error)) throw error
-  }
-
-  if (repoNames.length === 0) {
-    process.stdout.write('{"eligible":0,"dispatched":0,"skippedRunning":0,"failed":0}\n')
+  if (argv[0] === 'plan') {
+    // GITHUB_TOKEN here is the read-only discovery token; the plan lists, never dispatches.
+    const outputPath = env.GITHUB_OUTPUT
+    if (outputPath === undefined || outputPath === '') throw new Error('GITHUB_OUTPUT is required in plan mode')
+    const plan = await runPlanMode({octokit, renovatePath: deps.renovatePath ?? 'metadata/renovate.yaml', outputPath})
+    stdout(`dispatch-renovate: planned ${plan.length} repositories\n`)
     return
   }
+
+  // GITHUB_TOKEN here is the dispatch token, minted only for the planned list. Never re-read
+  // renovate.yaml: dispatching beyond the planned list would fall outside the token's reach.
+  const repoNames = cleanRepoNames((env.DISPATCH_REPOSITORIES ?? '').split(','))
+  if (repoNames.length === 0) throw new Error('DISPATCH_REPOSITORIES is required and must name at least one repository')
 
   const eligible = buildDispatchPlan(repoNames)
   const result = await dispatchRenovate({octokit, eligible})
@@ -155,9 +289,9 @@ async function main(): Promise<void> {
     skippedRunning: result.skippedRunning.length,
     failed: result.failed.length,
   }
-  process.stdout.write(`${JSON.stringify(summary)}\n`)
+  stdout(`${JSON.stringify(summary)}\n`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  await runCli(process.argv.slice(2), process.env)
 }

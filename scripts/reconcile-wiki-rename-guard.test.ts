@@ -89,6 +89,18 @@ interface FakeBranch {
   createWorkflowDispatch: ReturnType<typeof vi.fn>
 }
 
+/**
+ * Discovery client: answers installation enumeration (empty) and nothing else. Any other call
+ * (data-branch reads, writes) hits an undefined method and fails, so a wiki lookup misrouted
+ * to discovery turns into an unverifiable page and breaks the assertions below.
+ */
+function makeDiscoveryOctokit(): OctokitClient {
+  return {
+    paginate: async () => [],
+    rest: {apps: {listReposAccessibleToInstallation: async () => ({data: []})}},
+  } as unknown as OctokitClient
+}
+
 function createFakeBranch(options: FakeBranchOptions): FakeBranch {
   let repos = options.repos
   let revision = 0
@@ -171,7 +183,12 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
       },
       git: {createRef: async () => ({data: {ref: 'refs/heads/data'}})},
       actions: {createWorkflowDispatch: branch.createWorkflowDispatch},
-      apps: {listReposAccessibleToInstallation: async () => ({data: []})},
+      // The writer is repo-scoped: it must never enumerate the installation.
+      apps: {
+        listReposAccessibleToInstallation: async () => {
+          throw new Error('writer client must not enumerate the installation')
+        },
+      },
       issues: {
         create: async () => ({data: {number: 1}}),
         update: async () => ({data: {}}),
@@ -261,7 +278,8 @@ async function reconcile(branch: FakeBranch, scenario: UserScenario) {
   const logger = {warn: vi.fn<(message: string) => void>(), info: vi.fn<(message: string) => void>()}
   const params: HandleReconcileParams = {
     userOctokit: makeUserOctokit(scenario),
-    appOctokit: branch.octokit,
+    discoveryOctokit: makeDiscoveryOctokit(),
+    writerOctokit: branch.octokit,
     owner: 'fro-bot',
     repo: '.github',
     allowlistPath: 'metadata/allowlist.yaml',

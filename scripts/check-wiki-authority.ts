@@ -24,9 +24,9 @@ function frobotAuthors(): ReadonlySet<string> {
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
  * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal.
  * - `knowledge/corrections.yaml` is system-owned sidecar state for marked corrections.
- * - `metadata/*.{yaml,yml}` are all auto-managed state. Manual edits to allowlist.yaml or
- *   any other metadata YAML still land via the `data` branch and are promoted by the
- *   `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
+ * - `metadata/*.{yaml,yml}` are all auto-managed state (including `repos.yaml`). Manual edits
+ *   to allowlist.yaml or any other metadata YAML still land via the `data` branch and are
+ *   promoted by the `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
  *
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
@@ -45,7 +45,14 @@ function guardedPatterns(): readonly RegExp[] {
 
 export interface GuardInput {
   readonly author: string
-  readonly headRef: string
+  // `unknown`, not `string`: the pure function is the trust boundary, so it narrows rather than
+  // trusting the caller's type. See exact-match-trust-gates-need-type-discipline-2026-09-08.md.
+  readonly headRef: unknown
+  // `unknown` for the same reason as `headRef`: the repository the PR's head branch lives in
+  // (`pull_request.head.repo.full_name`), absent/null for a deleted fork.
+  readonly headRepo: unknown
+  // The repository the guard runs in (`pull_request.base.repo.full_name`).
+  readonly baseRepo: string
   readonly files: readonly string[]
 }
 
@@ -55,35 +62,44 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * Pure decision function: should this PR be allowed to touch autonomously-managed files?
  *
  * Rules:
- * - If the author is a Fro Bot identity, always allow. Fro Bot is the legitimate writer.
- * - Otherwise, reject if any changed file matches a guarded pattern. The PR must split
- *   its guarded edits onto the `data` branch and let the promotion flow land them.
+ * - A Fro Bot identity may touch guarded paths only from the `data` head branch of THIS
+ *   repository (the writers all target `data`; `main` receives them through the promotion PR).
+ *   Any guarded path on another head, a `headRef` that is not exactly the string `data`, or a
+ *   `headRepo` that is not exactly the string `baseRepo` (a fork's `data`, a deleted fork, a
+ *   missing or non-string value) is blocked. Fro Bot with only unguarded paths is allowed on any
+ *   head.
+ * - Any other author is blocked if any changed file matches a guarded pattern, whatever the
+ *   head. The PR must split its guarded edits onto the `data` branch and let the promotion
+ *   flow land them.
  *
- * Returns `{ok: true}` on allow, `{ok: false, blockedFiles}` listing the offending paths
- * in input order. Mixed PRs (some guarded, some not) still fail; splitting the PR is the
+ * Returns `{ok: true}` on allow, `{ok: false, blockedFiles}` listing the offending (guarded)
+ * paths in input order. Mixed PRs (some guarded, some not) still fail; splitting the PR is the
  * intended resolution.
+ *
+ * A branch name alone is not an origin: a fork can name its branch `data`, and GitHub PR
+ * authorship is not a claim about where the head lives. So the Fro Bot allow checks the head
+ * repository against the base repository as well, rather than assuming a Fro Bot identity never
+ * originates from a fork.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
-  if (frobotAuthors().has(input.author)) {
-    // metadata/repos.yaml may only arrive via the `data` promotion branch.
-    // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
-    // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
-    // fro-bot identity never originates from a fork — fork PRs carry an external author and
-    // fall through to the guardedPatterns() check below, so a fork naming its branch `data`
-    // cannot reach this allow path. Deliberately a literal, not the `.ya?ml` glob below: the
-    // canonical filename is hardcoded in every reader (commit-metadata, check-private-leak,
-    // cross-repo-dispatch, ...), so a `.yml` variant is an orphan no pipeline consumes.
-    if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
-      return {ok: false, blockedFiles: ['metadata/repos.yaml']}
-    }
-    return {ok: true}
-  }
   const patterns = guardedPatterns()
-  const blockedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
-  if (blockedFiles.length === 0) {
+  const guardedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
+  if (guardedFiles.length === 0) {
     return {ok: true}
   }
-  return {ok: false, blockedFiles}
+  // Strict `===` against a string is the narrowing for both `unknown` fields: it is true only for
+  // the primitive string (not `['data']`, not a `String` object), so a separate `typeof` check
+  // would be dead code whose mutant is equivalent and unkillable. `baseRepo !== ''` keeps an
+  // unresolved base repo from matching an empty head repo.
+  if (
+    frobotAuthors().has(input.author) &&
+    input.headRef === 'data' &&
+    input.baseRepo !== '' &&
+    input.headRepo === input.baseRepo
+  ) {
+    return {ok: true}
+  }
+  return {ok: false, blockedFiles: guardedFiles}
 }
 
 /**
@@ -106,8 +122,8 @@ export function formatBlockMessage(result: {readonly ok: false; readonly blocked
 Blocked files:
 ${fileList}
 
-These paths are writable only by the Fro Bot App (\`fro-bot[bot]\`), enforced by the \`data\`
-branch ruleset. Authorized manual edits land like this:
+These paths are writable only by Fro Bot (\`fro-bot\` / \`fro-bot[bot]\`), and only from the \`data\`
+branch of this repository, never a fork's (enforced by the \`data\` branch ruleset). Authorized manual edits land like this:
 
   1. Check out \`data\` in a worktree (\`git worktree add ../worktree-data data\`)
   2. Make the edit there
@@ -121,7 +137,7 @@ interface PullRequestEventPayload {
   readonly pull_request?: {
     readonly number?: number
     readonly user?: {readonly login?: string} | null
-    readonly head?: {readonly ref?: string} | null
+    readonly head?: {readonly ref?: string; readonly repo?: {readonly full_name?: string} | null} | null
     readonly base?: {readonly repo?: {readonly full_name?: string} | null} | null
   }
 }
@@ -133,7 +149,7 @@ interface PullRequestEventPayload {
  */
 export async function readPullRequestContext(
   eventPath: string,
-): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
+): Promise<{prNumber: number; author: string; headRef: string; headRepo: unknown; fullName: string | null}> {
   // Buffer.toString() defaults to utf8; no encoding literal to mutate.
   const raw = await readFile(eventPath)
   const parsed = JSON.parse(raw.toString()) as PullRequestEventPayload
@@ -148,11 +164,15 @@ export async function readPullRequestContext(
   if (typeof headRef !== 'string' || headRef === '') {
     throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
   }
-  // pull_request is defined: prNumber above threw otherwise.
+  // pull_request and head are defined: the checks above threw otherwise. `headRepo` stays
+  // `unknown` and unvalidated on purpose; the guard compares it by strict equality, so a null
+  // `head.repo` (deleted fork) or a missing/non-string value simply never matches.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const headRepo: unknown = parsed.pull_request!.head!.repo?.full_name
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const rawFullName = parsed.pull_request!.base?.repo?.full_name
   const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
-  return {prNumber, author, headRef, fullName}
+  return {prNumber, author, headRef, headRepo, fullName}
 }
 
 /**
@@ -183,12 +203,12 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const {prNumber, author, headRef, fullName: eventFullName} = await readPullRequestContext(eventPath)
+  const {prNumber, author, headRef, headRepo, fullName: eventFullName} = await readPullRequestContext(eventPath)
   const fullName =
     eventFullName ??
     execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
   const files = fetchChangedFiles(prNumber, fullName)
-  const result = checkWikiAuthority({author, headRef, files})
+  const result = checkWikiAuthority({author, headRef, headRepo, baseRepo: fullName, files})
 
   if (result.ok) {
     process.stdout.write(`check-wiki-authority: ok (author=${author}, files_checked=${files.length})\n`)

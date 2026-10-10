@@ -21,9 +21,23 @@
  *
  * `handleReconcile` accepts injectable dependencies (Octokit clients, readMetadata,
  * commitMetadata, bootstrapDataBranch, logger) so the entire outer layer is testable
- * with handcrafted mocks. Production uses `main()` which reads `FRO_BOT_POLL_PAT` and
- * `GITHUB_TOKEN` from env, constructs both Octokit clients, and delegates. Token values
- * never appear in logs or error messages — error paths reference env-var names only.
+ * with handcrafted mocks. Production uses `main()` which reads `FRO_BOT_POLL_PAT`,
+ * `RECONCILE_DISCOVERY_TOKEN` and `RECONCILE_WRITER_TOKEN` from env, constructs the three
+ * Octokit clients, and delegates. Token values never appear in logs or error messages —
+ * error paths reference env-var names only.
+ *
+ * ## Client routing (least-privilege App tokens)
+ *
+ * - `userOctokit` (`FRO_BOT_POLL_PAT`): collaborator access, collab status, field,
+ *   identity and rename probes, star sync. Unchanged.
+ * - `discoveryOctokit` (App, owner-wide, metadata:read + contents:read): installation
+ *   enumeration and the owned/contrib probes (`repos.get`, `.github/workflows/fro-bot.yaml`
+ *   content). Never writes. Response bodies are parsed, never logged or persisted.
+ * - `writerOctokit` (App, this repo only, contents/issues/actions:write): `bootstrapDataBranch`,
+ *   `commitMetadata`, data-branch integrity reads, issues/labels/integrity alerts, the
+ *   `survey-repo.yaml` dispatch, and same-repo reads inside those flows (issue dedup lists,
+ *   wiki page lookup on `data`). Never enumerates the installation or reads other repos.
+ * A misrouted probe returns 403/404 and would wrongly mark a tracked repo `lost-access`.
  *
  * Commit-before-dispatch: `commitMetadata` runs before the dispatch/issue loops. A
  * commit failure is fatal (bubbled up). Dispatch/issue failures are non-blocking: they
@@ -1702,7 +1716,10 @@ export interface ReconcileLogger {
 
 export interface HandleReconcileParams {
   userOctokit?: OctokitClient
-  appOctokit?: OctokitClient
+  /** App token, owner-wide, read-only: installation enumeration + owned/contrib probes. */
+  discoveryOctokit?: OctokitClient
+  /** App token, this repo only, write: data-branch commits, issues, labels, survey dispatch. */
+  writerOctokit?: OctokitClient
   owner?: string
   repo?: string
   allowlistPath?: string
@@ -1808,14 +1825,15 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
   const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
   const userOctokit = params.userOctokit ?? (await createOctokitFromEnv('FRO_BOT_POLL_PAT'))
-  const appOctokit = params.appOctokit ?? (await createOctokitFromEnv('GITHUB_TOKEN'))
+  const discoveryOctokit = params.discoveryOctokit ?? (await createOctokitFromEnv('RECONCILE_DISCOVERY_TOKEN'))
+  const writerOctokit = params.writerOctokit ?? (await createOctokitFromEnv('RECONCILE_WRITER_TOKEN'))
 
   // 1. Bootstrap data branch (idempotent). On first run, this creates `data` from `main`'s
   //    HEAD. The new branch inherits `main`'s history, so its tip commit is authored by
   //    whoever merged the most recent PR — not `fro-bot[bot]`. Track the `created` flag so
   //    we can skip the author-integrity check on bootstrap runs; once fro-bot makes its
   //    first commit on `data`, subsequent runs enforce the check normally.
-  const bootstrapResult = await bootstrap({octokit: appOctokit, owner, repo})
+  const bootstrapResult = await bootstrap({octokit: writerOctokit, owner, repo})
   const justBootstrapped = bootstrapResult.created === true
 
   // 2. Read metadata from disk (main branch checkout).
@@ -1833,8 +1851,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
   //    `validateAccessList` (which rejects duplicates) doesn't throw.
   const collabAccess = await fetchAccessList(userOctokit)
-  const ownedAccess = await fetchOwnedRepos(appOctokit, owner, logger)
-  const contribAccess = await fetchContribRepos(appOctokit, allowlist, logger)
+  const ownedAccess = await fetchOwnedRepos(discoveryOctokit, owner, logger)
+  const contribAccess = await fetchContribRepos(discoveryOctokit, allowlist, logger)
   const {accessList, accessChannelByKey} = mergeAccessChannels({
     collab: collabAccess,
     owned: ownedAccess,
@@ -1851,7 +1869,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 6. Run the pure engine to produce the change plan, guarded against stranding wiki pages.
   const lookupWikiPage = async (slug: string): Promise<WikiPageState> =>
-    lookupRepoWikiPage({octokit: appOctokit, owner, repo, branch: 'data', slug})
+    lookupRepoWikiPage({octokit: writerOctokit, owner, repo, branch: 'data', slug})
   // Replaced by each commit attempt's re-plan, so everything after the commit uses the plan
   // that was actually written (or, for a no-op or never-run commit, the last one computed).
   let guarded = await planWithWikiGuard(
@@ -1901,10 +1919,10 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     if (justBootstrapped) {
       integrityCheck = 'skipped-just-bootstrapped'
     } else {
-      const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
+      const integrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
       if (!integrity.ok) {
         await fileIntegrityAlert({
-          appOctokit,
+          writerOctokit,
           owner,
           repo,
           authorLogin: integrity.authorLogin,
@@ -1924,7 +1942,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     // 8. Commit via mutator closure. Mutator re-runs reconcileRepos on each invocation,
     //    so 409-retry in commitMetadata absorbs concurrent writes correctly.
     const commitResult = await commitMetadataImpl({
-      octokit: appOctokit,
+      octokit: writerOctokit,
       path: reposPath,
       // Read by `commitMetadata` when it writes, after the mutator has re-planned, so the message
       // describes the plan that is persisted rather than the pre-commit one.
@@ -1938,10 +1956,10 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         // also re-verifies, catching any tamper that lands during the retry loop. Skipped
         // on bootstrap runs for the same reason as the initial check.
         if (!justBootstrapped) {
-          const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
+          const retryIntegrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
           if (!retryIntegrity.ok) {
             await fileIntegrityAlert({
-              appOctokit,
+              writerOctokit,
               owner,
               repo,
               authorLogin: retryIntegrity.authorLogin,
@@ -2025,7 +2043,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const dispatchOutcome = await runDispatches({
     staggerMs: dispatchStaggerMs,
     sleep: params.dispatchSleep,
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     workflowFile,
@@ -2038,7 +2056,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 10. Issue-creation loop (serial, non-blocking on failure).
   const issueOutcome = await runIssueQueue({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     issues: plan.issues,
@@ -2047,7 +2065,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 11. Auto-close stale `reconcile:pending-review` issues.
   const closedStaleIssues = await autoCloseStaleIssues({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     nextRepos: plan.nextRepos,
@@ -2065,7 +2083,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
   )
   const {created: healedRollups, raceSuppressed} = await selfHealRollups({
-    appOctokit,
+    writerOctokit,
     owner,
     repo,
     nextRepos: plan.nextRepos,
@@ -2079,7 +2097,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   // 13. Star sync — star collab/contrib repos not yet starred by @fro-bot. Non-blocking:
   //     failures increment starFailures and the run still returns. Owned repos are excluded
   //     (fro-bot owns them; self-starring is pointless). A star is a user action — uses
-  //     userOctokit (FRO_BOT_POLL_PAT), never appOctokit. Counts-only telemetry.
+  //     userOctokit (FRO_BOT_POLL_PAT), never an App client. Counts-only telemetry.
   const starCandidates = accessList.filter(entry => {
     const channel = accessChannelByKey.get(`${entry.owner}/${entry.name}`)
     return channel === 'collab' || channel === 'contrib'
@@ -2742,13 +2760,13 @@ function isFroBotAgentUses(value: string): boolean {
  * the authoritative signal for repo presence.
  */
 async function fetchOwnedRepos(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   logger: ReconcileLogger,
 ): Promise<AccessListEntry[]> {
   let allRepos: InstallationRepo[]
   try {
-    allRepos = await appOctokit.paginate(appOctokit.rest.apps.listReposAccessibleToInstallation, {
+    allRepos = await discoveryOctokit.paginate(discoveryOctokit.rest.apps.listReposAccessibleToInstallation, {
       per_page: 100,
     })
   } catch (error: unknown) {
@@ -2795,7 +2813,7 @@ async function fetchOwnedRepos(
  * warn so the operator knows the field is being ignored.
  */
 async function fetchContribRepos(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   allowlist: AllowlistFile,
   logger: ReconcileLogger,
 ): Promise<AccessListEntry[]> {
@@ -2817,10 +2835,10 @@ async function fetchContribRepos(
     const directName = ownerRepo.slice(slashIndex + 1)
     const key = `${directOwner}/${directName}`
     if (seen.has(key)) continue
-    const meta = await probeContribRepoMetadata(appOctokit, directOwner, directName, logger)
+    const meta = await probeContribRepoMetadata(discoveryOctokit, directOwner, directName, logger)
     if (meta === null) continue
     if (meta.archived || meta.fork) continue
-    const probe = await probeContribWorkflow(appOctokit, directOwner, directName, logger)
+    const probe = await probeContribWorkflow(discoveryOctokit, directOwner, directName, logger)
     if (probe === null) continue
     if (!containsFroBotAgentReference(probe)) continue
     entries.push({
@@ -2845,13 +2863,13 @@ async function fetchContribRepos(
  * about.
  */
 async function probeContribRepoMetadata(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
 ): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null> {
   try {
-    const response = await appOctokit.rest.repos.get({owner, repo: name})
+    const response = await discoveryOctokit.rest.repos.get({owner, repo: name})
     return {
       private: response.data.private === true,
       node_id: response.data.node_id,
@@ -2877,13 +2895,13 @@ async function probeContribRepoMetadata(
  * visibility contract as `probeContribRepoMetadata`.
  */
 async function probeContribWorkflow(
-  appOctokit: OctokitClient,
+  discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
 ): Promise<string | null> {
   try {
-    const response = await appOctokit.rest.repos.getContent({
+    const response = await discoveryOctokit.rest.repos.getContent({
       owner,
       repo: name,
       path: FRO_BOT_WORKFLOW_PATH,
@@ -2959,12 +2977,12 @@ interface IntegrityCheckFailResult {
 }
 
 async function verifyDataBranchIntegrity(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
 }): Promise<IntegrityCheckOkResult | IntegrityCheckFailResult> {
   try {
-    const response = await params.appOctokit.rest.repos.getBranch({
+    const response = await params.writerOctokit.rest.repos.getBranch({
       owner: params.owner,
       repo: params.repo,
       branch: 'data',
@@ -2984,7 +3002,7 @@ async function verifyDataBranchIntegrity(params: {
 }
 
 async function fileIntegrityAlert(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   authorLogin: string | null
@@ -2992,7 +3010,7 @@ async function fileIntegrityAlert(params: {
   logger: ReconcileLogger
 }): Promise<void> {
   try {
-    await callIssuesCreate(params.appOctokit, {
+    await callIssuesCreate(params.writerOctokit, {
       owner: params.owner,
       repo: params.repo,
       title: `Reconcile integrity alert: unexpected author on data branch`,
@@ -3037,7 +3055,7 @@ async function fileIntegrityAlert(params: {
  *
  * Telemetry is counts-only; canonical owner/name never appears in any log or warn message.
  *
- * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
+ * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never an App token.
  *
  * Exported for unit tests; the sole production caller is `handleReconcile`.
  *
@@ -3114,7 +3132,7 @@ export async function syncStars(params: {
 }
 
 async function runDispatches(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   workflowFile: string
@@ -3168,7 +3186,7 @@ async function runDispatches(params: {
     try {
       await dispatchWithTimeout(
         async () =>
-          params.appOctokit.rest.actions.createWorkflowDispatch({
+          params.writerOctokit.rest.actions.createWorkflowDispatch({
             owner: params.owner,
             repo: params.repo,
             workflow_id: params.workflowFile,
@@ -3258,7 +3276,7 @@ async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number)
 type ListForRepoResponseItem = RestEndpointMethodTypes['issues']['listForRepo']['response']['data'][number]
 
 async function runIssueQueue(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   issues: IssueQueueEntry[]
@@ -3311,7 +3329,7 @@ async function runIssueQueue(params: {
         // to create — better to risk a duplicate than to silently drop the alert.
         let existing: ListForRepoResponseItem[] = []
         try {
-          existing = await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+          existing = await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
             owner: params.owner,
             repo: params.repo,
             state: 'open',
@@ -3346,7 +3364,7 @@ async function runIssueQueue(params: {
         let confirmedLabels: Set<string>
         if (cachedConfirmedLabels === null) {
           const labels = await ensureLabelsExist(
-            params.appOctokit,
+            params.writerOctokit,
             params.owner,
             params.repo,
             TRANSITION_LABELS,
@@ -3369,13 +3387,13 @@ async function runIssueQueue(params: {
             `reconcile: all labels unconfirmed for visibility-transition issue (node_id=${issue.node_id}); shipping unlabeled.`,
           )
         }
-        await callIssuesCreate(params.appOctokit, filteredPayload)
+        await callIssuesCreate(params.writerOctokit, filteredPayload)
         // Mark as successfully created — only after the create call succeeds.
         // This ensures a failed create does not suppress a subsequent retry for the same node_id.
         attemptedTransitionNodeIds.add(issue.node_id)
       } else {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
-        await callIssuesCreate(params.appOctokit, payload)
+        await callIssuesCreate(params.writerOctokit, payload)
       }
       /**
        * Counter semantics: these counts reflect issues.create API acknowledgements, not
@@ -3584,7 +3602,7 @@ interface OpenIssueEntry {
 }
 
 async function autoCloseStaleIssues(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   nextRepos: ReposFile
@@ -3607,7 +3625,7 @@ async function autoCloseStaleIssues(params: {
 
   let closed = 0
   try {
-    const issues = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+    const issues = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
       owner: params.owner,
       repo: params.repo,
       state: 'open',
@@ -3635,7 +3653,7 @@ async function autoCloseStaleIssues(params: {
       if (!stale) continue
 
       try {
-        await params.appOctokit.rest.issues.update({
+        await params.writerOctokit.rest.issues.update({
           owner: params.owner,
           repo: params.repo,
           issue_number: issue.number,
@@ -3672,7 +3690,7 @@ async function autoCloseStaleIssues(params: {
  * workflow scheduler, not from this code.
  */
 async function selfHealRollups(params: {
-  appOctokit: OctokitClient
+  writerOctokit: OctokitClient
   owner: string
   repo: string
   nextRepos: ReposFile
@@ -3699,7 +3717,7 @@ async function selfHealRollups(params: {
   // Kept separate from currentRunRollupOwners so each skip path is observable independently.
   let existingRollupOwners: Set<string>
   try {
-    const openRollups = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+    const openRollups = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
       owner: params.owner,
       repo: params.repo,
       state: 'open',
@@ -3752,7 +3770,7 @@ async function selfHealRollups(params: {
       reason: 'unsolicited-new',
     }
     try {
-      await callIssuesCreate(params.appOctokit, renderIssuePayload(rollupIssue, params.owner, params.repo))
+      await callIssuesCreate(params.writerOctokit, renderIssuePayload(rollupIssue, params.owner, params.repo))
       created += 1
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
@@ -3772,7 +3790,9 @@ async function callIssuesCreate(octokit: OctokitClient, payload: IssuePayload): 
   await octokit.rest.issues.create(payload as unknown as Parameters<OctokitClient['rest']['issues']['create']>[0])
 }
 
-async function createOctokitFromEnv(envVar: 'FRO_BOT_POLL_PAT' | 'GITHUB_TOKEN'): Promise<OctokitClient> {
+async function createOctokitFromEnv(
+  envVar: 'FRO_BOT_POLL_PAT' | 'RECONCILE_DISCOVERY_TOKEN' | 'RECONCILE_WRITER_TOKEN',
+): Promise<OctokitClient> {
   const token = process.env[envVar]
   if (token === undefined || token === '') {
     throw new ReconcileError({
