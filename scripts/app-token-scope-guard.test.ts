@@ -938,3 +938,186 @@ describe('app-token scope guard: each rule fails against an in-memory fixture', 
     expect(() => collectMints({'a.yaml': 'not a workflow'})).toThrow(TypeError)
   })
 })
+
+// ─── Split-token bindings (discovery vs writer) ─────────────────────────────
+
+/**
+ * The discovery and writer mints are only least-privilege if each token reaches only its own
+ * client. These rules pin the wiring from mint step to script env var, by parsed `env` keys.
+ */
+interface TokenBinding {
+  /** Env var the script reads. */
+  readonly env: string
+  /** Step id of the mint that must feed it. */
+  readonly mintId: string
+}
+
+interface BindingSpec {
+  readonly file: string
+  readonly job: string
+  readonly bindings: readonly TokenBinding[]
+}
+
+const tokenOutput = (mintId: string): string => gh(`steps.${mintId}.outputs.token`)
+
+const BINDING_SPECS: readonly BindingSpec[] = [
+  {
+    file: 'reconcile-repos.yaml',
+    job: 'reconcile-repos',
+    bindings: [
+      {env: 'RECONCILE_DISCOVERY_TOKEN', mintId: 'discovery-token'},
+      {env: 'RECONCILE_WRITER_TOKEN', mintId: 'writer-token'},
+    ],
+  },
+  {
+    file: 'update-metadata.yaml',
+    job: 'update-metadata',
+    bindings: [
+      {env: 'UPDATE_METADATA_DISCOVERY_TOKEN', mintId: 'discovery-token'},
+      {env: 'UPDATE_METADATA_WRITER_TOKEN', mintId: 'writer-token'},
+    ],
+  },
+]
+
+function bindingViolations(workflow: unknown, spec: BindingSpec): string[] {
+  const where = `${spec.file}#${spec.job}`
+  if (!isRecord(workflow) || !isRecord(workflow.jobs))
+    return [`${where}: workflow does not have the expected jobs shape`]
+  const job = workflow.jobs[spec.job]
+  if (!isRecord(job) || !Array.isArray(job.steps)) return [`${where}: job has no steps`]
+  const steps: unknown[] = job.steps
+
+  const violations: string[] = []
+  const envNames = new Set(spec.bindings.map(binding => binding.env))
+  const outputRefs = spec.bindings.map(binding => `steps.${binding.mintId}.outputs`)
+  const consumers = steps.filter(
+    step => isRecord(step) && isRecord(step.env) && Object.keys(step.env).some(name => envNames.has(name)),
+  )
+  if (consumers.length !== 1) {
+    violations.push(`${where}: expected exactly one step to set the token env vars, found ${consumers.length}`)
+  }
+
+  for (const binding of spec.bindings) {
+    const holders = consumers.filter(step => isRecord(step) && isRecord(step.env) && binding.env in step.env)
+    if (holders.length !== 1) {
+      violations.push(`${where}: ${binding.env} must be set by exactly one step, found ${holders.length}`)
+      continue
+    }
+    const holder = holders[0]
+    const actual = isRecord(holder) && isRecord(holder.env) ? holder.env[binding.env] : undefined
+    if (actual !== tokenOutput(binding.mintId)) {
+      violations.push(
+        `${where}: ${binding.env} must be exactly ${tokenOutput(binding.mintId)}, found ${String(actual)}`,
+      )
+    }
+  }
+
+  // Each token output is referenced exactly once in the whole job (its env binding) and nowhere
+  // else: not in another step's env/with/run/if, not in job-level env or outputs, not in the
+  // workflow-level env.
+  const without = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(record).filter(([name]) => name !== key))
+  const workflowRest = without(workflow, 'jobs')
+  const jobRest = without(job, 'steps')
+  const scopes: [string, unknown][] = [
+    ['workflow-level fields', workflowRest],
+    ['job-level fields', jobRest],
+    ...steps.map((step, index): [string, unknown] => [`step #${index}`, step]),
+  ]
+  for (const ref of outputRefs) {
+    const referencing = scopes.filter(([, scope]) => JSON.stringify(scope).includes(ref)).map(([name]) => name)
+    if (referencing.length !== 1 || !referencing[0]?.startsWith('step #')) {
+      violations.push(
+        `${where}: ${ref} must be referenced only by the consuming step, found in [${referencing.join(', ')}]`,
+      )
+    } else if (JSON.stringify(consumers[0]).split(ref).length - 1 !== 1) {
+      violations.push(`${where}: ${ref} must be referenced once in the consuming step`)
+    }
+  }
+  return violations
+}
+
+describe('app-token scope guard: discovery and writer token bindings', () => {
+  const workflows = loadWorkflows()
+
+  it.each(BINDING_SPECS.map(spec => [spec.file, spec] as const))(
+    '%s feeds each client only its own token and nothing else consumes either',
+    (file, spec) => {
+      expect(bindingViolations(workflows[file], spec)).toStrictEqual([])
+    },
+  )
+
+  describe('rules fail against an in-memory fixture', () => {
+    const spec: BindingSpec = {
+      file: 'f.yaml',
+      job: 'j',
+      bindings: [
+        {env: 'D', mintId: 'discovery-token'},
+        {env: 'W', mintId: 'writer-token'},
+      ],
+    }
+    const workflowOf = (consumerEnv: Record<string, unknown>, extraSteps: unknown[] = [], jobRest = {}) => ({
+      jobs: {
+        j: {
+          ...jobRest,
+          steps: [
+            {id: 'discovery-token', uses: 'x'},
+            {id: 'writer-token', uses: 'x'},
+            {name: 'consume', env: consumerEnv},
+            ...extraSteps,
+          ],
+        },
+      },
+    })
+    const good = {D: tokenOutput('discovery-token'), W: tokenOutput('writer-token')}
+
+    it('passes the correct wiring', () => {
+      expect(bindingViolations(workflowOf(good), spec)).toStrictEqual([])
+    })
+
+    it('fails when the two expressions are swapped', () => {
+      const swapped = {D: tokenOutput('writer-token'), W: tokenOutput('discovery-token')}
+      const violations = bindingViolations(workflowOf(swapped), spec)
+      expect(violations.join('\n')).toContain('D must be exactly')
+      expect(violations.join('\n')).toContain('W must be exactly')
+    })
+
+    it('fails when the expression is not exactly the token output (extra text)', () => {
+      const padded = {...good, D: `${tokenOutput('discovery-token')} `}
+      expect(bindingViolations(workflowOf(padded), spec).join('\n')).toContain('D must be exactly')
+    })
+
+    it('fails when an env var is missing', () => {
+      expect(bindingViolations(workflowOf({D: good.D}), spec).join('\n')).toContain('W must be set by exactly one step')
+    })
+
+    it('fails when another step consumes a token', () => {
+      const extra = {name: 'leak', env: {GH_TOKEN: tokenOutput('writer-token')}}
+      expect(bindingViolations(workflowOf(good, [extra]), spec).join('\n')).toContain(
+        'must be referenced only by the consuming step',
+      )
+    })
+
+    it('fails when another step passes a token via with or run', () => {
+      const viaWith = {uses: 'y', with: {token: tokenOutput('discovery-token')}}
+      const viaRun = {run: `echo ${tokenOutput('writer-token')}`}
+      expect(bindingViolations(workflowOf(good, [viaWith]), spec).join('\n')).toContain('steps.discovery-token.outputs')
+      expect(bindingViolations(workflowOf(good, [viaRun]), spec).join('\n')).toContain('steps.writer-token.outputs')
+    })
+
+    it('fails when a token also reaches job-level env', () => {
+      const withJobEnv = workflowOf(good, [], {env: {X: tokenOutput('writer-token')}})
+      expect(bindingViolations(withJobEnv, spec).join('\n')).toContain('job-level fields')
+    })
+
+    it('fails when a second step sets the same env var', () => {
+      const dup = {name: 'dup', env: {D: tokenOutput('discovery-token')}}
+      expect(bindingViolations(workflowOf(good, [dup]), spec).join('\n')).toContain('exactly one step')
+    })
+
+    it('fails closed on a missing job and a non-workflow', () => {
+      expect(bindingViolations({jobs: {}}, spec).join('\n')).toContain('job has no steps')
+      expect(bindingViolations('nope', spec).join('\n')).toContain('expected jobs shape')
+    })
+  })
+})
