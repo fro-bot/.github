@@ -637,9 +637,48 @@ jobs:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
         run: node scripts/wiki-handoff-apply.ts
 
+      # The onboarded gate in survey-repo ran when the survey started. A rename applied to `data` since
+      # then (rename-tracked-repo.yaml deletes the old-slug page and moves the row) would otherwise be
+      # undone by this commit, which replays the precomputed old-slug page onto the new head. So the same
+      # check runs again here against `data`, right before the commit. It needs no credential: the repo
+      # is public. If the overlay cannot be fetched the step fails and the commit is skipped; a refused
+      # check skips the commit too, and the record step then records `failure` (SURVEY_STATUS requires
+      # a successful wiki-commit), never `success`.
+      - name: Re-check repo onboarded before the wiki commit
+        id: onboarded-persist
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        env:
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
+        run: |
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch origin data || {
+                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              git restore --source FETCH_HEAD --worktree -- metadata || {
+                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              ;;
+            2)
+              # data branch absent: nothing to overlay.
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
+          node scripts/check-repo-onboarded.ts
+
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        if: >-
+          needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success' &&
+          steps.onboarded-persist.outputs.onboarded == 'true'
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_OPERATION: survey

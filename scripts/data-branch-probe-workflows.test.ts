@@ -167,6 +167,7 @@ describe('no overlay step tolerates a failed fetch, checkout, or restore', () =>
     expect([...ANNOUNCES_OVERLAY_FAILURE].sort()).toStrictEqual([
       'fro-bot.yaml#fro-bot-observe#⤵ Overlay metadata from data branch',
       'fro-bot.yaml#fro-bot-observe-announce#⤵ Overlay metadata from data branch',
+      'survey-repo.yaml#survey-persist#Re-check repo onboarded before the wiki commit',
       'survey-repo.yaml#survey-repo#Check repo onboarded',
     ])
   })
@@ -200,7 +201,10 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))(
 
 describe('exit 2 skip messages are unchanged', () => {
   it('every overlay step that announced a skip still announces it', () => {
-    const silentByDesign = new Set(['survey-repo.yaml#survey-repo#Check repo onboarded'])
+    const silentByDesign = new Set([
+      'survey-repo.yaml#survey-repo#Check repo onboarded',
+      'survey-repo.yaml#survey-persist#Re-check repo onboarded before the wiki commit',
+    ])
     for (const step of overlaySteps.filter(candidate => !silentByDesign.has(candidate.key))) {
       const result = runStepWithStubs(step.run, {lsRemoteExit: 2})
       expect(result.stdout, step.key).toMatch(
@@ -217,14 +221,28 @@ describe('exit 2 skip messages are unchanged', () => {
   })
 })
 
-describe('survey-repo onboarded gate keeps running its check after a successful probe or an absent branch', () => {
-  const survey = steps.find(step => step.file === 'survey-repo.yaml')
+describe.each(steps.filter(step => step.file === 'survey-repo.yaml' && step.run.includes('check-repo-onboarded.ts')))(
+  'survey-repo onboarded gate ($key) keeps running its check after a successful probe or an absent branch',
+  survey => {
+    it.each([0, 2])('probe exit %i: runs the onboarded check', (code: number) => {
+      const result = runStepWithStubs(survey.run, {lsRemoteExit: code})
 
-  it.each([0, 2])('probe exit %i: runs the onboarded check', (code: number) => {
-    const result = runStepWithStubs(survey?.run ?? '', {lsRemoteExit: code})
+      expect(result.status).toBe(0)
+      expect(result.trace).toContain('node scripts/check-repo-onboarded.ts')
+    })
+  },
+)
 
-    expect(result.status).toBe(0)
-    expect(result.trace).toContain('node scripts/check-repo-onboarded.ts')
+describe('the survey onboarded gate runs both at survey start and again at persist time', () => {
+  it('finds exactly two onboarded-check steps in survey-repo.yaml, one per job', () => {
+    const keys = steps
+      .filter(step => step.file === 'survey-repo.yaml' && step.run.includes('check-repo-onboarded.ts'))
+      .map(step => step.key)
+
+    expect(keys.sort()).toStrictEqual([
+      'survey-repo.yaml#survey-persist#Re-check repo onboarded before the wiki commit',
+      'survey-repo.yaml#survey-repo#Check repo onboarded',
+    ])
   })
 })
 

@@ -384,6 +384,8 @@ export type SurveyWriteBackOutcome = 'recorded' | 'name-mismatch' | 'visibility-
 export interface AppliedSurveyResult {
   file: ReposFile
   outcome: SurveyWriteBackOutcome
+  /** The status written to the row: the requested one, `failure` on a name mismatch, none if nothing was written. */
+  written: SurveyStatus | undefined
 }
 
 /**
@@ -414,7 +416,7 @@ export function applySurveyResult(current: unknown, input: RecordSurveyResultInp
 
   const storedPrivate = match.private === true || match.owner === REDACTED_OWNER
   if (storedPrivate && input.private === false) {
-    return {file: current, outcome: 'visibility-mismatch'}
+    return {file: current, outcome: 'visibility-mismatch', written: undefined}
   }
 
   // A redacted row's name is its node ID, so there is no owner/name to compare against.
@@ -463,6 +465,7 @@ export function applySurveyResult(current: unknown, input: RecordSurveyResultInp
       repos: nextRepos,
     },
     outcome: nameMismatch ? 'name-mismatch' : 'recorded',
+    written: status,
   }
 }
 

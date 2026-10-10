@@ -9559,6 +9559,12 @@ describe('rename detection', () => {
       collab: AccessListApiEntry[]
       redirect?: {name: string; owner?: string}
       openIssues?: IssueListEntry[]
+      /** Node ID the identity probe reports. Defaults to the fixture's `R_old`. */
+      probeNodeId?: string
+      /** Makes the App-installation (owned-channel) enumeration fail. */
+      ownedEnumerationFails?: boolean
+      /** Makes contrib enumeration fail with this status, for one allowlisted repo. */
+      contribProbeStatus?: number
     }): Harness {
       const issuesCreate = vi.fn(async (_params: unknown) => ({data: {number: 1}}))
       const issuesUpdate = vi.fn(async (_params: unknown) => ({}))
@@ -9579,7 +9585,7 @@ describe('rename detection', () => {
           return {
             data: {
               private: false,
-              node_id: 'R_old',
+              node_id: options.probeNodeId ?? 'R_old',
               id: 77,
               name: options.redirect?.name ?? 'old-name',
               owner: {login: options.redirect?.owner ?? 'alice'},
@@ -9594,10 +9600,25 @@ describe('rename detection', () => {
           baseParams({
             userOctokit,
             writerOctokit: writer,
-            discoveryOctokit: mockOctokit({paginate: async () => []}),
+            discoveryOctokit: mockOctokit({
+              paginate: async () => {
+                if (options.ownedEnumerationFails === true) throw apiError(500, 'enumeration down')
+                return []
+              },
+              ...(options.contribProbeStatus === undefined
+                ? {}
+                : {
+                    reposGet: async () => {
+                      throw apiError(options.contribProbeStatus ?? 500, 'contrib probe')
+                    },
+                  }),
+            }),
             logger,
             readMetadata: makeReadMetadata({
-              allowlist: makeAllowlist(['alice']),
+              allowlist: {
+                ...makeAllowlist(['alice']),
+                ...(options.contribProbeStatus === undefined ? {} : {approved_contrib_repos: ['bob/tool']}),
+              },
               repos: {version: 1, repos: options.rows},
             }),
             commitMetadata: vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
@@ -9781,6 +9802,111 @@ describe('rename detection', () => {
       expect(result.probesFailed).toBeGreaterThan(0)
       expect(h.issuesUpdate).not.toHaveBeenCalled()
       expect(result.closedRenamePendingIssues).toBe(0)
+    })
+
+    describe.each<[string, {ownedEnumerationFails?: boolean; contribProbeStatus?: number}]>([
+      ['an owned-channel enumeration that failed', {ownedEnumerationFails: true}],
+      ['a contrib probe that failed transiently', {contribProbeStatus: 502}],
+    ])('with %s', (_label, degraded) => {
+      const stillOpen = (): IssueListEntry[] => [
+        {
+          number: 41,
+          title: 'pending',
+          body: '<!-- reconcile:subject:node_id=R_old -->',
+          state: 'open',
+          labels: [{name: 'reconcile:rename-pending'}],
+        },
+      ]
+
+      it('does not close a rename issue, because a partial access list cannot prove the rename was applied', async () => {
+        const h = harness({
+          rows: [publicRow({name: 'new-name'})],
+          collab: [renamedCollab],
+          redirect: {name: 'new-name'},
+          openIssues: stillOpen(),
+          ...degraded,
+        })
+
+        const result = await h.run()
+
+        expect(result.renamesPending).toBe(0)
+        expect(h.issuesUpdate).not.toHaveBeenCalled()
+        expect(result.closedRenamePendingIssues).toBe(0)
+      })
+
+      it('closes the same issue once enumeration is complete (the control for the case above)', async () => {
+        const h = harness({
+          rows: [publicRow({name: 'new-name'})],
+          collab: [renamedCollab],
+          redirect: {name: 'new-name'},
+          openIssues: stillOpen(),
+          ...(degraded.contribProbeStatus === undefined ? {} : {contribProbeStatus: 404}),
+        })
+
+        const result = await h.run()
+
+        expect(result.closedRenamePendingIssues).toBe(1)
+      })
+    })
+
+    describe("with a legacy '='-padded node ID", () => {
+      const PADDED = 'MDEwOlJlcG9zaXRvcnk3Nzc3Nzc='
+      const paddedCollab: AccessListApiEntry = {...renamedCollab, node_id: PADDED}
+      const paddedRow = () => publicRow({node_id: PADDED})
+      const marker = `<!-- reconcile:subject:node_id=${PADDED} -->`
+      const openPadded = (): IssueListEntry[] => [
+        {number: 41, title: 'pending', body: marker, state: 'open', labels: [{name: 'reconcile:rename-pending'}]},
+      ]
+
+      it('files the issue, carrying the whole ID in the marker, title and command', async () => {
+        const h = harness({rows: [paddedRow()], collab: [paddedCollab], probeNodeId: PADDED})
+
+        const result = await h.run()
+
+        expect(result.renamesPending).toBe(1)
+        expect(result.renamePendingIssues).toBe(1)
+        const created = h.issuesCreate.mock.calls[0]?.[0] as IssuePayload
+        expect(created.title).toContain(PADDED)
+        expect(created.body).toContain(marker)
+        expect(created.body).toContain(`gh workflow run rename-tracked-repo.yaml -f node_id=${PADDED}`)
+      })
+
+      it('dedupes against an open issue that already carries the padded marker', async () => {
+        const h = harness({
+          rows: [paddedRow()],
+          collab: [paddedCollab],
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+
+        const result = await h.run()
+
+        expect(h.issuesCreate).not.toHaveBeenCalled()
+        expect(result.renamePendingDuplicatesSkipped).toBe(1)
+      })
+
+      it('keeps the issue open while pending, and closes it once the rename is applied', async () => {
+        const pending = harness({
+          rows: [paddedRow()],
+          collab: [paddedCollab],
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+        await pending.run()
+        expect(pending.issuesUpdate).not.toHaveBeenCalled()
+
+        const applied = harness({
+          rows: [publicRow({node_id: PADDED, name: 'new-name'})],
+          collab: [paddedCollab],
+          redirect: {name: 'new-name'},
+          probeNodeId: PADDED,
+          openIssues: openPadded(),
+        })
+        const result = await applied.run()
+
+        expect(applied.issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 41, state: 'closed'}))
+        expect(result.closedRenamePendingIssues).toBe(1)
+      })
     })
 
     it('exposes every rename counter the workflow step summary reads from the result JSON', async () => {

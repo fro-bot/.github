@@ -68,8 +68,12 @@ export interface PlanRepoPageMoveParams {
   readonly rowName: string
   /** Every other row, public or redacted, so the move cannot land on or orphan another repo's slug. */
   readonly otherRows: readonly RepoRowRef[]
-  /** Private-name tokens (from `buildPrivateTokenSet`); compared case-insensitively. */
-  readonly privateTokens: ReadonlySet<string>
+  /**
+   * Private-name tokens (from `buildPrivateTokenSet`); compared case-insensitively. Optional: a
+   * caller that cannot read private repository names omits it, and the promotion privacy gate
+   * remains the check on a public rename onto a private name.
+   */
+  readonly privateTokens?: ReadonlySet<string>
   readonly timestamp: Date
 }
 
@@ -185,7 +189,7 @@ function collidesWithAnotherRow(rows: readonly RepoRowRef[], slugs: readonly str
 }
 
 function matchesPrivateToken(params: PlanRepoPageMoveParams): boolean {
-  const privateTokens = new Set([...params.privateTokens].map(token => token.toLowerCase()))
+  const privateTokens = new Set([...(params.privateTokens ?? [])].map(token => token.toLowerCase()))
   return buildPrivateNameTokens(`${params.owner}/${params.newName}`).some(token =>
     privateTokens.has(token.toLowerCase()),
   )

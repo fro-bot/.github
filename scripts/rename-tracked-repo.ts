@@ -10,6 +10,11 @@
  * truncated tree, the latter cannot express a multi-file commit. This is the one metadata writer
  * outside `commitMetadata`, by design: the row and the page move must land in a single commit.
  *
+ * Private-name collisions are not checked here. Private rows are stored redacted and this workflow
+ * never reads the access list, so it has no private names to compare against; the promotion privacy
+ * gate (`check-wiki-private-presence`) owns that check and blocks a page that cannot be attributed
+ * to a known-public repository.
+ *
  * Safety properties:
  * - The target is the literal `fro-bot/.github@data`. There is no override.
  * - Each attempt rebuilds from the current head; only an `updateRef` 409/422 is retried (3 attempts).
@@ -35,8 +40,8 @@ import {
 } from '@fro-bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
 
-import {assertReposFile, type RepoEntry} from './schemas.ts'
-import {buildPrivateTokenSet, computeRepoSlug} from './wiki-slug.ts'
+import {assertReposFile, NODE_ID_PATTERN, type RepoEntry} from './schemas.ts'
+import {computeRepoSlug} from './wiki-slug.ts'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -53,7 +58,7 @@ const REPO_PAGE_PATTERN = /^knowledge\/wiki\/repos\/[^/]+\.md$/u
 const WIKI_PAGE_PATTERN = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[^/]+\.md$/u
 const EXPECTED_AUTHORS = new Set<string>(['fro-bot', 'fro-bot[bot]'])
 
-const NODE_ID_PATTERN = /^[\w=-]{1,100}$/u
+const NODE_ID_MAX_LENGTH = 100
 const OLD_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[\w.-]{1,100}$/u
 const REPO_NAME_PATTERN = /^[\w.-]{1,100}$/u
 
@@ -537,9 +542,12 @@ export async function renameTrackedRepo(deps: RenameDeps): Promise<RenameOutcome
     }
     const {newName} = identity
 
-    // Already applied? Decided from the data alone, so it needs no old name.
+    // Already applied? Decided from the data alone, so it needs no old name. It is only applied if
+    // no page for this node is left at the old slug: two pages for one node is a named block.
     if (row.name === newName && newPageIsThisNodes(snapshot.files, row.owner, newName, deps.nodeId)) {
-      return {result: 'noop'}
+      return hasStrayNodePage(snapshot.files, row.owner, newName, deps.nodeId, deps.oldName)
+        ? blockedOutcome('both-pages-present')
+        : {result: 'noop'}
     }
 
     // The old name is fixed on the first attempt: from the row if it still holds it, otherwise from
@@ -575,7 +583,6 @@ export async function renameTrackedRepo(deps: RenameDeps): Promise<RenameOutcome
       newName,
       rowName: row.name,
       otherRows: others.map(other => ({owner: other.owner, name: other.name})),
-      privateTokens: privateTokensOf(others),
       timestamp: now(),
     })
 
@@ -632,6 +639,33 @@ function oldPageNamesUrl(files: Readonly<Record<string, string>>, oldSlug: strin
   }
 }
 
+/**
+ * Whether a repo page for this node still sits somewhere other than the new slug. A page counts
+ * when it carries this node's ID, or, if `oldName` is given, when the shared attribution rule ties it
+ * to the old URL. Unparseable pages are not counted here; the planner blocks on those separately.
+ */
+function hasStrayNodePage(
+  files: Readonly<Record<string, string>>,
+  owner: string,
+  newName: string,
+  nodeId: string,
+  oldName: string | undefined,
+): boolean {
+  const newSlug = safeSlug(owner, newName)
+  const parsedOld = oldName === undefined ? undefined : parseOldName(oldName)
+  const oldUrl =
+    parsedOld === undefined || parsedOld.owner !== owner ? undefined : `https://github.com/${owner}/${parsedOld.name}`
+  return Object.entries(files).some(([path, content]) => {
+    if (!REPO_PAGE_PATTERN.test(path) || path === `knowledge/wiki/repos/${newSlug}.md`) return false
+    try {
+      const document = parseFrontmatterDocument(content)
+      return oldUrl === undefined ? document.values.node_id === nodeId : attributesPageTo(document, nodeId, oldUrl)
+    } catch {
+      return false
+    }
+  })
+}
+
 /** A page at the new slug that already carries this node's ID means the move has been applied. */
 function newPageIsThisNodes(
   files: Readonly<Record<string, string>>,
@@ -647,14 +681,6 @@ function newPageIsThisNodes(
   } catch {
     return false
   }
-}
-
-/** Private-name tokens from private rows that still carry a real name (redacted rows have none to give). */
-function privateTokensOf(rows: readonly RepoEntry[]): ReadonlySet<string> {
-  const names = rows.flatMap(row =>
-    row.private === true && row.owner !== '[REDACTED]' && row.name !== '[REDACTED]' ? [`${row.owner}/${row.name}`] : [],
-  )
-  return buildPrivateTokenSet(names)
 }
 
 /** Rename one row and nothing else, serialized with the same options `commitMetadata` uses. */
@@ -762,7 +788,9 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
   }
 
   const nodeId = env.NODE_ID
-  if (nodeId === undefined || !NODE_ID_PATTERN.test(nodeId)) return fail('INVALID_INPUT (field=node_id)')
+  if (nodeId === undefined || nodeId.length > NODE_ID_MAX_LENGTH || !NODE_ID_PATTERN.test(nodeId)) {
+    return fail('INVALID_INPUT (field=node_id)')
+  }
   const oldNameInput = env.OLD_NAME === undefined || env.OLD_NAME === '' ? undefined : env.OLD_NAME
   if (oldNameInput !== undefined && parseOldName(oldNameInput) === undefined) {
     return fail('INVALID_INPUT (field=old_name)')

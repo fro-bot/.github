@@ -430,6 +430,45 @@ describe('renameTrackedRepo: already applied and named blocks', () => {
     expectNoWrite(fake, before)
   })
 
+  it('is not a noop while a page for this node still sits at the old slug', async () => {
+    const files = appliedFiles()
+    files[OLD_PAGE_PATH] = oldRepoPage({nodeId: NODE_ID})
+    const fake = createGitDataFake({files})
+    const before = fake.head()
+
+    const outcome = await rename(fake)
+
+    expect(outcome).toEqual({result: 'blocked', reason: 'both-pages-present'})
+    expectNoWrite(fake, before)
+  })
+
+  it('names an ID-less old-slug page as stray when old_name ties it to the old URL', async () => {
+    const files = appliedFiles()
+    files[OLD_PAGE_PATH] = oldRepoPage()
+    const fake = createGitDataFake({files})
+    const before = fake.head()
+
+    const outcome = await rename(fake, transportFor(), {oldName: `${OWNER}/${OLD_NAME}`})
+
+    expect(outcome).toEqual({result: 'blocked', reason: 'both-pages-present'})
+    expectNoWrite(fake, before)
+  })
+
+  it('stays a noop when the only other repo pages belong to other nodes', async () => {
+    const files = appliedFiles()
+    files['knowledge/wiki/repos/someone--else.md'] = oldRepoPage({
+      nodeId: 'R_other',
+      sourceUrls: ['https://github.com/someone/else'],
+    })
+    const fake = createGitDataFake({files})
+    const before = fake.head()
+
+    const outcome = await rename(fake)
+
+    expect(outcome).toEqual({result: 'noop'})
+    expectNoWrite(fake, before)
+  })
+
   it('blocks as both-pages-present when pages exist at the old and the new slug', async () => {
     const target = oldRepoPage({nodeId: NODE_ID}).replace('marcusrbrown/panthe.ai', 'marcusrbrown/panthea')
     const fake = createGitDataFake({files: worldFiles({[NEW_PAGE_PATH]: target})})

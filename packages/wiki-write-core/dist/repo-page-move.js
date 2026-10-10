@@ -112,7 +112,7 @@ function collidesWithAnotherRow(rows, slugs) {
     });
 }
 function matchesPrivateToken(params) {
-    const privateTokens = new Set([...params.privateTokens].map(token => token.toLowerCase()));
+    const privateTokens = new Set([...(params.privateTokens ?? [])].map(token => token.toLowerCase()));
     return buildPrivateNameTokens(`${params.owner}/${params.newName}`).some(token => privateTokens.has(token.toLowerCase()));
 }
 function repoPagePath(slug) {

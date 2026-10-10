@@ -58,7 +58,8 @@ async function main(): Promise<void> {
     process.stderr.write(warning)
   }
   const outcomeField = outcome === undefined || outcome === 'recorded' ? {} : {outcome}
-  const status = effectiveSurveyStatus(input, outcome)
+  // What the mutator actually wrote; `null` when it wrote nothing, so output never claims a success.
+  const status = writeBack.written() ?? null
 
   if (result.committed) {
     process.stdout.write(
@@ -78,6 +79,8 @@ export interface SurveyWriteBack {
   mutator: (current: unknown) => ReposFile
   /** Outcome of the most recent mutator run, or `undefined` before the first run. */
   outcome: () => SurveyWriteBackOutcome | undefined
+  /** Status the most recent mutator run wrote, or `undefined` before the first run or if it wrote nothing. */
+  written: () => RecordSurveyResultInput['status'] | undefined
 }
 
 /**
@@ -86,13 +89,16 @@ export interface SurveyWriteBack {
  */
 export function createSurveyWriteBack(input: RecordSurveyResultInput): SurveyWriteBack {
   let lastOutcome: SurveyWriteBackOutcome | undefined
+  let lastWritten: RecordSurveyResultInput['status'] | undefined
   return {
     mutator: (current: unknown) => {
       const applied = applySurveyResult(current, input)
       lastOutcome = applied.outcome
+      lastWritten = applied.written
       return applied.file
     },
     outcome: () => lastOutcome,
+    written: () => lastWritten,
   }
 }
 
@@ -109,14 +115,6 @@ export function formatSurveyWriteBackWarning(outcome: SurveyWriteBackOutcome): s
     return 'record-survey-result: survey reported public for a row stored as private; nothing was written\n'
   }
   return undefined
-}
-
-/** The status that actually landed: a name mismatch is always recorded as `failure`. */
-export function effectiveSurveyStatus(
-  input: Pick<RecordSurveyResultInput, 'status'>,
-  outcome: SurveyWriteBackOutcome | undefined,
-): RecordSurveyResultInput['status'] {
-  return outcome === 'name-mismatch' ? 'failure' : input.status
 }
 
 export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurveyResultInput {

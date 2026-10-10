@@ -23,7 +23,7 @@ interface Workflow {
   >
   permissions?: unknown
   concurrency?: {group?: string; 'cancel-in-progress'?: boolean}
-  jobs?: Record<string, {steps?: Step[]; permissions?: unknown; 'timeout-minutes'?: number}>
+  jobs?: Record<string, {if?: string; steps?: Step[]; permissions?: unknown; 'timeout-minutes'?: number}>
 }
 
 const gh = (inner: string): string => `$${'{{'} ${inner} }}`
@@ -69,6 +69,14 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
     const job = Object.values(workflow.jobs ?? {})[0]
     expect(job?.permissions).toEqual({contents: 'read'})
     expect(job?.['timeout-minutes']).toBeLessThanOrEqual(10)
+  })
+
+  it('runs only from main, so a dispatched branch can never run its own copy of the script with the write token', async () => {
+    const workflow = await loadWorkflow()
+
+    const job = Object.values(workflow.jobs ?? {})[0]
+    // A job-level condition skips the whole job, including the token mint.
+    expect(job?.if).toBe("github.ref == 'refs/heads/main'")
   })
 
   it('checks out without persisting credentials, then runs the shared setup action', async () => {

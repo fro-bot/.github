@@ -84,6 +84,7 @@ import {
 import {
   assertAllowlistFile,
   assertReposFile,
+  NODE_ID_PATTERN,
   type AllowlistFile,
   type DiscoveryChannel,
   type OnboardingStatus,
@@ -391,9 +392,6 @@ export interface ReconcileResult {
 
 /** Stored owner of a private repo; its `name` holds the node ID instead. */
 const REDACTED_OWNER = '[REDACTED]'
-
-/** Node IDs safe to embed in a marker comment and a shell command (see `NODE_ID_MARKER_PATTERN`). */
-const NODE_ID_SAFE_PATTERN = /^[\w-]+$/
 
 /**
  * Minimum number of dispatches the reconcile engine targets per run. When the threshold
@@ -739,7 +737,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   }
 
   const renameIssues: RenamePendingIssue[] = pendingRenames
-    .filter(nodeId => NODE_ID_SAFE_PATTERN.test(nodeId))
+    .filter(nodeId => NODE_ID_PATTERN.test(nodeId))
     .map(nodeId => ({kind: 'rename-pending', node_id: nodeId}))
   const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues, ...renameIssues]
 
@@ -1820,7 +1818,12 @@ export const RENAME_PENDING_LABELS = [
 // so the integrity check accepts either as legitimate.
 const EXPECTED_AUTHORS = new Set<string>(['fro-bot', 'fro-bot[bot]'])
 
-const NODE_ID_MARKER_PATTERN = /<!-- reconcile:subject:node_id=([\w-]+) -->/
+// Built from the schema's node-ID pattern (minus its anchors) so the marker, the producer filter and the
+// row schema accept exactly the same IDs, including legacy base64 IDs with `=` padding.
+const NODE_ID_MARKER_PATTERN = new RegExp(
+  `<!-- reconcile:subject:node_id=(${NODE_ID_PATTERN.source.slice(1, -1)}) -->`,
+  NODE_ID_PATTERN.flags,
+)
 const ROLLUP_OWNER_MARKER_PATTERN = /<!-- reconcile:subject:rollup-owner=([\w-]+) -->/
 
 export type ReconcileErrorCode =
@@ -1995,12 +1998,15 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
   //    `validateAccessList` (which rejects duplicates) doesn't throw.
   const collabAccess = await fetchAccessList(userOctokit)
-  const ownedAccess = await fetchOwnedRepos(discoveryOctokit, owner, logger)
-  const contribAccess = await fetchContribRepos(discoveryOctokit, allowlist, logger)
+  const owned = await fetchOwnedRepos(discoveryOctokit, owner, logger)
+  const contrib = await fetchContribRepos(discoveryOctokit, allowlist, logger)
+  // A partial access list cannot prove that anything is no longer pending, so the rename close pass
+  // (below) needs both channels to have enumerated completely.
+  const enumerationComplete = owned.complete && contrib.complete
   const {accessList, accessChannelByKey} = mergeAccessChannels({
     collab: collabAccess,
-    owned: ownedAccess,
-    contrib: contribAccess,
+    owned: owned.entries,
+    contrib: contrib.entries,
   })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
@@ -2219,7 +2225,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 11. Auto-close stale `reconcile:pending-review` issues.
   const closedRenamePendingIssues =
-    probesFailed > 0
+    probesFailed > 0 || !enumerationComplete
       ? 0
       : await autoCloseResolvedRenameIssues({
           writerOctokit,
@@ -2851,6 +2857,16 @@ const OWNED_SELF_EXCLUDE = 'fro-bot/.github'
 const FRO_BOT_WORKFLOW_PATH = '.github/workflows/fro-bot.yaml'
 
 // Derived from the real Octokit response so SDK drift becomes a compile error.
+/**
+ * One discovery channel's access entries, and whether the channel enumerated completely. A transient
+ * failure (not a 403/404, which are stable facts about the repo) leaves `complete` false: the list
+ * is then missing repos it should have, so nothing may be concluded from a repo's absence.
+ */
+interface ChannelEnumeration {
+  entries: AccessListEntry[]
+  complete: boolean
+}
+
 type InstallationRepo =
   RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
 
@@ -2933,7 +2949,7 @@ async function fetchOwnedRepos(
   discoveryOctokit: OctokitClient,
   owner: string,
   logger: ReconcileLogger,
-): Promise<AccessListEntry[]> {
+): Promise<ChannelEnumeration> {
   let allRepos: InstallationRepo[]
   try {
     allRepos = await discoveryOctokit.paginate(discoveryOctokit.rest.apps.listReposAccessibleToInstallation, {
@@ -2942,7 +2958,7 @@ async function fetchOwnedRepos(
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: owned-channel enumeration failed (status=${status}); continuing without owned repos.`)
-    return []
+    return {entries: [], complete: false}
   }
 
   const entries: AccessListEntry[] = []
@@ -2960,7 +2976,7 @@ async function fetchOwnedRepos(
       node_id: repo.node_id,
     })
   }
-  return entries
+  return {entries, complete: true}
 }
 
 /**
@@ -2986,7 +3002,7 @@ async function fetchContribRepos(
   discoveryOctokit: OctokitClient,
   allowlist: AllowlistFile,
   logger: ReconcileLogger,
-): Promise<AccessListEntry[]> {
+): Promise<ChannelEnumeration> {
   if (allowlist.approved_contrib_orgs !== undefined && allowlist.approved_contrib_orgs.length > 0) {
     logger.warn(
       `reconcile: approved_contrib_orgs is not yet supported (requires per-org App installation tokens); ` +
@@ -2997,6 +3013,7 @@ async function fetchContribRepos(
   const directRepos = allowlist.approved_contrib_repos ?? []
   const seen = new Set<string>()
   const entries: AccessListEntry[] = []
+  let complete = true
 
   for (const ownerRepo of directRepos) {
     const slashIndex = ownerRepo.indexOf('/')
@@ -3006,9 +3023,17 @@ async function fetchContribRepos(
     const key = `${directOwner}/${directName}`
     if (seen.has(key)) continue
     const meta = await probeContribRepoMetadata(discoveryOctokit, directOwner, directName, logger)
+    if (meta === 'failed') {
+      complete = false
+      continue
+    }
     if (meta === null) continue
     if (meta.archived || meta.fork) continue
     const probe = await probeContribWorkflow(discoveryOctokit, directOwner, directName, logger)
+    if (probe === 'failed') {
+      complete = false
+      continue
+    }
     if (probe === null) continue
     if (!containsFroBotAgentReference(probe)) continue
     entries.push({
@@ -3021,7 +3046,7 @@ async function fetchContribRepos(
     seen.add(key)
   }
 
-  return entries
+  return {entries, complete}
 }
 
 /**
@@ -3030,14 +3055,14 @@ async function fetchContribRepos(
  * installed). Distinguishes the two for operator-grade logging — silently collapsing 403
  * to 404 would mask installation drift, the silent-failure mode that
  * `docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md` warns
- * about.
+ * about. Any other error returns `'failed'`, which marks the channel's enumeration incomplete.
  */
 async function probeContribRepoMetadata(
   discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
-): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null> {
+): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null | 'failed'> {
   try {
     const response = await discoveryOctokit.rest.repos.get({owner, repo: name})
     return {
@@ -3054,14 +3079,14 @@ async function probeContribRepoMetadata(
     }
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: contrib-repo ${owner}/${name} probe failed (status=${status}); omitting.`)
-    return null
+    return 'failed'
   }
 }
 
 /**
  * Fetch the raw `.github/workflows/fro-bot.yaml` content for a candidate contrib repo.
  * Returns null when the file is missing (404), the App lacks access (403), or the response
- * is malformed. 403 is logged distinctly from 404 — the same forge-resistance + drift-
+ * is malformed, and `'failed'` for any other (transient) error. 403 is logged distinctly from 404 — the same forge-resistance + drift-
  * visibility contract as `probeContribRepoMetadata`.
  */
 async function probeContribWorkflow(
@@ -3069,7 +3094,7 @@ async function probeContribWorkflow(
   owner: string,
   name: string,
   logger: ReconcileLogger,
-): Promise<string | null> {
+): Promise<string | null | 'failed'> {
   try {
     const response = await discoveryOctokit.rest.repos.getContent({
       owner,
@@ -3091,7 +3116,7 @@ async function probeContribWorkflow(
     }
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: contrib-repo ${owner}/${name} workflow probe failed (status=${status}); omitting.`)
-    return null
+    return 'failed'
   }
 }
 
@@ -3741,7 +3766,7 @@ export function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: 
 
 function renderRenamePendingIssue(issue: RenamePendingIssue, owner: string, repo: string): IssuePayload {
   // Public issue stream: the node ID is the only identifier. node_id is validated against
-  // `NODE_ID_SAFE_PATTERN` before the issue is queued, so it can be interpolated without quoting.
+  // `NODE_ID_PATTERN` before the issue is queued, so it can be interpolated without quoting.
   const title = `[RENAME] Pending repository rename for ${issue.node_id}`
   const body = [
     `<!-- reconcile:subject:node_id=${issue.node_id} -->`,

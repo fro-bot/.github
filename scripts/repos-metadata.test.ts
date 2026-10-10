@@ -1688,6 +1688,25 @@ function trackedPantheon(overrides: Partial<RepoEntry> = {}): ReposFile {
 }
 
 describe('recordSurveyResult — identity-only write-back', () => {
+  it('reports the status it wrote: the requested one, failure on a name mismatch, none on a visibility mismatch', () => {
+    const base = {node_id: RENAMED_NODE_ID, private: false, at: NOW, status: 'success'} as const
+
+    expect(applySurveyResult(trackedPantheon(), {...base, owner: 'marcusrbrown', repo: 'panthe.ai'}).written).toBe(
+      'success',
+    )
+    expect(applySurveyResult(trackedPantheon(), {...base, owner: 'marcusrbrown', repo: 'panthea'}).written).toBe(
+      'failure',
+    )
+
+    const mismatch = applySurveyResult(trackedPantheon({private: true}), {
+      ...base,
+      owner: 'marcusrbrown',
+      repo: 'panthe.ai',
+    })
+    expect(mismatch.outcome).toBe('visibility-mismatch')
+    expect(mismatch.written).toBeUndefined()
+  })
+
   it('records failure and keeps the stored name when the survey target was renamed', () => {
     const current = trackedPantheon()
 

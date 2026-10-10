@@ -572,6 +572,54 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
     }
   })
 
+  describe('persist-time onboarded re-check (a rename can land between survey start and persist)', () => {
+    const STEP_NAME = 'Re-check repo onboarded before the wiki commit'
+    const checkStep = () => persistJob?.steps.find(step => step.name === STEP_NAME)
+    const commitStep = () => persistJob?.steps.find(step => step.name === 'Commit wiki ingest to data branch')
+
+    it('runs the same onboarded script as the survey job, keyed on the resolved target', () => {
+      const surveyCheck = surveyJob?.steps.find(step => step.name === 'Check repo onboarded')
+
+      expect(checkStep()?.id).toBe('onboarded-persist')
+      expect(String(checkStep()?.run ?? '')).toContain('node scripts/check-repo-onboarded.ts')
+      expect(String(surveyCheck?.run ?? '')).toContain('node scripts/check-repo-onboarded.ts')
+      expect(String(checkStep()?.env?.REPO_OWNER ?? '')).toContain('needs.survey-resolve.outputs.resolve-owner')
+      expect(String(checkStep()?.env?.REPO_NAME ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
+    })
+
+    it('reads metadata from the data branch, and fails the step rather than check stale metadata', () => {
+      const run = String(checkStep()?.run ?? '')
+
+      expect(run).toContain('git fetch origin data')
+      expect(run).toContain('git restore --source FETCH_HEAD --worktree -- metadata')
+      // Both the fetch and the restore refuse to continue on failure.
+      expect(run.match(/exit 1/g)?.length).toBeGreaterThanOrEqual(2)
+      // The overlay precedes the check.
+      expect(run.indexOf('git restore')).toBeLessThan(run.indexOf('node scripts/check-repo-onboarded.ts'))
+    })
+
+    it("runs after the trusted recheck and before the wiki commit, under the commit step's own preconditions", () => {
+      const names = (persistJob?.steps ?? []).map(step => step.name ?? '')
+
+      expect(names.indexOf(STEP_NAME)).toBeGreaterThan(names.indexOf('🔒 Recheck visibility'))
+      expect(names.indexOf(STEP_NAME)).toBeLessThan(names.indexOf('Commit wiki ingest to data branch'))
+      expect(String(checkStep()?.if ?? '')).toContain("needs.survey-repo.outputs.wiki-artifact-ready == 'success'")
+      expect(String(checkStep()?.if ?? '')).toContain("steps.recheck.conclusion == 'success'")
+    })
+
+    it('gates the wiki commit on the persist-time result, not only on the survey-time one', () => {
+      const condition = String(commitStep()?.if ?? '')
+
+      expect(condition).toContain("steps.onboarded-persist.outputs.onboarded == 'true'")
+      expect(condition).toContain("needs.survey-repo.outputs.wiki-artifact-ready == 'success'")
+      expect(condition).toContain("steps.recheck.conclusion == 'success'")
+    })
+
+    it('holds no write credential: the re-check step does not receive the App token', () => {
+      expect(JSON.stringify(checkStep()?.env ?? {})).not.toContain('app-token')
+    })
+  })
+
   it("every persistence step gates on this job's own steps.recheck, not a needs.survey-repo recheck output", () => {
     const persistenceStepNames = [
       'Sync wiki from data branch',
@@ -1127,6 +1175,26 @@ describe('survey-repo.yaml Unit 4: success gate in survey-persist (KTD2)', () =>
         'needs.survey-repo.outputs.agent-conclusion': 'success',
         'needs.survey-repo.outputs.wiki-changed': 'true',
         'needs.survey-repo.result': 'failure',
+        'steps.recheck.conclusion': 'success',
+        'needs.survey-repo.outputs.onboarded': 'true',
+        'steps.wiki-commit.conclusion': 'skipped',
+        'needs.survey-resolve.outputs.resolve-outcome': 'success',
+        'steps.record-result.outcome': 'success',
+      },
+      expectedStatus: 'failure',
+      record: true,
+      announce: false,
+      fallback: false,
+    },
+    {
+      // Onboarded when the survey started, but the persist-time re-check refused (the row was renamed
+      // in between), so the wiki commit was skipped: never a success. SURVEY_STATUS reads only the
+      // commit's conclusion, which is what carries the refusal.
+      label: 'onboarded at survey start, persist-time re-check refused, commit skipped, result success → failure',
+      context: {
+        'needs.survey-repo.outputs.agent-conclusion': 'success',
+        'needs.survey-repo.outputs.wiki-changed': 'true',
+        'needs.survey-repo.result': 'success',
         'steps.recheck.conclusion': 'success',
         'needs.survey-repo.outputs.onboarded': 'true',
         'steps.wiki-commit.conclusion': 'skipped',

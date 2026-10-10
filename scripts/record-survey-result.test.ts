@@ -6,7 +6,6 @@ import YAML from 'yaml'
 import {
   buildRecordSurveyResultInput,
   createSurveyWriteBack,
-  effectiveSurveyStatus,
   formatRecordSurveyResultError,
   formatRecordSurveyResultNonFatalOutcome,
   formatSurveyResultTarget,
@@ -243,11 +242,31 @@ describe('survey write-back outcome', () => {
     expect(formatSurveyWriteBackWarning('recorded')).toBeUndefined()
   })
 
-  it('reports failure as the effective status for a name mismatch only', () => {
-    const input = inputFor('panthea')
+  it('reports the status the mutator actually wrote, and none when nothing was written', () => {
+    const matching = createSurveyWriteBack(inputFor('panthe.ai'))
+    const renamed = createSurveyWriteBack(inputFor('panthea'))
+    const visibility = createSurveyWriteBack(inputFor('panthe.ai'))
 
-    expect(effectiveSurveyStatus(input, 'name-mismatch')).toBe('failure')
-    expect(effectiveSurveyStatus(input, 'recorded')).toBe('success')
-    expect(effectiveSurveyStatus(input, undefined)).toBe('success')
+    expect(matching.written()).toBeUndefined()
+
+    matching.mutator(trackedRow())
+    renamed.mutator(trackedRow())
+    // The survey says public; the stored row is private. Nothing may be recorded.
+    visibility.mutator(trackedRow({private: true}))
+
+    expect(matching.written()).toBe('success')
+    expect(renamed.written()).toBe('failure')
+    expect(visibility.outcome()).toBe('visibility-mismatch')
+    expect(visibility.written()).toBeUndefined()
+  })
+
+  it('does not report a stale status after a retry finds nothing to write', () => {
+    const writeBack = createSurveyWriteBack(inputFor('panthe.ai'))
+
+    writeBack.mutator(trackedRow())
+    expect(writeBack.written()).toBe('success')
+
+    writeBack.mutator(trackedRow({private: true}))
+    expect(writeBack.written()).toBeUndefined()
   })
 })
