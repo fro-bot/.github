@@ -1310,20 +1310,33 @@ describe('handleInvitations — identity-only write-back', () => {
     }
   }
 
-  async function runInvitationFor(repoName: string, initial: unknown, invitedNodeId = NODE_ID) {
+  async function runInvitationFor(
+    repoName: string,
+    initial: unknown,
+    invitedNodeId = NODE_ID,
+    options: {isPrivate?: boolean; retryOnce?: boolean} = {},
+  ) {
     const createWorkflowDispatch = vi.fn(async () => undefined)
-    const {state, commitMetadata} = inMemoryCommit(initial)
+    const {state, commitMetadata: single} = inMemoryCommit(initial)
+    // A 409 retry re-runs the mutator against fresh `data` content; the first result is discarded.
+    const commitMetadata = options.retryOnce
+      ? vi.fn<CommitMetadataMock>(async params => {
+          params.mutator(initial)
+          return single(params)
+        })
+      : single
+    const isPrivate = options.isPrivate === true
     const octokit = mockOctokit({
       listInvitationsForAuthenticatedUser: async () => ({
         data: [
           {
             id: 202,
             inviter: {login: 'marcusrbrown'},
-            repository: {name: repoName, node_id: invitedNodeId, private: false, owner: {login: 'marcusrbrown'}},
+            repository: {name: repoName, node_id: invitedNodeId, private: isPrivate, owner: {login: 'marcusrbrown'}},
           },
         ],
       }),
-      getRepo: async () => ({data: {node_id: invitedNodeId, private: false}}),
+      getRepo: async () => ({data: {node_id: invitedNodeId, private: isPrivate}}),
       createWorkflowDispatch,
     })
 
@@ -1369,6 +1382,45 @@ describe('handleInvitations — identity-only write-back', () => {
     expect(warning).toContain('survey dispatch skipped')
     expect(warning).not.toContain('panthe')
     expect(warning).not.toContain(NODE_ID)
+  })
+
+  describe('a private invitation for a node tracked publicly under a different name', () => {
+    // The repository went private (and was renamed) after it was tracked: the public row must be
+    // redacted, whatever the name conflict, but nothing about the new name may be stored.
+    it.each([
+      ['on the first attempt', {}],
+      ['after a 409 retry', {retryOnce: true}],
+    ])('redacts the row, stores no new name and dispatches no survey %s', async (_label, retry) => {
+      const initial = trackedUnderOldName()
+
+      const {createWorkflowDispatch, state, warnings} = await runInvitationFor('panthea', initial, NODE_ID, {
+        isPrivate: true,
+        ...retry,
+      })
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: Record<string, unknown>[]}
+      expect(persisted.repos).toHaveLength(1)
+      expect(persisted.repos[0]).toMatchObject({owner: '[REDACTED]', name: NODE_ID, private: true, node_id: NODE_ID})
+      expect(JSON.stringify(persisted)).not.toContain('panthea')
+      expect(JSON.stringify(persisted)).not.toContain('panthe.ai')
+      const warning = warnings.find(line => line.startsWith('handle-invitation:'))
+      expect(warning).not.toContain('panthe')
+      expect(warning).not.toContain(NODE_ID)
+    })
+
+    it('never takes the held-by-another-node path: a private input is stored redacted under its node ID', async () => {
+      const initial = trackedUnderOldName()
+
+      const {createWorkflowDispatch, state, warnings} = await runInvitationFor('panthe.ai', initial, 'R_kgDOPRIVATE2', {
+        isPrivate: true,
+      })
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      const persisted = YAML.parse(YAML.stringify(state.file)) as {repos: Record<string, unknown>[]}
+      expect(persisted.repos.map(row => row.owner)).toEqual(['marcusrbrown', '[REDACTED]'])
+      expect(warnings.some(line => line.includes('held by a different tracked node'))).toBe(false)
+    })
   })
 
   describe('a recreated repository whose name is held by a different node', () => {

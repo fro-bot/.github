@@ -252,7 +252,9 @@ async function processInvitation(params: {
     // Detected inside the mutator so it sees the authoritative `data` content and is recomputed on
     // every 409 retry. A node already tracked under a different owner/name is a pending rename or a
     // transfer: the row stays untouched and no survey is dispatched for it (the survey would only
-    // record a mismatch). Reconcile's node-ID issue is where the operator acts.
+    // record a mismatch). Reconcile's node-ID issue is where the operator acts. A private input is the
+    // exception to "untouched": its redaction must still apply, or the row stays public. `addRepoEntry`
+    // redacts a node match without reading the input's owner/name, so no new name is stored.
     let nameConflict = false
     let nameHeldByOtherNode = false
     await params.commitMetadata({
@@ -265,12 +267,12 @@ async function processInvitation(params: {
         // The same hold-off for a recreated repository: a new node whose owner/name another node's row
         // still holds. `addRepoEntry` would leave the file alone, but a survey must not run either.
         nameHeldByOtherNode = !nameConflict && findNameHeldByOtherNode(current.repos, entryInput)
-        return nameConflict ? current : addRepoEntry(current, entryInput)
+        return nameConflict && entryInput.private !== true ? current : addRepoEntry(current, entryInput)
       },
     })
     if (nameConflict) {
       process.stderr.write(
-        'handle-invitation: an accepted invitation is tracked under a different owner/name (pending rename or transfer); row unchanged, survey dispatch skipped.\n',
+        'handle-invitation: an accepted invitation is tracked under a different owner/name (pending rename or transfer); row name unchanged, survey dispatch skipped.\n',
       )
     }
     if (nameHeldByOtherNode) {
