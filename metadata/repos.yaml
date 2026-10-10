@@ -443,12 +443,12 @@ repos:
     name: panthea
     added: 2026-09-26
     onboarding_status: onboarded
-    last_survey_at: null
-    last_survey_status: null
+    last_survey_at: 2026-10-10
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: null
+    next_survey_eligible_at: 2026-11-12
     private: false
     node_id: R_kgDOJt6i0Q
     database_id: 652124881
