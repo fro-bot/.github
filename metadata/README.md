@@ -273,7 +273,7 @@ The workflow then requires that `GET /repos/<owner>/<old-name>` still redirects 
 
 ### Outcomes and blocked states
 
-A run that finds the rename already applied (the row holds the new name and the page at the new slug carries this node's ID, with no other page for the node left behind; a stray page with no ID, or one that cannot be parsed, is detected only when `old_name` is passed) exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
+A run that finds the rename already applied (the row holds the new name and the page at the new slug carries this node's ID, with no other page for the node left behind; with `old_name` passed, a stray page at the old slug that cannot be parsed is also detected, and one with no ID is detected only if its structured `sources` list the old repository URL) exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
 
 | Reason | Meaning | Next step |
 | --- | --- | --- |
