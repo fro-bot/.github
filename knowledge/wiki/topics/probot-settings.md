@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-30
+updated: 2026-10-10
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: a86828a50fdeb04558a47eaf414a63284d7432c1
+    accessed: 2026-10-10
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 6852f168e06bce3373901bea9fdb79bf4aee831f
     accessed: 2026-09-30
@@ -402,6 +405,26 @@ This completes the pair this page has been building toward. The 2026-09-01 entry
 One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
+
+### Personal settings caller: current wiring, bounded evidence (2026-10-10)
+
+At [[marcusrbrown--github]] commit `a86828a`, the settings caller still targets
+`bfra-me/.github/.github/workflows/update-repo-settings.yaml`, while its
+Renovate sibling targets `bfra-me/.github/.github/workflows/renovate.yaml`.
+Both now pin full SHA `35dbc9c96be4400e696fa9967e4f54071c43da88` (**v4.37.0**),
+superseding the v4.33.0 snapshot below without contradicting the established
+basename-matched wiring. The settings job passes the two App secrets and
+retains push-to-main, daily **02:55 UTC**, and manual triggers.
+
+This is a reference for **caller routing**, not a fresh template-content or
+applied-state check. The bounded survey did not read `common-settings.yaml`,
+`.github/settings.yml`, the callee implementation, or run logs. Consequently
+the earlier label counts, inheritance, required checks, and settings-health
+measurements remain historical evidence, not current assertions from this pass.
+Keeping those evidence layers distinct prevents a routine dependency-pin
+advance from silently renewing an unmeasured governance claim.
+
+Source: [settings caller at the surveyed commit](https://github.com/marcusrbrown/.github/blob/a86828a50fdeb04558a47eaf414a63284d7432c1/.github/workflows/update-repo-settings.yaml).
 
 ### A newer ref does not repair a wrong workflow path (2026-09-30)
 

@@ -2,9 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-10-10: [[fro-bot--dashboard]] (repo) and
-[[github-actions-ci]] (topic). Existing catalog entries and dated evidence are
-retained; the canonical ingest record is in `knowledge/log.md`.
+Catalog refreshed 2026-10-10: [[marcusrbrown--github]] (repo) and
+[[probot-settings]] (topic). Both existing catalog entries and dated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
 
 Catalog refreshed 2026-10-09: [[fro-bot--agent]] (repo) and
 [[github-actions-ci]] (topic). Their existing catalog entries and dated evidence

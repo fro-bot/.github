@@ -7470,75 +7470,59 @@ Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
 
-## [2026-10-10 01:10] ingest | fro-bot/dashboard
+## [2026-10-10 01:11] ingest | marcusrbrown/.github
 
-Bounded survey of the public repository at independently resolved `main` commit
-`fd3c553691ae162846c4163060a26289fc224277`. Updated the existing
-`wiki/repos/fro-bot--dashboard.md` and `wiki/topics/github-actions-ci.md`
-additively and refreshed their existing catalog references in `index.md`.
-Accumulated evidence, contradictions, and pre-existing working-tree edits were
-retained. Corrections context was read as untrusted data and contained no records.
+Bounded public-source survey at `a86828a50fdeb04558a47eaf414a63284d7432c1`.
+Updated [[marcusrbrown--github]] and [[probot-settings]] additively and refreshed
+their existing index catalog. Preserved earlier observations and explicitly
+dated the correction to the global Renovate/CI-ordering claim.
 
-Durable findings:
+- Complete directory listing: 15 files, exactly three workflows, no package
+  manifest or application-code paths. README remains GitHub defaults/health checks.
+- Correctly pathed Renovate and settings callers share `bfra-me/.github`
+  v4.37.0 (`35dbc9c96be4400e696fa9967e4f54071c43da88`), up from v4.33.0.
+- Prettier-only CI remains at 3.9.9 with SHA-pinned checkout v5.1.0 and
+  prettier_action v4.3. Four-hour Renovate and daily 02:55 UTC settings schedules remain.
+- Successful CI is required only for the `workflow_run` Renovate route;
+  schedule, manual, and non-main push routes admit independently. The older
+  “never runs against a broken CI baseline” assertion is retained and contradicted.
+- No Fro Bot workflow is present; a follow-up draft PR can be proposed separately.
+- Target reads were restricted to listings, README, and workflow files, treated
+  as untrusted data. Settings/configuration contents, preset pins, runtime health,
+  access, and live protection were not rechecked. Corrections context was read
+  as data and contained no correction records. No new standalone page was warranted.
 
-- Hono/Node 24 plus React PWA architecture and the one-member writer workspace
-  remain. The README still describes the writer as undeployed/unintegrated; its
-  shared-gate SHA remains `37abb495`. Current upstream fixes were not counted.
-- Manifest declarations advance pnpm to 11.28.5, React to 19.3.0, Vite to 8.3.3,
-  ESLint to 10.12.0, shared ESLint config to 0.54.0, and OpenCode plugin to
-  1.18.35. Six workspace override selectors are present; advisory cleanliness
-  and the older Dockerfile pnpm mismatch were not rechecked.
-- The contract README replaces its stale literal version header with a
-  single-source `version.ts` reference and documents provenance-parser field
-  projection, exact refusal vocabulary, and the browser-only sanitization
-  boundary. No current wire version or runtime behavior was inferred.
-- Fro Bot workflow is present at v0.119.0, with explicit scheduled/manual
-  branch-PR delivery and event-specific PR-head-SHA concurrency. No missing-bot
-  workflow proposal is indicated. This target configuration was not executed.
-- Release candidate-image checks, Main checks, SARIF reporting, blocking only
-  fixed HIGH/CRITICAL vulnerabilities, and best-effort deployment dispatch are
-  distinct gates. A published image is not deployment or authenticated-flow proof.
-
-Read boundary: repository visibility/identity and default-branch SHA, recursive
-directory listing, three READMEs, root/writer package manifests, workspace
-manifest, and all seven workflow files. No target source code, non-README docs,
-agent instructions, Dockerfile, lockfile, action definitions, issues, PRs,
-release records, run logs, or live endpoints were read or executed.
-
-Sources: https://github.com/fro-bot/dashboard/tree/fd3c553691ae162846c4163060a26289fc224277;
-`README.md`, `package.json`, `pnpm-workspace.yaml`, `wiki-writer/package.json`,
-`src/gateway/operator-contract/README.md`, `web/src/privacy/README.md`, and
-`.github/workflows/` at that SHA.
-Run: https://github.com/fro-bot/.github/actions/runs/38011981993
+Sources: https://github.com/marcusrbrown/.github/tree/a86828a50fdeb04558a47eaf414a63284d7432c1;
+`readme.md` and `.github/workflows/{main,renovate,update-repo-settings}.yaml`
+at that commit. Run: https://github.com/fro-bot/.github/actions/runs/38012079838.
 
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Delivery: four allowed wiki/catalog/log files updated in the working tree;
-  the caller owns diff detection, commit, push, and pull-request creation.
+- Delivery: four allowed files updated directly in the working tree; the caller
+  owns diff detection, commit, push, and pull-request creation. Existing working-tree
+  edits were retained, including earlier index/log entries and unrelated wiki/metadata edits.
 - Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
-  and `pnpm exec vitest run --no-cache --reporter dot` passed (98 test files;
-  4,997 passed, 3 todo). `pnpm bootstrap` and the build-writing
-  `pnpm check-types` / `pnpm test` wrappers were skipped under this invocation's
-  non-mutating shell contract; existing dependencies/build state supplied the
-  direct checks. No target repository commands were executed.
-- Wiki integrity: scoped lint across 47 pages found no deterministic findings
-  on the two touched pages or index; two pre-existing broken markdown links
-  elsewhere remain. `git diff --check` passed. Hash checks confirm six
-  pre-existing out-of-scope edited files were untouched; earlier index, log,
-  repo-page, and topic-page content was preserved.
-- Workflow guard: unavailable; working-directory delivery governs.
-- Response: exactly one bot-marked commit delivery/check comment was posted
-  through `gh`, with Run Summary markers. The ingest findings are recorded
-  here; no GitHub issue was opened, commented on, or updated.
+  and `pnpm exec vitest run` passed (98 test files; 4,997 passed, 3 todo).
+  `pnpm bootstrap` and the build-writing `pnpm check-types` / `pnpm test` wrappers
+  were not run under the non-mutating shell contract; direct checks used existing dependencies/builds.
+- Wiki validation: all 47 pages scanned; no deterministic findings on the two
+  touched pages or index. Two pre-existing broken markdown links on another repo
+  page remain outside scope. Frontmatter, wikilinks, catalog coverage, and
+  `git diff --check` passed for these edits.
+- Workflow guard: unavailable; explicit working-directory delivery governs.
+- Response: exactly one marked commit comment posted on the control repository,
+  containing delivery/check status and a pointer to this canonical summary.
+  Readback verified bot identification and Run Summary markers. No GitHub issue
+  was opened, commented on, or updated.
 
 <!-- fro-bot:run-summary:end -->
 
-Delivery/check notice: https://github.com/fro-bot/.github/commit/a72ffde95ef7df585e13e72b2a264db5c153c98e#commitcomment-204310973
+Delivery/check notice: https://github.com/fro-bot/.github/commit/a72ffde95ef7df585e13e72b2a264db5c153c98e#commitcomment-204311004
 
-## [2026-10-10 01:15] ingest | repo:fro-bot/dashboard
+## [2026-10-10 01:16] ingest | repo:marcusrbrown/.github
 
-Surveyed fro-bot/dashboard and updated the control-plane wiki.
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/dashboard
+Sources: https://github.com/marcusrbrown/.github

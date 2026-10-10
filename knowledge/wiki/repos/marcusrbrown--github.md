@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-09-26
+updated: 2026-10-10
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: a86828a50fdeb04558a47eaf414a63284d7432c1
+    accessed: 2026-10-10
   - url: https://github.com/marcusrbrown/.github
     sha: 656663c5dd260020e3b9646b95a375e51e96c493
     accessed: 2026-09-26
@@ -301,6 +304,50 @@ The 2026-09-04 deadlock sharpens the case and also bounds it honestly:
 
 ## Survey History
 
+### Bounded source recheck (2026-10-10)
+
+At `a86828a50fdeb04558a47eaf414a63284d7432c1`, the public repository's
+complete recursive directory listing contains 15 files, exactly three workflows,
+and no package manifest or application-code paths. The README still describes
+GitHub defaults and health checks. **No Fro Bot workflow is present** in any
+of the listed workflow files; a separate follow-up draft PR remains appropriate.
+The existing collaborator and merge-policy observations above are historical,
+not a fresh verification of access or applied settings.
+
+Both correctly pathed reusable callers now share
+`35dbc9c96be4400e696fa9967e4f54071c43da88` (**v4.37.0**), superseding the
+2026-09-26 v4.33.0 snapshot. The settings caller still targets
+`bfra-me/.github/.github/workflows/update-repo-settings.yaml`, with push-to-main,
+daily `55 2 * * *`, and manual triggers. See [[probot-settings]] for why correct
+static wiring does not prove settings application.
+
+`main.yaml` still runs only Prettier `--check .`, using Prettier **3.9.9**,
+`actions/checkout` **v5.1.0**, and `creyD/prettier_action` **v4.3**, with both
+actions SHA-pinned. Renovate retains its four-hour `15 */4 * * *` schedule,
+non-main pushes, PR events, human issue edits, reusable/manual calls, and
+successful `main` workflow completions.
+
+**Correction to the undated “Renovate/CI ordering” pattern below:** the claim
+that “Renovate never runs against a broken CI baseline” applies only to the
+`workflow_run` route. The job condition independently admits events outside
+`issues`, `pull_request`, and `workflow_run` (including schedule, dispatch, and
+non-main push), plus human `edited` events. Those routes do not require the
+latest CI conclusion to be successful. The earlier wording is retained as the
+contradicted claim; the current workflow demonstrates a conditional ordering
+guarantee, not a global one.
+
+This pass read only directory listings, the README, and the three workflow
+files, all pinned to the same commit. Settings/configuration contents,
+Renovate preset and post-upgrade commands, runs, PRs, and live protections were
+not rechecked. Prior incident diagnoses and configuration values remain dated
+evidence; they are not renewed by this bounded survey.
+
+Sources: [directory listing](https://github.com/marcusrbrown/.github/tree/a86828a50fdeb04558a47eaf414a63284d7432c1),
+[README](https://github.com/marcusrbrown/.github/blob/a86828a50fdeb04558a47eaf414a63284d7432c1/readme.md),
+[CI](https://github.com/marcusrbrown/.github/blob/a86828a50fdeb04558a47eaf414a63284d7432c1/.github/workflows/main.yaml),
+[Renovate caller](https://github.com/marcusrbrown/.github/blob/a86828a50fdeb04558a47eaf414a63284d7432c1/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/.github/blob/a86828a50fdeb04558a47eaf414a63284d7432c1/.github/workflows/update-repo-settings.yaml).
+
 ### Limited source recheck (2026-09-26)
 
 At `656663c`, the directory listing still has 15 blobs, including exactly three workflows and no Fro Bot agent workflow. The canonical `common-settings.yaml` is still blob `b120b52e` (the 48-label personal template); `.github/settings.yml` still self-extends it and requires `Lint` and `Renovate / Renovate`. A **separate follow-up draft PR remains warranted** for the missing agent workflow.
@@ -309,6 +356,7 @@ The two correctly pathed `bfra-me/.github` callers now share SHA `6f33c678` (`v4
 
 | Date | SHA | Changes |
 | --- | --- | --- |
+| 2026-10-10 | `a86828a` | Bounded listing/README/workflow recheck: 15 files, three workflows, no Fro Bot workflow; both correctly pathed callers at v4.37.0, CI Prettier still 3.9.9. Corrected the global CI-ordering claim; configuration and runtime state not rechecked. |
 | 2026-09-26 | `656663c` | Limited recheck: same 15-blob structure and three workflows; no Fro Bot workflow. Both correctly pathed reusable callers at v4.33.0, Prettier at 3.9.9 in CI and post-upgrade task; preset still #4.5.9. Settings template blob unchanged. |
 | 2025-06-18 | `be01029` | Initial ingest |
 | 2026-04-21 | `be01029` | Re-survey — no change in repo content; additive wiki updates only (label count verified, workflow details expanded, related links extended) |
