@@ -63,16 +63,35 @@ function definedPrivacyFields(
   return fields
 }
 
-function findRepoEntryIndex(repos: readonly RepoEntry[], input: RepoIdentityInput): number {
+interface FindRepoEntryOptions {
+  /**
+   * Match by `node_id` only. Never consults `database_id` or owner/name, so a write-back keyed
+   * by a stale or reused name cannot reach a row that belongs to a different repository, and
+   * a renamed repository is never matched through its old name. Requires `input.node_id`;
+   * without one nothing matches.
+   */
+  identityOnly?: boolean
+}
+
+function isNodeIdMatch(entry: RepoEntry, nodeId: string): boolean {
+  return entry.node_id === nodeId || (entry.owner === REDACTED_OWNER && entry.name === nodeId)
+}
+
+function findRepoEntryIndex(
+  repos: readonly RepoEntry[],
+  input: RepoIdentityInput,
+  options: FindRepoEntryOptions = {},
+): number {
   const identityMatches: number[] = []
   if (input.node_id !== undefined) {
+    const nodeId = input.node_id
     repos.forEach((entry, index) => {
-      if (entry.node_id === input.node_id || (entry.owner === REDACTED_OWNER && entry.name === input.node_id)) {
+      if (isNodeIdMatch(entry, nodeId)) {
         identityMatches.push(index)
       }
     })
   }
-  if (input.database_id !== undefined) {
+  if (options.identityOnly !== true && input.database_id !== undefined) {
     repos.forEach((entry, index) => {
       if (entry.database_id === input.database_id && !identityMatches.includes(index)) {
         identityMatches.push(index)
@@ -86,8 +105,30 @@ function findRepoEntryIndex(repos: readonly RepoEntry[], input: RepoIdentityInpu
   if (identityMatches.length === 1) {
     return identityMatches[0] ?? -1
   }
+  if (options.identityOnly === true) {
+    return -1
+  }
 
   return repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
+}
+
+/**
+ * Pure predicate: true iff `input.node_id` is already tracked under a different owner/name than
+ * `input` carries (a pending rename or a transfer). Used by the invitation handler to leave the
+ * row alone and skip dispatching a survey that would only record a mismatch.
+ *
+ * Redacted stored rows never conflict: their name is the node ID, so there is nothing to compare.
+ * Inputs without a `node_id` never conflict (no identity to anchor on). Throws
+ * `DuplicateRepoIdentityError` when the node ID matches more than one row, like the writers do.
+ */
+export function findNodeNameConflict(repos: readonly RepoEntry[], input: RepoIdentityInput): boolean {
+  const index = findRepoEntryIndex(repos, input, {identityOnly: true})
+  const match = index === -1 ? undefined : repos[index]
+  if (match === undefined || match.owner === REDACTED_OWNER) {
+    return false
+  }
+
+  return match.owner !== input.owner || match.name !== input.repo
 }
 
 export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<RepoIdentityInput> = {}): RepoEntry {
@@ -246,9 +287,13 @@ export interface AddRepoEntryInput {
 
 /**
  * Add a new repo entry to the repos metadata file. Idempotent: returns the input unchanged
- * (by reference) when an entry with the same repo identity already exists and no privacy
- * normalization is needed, regardless of the requested `onboarding_status`. Callers that
+ * (by reference) when an entry with the same node identity already exists and no private
+ * redaction is needed, regardless of the requested `onboarding_status`. Callers that
  * need to change status of an existing entry must do so through a different code path.
+ *
+ * Matching is by `node_id` only (`identityOnly`). It never changes identity or visibility
+ * fields on a match except to redact a repo that has gone private, and it never adds a second
+ * row under an owner/name another node already holds.
  *
  * Pure function: never mutates `current` in place. When adding, returns a fresh top-level
  * object with a fresh `repos` array.
@@ -262,10 +307,13 @@ export function addRepoEntry(current: unknown, input: AddRepoEntryInput): ReposF
   assertReposFile(current, 'repos')
   assertPrivateNodeId(input)
 
-  const matchIndex = findRepoEntryIndex(current.repos, input)
+  const matchIndex = findRepoEntryIndex(current.repos, input, {identityOnly: true})
   if (matchIndex !== -1) {
     const match = current.repos[matchIndex]
-    if (match === undefined) {
+    // A node match is only ever touched by the private-redaction transform. A public input never
+    // rewrites owner, name, node_id, database_id or private: renames belong to the operator
+    // rename workflow and un-redaction belongs to reconcile's planner.
+    if (match === undefined || input.private !== true) {
       return current
     }
 
@@ -281,6 +329,12 @@ export function addRepoEntry(current: unknown, input: AddRepoEntryInput): ReposF
       ...current,
       repos: nextRepos,
     }
+  }
+
+  // No node match. A non-private input whose owner/name is already held by a row with a different
+  // (or no) node ID must not create a second row under the same name, and must not adopt that row.
+  if (input.private !== true && current.repos.some(entry => entry.owner === input.owner && entry.name === input.repo)) {
+    return current
   }
 
   const nextEntry = normalizeRepoEntryForStorage({
@@ -311,38 +365,61 @@ export interface RecordSurveyResultInput {
   owner: string
   repo: string
   private?: boolean
+  /** Required at write time: survey write-backs match rows by node ID only. */
   node_id?: string
   at: Date
   status: SurveyStatus
 }
 
 /**
- * Record the outcome of a Survey Repo run against an existing entry.
+ * How a survey write-back related to the stored row it matched by node ID.
  *
- * Updates `last_survey_at` to the ISO date of `input.at` and `last_survey_status` to
- * `input.status`. Throws `RepoEntryNotFoundError` when the entry is missing — callers must
- * ensure the entry exists (typically via a prior reconcile run that called `addRepoEntry`).
- *
- * Reconcile's `>30d since last survey` staleness gate only engages when survey workflows
- * write their outcome back here. Without this write-back, reconcile treats every repo as
- * never-surveyed and re-dispatches the full access list every run.
- *
- * Pure function: never mutates `current` in place. Returns a fresh top-level object with a
- * fresh `repos` array.
+ * - `recorded`: the survey target matched the row; the requested status was written.
+ * - `name-mismatch`: the node ID matched but the stored owner/name differs from the survey
+ *   target (a pending rename or a transfer). `failure` was recorded and the stored name kept.
+ * - `visibility-mismatch`: the survey reported public for a row stored as private. Nothing was written.
  */
-export function recordSurveyResult(current: unknown, input: RecordSurveyResultInput): ReposFile {
+export type SurveyWriteBackOutcome = 'recorded' | 'name-mismatch' | 'visibility-mismatch'
+
+export interface AppliedSurveyResult {
+  file: ReposFile
+  outcome: SurveyWriteBackOutcome
+}
+
+/**
+ * Record the outcome of a Survey Repo run against an existing entry and report how the survey
+ * target related to that entry. See {@link recordSurveyResult} for the file-only form.
+ *
+ * Rows are matched by `node_id` only. A missing `node_id` throws a status-only error; no node
+ * match throws `RepoEntryNotFoundError` (nothing is written). On a match the stored `owner`,
+ * `name`, `node_id`, `database_id` and `private` are kept: a survey can never rename a row.
+ * The one visibility write left is the fail-safe redaction of a stored public row the survey
+ * reports as private.
+ *
+ * Pure function: never mutates `current` in place.
+ */
+export function applySurveyResult(current: unknown, input: RecordSurveyResultInput): AppliedSurveyResult {
   assertReposFile(current, 'repos')
   assertPrivateNodeId(input)
 
-  const matchIndex = findRepoEntryIndex(current.repos, input)
-  if (matchIndex === -1) {
-    throw new RepoEntryNotFoundError(input.owner, input.repo)
+  if (input.node_id === undefined || input.node_id.trim() === '') {
+    throw new Error('node_id is required for survey write-back')
   }
 
-  const match = current.repos[matchIndex]
+  const matchIndex = findRepoEntryIndex(current.repos, input, {identityOnly: true})
+  const match = matchIndex === -1 ? undefined : current.repos[matchIndex]
   if (match === undefined) {
     throw new RepoEntryNotFoundError(input.owner, input.repo)
   }
+
+  const storedPrivate = match.private === true || match.owner === REDACTED_OWNER
+  if (storedPrivate && input.private === false) {
+    return {file: current, outcome: 'visibility-mismatch'}
+  }
+
+  // A redacted row's name is its node ID, so there is no owner/name to compare against.
+  const nameMismatch = match.owner !== REDACTED_OWNER && (match.owner !== input.owner || match.name !== input.repo)
+  const status: SurveyStatus = nameMismatch ? 'failure' : input.status
 
   // Promote pending → onboarded on first successful survey. This closes the
   // bootstrapping lifecycle: pending (added) → onboarded (first success) →
@@ -350,7 +427,7 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
   // never reach onboarded status and the staleness gate on the onboarded path
   // would never apply.
   const nextStatus =
-    input.status === 'success' && match.onboarding_status === 'pending' ? 'onboarded' : match.onboarding_status
+    status === 'success' && match.onboarding_status === 'pending' ? 'onboarded' : match.onboarding_status
 
   // Compute the next-eligible date using the entry's discovery channel. The cadence
   // model writes this on every survey outcome — both success and failure — so a failed
@@ -358,7 +435,10 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
   // dispatch slots while the underlying problem persists). Channel defaults to 'collab'
   // when the field is absent on a legacy entry that hasn't been migrated yet.
   const channel: DiscoveryChannel = match.discovery_channel ?? 'collab'
-  const normalizedMatch = normalizeRepoEntryForStorage(match, input)
+  // Only the private-redaction transform may run here; identity and visibility fields otherwise
+  // come from the stored row, never from the survey input.
+  const normalizedMatch =
+    input.private === true ? normalizeRepoEntryForStorage(match, {private: true, node_id: input.node_id}) : match
   const nextEligibleAt = computeNextEligibleAt({
     owner: normalizedMatch.owner,
     repo: normalizedMatch.name,
@@ -366,21 +446,43 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
     baseDate: input.at,
   })
 
-  const updated = normalizeRepoEntryForStorage({
+  const updated: RepoEntry = {
     ...normalizedMatch,
     onboarding_status: nextStatus,
     last_survey_at: input.at.toISOString().slice(0, 10),
-    last_survey_status: input.status,
+    last_survey_status: status,
     next_survey_eligible_at: nextEligibleAt,
-  })
+  }
 
   const nextRepos = [...current.repos]
   nextRepos[matchIndex] = updated
 
   return {
-    ...current,
-    repos: nextRepos,
+    file: {
+      ...current,
+      repos: nextRepos,
+    },
+    outcome: nameMismatch ? 'name-mismatch' : 'recorded',
   }
+}
+
+/**
+ * Record the outcome of a Survey Repo run against an existing entry.
+ *
+ * Updates `last_survey_at` to the ISO date of `input.at` and `last_survey_status` to
+ * `input.status` (or `failure` when the survey target's owner/name no longer matches the row).
+ * Throws `RepoEntryNotFoundError` when no row carries `input.node_id` — callers must
+ * ensure the entry exists (typically via a prior reconcile run that called `addRepoEntry`).
+ *
+ * Reconcile's `>30d since last survey` staleness gate only engages when survey workflows
+ * write their outcome back here. Without this write-back, reconcile treats every repo as
+ * never-surveyed and re-dispatches the full access list every run.
+ *
+ * Pure function: never mutates `current` in place. Returns a fresh top-level object with a
+ * fresh `repos` array. Callers that need the outcome use {@link applySurveyResult}.
+ */
+export function recordSurveyResult(current: unknown, input: RecordSurveyResultInput): ReposFile {
+  return applySurveyResult(current, input).file
 }
 
 export interface ResetSurveyResultInput {

@@ -1,10 +1,14 @@
 import type {RepoEntry, ReposFile} from './schemas.ts'
 
 import {describe, expect, it} from 'vitest'
+import YAML from 'yaml'
+
 import {
   addRepoEntry,
+  applySurveyResult,
   computeNextEligibleAt,
   DuplicateRepoIdentityError,
+  findNodeNameConflict,
   normalizeRepoEntryForStorage,
   publicRepoEntryExists,
   recordSurveyResult,
@@ -395,6 +399,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -410,6 +415,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: new Date('2026-04-18T05:34:00Z'),
       status: 'success',
     })
@@ -501,6 +507,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -517,6 +524,7 @@ describe('recordSurveyResult', () => {
     recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: NOW,
       status: 'success',
     })
@@ -532,6 +540,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'first',
+          node_id: 'R_kgDO_first',
           added: '2026-04-01',
           onboarding_status: 'onboarded',
           last_survey_at: '2026-04-02',
@@ -544,6 +553,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'bob',
           name: 'second',
+          node_id: 'R_kgDO_second',
           added: '2026-04-15',
           onboarding_status: 'pending',
           last_survey_at: null,
@@ -559,6 +569,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'bob',
       repo: 'second',
+      node_id: 'R_kgDO_second',
       at: new Date('2026-04-18T00:00:00Z'),
       status: 'success',
     })
@@ -581,6 +592,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -596,6 +608,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: NOW,
       status: 'failure',
     })
@@ -611,6 +624,7 @@ describe('recordSurveyResult', () => {
       recordSurveyResult(current, {
         owner: 'ghost',
         repo: 'nowhere',
+        node_id: 'R_kgDO_nowhere',
         at: NOW,
         status: 'success',
       }),
@@ -625,6 +639,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'pending',
           last_survey_at: null,
@@ -640,6 +655,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: new Date('2026-04-18T05:34:00Z'),
       status: 'success',
     })
@@ -656,6 +672,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'pending',
           last_survey_at: null,
@@ -671,6 +688,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: NOW,
       status: 'failure',
     })
@@ -687,6 +705,7 @@ describe('recordSurveyResult', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-17',
           onboarding_status: 'onboarded',
           last_survey_at: '2026-03-01',
@@ -702,6 +721,7 @@ describe('recordSurveyResult', () => {
     const result = recordSurveyResult(current, {
       owner: 'alice',
       repo: 'project',
+      node_id: 'R_kgDO_project',
       at: NOW,
       status: 'success',
     })
@@ -1105,6 +1125,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-01',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -1118,7 +1139,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'alice', repo: 'project', at, status: 'success'})
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      node_id: 'R_kgDO_project',
+      at,
+      status: 'success',
+    })
 
     const eligibleAt = result.repos[0]?.next_survey_eligible_at
     expect(eligibleAt).not.toBeNull()
@@ -1134,6 +1161,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-01',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -1147,7 +1175,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'alice', repo: 'project', at, status: 'failure'})
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      node_id: 'R_kgDO_project',
+      at,
+      status: 'failure',
+    })
 
     const eligibleAt = result.repos[0]?.next_survey_eligible_at
     expect(eligibleAt).not.toBeNull()
@@ -1162,6 +1196,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'fro-bot',
           name: 'agent',
+          node_id: 'R_kgDO_agent',
           added: '2026-04-01',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -1175,7 +1210,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'fro-bot', repo: 'agent', at, status: 'success'})
+    const result = recordSurveyResult(current, {
+      owner: 'fro-bot',
+      repo: 'agent',
+      node_id: 'R_kgDO_agent',
+      at,
+      status: 'success',
+    })
 
     const eligibleAt = result.repos[0]?.next_survey_eligible_at
     expect(eligibleAt).not.toBeNull()
@@ -1191,6 +1232,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'bfra-me',
           name: '.github',
+          node_id: 'R_kgDO_dotgithub',
           added: '2026-04-01',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -1204,7 +1246,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'bfra-me', repo: '.github', at, status: 'success'})
+    const result = recordSurveyResult(current, {
+      owner: 'bfra-me',
+      repo: '.github',
+      node_id: 'R_kgDO_dotgithub',
+      at,
+      status: 'success',
+    })
 
     const eligibleAt = result.repos[0]?.next_survey_eligible_at
     expect(eligibleAt).not.toBeNull()
@@ -1222,6 +1270,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'alice',
           name: 'legacy-repo',
+          node_id: 'R_kgDO_legacy-repo',
           added: '2026-01-01',
           onboarding_status: 'onboarded',
           last_survey_at: null,
@@ -1236,7 +1285,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'alice', repo: 'legacy-repo', at, status: 'success'})
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'legacy-repo',
+      node_id: 'R_kgDO_legacy-repo',
+      at,
+      status: 'success',
+    })
 
     const eligibleAt = result.repos[0]?.next_survey_eligible_at
     expect(eligibleAt).not.toBeNull()
@@ -1252,6 +1307,7 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
         {
           owner: 'alice',
           name: 'project',
+          node_id: 'R_kgDO_project',
           added: '2026-04-01',
           onboarding_status: 'pending',
           last_survey_at: null,
@@ -1265,7 +1321,13 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
     }
 
     const at = new Date('2026-05-01T12:00:00Z')
-    const result = recordSurveyResult(current, {owner: 'alice', repo: 'project', at, status: 'success'})
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      node_id: 'R_kgDO_project',
+      at,
+      status: 'success',
+    })
 
     expect(result.repos[0]?.onboarding_status).toBe('onboarded')
     expect(result.repos[0]?.next_survey_eligible_at).not.toBeNull()
@@ -1595,5 +1657,342 @@ describe('normalizeRepoEntryForStorage — database_id propagation', () => {
 
     expect(result).not.toBe(entry)
     expect(result.database_id).toBe(DB_ID)
+  })
+})
+
+// --- Write-backs never change identity (rename-redirect plan, Unit 1) ---------------------------
+
+const RENAMED_NODE_ID = 'R_kgDOJt6i0Q'
+
+/** Serialize and re-parse, so assertions see what lands on disk rather than in-memory shape. */
+function decodePersisted(file: ReposFile): ReposFile {
+  return YAML.parse(YAML.stringify(file)) as ReposFile
+}
+
+function trackedPantheon(overrides: Partial<RepoEntry> = {}): ReposFile {
+  return {
+    version: 1,
+    repos: [
+      repoEntry({
+        owner: 'marcusrbrown',
+        name: 'panthe.ai',
+        node_id: RENAMED_NODE_ID,
+        database_id: 111,
+        private: false,
+        onboarding_status: 'onboarded',
+        ...overrides,
+      }),
+    ],
+  }
+}
+
+describe('recordSurveyResult — identity-only write-back', () => {
+  it('records failure and keeps the stored name when the survey target was renamed', () => {
+    const current = trackedPantheon()
+
+    const {file, outcome} = applySurveyResult(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthea',
+      node_id: RENAMED_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(outcome).toBe('name-mismatch')
+    const [row] = decodePersisted(file).repos
+    expect(row).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      database_id: 111,
+      private: false,
+      last_survey_at: '2026-04-17',
+      last_survey_status: 'failure',
+    })
+    expect(row?.next_survey_eligible_at).not.toBeNull()
+  })
+
+  it('does not promote a pending row to onboarded on a name-mismatch survey', () => {
+    const current = trackedPantheon({onboarding_status: 'pending'})
+
+    const result = recordSurveyResult(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthea',
+      node_id: RENAMED_NODE_ID,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(decodePersisted(result).repos[0]?.onboarding_status).toBe('pending')
+  })
+
+  it('records success when both the name and the node ID match (regression)', () => {
+    const {file, outcome} = applySurveyResult(trackedPantheon(), {
+      owner: 'marcusrbrown',
+      repo: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(outcome).toBe('recorded')
+    expect(decodePersisted(file).repos[0]).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      last_survey_status: 'success',
+    })
+  })
+
+  it('writes nothing when the name matches but the node ID differs, and keeps the stored node_id', () => {
+    const current = trackedPantheon()
+    const snapshot = structuredClone(current)
+
+    expect(() =>
+      recordSurveyResult(current, {
+        owner: 'marcusrbrown',
+        repo: 'panthe.ai',
+        node_id: 'R_kgDO_SOMEONE_ELSE',
+        private: false,
+        at: NOW,
+        status: 'success',
+      }),
+    ).toThrow(RepoEntryNotFoundError)
+
+    expect(current).toEqual(snapshot)
+    expect(decodePersisted(current).repos[0]?.node_id).toBe(RENAMED_NODE_ID)
+  })
+
+  it('writes nothing when the survey reports private:false for a stored private row', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: '[REDACTED]', name: PRIVATE_NODE_ID, private: true, node_id: PRIVATE_NODE_ID})],
+    }
+
+    const {file, outcome} = applySurveyResult(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      node_id: PRIVATE_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(outcome).toBe('visibility-mismatch')
+    expect(file).toBe(current)
+    expect(JSON.stringify(decodePersisted(file))).not.toContain('secret-repo')
+    expect(decodePersisted(file).repos[0]).toMatchObject({owner: '[REDACTED]', private: true})
+  })
+
+  it('does not take over a stored row by overwriting private from a survey input', () => {
+    const current = trackedPantheon({private: undefined})
+
+    const result = recordSurveyResult(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(decodePersisted(result).repos[0]?.private).toBeUndefined()
+  })
+
+  it('still redacts a stored public row when the survey reports it private (fail-safe direction)', () => {
+    const current = trackedPantheon()
+
+    const result = recordSurveyResult(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      private: true,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(decodePersisted(result).repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: RENAMED_NODE_ID,
+      private: true,
+    })
+    expect(JSON.stringify(decodePersisted(result))).not.toContain('panthe.ai')
+  })
+
+  it('throws a status-only error when node_id is absent', () => {
+    let message = ''
+    try {
+      recordSurveyResult(trackedPantheon(), {
+        owner: 'marcusrbrown',
+        repo: 'panthe.ai',
+        at: NOW,
+        status: 'success',
+      })
+    } catch (error: unknown) {
+      message = error instanceof Error ? error.message : ''
+    }
+
+    expect(message).toBe('node_id is required for survey write-back')
+    expect(message).not.toContain('marcusrbrown')
+    expect(message).not.toContain('panthe.ai')
+  })
+
+  it('treats a case-only name difference as a mismatch (pins publicRepoEntryExists strict ===)', () => {
+    const current = trackedPantheon()
+
+    expect(publicRepoEntryExists(current, 'marcusrbrown', 'Panthe.AI')).toBe(false)
+
+    const {file, outcome} = applySurveyResult(current, {
+      owner: 'marcusrbrown',
+      repo: 'Panthe.AI',
+      node_id: RENAMED_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+    expect(outcome).toBe('name-mismatch')
+    expect(decodePersisted(file).repos[0]).toMatchObject({name: 'panthe.ai', last_survey_status: 'failure'})
+  })
+
+  it('still reports a redacted stored row as recorded despite the survey carrying a real name', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: '[REDACTED]', name: PRIVATE_NODE_ID, private: true, node_id: PRIVATE_NODE_ID})],
+    }
+
+    const {outcome} = applySurveyResult(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      node_id: PRIVATE_NODE_ID,
+      private: true,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(outcome).toBe('recorded')
+  })
+})
+
+describe('resetSurveyResult — keeps its name fallback', () => {
+  it('resolves a row by owner/name even though the input carries no node_id', () => {
+    const current = trackedPantheon({last_survey_at: '2026-04-01', last_survey_status: 'failure'})
+
+    const result = resetSurveyResult(current, {owner: 'marcusrbrown', repo: 'panthe.ai'})
+
+    expect(decodePersisted(result).repos[0]).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      last_survey_at: null,
+      last_survey_status: null,
+      next_survey_eligible_at: null,
+    })
+  })
+})
+
+describe('addRepoEntry — identity-only matching', () => {
+  it('leaves the row unchanged when the same node arrives under a new name', () => {
+    const current = trackedPantheon()
+
+    const result = addRepoEntry(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthea',
+      now: NOW,
+      private: false,
+      node_id: RENAMED_NODE_ID,
+      database_id: 999,
+    })
+
+    expect(result).toBe(current)
+    expect(decodePersisted(result).repos).toHaveLength(1)
+    expect(decodePersisted(result).repos[0]).toMatchObject({
+      owner: 'marcusrbrown',
+      name: 'panthe.ai',
+      node_id: RENAMED_NODE_ID,
+      database_id: 111,
+      private: false,
+    })
+  })
+
+  it('does not un-redact a stored redacted row when the same node arrives public', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: '[REDACTED]', name: PUBLIC_NODE_ID, private: true, node_id: PUBLIC_NODE_ID})],
+    }
+
+    const result = addRepoEntry(current, {
+      owner: 'alice',
+      repo: 'project',
+      now: NOW,
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+    })
+
+    expect(result).toBe(current)
+    expect(decodePersisted(result).repos[0]).toMatchObject({owner: '[REDACTED]', private: true})
+  })
+
+  it('never adds a second row under an owner/name another node already holds', () => {
+    const current = trackedPantheon()
+
+    const result = addRepoEntry(current, {
+      owner: 'marcusrbrown',
+      repo: 'panthe.ai',
+      now: NOW,
+      private: false,
+      node_id: 'R_kgDO_REUSED_NAME',
+    })
+
+    expect(result).toBe(current)
+    expect(decodePersisted(result).repos).toHaveLength(1)
+    expect(decodePersisted(result).repos[0]?.node_id).toBe(RENAMED_NODE_ID)
+  })
+
+  it('still adds a row for a genuinely new node (regression)', () => {
+    const result = addRepoEntry(trackedPantheon(), {
+      owner: 'marcusrbrown',
+      repo: 'brand-new',
+      now: NOW,
+      private: false,
+      node_id: 'R_kgDO_BRAND_NEW',
+    })
+
+    expect(decodePersisted(result).repos.map(entry => entry.name)).toEqual(['panthe.ai', 'brand-new'])
+  })
+})
+
+describe('findNodeNameConflict', () => {
+  const input = {owner: 'marcusrbrown', repo: 'panthea', node_id: RENAMED_NODE_ID, private: false}
+
+  it('reports a node match tracked under a different name', () => {
+    expect(findNodeNameConflict(trackedPantheon().repos, input)).toBe(true)
+  })
+
+  it('reports a node match tracked under a different owner (transfer)', () => {
+    expect(findNodeNameConflict(trackedPantheon().repos, {...input, owner: 'someone-else', repo: 'panthe.ai'})).toBe(
+      true,
+    )
+  })
+
+  it('does not report an exact match', () => {
+    expect(findNodeNameConflict(trackedPantheon().repos, {...input, repo: 'panthe.ai'})).toBe(false)
+  })
+
+  it('does not report an unknown node', () => {
+    expect(findNodeNameConflict(trackedPantheon().repos, {...input, node_id: 'R_kgDO_UNKNOWN'})).toBe(false)
+  })
+
+  it('does not report a name-only match without a node_id', () => {
+    expect(findNodeNameConflict(trackedPantheon().repos, {owner: 'marcusrbrown', repo: 'panthe.ai'})).toBe(false)
+  })
+
+  it('never reports a redacted stored row, whose name is not comparable', () => {
+    const repos = [repoEntry({owner: '[REDACTED]', name: PRIVATE_NODE_ID, private: true, node_id: PRIVATE_NODE_ID})]
+
+    expect(findNodeNameConflict(repos, {owner: 'private-owner', repo: 'secret-repo', node_id: PRIVATE_NODE_ID})).toBe(
+      false,
+    )
   })
 })

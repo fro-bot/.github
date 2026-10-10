@@ -7,7 +7,7 @@ import {parse} from 'yaml'
 
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 import {bootstrapDataBranch, type DataBranchBootstrapParams} from './data-branch-bootstrap.ts'
-import {addRepoEntry} from './repos-metadata.ts'
+import {addRepoEntry, findNodeNameConflict} from './repos-metadata.ts'
 import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -249,13 +249,27 @@ async function processInvitation(params: {
         ? {private: true, node_id: acceptedPrivacy.nodeId}
         : {private: false, node_id: acceptedPrivacy.nodeId}),
     }
+    // Detected inside the mutator so it sees the authoritative `data` content and is recomputed on
+    // every 409 retry. A node already tracked under a different owner/name is a pending rename or a
+    // transfer: the row stays untouched and no survey is dispatched for it (the survey would only
+    // record a mismatch). Reconcile's node-ID issue is where the operator acts.
+    let nameConflict = false
     await params.commitMetadata({
       octokit: params.metadataOctokit,
       path: params.reposPath,
       message: invitationCommitMessage(displayTarget),
-      mutator: current => addRepoEntry(current, entryInput),
+      mutator: current => {
+        assertReposFile(current, 'repos')
+        nameConflict = findNodeNameConflict(current.repos, entryInput)
+        return nameConflict ? current : addRepoEntry(current, entryInput)
+      },
     })
-    if (acceptedPrivacy.kind !== 'private') {
+    if (nameConflict) {
+      process.stderr.write(
+        'handle-invitation: an accepted invitation is tracked under a different owner/name (pending rename or transfer); row unchanged, survey dispatch skipped.\n',
+      )
+    }
+    if (acceptedPrivacy.kind !== 'private' && !nameConflict) {
       await params.octokit.rest.actions.createWorkflowDispatch({
         owner: params.owner,
         repo: params.repo,
