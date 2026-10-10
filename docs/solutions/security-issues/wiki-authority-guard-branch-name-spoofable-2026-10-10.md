@@ -81,7 +81,7 @@ That holds only while it stays true. If a coercing consumer is ever added, such 
 
 - When a head branch name grants authority, also compare the repository that branch lives in. A branch name alone is not an origin.
 - Keep guard inputs `unknown` and narrow them by strict equality against the expected primitive.
-- Test the decoys: a one-element array, a `String` object, a case variant, a trailing space, `undefined`, `null`, the empty string and a fork. They are in `scripts/check-wiki-authority.test.ts`: fork on the `data` head (`:193-203`), `headRef` decoys (`:269-286`), `headRepo` decoys (`:288-305`), an unresolved base (`:307-316`), the allowed promotion (`:318-327`) and the unguarded-only fork (`:329-338`). The event-payload tests (`:947` and `:972`) check the parse layer, including that a `null` `head.repo` yields `undefined` rather than a throw. The `null` case is not tested at the guard level in its own right.
+- Test the decoys: a one-element array, a `String` object, a case variant, a trailing space, `undefined`, `null`, the empty string and a fork. They are in `scripts/check-wiki-authority.test.ts`: fork on the `data` head (`:193-203`), `headRef` decoys (`:269-286`), `headRepo` decoys (`:288-305`), an unresolved base (`:307-316`), the allowed promotion (`:318-327`) and the unguarded-only fork (`:329-338`). The event-payload tests (`:947` and `:972`) check the parse layer, including that a `null` `head.repo` yields `undefined` rather than a throw.
 - A premise stated in a comment needs a test that pins it, or the comment ends up doing the guard's job.
 
 ## Related Issues
