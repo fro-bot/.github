@@ -37,8 +37,8 @@ concurrency:
 jobs:
   rename-tracked-repo:
     name: Rename the tracked repo and move its wiki page
-    # workflow_dispatch runs the workflow file and scripts of whichever ref is selected. Only main may
-    # mint the write token, so an unreviewed branch cannot run its own copy of the script with it.
+    # Defense in depth, not a boundary: this skips dispatches from any ref other than main, but
+    # workflow_dispatch runs the workflow file of whichever ref is selected, and that file can omit this line.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Checkout reads this repository. The write goes through the App token, not this grant.

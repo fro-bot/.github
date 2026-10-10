@@ -71,7 +71,7 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
     expect(job?.['timeout-minutes']).toBeLessThanOrEqual(10)
   })
 
-  it('runs only from main, so a dispatched branch can never run its own copy of the script with the write token', async () => {
+  it('skips dispatches from any ref other than main, as defense in depth rather than a boundary', async () => {
     const workflow = await loadWorkflow()
 
     const job = Object.values(workflow.jobs ?? {})[0]
