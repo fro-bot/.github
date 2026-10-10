@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-10: [[marcusrbrown--panthea]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog entries and dated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
+
 2026-10-10 oversight: [[github-actions-ci]] records the merged thirteen-proposal
 codification recovery and distinguishes the new drafting workflow's empty-queue
 run from verified drafting/publication. [[fro-bot--dashboard]] records a third

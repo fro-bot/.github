@@ -7564,3 +7564,46 @@ Sources: https://github.com/fro-bot/.github@02323969d734075d178dfe8a477f7398089b
 Renamed `marcusrbrown/panthe.ai` to `marcusrbrown/panthea`. Moved the repo page from `marcusrbrown--panthe-ai.md` to `marcusrbrown--panthea.md` and repaired wikilinks and related entries.
 
 Sources: none
+
+## [2026-10-10 11:16] ingest | marcusrbrown/panthea
+
+Bounded re-survey at `c74fe32b46ecdf332b916295a18c1c2a8d11d008` for dispatch
+run `38047637446`. Verified the target is public before reading and again
+before completion. Reads were restricted to directory listings, READMEs,
+manifests, and workflow files; upstream text was treated as untrusted evidence.
+The corrections context contains no correction records.
+
+Updated [[marcusrbrown--panthea]] additively, retained the founding and
+September scaffold snapshots, and recorded the current Studio app/CLI,
+shared authoring interface, M2 scenario README evidence limits, and dated
+documentation tensions. The September “no Fro Bot workflow” finding is now
+historical: four workflows are present, including Fro Bot **v0.118.2**.
+[[github-actions-ci]] records trigger/input-dependent delivery modes, three
+CI jobs, sidecar-before-clippy prerequisites, differing desktop/Studio native
+test coverage, and shared workflows at **v4.37.0**. Refreshed the catalog in
+`knowledge/index.md`; no additional entity/comparison page was warranted.
+No upstream execution, live workflow results, release state, or completed M2
+exit was inferred.
+
+Validation: `pnpm lint` and direct
+`pnpm exec tsc --noEmit --project ./tsconfig.json` passed. Read-only validation passed for touched-page
+frontmatter, source fields, wikilinks, and catalog entries. The standard
+`pnpm bootstrap`, `pnpm check-types`, and `pnpm test` scripts were not run:
+installation and the build-writing prerequisite conflict with this run's
+non-mutating-shell delivery contract. The workflow guard is unavailable.
+Changes remain in the working tree for caller-owned persistence; existing
+caller changes were preserved. No GitHub run-notice issue/comment was posted;
+this entry is the canonical survey summary.
+
+Sources: https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008;
+https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/README.md;
+https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/package.json;
+https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/tools/studio/README.md;
+https://github.com/marcusrbrown/panthea/blob/c74fe32b46ecdf332b916295a18c1c2a8d11d008/tools/scenarios/m2-greek-cast/README.md;
+https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows.
+
+## [2026-10-10 11:19] ingest | repo:marcusrbrown/panthea
+
+Surveyed marcusrbrown/panthea and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthea

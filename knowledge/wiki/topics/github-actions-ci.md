@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-10
 sources:
+  - url: https://github.com/marcusrbrown/panthea
+    sha: c74fe32b46ecdf332b916295a18c1c2a8d11d008
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/.github/pull/3970
     sha: 7413df55543aca2217c691b752a11ade75416049
     accessed: 2026-10-10
@@ -652,11 +655,29 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--sparkle]] | Present (`fro-bot.yaml`, agent **v0.95.0** as of 2026-07-28; landed 2026-06-05 at v0.54.2) | Autoheal `0 5 * * *`, Maintenance `0 17 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; comment-trigger fork-head refusal preflight. Autoheal now shipping **security-override PRs** (`pnpm.overrides` in `pnpm-workspace.yaml`) for transitive Dependabot alerts — see [[marcusrbrown--sparkle]] |
 | [[marcusrbrown--dev-like]] | Present (`fro-bot.yaml`, **two-mode** at agent **v0.105.1** SHA-pinned `e9501a9` as of 2026-08-30 — fleet-front pin, was v0.96.0/`c29ac29` at 2026-07-31; workflow body otherwise byte-identical across the interval; onboarded since the 2026-07-12 initial survey when it had none) | Daily `30 14 * * *` autoheal; modes `autoheal`/`pr-review` via dispatch (default `autoheal`); `pull_request` → pr-review, `schedule`/`workflow_dispatch` → autoheal. Distinct from the fleet's three-mode norm: **no maintenance mode**. Inline prompts encode repo invariants as hard boundaries (zero runtime deps, human-gated registry/consent/OPTOUT/profile edits, no release.yaml/OIDC edits, mandatory changesets for `registry\|skills\|bin\|scripts`, verification gates incl. `npm pack --dry-run`). Failures roll up to a single **`Fro Bot Autoheal`** issue (reopen-not-spam). `secrets.FRO_BOT_PAT`, `persist-credentials: false` |
 | [[marcusrbrown--ha-config]] | **Not present** | N/A |
-| [[marcusrbrown--panthea]] | **Not present** at `f0c4ff0` (three-file tree); **present at `e5022aa`** as `ci.yaml` with Bun checks on Ubuntu and Rust fmt/clippy on macOS; **Fro Bot workflow still absent** (both surveyed 2026-09-26) | N/A |
+| [[marcusrbrown--panthea]] | **Historically absent** at `f0c4ff0` and `e5022aa` (2026-09-26; the latter added CI only). **Present at `c74fe32`** (2026-10-10), `fro-bot.yaml`, agent **v0.118.2** SHA-pinned `77f2bad` | Daily `30 3 * * *` oversight + autoheal; explicit `branch-pr` on schedule and default-prompt dispatch, `auto` on custom-prompt dispatch and content events |
 | [[bfra-me--works]] | Present (`fro-bot.yaml`, single-file three-mode at **v0.83.0** as of 2026-07-05 — fleet pin leader; stale Renovate PR #3691 holds the pending v0 → v1 (`v1.18.0`) cutover, untouched since 2026-06-14) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`). Autoheal still re-emitting **duplicate** security/docs PRs (#3704/#3713, #3620/#3724 all still open) plus new #3762/#3803 — dedup guard not catching its own stale cross-run PRs; backlog 7 → 11 open PRs |
 | [[bfra-me--renovate-action]] | Present (single-file three-mode `fro-bot.yaml` at **v0.98.2** SHA-pinned `994357c3` as of 2026-08-10 — ecosystem version leader/canary a sixth time, now only ~1 patch ahead of the fleet front) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt. **2026-08-10 adds a `Validate review mode inputs` guard**: a `mode=review` dispatch hard-fails without a `prompt` (review mode has no default prompt — its normal path is the `pull_request` event), and the `prompt` doc-string names the verbatim-prompt path as the release-notes-narrative automation hook |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
+
+**Panthea source contract (2026-10-10, `c74fe32`).**
+[[marcusrbrown--panthea]] now explicitly selects `branch-pr` for scheduled and
+default-prompt dispatched daily passes, while custom-prompt dispatches retain
+`auto`. Delivery capability must be assessed per dispatch input, not merely
+per event name. Checkout uses `persist-credentials: false`; a same-repository
+PR-comment preflight supplies `trusted-head-sha`, and brokered-push extra
+paths are `apps,content,tools`. These are workflow declarations, not evidence
+that a scheduled change or report was delivered; no live runs were read.
+
+The separate CI workflow now has three jobs: Ubuntu Bun type/lint/tests and
+macOS Rust checks for both desktop and Studio. The Bun test step sets
+`prlimit --core=1:1`; each Rust lane builds its sidecar before clippy because
+`tauri-build` resolves the external binary during compilation. Studio also
+runs `cargo test --locked`; the desktop lane stops at fmt/clippy, so the two
+native lanes have different behavioral-test coverage. Renovate and settings
+sync delegate to correctly pathed `bfra-me/.github` workflows at **v4.37.0**.
+Source: [workflow directory](https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 
