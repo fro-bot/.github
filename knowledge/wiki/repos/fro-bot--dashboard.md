@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-09
+updated: 2026-10-10
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: fd3c553691ae162846c4163060a26289fc224277
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/.github/issues/3512
     accessed: 2026-10-09
   - url: https://github.com/users/fro-bot/projects/1
@@ -139,6 +142,70 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-10 — bounded source snapshot and documented consumer boundaries
+
+This public-repository snapshot is pinned to `main` commit
+`fd3c553691ae162846c4163060a26289fc224277`. Evidence is limited to directory
+listings, README files, package/workspace manifests, and seven workflow files.
+Earlier source, issue, release, and live-deployment observations remain dated
+evidence; this pass does not refresh those external states.
+
+The root README still describes a Node 24 strip-only Hono server and a Vite-built
+React PWA, read-only toward GitHub by default. Its authority statement remains
+explicit: `wiki-writer/` is implemented but **not deployed or integrated**, with
+no current web/runtime GitHub write authority. This is a README claim rather
+than an implementation or production audit. The workspace lists only
+`wiki-writer`; its manifest still pins `@fro-bot/wiki-write-core` to
+`37abb495df047e6b8beb690017ac6d217978fb9c`. The historical stale-gate concern
+therefore remains unresolved at the dependency-reference level; this survey
+does not re-evaluate upstream fixes or establish their current count.
+
+Current manifest declarations are pnpm **11.28.5**, Node **>=24**, React
+**19.3.0**, Vite **8.3.3**, ESLint **10.12.0**, shared ESLint config **0.54.0**,
+and OpenCode plugin **1.18.35**. TypeScript **6.0.3**, Vitest **4.1.11**, and
+Workbox **7.4.1** remain. These declarations supersede the older version
+snapshots below as manifest evidence, not installed-version measurements.
+The workspace currently includes six override selectors: `brace-expansion@2`,
+`brace-expansion@5`, `fast-uri@3`, `katex@0`, `toml@4`, and `undici@7`.
+Neither their presence nor this limited read proves a clean advisory state.
+The older Dockerfile pnpm mismatch was not rechecked because Dockerfiles are
+outside this survey's permitted content boundary.
+
+The operator-contract README now names `version.ts` as the sole version source
+rather than hand-typing a contract number or upstream release tag. This
+supersedes the historical stale `Contract: 1.5.0` header finding as a current
+README claim. It documents `provenance.ts`, including fresh contract-field-only
+parser objects, exported vocabulary sets for coverage, and an exact refusal-set
+type check. It also states that the server reader applies **no length caps or
+sanitizing**: the browser is the sanitization boundary, so future server-side
+consumers need equivalent caps. These are documented boundaries, not verified
+parser behavior. No current contract number is inferred without reading the
+excluded implementation. The privacy README likewise keeps Gateway-owned
+processing claims separate from dashboard rendering and says Gateway sources
+must be re-surveyed before changing those claims.
+
+**Fro Bot workflow is present**, SHA-pinned to agent **v0.119.0**, with daily
+midnight UTC, manual, issue/PR, and trusted-mention paths. Schedule/dispatch
+explicitly request `branch-pr`; other events use `auto`. The concurrency key
+uses PR head SHA only for `pull_request` events and retains separate issue/daily
+keys, with cancellation disabled. This is target configuration evidence, not
+the delivery mode for this ingest or proof that those runs executed successfully.
+No missing-workflow follow-up is indicated.
+
+Main CI still declares six jobs: lint, design check, types, tests, workflow
+validation, and recursive `src/` strip-only loading. Release remains a distinct
+push/dispatch workflow with no `needs` edge to Main. It smoke-tests a candidate
+digest, emits HIGH/CRITICAL SARIF, blocks fixed HIGH/CRITICAL vulnerabilities,
+then promotes image tags and creates a release. Its infra dispatch is
+best-effort (`continue-on-error: true`) after publication. Consequently candidate
+checks, PR/Main checks, publication, and deployment remain separate evidence
+boundaries; see [[github-actions-ci]] and [[marcusrbrown--infra]]. Live operator
+parity and the October 9 unfinished production sweep are not reclassified here.
+
+Sources: `README.md`, `package.json`, `pnpm-workspace.yaml`,
+`wiki-writer/package.json`, `src/gateway/operator-contract/README.md`,
+`web/src/privacy/README.md`, and `.github/workflows/` at `fd3c5536`.
 
 ## 2026-10-09 — issue closure, release inclusion, and deployment are different gates
 

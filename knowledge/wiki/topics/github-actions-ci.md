@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-09
+updated: 2026-10-10
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: fd3c553691ae162846c4163060a26289fc224277
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/agent
     sha: 26df76e318581b59d4786a39649474136e30f24f
     accessed: 2026-10-09
@@ -279,6 +282,36 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Candidate-image checks do not establish Main or deployment success (2026-10-10)
+
+At `fd3c5536`, [[fro-bot--dashboard]] has separate Main and Release workflows.
+Release runs on runtime-relevant pushes or manual dispatch, not on successful
+Main completion. Its candidate image is pushed by digest before smoke checks;
+those checks cover host and sibling-container health reachability, the public
+PWA manifest, CSP, non-root UID, production environment, and absence of package
+managers and their filesystem residue. They do not execute Main's lint,
+type-check, unit-test, design, or strip-only-load jobs.
+
+The security stages also have different contracts: the first Trivy scan emits
+HIGH/CRITICAL SARIF with `exit-code: '0'`; the second blocks fixed
+HIGH/CRITICAL findings with `ignore-unfixed: true` and `exit-code: '1'`.
+Reporting coverage is broader than blocking coverage. Successful publication
+would not mean the image has no HIGH/CRITICAL findings.
+
+After publication, the infra-dispatch job is best-effort for the whole job.
+A successful release is therefore neither verified deploy dispatch nor a
+completed deployment. Verify each boundary separately rather than treating a
+green release as end-to-end delivery. This source snapshot establishes configured
+checks only; no runs or deployed images were inspected.
+
+The Fro Bot workflow also narrows PR concurrency to head SHA specifically on
+`pull_request` events. Issue and review-comment events keep their own keys,
+avoiding accidental collapse onto a shared PR SHA. This is a declared queue
+policy, not observed proof that pending runs are never dropped.
+
+Sources: `.github/workflows/{main,release,fro-bot}.yaml` in `fro-bot/dashboard`
+at `fd3c553691ae162846c4163060a26289fc224277`.
 
 ## Nested deadlines and response suppression are separate contracts (2026-10-09)
 

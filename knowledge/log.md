@@ -7469,3 +7469,76 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/e1b82de9d29d5dd
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-10-10 01:10] ingest | fro-bot/dashboard
+
+Bounded survey of the public repository at independently resolved `main` commit
+`fd3c553691ae162846c4163060a26289fc224277`. Updated the existing
+`wiki/repos/fro-bot--dashboard.md` and `wiki/topics/github-actions-ci.md`
+additively and refreshed their existing catalog references in `index.md`.
+Accumulated evidence, contradictions, and pre-existing working-tree edits were
+retained. Corrections context was read as untrusted data and contained no records.
+
+Durable findings:
+
+- Hono/Node 24 plus React PWA architecture and the one-member writer workspace
+  remain. The README still describes the writer as undeployed/unintegrated; its
+  shared-gate SHA remains `37abb495`. Current upstream fixes were not counted.
+- Manifest declarations advance pnpm to 11.28.5, React to 19.3.0, Vite to 8.3.3,
+  ESLint to 10.12.0, shared ESLint config to 0.54.0, and OpenCode plugin to
+  1.18.35. Six workspace override selectors are present; advisory cleanliness
+  and the older Dockerfile pnpm mismatch were not rechecked.
+- The contract README replaces its stale literal version header with a
+  single-source `version.ts` reference and documents provenance-parser field
+  projection, exact refusal vocabulary, and the browser-only sanitization
+  boundary. No current wire version or runtime behavior was inferred.
+- Fro Bot workflow is present at v0.119.0, with explicit scheduled/manual
+  branch-PR delivery and event-specific PR-head-SHA concurrency. No missing-bot
+  workflow proposal is indicated. This target configuration was not executed.
+- Release candidate-image checks, Main checks, SARIF reporting, blocking only
+  fixed HIGH/CRITICAL vulnerabilities, and best-effort deployment dispatch are
+  distinct gates. A published image is not deployment or authenticated-flow proof.
+
+Read boundary: repository visibility/identity and default-branch SHA, recursive
+directory listing, three READMEs, root/writer package manifests, workspace
+manifest, and all seven workflow files. No target source code, non-README docs,
+agent instructions, Dockerfile, lockfile, action definitions, issues, PRs,
+release records, run logs, or live endpoints were read or executed.
+
+Sources: https://github.com/fro-bot/dashboard/tree/fd3c553691ae162846c4163060a26289fc224277;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, `wiki-writer/package.json`,
+`src/gateway/operator-contract/README.md`, `web/src/privacy/README.md`, and
+`.github/workflows/` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/38011981993
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki/catalog/log files updated in the working tree;
+  the caller owns diff detection, commit, push, and pull-request creation.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run --no-cache --reporter dot` passed (98 test files;
+  4,997 passed, 3 todo). `pnpm bootstrap` and the build-writing
+  `pnpm check-types` / `pnpm test` wrappers were skipped under this invocation's
+  non-mutating shell contract; existing dependencies/build state supplied the
+  direct checks. No target repository commands were executed.
+- Wiki integrity: scoped lint across 47 pages found no deterministic findings
+  on the two touched pages or index; two pre-existing broken markdown links
+  elsewhere remain. `git diff --check` passed. Hash checks confirm six
+  pre-existing out-of-scope edited files were untouched; earlier index, log,
+  repo-page, and topic-page content was preserved.
+- Workflow guard: unavailable; working-directory delivery governs.
+- Response: exactly one bot-marked commit delivery/check comment was posted
+  through `gh`, with Run Summary markers. The ingest findings are recorded
+  here; no GitHub issue was opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/a72ffde95ef7df585e13e72b2a264db5c153c98e#commitcomment-204310973
+
+## [2026-10-10 01:15] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard
