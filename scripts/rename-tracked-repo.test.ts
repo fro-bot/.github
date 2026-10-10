@@ -454,6 +454,30 @@ describe('renameTrackedRepo: already applied and named blocks', () => {
     expectNoWrite(fake, before)
   })
 
+  it('treats an unparseable page at the old slug as stray when old_name names it', async () => {
+    const files = appliedFiles()
+    files[OLD_PAGE_PATH] = 'not a wiki page: no frontmatter\n'
+    const fake = createGitDataFake({files})
+    const before = fake.head()
+
+    const outcome = await rename(fake, transportFor(), {oldName: `${OWNER}/${OLD_NAME}`})
+
+    expect(outcome).toEqual({result: 'blocked', reason: 'both-pages-present'})
+    expectNoWrite(fake, before)
+  })
+
+  it('does not count an unparseable page elsewhere as stray', async () => {
+    const files = appliedFiles()
+    files['knowledge/wiki/repos/someone--else.md'] = 'not a wiki page: no frontmatter\n'
+    const fake = createGitDataFake({files})
+    const before = fake.head()
+
+    const outcome = await rename(fake, transportFor(), {oldName: `${OWNER}/${OLD_NAME}`})
+
+    expect(outcome).toEqual({result: 'noop'})
+    expectNoWrite(fake, before)
+  })
+
   it('stays a noop when the only other repo pages belong to other nodes', async () => {
     const files = appliedFiles()
     files['knowledge/wiki/repos/someone--else.md'] = oldRepoPage({

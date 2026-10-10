@@ -10,10 +10,9 @@
  * truncated tree, the latter cannot express a multi-file commit. This is the one metadata writer
  * outside `commitMetadata`, by design: the row and the page move must land in a single commit.
  *
- * Private-name collisions are not checked here. Private rows are stored redacted and this workflow
- * never reads the access list, so it has no private names to compare against; the promotion privacy
- * gate (`check-wiki-private-presence`) owns that check and blocks a page that cannot be attributed
- * to a known-public repository.
+ * No private-name collision check runs, here or at promotion: private rows are stored redacted and
+ * this workflow never reads the access list. That is accepted, because a renamed repository is public,
+ * so its new name is already public information.
  *
  * Safety properties:
  * - The target is the literal `fro-bot/.github@data`. There is no override.
@@ -642,7 +641,10 @@ function oldPageNamesUrl(files: Readonly<Record<string, string>>, oldSlug: strin
 /**
  * Whether a repo page for this node still sits somewhere other than the new slug. A page counts
  * when it carries this node's ID, or, if `oldName` is given, when the shared attribution rule ties it
- * to the old URL. Unparseable pages are not counted here; the planner blocks on those separately.
+ * to the old URL. With `oldName`, a page at the old slug that cannot be parsed also counts: it may be
+ * this node's page, and the move must not be reported as applied over it. Without `oldName` the old
+ * slug is unknown, so an unparseable page, or one with no ID, cannot be told from an unrelated one
+ * and is not detected here.
  */
 function hasStrayNodePage(
   files: Readonly<Record<string, string>>,
@@ -651,17 +653,22 @@ function hasStrayNodePage(
   nodeId: string,
   oldName: string | undefined,
 ): boolean {
-  const newSlug = safeSlug(owner, newName)
+  const pagePath = (name: string): string | undefined => {
+    const slug = safeSlug(owner, name)
+    return slug === undefined ? undefined : `knowledge/wiki/repos/${slug}.md`
+  }
+  const newPath = pagePath(newName)
   const parsedOld = oldName === undefined ? undefined : parseOldName(oldName)
-  const oldUrl =
-    parsedOld === undefined || parsedOld.owner !== owner ? undefined : `https://github.com/${owner}/${parsedOld.name}`
+  const named = parsedOld === undefined || parsedOld.owner !== owner ? undefined : parsedOld
+  const oldUrl = named === undefined ? undefined : `https://github.com/${owner}/${named.name}`
+  const oldPath = named === undefined ? undefined : pagePath(named.name)
   return Object.entries(files).some(([path, content]) => {
-    if (!REPO_PAGE_PATTERN.test(path) || path === `knowledge/wiki/repos/${newSlug}.md`) return false
+    if (!REPO_PAGE_PATTERN.test(path) || path === newPath) return false
     try {
       const document = parseFrontmatterDocument(content)
       return oldUrl === undefined ? document.values.node_id === nodeId : attributesPageTo(document, nodeId, oldUrl)
     } catch {
-      return false
+      return path === oldPath
     }
   })
 }

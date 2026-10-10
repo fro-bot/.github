@@ -273,7 +273,7 @@ The workflow then requires that `GET /repos/<owner>/<old-name>` still redirects 
 
 ### Outcomes and blocked states
 
-A run that finds the rename already applied (the row holds the new name and the page at the new slug carries this node's ID, with no other page for the node left behind) exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
+A run that finds the rename already applied (the row holds the new name and the page at the new slug carries this node's ID, with no other page for the node left behind; a stray page with no ID, or one that cannot be parsed, is detected only when `old_name` is passed) exits 0 and prints `{"result":"noop"}`. A blocked run exits non-zero, writes nothing, and prints a fixed reason code:
 
 | Reason | Meaning | Next step |
 | --- | --- | --- |
@@ -292,7 +292,7 @@ Operational failures (a Git Data call failing, a truncated tree, a path or overw
 
 ### Private-name collisions
 
-This workflow does not check a new name against private repository names: private rows are stored redacted and the workflow never reads the access list, so it has none to compare. The promotion privacy gate (`check-wiki-private-presence`) owns that check. A page it cannot attribute to a known-public repository blocks `data → main`, so a public rename onto a private repository's name is stopped there rather than here.
+No private-name collision check runs, in this workflow or at promotion: private rows are stored redacted and the workflow never reads the access list. That is accepted, because a renamed repository is public, so its new name is already public information.
 
 ### Staleness window and manual follow-ups
 
