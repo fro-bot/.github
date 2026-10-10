@@ -1,3 +1,4 @@
+import type {DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
 import type {DiscoveryClient, OctokitClient} from './update-metadata.ts'
 
 import {Buffer} from 'node:buffer'
@@ -374,11 +375,16 @@ describe('runUpdateMetadata (discovery/writer split)', () => {
 
     // #when the run executes with the default commit implementation
     const {commitMetadata} = await import('./commit-metadata.ts')
+    const bootstrapDataBranch = async (): Promise<DataBranchBootstrapResult> => ({
+      created: false,
+      ref: 'refs/heads/data',
+      sha: 'data-sha',
+    })
     const summary = await runUpdateMetadata({
       discovery,
       writer,
       owner: 'fro-bot',
-      commit: async params => commitMetadata({...params, bootstrapDataBranch: async () => ({}) as never}),
+      commit: async params => commitMetadata({...params, bootstrapDataBranch}),
     })
 
     // #then the file was written via the writer and nothing mutating hit discovery

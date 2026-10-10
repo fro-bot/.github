@@ -1,4 +1,5 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
+import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
 import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
@@ -8893,7 +8894,7 @@ describe('handleReconcile — discovery/writer client routing', () => {
   it('completes a full owned + contrib + collaborator reconcile under both adversarial mocks', async () => {
     // #given distinct, adversarial discovery and writer clients
     const {harness, readMetadata} = routingScenario()
-    const bootstrap = vi.fn(async (params: {octokit: OctokitClient}) => {
+    const bootstrap = vi.fn(async (params: DataBranchBootstrapParams): Promise<DataBranchBootstrapResult> => {
       expect(params.octokit).toBe(harness.writer)
       return {created: false, ref: 'refs/heads/data', sha: 'x'}
     })
@@ -8914,7 +8915,7 @@ describe('handleReconcile — discovery/writer client routing', () => {
         discoveryOctokit: harness.discovery,
         writerOctokit: harness.writer,
         readMetadata,
-        bootstrapDataBranch: bootstrap as never,
+        bootstrapDataBranch: bootstrap,
         commitMetadata: commit,
       }),
     )
