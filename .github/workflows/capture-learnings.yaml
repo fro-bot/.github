@@ -168,7 +168,7 @@ jobs:
       # a credential.
       - name: 🤖 Author proposal bodies
         id: agent
-        uses: fro-bot/agent@2f020b402512be23fe9151d19ddb4dfeea684466 # v0.119.0
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           TASK_PROMPT: |
             You are authoring learning-proposal bodies. Each body distills a reusable
@@ -260,7 +260,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: ${{ env.TASK_PROMPT }}
 
@@ -359,7 +358,7 @@ jobs:
         name: 🔑 Mint write token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           # Scope to this repo only — smallest blast radius.
           repositories: ${{ github.event.repository.name }}
