@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-11 oversight: [[fro-bot--dashboard]] distinguishes released contract
+1.9.0 from live health 1.8.0, records six issue-body/Project state mismatches,
+and preserves the pending-deploy and older audit-ledger evidence boundaries.
+Earlier dated observations and existing catalog entries remain intact.
+
 Catalog refreshed 2026-10-10: [[marcusrbrown--opencode-copilot-delegate]]
 (repo) and [[opencode-plugins]] (topic). Existing entries and dated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.

@@ -2,9 +2,23 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-10
+updated: 2026-10-11
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.20
+    sha: 5535b0dbe6f9f152740468ddc56c50b41d78666a
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.119.2
+    sha: 83ed683da24111bd1474eb4bda39715ed5799bc2
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6104169505
+    accessed: 2026-10-11
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38107582154
+    accessed: 2026-10-11
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-11
   - url: https://github.com/fro-bot/.github/issues/3512
     accessed: 2026-10-10
   - url: https://github.com/users/fro-bot/projects/1
@@ -161,6 +175,42 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-11 — released contract parity is not deployed contract parity
+
+GitHub Releases now identifies agent **v0.119.2** and dashboard **2026.10.20**
+as latest. Their tagged `packages/gateway/src/operator-contract/version.ts`
+and `src/gateway/operator-contract/version.ts` both declare **1.9.0**.
+Fresh public `/operator/health` still returns **1.8.0**. This supersedes
+October 10's latest-release snapshot, not its runtime observation. Health
+does not establish the serving image digest or authenticated SSE behavior.
+
+[#3512's body](https://github.com/fro-bot/.github/issues/3512) calls agent
+#1736, #1737, #1739, #1740 and dashboard #583, #584 **Open**; live issues are
+**Closed**, and Project 1 marks all six **Done / ready now**. The later
+[tracker comment](https://github.com/fro-bot/.github/issues/3512#issuecomment-6104169505)
+already distinguishes the 1.9.0 release from the unfinished production gate.
+The parent remains **Open / In Progress / waiting**, consistent with outstanding
+acceptance checks; dashboard #585 and #586 remain **Open / Todo / ready now**.
+
+GitHub ancestry comparisons place agent [#1771](https://github.com/fro-bot/agent/pull/1771)
+in v0.119.2 and dashboard [#599](https://github.com/fro-bot/dashboard/pull/599)
+and [#600](https://github.com/fro-bot/dashboard/pull/600) in 2026.10.20.
+That proves release inclusion, not live segment boundaries, question handling,
+expired-output recovery, or Cancel-control cleanup.
+
+The latest [2026.10.20 deploy](https://github.com/marcusrbrown/infra/actions/runs/38107582154)
+is **pending**; the 2026.10.18 deploy is **waiting**, and 2026.10.19 was
+**cancelled**. The latest successful dashboard deploy remains 2026.10.17,
+with audit [#1502](https://github.com/marcusrbrown/infra/pull/1502) open.
+Infrastructure main still pins gateway v0.118.2 and dashboard 2026.10.15.
+Neither queued intent nor the older audit ledger identifies a newer running image.
+
+For [[fro-bot--agent]] and [[marcusrbrown--infra]], exact-match contract checking
+means even sequential paired deploys have a mismatch interval. Select fixed,
+verified-compatible releases in one maintenance window; verify gateway health
+then authenticated SSE and consumer flows. Keep the earlier volume-snapshot
+rollback requirement. Tracker writes remain the dedicated workflow's responsibility.
 
 ## 2026-10-10 — deployment execution can precede the audit pin
 

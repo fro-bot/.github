@@ -7627,3 +7627,29 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/8792b53409c59cf
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-10-11 03:31] manual-edit | repo:fro-bot/dashboard
+
+Daily oversight updated [[fro-bot--dashboard]] and its existing catalog entry
+additively. Tagged agent v0.119.2 and dashboard 2026.10.20 declare contract
+1.9.0 while fresh public health reports 1.8.0. Six defects listed Open in
+Tracker #3512's body is stale: those issues are Closed / Project Done; the parent
+remains In Progress / waiting.
+Recorded release ancestry, pending/waiting deployment intent, and the older
+successful deploy/audit ledger separately. No authenticated flow verification
+or tracker mutation occurred. Pre-existing working-tree changes are preserved;
+caller ingestion owns persistence.
+
+Sources: https://github.com/fro-bot/.github/issues/3512;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6104169505;
+https://github.com/users/fro-bot/projects/1;
+https://github.com/fro-bot/agent/releases/tag/v0.119.2;
+https://github.com/fro-bot/dashboard/releases/tag/2026.10.20;
+https://github.com/marcusrbrown/infra/actions/runs/38107582154;
+https://dashboard.fro.bot/operator/health.
+
+## [2026-10-11 03:36] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b521a0028dc7e642a1bbe4de444dd9706bd4a90f

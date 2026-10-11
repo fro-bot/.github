@@ -3,7 +3,6 @@ type: repo
 title: marcusrbrown/panthea
 created: 2026-09-26
 updated: 2026-10-10
-node_id: R_kgDOJt6i0Q
 sources:
   - url: https://github.com/marcusrbrown/panthe.ai
     sha: e5022aaa6e9970e66b41ad68334f2fb7781658e7
