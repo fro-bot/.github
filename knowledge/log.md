@@ -7653,3 +7653,27 @@ https://dashboard.fro.bot/operator/health.
 Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b521a0028dc7e642a1bbe4de444dd9706bd4a90f
+
+## [2026-10-11 05:17] manual-edit | repo:fro-bot/dashboard
+
+Added a later deployment/health readback to [[fro-bot--dashboard]] and the
+existing index entry. Actual gateway and dashboard deployment jobs now succeed,
+infrastructure main pins v0.119.2/2026.10.20, and public health reports 1.9.0.
+Preserved the earlier same-day pending-deployment/1.8.0 observation as history.
+Authenticated operator acceptance remains unverified; the parent tracker and
+six stale body/Project comparisons remain distinct from deployment completion.
+The trusted caller owns persistence of this additive working-tree payload.
+
+Sources: https://github.com/marcusrbrown/infra/actions/runs/38113063394;
+https://github.com/marcusrbrown/infra/actions/runs/38107582154;
+https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/gateway/upstream.json;
+https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/dashboard/docker-compose.yaml;
+https://dashboard.fro.bot/operator/health;
+https://github.com/fro-bot/.github/issues/3512;
+https://github.com/users/fro-bot/projects/1.
+
+## [2026-10-11 05:22] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a

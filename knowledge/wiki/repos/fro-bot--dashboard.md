@@ -5,6 +5,11 @@ created: 2026-06-15
 updated: 2026-10-11
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38113063394
+    accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/infra
+    sha: d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9
+    accessed: 2026-10-11
   - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.20
     sha: 5535b0dbe6f9f152740468ddc56c50b41d78666a
     accessed: 2026-10-11
@@ -175,6 +180,43 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-11 — later deploy and health readback supersedes the pending snapshot
+
+The later daily readback observes public `/operator/health` returning
+`{"ok":true,"contractVersion":"1.9.0"}`. This contradicts and supersedes the
+earlier same-day **1.8.0** observation below; both remain dated evidence.
+Tagged agent **v0.119.2** and dashboard **2026.10.20** still declare **1.9.0**.
+
+The gateway router [run 38113063394](https://github.com/marcusrbrown/infra/actions/runs/38113063394)
+completed its actual `deploy-gateway / deploy-gateway` job successfully at
+**05:02:17 UTC**. Dashboard [run 38107582154](https://github.com/marcusrbrown/infra/actions/runs/38107582154)
+completed `deploy-dashboard` successfully at **05:04:21 UTC**, replacing its
+earlier pending state. The older dashboard 2026.10.18 attempt now reports
+failure; 2026.10.19 remains cancelled. Neither should be retried merely to
+clear a historical queue.
+
+Infrastructure main at `d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9` now records
+gateway **v0.119.2** in `apps/gateway/upstream.json` and dashboard
+**2026.10.20** with the published image digest in
+`apps/dashboard/docker-compose.yaml`. The older audit-pin lag described below
+is therefore historical, not the current ledger state.
+
+These independent checks establish successful deployment jobs, updated source
+intent, and a live contract response. They do **not** establish the running image
+digest, authenticated SSE `ready`, question answer/skip continuation, Discord
+settlement, terminal cleanup, expired-output recovery, or the remaining
+approval/cancellation/logout/privacy acceptance checks. [#3512](https://github.com/fro-bot/.github/issues/3512)
+still remains Open and Project 1 remains **In Progress / waiting**. Its body
+still lists the six fixed producer/dashboard defects as Open while their
+Project items are Done; production readiness and source completion remain
+separate. The dedicated tracker owns reconciliation. Preserve the paired
+rollback and earlier volume-snapshot requirement for [[marcusrbrown--infra]].
+
+Sources: [gateway pin](https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/gateway/upstream.json),
+[dashboard pin](https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/dashboard/docker-compose.yaml),
+[live health](https://dashboard.fro.bot/operator/health), and the deployment runs
+above; accessed 2026-10-11.
 
 ## 2026-10-11 — released contract parity is not deployed contract parity
 

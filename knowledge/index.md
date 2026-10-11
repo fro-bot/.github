@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-11 later oversight: [[fro-bot--dashboard]] adds successful gateway and
+dashboard deployment-job readbacks, current infrastructure pins, and live health
+contract 1.9.0. The earlier pending/1.8.0 snapshot remains historical evidence;
+authenticated production acceptance is still unverified.
+
 2026-10-11 oversight: [[fro-bot--dashboard]] distinguishes released contract
 1.9.0 from live health 1.8.0, records six issue-body/Project state mismatches,
 and preserves the pending-deploy and older audit-ledger evidence boundaries.
