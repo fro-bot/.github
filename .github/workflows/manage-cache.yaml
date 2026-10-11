@@ -47,6 +47,17 @@ jobs:
         run: |
           CACHE_KEYS="$(gh cache list -R "${{ github.repository }}" --ref "${{ env.REF }}" --limit 100 --order asc --sort last_accessed_at | cut -f 2 | tr '\n' ' ')"
           for key in $CACHE_KEYS; do
+            # Fro Bot's session history lives in opencode-storage-* caches on the default
+            # branch; wiping them resets the agent's memory. GitHub's inactivity eviction and
+            # repo size cap bound them. PR refs are dead after close, so they are still cleaned.
+            if [ "$REF" = 'refs/heads/${{ github.event.repository.default_branch }}' ]; then
+              case "$key" in
+                opencode-storage-*)
+                  echo "::notice::keeping agent session cache: $key"
+                  continue
+                  ;;
+              esac
+            fi
             # A listed cache can be evicted or re-keyed before we delete it (a TOCTOU
             # race against GitHub's async cache eviction), making `gh cache delete` exit
             # non-zero with "Could not find a cache matching ...". That specific case is
