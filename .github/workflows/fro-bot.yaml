@@ -67,9 +67,6 @@ on:
       OPENCODE_AUTH_JSON:
         description: OpenCode authentication configuration
         required: true
-      OMO_PROVIDERS:
-        description: OhMyOpenCode provider configuration
-        required: true
       OPENCODE_CONFIG:
         description: OpenCode runtime configuration
         required: true
@@ -615,7 +612,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@2f020b402512be23fe9151d19ddb4dfeea684466 # v0.119.0
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -633,7 +630,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: |
             <persona>
@@ -655,11 +651,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -762,7 +760,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
@@ -872,7 +870,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@2f020b402512be23fe9151d19ddb4dfeea684466 # v0.119.0
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -889,7 +887,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: branch-pr
           prompt: |
@@ -912,11 +909,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -1043,7 +1042,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@2f020b402512be23fe9151d19ddb4dfeea684466 # v0.119.0
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1060,7 +1059,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: working-dir
           prompt: |
@@ -1083,11 +1081,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -1195,7 +1195,7 @@ jobs:
         id: report-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-issues: read
@@ -1360,7 +1360,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
