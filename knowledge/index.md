@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-11: [[marcusrbrown--containers]] (repo) and
+[[docker-containers]] (topic). Existing entries and dated evidence are retained;
+the canonical survey record is in `knowledge/log.md`.
+
 2026-10-11 later oversight: [[fro-bot--dashboard]] adds successful gateway and
 dashboard deployment-job readbacks, current infrastructure pins, and live health
 contract 1.9.0. The earlier pending/1.8.0 snapshot remains historical evidence;

@@ -7677,3 +7677,73 @@ https://github.com/users/fro-bot/projects/1.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
+
+## [2026-10-11 11:28] ingest | marcusrbrown/containers
+
+Bounded survey at public `main` revision
+`008a0d383c457c0f4b05b3db5e3b5d41e3787ed5`. Updated
+[[marcusrbrown--containers]] and [[docker-containers]] additively, refreshed their
+existing catalog references in `knowledge/index.md`, and preserved earlier
+observations and working-tree changes. No new entity or comparison page was
+justified. Corrections context was read as untrusted data and contains no records.
+
+Findings: ten workflows and seven declared templates remain; Python's ten-entry-point
+manifest and 35% coverage gate, Node/pnpm pins, and Fro Bot agent v0.116.0 remain.
+Fro Bot is present, so no missing-workflow draft is indicated. Recorded the
+application-change trigger/matrix omission against the Node README promise,
+the shell-only/non-blocking functionality check, and skipped-work acceptance in
+aggregate checks. Preserved the scripts-only routing and dispatch prerequisite
+findings. Corrected the historical release table explicitly: the inspected
+`release.yaml` is main-push/dispatch tag-generation scaffolding, not tag-triggered
+publication. CodeQL SARIF uploads now declare v4.38.0. Runtime/base-version,
+security, queue, branch-protection, and enabled-workflow claims remain unverified.
+
+Reads used `gh` only for visibility/ref metadata, an untruncated directory listing,
+root/Node/archive/template READMEs, root and Node app manifests, and all ten
+workflow files pinned to that revision. No target code or instructions were
+executed. Visibility was rechecked as public before authoring.
+
+Sources: https://github.com/marcusrbrown/containers/tree/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5;
+https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/node/README.md;
+https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/build-publish.yaml;
+https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/test.yaml;
+https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/release.yaml.
+
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed files updated in the working tree. Existing changes
+  are preserved; the caller owns commit, push, and promotion. Persistence is
+  not yet verified. The workflow guard is unavailable.
+- Verification: `pnpm bootstrap`, `pnpm lint`,
+  `pnpm exec tsc --noEmit --project ./tsconfig.json`, and
+  `pnpm exec vitest run` passed (102 test files; 5,358 passed, 3 todo).
+  Direct type/test checks used the existing build instead of the build-writing
+  `pnpm check-types` and `pnpm test` wrappers. Bootstrap left no additional
+  tracked changes.
+- Wiki validation: 47 pages scanned; touched-page frontmatter and pinned
+  sources, all wikilinks, and index coverage passed. No deterministic findings
+  on the touched pages or index. Two pre-existing markdown-link findings on
+  another repo page remain. `git diff --check` passed.
+- Formatting: repository ESLint ignores the wiki files. A separate Prettier
+  check flags all four touched files; the same four files already fail that
+  check at `HEAD`. Historical content was preserved rather than broadly
+  reformatted, especially the append-only log.
+- The canonical survey summary is this log entry. The required single GitHub
+  comment was posted and its returned body confirms the bot identification
+  and Run Summary markers. It carries only delivery/check status and a pointer here; no issue
+  is opened, commented on, or updated.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204442303
+
+Run: https://github.com/fro-bot/.github/actions/runs/38135559985.
+
+## [2026-10-11 11:35] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers

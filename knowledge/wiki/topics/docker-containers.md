@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-30
+updated: 2026-10-11
 sources:
+  - url: https://github.com/marcusrbrown/containers
+    sha: 008a0d383c457c0f4b05b3db5e3b5d41e3787ed5
+    accessed: 2026-10-11
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-30
@@ -117,6 +120,31 @@ Registry push is gated on `github.event_name != 'pull_request'` to prevent PR bu
 #### A trigger is not a build matrix (2026-09-27)
 
 [[marcusrbrown--containers]]'s `build-publish.yaml` triggers on both `scripts/**` and `**/Dockerfile`, but its detection step filters the changed paths to `Dockerfile` only and returns an empty matrix for a scripts-only change. The build job then skips. The workflow declares that script changes matter while the matrix declares that they do not: a successful trigger is not evidence that a container was built. If scripts can affect published images, map those paths to the affected image(s), or remove the trigger if they cannot. The surveyed workflow establishes this routing mismatch; it does not establish an actual image regression.
+
+#### Build inputs need routing, not just a README promise (2026-10-11)
+
+At `008a0d38`, [[marcusrbrown--containers]]'s
+[`node/README.md`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/node/README.md)
+says application-code updates trigger builds. Its
+[`build-publish.yaml`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/build-publish.yaml)
+trigger matches Dockerfiles and `scripts/**`, and its matrix selects only
+Dockerfile diffs. Application-only changes under `node/alpine/` or
+`node/release/` match neither. This extends the September scripts-only finding:
+the trigger and matrix are two independent gates, and both must route an image's
+relevant inputs. Manual dispatch selects all active Dockerfiles but does not
+repair event-driven routing. Actual Dockerfile consumption and image regressions
+were not inspected.
+
+The same repo's
+[`test.yaml`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/test.yaml)
+illustrates a second boundary: an image build plus inspection and a shell-only
+command is not application acceptance. The named functionality step clears the
+entrypoint, runs `sh -c "exit 0"`, and only logs if it fails. It never launches
+the app or probes the documented health/info endpoints. Its aggregate build and
+security jobs accept skipped work as well as success. Consequently a green
+aggregate does not by itself establish either application startup or scan
+execution; distinguish legitimate no-change skips from work expected for a
+manual full check. These are source-contract findings, not observed failures.
 
 ### Security Scanning
 
