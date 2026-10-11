@@ -255,8 +255,10 @@ env:
     pick it up cold: state the exact file paths, the root cause, the smallest
     safe fix, any constraints or "do not retry" warnings, and how to verify.
     Put these under "Needs Human Attention" in the report. If a finding is
-    durable repository knowledge, also persist it to the wiki per the
-    knowledge_persistence block, following knowledge/schema.md.
+    durable repository knowledge, follow the knowledge_persistence block for this
+    run: a run that owns wiki writes persists it there, following
+    knowledge/schema.md; any other run (for example branch-pr) records it under
+    "Needs Human Attention" and does not edit knowledge/**.
 
   REMEDIATE_INTRO: |
     Run the remediation half of the daily Fro Bot pass for fro-bot/.github — the
@@ -363,12 +365,13 @@ env:
     knowledge worth persisting, write it directly into knowledge/wiki/**,
     knowledge/index.md, and knowledge/log.md in the working tree per
     knowledge/schema.md, and leave that tree dirty when you finish this run.
-    `wiki-ingest.ts` discovers its payload by running `git status --porcelain`
-    and reading whatever it finds changed; a clean tree means ingestion silently
-    delivers nothing and exits 0. Do not run `git checkout`, `git restore`, or
-    any other cleanup against knowledge/** before finishing — a later step in
-    this same job captures and commits that diff for you. Do not commit those
-    changes yourself.
+    The workflow discovers the payload by running `git status --porcelain` and
+    reading whatever it finds changed; a clean tree means nothing is handed off
+    and ingestion silently delivers nothing and exits 0. Do not run
+    `git checkout`, `git restore`, or any other cleanup against knowledge/**
+    before finishing — the workflow hands that diff to a separate trusted ingest
+    job, which validates it and commits it to the data branch for you. Do not
+    commit those changes yourself.
 
   OBSERVE_CATEGORIES: |
     CATEGORIES (work in order)
@@ -418,7 +421,7 @@ env:
        Review awareness only. Compare #3512's checklist/status claims with the
        corresponding GitHub Project 1 item status and the latest rollout evidence
        in managed repositories; report any mismatch with both values. Summarize
-       drift in the Daily Org Oversight Report if found. Do not post tracker
+       drift in the Daily Fro Bot Report if found. Do not post tracker
        comments or edit Project fields from this daily report path; the dedicated
        Gateway Rollout Tracker workflow owns tracker writes.
 

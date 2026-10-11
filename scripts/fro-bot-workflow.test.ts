@@ -338,6 +338,65 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
     expect(observeOutput).toContain('Do not re-analyze those')
     expect(observeOutput).toContain('Fro-Bot-authored PRs')
   })
+
+  it('the observe prompt hands knowledge edits to a separate trusted ingest job, not a same-job step', () => {
+    // The observe job only builds + uploads a data-only handoff artifact; fro-bot-observe-wiki-ingest
+    // (a separate job) downloads, validates and commits it to `data`.
+    const observeIntro = (env.OBSERVE_INTRO ?? '').replaceAll(/\s+/g, ' ')
+    expect(observeIntro).not.toContain('same job')
+    expect(observeIntro).toContain('separate trusted ingest job')
+    expect(observeIntro).toContain('validates it and commits it to the data branch')
+    expect(froBotParsed.jobs['fro-bot-observe-wiki-ingest']?.needs).toBe('fro-bot-observe')
+  })
+
+  it('the remediate prompt never instructs editing knowledge/** — durable knowledge goes to Needs Human Attention', () => {
+    // Composed the same way the remediate job builds it: TASK_PROMPT pieces + the agent step's
+    // <knowledge_persistence> block.
+    const agentStep = froBotParsed.jobs['fro-bot-remediate']?.steps?.find(step => step.id === 'fro-bot-agent')
+    const knowledgeBlock = /<knowledge_persistence>[\s\S]*?<\/knowledge_persistence>/.exec(
+      String(agentStep?.with?.prompt ?? ''),
+    )?.[0]
+    expect(knowledgeBlock).toBeDefined()
+    const composed = [
+      env.REMEDIATE_INTRO,
+      env.SHARED_RULES,
+      env.REMEDIATE_CATEGORIES,
+      env.HARD_BOUNDARIES,
+      env.AGENT_NOTES,
+      knowledgeBlock,
+    ]
+      .join('\n')
+      .replaceAll(/\s+/g, ' ')
+
+    // The unconditional wiki-persistence instructions that used to reach this run.
+    expect(composed).not.toContain('also persist it to the wiki')
+    expect(composed).not.toContain('update only `knowledge/wiki/**`')
+    // The conditional replacement routes non-owning runs to the report.
+    expect(composed).toContain('any other run (for example branch-pr) records it under "Needs Human Attention"')
+    expect(composed).toContain('and does not edit knowledge/**')
+    expect(composed).toContain('Wiki persistence does not happen in this run at all')
+  })
+
+  it('the observe prompt still tells the run that owns the handoff to write knowledge files', () => {
+    const observeIntro = env.OBSERVE_INTRO ?? ''
+    expect(observeIntro).toContain('write it directly into knowledge/wiki/**')
+    const agentStep = froBotParsed.jobs['fro-bot-observe']?.steps?.find(step => step.id === 'fro-bot-agent')
+    expect(String(agentStep?.with?.prompt ?? '').replaceAll(/\s+/g, ' ')).toContain('update only `knowledge/wiki/**`')
+  })
+
+  it('the daily report is named consistently — no stale Daily Org Oversight Report in category text', () => {
+    const categories = env.OBSERVE_CATEGORIES ?? ''
+    const output = env.OBSERVE_OUTPUT ?? ''
+    expect(categories).not.toContain('Daily Org Oversight Report')
+    expect(categories).toContain('Daily Fro Bot Report')
+    expect(output).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
+    // The only remaining mention is the legacy-title cleanup match in OBSERVE_OUTPUT.
+    const staleMentions = Object.entries(env).filter(
+      ([name, value]) => name !== 'OBSERVE_OUTPUT' && String(value).includes('Daily Org Oversight Report'),
+    )
+    expect(staleMentions).toEqual([])
+    expect(output).toContain('"Daily Org Oversight Report —" (the previous')
+  })
 })
 
 const draftedBranch = 'docs/drafted-solutions'
