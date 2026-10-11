@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-10
+updated: 2026-10-11
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config/blob/4d13f58d835da29513abb454c3928ca34a82cfbe/.github/workflows/main.yaml
+    sha: 4d13f58d835da29513abb454c3928ca34a82cfbe
+    accessed: 2026-10-11
   - url: https://github.com/marcusrbrown/panthea
     sha: c74fe32b46ecdf332b916295a18c1c2a8d11d008
     accessed: 2026-10-10
@@ -295,6 +298,29 @@ related:
 ---
 
 # GitHub Actions CI
+
+## A dispatch dry-run default can be overridden before execution (2026-10-11)
+
+At `4d13f58`, [[marcusrbrown--renovate-config]]'s `main.yaml` declares a
+boolean `workflow_dispatch` input `dry-run` with default `true`. Its release
+job initially derives `DRY_RUN` from the event, then `Get Release Options`
+overwrites it with `false` whenever the current ref is the default branch.
+The step exposes `INPUT_DRY_RUN` but does not use it in its condition. The
+semantic-release command consumes the overwritten environment value, not the
+operator-facing input. A manual dispatch on `main` therefore selects real
+release mode even when dry-run was requested.
+
+This contradicts the dispatch interface, not the earlier observation that PRs
+use dry-run and ordinary main pushes release. No execution logs or release
+records were read in this bounded survey, so it does not establish that an
+unintended release occurred: semantic-release must still find a releasable
+change, and the major-branch write checks `new-release-published`.
+
+**Rule:** trace an operator input through every environment rewrite to the
+final command. A safe default in the input schema is not a preserved choice
+when later branch-based logic overrides it. Keep requested mode and effective
+mode distinguishable in verification; branch eligibility and dry-run selection
+are separate decisions.
 
 ## 2026-10-10 — codification recovery and a no-op automation run are different evidence
 

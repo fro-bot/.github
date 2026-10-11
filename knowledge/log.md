@@ -7678,72 +7678,64 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
 
-## [2026-10-11 11:28] ingest | marcusrbrown/containers
+## [2026-10-11 11:29] ingest | marcusrbrown/renovate-config
 
-Bounded survey at public `main` revision
-`008a0d383c457c0f4b05b3db5e3b5d41e3787ed5`. Updated
-[[marcusrbrown--containers]] and [[docker-containers]] additively, refreshed their
-existing catalog references in `knowledge/index.md`, and preserved earlier
-observations and working-tree changes. No new entity or comparison page was
-justified. Corrections context was read as untrusted data and contains no records.
+Bounded public-repository survey at
+`4d13f58d835da29513abb454c3928ca34a82cfbe`. Updated
+[[marcusrbrown--renovate-config]] and [[github-actions-ci]] additively and
+refreshed their existing catalog entries in `knowledge/index.md`.
 
-Findings: ten workflows and seven declared templates remain; Python's ten-entry-point
-manifest and 35% coverage gate, Node/pnpm pins, and Fro Bot agent v0.116.0 remain.
-Fro Bot is present, so no missing-workflow draft is indicated. Recorded the
-application-change trigger/matrix omission against the Node README promise,
-the shell-only/non-blocking functionality check, and skipped-work acceptance in
-aggregate checks. Preserved the scripts-only routing and dispatch prerequisite
-findings. Corrected the historical release table explicitly: the inspected
-`release.yaml` is main-push/dispatch tag-generation scaffolding, not tag-triggered
-publication. CodeQL SARIF uploads now declare v4.38.0. Runtime/base-version,
-security, queue, branch-protection, and enabled-workflow claims remain unverified.
+- README still advertises three presets and `#v5` pins. Recorded current
+  manifest toolchain (pnpm 11.28.5, ESLint 10.12.0, Prettier 3.9.9), workspace
+  exact overrides, and release-age exclusions without asserting effective
+  policy or dependency health. The development version is not a release version.
+- Six committed workflow files are distinguished from September's eight
+  service-side workflow entries; no deletion or workflow-health inference made.
+  Renovate/settings reusable callers are v4.37.0. Fro Bot is present at
+  v0.119.3; no missing-workflow proposal is warranted. No explicit output mode
+  or post-agent delivery step is present, preserving the earlier wiring concern.
+- Added the source-visible dry-run contradiction: default-branch dispatch
+  overwrites the requested safe mode before semantic-release. Related CI topic
+  records the input-to-command tracing rule, not a claim of an actual release.
+- Reads were limited to listings, README, package/workspace manifests, and six
+  workflow files. Preset/config contents, issue/PR state, releases, and live
+  runs were not read; September's grouping/release-age questions remain open.
+  No target code or prompt instructions were executed. Corrections context
+  contains no correction spans. Pre-existing working-tree changes are retained.
 
-Reads used `gh` only for visibility/ref metadata, an untruncated directory listing,
-root/Node/archive/template READMEs, root and Node app manifests, and all ten
-workflow files pinned to that revision. No target code or instructions were
-executed. Visibility was rechecked as public before authoring.
-
-Sources: https://github.com/marcusrbrown/containers/tree/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5;
-https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/node/README.md;
-https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/build-publish.yaml;
-https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/test.yaml;
-https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/release.yaml.
+Sources: https://github.com/marcusrbrown/renovate-config/tree/4d13f58d835da29513abb454c3928ca34a82cfbe;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,renovate,update-repo-settings,fro-bot,codeql-analysis,scorecard}.yaml`
+at that commit. Run: https://github.com/fro-bot/.github/actions/runs/38135652567.
 
 <!-- fro-bot -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Delivery: four allowed files updated in the working tree. Existing changes
-  are preserved; the caller owns commit, push, and promotion. Persistence is
-  not yet verified. The workflow guard is unavailable.
+- Delivery: four allowed wiki/catalog/log files updated in the working tree;
+  caller owns commit, push, and promotion. Existing changes were preserved.
+  Workflow guard is unavailable; working-directory delivery governs.
 - Verification: `pnpm bootstrap`, `pnpm lint`,
   `pnpm exec tsc --noEmit --project ./tsconfig.json`, and
-  `pnpm exec vitest run` passed (102 test files; 5,358 passed, 3 todo).
-  Direct type/test checks used the existing build instead of the build-writing
-  `pnpm check-types` and `pnpm test` wrappers. Bootstrap left no additional
-  tracked changes.
-- Wiki validation: 47 pages scanned; touched-page frontmatter and pinned
-  sources, all wikilinks, and index coverage passed. No deterministic findings
-  on the touched pages or index. Two pre-existing markdown-link findings on
-  another repo page remain. `git diff --check` passed.
-- Formatting: repository ESLint ignores the wiki files. A separate Prettier
-  check flags all four touched files; the same four files already fail that
-  check at `HEAD`. Historical content was preserved rather than broadly
-  reformatted, especially the append-only log.
-- The canonical survey summary is this log entry. The required single GitHub
-  comment was posted and its returned body confirms the bot identification
-  and Run Summary markers. It carries only delivery/check status and a pointer here; no issue
-  is opened, commented on, or updated.
+  `pnpm exec vitest run` passed (102 test files, 5,358 passed, 3 todo).
+  Build-writing `pnpm check-types` / `pnpm test` wrappers were replaced by
+  direct checks using existing builds under the scoped-write contract.
+- Wiki validation: 47 pages scanned; touched pages have complete frontmatter,
+  valid wikilinks, catalog coverage, and no deterministic findings. Two existing
+  broken markdown links on another repo page and one unrelated catalog
+  knowledge-gap advisory remain. `git diff --check` passed.
+- Response: exactly one control-repo commit comment was posted and its response
+  confirmed both marker blocks. It carries delivery/check status and points here
+  for the canonical ingest summary. No GitHub issue was opened,
+  commented on, or updated. Persistence remains caller-owned and unverified.
 
 <!-- fro-bot:run-summary:end -->
 
-Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204442303
+Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204442312
 
-Run: https://github.com/fro-bot/.github/actions/runs/38135559985.
+## [2026-10-11 11:35] ingest | repo:marcusrbrown/renovate-config
 
-## [2026-10-11 11:35] ingest | repo:marcusrbrown/containers
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/renovate-config

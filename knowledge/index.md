@@ -2,9 +2,9 @@
 
 Master catalog of all wiki pages, organized by type.
 
-Catalog refreshed 2026-10-11: [[marcusrbrown--containers]] (repo) and
-[[docker-containers]] (topic). Existing entries and dated evidence are retained;
-the canonical survey record is in `knowledge/log.md`.
+Catalog refreshed 2026-10-11: [[marcusrbrown--renovate-config]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog entries and dated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
 
 2026-10-11 later oversight: [[fro-bot--dashboard]] adds successful gateway and
 dashboard deployment-job readbacks, current infrastructure pins, and live health
