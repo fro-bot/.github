@@ -152,7 +152,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 30 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 31 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -223,6 +223,7 @@ Fro Bot control plane:
 | **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
 | **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
+| **Rename Tracked Repo** | Apply a repository rename that Reconcile Repos detected: renames the `metadata/repos.yaml` row and moves the repo's wiki page in one commit on `data` (`gh workflow run rename-tracked-repo.yaml -f node_id=<node_id>`) | Manual dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
 | **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |

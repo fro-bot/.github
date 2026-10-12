@@ -67,9 +67,6 @@ on:
       OPENCODE_AUTH_JSON:
         description: OpenCode authentication configuration
         required: true
-      OMO_PROVIDERS:
-        description: OhMyOpenCode provider configuration
-        required: true
       OPENCODE_CONFIG:
         description: OpenCode runtime configuration
         required: true
@@ -258,8 +255,10 @@ env:
     pick it up cold: state the exact file paths, the root cause, the smallest
     safe fix, any constraints or "do not retry" warnings, and how to verify.
     Put these under "Needs Human Attention" in the report. If a finding is
-    durable repository knowledge, also persist it to the wiki per the
-    knowledge_persistence block, following knowledge/schema.md.
+    durable repository knowledge, follow the knowledge_persistence block for this
+    run: a run that owns wiki writes persists it there, following
+    knowledge/schema.md; any other run (for example branch-pr) records it under
+    "Needs Human Attention" and does not edit knowledge/**.
 
   REMEDIATE_INTRO: |
     Run the remediation half of the daily Fro Bot pass for fro-bot/.github — the
@@ -366,12 +365,13 @@ env:
     knowledge worth persisting, write it directly into knowledge/wiki/**,
     knowledge/index.md, and knowledge/log.md in the working tree per
     knowledge/schema.md, and leave that tree dirty when you finish this run.
-    `wiki-ingest.ts` discovers its payload by running `git status --porcelain`
-    and reading whatever it finds changed; a clean tree means ingestion silently
-    delivers nothing and exits 0. Do not run `git checkout`, `git restore`, or
-    any other cleanup against knowledge/** before finishing — a later step in
-    this same job captures and commits that diff for you. Do not commit those
-    changes yourself.
+    The workflow discovers the payload by running `git status --porcelain` and
+    reading whatever it finds changed; a clean tree means nothing is handed off
+    and ingestion silently delivers nothing and exits 0. Do not run
+    `git checkout`, `git restore`, or any other cleanup against knowledge/**
+    before finishing — the workflow hands that diff to a separate trusted ingest
+    job, which validates it and commits it to the data branch for you. Do not
+    commit those changes yourself.
 
   OBSERVE_CATEGORIES: |
     CATEGORIES (work in order)
@@ -421,7 +421,7 @@ env:
        Review awareness only. Compare #3512's checklist/status claims with the
        corresponding GitHub Project 1 item status and the latest rollout evidence
        in managed repositories; report any mismatch with both values. Summarize
-       drift in the Daily Org Oversight Report if found. Do not post tracker
+       drift in the Daily Fro Bot Report if found. Do not post tracker
        comments or edit Project fields from this daily report path; the dedicated
        Gateway Rollout Tracker workflow owns tracker writes.
 
@@ -615,7 +615,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -633,7 +633,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: |
             <persona>
@@ -655,11 +654,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -762,7 +763,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
@@ -872,7 +873,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -889,7 +890,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: branch-pr
           prompt: |
@@ -912,11 +912,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -1043,7 +1045,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1060,7 +1062,6 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: working-dir
           prompt: |
@@ -1083,11 +1084,13 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `node scripts/wiki-context-expand.ts linked`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
             `node scripts/wiki-context-expand.ts query "<short grounded query>"`
 
-            Linked mode reads the baseline-selected pages from the path in
-            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            Run the linked command exactly as written, including the inline
+            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
+            assignment is what points linked mode at the baseline-selected pages. Query mode
+            needs no handoff variable. Do not print or echo that path, its file contents, the
             query text, returned excerpts, or any token/env values into your output or logs. Use
             returned wiki paths only to ground a recommendation.
             </wiki_context_expansion>
@@ -1195,7 +1198,7 @@ jobs:
         id: report-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-issues: read
@@ -1360,7 +1363,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write

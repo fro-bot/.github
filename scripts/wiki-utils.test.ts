@@ -6,6 +6,7 @@ const wikiUtilsModulePromise: Promise<{
   collectPageTargets: typeof import('./wiki-utils.js').collectPageTargets
   collectWikiPages: typeof import('./wiki-utils.js').collectWikiPages
   collectWikilinks: typeof import('./wiki-utils.js').collectWikilinks
+  findWikilinkSpans: typeof import('./wiki-utils.js').findWikilinkSpans
   parseWikiPage: typeof import('./wiki-utils.js').parseWikiPage
   splitFrontmatter: typeof import('./wiki-utils.js').splitFrontmatter
   truncateToBytes: typeof import('./wiki-utils.js').truncateToBytes
@@ -16,6 +17,7 @@ const {
   collectPageTargets,
   collectWikiPages,
   collectWikilinks,
+  findWikilinkSpans,
   parseWikiPage,
   splitFrontmatter,
   truncateToBytes,
@@ -80,6 +82,61 @@ describe('collectWikilinks', () => {
     // #when wikilinks are collected
     // #then no targets are found
     expect(collectWikilinks('No links here.')).toEqual([])
+  })
+})
+
+describe('findWikilinkSpans', () => {
+  it('returns the offsets, trimmed target, label and surrounding whitespace of each link', () => {
+    // #given plain, labelled and whitespace-padded links
+    const content = 'a [[one]] b [[two|Two Label]] c [[ three ]] d [[ four | Four ]]'
+
+    // #when spans are found
+    const spans = findWikilinkSpans(content)
+
+    // #then every span covers exactly its `[[...]]` text and keeps the original padding and label
+    expect(spans.map(span => content.slice(span.start, span.end))).toEqual([
+      '[[one]]',
+      '[[two|Two Label]]',
+      '[[ three ]]',
+      '[[ four | Four ]]',
+    ])
+    expect(spans.map(span => span.target)).toEqual(['one', 'two', 'three', 'four'])
+    expect(spans.map(span => span.label)).toEqual([undefined, 'Two Label', undefined, ' Four '])
+    expect(spans.map(span => [span.leading, span.trailing])).toEqual([
+      ['', ''],
+      ['', ''],
+      [' ', ' '],
+      [' ', ' '],
+    ])
+  })
+
+  it('shares the collectWikilinks grammar: it finds the same links, in order, except heading links', () => {
+    // #given a mix of valid, empty and unterminated links
+    const content = '[[a]] [[b|x]] [[]] [[c|]] [[ d ]] and an unterminated [[e'
+
+    // #when both scanners read it
+    const targets = collectWikilinks(content).map(target => target.trim())
+    const spanTargets = findWikilinkSpans(content).map(span => span.target)
+
+    // #then the span scanner agrees with the collector
+    expect(spanTargets).toEqual(targets)
+    expect(spanTargets).toEqual(['a', 'b', 'd'])
+  })
+
+  it('excludes heading links ([[target#heading]]) but still reports their neighbours', () => {
+    // #given a heading link between two plain links
+    const content = '[[old]] [[old#section]] [[old#section|label]] [[ old #h ]] [[old]]'
+
+    // #when spans are found
+    const spans = findWikilinkSpans(content)
+
+    // #then only the two plain links are reported
+    expect(spans.map(span => content.slice(span.start, span.end))).toEqual(['[[old]]', '[[old]]'])
+  })
+
+  it('returns an empty list when there are no links', () => {
+    expect(findWikilinkSpans('No links here.')).toEqual([])
+    expect(findWikilinkSpans('')).toEqual([])
   })
 })
 

@@ -84,6 +84,7 @@ import {
 import {
   assertAllowlistFile,
   assertReposFile,
+  NODE_ID_PATTERN,
   type AllowlistFile,
   type DiscoveryChannel,
   type OnboardingStatus,
@@ -242,7 +243,17 @@ export interface VisibilityTransitionIssue {
   node_id: string
 }
 
-export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTransitionIssue
+/**
+ * Operator issue for a tracked public repo that was renamed on GitHub. Reconcile only detects
+ * renames; the operator applies one by dispatching `rename-tracked-repo.yaml`. Title and body use
+ * `node_id` only — no `owner/repo` — and the issue is closed once the node is no longer pending.
+ */
+export interface RenamePendingIssue {
+  kind: 'rename-pending'
+  node_id: string
+}
+
+export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTransitionIssue | RenamePendingIssue
 
 /**
  * Per-channel breakdown of reconcile activity for one run. Operators read these to
@@ -281,7 +292,10 @@ export interface ReconcileSummary {
    * field-probe drift. Drops to zero on the next run after migration completes.
    */
   migrated: number
-  /** Number of tracked entries whose owner/name was repaired from a stable node identity. */
+  /**
+   * Retained for output compatibility. Reconcile no longer applies renames (it reports them as
+   * pending; see {@link ReconcileResult.pendingRenames}), so this is always 0.
+   */
   renamed: number
   /** Number of duplicate node_id/database_id rows removed by deterministic merge. */
   merged: number
@@ -367,7 +381,17 @@ export interface ReconcileResult {
   dispatches: DispatchRequest[]
   issues: IssueQueueEntry[]
   summary: ReconcileSummary
+  /** Node IDs of tracked public repos renamed on GitHub. Reported only; no row is renamed. */
+  pendingRenames: string[]
+  /**
+   * Node IDs that must never be surveyed: pending renames and blocked transfers. Applied to the
+   * planner's own dispatch list and floor, and again to the final dispatch list in `handleReconcile`.
+   */
+  excludedNodeIds: string[]
 }
+
+/** Stored owner of a private repo; its `name` holds the node ID instead. */
+const REDACTED_OWNER = '[REDACTED]'
 
 /**
  * Minimum number of dispatches the reconcile engine targets per run. When the threshold
@@ -474,6 +498,13 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   const accessNodePrivacy = indexAccessNodePrivacy(accessList)
   const allowlistedOwners = new Set(allowlist.approved_inviters.map(i => i.username))
 
+  // Renames and transfers are detected, never applied. One exclusion set (pending rename or blocked
+  // transfer) is computed here and filters every dispatch path below plus the floor.
+  const detection = detectRenames({rows: currentRepos.repos, accessList, fieldProbes})
+  const transferKeys = new Set(detection.transfers.map(change => change.key))
+  const pendingRenames = [...new Set(detection.pending.map(change => change.node_id))]
+  const excludedNodeIds = new Set([...pendingRenames, ...detection.transfers.map(change => change.node_id)])
+
   const summary: ReconcileSummary = {
     added: 0,
     pendingReview: 0,
@@ -519,6 +550,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       perRepoStatus,
       fieldProbes,
       allowlistedOwners,
+      transferKeys,
       summary,
       dispatches,
       rawIssues,
@@ -545,6 +577,10 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     const surveyable = dispatches.filter(dispatch => !protectedKeys.has(`node_id:${dispatch.node_id}`))
     dispatches.splice(0, dispatches.length, ...surveyable)
   }
+
+  // Dropped before Pass 2.5 so an excluded candidate can't occupy a slot the floor should fill.
+  const dispatchable = dropExcludedDispatches(dispatches, excludedNodeIds)
+  dispatches.splice(0, dispatches.length, ...dispatchable)
 
   let next: ReposFile = {...currentRepos, repos: nextEntries}
 
@@ -653,6 +689,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
       if (entry.private !== false || accessPrivate) continue
       if (identityKeys(entry).some(key => protectedKeys.has(key))) continue
+      if (excludedNodeIds.has(access.node_id)) continue
 
       // Gap-days: strict greater-than on whole-day count. A repo surveyed exactly
       // FLOOR_MIN_GAP_DAYS days ago is still inside the gap; only repos surveyed
@@ -699,7 +736,10 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     }
   }
 
-  const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues]
+  const renameIssues: RenamePendingIssue[] = pendingRenames
+    .filter(nodeId => NODE_ID_PATTERN.test(nodeId))
+    .map(nodeId => ({kind: 'rename-pending', node_id: nodeId}))
+  const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues, ...renameIssues]
 
   // Populate per-channel tracked counts and stuck-candidate count after both passes
   // complete. Counts entries present on `next.repos` post-classification (excludes
@@ -735,11 +775,86 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   }
 
   // Zero-change optimization: preserve currentRepos reference identity for cheap `===` probe.
+  const excluded = [...excludedNodeIds]
   if (isNoOp(summary, dispatches, issues)) {
-    return {nextRepos: currentRepos, dispatches, issues, summary}
+    return {nextRepos: currentRepos, dispatches, issues, summary, pendingRenames, excludedNodeIds: excluded}
   }
 
-  return {nextRepos: next, dispatches, issues, summary}
+  return {nextRepos: next, dispatches, issues, summary, pendingRenames, excludedNodeIds: excluded}
+}
+
+/** The single dispatch exclusion predicate: drop every candidate whose node is pending rename or transfer-blocked. */
+function dropExcludedDispatches(
+  dispatches: readonly DispatchRequest[],
+  excludedNodeIds: ReadonlySet<string>,
+): DispatchRequest[] {
+  return dispatches.filter(dispatch => !excludedNodeIds.has(dispatch.node_id))
+}
+
+export interface DetectedIdentityChange {
+  /** Stored `owner/name` of the tracked row. */
+  key: string
+  node_id: string
+}
+
+export interface RenameDetection {
+  /** Same node, same owner, different name. */
+  pending: DetectedIdentityChange[]
+  /** Same node, different owner. Never applied and never surveyed. */
+  transfers: DetectedIdentityChange[]
+}
+
+/**
+ * Pure rename/transfer detector. Considers only tracked rows that are public with a real stored
+ * owner and a node ID; redacted and private rows are skipped first (they take no part in renames).
+ * Evidence is the access-list entry for the row's node (when it is public and unambiguous) and the
+ * identity probe of the stored name (when it returned the same node). A missing probe value is no
+ * information, never a rename. An archived access entry can evidence a transfer but not a rename.
+ * Owners compare case-insensitively (logins are); names compare exactly.
+ */
+export function detectRenames(input: {
+  rows: readonly RepoEntry[]
+  accessList: readonly AccessListEntry[]
+  fieldProbes: ReadonlyMap<string, FieldProbe>
+}): RenameDetection {
+  const accessByNodeId = indexAccessListByNodeId([...input.accessList])
+  const accessNodePrivacy = indexAccessNodePrivacy([...input.accessList])
+  const detection: RenameDetection = {pending: [], transfers: []}
+
+  for (const row of input.rows) {
+    if (row.owner === REDACTED_OWNER || row.private !== false || row.node_id === undefined) continue
+    const nodeId = row.node_id
+    const access = accessByNodeId.get(nodeId)
+    if (access === undefined || accessPrivateForStorage(access, accessNodePrivacy)) continue
+
+    const key = repoKey(row.owner, row.name)
+    const identity =
+      input.fieldProbes.get(key)?.identity ?? input.fieldProbes.get(repoKey(access.owner, access.name))?.identity
+    const observed: {owner: string; name: string}[] = [{owner: access.owner, name: access.name}]
+    if (identity !== undefined) {
+      if (identity.returned_node_id === nodeId && identity.resolution === 'matched') {
+        if (identity.returned_owner !== undefined && identity.returned_name !== undefined) {
+          observed.push({owner: identity.returned_owner, name: identity.returned_name})
+        }
+      } else if (
+        // Same gate `classifyTracked` applies before it trusts a repaired identity: anything else
+        // is a transient/unresolvable/inconsistent probe that routes to lost-access or sticky-keep.
+        identity.resolution !== 'resolved' ||
+        identity.resolved_owner !== access.owner ||
+        identity.resolved_name !== access.name
+      ) {
+        continue
+      }
+    }
+
+    if (observed.some(seen => seen.owner.toLowerCase() !== row.owner.toLowerCase())) {
+      detection.transfers.push({key, node_id: nodeId})
+    } else if (!access.archived && observed.some(seen => seen.name !== row.name)) {
+      detection.pending.push({key, node_id: nodeId})
+    }
+  }
+
+  return detection
 }
 
 interface ClassifyTrackedParams {
@@ -752,6 +867,8 @@ interface ClassifyTrackedParams {
   perRepoStatus: Map<string, RepoStatusProbe>
   fieldProbes: Map<string, FieldProbe>
   allowlistedOwners: Set<string>
+  /** Stored `owner/name` keys of rows whose owner changed on GitHub (see {@link detectRenames}). */
+  transferKeys: ReadonlySet<string>
   summary: ReconcileSummary
   dispatches: DispatchRequest[]
   rawIssues: RawIssue[]
@@ -1054,7 +1171,6 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   let accessKey = access === undefined ? key : repoKey(access.owner, access.name)
   const identity = fieldProbes.get(key)?.identity ?? fieldProbes.get(accessKey)?.identity
   const storedNodeId = storedRepoNodeId(entry)
-  let renameTarget: {owner: string; name: string} | undefined
 
   const identityNeedsRepair =
     identity !== undefined && (identity.returned_node_id !== storedNodeId || identity.resolution !== 'matched')
@@ -1109,18 +1225,10 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       return normalizeLostAccessEntry(entry)
     }
 
-    if (identity.resolved_owner.toLowerCase() !== entry.owner.toLowerCase()) {
-      summary.transferBlocked += 1
-      summary.unchanged += 1
-      return entry
-    }
-
+    // The node resolves to a current owner/name; whether that is a rename or a transfer is decided
+    // by `detectRenames` (reported, never applied). The stored owner/name stay on every return path.
     access = resolvedAccess
     accessKey = repoKey(access.owner, access.name)
-    renameTarget = {owner: identity.resolved_owner, name: identity.resolved_name}
-    if (entry.owner !== renameTarget.owner || entry.name !== renameTarget.name) {
-      summary.renamed += 1
-    }
   }
 
   if (access === undefined) {
@@ -1207,6 +1315,20 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
   }
 
+  // Owner change (node-ID-preserving transfer): never applied, never surveyed. Checked before any
+  // dispatch push or write, and only for rows with a real stored owner (`detectRenames` skips the rest).
+  if (params.transferKeys.has(key)) {
+    summary.transferBlocked += 1
+    summary.unchanged += 1
+    return entry
+  }
+
+  // Stored owner/name win on every return path below. The one exception is un-redaction: a row stored
+  // as `[REDACTED]` whose same node is public in the access list takes the access entry's real name.
+  const unredact = entry.owner === REDACTED_OWNER
+  const identityOwner = unredact ? access.owner : entry.owner
+  const identityName = unredact ? access.name : entry.name
+
   if (access.archived) {
     // Pass-1 archived detection: flip to lost-access directly, no Pass-2 probe required.
     if (entry.onboarding_status === 'lost-access') {
@@ -1224,8 +1346,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     })
     return {
       ...normalizeRepoEntryForStorage(entry, {
-        owner: renameTarget?.owner ?? access.owner,
-        repo: renameTarget?.name ?? access.name,
+        owner: identityOwner,
+        repo: identityName,
         private: true,
         node_id: access.node_id,
       }),
@@ -1261,8 +1383,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
     return {
       ...normalizeRepoEntryForStorage(entry, {
-        owner: renameTarget?.owner ?? access.owner,
-        repo: renameTarget?.name ?? access.name,
+        owner: identityOwner,
+        repo: identityName,
         private: accessPrivate,
         node_id: access.node_id,
       }),
@@ -1344,8 +1466,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   const probe = fieldProbes.get(key) ?? fieldProbes.get(accessKey)
   const accessNodeId = storedNodeId === undefined ? (identity?.returned_node_id ?? access.node_id) : access.node_id
   const storageInput = {
-    owner: renameTarget?.owner ?? access.owner,
-    repo: renameTarget?.name ?? access.name,
+    owner: identityOwner,
+    repo: identityName,
     private: accessPrivate,
     node_id: accessNodeId,
   }
@@ -1371,9 +1493,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
   const databaseIdMatch = probe.database_id === undefined || workingEntry.database_id === probe.database_id
   const channelMatch = workingEntry === entry // true only when no channel refresh occurred
-  const identityMatch = renameTarget === undefined
 
-  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch && identityMatch) {
+  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch) {
     summary.unchanged += 1
     return entry
   }
@@ -1666,6 +1787,7 @@ const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
 const INTEGRITY_ALERT_LABEL = 'reconcile:integrity-alert'
 const VISIBILITY_TRANSITION_LABEL = 'reconcile:visibility-transition'
+const RENAME_PENDING_LABEL = 'reconcile:rename-pending'
 
 // Colors match .github/settings.yml (hex without '#', as GitHub createLabel requires)
 export const TRANSITION_LABELS = [
@@ -1680,13 +1802,28 @@ export const TRANSITION_LABELS = [
     description: 'Integrity alert requiring manual operator review',
   },
 ] as const
+// Kept apart from TRANSITION_LABELS so the visibility/integrity paths still create exactly their
+// own two labels. Like them, it is declared in `.github/settings.yml` (the settings sync deletes
+// undeclared labels) and pinned against it by `settings-labels-effective-set.test.ts`.
+export const RENAME_PENDING_LABELS = [
+  {
+    name: RENAME_PENDING_LABEL,
+    color: '0ea5e9',
+    description: 'Tracked repo was renamed on GitHub; dispatch rename-tracked-repo to apply',
+  },
+] as const
 // Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
 // (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
 // Both have identical access to this repo and represent the same autonomous operator,
 // so the integrity check accepts either as legitimate.
 const EXPECTED_AUTHORS = new Set<string>(['fro-bot', 'fro-bot[bot]'])
 
-const NODE_ID_MARKER_PATTERN = /<!-- reconcile:subject:node_id=([\w-]+) -->/
+// Built from the schema's node-ID pattern (minus its anchors) so the marker, the producer filter and the
+// row schema accept exactly the same IDs, including legacy base64 IDs with `=` padding.
+const NODE_ID_MARKER_PATTERN = new RegExp(
+  `<!-- reconcile:subject:node_id=(${NODE_ID_PATTERN.source.slice(1, -1)}) -->`,
+  NODE_ID_PATTERN.flags,
+)
 const ROLLUP_OWNER_MARKER_PATTERN = /<!-- reconcile:subject:rollup-owner=([\w-]+) -->/
 
 export type ReconcileErrorCode =
@@ -1776,7 +1913,17 @@ export interface HandleReconcileResult {
    * or same-run Set dedup). Surfaces in the JSON result so operators can observe dedup activity.
    */
   visibilityTransitionDuplicatesSkipped: number
-  /** Count of issue-creation failures across per-repo + rollup + visibility-transition. */
+  /** Count of successfully-created rename-pending operator issues (node ID only). */
+  renamePendingIssues: number
+  /** Count of rename-pending creates suppressed because an open issue already carries the node marker. */
+  renamePendingDuplicatesSkipped: number
+  /** Tracked public repos renamed on GitHub and awaiting `rename-tracked-repo.yaml`. Never dispatched. */
+  renamesPending: number
+  /** Node-ID-preserving owner changes rejected this run. Never applied, never dispatched. */
+  transferBlocked: number
+  /** Count of rename-pending issues auto-closed because their node is no longer pending. */
+  closedRenamePendingIssues: number
+  /** Count of issue-creation failures across per-repo + rollup + visibility-transition + rename-pending. */
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
   closedStaleIssues: number
@@ -1851,12 +1998,15 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
   //    `validateAccessList` (which rejects duplicates) doesn't throw.
   const collabAccess = await fetchAccessList(userOctokit)
-  const ownedAccess = await fetchOwnedRepos(discoveryOctokit, owner, logger)
-  const contribAccess = await fetchContribRepos(discoveryOctokit, allowlist, logger)
+  const owned = await fetchOwnedRepos(discoveryOctokit, owner, logger)
+  const contrib = await fetchContribRepos(discoveryOctokit, allowlist, logger)
+  // A partial access list cannot prove that anything is no longer pending, so the rename close pass
+  // (below) needs both channels to have enumerated completely.
+  const enumerationComplete = owned.complete && contrib.complete
   const {accessList, accessChannelByKey} = mergeAccessChannels({
     collab: collabAccess,
-    owned: ownedAccess,
-    contrib: contribAccess,
+    owned: owned.entries,
+    contrib: contrib.entries,
   })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
@@ -1995,12 +2145,22 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     )
   }
 
+  // Counts-only: pending renames are named by node-ID issues, never by this public log.
+  if (plan.pendingRenames.length > 0) {
+    logger.info(
+      `reconcile: ${plan.pendingRenames.length} rename(s) pending operator action; excluded from survey dispatch`,
+    )
+  }
+
   // 9. Dispatch loop. Prioritize candidates with null `last_survey_at` first
   //    (never surveyed), then oldest `last_survey_at` first. Cap at
   //    `maxDispatchesPerRun` so a single run stays inside the workflow job budget and
   //    bounds peak concurrent surveys against the shared upstream seat. Deferred
   //    candidates become eligible again on the next run via the staleness gate.
-  const prioritizedDispatches = prioritizeDispatches(plan.dispatches, plan.nextRepos.repos)
+  //    The exclusion predicate (pending rename or blocked transfer) is applied to the final list here, after
+  //    the planner, regain and pending branches have all pushed, so no path can survey an excluded node.
+  const dispatchCandidates = dropExcludedDispatches(plan.dispatches, new Set(plan.excludedNodeIds))
+  const prioritizedDispatches = prioritizeDispatches(dispatchCandidates, plan.nextRepos.repos)
   const dispatchCap = maxDispatchesPerRun > 0 ? maxDispatchesPerRun : prioritizedDispatches.length
 
   // Rotate within the never-surveyed (null last_survey_at) leading group so that all
@@ -2064,6 +2224,16 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
 
   // 11. Auto-close stale `reconcile:pending-review` issues.
+  const closedRenamePendingIssues =
+    probesFailed > 0 || !enumerationComplete
+      ? 0
+      : await autoCloseResolvedRenameIssues({
+          writerOctokit,
+          owner,
+          repo,
+          pendingNodeIds: new Set(plan.pendingRenames),
+          logger,
+        })
   const closedStaleIssues = await autoCloseStaleIssues({
     writerOctokit,
     owner,
@@ -2134,6 +2304,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
     visibilityTransitionIssues: issueOutcome.visibilityTransitionSucceeded,
     visibilityTransitionDuplicatesSkipped: issueOutcome.visibilityTransitionDuplicatesSkipped,
+    renamePendingIssues: issueOutcome.renamePendingSucceeded,
+    renamePendingDuplicatesSkipped: issueOutcome.renamePendingDuplicatesSkipped,
+    renamesPending: plan.pendingRenames.length,
+    transferBlocked: plan.summary.transferBlocked,
+    closedRenamePendingIssues,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
     probesFailed,
@@ -2252,7 +2427,8 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.renamed > 0 ||
     summary.merged > 0 ||
     plan.dispatches.length > 0 ||
-    plan.issues.length > 0
+    // Rename reports are issue-only: they never change metadata, so they don't warrant a data-branch write.
+    plan.issues.some(issue => issue.kind !== 'rename-pending')
   )
 }
 
@@ -2681,6 +2857,16 @@ const OWNED_SELF_EXCLUDE = 'fro-bot/.github'
 const FRO_BOT_WORKFLOW_PATH = '.github/workflows/fro-bot.yaml'
 
 // Derived from the real Octokit response so SDK drift becomes a compile error.
+/**
+ * One discovery channel's access entries, and whether the channel enumerated completely. A transient
+ * failure (not a 403/404, which are stable facts about the repo) leaves `complete` false: the list
+ * is then missing repos it should have, so nothing may be concluded from a repo's absence.
+ */
+interface ChannelEnumeration {
+  entries: AccessListEntry[]
+  complete: boolean
+}
+
 type InstallationRepo =
   RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
 
@@ -2763,7 +2949,7 @@ async function fetchOwnedRepos(
   discoveryOctokit: OctokitClient,
   owner: string,
   logger: ReconcileLogger,
-): Promise<AccessListEntry[]> {
+): Promise<ChannelEnumeration> {
   let allRepos: InstallationRepo[]
   try {
     allRepos = await discoveryOctokit.paginate(discoveryOctokit.rest.apps.listReposAccessibleToInstallation, {
@@ -2772,7 +2958,7 @@ async function fetchOwnedRepos(
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: owned-channel enumeration failed (status=${status}); continuing without owned repos.`)
-    return []
+    return {entries: [], complete: false}
   }
 
   const entries: AccessListEntry[] = []
@@ -2790,7 +2976,7 @@ async function fetchOwnedRepos(
       node_id: repo.node_id,
     })
   }
-  return entries
+  return {entries, complete: true}
 }
 
 /**
@@ -2816,7 +3002,7 @@ async function fetchContribRepos(
   discoveryOctokit: OctokitClient,
   allowlist: AllowlistFile,
   logger: ReconcileLogger,
-): Promise<AccessListEntry[]> {
+): Promise<ChannelEnumeration> {
   if (allowlist.approved_contrib_orgs !== undefined && allowlist.approved_contrib_orgs.length > 0) {
     logger.warn(
       `reconcile: approved_contrib_orgs is not yet supported (requires per-org App installation tokens); ` +
@@ -2827,6 +3013,7 @@ async function fetchContribRepos(
   const directRepos = allowlist.approved_contrib_repos ?? []
   const seen = new Set<string>()
   const entries: AccessListEntry[] = []
+  let complete = true
 
   for (const ownerRepo of directRepos) {
     const slashIndex = ownerRepo.indexOf('/')
@@ -2836,9 +3023,17 @@ async function fetchContribRepos(
     const key = `${directOwner}/${directName}`
     if (seen.has(key)) continue
     const meta = await probeContribRepoMetadata(discoveryOctokit, directOwner, directName, logger)
+    if (meta === 'failed') {
+      complete = false
+      continue
+    }
     if (meta === null) continue
     if (meta.archived || meta.fork) continue
     const probe = await probeContribWorkflow(discoveryOctokit, directOwner, directName, logger)
+    if (probe === 'failed') {
+      complete = false
+      continue
+    }
     if (probe === null) continue
     if (!containsFroBotAgentReference(probe)) continue
     entries.push({
@@ -2851,7 +3046,7 @@ async function fetchContribRepos(
     seen.add(key)
   }
 
-  return entries
+  return {entries, complete}
 }
 
 /**
@@ -2860,14 +3055,14 @@ async function fetchContribRepos(
  * installed). Distinguishes the two for operator-grade logging — silently collapsing 403
  * to 404 would mask installation drift, the silent-failure mode that
  * `docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md` warns
- * about.
+ * about. Any other error returns `'failed'`, which marks the channel's enumeration incomplete.
  */
 async function probeContribRepoMetadata(
   discoveryOctokit: OctokitClient,
   owner: string,
   name: string,
   logger: ReconcileLogger,
-): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null> {
+): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null | 'failed'> {
   try {
     const response = await discoveryOctokit.rest.repos.get({owner, repo: name})
     return {
@@ -2884,14 +3079,14 @@ async function probeContribRepoMetadata(
     }
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: contrib-repo ${owner}/${name} probe failed (status=${status}); omitting.`)
-    return null
+    return 'failed'
   }
 }
 
 /**
  * Fetch the raw `.github/workflows/fro-bot.yaml` content for a candidate contrib repo.
  * Returns null when the file is missing (404), the App lacks access (403), or the response
- * is malformed. 403 is logged distinctly from 404 — the same forge-resistance + drift-
+ * is malformed, and `'failed'` for any other (transient) error. 403 is logged distinctly from 404 — the same forge-resistance + drift-
  * visibility contract as `probeContribRepoMetadata`.
  */
 async function probeContribWorkflow(
@@ -2899,7 +3094,7 @@ async function probeContribWorkflow(
   owner: string,
   name: string,
   logger: ReconcileLogger,
-): Promise<string | null> {
+): Promise<string | null | 'failed'> {
   try {
     const response = await discoveryOctokit.rest.repos.getContent({
       owner,
@@ -2921,7 +3116,7 @@ async function probeContribWorkflow(
     }
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: contrib-repo ${owner}/${name} workflow probe failed (status=${status}); omitting.`)
-    return null
+    return 'failed'
   }
 }
 
@@ -3290,13 +3485,20 @@ async function runIssueQueue(params: {
    * listForRepo-existing-title path and the same-run Set path).
    */
   visibilityTransitionDuplicatesSkipped: number
+  renamePendingSucceeded: number
+  /** Rename-pending creates suppressed because an open issue already carries the node marker (or same-run repeat). */
+  renamePendingDuplicatesSkipped: number
   failed: number
 }> {
   let perRepoSucceeded = 0
   let rollupSucceeded = 0
   let visibilityTransitionSucceeded = 0
   let visibilityTransitionDuplicatesSkipped = 0
+  let renamePendingSucceeded = 0
+  let renamePendingDuplicatesSkipped = 0
   let failed = 0
+  const attemptedRenameNodeIds = new Set<string>()
+  let cachedRenameLabels: Set<string> | null = null
 
   // Same-run dedup Set. Two visibility-transition queue entries for the same
   // node_id in one reconcile plan can both pass the listForRepo dedup check because the
@@ -3391,6 +3593,52 @@ async function runIssueQueue(params: {
         // Mark as successfully created — only after the create call succeeds.
         // This ensures a failed create does not suppress a subsequent retry for the same node_id.
         attemptedTransitionNodeIds.add(issue.node_id)
+      } else if (issue.kind === 'rename-pending') {
+        if (attemptedRenameNodeIds.has(issue.node_id)) {
+          renamePendingDuplicatesSkipped += 1
+          continue
+        }
+        // Search before create, by the node marker in the body. Unlike the visibility alert this
+        // fails CLOSED: a failed search throws into the catch below (counted as a failed issue,
+        // retried next run) rather than risking a duplicate operator issue every day.
+        const open = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
+          owner: params.owner,
+          repo: params.repo,
+          state: 'open',
+          labels: RENAME_PENDING_LABEL,
+          per_page: 100,
+        })) as unknown as OpenIssueEntry[]
+        if (
+          open.some(
+            existing =>
+              isRenamePendingIssue(existing) && NODE_ID_MARKER_PATTERN.exec(existing.body ?? '')?.[1] === issue.node_id,
+          )
+        ) {
+          renamePendingDuplicatesSkipped += 1
+          params.logger.info('reconcile: rename-pending duplicate skipped (existing open issue)')
+          continue
+        }
+
+        let confirmedLabels: Set<string>
+        if (cachedRenameLabels === null) {
+          const labels = await ensureLabelsExist(
+            params.writerOctokit,
+            params.owner,
+            params.repo,
+            RENAME_PENDING_LABELS,
+            params.logger,
+          )
+          if (labels.size === RENAME_PENDING_LABELS.length) cachedRenameLabels = labels
+          confirmedLabels = labels
+        } else {
+          confirmedLabels = cachedRenameLabels
+        }
+        const payload = renderIssuePayload(issue, params.owner, params.repo)
+        await callIssuesCreate(params.writerOctokit, {
+          ...payload,
+          labels: payload.labels.filter(label => confirmedLabels.has(label)),
+        })
+        attemptedRenameNodeIds.add(issue.node_id)
       } else {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         await callIssuesCreate(params.writerOctokit, payload)
@@ -3415,6 +3663,10 @@ async function runIssueQueue(params: {
           visibilityTransitionSucceeded += 1
           break
         }
+        case 'rename-pending': {
+          renamePendingSucceeded += 1
+          break
+        }
         default: {
           // Exhaustiveness guard: adding a new IssueQueueEntry kind must update the switch above.
           const exhaustive: never = issue
@@ -3432,6 +3684,8 @@ async function runIssueQueue(params: {
     rollupSucceeded,
     visibilityTransitionSucceeded,
     visibilityTransitionDuplicatesSkipped,
+    renamePendingSucceeded,
+    renamePendingDuplicatesSkipped,
     failed,
   }
 }
@@ -3499,7 +3753,39 @@ export function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: 
   if (issue.kind === 'visibility-transition') {
     return renderVisibilityTransitionIssue(issue, owner, repo)
   }
-  return renderRollupIssue(issue, owner, repo)
+  if (issue.kind === 'rename-pending') {
+    return renderRenamePendingIssue(issue, owner, repo)
+  }
+  if (issue.kind === 'per-owner-rollup') {
+    return renderRollupIssue(issue, owner, repo)
+  }
+  // Exhaustiveness guard: adding a new IssueQueueEntry kind must add a renderer above.
+  const exhaustive: never = issue
+  throw new Error(`renderIssuePayload: unhandled issue kind: ${JSON.stringify(exhaustive)}`)
+}
+
+function renderRenamePendingIssue(issue: RenamePendingIssue, owner: string, repo: string): IssuePayload {
+  // Public issue stream: the node ID is the only identifier. node_id is validated against
+  // `NODE_ID_PATTERN` before the issue is queued, so it can be interpolated without quoting.
+  const title = `[RENAME] Pending repository rename for ${issue.node_id}`
+  const body = [
+    `<!-- reconcile:subject:node_id=${issue.node_id} -->`,
+    '',
+    'A tracked public repository was renamed on GitHub. Reconcile detects renames but never applies them: the repository is not surveyed until you apply the rename.',
+    '',
+    `- Node ID: \`${issue.node_id}\``,
+    '',
+    'To apply the rename (one commit: the metadata row, the wiki page and the links to it), dispatch:',
+    '',
+    '```sh',
+    `gh workflow run rename-tracked-repo.yaml -f node_id=${issue.node_id}`,
+    '```',
+    '',
+    'If the metadata row already holds the new name but the wiki page is still at the old slug, also pass `-f old_name=<previous owner/name>`.',
+    '',
+    'This issue closes automatically once reconcile no longer sees a pending rename for this node.',
+  ].join('\n')
+  return {owner, repo, title, body, labels: [RENAME_PENDING_LABEL]}
 }
 
 function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner: string, repo: string): IssuePayload {
@@ -3668,6 +3954,59 @@ async function autoCloseStaleIssues(params: {
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     params.logger.warn(`reconcile: failed to list pending-review issues (status=${status}).`)
+  }
+  return closed
+}
+
+/** Re-checks the label on listed issues so a list result is never trusted beyond what the query promised. */
+function isRenamePendingIssue(issue: OpenIssueEntry): boolean {
+  return issue.labels.some(label => label.name === RENAME_PENDING_LABEL)
+}
+
+/**
+ * Close open rename-pending issues whose node is no longer pending (the rename was applied, or the
+ * node left the tracked set). Modeled on {@link autoCloseStaleIssues}: matches by the node marker in
+ * the body, and logs status only. The caller skips this pass when field probes failed this run, since
+ * a missing probe is no information and must not close (then re-open) an issue.
+ */
+async function autoCloseResolvedRenameIssues(params: {
+  writerOctokit: OctokitClient
+  owner: string
+  repo: string
+  pendingNodeIds: ReadonlySet<string>
+  logger: ReconcileLogger
+}): Promise<number> {
+  let closed = 0
+  try {
+    const issues = (await params.writerOctokit.paginate(params.writerOctokit.rest.issues.listForRepo, {
+      owner: params.owner,
+      repo: params.repo,
+      state: 'open',
+      labels: RENAME_PENDING_LABEL,
+      per_page: 100,
+    })) as unknown as OpenIssueEntry[]
+
+    for (const issue of issues) {
+      if (!isRenamePendingIssue(issue)) continue
+      const nodeId = NODE_ID_MARKER_PATTERN.exec(issue.body ?? '')?.[1]
+      if (nodeId === undefined || params.pendingNodeIds.has(nodeId)) continue
+
+      try {
+        await params.writerOctokit.rest.issues.update({
+          owner: params.owner,
+          repo: params.repo,
+          issue_number: issue.number,
+          state: 'closed',
+        })
+        closed += 1
+      } catch (error: unknown) {
+        const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+        params.logger.warn(`reconcile: failed to close resolved rename issue #${issue.number} (status=${status}).`)
+      }
+    }
+  } catch (error: unknown) {
+    const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+    params.logger.warn(`reconcile: failed to list rename-pending issues (status=${status}).`)
   }
   return closed
 }

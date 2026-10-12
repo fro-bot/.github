@@ -1,7 +1,7 @@
 ---
 title: 'fix: Least-privilege App tokens and data-only guarded paths'
 type: fix
-status: active
+status: completed
 date: 2026-10-09
 ---
 

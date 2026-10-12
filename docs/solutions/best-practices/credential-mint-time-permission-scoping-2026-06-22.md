@@ -100,3 +100,4 @@ Prose describes intent. Live data describes reality. Ground the review in realit
 - [Writing a requirements doc that survives verification](requirements-doc-survives-verification-2026-06-24.md) —
   validate a plan's security invariants against live data, not its prose; the same "ground the
   review in reality" discipline applied to requirements documents.
+- [Pin Every App Token Mint in a Repo-Wide Contract Test](repo-wide-app-token-scope-contract-2026-10-10.md) — enforcing this principle across every workflow: explicit reach, pinned owner-wide exemptions, and a discovery/writer split.

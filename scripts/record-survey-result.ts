@@ -1,11 +1,13 @@
-import process from 'node:process'
+import type {ReposFile} from './schemas.ts'
 
+import process from 'node:process'
 import {commitMetadata} from './commit-metadata.ts'
 import {
+  applySurveyResult,
   DuplicateRepoIdentityError,
-  recordSurveyResult,
   RepoEntryNotFoundError,
   type RecordSurveyResultInput,
+  type SurveyWriteBackOutcome,
 } from './repos-metadata.ts'
 
 /**
@@ -19,7 +21,8 @@ import {
  *   REPO_OWNER        — target repository owner (e.g. "marcusrbrown")
  *   REPO_NAME         — target repository name (e.g. ".dotfiles")
  *   REPO_PRIVATE      — optional "true" | "false" visibility hint
- *   REPO_NODE_ID      — optional GitHub GraphQL node ID; required when REPO_PRIVATE=true
+ *   REPO_NODE_ID      — GitHub GraphQL node ID. Required: the row is matched by node ID only,
+ *                       so a survey can never rename or re-key a row. Also required when REPO_PRIVATE=true.
  *   SURVEY_STATUS     — "success" | "failure"
  *   SURVEY_AT         — ISO 8601 timestamp; defaults to "now" if absent
  *   GITHUB_TOKEN      — fro-bot App installation token, minted in the trusted survey-persist job
@@ -28,7 +31,9 @@ import {
  *
  * Writes to: `metadata/repos.yaml` on the `data` branch via `commitMetadata`. Exits 0 on
  * success, duplicate-identity write-back (reconcile owns the repair), or a missing entry;
- * other failures exit non-zero. When the survey target has no entry in `metadata/repos.yaml`,
+ * other failures (including a missing REPO_NODE_ID) exit non-zero. When the node ID matches a row
+ * stored under a different owner/name (a pending rename or a transfer), the row keeps its stored
+ * name and `failure` is recorded; the outcome is reported as `name-mismatch`. When the survey target has no entry in `metadata/repos.yaml`,
  * writes nothing and exits 0 with a warning (the entry must already exist — reconcile is the
  * canonical writer for new entries).
  */
@@ -37,25 +42,79 @@ async function main(): Promise<void> {
   const target = formatSurveyResultTarget(input)
   const [controlPlaneOwner, controlPlaneRepo] = splitControlPlane(requiredEnv('GITHUB_REPOSITORY'))
 
+  const writeBack = createSurveyWriteBack(input)
+
   const result = await commitMetadata({
     owner: controlPlaneOwner,
     repo: controlPlaneRepo,
     path: 'metadata/repos.yaml',
     message: `chore(reconcile): record survey ${input.status} for ${target}`,
-    mutator: (current: unknown) => recordSurveyResult(current, input),
+    mutator: writeBack.mutator,
   })
+
+  const outcome = writeBack.outcome()
+  const warning = outcome === undefined ? undefined : formatSurveyWriteBackWarning(outcome)
+  if (warning !== undefined) {
+    process.stderr.write(warning)
+  }
+  const outcomeField = outcome === undefined || outcome === 'recorded' ? {} : {outcome}
+  // What the mutator actually wrote; `null` when it wrote nothing, so output never claims a success.
+  const status = writeBack.written() ?? null
 
   if (result.committed) {
     process.stdout.write(
-      `${JSON.stringify({committed: true, sha: result.sha, attempts: result.attempts, target, status: input.status})}\n`,
+      `${JSON.stringify({committed: true, sha: result.sha, attempts: result.attempts, target, status, ...outcomeField})}\n`,
     )
     return
   }
 
   // No-op commit (mutator returned the same file) — valid when status + date already match.
   process.stdout.write(
-    `${JSON.stringify({committed: false, attempts: result.attempts, target, status: input.status})}\n`,
+    `${JSON.stringify({committed: false, attempts: result.attempts, target, status, ...outcomeField})}\n`,
   )
+}
+
+export interface SurveyWriteBack {
+  /** Pure mutator for `commitMetadata`. Re-runs on a 409 retry and always reflects the latest run. */
+  mutator: (current: unknown) => ReposFile
+  /** Outcome of the most recent mutator run, or `undefined` before the first run. */
+  outcome: () => SurveyWriteBackOutcome | undefined
+  /** Status the most recent mutator run wrote, or `undefined` before the first run or if it wrote nothing. */
+  written: () => RecordSurveyResultInput['status'] | undefined
+}
+
+/**
+ * Bind a survey input to a mutator that also surfaces how the survey target related to the row it
+ * matched. `applySurveyResult` is pure, so the outcome travels out through this closure.
+ */
+export function createSurveyWriteBack(input: RecordSurveyResultInput): SurveyWriteBack {
+  let lastOutcome: SurveyWriteBackOutcome | undefined
+  let lastWritten: RecordSurveyResultInput['status'] | undefined
+  return {
+    mutator: (current: unknown) => {
+      const applied = applySurveyResult(current, input)
+      lastOutcome = applied.outcome
+      lastWritten = applied.written
+      return applied.file
+    },
+    outcome: () => lastOutcome,
+    written: () => lastWritten,
+  }
+}
+
+/**
+ * Counts-only warning for a write-back that did not record the survey as requested. Deliberately
+ * carries no owner, name, or node ID: the mismatch is the signal, and reconcile's node-ID issue
+ * is where the operator acts on it.
+ */
+export function formatSurveyWriteBackWarning(outcome: SurveyWriteBackOutcome): string | undefined {
+  if (outcome === 'name-mismatch') {
+    return 'record-survey-result: survey target does not match the tracked row for its node ID (pending rename or transfer); recorded failure and kept the stored name\n'
+  }
+  if (outcome === 'visibility-mismatch') {
+    return 'record-survey-result: survey reported public for a row stored as private; nothing was written\n'
+  }
+  return undefined
 }
 
 export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurveyResultInput {
@@ -65,12 +124,15 @@ export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurv
   if (privateFlag === true && nodeId === undefined) {
     throw new Error('REPO_NODE_ID is required when REPO_PRIVATE is true')
   }
+  // Write-backs match rows by node ID only, so reject its absence here rather than on every
+  // commit retry inside the mutator.
+  const requiredNodeId = requiredEnvFrom(env, 'REPO_NODE_ID')
 
   return {
     owner: requiredEnvFrom(env, 'REPO_OWNER'),
     repo: requiredEnvFrom(env, 'REPO_NAME'),
     ...(privateFlag === undefined ? {} : {private: privateFlag}),
-    ...(nodeId === undefined ? {} : {node_id: nodeId}),
+    node_id: requiredNodeId,
     at: parseAt(env.SURVEY_AT),
     status: parseStatus(requiredEnvFrom(env, 'SURVEY_STATUS')),
   }

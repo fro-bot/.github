@@ -51,7 +51,7 @@ env:
 jobs:
   # ─── Trusted pre-agent resolver: privacy verification only ──────────────────
   # No agent step in this job, ever. actions/create-github-app-token declares a
-  # `post:` phase that re-reads its own `with:` inputs (app-id, APPLICATION_PRIVATE_KEY)
+  # `post:` phase that re-reads its own `with:` inputs (client-id, APPLICATION_PRIVATE_KEY)
   # from runner state after every main step in the SAME job — including an agent step,
   # whose shell can tamper with the runner's _actions tree. Minting here, in a job with
   # no agent step at all, means there is no tampered post.cjs that could ever run.
@@ -75,7 +75,7 @@ jobs:
         id: gate-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           # Only used for a public-node GraphQL visibility read — narrow to metadata.
@@ -279,13 +279,12 @@ jobs:
       # action's post phase, which the agent timeout does not cover.
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           # Write wiki updates to the workflow's working tree so the next step can
           # commit them to the `data` branch via scripts/wiki-ingest.ts.
@@ -321,13 +320,12 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: working-dir
           timeout: '1200000'
@@ -363,13 +361,12 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@d88c245fdbd4a952bd88a0f04b8d53927403f16d # v0.118.3
+        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
         timeout-minutes: 23
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: working-dir
           timeout: '1200000'
@@ -550,7 +547,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
@@ -575,7 +572,7 @@ jobs:
         if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           # Only used for a public-node GraphQL visibility read — narrow to metadata.
@@ -637,9 +634,48 @@ jobs:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
         run: node scripts/wiki-handoff-apply.ts
 
+      # The onboarded gate in survey-repo ran when the survey started. A rename applied to `data` since
+      # then (rename-tracked-repo.yaml deletes the old-slug page and moves the row) would otherwise be
+      # undone by this commit, which replays the precomputed old-slug page onto the new head. So the same
+      # check runs again here against `data`, right before the commit. It needs no credential: the repo
+      # is public. If the overlay cannot be fetched the step fails and the commit is skipped; a refused
+      # check skips the commit too, and the record step then records `failure` (SURVEY_STATUS requires
+      # a successful wiki-commit), never `success`.
+      - name: Re-check repo onboarded before the wiki commit
+        id: onboarded-persist
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        env:
+          REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
+          REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
+        run: |
+          status=0
+          git ls-remote --exit-code origin data >/dev/null || status=$?
+          case "$status" in
+            0)
+              git fetch origin data || {
+                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              git restore --source FETCH_HEAD --worktree -- metadata || {
+                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
+                exit 1
+              }
+              ;;
+            2)
+              # data branch absent: nothing to overlay.
+              ;;
+            *)
+              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
+              exit 1
+              ;;
+          esac
+          node scripts/check-repo-onboarded.ts
+
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        if: >-
+          needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success' &&
+          steps.onboarded-persist.outputs.onboarded == 'true'
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_OPERATION: survey
@@ -673,8 +709,11 @@ jobs:
       # Write the survey outcome back to metadata/repos.yaml so the reconcile staleness
       # gate can filter this repo out of tomorrow's candidate list. 'success' needs the
       # final attempt's own success + wiki change, survey-repo's job success, a passed
-      # recheck, and (when onboarded) a successful wiki commit (KTD2). Anything else —
-      # including a clean no-op exhaustion — records 'failure'.
+      # recheck, an onboarded target, and a successful wiki commit (KTD2). Anything else —
+      # including a clean no-op exhaustion, and a survey whose persistence the onboarded gate
+      # skipped (e.g. the target was renamed, so its owner/name no longer matches the row) —
+      # records 'failure'. A skipped persist is never a success. record-survey-result.ts also
+      # matches the row by REPO_NODE_ID only and downgrades a name mismatch to 'failure' itself.
       #
       # `resolve-outcome == 'success'` in this step's `if:` guards against an empty
       # REPO_OWNER/REPO_NAME: if survey-repo ended before the final attempt ran at all
@@ -694,7 +733,7 @@ jobs:
           SURVEY_STATUS:
             ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
             needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
-            (needs.survey-repo.outputs.onboarded != 'true' || steps.wiki-commit.conclusion == 'success')) && 'success' || 'failure' }}
+            needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success') && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
       # Best-effort Discord presence: announce the completed survey to the gateway,

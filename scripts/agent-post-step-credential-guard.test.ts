@@ -27,7 +27,7 @@
  *       in its `inputs` defaults or `steps`.
  *   (d) ANY `actions/create-github-app-token` step in the job, before or after the agent.
  *       That action declares a `post:` phase which re-reads its own `with:` inputs
- *       (app-id, private-key) and `core.getState('token')` from runner state after every
+ *       (client-id, private-key) and `core.getState('token')` from runner state after every
  *       main step in the job — including the agent step. Its compiled `post.cjs` lives in
  *       the runner's `_actions` tree, which the agent's shell can tamper with as the same
  *       user, so a PRE-agent mint is exposed exactly like a post-agent one would be.
@@ -210,7 +210,7 @@ export function scanAgentJob(params: ScanAgentJobParams): ScanAgentJobResult {
   }
 
   // Rule (d): actions/create-github-app-token declares a `post:` phase that re-reads its
-  // own `with:` inputs (app-id, private-key) and `core.getState('token')` from runner
+  // own `with:` inputs (client-id, private-key) and `core.getState('token')` from runner
   // state AFTER every main step in the job completes — including the agent step. The
   // action's compiled post.cjs lives in the runner's _actions tree, which the agent's
   // shell can tamper with. A pre-agent mint is therefore just as exposed as a post-agent

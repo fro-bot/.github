@@ -35,8 +35,11 @@ export function splitFrontmatter(content) {
         body: content.slice(match[0].length).trim(),
     };
 }
-/** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
-export function collectWikilinks(content) {
+/**
+ * The one wikilink grammar: `[[target]]` and `[[target|label]]`, closed by the first `]]`.
+ * A link with an empty target, or with a `|` and an empty label, is not a link.
+ */
+function scanWikilinks(content) {
     const links = [];
     const pattern = /\[\[/gu;
     let match = pattern.exec(content);
@@ -51,12 +54,33 @@ export function collectWikilinks(content) {
         const target = separator === -1 ? inner : inner.slice(0, separator);
         const label = separator === -1 ? undefined : inner.slice(separator + 1);
         if (target !== '' && (label === undefined || label !== '')) {
-            links.push(target);
+            links.push({ start, end: close + 2, target, label });
         }
         pattern.lastIndex = close + 2;
         match = pattern.exec(content);
     }
     return links;
+}
+/** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
+export function collectWikilinks(content) {
+    return scanWikilinks(content).map(link => link.target);
+}
+/**
+ * Locate wikilinks with the same grammar as {@link collectWikilinks}, keeping the original
+ * whitespace and label so a caller can rewrite the target without disturbing the rest.
+ *
+ * Heading links (`[[target#heading]]`) are excluded: no wiki page slug contains `#`, so they
+ * never resolve and are not rewritable as page references.
+ */
+export function findWikilinkSpans(content) {
+    return scanWikilinks(content).flatMap(link => {
+        const target = link.target.trim();
+        if (target === '' || target.includes('#'))
+            return [];
+        const leading = link.target.slice(0, link.target.length - link.target.trimStart().length);
+        const trailing = link.target.slice(link.target.trimEnd().length);
+        return [{ start: link.start, end: link.end, target, leading, trailing, label: link.label }];
+    });
 }
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */
 export function parseWikiPage(path, content) {

@@ -182,7 +182,7 @@ describe('draft-solutions.yaml credential split', () => {
       expect(scopesOf(reviewMint)).toStrictEqual({'permission-pull-requests': 'write'})
       expect(reviewMint?.if).toBe(noWork)
       expect(String(reviewMint?.with?.repositories)).toContain('github.event.repository.name')
-      expect(reviewMint?.with?.['app-id']).toBe(gh('secrets.APPLICATION_ID'))
+      expect(reviewMint?.with?.['client-id']).toBe(gh('secrets.APPLICATION_ID'))
       expect(reviewMint?.with?.['private-key']).toBe(gh('secrets.APPLICATION_PRIVATE_KEY'))
     })
 

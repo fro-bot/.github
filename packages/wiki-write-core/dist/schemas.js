@@ -27,7 +27,7 @@ const CONTRIB_REPO_PATTERN = /^[A-Z\d](?:[A-Z\d]|-(?=[A-Z\d])){0,38}\/(?!\.{1,2}
  * `owner/repo`-shaped string from passing schema and later reaching a render/log site as if
  * it were a node_id. Verified against every node_id currently on the data branch.
  */
-const NODE_ID_PATTERN = /^[\w-]+={0,2}$/;
+export const NODE_ID_PATTERN = /^[\w-]+={0,2}$/;
 export class SchemaValidationError extends Error {
     path;
     constructor(path, message) {

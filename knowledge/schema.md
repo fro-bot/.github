@@ -95,6 +95,17 @@ Sources: <URLs or references>
 
 Operations: `ingest`, `query`, `lint`, `manual-edit`.
 
+## Repo Renames
+
+When a tracked repository is renamed on GitHub, the **Rename Tracked Repo** workflow (see [`metadata/README.md`](../metadata/README.md#applying-a-rename)) updates the wiki in the same commit that renames the `metadata/repos.yaml` row:
+
+- **The page moves, with no alias.** The repo page is renamed to its new `{owner}--{repo}.md` slug and its frontmatter gets the row's `node_id`, the new `title`, and the new repository URL added to `sources`. The old URL stays in `sources`. No `aliases` entry is added: wikilink validation checks slugs only, and an alias would turn ambiguous if another repository later took the old name. The body is not rewritten; the next scheduled survey refreshes it.
+- **A same-slug rename edits in place.** Case-only and punctuation-only renames that sanitize to the same slug leave the file where it is and update `node_id`, `title` and `sources`, so the promotion gate's attribution check still passes.
+- **References are repaired.** Every `[[old-slug]]`, `[[old-slug|label]]` and `[[ old-slug ]]` under `knowledge/wiki/`, and every `related:` entry naming the old slug, is rewritten to the new slug, keeping labels and whitespace. Only pages that contain such a reference are touched. `[[old-slug#heading]]` is not a valid wikilink and blocks the move.
+- **Attribution is structural.** A page without `node_id` is moved only if its structured `sources` list the exact old repository URL. The body is never used as evidence.
+- **`knowledge/index.md` is rebuilt** from the resulting pages, keeping curated descriptions.
+- **One `manual-edit` log entry is appended**, naming only the public old and new names. Existing log entries are never rewritten, so history keeps the old slug. `knowledge/wiki/README.md` is never touched.
+
 ## Maintenance
 
 - **Weekly lint**: scans for broken wikilinks, orphan pages, stale claims, missing cross-references, and knowledge gaps.

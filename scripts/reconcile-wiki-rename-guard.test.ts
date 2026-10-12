@@ -10,6 +10,7 @@ import type {HandleReconcileParams} from './reconcile-repos.ts'
 import {Buffer} from 'node:buffer'
 import {describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
+import {commitMetadata} from './commit-metadata.ts'
 import {handleReconcile} from './reconcile-repos.ts'
 
 const NODE_ID = 'R_kgDOWIDGET'
@@ -274,7 +275,11 @@ function makeUserOctokit(scenario: UserScenario): OctokitClient {
 
 const allowlist = {version: 1, approved_inviters: [{username: 'acme', added: '2026-01-01', role: 'owner'}]}
 
-async function reconcile(branch: FakeBranch, scenario: UserScenario) {
+async function reconcile(
+  branch: FakeBranch,
+  scenario: UserScenario,
+  commit: HandleReconcileParams['commitMetadata'] = undefined,
+) {
   const logger = {warn: vi.fn<(message: string) => void>(), info: vi.fn<(message: string) => void>()}
   const params: HandleReconcileParams = {
     userOctokit: makeUserOctokit(scenario),
@@ -293,7 +298,8 @@ async function reconcile(branch: FakeBranch, scenario: UserScenario) {
     logger,
     workflowFile: 'survey-repo.yaml',
     workflowRef: 'main',
-    // `commitMetadata` intentionally omitted: the real helper writes to the fake branch.
+    // Defaults to the real helper, which writes to the fake branch; a test passes a spy to observe it.
+    ...(commit === undefined ? {} : {commitMetadata: commit}),
   }
   return {result: await handleReconcile(params), logger}
 }
@@ -348,54 +354,48 @@ describe('reconcile wiki rename guard', () => {
     expect(dispatchedNodeIds(branch)).not.toContain(NODE_ID)
   })
 
-  it('applies the rename once the old page is verifiably absent', async () => {
-    const branch = createFakeBranch({repos: reposFile(dueRow())})
+  // Reconcile no longer applies a rename on any path (plan 2026-10-09-004, R3): a redirected rename is
+  // reported as pending and moved by the operator workflow. The planner therefore never removes a public
+  // name, so the guard has nothing to hold on the rename paths; these cases pin that the row stays put.
+  it('reports a rename as pending and leaves the row alone even when the old page is verifiably absent', async () => {
+    const original = dueRow()
+    const branch = createFakeBranch({repos: reposFile(original)})
 
     const {result, logger} = await reconcile(branch, renamedAway)
 
-    expect(result.committed).toBe(true)
-    expect(names(branch)).toEqual(['new-widget'])
-    expect(branch.repos().repos[0]).toMatchObject({owner: 'acme', node_id: NODE_ID})
-    expect(dispatchedNodeIds(branch)).toEqual([NODE_ID])
+    expect(result).toMatchObject({committed: false, renamesPending: 1, wikiGuardKept: 0})
+    expect(branch.repos().repos[0]).toEqual(original)
+    expect(names(branch)).toEqual(['old-widget'])
+    expect(dispatchedNodeIds(branch)).toEqual([])
     expect(guardWarnings(logger)).toEqual([])
   })
 
-  it('applies the unblocked rename of two while the blocked one is kept', async () => {
+  it('reports both renames as pending, whether or not an old page exists, and dispatches neither', async () => {
     const branch = createFakeBranch({
       repos: reposFile(dueRow(), dueRow({name: 'old-gadget', node_id: OTHER_NODE_ID})),
       pages: {'acme--old-widget': ID_LESS_PAGE},
     })
 
-    await reconcile(branch, {access: [widgetNew, gadgetNew], goneNames: ['old-widget', 'old-gadget']})
+    const {result} = await reconcile(branch, {access: [widgetNew, gadgetNew], goneNames: ['old-widget', 'old-gadget']})
 
+    expect(result.renamesPending).toBe(2)
     expect(branch.repos().repos.map(row => [row.name, row.node_id])).toEqual([
       ['old-widget', NODE_ID],
-      ['new-gadget', OTHER_NODE_ID],
+      ['old-gadget', OTHER_NODE_ID],
     ])
-    expect(dispatchedNodeIds(branch)).toEqual([OTHER_NODE_ID])
+    expect(dispatchedNodeIds(branch)).toEqual([])
   })
 
-  it('keeps the old row when wiki state is unverifiable', async () => {
-    const original = dueRow()
-    const branch = createFakeBranch({repos: reposFile(original), pageLookupStatus: 500})
-
-    const {result} = await reconcile(branch, {...renamedAway, access: [widgetNew, newcomer]})
-
-    expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 1})
-    expect(branch.repos().repos[0]).toEqual(original)
-    expect(names(branch)).toEqual(['old-widget', 'fresh'])
-  })
-
-  it('writes nothing when the only change is a blocked rename', async () => {
+  it('writes nothing when the only change is a pending rename', async () => {
     const branch = createFakeBranch({repos: reposFile(repoRow()), pages: {'acme--old-widget': ID_LESS_PAGE}})
 
     const {result} = await reconcile(branch, renamedAway)
 
-    expect(result).toMatchObject({committed: false, wikiGuardKept: 1, wikiGuardUnverifiable: 0})
+    expect(result).toMatchObject({committed: false, wikiGuardKept: 0, wikiGuardUnverifiable: 0, renamesPending: 1})
     expect(branch.writes).toEqual([])
   })
 
-  it('revalidates on a commit retry: a page that appears after a conflict keeps the row, and every downstream action follows', async () => {
+  it('a commit retry after a conflict keeps a pending-rename row untouched, and every downstream action follows', async () => {
     const original = dueRow()
     const branch = createFakeBranch({
       repos: reposFile(original),
@@ -409,52 +409,28 @@ describe('reconcile wiki rename guard', () => {
 
     expect(branch.repos().repos[0]).toEqual(original)
     expect(names(branch)).toEqual(['old-widget', 'fresh'])
-    // Once for the pre-commit plan, then again on each commit attempt.
-    expect(branch.pageLookups).toEqual(Array.from({length: 3}, () => 'acme--old-widget'))
+    // No rename is planned on any attempt, so the wiki is never consulted.
+    expect(branch.pageLookups).toEqual([])
     // The persisted (final) plan drives dispatches, message, warning and result counts.
     expect(dispatchedNodeIds(branch)).toEqual(['R_kgDOFRESH'])
     expect(branch.messages).toEqual(['chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 0 refreshes'])
-    expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 0)])
-    expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 0})
+    expect(guardWarnings(logger)).toEqual([])
+    expect(result).toMatchObject({committed: true, wikiGuardKept: 0, wikiGuardUnverifiable: 0, renamesPending: 1})
   })
 
-  it('revalidates on a commit retry: a tree that turns unreadable keeps the row, and every downstream action follows', async () => {
+  it('does not attempt a commit when the only finding is a pending rename', async () => {
     const original = dueRow()
-    const branch = createFakeBranch({
-      repos: reposFile(original),
-      conflictsBeforeWrite: 1,
-      onConflict: current => {
-        current.pageLookupStatus = 503
-      },
-    })
+    const branch = createFakeBranch({repos: reposFile(original)})
+    const commit = vi.fn(commitMetadata)
 
-    const {result, logger} = await reconcile(branch, {...renamedAway, access: [widgetNew, newcomer]})
+    const {result, logger} = await reconcile(branch, renamedAway, commit)
 
-    expect(branch.repos().repos[0]).toEqual(original)
-    expect(names(branch)).toEqual(['old-widget', 'fresh'])
-    expect(dispatchedNodeIds(branch)).toEqual(['R_kgDOFRESH'])
-    expect(branch.messages).toEqual(['chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 0 refreshes'])
-    expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 1)])
-    expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 1})
-  })
-
-  it('uses the last guarded plan when the commit turns out to be a no-op', async () => {
-    const original = dueRow()
-    const branch = createFakeBranch({
-      repos: reposFile(original),
-      conflictsBeforeWrite: 1,
-      onConflict: current => {
-        current.pages['acme--old-widget'] = ID_LESS_PAGE
-      },
-    })
-
-    const {result, logger} = await reconcile(branch, renamedAway)
-
-    // The retry keeps the row, so nothing is written and nothing is dispatched.
-    expect(result).toMatchObject({committed: false, wikiGuardKept: 1})
+    // A rename report is issue-only: the commit helper is never entered, not merely a no-op.
+    expect(commit).not.toHaveBeenCalled()
+    expect(result).toMatchObject({committed: false, wikiGuardKept: 0, renamesPending: 1})
     expect(branch.writes).toEqual([])
     expect(dispatchedNodeIds(branch)).toEqual([])
-    expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 0)])
+    expect(guardWarnings(logger)).toEqual([])
   })
 
   describe('duplicate rows', () => {
@@ -525,6 +501,61 @@ describe('reconcile wiki rename guard', () => {
 
       expect(result.committed).toBe(true)
       expect(names(branch)).toEqual(['new-widget'])
+    })
+
+    describe('a merge whose wiki lookup is unverifiable', () => {
+      const duplicates = () => reposFile(repoRow({name: 'new-widget'}), repoRow({name: 'old-widget'}))
+
+      it('keeps the row the merge would drop, counts it as unverifiable and says so once, without identifying text', async () => {
+        const branch = createFakeBranch({repos: duplicates(), pageLookupStatus: 500})
+
+        const {result, logger} = await reconcile(branch, {access: [widgetNew, newcomer]})
+
+        // One lookup for the pre-commit plan, one when the commit mutator re-plans.
+        expect(branch.pageLookups).toEqual(['acme--old-widget', 'acme--old-widget'])
+        expect(names(branch)).toEqual(['new-widget', 'old-widget', 'fresh'])
+        expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 1})
+        expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 1)])
+        const everything = logger.warn.mock.calls.map(call => String(call[0])).join('\n')
+        for (const fragment of FORBIDDEN_IN_PUBLIC_OUTPUT) expect(everything).not.toContain(fragment)
+        // The upstream error carries the request path and status; neither may reach the log.
+        expect(everything).not.toContain('500')
+      })
+
+      it('merges once the lookup answers on a later attempt, and re-checks the wiki on every attempt', async () => {
+        const branch = createFakeBranch({
+          repos: duplicates(),
+          pageLookupStatus: 503,
+          conflictsBeforeWrite: 1,
+          onConflict: current => {
+            current.pageLookupStatus = undefined
+          },
+        })
+
+        const {result} = await reconcile(branch, {access: [widgetNew]})
+
+        // Pre-commit plan, first commit attempt, then the retry after the 409: attempts plus one.
+        expect(branch.pageLookups).toEqual(['acme--old-widget', 'acme--old-widget', 'acme--old-widget'])
+        expect(names(branch)).toEqual(['new-widget'])
+        expect(result).toMatchObject({committed: true, wikiGuardKept: 0, wikiGuardUnverifiable: 0})
+      })
+
+      it('keeps the row when the lookup starts failing between attempts', async () => {
+        const branch = createFakeBranch({
+          repos: duplicates(),
+          conflictsBeforeWrite: 1,
+          onConflict: current => {
+            current.pageLookupStatus = 503
+          },
+        })
+
+        const {result, logger} = await reconcile(branch, {access: [widgetNew, newcomer]})
+
+        expect(branch.pageLookups).toEqual(['acme--old-widget', 'acme--old-widget', 'acme--old-widget'])
+        expect(names(branch)).toEqual(['new-widget', 'old-widget', 'fresh'])
+        expect(result).toMatchObject({committed: true, wikiGuardKept: 1, wikiGuardUnverifiable: 1})
+        expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 1)])
+      })
     })
 
     it('keeps both rows of a merge whose dropped name still has a page', async () => {
@@ -618,12 +649,9 @@ describe('reconcile wiki rename guard', () => {
       ])
     })
 
-    it.each([
-      ['page present', {pages: {'acme--alpha-beta': ID_LESS_PAGE}}],
-      ['wiki state unverifiable', {pageLookupStatus: 500}],
-    ])('keeps a same-slug rename `alpha.beta` → `alpha-beta` when %s', async (_label, options) => {
+    it('keeps a same-slug rename `alpha.beta` → `alpha-beta` untouched even though a page exists at the shared slug', async () => {
       const original = dotted()
-      const branch = createFakeBranch({repos: reposFile(original), ...options})
+      const branch = createFakeBranch({repos: reposFile(original), pages: {'acme--alpha-beta': ID_LESS_PAGE}})
 
       await reconcile(branch, {
         access: [{owner: 'acme', name: 'alpha-beta', private: false, node_id: NODE_ID}, newcomer],
@@ -634,19 +662,20 @@ describe('reconcile wiki rename guard', () => {
       expect(names(branch)).toEqual(['alpha.beta', 'fresh'])
     })
 
-    it('applies a same-slug rename on verified absence', async () => {
+    it('reports a same-slug rename as pending instead of applying it on verified absence', async () => {
       const branch = createFakeBranch({repos: reposFile(dotted())})
 
-      await reconcile(branch, {
+      const {result} = await reconcile(branch, {
         access: [{owner: 'acme', name: 'alpha-beta', private: false, node_id: NODE_ID}],
         goneNames: ['alpha.beta'],
       })
 
-      expect(new Set(branch.pageLookups)).toEqual(new Set(['acme--alpha-beta']))
-      expect(names(branch)).toEqual(['alpha-beta'])
+      expect(result.renamesPending).toBe(1)
+      expect(branch.pageLookups).toEqual([])
+      expect(names(branch)).toEqual(['alpha.beta'])
     })
 
-    it('does not treat a case-only rename as a removal', async () => {
+    it('treats a case-only rename as a pending rename, not a removal', async () => {
       const branch = createFakeBranch({
         repos: reposFile(repoRow({name: 'Widget'})),
         pages: {'acme--widget': ID_LESS_PAGE},
@@ -654,9 +683,10 @@ describe('reconcile wiki rename guard', () => {
 
       const {result} = await reconcile(branch, {access: [{...widgetNew, name: 'widget'}]})
 
-      expect(result).toMatchObject({committed: true, wikiGuardKept: 0})
+      // The database_id refresh is still written; the name is not.
+      expect(result).toMatchObject({committed: true, wikiGuardKept: 0, renamesPending: 1})
       expect(branch.pageLookups).toEqual([])
-      expect(names(branch)).toEqual(['widget'])
+      expect(names(branch)).toEqual(['Widget'])
     })
   })
 
@@ -687,28 +717,26 @@ describe('reconcile wiki rename guard', () => {
       expect(branch.messages[0]).toMatch(/\+1 merged/)
     })
 
-    it('reports exactly one rename when one of two is blocked', async () => {
+    it('claims no rename in the commit message for two pending renames', async () => {
       const branch = createFakeBranch({
         repos: reposFile(dueRow(), dueRow({name: 'old-gadget', node_id: OTHER_NODE_ID})),
         pages: {'acme--old-widget': ID_LESS_PAGE},
       })
 
-      await reconcile(branch, {access: [widgetNew, gadgetNew], goneNames: ['old-widget', 'old-gadget']})
+      await reconcile(branch, {access: [widgetNew, gadgetNew, newcomer], goneNames: ['old-widget', 'old-gadget']})
 
       expect(branch.messages).toHaveLength(1)
-      expect(branch.messages[0]).toContain('+1 renamed')
-      expect(branch.messages[0]).not.toContain('merged')
+      expect(branch.messages[0]).not.toMatch(/renamed|merged/)
     })
 
-    it('emits one counts-only warning with no names, slugs, paths, or API error text', async () => {
-      const branch = createFakeBranch({repos: reposFile(repoRow()), pageLookupStatus: 500})
+    it('emits no wiki-guard warning and no identifying text for a pending rename', async () => {
+      const branch = createFakeBranch({repos: reposFile(repoRow())})
 
       const {logger} = await reconcile(branch, {...renamedAway, access: [widgetNew, newcomer]})
 
-      expect(guardWarnings(logger)).toEqual([KEPT_WARNING(1, 1)])
-      const everything = logger.warn.mock.calls.map(call => String(call[0])).join('\n')
+      expect(guardWarnings(logger)).toEqual([])
+      const everything = [...logger.warn.mock.calls, ...logger.info.mock.calls].map(call => String(call[0])).join('\n')
       for (const fragment of FORBIDDEN_IN_PUBLIC_OUTPUT) expect(everything).not.toContain(fragment)
-      expect(everything).not.toContain('500')
     })
   })
 })

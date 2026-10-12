@@ -61,9 +61,23 @@ export function splitFrontmatter(content: string): SplitFrontmatterResult {
   }
 }
 
-/** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
-export function collectWikilinks(content: string): string[] {
-  const links: string[] = []
+interface RawWikilink {
+  /** Offset of the opening `[[`. */
+  readonly start: number
+  /** Offset just past the closing `]]`. */
+  readonly end: number
+  /** Everything before the first `|`, untrimmed. */
+  readonly target: string
+  /** Everything after the first `|`, or `undefined` for a link without a label. */
+  readonly label: string | undefined
+}
+
+/**
+ * The one wikilink grammar: `[[target]]` and `[[target|label]]`, closed by the first `]]`.
+ * A link with an empty target, or with a `|` and an empty label, is not a link.
+ */
+function scanWikilinks(content: string): RawWikilink[] {
+  const links: RawWikilink[] = []
   const pattern = /\[\[/gu
   let match = pattern.exec(content)
 
@@ -79,7 +93,7 @@ export function collectWikilinks(content: string): string[] {
     const target = separator === -1 ? inner : inner.slice(0, separator)
     const label = separator === -1 ? undefined : inner.slice(separator + 1)
     if (target !== '' && (label === undefined || label !== '')) {
-      links.push(target)
+      links.push({start, end: close + 2, target, label})
     }
 
     pattern.lastIndex = close + 2
@@ -87,6 +101,44 @@ export function collectWikilinks(content: string): string[] {
   }
 
   return links
+}
+
+/** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
+export function collectWikilinks(content: string): string[] {
+  return scanWikilinks(content).map(link => link.target)
+}
+
+/** One wikilink located in a string, with enough detail to rewrite its target in place. */
+export interface WikilinkSpan {
+  /** Offset of the opening `[[`. */
+  readonly start: number
+  /** Offset just past the closing `]]`. */
+  readonly end: number
+  /** The target with surrounding whitespace removed. */
+  readonly target: string
+  /** Whitespace between `[[` and the target. */
+  readonly leading: string
+  /** Whitespace between the target and the `|` or `]]`. */
+  readonly trailing: string
+  /** The label exactly as written (including its own whitespace), or `undefined`. */
+  readonly label: string | undefined
+}
+
+/**
+ * Locate wikilinks with the same grammar as {@link collectWikilinks}, keeping the original
+ * whitespace and label so a caller can rewrite the target without disturbing the rest.
+ *
+ * Heading links (`[[target#heading]]`) are excluded: no wiki page slug contains `#`, so they
+ * never resolve and are not rewritable as page references.
+ */
+export function findWikilinkSpans(content: string): WikilinkSpan[] {
+  return scanWikilinks(content).flatMap(link => {
+    const target = link.target.trim()
+    if (target === '' || target.includes('#')) return []
+    const leading = link.target.slice(0, link.target.length - link.target.trimStart().length)
+    const trailing = link.target.slice(link.target.trimEnd().length)
+    return [{start: link.start, end: link.end, target, leading, trailing, label: link.label}]
+  })
 }
 
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */

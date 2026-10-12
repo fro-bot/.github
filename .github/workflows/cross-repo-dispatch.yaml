@@ -83,7 +83,7 @@ jobs:
         id: control-plane-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
@@ -93,7 +93,7 @@ jobs:
         id: dispatch-token-fro-bot
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: fro-bot
           permission-actions: write
@@ -105,7 +105,7 @@ jobs:
         id: dispatch-token-marcusrbrown
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
+          client-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
           owner: marcusrbrown
           permission-actions: write
@@ -231,7 +231,7 @@ jobs:
         id: control-plane-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
@@ -241,7 +241,7 @@ jobs:
         id: track-token-fro-bot
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APPLICATION_ID }}
+          client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: fro-bot
           permission-actions: read
@@ -253,7 +253,7 @@ jobs:
         id: track-token-marcusrbrown
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
+          client-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
           owner: marcusrbrown
           permission-actions: read

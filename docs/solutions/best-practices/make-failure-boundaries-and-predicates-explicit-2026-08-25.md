@@ -266,4 +266,5 @@ every same-named helper in the repository.
 - [Byte-exact gateway signing and fail-soft telemetry](byte-exact-gateway-signing-and-fail-soft-telemetry-2026-06-04.md) — a separate fail-soft boundary whose safe output contract is explicit.
 - [Test the integration seam, not the endpoints](test-the-integration-seam-not-the-endpoints-2026-07-06.md) — verify the behavior at the boundary where the policy matters.
 - [An exact-match trust gate needs type discipline — establish shape before a coercing consumer sees the value](exact-match-trust-gates-need-type-discipline-2026-09-08.md) — the same fail-open family, caused by coercion in exact-match gates.
+- [Enumerate every no-match path before narrowing a row matcher](enumerate-no-match-paths-before-narrowing-a-matcher-2026-10-10.md) — what each caller's no-match branch did implicitly, before a matcher stops returning it.
 - [jq // operator silently coalesces false to fallback in shell-driven gates](../workflow-issues/jq-falsy-coalesce-trap-in-shell-gates-2026-05-17.md) — a different operator collapsing different states into one in a shell gate.

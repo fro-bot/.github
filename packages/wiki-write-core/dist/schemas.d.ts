@@ -115,6 +115,17 @@ export interface SocialCooldownEntry {
     last_broadcast_at: string;
     repo?: string;
 }
+/**
+ * GitHub repository GraphQL node_id shape. Two real forms exist:
+ * - Next-gen: `R_kgDO...` (TYPE prefix + URL-safe base64, chars `[A-Za-z0-9_-]`, no padding).
+ * - Legacy:   `MDEwOlJlcG9zaXRvcnk...==` (standard-ish base64, may carry 1-2 `=` padding chars).
+ *
+ * Both are opaque identifiers — neither contains a `/`. The body is `[\w-]+` (word chars
+ * plus hyphen) followed by optional base64 padding. Rejecting `/` is the point: it keeps an
+ * `owner/repo`-shaped string from passing schema and later reaching a render/log site as if
+ * it were a node_id. Verified against every node_id currently on the data branch.
+ */
+export declare const NODE_ID_PATTERN: RegExp;
 export declare class SchemaValidationError extends Error {
     readonly path: string;
     constructor(path: string, message: string);
