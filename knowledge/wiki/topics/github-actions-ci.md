@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-11
+updated: 2026-10-12
 sources:
+  - url: https://github.com/marcusrbrown/dev-like/blob/34141048abc24c19f463e20d3d54cbc797b275d1/.github/workflows/fro-bot.yaml
+    sha: 34141048abc24c19f463e20d3d54cbc797b275d1
+    accessed: 2026-10-12
   - url: https://github.com/marcusrbrown/renovate-config/blob/4d13f58d835da29513abb454c3928ca34a82cfbe/.github/workflows/main.yaml
     sha: 4d13f58d835da29513abb454c3928ca34a82cfbe
     accessed: 2026-10-11
@@ -298,6 +301,34 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
+
+At `34141048`, [[marcusrbrown--dev-like]] configures Fro Bot v0.121.0
+with a `github-token`, credential-less checkout persistence, and no explicit
+`output-mode`. Its sole post-agent step reports failures/cancellations to the
+rolling “Fro Bot Autoheal” issue; it never detects or publishes a working-tree
+diff. This source shape identifies missing caller-owned delivery, not the
+action's resolved mode or evidence that a particular fix was lost. Token
+availability, file-delivery ownership, and report delivery are separate checks.
+
+The failure step's `always() && (failure() || cancelled())` condition is
+event-agnostic within the admitted job: it can report a failed review invocation
+as well as a failed scheduled autoheal. A successful no-safe-fix run instead
+depends on the agent following its inline rolling-issue prompt; the deterministic
+failure step does not guarantee that successful report. Neither path proves the
+report actually posted without execution evidence.
+
+Verification has a similar boundary: root CI validates and tests the package,
+while the separate push-path-filtered Site workflow runs docs tests and the
+docs manifest's generation/build/internal-link chain before deployment. Green
+root CI would not establish docs acceptance. Read the concrete job graph and
+manifest commands, rather than treating the agent's broader verification prompt
+as checks mechanically enforced by every CI invocation.
+
+Sources: `fro-bot.yaml`, `ci.yaml`, `site.yaml`, root `package.json`, and
+`docs/package.json` at the surveyed commit. Historical August convergence
+and September workflow observations remain dated snapshots, not live results.
 
 ## A dispatch dry-run default can be overridden before execution (2026-10-11)
 
