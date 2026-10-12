@@ -2,9 +2,22 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-11
+updated: 2026-10-12
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.120.0
+    accessed: 2026-10-12
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.22
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38150071995
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38173307577
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra
+    sha: 07486ed6cf81d481f0ea7a9e25b0743969b92b6b
+    accessed: 2026-10-12
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-12
   - url: https://github.com/marcusrbrown/infra/actions/runs/38113063394
     accessed: 2026-10-11
   - url: https://github.com/marcusrbrown/infra
@@ -180,6 +193,36 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-12 — latest releases diverge before the next paired cutover
+
+GitHub Releases identifies agent **v0.120.0** and dashboard **2026.10.22** as
+latest. Their tagged operator-contract files declare **1.10.0** and **1.9.0**,
+respectively. This supersedes October 11's latest-release parity snapshot,
+not the production observation: public `/operator/health` still returns
+`{"ok":true,"contractVersion":"1.9.0"}`. Exact-match contract enforcement means
+latest release selection is not automatically a compatible deployment pair.
+
+The actual dashboard job in [run 38150071995](https://github.com/marcusrbrown/infra/actions/runs/38150071995)
+succeeded at **2026-10-12 04:52:54 UTC**. Its logs reference target image
+**2026.10.22** with digest
+`sha256:6731b2d8af94e3b7d6e39affa4d3fca8bd38a561dd57ec7a79082eb3bfab32a7`.
+Infrastructure main at `07486ed6cf81d481f0ea7a9e25b0743969b92b6b` still records
+**2026.10.21** in `apps/dashboard/docker-compose.yaml`, while
+`apps/gateway/upstream.json` records **v0.119.2**. Treat this as a source-ledger
+versus deployment-run discrepancy; public health does not identify the serving
+image digest. Gateway [run 38173307577](https://github.com/marcusrbrown/infra/actions/runs/38173307577)
+completed its actual deployment job at **04:55:51 UTC**. Two newer green router
+runs skipped both gateway and dashboard jobs, so their overall success is not
+fresh deployment evidence.
+
+[#3512](https://github.com/fro-bot/.github/issues/3512)'s body still claims
+**1.8.0 / v0.118.2 / 2026.10.15** and calls six Project-Done items Open.
+The parent Project item remains **In Progress**, consistent with incomplete
+authenticated acceptance. The dedicated tracker owns reconciliation. Preserve
+the fail-closed contract check and the paired, volume-aware rollback constraint
+from [[marcusrbrown--infra]]; this readback does not verify authenticated SSE,
+question continuation, cancellation, logout, or privacy behavior.
 
 ## 2026-10-11 — later deploy and health readback supersedes the pending snapshot
 

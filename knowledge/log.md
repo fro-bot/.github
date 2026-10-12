@@ -7739,3 +7739,29 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b3
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-10-12 05:32] manual-edit | rollout release and deployment boundaries
+
+Updated [[fro-bot--dashboard]] and its existing catalog entry additively.
+Latest GitHub releases declare agent contract 1.10.0 versus dashboard 1.9.0;
+live public health remains 1.9.0. Actual dashboard/gateway deploy jobs succeed,
+but the dashboard job references 2026.10.22 while infrastructure main records
+2026.10.21. Newer green routers skipped these deploy jobs. Preserved historical
+parity observations, tracker/Project disagreement, and authenticated-acceptance
+and serving-digest evidence boundaries. Pre-existing checkout changes remain;
+trusted caller ingestion owns persistence.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.120.0;
+https://github.com/fro-bot/dashboard/releases/tag/2026.10.22;
+https://github.com/marcusrbrown/infra/actions/runs/38150071995;
+https://github.com/marcusrbrown/infra/actions/runs/38173307577;
+https://github.com/marcusrbrown/infra/tree/07486ed6cf81d481f0ea7a9e25b0743969b92b6b;
+https://dashboard.fro.bot/operator/health;
+https://github.com/fro-bot/.github/issues/3512;
+https://github.com/users/fro-bot/projects/1.
+
+## [2026-10-12 05:36] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a

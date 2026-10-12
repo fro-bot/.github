@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-12 oversight: [[fro-bot--dashboard]] records latest released contracts
+1.10.0 versus 1.9.0, unchanged live health 1.9.0, successful actual deploy jobs,
+and dashboard deployment-target versus infrastructure-ledger drift. Earlier
+dated observations and catalog entries are preserved.
+
 Catalog refreshed 2026-10-11: [[marcusrbrown--renovate-config]] (repo) and
 [[github-actions-ci]] (topic). Existing catalog entries and dated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.
