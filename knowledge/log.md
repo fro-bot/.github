@@ -7678,61 +7678,47 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
 
-## [2026-10-12 13:18] ingest | marcusrbrown/dev-like
+## [2026-10-12 13:17] ingest | marcusrbrown/marcusrbrown.github.io
 
-Bounded public-repository re-survey at `34141048abc24c19f463e20d3d54cbc797b275d1`.
-Updated [[marcusrbrown--dev-like]] and [[github-actions-ci]] additively and
-cataloged both in `knowledge/index.md`. Preserved prior evidence, the settings
-attribution correction, and all pre-existing checkout changes.
+Surveyed the public target at `8a1567dfedb1258675e4cfa39d2e5c1854dc3487`
+using only listings, README files, the package manifest, and workflows.
+Updated [[marcusrbrown--marcusrbrown-github-io]] and [[github-pages]] additively,
+and refreshed their existing catalog references in `knowledge/index.md`.
+Recorded the portfolio's explicit deployment lint/unit-test/compiler chain,
+its distinction from PR-only audit/coverage gates, the continuing root-versus-
+visual README contradiction, and the README/manifest pnpm prerequisite drift.
+Fro Bot remains present at v0.113.2 with explicit scheduled `branch-pr` delivery;
+no missing-workflow proposal is warranted. Historical brand-site knowledge and
+dated queue/runtime observations are preserved, not revalidated. Corrections
+context contained no records. Existing checkout changes were preserved;
+persistence is caller-owned. Workflow guard unavailable.
 
-- Root package remains 0.4.1 with no declared runtime dependencies; the separate
-  docs workspace advances Playwright to 1.64.0. Five registry directories remain.
-  README's Theo “generated on demand” wording still differs from the listed
-  generated skill directory; installer behavior was not inspected.
-- Fro Bot is present at v0.121.0; no missing-workflow follow-up is needed.
-  Recorded the absent explicit output mode/post-agent diff delivery separately
-  from the event-agnostic failure reporter and agent-owned successful no-op
-  report. Configuration does not prove lost fixes or successful reporting.
-- Recorded root CI versus Site docs-check boundaries, npm release install
-  11.21.0, and reusable workflows v4.38.0. The missing index-schema path remains
-  a directory-only observation; prior registry-index, publication, queue, eval,
-  and live security/run claims were not revalidated.
-- Reads were restricted to listings, README, package manifests, and seven
-  workflow files; no upstream instructions or code were executed. Corrections
-  context contained no spans to preserve. Only allowed wiki/catalog/log files
-  were edited; caller owns persistence.
-
-Sources: https://github.com/marcusrbrown/dev-like/tree/34141048abc24c19f463e20d3d54cbc797b275d1;
-`README.md`, `package.json`, `docs/package.json`, and
-`.github/workflows/{ci,fro-bot,link-check,release,renovate,site,update-repo-settings}.yaml`
-at that commit. Run: https://github.com/fro-bot/.github/actions/runs/38254221783.
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/8a1567dfedb1258675e4cfa39d2e5c1854dc3487;
+`README.md`, `package.json`, `tests/visual/README.md`, and
+`.github/workflows/{ci,deploy,fro-bot}.yaml` at that SHA.
 
 <!-- fro-bot -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Delivery: four allowed wiki/catalog/log files updated in the working tree.
-  Caller owns commit, push, and promotion; pre-existing changes were preserved.
-  Workflow guard unavailable; working-directory delivery governs.
-- Verification: `pnpm bootstrap`, `pnpm lint`,
-  `pnpm exec tsc --noEmit --project ./tsconfig.json`, and
-  `pnpm exec vitest run` passed (102 files, 5,358 passed, 3 todo).
-  Build-writing `pnpm check-types` / `pnpm test` wrappers were replaced by
-  direct checks against the existing build under the scoped-write contract.
-  `git diff --check` passed.
-- Wiki validation: 47 pages scanned; touched pages have complete frontmatter,
-  valid wikilinks, catalog coverage, and no deterministic findings. Two existing
-  markdown-link findings on another repo page and four unrelated advisories
-  remain. No workflows or implementation modules were modified.
-- Response: the canonical ingest summary is this log entry. The single required
-  GitHub commit comment was posted and its response confirmed both marker blocks.
-  It carries delivery/check status only; no issue notice was used.
-  Persistence remains caller-owned and unverified.
+- Updated two wiki pages, their catalog references, and this append-only log.
+- Passed `pnpm lint`, direct `tsc --noEmit`, direct Vitest execution
+  (102 files, 5,358 passed tests, three todo), and `git diff --check`.
+- Wiki validation found only two pre-existing `LICENSE` links in the untouched
+  brand-site page; no broken wikilinks, frontmatter failures, or index drift.
+  Standalone Prettier checks fail for all four touched files, as do their HEAD
+  versions. Accumulated content was not reformatted.
+- `pnpm bootstrap` and the build-writing `pnpm check-types` / `pnpm test`
+  wrappers were omitted under the non-mutating-shell delivery constraint;
+  their compiler and test steps ran directly against the prepared environment.
+- No GitHub comment/review was posted: working-dir permits file edits and
+  non-mutating shell operations only, and the survey forbids issue run notices.
+  This prevents satisfying the separate mandatory-comment instruction within
+  the resolved delivery contract. This log is the canonical ingest summary;
+  commit, push, PR creation, and persistence verification remain caller-owned.
 
 <!-- fro-bot:run-summary:end -->
-
-Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204567424
 
 ## [2026-10-11 11:29] ingest | marcusrbrown/renovate-config
 
@@ -7822,8 +7808,8 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
 
-## [2026-10-12 13:22] ingest | repo:marcusrbrown/dev-like
+## [2026-10-12 13:23] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/dev-like
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
