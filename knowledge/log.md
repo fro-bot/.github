@@ -7814,59 +7814,68 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-10-13 12:48] ingest | bfra-me/.github
+## [2026-10-13 12:50] ingest | marcusrbrown/sparkle
 
-Surveyed public `main` at `087e542d3a59cbd06792266fe3eae140c7ec6dbb`,
-limited to directory listings, README, package/workspace/action manifests,
-and workflow files. Updated [[bfra-me--github]], [[github-actions-ci]],
-[[probot-settings]], and their index catalog additively. Preserved prior
-observations and the pre-existing checkout changes. Corrections context
-contained no correction records; upstream prompts were not executed.
+Limited public-repository survey at `6182bccec901d1e8c99bbfbba542113926697fad`.
+Updated [[marcusrbrown--sparkle]] and [[github-actions-ci]] additively and
+refreshed their catalog references in `knowledge/index.md`. Earlier findings
+and pre-existing working-tree changes are preserved.
 
-Root package 4.38.0, pnpm 11.28.5, TypeScript 6.0.3, three Node 24 action
-manifests, and the same 16-workflow layout are declared. Fro Bot is present
-at v0.122.0; no missing-workflow follow-up is needed. Its workflow still
-has no explicit delivery mode or post-agent publisher despite the embedded
-branch/PR mandate. This is source-level evidence, not proof of lost edits
-or current run health. Settings sync selects client-ID or legacy app-ID
-token paths but keeps the required reusable `APPLICATION_ID` secret.
-README attribution to `elstudio/actions-settings` still contradicts local
-action execution. Related topics record those contract/evidence boundaries.
+- Workspace remains eight packages, two apps, docs/scripts, and seven workflows.
+  Recorded pnpm 11.28.5, Turbo 2.11.7, Fro Bot v0.122.0, and reusable workflows
+  v4.38.0. Fro Bot is present; no absent-workflow follow-up is needed.
+- Corrected the earlier fork-preflight interpretation: `// "unknown"` replaces
+  false, so the inspected guard rejects legitimate same-repository PR heads
+  on the issue-comment path as well as unsafe/unknown inputs. A local boolean
+  probe confirmed the expression semantics; upstream execution was not read.
+- Extended documentation-selection drift beyond UI JS/JSX to the four other
+  watched packages' TSX paths. Preserved prompt-version/class-policy drift and
+  noted the README engine floor, nested npm scripts, and Main's lack of an
+  explicit test step as declared-contract evidence, not runtime failures.
+- Reads were restricted to listings, READMEs, manifests, and workflows.
+  Corrections context contained no corrections and was treated as untrusted
+  data. No source code, issue/PR state, run logs, or live-site behavior was read.
 
-Sources: https://github.com/bfra-me/.github/tree/087e542d3a59cbd06792266fe3eae140c7ec6dbb;
-`README.md`, `package.json`, `pnpm-workspace.yaml`, the three action package
-and action manifests, and `.github/workflows/{fro-bot,main,update-repo-settings,renovate,trigger-org-renovate,codeql-analysis}.yaml`
-at that revision. Run: https://github.com/fro-bot/.github/actions/runs/38399638266.
+Sources: https://github.com/marcusrbrown/sparkle/tree/6182bccec901d1e8c99bbfbba542113926697fad;
+root `readme.md`, `package.json`, `pnpm-workspace.yaml`; `docs/{README.md,package.json}`;
+`packages/ui/package.json`, `apps/moo-dang/package.json`; all seven workflow files
+under `.github/workflows/` at that commit.
+Run: https://github.com/fro-bot/.github/actions/runs/38399835111.
 
 <!-- fro-bot -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Updated three wiki pages, their catalog references, and this append-only log.
-- Passed `pnpm lint`, direct `tsc --noEmit`, direct Vitest execution
-  (102 files, 5,358 passed tests, three todo), and `git diff --check`.
-- Wiki validation scanned 47 pages and found no deterministic findings in
-  the touched pages or index; two unrelated existing findings remain.
-- Configured ESLint ignores `knowledge/`; a scoped invocation confirmed
-  the five files are excluded. Lint success does not certify their Markdown
-  formatting; wiki schema, links, and index checks were validated separately.
-- `pnpm bootstrap` and the build-writing `pnpm check-types` / `pnpm test`
-  wrappers were omitted under the non-mutating-shell delivery constraint;
-  their compiler and test steps ran directly in the prepared environment.
-- The workflow guard was advertised unavailable in observe mode; its start
-  request was rejected. Execution used the explicitly authorized working-tree
-  delivery contract without claiming protected verification.
-- No GitHub comment/review was posted: working-dir permits file edits and
-  non-mutating shell operations only, and the survey forbids issue run notices.
-  The separate mandatory-comment instruction cannot be satisfied within that
-  delivery contract. This log is the canonical summary; persistence remains
-  caller-owned.
+- Delivery: four allowed wiki/catalog/log files updated in the working tree;
+  existing changes were preserved. Caller owns commit, push, and promotion.
+  Workflow guard is unavailable (`guard-unavailable`); no guarded delivery or
+  branch/PR operation was attempted.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run` passed (102 test files; 5,358 passed, 3 todo).
+  `pnpm bootstrap` was omitted because installation writes outside the allowed
+  paths; build-writing `pnpm check-types` and `pnpm test` wrappers were replaced
+  by their direct checks against existing dependencies/builds.
+- Wiki validation: all 47 content pages passed ingest wikilink validation;
+  touched pages have complete frontmatter, catalog coverage, and no deterministic
+  lint findings. Two existing broken markdown links on an unrelated page and
+  four advisory findings remain. Standalone Prettier checks warn on the four
+  touched files, as they also do on each HEAD version; no broad historical
+  reformat was applied. Repository lint passed.
+- Visibility was rechecked as public before delivery. The ingest summary lives
+  only in this entry; the required single GitHub response is a control-repository
+  commit comment containing delivery/check status and a pointer here. No issue
+  was opened, commented on, or updated. Persistence is caller-owned and has not
+  been verified by this agent.
+- Response confirmed: exactly one control-repository commit comment was posted;
+  its returned body contains the bot and Run Summary markers.
 
 <!-- fro-bot:run-summary:end -->
 
-## [2026-10-13 12:55] ingest | repo:bfra-me/.github
+Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204717147
 
-Surveyed bfra-me/.github and updated the control-plane wiki.
+## [2026-10-13 12:59] ingest | repo:marcusrbrown/sparkle
 
-Sources: https://github.com/bfra-me/.github
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle

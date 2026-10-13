@@ -4,8 +4,11 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-13
 sources:
-  - url: https://github.com/bfra-me/.github/blob/087e542d3a59cbd06792266fe3eae140c7ec6dbb/.github/workflows/fro-bot.yaml
-    sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
+  - url: https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/fro-bot.yaml
+    sha: 6182bccec901d1e8c99bbfbba542113926697fad
+    accessed: 2026-10-13
+  - url: https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/regenerate-docs.yaml
+    sha: 6182bccec901d1e8c99bbfbba542113926697fad
     accessed: 2026-10-13
   - url: https://github.com/marcusrbrown/dev-like/blob/34141048abc24c19f463e20d3d54cbc797b275d1/.github/workflows/fro-bot.yaml
     sha: 34141048abc24c19f463e20d3d54cbc797b275d1
@@ -305,21 +308,36 @@ related:
 
 # GitHub Actions CI
 
-## New agent pins do not establish repaired delivery ownership (2026-10-13)
+## Fail-closed guards must preserve an allowed false value (2026-10-13)
 
-At `087e542d`, [[bfra-me--github]] has advanced Fro Bot from v0.117.0
-(September 29) to **v0.122.0**, but the workflow still ends with the agent
-step: no explicit `output-mode`, no post-agent diff detection or publication.
-Its autoheal prompt still asks the agent to branch, commit, push, and open a
-PR. The source therefore continues to lack caller-owned delivery; neither a
-new version comment nor the supplied GitHub token closes that ownership gap.
+At `6182bcce`, [[marcusrbrown--sparkle]]'s comment-triggered PR preflight
+uses `gh api --jq '.head.repo.fork // "unknown"'` and refuses anything other
+than the literal `false`. The alternative operator treats false as absent:
+false becomes `unknown`, true stays true, and null becomes `unknown`.
+Consequently even a legitimate same-repository PR head is refused before
+checkout. This corrects the repo page's September interpretation that the
+expression had the correct polarity: denying unknown is sound, but discarding
+the allowed boolean first makes the guard unusable on its intended path.
 
-The boundary matters: this survey read workflow source, not the pinned
-action's implementation or live runs. It cannot establish which mode that
-action resolves, whether an invocation edits files, or whether a specific
-change is lost. Earlier September incident measurements remain historical,
-not fresh proof of current automated throughput. Verify effective delivery
-mode and the corresponding publisher separately before claiming recovery.
+Preserve false explicitly before applying the deny-on-unknown rule. A guard
+check should cover true, false, null, and missing fields, asserting both that
+forbidden input is denied and permitted input reaches the next step. The
+local probe verifies expression semantics only; no upstream run or production
+guard change was performed.
+
+## Documentation selection is a three-way path contract (2026-10-13)
+
+The same snapshot extends the September 29 trigger/detector mismatch:
+`regenerate-docs.yaml` watches and caches UI `.js`/`.jsx` that its detector
+omits, and also watches/caches `.tsx` for `types`, `utils`, `theme`, and
+`error-testing` while detecting only `.ts` for those four packages. Keep
+trigger, detector, and cache inputs aligned per package and extension; otherwise
+an eligible source-only push can start a workflow that selects no regeneration.
+This is static evidence of a skipped-work possibility, not a fresh stale-docs
+or successful-run claim.
+
+Sources: the pinned Fro Bot and regeneration workflows above; see
+[[marcusrbrown--sparkle]] for the manifest and CI evidence boundaries.
 
 ## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
 
