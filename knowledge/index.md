@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-13: [[bfra-me--github]] (repo),
+[[github-actions-ci]] and [[probot-settings]] (topics). Existing catalog
+entries are retained; the canonical ingest record is in `knowledge/log.md`.
+
 Catalog refreshed 2026-10-12: [[marcusrbrown--marcusrbrown-github-io]] (repo)
 and [[github-pages]] (topic). Existing entries remain; the canonical ingest
 summary is in `knowledge/log.md`.

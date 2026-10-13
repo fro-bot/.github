@@ -7813,3 +7813,60 @@ Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-10-13 12:48] ingest | bfra-me/.github
+
+Surveyed public `main` at `087e542d3a59cbd06792266fe3eae140c7ec6dbb`,
+limited to directory listings, README, package/workspace/action manifests,
+and workflow files. Updated [[bfra-me--github]], [[github-actions-ci]],
+[[probot-settings]], and their index catalog additively. Preserved prior
+observations and the pre-existing checkout changes. Corrections context
+contained no correction records; upstream prompts were not executed.
+
+Root package 4.38.0, pnpm 11.28.5, TypeScript 6.0.3, three Node 24 action
+manifests, and the same 16-workflow layout are declared. Fro Bot is present
+at v0.122.0; no missing-workflow follow-up is needed. Its workflow still
+has no explicit delivery mode or post-agent publisher despite the embedded
+branch/PR mandate. This is source-level evidence, not proof of lost edits
+or current run health. Settings sync selects client-ID or legacy app-ID
+token paths but keeps the required reusable `APPLICATION_ID` secret.
+README attribution to `elstudio/actions-settings` still contradicts local
+action execution. Related topics record those contract/evidence boundaries.
+
+Sources: https://github.com/bfra-me/.github/tree/087e542d3a59cbd06792266fe3eae140c7ec6dbb;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, the three action package
+and action manifests, and `.github/workflows/{fro-bot,main,update-repo-settings,renovate,trigger-org-renovate,codeql-analysis}.yaml`
+at that revision. Run: https://github.com/fro-bot/.github/actions/runs/38399638266.
+
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Updated three wiki pages, their catalog references, and this append-only log.
+- Passed `pnpm lint`, direct `tsc --noEmit`, direct Vitest execution
+  (102 files, 5,358 passed tests, three todo), and `git diff --check`.
+- Wiki validation scanned 47 pages and found no deterministic findings in
+  the touched pages or index; two unrelated existing findings remain.
+- Configured ESLint ignores `knowledge/`; a scoped invocation confirmed
+  the five files are excluded. Lint success does not certify their Markdown
+  formatting; wiki schema, links, and index checks were validated separately.
+- `pnpm bootstrap` and the build-writing `pnpm check-types` / `pnpm test`
+  wrappers were omitted under the non-mutating-shell delivery constraint;
+  their compiler and test steps ran directly in the prepared environment.
+- The workflow guard was advertised unavailable in observe mode; its start
+  request was rejected. Execution used the explicitly authorized working-tree
+  delivery contract without claiming protected verification.
+- No GitHub comment/review was posted: working-dir permits file edits and
+  non-mutating shell operations only, and the survey forbids issue run notices.
+  The separate mandatory-comment instruction cannot be satisfied within that
+  delivery contract. This log is the canonical summary; persistence remains
+  caller-owned.
+
+<!-- fro-bot:run-summary:end -->
+
+## [2026-10-13 12:55] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
