@@ -2,9 +2,25 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-12
+updated: 2026-10-14
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.122.1
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.24
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/dashboard/blob/f12fde0d877e70f1951d0b25b0c54a778e4edbcb/src/gateway/operator-contract/run-summary.ts
+    sha: f12fde0d877e70f1951d0b25b0c54a778e4edbcb
+    accessed: 2026-10-14
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38481473838
+    accessed: 2026-10-14
+  - url: https://github.com/marcusrbrown/infra/tree/bc6bf3c03bd9c22f6e4fc606ad443083b195a435
+    sha: bc6bf3c03bd9c22f6e4fc606ad443083b195a435
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6153677776
+    accessed: 2026-10-14
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-14
   - url: https://github.com/fro-bot/agent/releases/tag/v0.120.0
     accessed: 2026-10-12
   - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.22
@@ -193,6 +209,35 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-14 — contract adoption includes closed-set consumers
+
+GitHub Releases now identifies agent **v0.122.1**, whose tagged contract is
+**1.11.0**, and dashboard **2026.10.24**, whose tagged contract remains **1.9.0**.
+This supersedes October 12's latest-release snapshot; public operator health
+still reports **1.9.0**. The October 13 tracker comment's pending-release claim
+is historical: v0.122.1 published later that evening. Release availability does
+not authorize a standalone gateway cutover.
+
+At dashboard `f12fde0`, `src/gateway/operator-contract/run-summary.ts` accepts
+only queued, running, succeeded, failed, and cancelled summary statuses.
+`parseRunSummaryList` skips invalid items. Agent contract 1.11.0 adds
+`waiting_for_question` and `waiting_for_approval` to summaries: changing only
+the dashboard version constant could satisfy the handshake while silently
+dropping waiting runs from its index. Adopt the wire vocabulary, parser,
+list/card rendering, fixtures, and question-notification route together.
+Verification needs waiting and settled summaries plus reconnect and terminal
+cases; a successful health response alone cannot exercise this consumer.
+
+The actual dashboard deployment in [run 38481473838](https://github.com/marcusrbrown/infra/actions/runs/38481473838)
+completed **2026-10-13 23:11:26 UTC**. Post-convergence logs identify healthy
+running dashboard digest
+`sha256:efd71a845ba5bd419e5c31fbea3ec65353a873d2342a8687d5d20c96f10cdaba`
+and active compose tag **2026.10.24**. Infrastructure source at `bc6bf3c`
+still records dashboard **2026.10.21** and gateway **v0.119.2**. Preserve this
+ledger/deployment distinction and the paired, volume-aware rollback constraint
+from [[marcusrbrown--infra]]. Authenticated production acceptance was not run;
+the dedicated tracker still owns issue-body and Project reconciliation.
 
 ## 2026-10-12 — latest releases diverge before the next paired cutover
 

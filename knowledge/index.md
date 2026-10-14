@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-14 oversight: [[fro-bot--dashboard]] records released contract 1.11.0
+versus consumer/live 1.9.0, closed-set summary parsing as a separate adoption
+gate, and healthy running-image evidence versus the older infrastructure ledger.
+Earlier dated observations and existing catalog entries remain intact.
+
 Catalog refreshed 2026-10-13: [[marcusrbrown--sparkle]] (repo) and
 [[github-actions-ci]] (topic). Existing catalog entries and dated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.

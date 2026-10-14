@@ -7879,3 +7879,28 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b3
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-10-14 04:33] manual-edit | daily oversight rollout readback
+
+Updated [[fro-bot--dashboard]] and its catalog note additively. Latest released
+agent contract is 1.11.0; dashboard release and public live health remain 1.9.0.
+Inspected the consumer's closed summary-status set and skip-invalid list parser:
+version-pin adoption alone would not preserve waiting runs. Recorded healthy
+running-dashboard digest evidence for 2026.10.24 separately from the source
+ledger's 2026.10.21. The prior pending-release statement and older observations
+remain dated evidence; authenticated production acceptance was not performed.
+Existing checkout changes are preserved for caller-owned trusted ingestion.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.122.1;
+https://github.com/fro-bot/dashboard/releases/tag/2026.10.24;
+https://github.com/fro-bot/dashboard/blob/f12fde0d877e70f1951d0b25b0c54a778e4edbcb/src/gateway/operator-contract/run-summary.ts;
+https://github.com/marcusrbrown/infra/actions/runs/38481473838;
+https://github.com/marcusrbrown/infra/tree/bc6bf3c03bd9c22f6e4fc606ad443083b195a435;
+https://dashboard.fro.bot/operator/health;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6153677776.
+
+## [2026-10-14 04:41] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
