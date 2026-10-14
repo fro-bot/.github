@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-10-11
+updated: 2026-10-14
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-10-14
   - url: https://github.com/marcusrbrown/containers
     sha: 008a0d383c457c0f4b05b3db5e3b5d41e3787ed5
     accessed: 2026-10-11
@@ -105,6 +108,24 @@ With a single `FROM ghcr.io/home-assistant/base:3.24@sha256:…` there is exactl
 **Verify the published manifest, not the push.** The same repo's `publish-manifest` job reads the pushed reference back with `docker buildx imagetools inspect --raw`, projects the declared arch list into expected `{os, architecture}` pairs, and fails on a difference — filtering `platform.os != "unknown"` so attestation manifests do not make a correct 2-platform manifest look like 4. A green push proves bytes were accepted; it does not prove the manifest lists the platforms you declared. See [[github-actions-ci]].
 
 **Separate build from publish by permission, not by flag.** The prior design ran one job with a `--test` flag on PRs and a full build on push — meaning the fork-reachable path executed inside a job declaring `packages: write` + `id-token: write`. The current design splits them: `build-addon` (pull requests, `contents: read`, `push: 'false'`) and `publish-addon` (default branch only, `packages: write` + `id-token: write`, cosign). A flag that gates publishing is a correctness control; a permission that makes publishing impossible is a security control, and only the second survives a bug in the flag.
+
+### Architecture aliases and generic manifests are separate contracts (2026-10-14)
+
+At unchanged `b7bcd528`, [[bfra-me--ha-addon-repository]]'s workflow passes
+`<version>` and `latest` to each architecture-specific image publisher, but
+only `<version>` to the generic multi-architecture manifest publisher. Its
+platform readback also inspects only the generic versioned reference.
+The two-platform verification is therefore scoped to that tag; it does not
+establish a generic multi-arch `latest` alias. Live registry contents and
+external action defaults were not read, so this is a declared-contract
+boundary rather than evidence of a missing or broken registry tag.
+
+For template consumers, preserve the distinction between the concrete image
+names used by builders and the generic image consumed by Home Assistant.
+If a generic moving alias is intended, it needs its own publication declaration
+and readback. Passing `latest` to a per-architecture image is insufficient
+evidence for the generic alias. Earlier push-versus-platform and
+validation-versus-publication observations remain complementary guarantees.
 
 ## CI/CD Patterns
 

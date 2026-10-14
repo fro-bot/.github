@@ -7678,58 +7678,6 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
 
-## [2026-10-14 10:20] ingest | marcusrbrown/esphome.life
-
-Surveyed the public repository at `878b4225e448152dc63c8a41418812cb466c1fbf`.
-Updated [[marcusrbrown--esphome-life]] and [[esphome]] additively, and refreshed
-their catalog note in `knowledge/index.md`. Historical observations and
-contradictions remain intact.
-
-- The 17-file tree still has three workflows and no Fro Bot workflow; a separate
-  follow-up draft PR remains a candidate.
-- Both reusable-workflow pins advanced from v4.34.0 to **v4.38.0**, while the
-  settings caller still invokes `renovate.yaml` on its settings-sync triggers.
-- CI/devcontainer remain on **ESPHome 2025.12.7**; build action **v7.4.0**,
-  Pages action **v4.9.0**, one-device matrix, and missing manifest-version
-  output forwarding are reconfirmed from permitted sources.
-- Recorded the Renovate dispatch `log-level` input's absent forwarding path;
-  only `print-config` is passed through the reusable caller's `with:` block.
-- The template README still names nonexistent `.yml` workflow paths. Reads
-  were restricted to listings, README, devcontainer manifest, and workflows.
-  Configuration/source bodies, issues, PRs, runs, releases, and deployed
-  artifacts were not read. Corrections context was untrusted data and empty.
-
-Sources: https://github.com/marcusrbrown/esphome.life/tree/878b4225e448152dc63c8a41418812cb466c1fbf;
-`docs/readme.md`, `.devcontainer.json`, and all three `.github/workflows/*.yaml`
-files at that commit.
-Run: https://github.com/fro-bot/.github/actions/runs/38548630809.
-Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204892145.
-
-<!-- fro-bot -->
-<!-- RUN_SUMMARY_START -->
-
-### Run Summary
-
-- Delivery: four allowed wiki/catalog/log files updated in the working tree;
-  pre-existing changes were preserved. Caller owns persistence and promotion.
-  The workflow guard is unavailable (`guard-unavailable`).
-- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
-  and `pnpm exec vitest run` passed (102 files; 5,358 tests passed, 3 todo).
-  `pnpm bootstrap` was omitted because it installs outside the allowed paths;
-  build-writing `pnpm check-types` and `pnpm test` wrappers were replaced by
-  direct checks against existing dependencies/builds.
-- Wiki validation: all 47 content pages passed ingest wikilink validation;
-  touched pages passed deterministic lint, including frontmatter and catalog
-  coverage. Two pre-existing broken Markdown links on an unrelated page and
-  four advisory findings remain. Diff whitespace validation passed.
-- The ingest summary is recorded only in this log entry. The single required
-  GitHub response is a delivery/check notice on the control-repository commit,
-  pointing here; no issue notice or target-repository mutation is performed.
-  Exactly one comment was posted; its returned body confirmed both bot and
-  Run Summary markers.
-
-<!-- RUN_SUMMARY_END -->
-
 ## [2026-10-12 13:17] ingest | marcusrbrown/marcusrbrown.github.io
 
 Surveyed the public target at `8a1567dfedb1258675e4cfa39d2e5c1854dc3487`
@@ -7957,8 +7905,63 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
 
-## [2026-10-14 10:25] ingest | repo:marcusrbrown/esphome.life
+## [2026-10-14 10:19] ingest | bfra-me/ha-addon-repository
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Re-surveyed public `main` at unchanged
+`b7bcd528f511809e0f5906af42ca6ff131c1ff1e` using only the complete directory
+listing, root and example READMEs, repository/add-on manifests, and all seven
+workflow files. Updated [[bfra-me--ha-addon-repository]] and
+[[docker-containers]] additively, and refreshed both index references.
+Existing working-tree changes and accumulated observations were preserved.
+Untrusted corrections data contained no records; target content was used
+only as evidence.
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Fro Bot remains present at v0.112.0; no missing-workflow draft is warranted.
+The two-step caller's delivery routing and the validation/publication job
+graph remain unchanged. Recorded that architecture-specific version/latest
+tags and the generic version-only manifest are distinct declared contracts:
+generic `latest` availability is unverified. Also recorded the difference
+between workflow triggers and add-on rebuild selection, including the
+separate scripts-only regression-test selector and absent force-build input.
+Manifest version 1.2.8, two architectures, placeholder repository metadata,
+and reusable workflow v4.29.0 pins remain unchanged. Historical live-run,
+issue/PR, advisory, protection, and registry claims were not refreshed;
+scripts, Dockerfiles, settings, and external implementations were not read.
+
+Sources: https://github.com/bfra-me/ha-addon-repository/tree/b7bcd528f511809e0f5906af42ca6ff131c1ff1e;
+`README.md`, `example/README.md`, `repository.yaml`, `example/config.yaml`,
+and `.github/workflows/{main,fro-bot,hadolint,renovate,scorecard,update-repo-settings,workflow-lint}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/38548449858.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed wiki/catalog/log files edited in the working tree.
+  Caller owns persistence; pre-existing changes were preserved.
+- Verification: `pnpm lint`, direct no-emit TypeScript, and direct Vitest
+  passed (102 test files; 5,358 passed, three todo).
+- Wiki validation: all 47 content pages have valid wikilinks and index
+  coverage; both touched pages passed required frontmatter, provenance,
+  related-page checks, and deterministic lint. Two existing broken Markdown
+  links on an unrelated page and four advisory findings remain.
+  Diff whitespace passed; public visibility was rechecked before delivery.
+- Limitations: install/build-writing `pnpm bootstrap`, `pnpm check-types`,
+  and `pnpm test` wrappers were omitted under the allowed-path and
+  non-mutating-shell contract; direct checks used cached dependencies/builds.
+  Workflow guard was unavailable (`guard-unavailable`).
+- The ingest summary is recorded only here. Exactly one control-repository
+  commit comment was posted; its returned body confirms the bot and Run
+  Summary markers. It contains delivery/check status and a pointer to this
+  log. No GitHub issue notice is used; persistence remains caller-owned.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-204892114
+
+## [2026-10-14 10:25] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
