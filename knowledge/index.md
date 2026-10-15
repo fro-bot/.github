@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+2026-10-15 oversight: [[github-actions-ci]] separates trusted-ingress health,
+exact contract parity, and authenticated rollout acceptance, and records the
+migration-crossing condition for volume recovery. Earlier dated observations
+and existing catalog entries remain intact.
+
 Catalog refreshed 2026-10-14: [[bfra-me--ha-addon-repository]] (repo) and
 [[docker-containers]] (topic). Both existing entries and dated observations
 are retained; the canonical ingest record is in `knowledge/log.md`.

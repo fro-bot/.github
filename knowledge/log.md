@@ -7965,3 +7965,24 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b3
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-10-15 04:13] manual-edit | topic:github-actions-ci
+
+Added the source-verified distinction between trusted-ingress health probes,
+exact contract compatibility, and authenticated operator acceptance. Recorded
+that the merged probe is warning-only and does not compare contract versions,
+and that paired rollback requires volume recovery only when crossing the
+one-way ownership migration. Preserved earlier dated rollout observations and
+all pre-existing working-tree changes. Refreshed the existing topic's index
+reference; left the additive payload for caller-owned trusted ingestion.
+
+Sources: https://github.com/marcusrbrown/infra/pull/1537
+(`d636f2690f4e778f05cbca6f008feba72287075e`),
+https://github.com/marcusrbrown/infra/pull/1539
+(`3779a4b9cb8053f664a65a8aa13c7ba48fdd7504`).
+
+## [2026-10-15 04:20] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a

@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-13
+updated: 2026-10-15
 sources:
+  - url: https://github.com/marcusrbrown/infra/blob/d636f2690f4e778f05cbca6f008feba72287075e/apps/gateway/src/deploy.ts
+    sha: d636f2690f4e778f05cbca6f008feba72287075e
+    accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/docs/runbooks/operator-surface-acceptance.md
+    sha: 3779a4b9cb8053f664a65a8aa13c7ba48fdd7504
+    accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/apps/gateway/AGENTS.md
+    sha: 3779a4b9cb8053f664a65a8aa13c7ba48fdd7504
+    accessed: 2026-10-15
   - url: https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/fro-bot.yaml
     sha: 6182bccec901d1e8c99bbfbba542113926697fad
     accessed: 2026-10-13
@@ -307,6 +316,37 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Health, compatibility, and rollout acceptance are separate checks (2026-10-15)
+
+In [[marcusrbrown--infra]], merged [PR #1537](https://github.com/marcusrbrown/infra/pull/1537)
+routes the post-deploy operator health probe through the configured public
+dashboard origin. The gateway-side proxy is deliberately outside the
+daemon's trusted-proxy set; probing that path returned 400 even when the
+browser-facing path was healthy. Preserve the trust boundary and choose the
+production ingress path for the probe, rather than expanding trusted peers
+to make a diagnostic pass.
+
+At `d636f269`, success requires HTTP 200 and a non-empty string
+`contractVersion` in a JSON object. The probe logs that version but does not
+compare it with a consumer pin, and exhausting retries only warns. Thus a
+successful deploy does not prove either probe success or exact producer/client
+compatibility. Separate route liveness, contract parity, and authenticated
+operator-flow acceptance in report evidence. Reading the implementation and
+its malformed-response/retry tests establishes this contract; it does not
+establish that the newly merged probe has executed in production.
+
+The [paired-rollout runbook](https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/docs/runbooks/operator-surface-acceptance.md)
+also distinguishes one rollout window from an atomic cutover: confirm the
+actual live rollback pair, discard superseded pending dashboard runs, deploy
+the gateway, observe the new health contract, then promptly deploy the matching
+dashboard. Do not infer authenticated SSE or waiting-state acceptance from
+anonymous health. The same snapshot's `apps/gateway/AGENTS.md` narrows the
+older post-migration rollback warning: a volume snapshot restore is required
+when crossing the one-way ownership migration, not for every later rollback.
+Between releases at or after the `v0.118.2` migration, the documented rollback
+is a paired pin reversal. Preserve earlier dated cutover observations as
+history; do not apply their volume-recovery requirement to every version pair.
 
 ## Fail-closed guards must preserve an allowed false value (2026-10-13)
 
