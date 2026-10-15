@@ -2,6 +2,11 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-15: [[marcusrbrown--extend-vscode]] (repo) and
+[[vscode-extensions]] (topic). Existing catalog descriptions are historical
+snapshots; the pages carry newer dated contracts. The canonical ingest record
+is in `knowledge/log.md`.
+
 2026-10-15 oversight: [[github-actions-ci]] separates trusted-ingress health,
 exact contract parity, and authenticated rollout acceptance, and records the
 migration-crossing condition for volume recovery. Earlier dated observations

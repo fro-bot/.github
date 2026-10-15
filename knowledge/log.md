@@ -7986,3 +7986,72 @@ https://github.com/marcusrbrown/infra/pull/1539
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@898209884dee4b338cc73a78cb774a9d3949466a
+
+## [2026-10-15 10:01] ingest | marcusrbrown/extend-vscode
+
+Surveyed the public repository at `3c1dafe6d45f9772cbadc02c9f09fe99de26810f`
+using only directory listings, README, package manifest, and all six workflow
+files. Updated [[marcusrbrown--extend-vscode]] and [[vscode-extensions]]
+additively, and refreshed their index references. Prior dated evidence and
+pre-existing working-tree changes were preserved; the corrections context
+contained no correction spans.
+
+Durable findings:
+
+- VS Code compatibility declarations disagree: README badge 1.71+, engine
+  `^1.102.0`, API types 1.140.0. The types/engine gap is now 38 minor versions;
+  newer API usage was not assessed.
+- Corrected the earlier conditional-export interpretation: extension activation
+  splits Node/Web through `main` and `browser`, while all nine library exports
+  route only to Node outputs. Browser-safe library imports are not established.
+- Main and Publish do not explicitly invoke the manifest's type-check script;
+  integration/visual/coverage/UI scripts have no active workflow invocation.
+  Indirect checks in uninspected configurations remain unverified.
+- Correctly pathed shared workflow callers now pin `bfra-me/.github` v4.39.0.
+  Renovate still has no declared schedule; settings sync retains its daily cron.
+  pnpm 10.34.5 and the Vitest 4.1.11 versus coverage/UI 4.1.0 skew persist.
+- No Fro Bot workflow exists among the six inspected files. A follow-up draft
+  onboarding PR can be proposed separately.
+- README manual-release guidance and the semantic-release workflow describe
+  different paths. Earlier release counts, run failures, settings, and update
+  policy claims were not revalidated under this survey's restricted read scope.
+
+Sources: https://github.com/marcusrbrown/extend-vscode/tree/3c1dafe6d45f9772cbadc02c9f09fe99de26810f,
+https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/README.md,
+https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/package.json,
+https://github.com/marcusrbrown/extend-vscode/tree/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/.github/workflows.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed files updated in the working tree; caller owns
+  persistence. Pre-existing changes were preserved.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run --no-cache` passed (102 test files, 5,358 passed,
+  three todo). Diff whitespace passed.
+- Wiki validation: all 47 pages have valid wikilinks and index coverage;
+  both touched pages passed frontmatter, pinned-source, related-page, and
+  deterministic-lint checks. Two pre-existing broken Markdown links on an
+  unrelated page and four advisory findings remain.
+- Limitations: install/build-writing `pnpm bootstrap`, `pnpm check-types`,
+  and `pnpm test` wrappers were omitted under the non-mutating-shell and
+  allowed-path contract; direct checks used cached dependencies/builds.
+  Workflow guard was unavailable (`guard-unavailable`). Public visibility
+  was rechecked before delivery.
+- The ingest summary is recorded only here. The required single GitHub
+  response uses a control-repository commit comment with delivery/check status
+  and a pointer to this log; no GitHub issue run notice is used.
+- Response confirmed: exactly one commit comment was posted; its returned body
+  contains the bot identification and Run Summary markers.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-205071332
+
+## [2026-10-15 10:07] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
