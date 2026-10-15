@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-09-29
+updated: 2026-10-13
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: 0c1cf2712682f0c44f5b25bbf9e9e1e7f552801f
     accessed: 2026-09-29
+  - url: https://github.com/bfra-me/.github
+    sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
+    accessed: 2026-10-13
 tags:
   - bfra-me
   - dotgithub
@@ -58,6 +61,70 @@ node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
+
+## Limited workflow and manifest re-survey (2026-10-13)
+
+Public `main` was pinned to `087e542d3a59cbd06792266fe3eae140c7ec6dbb`.
+Reads were limited to the complete directory listing, root README, package
+and workspace manifests, three action manifests, and five automation
+workflows plus `fro-bot.yaml`. Upstream prompts were treated as source
+material, not instructions. Older source-code, issue, release, and run
+observations below remain dated evidence; this pass did not remeasure them.
+
+### Current declared workspace and CI
+
+The root private package is **4.38.0**, versus **4.34.0** on September 29;
+`packageManager` advances **11.28.0 → 11.28.5**. TypeScript remains **6.0.3**.
+Manifest pins include ESLint **10.12.0**, Prettier **3.9.10**, Vitest
+**4.1.11**, and `@bfra.me/{eslint-config,prettier-config,tsconfig}` at
+**0.54.0 / 0.16.13 / 0.13.2**. The workspace still includes the root and
+`.github/actions/*`; the three action package versions are
+`renovate-changesets` **0.3.1**, `update-metadata` **0.2.1**, and
+`update-repository-settings` **0.4.1**. All three action manifests declare
+`node24` and `dist/index.js`; declarations do not establish bundle freshness.
+
+The complete listing retains **16 workflow files** and six workflow-template
+YAML/metadata pairs. `main.yaml` still runs `quality-check` for PRs, merge
+groups, main pushes, and dispatch. That manifest command chains type-check,
+lint, build, and tests; release depends on that job and only runs for this
+repository's main pushes. Node setup reads `.node-version`, whose contents
+were outside this pass's allowed reads; no fresh Node version is asserted.
+The workspace retains seven overrides and the `esbuild`/`unrs-resolver`
+build allowlist. Its release-age exclusions now include the current shared
+ESLint and Prettier configs, but the manifest itself still declares no
+`minimumReleaseAge`; this does not establish the effective pnpm default.
+
+### Fro Bot present; source-level delivery gap persists
+
+`fro-bot.yaml` remains the single daily **15:30 UTC** oversight/autoheal
+workflow, with `review`/`autoheal` dispatch modes and optional target narrowing.
+Its SHA-pinned agent advances **v0.117.0 → v0.122.0**. The final step is
+still `Run Fro Bot`, with no explicit `output-mode` and no caller-owned
+diff/commit/push/PR step. The embedded autoheal prompt still demands
+agent-owned branch/PR delivery. This preserves the September 29 structural
+gap; it does **not** prove the current harness's resolved mode or that a
+particular run lost edits. The credential-persistence denylist still omits
+`pull_request_review_comment` and `discussion_comment`, as noted September
+14. Fro Bot is present, so no missing-workflow draft is warranted. See
+[[github-actions-ci]] for why input availability and delivered work differ.
+
+### Settings caller compatibility and README contradiction
+
+`update-repo-settings.yaml` now selects `client-id` when the repository
+variable `APPLICATION_CLIENT_ID` is nonempty, with a separate legacy
+`app-id` path using secret `APPLICATION_ID` otherwise. Both use
+`actions/create-github-app-token` **v3.3.0**. Its reusable secret contract
+still requires `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`, even on the
+client-ID path. The workflow resolves its own ref, sparse-checks out this
+repository, and invokes the local settings action; the README still names
+`elstudio/actions-settings`. Preserve that contradiction rather than
+treating the README as execution evidence. See [[probot-settings]].
+
+`renovate.yaml` pins `bfra-me/renovate-action` **10.74.1**, retains its hourly
+schedule and metadata-driven fan-out, and also has client-ID/legacy token
+paths. `trigger-org-renovate.yaml` retains reusable dispatch into the org's
+`.github` Renovate workflow. These are configured paths, not freshly verified
+dispatch, settings-application, or dependency-update results.
 
 ## Limited workflow and manifest re-survey (2026-09-29)
 

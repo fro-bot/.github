@@ -2,11 +2,14 @@
 type: topic
 title: VS Code Extension Development
 created: 2026-04-18
-updated: 2026-09-15
+updated: 2026-10-15
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
     accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 3c1dafe6d45f9772cbadc02c9f09fe99de26810f
+    accessed: 2026-10-15
 tags: [vscode, vscode-extension, typescript, extension-development, semantic-release]
 related:
   - marcusrbrown--extend-vscode
@@ -72,6 +75,41 @@ Extensions in this ecosystem publish to three registries:
 | Visual      | Screenshot-based regression              | Playwright              |
 
 ## Release Posture
+
+### Host entry points are not library export conditions (2026-10-15)
+
+The [manifest](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/package.json)
+at [[marcusrbrown--extend-vscode]] distinguishes two surfaces:
+
+| Surface | Declared routing |
+| --- | --- |
+| VS Code extension activation | `main` → `out/node/extension.js`; `browser` → `out/web/extension.js` |
+| Toolkit library imports | Nine `exports` entries; `types` and `default` point only into `out/node/` |
+
+This qualifies the earlier dual-target description: separate build outputs and
+extension-host entries do not establish a browser condition for library
+consumers. The README's “Node and Web … via conditional exports” wording
+overstates what the manifest declares. No claim about bundle browser safety is
+possible without inspecting the build configuration and implementation, which
+were outside this survey's read scope.
+
+Compatibility likewise has three declarations to reconcile: the README badge
+says VS Code **1.71+**, the manifest engine is **`^1.102.0`**, and API types are
+**1.140.0** (38 minors above the floor, up from September's 35). A type-version
+gap is a compatibility risk, not proof that a newer API is actually used.
+
+The manifest exposes `type-check: tsc --noEmit`, but neither `main.yaml` nor the
+eight-leg publish validation matrix invokes it explicitly. Manual publishing
+scripts do. This establishes a difference in declared gates, not the absence
+of indirect type checking inside tsup or ESLint. Similarly, integration and
+visual tests being present in the directory and manifest does not establish
+that CI runs them: neither script is actively called in the six workflows.
+See [[github-actions-ci]] for the broader distinction between configured
+capability and exercised checks.
+
+Sources: [README](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/README.md),
+[Main workflow](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/.github/workflows/main.yaml),
+and [Publish workflow](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/.github/workflows/publish.yaml).
 
 ### Correction: the pipeline was never unexercised (2026-09-15)
 

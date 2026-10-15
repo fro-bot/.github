@@ -2,8 +2,44 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-10
+updated: 2026-10-15
 sources:
+  - url: https://github.com/marcusrbrown/infra/blob/d636f2690f4e778f05cbca6f008feba72287075e/apps/gateway/src/deploy.ts
+    sha: d636f2690f4e778f05cbca6f008feba72287075e
+    accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/docs/runbooks/operator-surface-acceptance.md
+    sha: 3779a4b9cb8053f664a65a8aa13c7ba48fdd7504
+    accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/apps/gateway/AGENTS.md
+    sha: 3779a4b9cb8053f664a65a8aa13c7ba48fdd7504
+    accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/fro-bot.yaml
+    sha: 6182bccec901d1e8c99bbfbba542113926697fad
+    accessed: 2026-10-13
+  - url: https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/regenerate-docs.yaml
+    sha: 6182bccec901d1e8c99bbfbba542113926697fad
+    accessed: 2026-10-13
+  - url: https://github.com/marcusrbrown/dev-like/blob/34141048abc24c19f463e20d3d54cbc797b275d1/.github/workflows/fro-bot.yaml
+    sha: 34141048abc24c19f463e20d3d54cbc797b275d1
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/renovate-config/blob/4d13f58d835da29513abb454c3928ca34a82cfbe/.github/workflows/main.yaml
+    sha: 4d13f58d835da29513abb454c3928ca34a82cfbe
+    accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/panthea
+    sha: c74fe32b46ecdf332b916295a18c1c2a8d11d008
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/pull/3970
+    sha: 7413df55543aca2217c691b752a11ade75416049
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/pull/3971
+    sha: 267cf77613a807e002465634cdaadb0cc381f793
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/actions/runs/37981130113
+    sha: 267cf77613a807e002465634cdaadb0cc381f793
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/.github/issues/3966#issuecomment-6094129392
+    sha: 02323969d734075d178dfe8a477f7398089bc2f7
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/dashboard
     sha: fd3c553691ae162846c4163060a26289fc224277
     accessed: 2026-10-10
@@ -251,7 +287,7 @@ tags:
     detection-mapping,
   ]
 related:
-  - marcusrbrown--panthe-ai
+  - marcusrbrown--panthea
   - marcusrbrown--sparkle
   - marcusrbrown--dotfiles
   - marcusrbrown--tokentoilet
@@ -270,11 +306,9 @@ related:
   - marcusrbrown--systematic
   - marcusrbrown--infra
   - marcusrbrown--marcusrbrown-github-io
-  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--marcusrbrown
   - marcusrbrown--mothership
   - marcusrbrown--renovate-config
-  - marcusrbrown--sparkle
   - marcusrbrown--vbs
   - bfra-me--github
   - bfra-me--works
@@ -282,6 +316,147 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Health, compatibility, and rollout acceptance are separate checks (2026-10-15)
+
+In [[marcusrbrown--infra]], merged [PR #1537](https://github.com/marcusrbrown/infra/pull/1537)
+routes the post-deploy operator health probe through the configured public
+dashboard origin. The gateway-side proxy is deliberately outside the
+daemon's trusted-proxy set; probing that path returned 400 even when the
+browser-facing path was healthy. Preserve the trust boundary and choose the
+production ingress path for the probe, rather than expanding trusted peers
+to make a diagnostic pass.
+
+At `d636f269`, success requires HTTP 200 and a non-empty string
+`contractVersion` in a JSON object. The probe logs that version but does not
+compare it with a consumer pin, and exhausting retries only warns. Thus a
+successful deploy does not prove either probe success or exact producer/client
+compatibility. Separate route liveness, contract parity, and authenticated
+operator-flow acceptance in report evidence. Reading the implementation and
+its malformed-response/retry tests establishes this contract; it does not
+establish that the newly merged probe has executed in production.
+
+The [paired-rollout runbook](https://github.com/marcusrbrown/infra/blob/3779a4b9cb8053f664a65a8aa13c7ba48fdd7504/docs/runbooks/operator-surface-acceptance.md)
+also distinguishes one rollout window from an atomic cutover: confirm the
+actual live rollback pair, discard superseded pending dashboard runs, deploy
+the gateway, observe the new health contract, then promptly deploy the matching
+dashboard. Do not infer authenticated SSE or waiting-state acceptance from
+anonymous health. The same snapshot's `apps/gateway/AGENTS.md` narrows the
+older post-migration rollback warning: a volume snapshot restore is required
+when crossing the one-way ownership migration, not for every later rollback.
+Between releases at or after the `v0.118.2` migration, the documented rollback
+is a paired pin reversal. Preserve earlier dated cutover observations as
+history; do not apply their volume-recovery requirement to every version pair.
+
+## Fail-closed guards must preserve an allowed false value (2026-10-13)
+
+At `6182bcce`, [[marcusrbrown--sparkle]]'s comment-triggered PR preflight
+uses `gh api --jq '.head.repo.fork // "unknown"'` and refuses anything other
+than the literal `false`. The alternative operator treats false as absent:
+false becomes `unknown`, true stays true, and null becomes `unknown`.
+Consequently even a legitimate same-repository PR head is refused before
+checkout. This corrects the repo page's September interpretation that the
+expression had the correct polarity: denying unknown is sound, but discarding
+the allowed boolean first makes the guard unusable on its intended path.
+
+Preserve false explicitly before applying the deny-on-unknown rule. A guard
+check should cover true, false, null, and missing fields, asserting both that
+forbidden input is denied and permitted input reaches the next step. The
+local probe verifies expression semantics only; no upstream run or production
+guard change was performed.
+
+## Documentation selection is a three-way path contract (2026-10-13)
+
+The same snapshot extends the September 29 trigger/detector mismatch:
+`regenerate-docs.yaml` watches and caches UI `.js`/`.jsx` that its detector
+omits, and also watches/caches `.tsx` for `types`, `utils`, `theme`, and
+`error-testing` while detecting only `.ts` for those four packages. Keep
+trigger, detector, and cache inputs aligned per package and extension; otherwise
+an eligible source-only push can start a workflow that selects no regeneration.
+This is static evidence of a skipped-work possibility, not a fresh stale-docs
+or successful-run claim.
+
+Sources: the pinned Fro Bot and regeneration workflows above; see
+[[marcusrbrown--sparkle]] for the manifest and CI evidence boundaries.
+
+## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
+
+At `34141048`, [[marcusrbrown--dev-like]] configures Fro Bot v0.121.0
+with a `github-token`, credential-less checkout persistence, and no explicit
+`output-mode`. Its sole post-agent step reports failures/cancellations to the
+rolling “Fro Bot Autoheal” issue; it never detects or publishes a working-tree
+diff. This source shape identifies missing caller-owned delivery, not the
+action's resolved mode or evidence that a particular fix was lost. Token
+availability, file-delivery ownership, and report delivery are separate checks.
+
+The failure step's `always() && (failure() || cancelled())` condition is
+event-agnostic within the admitted job: it can report a failed review invocation
+as well as a failed scheduled autoheal. A successful no-safe-fix run instead
+depends on the agent following its inline rolling-issue prompt; the deterministic
+failure step does not guarantee that successful report. Neither path proves the
+report actually posted without execution evidence.
+
+Verification has a similar boundary: root CI validates and tests the package,
+while the separate push-path-filtered Site workflow runs docs tests and the
+docs manifest's generation/build/internal-link chain before deployment. Green
+root CI would not establish docs acceptance. Read the concrete job graph and
+manifest commands, rather than treating the agent's broader verification prompt
+as checks mechanically enforced by every CI invocation.
+
+Sources: `fro-bot.yaml`, `ci.yaml`, `site.yaml`, root `package.json`, and
+`docs/package.json` at the surveyed commit. Historical August convergence
+and September workflow observations remain dated snapshots, not live results.
+
+## A dispatch dry-run default can be overridden before execution (2026-10-11)
+
+At `4d13f58`, [[marcusrbrown--renovate-config]]'s `main.yaml` declares a
+boolean `workflow_dispatch` input `dry-run` with default `true`. Its release
+job initially derives `DRY_RUN` from the event, then `Get Release Options`
+overwrites it with `false` whenever the current ref is the default branch.
+The step exposes `INPUT_DRY_RUN` but does not use it in its condition. The
+semantic-release command consumes the overwritten environment value, not the
+operator-facing input. A manual dispatch on `main` therefore selects real
+release mode even when dry-run was requested.
+
+This contradicts the dispatch interface, not the earlier observation that PRs
+use dry-run and ordinary main pushes release. No execution logs or release
+records were read in this bounded survey, so it does not establish that an
+unintended release occurred: semantic-release must still find a releasable
+change, and the major-branch write checks `new-release-published`.
+
+**Rule:** trace an operator input through every environment rewrite to the
+final command. A safe default in the input schema is not a preserved choice
+when later branch-based logic overrides it. Keep requested mode and effective
+mode distinguishable in verification; branch eligibility and dry-run selection
+are separate decisions.
+
+## 2026-10-10 — codification recovery and a no-op automation run are different evidence
+
+The thirteen-proposal backlog recorded on October 9 is now cleared. Merged
+[#3970](https://github.com/fro-bot/.github/pull/3970) contains four new solution
+documents and four extensions; its disposition table consolidates duplicate
+incidents and records one proposal already covered by existing docs. All thirteen
+linked proposals closed on merge. The October 10 query returns **zero open
+learning proposals**, not thirteen aging unauthored proposals. Preserve the
+earlier snapshot as historical evidence rather than silently revising its counts.
+
+Weekly drafted-solution automation subsequently landed through
+[#3971](https://github.com/fro-bot/.github/pull/3971). Its first manual
+[run](https://github.com/fro-bot/.github/actions/runs/37981130113) succeeded at
+harvest but skipped drafting and publication because there was no uncovered
+proposal work. That run verifies the empty-queue path, not model drafting,
+artifact delivery, privacy filtering, PR publication, or reviewed merge on a
+nonempty queue. The October 5 Improvement Metrics reading remains dated evidence;
+recurrence edges still measure a different population from unauthored proposals.
+
+The same day's separate
+[remediation readback](https://github.com/fro-bot/.github/issues/3966#issuecomment-6094129392)
+at `02323969` supersedes the earlier App-token scope and wiki-authority gap notes:
+mint steps now declare explicit permissions, and guarded-path promotion requires
+a recognized author **and** exact `data` head **and** the same nonempty repository
+identity. Bot authorship or a branch name alone is not an origin guarantee.
+These are source/control readbacks, not permission to bypass the established
+data writer or persist knowledge from a branch-pr remediation run.
 
 ## Candidate-image checks do not establish Main or deployment success (2026-10-10)
 
@@ -614,11 +789,29 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--sparkle]] | Present (`fro-bot.yaml`, agent **v0.95.0** as of 2026-07-28; landed 2026-06-05 at v0.54.2) | Autoheal `0 5 * * *`, Maintenance `0 17 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; comment-trigger fork-head refusal preflight. Autoheal now shipping **security-override PRs** (`pnpm.overrides` in `pnpm-workspace.yaml`) for transitive Dependabot alerts — see [[marcusrbrown--sparkle]] |
 | [[marcusrbrown--dev-like]] | Present (`fro-bot.yaml`, **two-mode** at agent **v0.105.1** SHA-pinned `e9501a9` as of 2026-08-30 — fleet-front pin, was v0.96.0/`c29ac29` at 2026-07-31; workflow body otherwise byte-identical across the interval; onboarded since the 2026-07-12 initial survey when it had none) | Daily `30 14 * * *` autoheal; modes `autoheal`/`pr-review` via dispatch (default `autoheal`); `pull_request` → pr-review, `schedule`/`workflow_dispatch` → autoheal. Distinct from the fleet's three-mode norm: **no maintenance mode**. Inline prompts encode repo invariants as hard boundaries (zero runtime deps, human-gated registry/consent/OPTOUT/profile edits, no release.yaml/OIDC edits, mandatory changesets for `registry\|skills\|bin\|scripts`, verification gates incl. `npm pack --dry-run`). Failures roll up to a single **`Fro Bot Autoheal`** issue (reopen-not-spam). `secrets.FRO_BOT_PAT`, `persist-credentials: false` |
 | [[marcusrbrown--ha-config]] | **Not present** | N/A |
-| [[marcusrbrown--panthe-ai]] | **Not present** at `f0c4ff0` (three-file tree); **present at `e5022aa`** as `ci.yaml` with Bun checks on Ubuntu and Rust fmt/clippy on macOS; **Fro Bot workflow still absent** (both surveyed 2026-09-26) | N/A |
+| [[marcusrbrown--panthea]] | **Historically absent** at `f0c4ff0` and `e5022aa` (2026-09-26; the latter added CI only). **Present at `c74fe32`** (2026-10-10), `fro-bot.yaml`, agent **v0.118.2** SHA-pinned `77f2bad` | Daily `30 3 * * *` oversight + autoheal; explicit `branch-pr` on schedule and default-prompt dispatch, `auto` on custom-prompt dispatch and content events |
 | [[bfra-me--works]] | Present (`fro-bot.yaml`, single-file three-mode at **v0.83.0** as of 2026-07-05 — fleet pin leader; stale Renovate PR #3691 holds the pending v0 → v1 (`v1.18.0`) cutover, untouched since 2026-06-14) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`). Autoheal still re-emitting **duplicate** security/docs PRs (#3704/#3713, #3620/#3724 all still open) plus new #3762/#3803 — dedup guard not catching its own stale cross-run PRs; backlog 7 → 11 open PRs |
 | [[bfra-me--renovate-action]] | Present (single-file three-mode `fro-bot.yaml` at **v0.98.2** SHA-pinned `994357c3` as of 2026-08-10 — ecosystem version leader/canary a sixth time, now only ~1 patch ahead of the fleet front) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt. **2026-08-10 adds a `Validate review mode inputs` guard**: a `mode=review` dispatch hard-fails without a `prompt` (review mode has no default prompt — its normal path is the `pull_request` event), and the `prompt` doc-string names the verbatim-prompt path as the release-notes-narrative automation hook |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
+
+**Panthea source contract (2026-10-10, `c74fe32`).**
+[[marcusrbrown--panthea]] now explicitly selects `branch-pr` for scheduled and
+default-prompt dispatched daily passes, while custom-prompt dispatches retain
+`auto`. Delivery capability must be assessed per dispatch input, not merely
+per event name. Checkout uses `persist-credentials: false`; a same-repository
+PR-comment preflight supplies `trusted-head-sha`, and brokered-push extra
+paths are `apps,content,tools`. These are workflow declarations, not evidence
+that a scheduled change or report was delivered; no live runs were read.
+
+The separate CI workflow now has three jobs: Ubuntu Bun type/lint/tests and
+macOS Rust checks for both desktop and Studio. The Bun test step sets
+`prlimit --core=1:1`; each Rust lane builds its sidecar before clippy because
+`tauri-build` resolves the external binary during compilation. Studio also
+runs `cargo test --locked`; the desktop lane stops at fmt/clippy, so the two
+native lanes have different behavioral-test coverage. Renovate and settings
+sync delegate to correctly pathed `bfra-me/.github` workflows at **v4.37.0**.
+Source: [workflow directory](https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 

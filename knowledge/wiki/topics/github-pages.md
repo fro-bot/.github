@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-08
+updated: 2026-10-12
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-10-12
   - url: https://github.com/marcusrbrown/vbs
     sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
@@ -67,6 +70,29 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Portfolio deployment: unit tests are not the whole PR gate (2026-10-12)
+
+At `8a1567df`, [[marcusrbrown--marcusrbrown-github-io]] explicitly runs lint,
+Vitest unit tests, and build in its Pages build job before artifact upload;
+deployment depends on that job. Its manifest's build also compiles the root
+and OpenCode TypeScript projects before Vite and blog prerendering. This is
+a positive instance of the historical lint/test deployment pattern below,
+unlike the separately documented [[marcusrbrown--marcusrbrown-com]] brand site.
+
+The deployment does not execute coverage, browser tests, Lighthouse, the RSC
+boundary check, or the moderate-severity audit gate. Those commands being
+available in the manifest or separate PR CI does not put them on the deploy
+dependency chain. The portfolio's root README also claims automated visual
+comparisons, whereas its visual-suite README describes manual screenshot
+artifacts without snapshot matching. Preserve that contradiction rather than
+equating a test-suite label with pixel-comparison evidence. No live deployment,
+branch protection, or analytics activation was checked.
+
+Sources: [Deploy](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/deploy.yaml),
+[CI](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/ci.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/package.json),
+[visual README](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/tests/visual/README.md).
 
 ## Separate deployment workflows do not inherit CI gates (2026-10-08)
 

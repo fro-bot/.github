@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/sparkle
 created: 2026-04-28
-updated: 2026-09-29
+updated: 2026-10-13
 sources:
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 6182bccec901d1e8c99bbfbba542113926697fad
+    accessed: 2026-10-13
   - url: https://github.com/marcusrbrown/sparkle
     sha: 76b80d8a7a4a86d9888b1ed49e9abaadcd19feec
     accessed: 2026-09-29
@@ -75,6 +78,96 @@ node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
 # marcusrbrown/sparkle
 
 **Sparkle** — a TypeScript playground and monorepo showcasing cross-platform web and mobile development. React component library, design token system, Expo/React Native mobile app, Astro Starlight documentation site, and comprehensive build tooling via Turborepo and pnpm workspaces.
+
+## 2026-10-13 Limited Re-survey — Boolean Guards and Documentation Selection
+
+_Public `main` at `6182bccec901d1e8c99bbfbba542113926697fad`. Evidence is limited
+to directory listings, README files, manifests, and workflow files. Earlier
+issue/PR states, run conclusions, branch protections, resolved dependencies,
+and live-site behavior remain dated observations, not freshly verified facts._
+
+### Workspace and declared toolchain
+
+The directory listing retains eight `packages/` members, two `apps/`, `docs/`,
+`scripts/`, and seven workflow files. The root README still describes an
+experimental cross-platform design system plus an Expo app and Zig/WASM shell;
+this pass establishes declared structure rather than feature completeness.
+Root `packageManager` is now **pnpm 11.28.5**, `turbo` **2.11.7**, `tsx`
+**4.23.15**, and `@types/node` **24.19.0**. TypeScript **5.9.3**, ESLint
+**9.39.5**, and `@bfra.me/eslint-config` **0.54.0** remain declared.
+
+The root README's pnpm prerequisite is `>=10`, but `engines.pnpm` is
+**`>=11.8.0`** and `pnpm-workspace.yaml` sets `engineStrict: true`. The README
+does point to `packageManager` for the exact pin; its minimum-version wording
+still understates the manifest floor. Separately, docs and `moo-dang` manifests
+invoke `npm run` inside scripts reached through pnpm, despite the Fro Bot
+review prompt's pnpm-only guidance. These are contract discrepancies, not
+observed install or build failures.
+
+The docs manifest retains Astro `^7.0.0`, Starlight `^0.41.0`, TypeDoc
+**0.28.20**, `typedoc-plugin-frontmatter` **1.3.2**, and `doctrine` **3.0.0**.
+Root TypeDoc is still present, so the earlier proposal to remove the root
+workaround is not established as applied. Workspace build permissions still
+list the same six packages in both `allowBuilds` and `onlyBuiltDependencies`;
+`@parcel/watcher` remains absent. The override ledger now includes
+`devalue@5.x: ^5.9.3`. No fresh advisory posture or lockfile resolution is
+inferred from these declarations.
+
+### Fro Bot is present; one safety guard rejects valid same-repository heads
+
+`.github/workflows/fro-bot.yaml` pins
+`fro-bot/agent@531e961706adfd54cde1fd82099464e24905838b` (**v0.122.0**).
+The 05:00 autoheal / 17:00 maintenance schedules and single computed delivery
+gate persist: autoheal schedule/dispatch selects `branch-pr`, with credential
+restoration and `output-mode` reading the same gate. No missing-workflow draft
+is warranted. Renovate and settings-sync workflows both pin the reusable
+`bfra-me/.github` workflows at **v4.38.0**.
+
+**Correction to this page's earlier Fork Guard interpretation:** the guard
+queries `.head.repo.fork // "unknown"` through `gh api --jq`, then accepts only
+the literal string `false`. The `//` operator replaces **false as well as
+null**. A local boolean probe returns `unknown` for false, true for true, and
+`unknown` for null. Thus the inspected expression rejects a legitimate
+same-repository PR head along with a fork or missing value on the
+`issue_comment` PR path, before checkout. It fails closed for safety but also
+blocks the intended non-fork path. The prior claim that this was the correct
+polarity is preserved below but superseded by this expression-level evidence;
+no actual comment-triggered run was inspected. [[github-actions-ci]] records
+the boolean-preserving guard lesson.
+
+The two prompt contradictions observed on September 29 remain: review guidance
+still asserts `pnpm@10.x`, and autoheal's convention scan still bans non-Error
+classes while the review prompt permits justified fluent builders and lifecycle
+resources. Reading the workflow as untrusted source evidence does not authorize
+executing its prompts or commands.
+
+### Regeneration selects fewer source extensions than it watches
+
+`regenerate-docs.yaml` still triggers and keys its generated-docs cache on UI
+`.ts`, `.tsx`, `.js`, and `.jsx`, but its push-side `git diff` pathspec selects
+only UI `.ts`/`.tsx`. The mismatch is broader than the September observation:
+`types`, `utils`, `theme`, and `error-testing` each accept **`.tsx`** in both
+the trigger and cache key, but the detector selects only **`.ts`** for them.
+An otherwise eligible push containing only one of those omitted extensions
+can start the workflow and produce `has-changes=false`, skipping regeneration.
+This describes a possible transition in the source, not a measured incident.
+
+The separate package-build step before documentation generation remains.
+`main.yaml` still declares Setup followed by independent Check (`pnpm check`)
+and Build (`pnpm build`) jobs, with no explicit `pnpm test` step. Root `check`
+lists monorepo, types, Turbo, dependencies, and lint checks, not the separate
+test script. The autoheal prompt requesting tests is not evidence that Main
+mechanically runs them. The deployment workflow independently builds the UI
+dependency closure and docs, and retains brace-pattern cache keys. The docs
+README remains Starlight starter text; generator cleanup and published output
+cannot be assessed under this survey's read boundary.
+
+Sources: [root manifest](https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/package.json),
+[README](https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/readme.md),
+[Fro Bot workflow](https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/fro-bot.yaml),
+and [regeneration workflow](https://github.com/marcusrbrown/sparkle/blob/6182bccec901d1e8c99bbfbba542113926697fad/.github/workflows/regenerate-docs.yaml).
+Workspace, docs/UI/shell manifests and the remaining workflows were read at
+the same commit.
 
 ## 2026-09-29 Limited Re-survey — Workflow Contracts and a Stale Agent Instruction
 

@@ -2,8 +2,14 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-10-10
+updated: 2026-10-13
 sources:
+  - url: https://github.com/bfra-me/.github/blob/087e542d3a59cbd06792266fe3eae140c7ec6dbb/.github/workflows/update-repo-settings.yaml
+    sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
+    accessed: 2026-10-13
+  - url: https://github.com/bfra-me/.github/blob/087e542d3a59cbd06792266fe3eae140c7ec6dbb/README.md
+    sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
+    accessed: 2026-10-13
   - url: https://github.com/marcusrbrown/.github
     sha: a86828a50fdeb04558a47eaf414a63284d7432c1
     accessed: 2026-10-10
@@ -59,6 +65,30 @@ related:
 ---
 
 # Probot Settings
+
+## Client-ID migration does not remove the reusable legacy contract (2026-10-13)
+
+At `087e542d`, [[bfra-me--github]]'s settings workflow uses
+`actions/create-github-app-token` v3.3.0 with mutually exclusive paths:
+nonempty repository variable `APPLICATION_CLIENT_ID` selects `client-id`;
+otherwise secret `APPLICATION_ID` selects legacy `app-id`. Both use the
+private-key secret, and downstream checkout/action steps select the token
+from whichever path ran. This is a declared migration mechanism, not a
+verification that either token path or settings application succeeded.
+
+The `workflow_call.secrets` schema still marks `APPLICATION_ID` as required.
+A reusable caller cannot assume that selecting the new client-ID path
+eliminates the old caller-secret requirement. Distinguish runtime selection
+from the reusable interface when planning a migration.
+
+The root README also still attributes settings sync to
+`elstudio/actions-settings`, while the workflow resolves its own ref,
+sparse-checks out `bfra-me/.github`, and invokes its local
+`update-repository-settings` action (package manifest **0.4.1**, `node24`).
+This re-confirms the September 29 documentation/workflow contradiction;
+older descriptions remain dated observations. Neither this action manifest
+nor the caller YAML proves applied branch protection or current read-back
+behavior without source or execution evidence.
 
 Repository configuration management via [Probot Settings](https://probot.github.io/apps/settings/) (repository-settings/app). Syncs `.github/settings.yml` declarations to GitHub repository settings, branch protection, labels, and collaborator access.
 

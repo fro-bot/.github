@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-10-05
+updated: 2026-10-10
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 647200a3a3a99d874510da4f2f8c9efbcacd2ad8
+    accessed: 2026-10-10
   - url: https://github.com/marcusrbrown/systematic
     sha: ce3c817f37ac5ed2c13109eda680c1d36ce43c49
     accessed: 2026-10-05
@@ -787,6 +790,37 @@ Sources: [manifest](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac
 [CI](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/.github/workflows/main.yaml),
 [README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/README.md),
 and [eval README](https://github.com/marcusrbrown/systematic/blob/ce3c817f37ac5ed2c13109eda680c1d36ce43c49/evals/README.md).
+
+## Server Entry Checks Do Not Cover an Opt-In TUI (2026-10-10)
+
+[[marcusrbrown--opencode-copilot-delegate]] at `647200a3` exports a server
+entry, its `./plugin` alias, and a distinct `./tui` entry, declaring
+`oc-plugin: [server, tui]`. CI imports only `dist/index.js` under Node 24
+and checks that its sole export is a default function; it does not invoke
+that function. After this smoke check it runs `test:unit`, whose glob is
+`tests/*.test.ts`.
+
+The manifest separately declares `test:tui` with the Solid preload and
+`src/tui/__tests__` globs, plus `test:integration` for `tests/integration/`.
+Neither appears in any of the six inspected workflows. A successful run
+of the declared CI gate would therefore establish neither TUI test execution
+nor real Copilot delegation. No run result was read during this survey.
+This extends the proof-depth distinction above: cataloged test scripts,
+workflow-invoked tests, module import, factory invocation, and real-host
+behavior are separate evidence layers. An opt-in install path still needs
+its own verification claim.
+
+README continues to advertise three tools while the listing includes a
+resume tool file and earlier surveys document four. Its shipped `files[]`
+entry makes that prose part of the package surface. An export-shape check
+cannot detect an omitted README tool, and a filename alone cannot prove
+the tool is registered; preserve that uncertainty rather than collapsing
+the artifacts into one capability count.
+
+Sources: [manifest](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/package.json),
+[CI](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/.github/workflows/ci.yaml),
+[workflow listing](https://github.com/marcusrbrown/opencode-copilot-delegate/tree/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/.github/workflows),
+and [README](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/README.md).
 
 ## Related Pages
 

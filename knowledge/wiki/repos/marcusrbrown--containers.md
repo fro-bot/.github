@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/containers
 created: 2026-04-18
-updated: 2026-09-27
+updated: 2026-10-11
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -37,6 +37,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 2c473db0db8ca362b0e4039de878ae74f5c8f0b0
     accessed: 2026-09-27
+  - url: https://github.com/marcusrbrown/containers
+    sha: 008a0d383c457c0f4b05b3db5e3b5d41e3787ed5
+    accessed: 2026-10-11
 tags:
   - docker
   - containers
@@ -299,6 +302,81 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-06-07 | `8aeadf73` | Incremental re-survey. **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR lands first-class `containers ai config --init/--validate` CLI subcommand, `ai_config.example.yaml`, and three doc files (`AI_CONFIGURATION.md`, `AI_CLI_GUIDE.md`, `AI_VERIFICATION_REPORT.md`). **Security fix** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, idna 3.17 patched in Express and Python template deps. **Fro Bot agent jumped v0.44.0 → v0.55.0** (#630). **dorny/paths-filter bumped v3 → v4** (#607). **pnpm 10.34.1** (#622). **Node.js 24.16.0** (mise.toml). **openai >=2.41.0** (#628). Continuous Node.js/Debian base image digest rotation cadence. Open issues: 6 (Dep Dashboard #415, Daily Autohealing #533, Tech Debt test coverage #555, Copilot pytest PR #583, two Renovate dev-dependency pin PRs #611/#612). |
 | 2026-06-28 | `289d8009` | Incremental re-survey. **pnpm crossed v10 → v11 major boundary** (security PRs #670/#671, 2026-06-27) — `mise.toml` now pins pnpm `11.9.0`. **Fro Bot agent jumped v0.65.0 → v0.79.1** (SHA `720b7216...`) across the daily Renovate cadence (#653 v0.72.0 → #669 v0.78.0 → v0.79.1). **`openai` bumped to >=2.44.0,<2.45.0**; **Node.js to 24.18.0**. Continuous Node.js/Debian base image digest rotation. PR #647 (non-major bundle) merged. Open PRs: 4 — #673 (fro-bot, actions/cache v5→v6 in setup action), #655 (fro-bot, GitHub Actions major bumps), #646 (fro-bot, FastAPI template python-multipart/pydantic-settings security), #611 (mrbro-bot pin deps). Open issues: 2 (#533 Daily Autohealing, #415 Dependency Dashboard). No structural changes. |
 | 2026-06-17 | `569a6c8c` | Incremental re-survey. **Pytest coverage merged** (PR #583, 2026-06-14): the long-pending Copilot SWE-agent test PR finally lands; `pyproject.toml` gains a `--cov-fail-under=35` gate and branch-coverage config over `ai_core`, `template_engine`, `containers_cli`, `predictive_maintenance`. **Security fix** (PR #643, 2026-06-14): express → 4.22.2 in `node/release` (Dependabot #35). **Fro Bot agent jumped v0.55.0 → v0.65.0** across the daily Renovate cadence (#632 v0.56.1 → #644 v0.65.0). **Open Fro-Bot-authored security PR #646:** python-multipart 0.0.22 → 0.0.32 in the FastAPI template, closing six Dependabot alerts (#29/#30/#36/#37/#38/#39). Toolchain unchanged (Node 24.16.0, pnpm 10.34.1, Python 3.13, openai >=2.41.0). Renovate preset still `#5.2.0`. Open issues down to 2 (Daily Autohealing #533, Dependency Dashboard #415); tech-debt issue #555 now closed by the merged coverage work. Open PRs: 3 (#647 mrbro-bot non-major bundle, #646 fro-bot python-multipart, #611 mrbro-bot pin deps). |
+
+## Current Evidence — 2026-10-11
+
+Public `main` was resolved to `008a0d383c457c0f4b05b3db5e3b5d41e3787ed5`.
+Evidence is limited to directory listings, READMEs, manifests, and the ten workflow
+files at that revision. Older findings about image contents, vulnerabilities, PR
+queues, branch protection, and autoheal outcomes remain historical observations;
+none was rechecked through code, Dockerfile, issue, or run reads.
+
+### Declared structure and automation
+
+The tree still contains `node/alpine`, `node/release`, archived Parity definitions,
+fourteen Python implementation files under `scripts/`, and six test modules
+plus `conftest.py` and `__init__.py`. `docs/templates/README.md` describes seven
+templates across five categories, matching the seven `template.yaml` paths in
+the listing. This establishes the library's declared inventory, not successful
+generation or completeness of every template's implementation.
+
+The manifests retain Python `>=3.13,<3.14`, ten Poetry entry points, branch
+coverage over four automation modules, and `--cov-fail-under=35`. OpenAI remains
+`>=2.54.0,<2.55.0`; Anthropic remains `>=0.30.0,<1.0.0`. `mise.toml` still pins
+Node 24.21.0 and pnpm 11.27.0; the root package remains Prettier-only at 3.9.0
+with `@bfra.me/prettier-config` 0.16.7. Both Node application manifests declare
+Express 4.22.2, Node `>=22.0.0`, and a placeholder `test` command that exits 1.
+The Python coverage gate therefore does not establish Node application coverage.
+
+**Fro Bot workflow is present**, still SHA-pinned to agent v0.116.0 with the
+daily 14:30 UTC schedule. No missing-workflow onboarding draft is warranted.
+Its source still omits an explicit `output-mode` and ends at the agent step;
+the scheduled prompt requests commits, pushes, and PRs. This preserves the
+delivery-contract question from earlier surveys without proving current run
+behavior. Presence does not establish enabled state or successful remediation.
+Both reusable Renovate/settings workflows remain at v4.33.0. Buildx and QEMU
+remain v4.4.0, build-push v7.4.0; the inspected SARIF uploads now use CodeQL
+v4.38.0. These are source pins, not release-availability checks.
+
+### Documentation and workflow contracts diverge
+
+- **Application changes do not trigger the advertised publication lane.**
+  `node/README.md` says application-code updates trigger builds, but
+  `build-publish.yaml` includes only Dockerfile and `scripts/**` paths in its
+  push/PR triggers and detects only changed Dockerfiles. A change confined to
+  `node/*/index.js`, `package.json`, or `docker-entrypoint.sh` neither matches
+  that trigger nor selects an image. The scripts-only empty-matrix mismatch
+  recorded September 27 also remains. Manual dispatch selects all active
+  Dockerfiles, but it is a separate route. See [[docker-containers]].
+- **Build smoke testing is narrower than application acceptance.**
+  `test.yaml` builds AMD64 images and inspects them, then overrides the entrypoint
+  to run `sh -c "exit 0"`. Failure of that command only prints an informational
+  message. It does not start the declared application or probe `/health` and
+  `/info`; image construction is checked, application functionality is not
+  established by that step. No runtime failure is inferred.
+- **Skipped work can still produce successful aggregate checks.** The manual
+  dispatch path still skips `prepare`, while dependent test jobs lack a status
+  function to override the implicit success prerequisite. The always-running
+  build/security aggregators reject only `failure` or `cancelled`, accepting
+  `skipped`. They do not distinguish intentional no-change skips from missing
+  expected work. This is a static job-graph observation, not a run result.
+- **Release description correction:** the older table says `release.yaml`
+  triggers on tags and provides release automation. At the inspected revision
+  it triggers on pushes to `main` and dispatch, runs only setup and
+  `generate-image-tags`, and leaves tag application/build/push as comments.
+  Actual build/publication steps live in `build-publish.yaml`; a workflow or
+  job name is not evidence that an image was published.
+
+`node/README.md` additionally names Node 22 bases and mentions ARM alongside
+AMD64/ARM64, while the build workflow defaults to only AMD64/ARM64. Earlier
+Dockerfile-derived Node 24 observations are retained as dated evidence; this
+bounded read cannot resolve the actual base or runtime version. The root README's
+three-script tutorial remains narrower than the ten-entry-point manifest.
+
+Sources: [Node README](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/node/README.md),
+[build/publish workflow](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/build-publish.yaml),
+[test workflow](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/test.yaml),
+[release workflow](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/release.yaml).
 
 ## Delta — 2026-09-27 Limited Survey
 

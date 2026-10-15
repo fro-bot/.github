@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/extend-vscode
 created: 2026-04-18
-updated: 2026-09-15
+updated: 2026-10-15
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -52,6 +52,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
     accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 3c1dafe6d45f9772cbadc02c9f09fe99de26810f
+    accessed: 2026-10-15
 tags:
   - vscode
   - vscode-extension
@@ -74,6 +77,60 @@ node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
 # marcusrbrown/extend-vscode
 
 Modular toolkit for building VS Code extensions. Provides typed abstractions for commands, webviews, tree views, status bar, tasks, telemetry, configuration, and logging — targeting both Node.js and Web (browser) extension hosts.
+
+## Current declared contracts (2026-10-15)
+
+Evidence is limited to the directory listing, README, package manifest, and all
+six workflow files at commit `3c1dafe6d45f9772cbadc02c9f09fe99de26810f`.
+The repository was verified public. Earlier architecture descriptions and dated
+issue, release, run-health, settings, and dependency-policy observations remain
+historical evidence; source implementations and live operational state were not
+rechecked in this pass.
+
+- **Manifest baseline:** version `0.1.0`, pnpm `10.34.5`, TypeScript `5.9.3`,
+  tsup `8.5.1`, ESLint `10.12.0`, `typescript-eslint` `8.71.0`,
+  `@bfra.me/eslint-config` `0.54.0`, Playwright `1.64.0`, and
+  `@types/vscode` `1.140.0`. The engine remains `^1.102.0`;
+  Vitest remains `4.1.11` versus coverage/UI packages `4.1.0`.
+- **Compatibility documentation contradicts the manifest:** the README badge
+  advertises VS Code **1.71+**, while `engines.vscode` starts at **1.102.0**.
+  Types now sit **38 minor versions** above that engine floor, versus 35 in the
+  September snapshot. This is a declaration mismatch, not evidence that the
+  implementation calls newer APIs.
+- **Correction to “conditional exports” above and in earlier surveys:** the
+  extension host entries are split (`main: ./out/node/extension.js`,
+  `browser: ./out/web/extension.js`), but all nine `exports` entries specify only
+  `types` and `default`, both under `out/node/`. There is no `browser` export
+  condition. Browser extension activation and browser-safe library imports are
+  separate contracts; the manifest establishes the former's entry point, not
+  the latter's availability. See [[vscode-extensions]].
+- **Explicit type checking is outside the declared CI steps:** `type-check`
+  exists as `tsc --noEmit`, and the manual publishing scripts call it.
+  `main.yaml` calls lint, unit tests, web tests, and build; `publish.yaml` has
+  eight validation legs but no explicit type-check invocation. Whether build
+  or lint indirectly checks types is unverified because their configurations
+  and implementations were outside scope. Integration, visual, coverage, and
+  UI test scripts also have no active invocation in these six workflows;
+  integration is commented out of the publish matrix.
+- **Release instructions describe two paths:** the README labels manual
+  version/changelog edits, `vsce` packaging, and tag pushing as a “suggested”
+  release flow. The workflow instead invokes semantic-release after secret
+  availability checks and the validation matrix. Neither declarations nor
+  `version: 0.1.0` prove a present release count or current pipeline health.
+- **Reusable callers remain correctly pathed:** Renovate and settings sync both
+  use `bfra-me/.github` at `e62de417e8e22026f63890558ace7c574ee2a31f`
+  (v4.39.0), respectively calling upstream `renovate.yaml` and
+  `update-repo-settings.yaml`. Renovate still declares no schedule; settings
+  sync declares `23 0 * * *`. These are workflow declarations, not measured
+  execution times or proof of external dispatch cadence.
+- **Fro Bot workflow still absent:** the complete workflow listing contains
+  only `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`,
+  `cache-cleanup.yaml`, and `update-repo-settings.yaml`; none references the
+  Fro Bot agent. A separate follow-up draft PR can propose onboarding.
+
+Sources: [README](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/README.md),
+[manifest](https://github.com/marcusrbrown/extend-vscode/blob/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/package.json),
+and [workflow directory](https://github.com/marcusrbrown/extend-vscode/tree/3c1dafe6d45f9772cbadc02c9f09fe99de26810f/.github/workflows).
 
 ## Overview
 

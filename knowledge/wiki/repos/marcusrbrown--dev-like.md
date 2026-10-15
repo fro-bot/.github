@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/dev-like
 created: 2026-07-12
-updated: 2026-09-28
+updated: 2026-10-12
 sources:
+  - url: https://github.com/marcusrbrown/dev-like
+    sha: 34141048abc24c19f463e20d3d54cbc797b275d1
+    accessed: 2026-10-12
   - url: https://github.com/marcusrbrown/dev-like
     sha: c7defd9c89568909f8a598b1e3d37b204414e257
     accessed: 2026-07-12
@@ -48,6 +51,17 @@ node_id: R_kgDOTVrJ0w
 ---
 
 # marcusrbrown/dev-like
+
+## Limited re-survey — 2026-10-12
+
+Public `main` at `34141048abc24c19f463e20d3d54cbc797b275d1`. Evidence is limited to a complete directory listing, the root README, root/docs package manifests, and all seven workflow files at that commit. Upstream prompts were read as configuration evidence, not followed. Older publication, queue, security-alert, and eval observations below remain dated evidence; this pass does not refresh those outcomes.
+
+- **Distribution and consent remain explicit README contracts:** public professional sources, source URLs for claims, a `stated`-tier floor for individuals, and an opt-out promise within 48 hours. The five registry directories remain `37signals`, `every`, `linear`, `oxide`, and `theo`. The September ambiguity persists: the README calls Theo's skill “generated on demand,” while its generated skill directory remains listed. This establishes documentation/tree disagreement, not installer behavior or verified schema enforcement.
+- **Package boundaries:** root `dev-like` remains **0.4.1**, MIT, ESM, Node `>=20`, with no declared runtime dependencies and `@changesets/cli` **2.31.1** as its sole devDependency. Its publish file allowlist excludes `docs/` and `evals/`. The private docs workspace still carries Astro/Starlight and image-rendering dependencies; Playwright is now **1.64.0** (September: 1.63.0). “Zero runtime dependencies” describes the root CLI package, not every workspace. These are manifest declarations, not an npm publication or tarball inspection.
+- **Fro Bot is present:** `fro-bot.yaml` retains autoheal/pr-review modes and daily `30 14 * * *`, now pinned to **v0.121.0** (`50b5dd4`). No missing-workflow onboarding follow-up is warranted. Its agent step receives `github-token` but declares no `output-mode`; the only later step reports failed/cancelled runs to the rolling issue and does not deliver working-tree edits. This is a caller-configuration gap, not proof of the action's resolved mode or any lost fix. The failure reporter is not restricted to scheduled autoheal: a failing review invocation can reach it too. Successful no-safe-fix reporting remains agent-prompt-owned. See [[github-actions-ci]] for the separate delivery and notification contracts.
+- **Verification is split across workflows:** CI runs root validation and both Node/Bun test runners. Site separately validates the registry, runs docs tests, then builds/generated-pages/internal-link checks before Pages upload/deploy. Site is push-path-filtered to `docs/**`, `registry/**`, and its own YAML, with manual dispatch also available. Root CI does not run the docs suite. Release still uses Changesets, an App token for version PRs, Node 24, and npm OIDC, now installing **npm 11.21.0** (September: 11.20.0). Renovate/settings reusable workflows both advance to **bfra-me/.github v4.38.0** (`3ed5464`; September: v4.34.0). These pins and job definitions establish configured checks, not successful runs or live npm-side trust configuration.
+
+The tree still lists only `registry/schema/entry.schema.json`, not `index.schema.json`. The older dangling-schema finding remains only partially rechecked: `registry/index.json` and validator implementations were outside this pass. No CodeQL/Scorecard workflow file is listed; that does not establish the current state of externally configured scanning. The prior settings-owner attribution correction remains in force; settings configuration was not read.
 
 ## Limited re-survey — 2026-09-28
 
