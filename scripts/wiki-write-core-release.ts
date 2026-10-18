@@ -32,7 +32,7 @@ import {parse as parseYaml} from 'yaml'
 export const PACKAGE_PATH_PREFIX = 'packages/wiki-write-core/'
 export const TAG_PREFIX = 'wiki-write-core-v'
 export const RELEASERC_FILE = 'packages/wiki-write-core/.releaserc.yaml'
-export const TOOLS_WORKFLOW_FILE = '.github/workflows/main.yaml'
+export const TOOLS_WORKFLOW_FILE = '.github/workflows/release-wiki-write-core.yaml'
 export const PREFIX_ENV = 'WIKI_WRITE_CORE_RELEASE_PREFIX'
 
 /** The semantic-release `tagFormat` template that produces `TAG_PREFIX` tags. */
