@@ -56,10 +56,8 @@ describe('classifyExtends', () => {
   it.each([
     ['github>acme/cfg#v1', ['default.json', 'renovate.json']],
     ['github>acme/cfg:default#v1', ['default.json', 'renovate.json']],
-    ['github>acme/cfg:default/sub#v1', ['default.json', 'renovate.json']],
     ['github>acme/cfg:default.json5#v1', ['default.json5']],
     ['github>acme/cfg:rules#v1', ['rules.json']],
-    ['github>acme/cfg:rules/sub#v1', ['rules.json']],
     ['github>acme/cfg:rules.json5#v1', ['rules.json5']],
     ['github>acme/cfg:rules.jsonc#v1', ['rules.jsonc']],
     ['github>acme/cfg:rules.yaml#v1', ['rules.yaml.json']],
@@ -90,6 +88,17 @@ describe('classifyExtends', () => {
     const result = classifyExtends([{extends: ['github>acme/cfg//nested/path#v1', 'github>no-repo']}])
 
     expect(result.unsupported).toEqual(['github>acme/cfg//nested/path#v1', 'github>no-repo'])
+  })
+
+  it.each([
+    'github>acme/cfg:rules/sub#v1',
+    'github>acme/cfg:default/sub#v1',
+    'github>acme/cfg:rules.json/sub#v1',
+    'github>acme/cfg:rules/sub',
+  ])('fails closed on the sub-preset selector in %s', spec => {
+    const result = classifyExtends([{extends: [spec]}])
+
+    expect(result).toEqual({pinned: [], floating: [], unsupported: [spec]})
   })
 
   it('de-duplicates a preset extended by more than one config', () => {
@@ -312,6 +321,19 @@ describe('checkRenovateConfig', () => {
     expect(result).toMatchObject({ok: false, unsupported: ['github>acme/cfg//nested#v1']})
   })
 
+  it('fails closed on a sub-preset selector inside a fetched preset', async () => {
+    await writeConfigs({extends: [PINNED]})
+
+    const result = await checkRenovateConfig({
+      ...harness,
+      rootDir,
+      runValidator: okValidator,
+      fetchText: async () => ({status: 200, text: '{"extends": ["github>acme/cfg:rules/sub#v1"]}'}),
+    })
+
+    expect(result).toMatchObject({ok: false, unsupported: ['github>acme/cfg:rules/sub#v1']})
+  })
+
   it('fails when the validator exits non-zero', async () => {
     await writeConfigs({packageRules: []})
 
@@ -485,6 +507,21 @@ describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('gate end to end (pin
     expect(result.fetchFailures[0]).toMatch(/none of default\.json, renovate\.json exist/)
   }, 120_000)
 
+  it('fails a sub-preset selector whose key is missing from an otherwise valid file', async () => {
+    await writeFile(join(rootDir, 'default.json'), JSON.stringify({extends: ['github>acme/cfg:rules/missing#v1']}))
+
+    const result = await runGate({'rules.json': '{"packageRules": []}'})
+
+    // Renovate throws "preset not found" for this extends; the containing file itself is valid.
+    expect(result).toMatchObject({
+      ok: false,
+      validatorOk: true,
+      rangesOk: true,
+      fetchFailures: [],
+      unsupported: ['github>acme/cfg:rules/missing#v1'],
+    })
+  }, 120_000)
+
   it('prefers default.json over renovate.json', async () => {
     const result = await runGate({
       'default.json': '{"packageRules": [{"matchPackageNames": ["a"], "allowedVersions": "<2"}]}',
@@ -527,10 +564,8 @@ describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('preset file lookup (
   it.each([
     'github>acme/cfg#v1',
     'github>acme/cfg:default#v1',
-    'github>acme/cfg:default/sub#v1',
     'github>acme/cfg:default.json5#v1',
     'github>acme/cfg:rules#v1',
-    'github>acme/cfg:rules/sub#v1',
     'github>acme/cfg:rules.json#v1',
     'github>acme/cfg:rules.json5#v1',
     'github>acme/cfg:rules.jsonc#v1',

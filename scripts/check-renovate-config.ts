@@ -54,7 +54,7 @@ export interface PresetClassification {
   readonly pinned: readonly PinnedPreset[]
   /** `github>` presets with no `#ref`; not validated. */
   readonly floating: readonly string[]
-  /** `github>` presets in a shape this gate cannot resolve (fail closed). */
+  /** `github>` presets in a shape this gate cannot resolve (fail closed): `//path`, or a `/` sub-preset selector. */
   readonly unsupported: readonly string[]
 }
 
@@ -99,15 +99,14 @@ const PRESET_FILE_EXTENSION = /\.json[5c]?$/
 
 /**
  * The files Renovate's `fetchPreset` (`config/presets/util.ts`) reads for a `github>` preset, in
- * order. The first `/`-separated segment of the preset name is the file; later segments select a
- * sub-preset inside it. `default` (also the name when none is given) reads `default.json`, then
- * `renovate.json` when that does not exist. Any other name reads exactly one file: itself when it
- * ends in `.json`, `.json5` or `.jsonc`, else `<name>.json`. There is no `.json5` guessing.
+ * order. `default` (also the name when none is given) reads `default.json`, then `renovate.json`
+ * when that does not exist. Any other name reads exactly one file: itself when it ends in `.json`,
+ * `.json5` or `.jsonc`, else `<name>.json`. There is no `.json5` guessing. Names containing `/`
+ * select a sub-preset inside the file and are rejected before this point (see `classifyExtends`).
  */
 function candidateFiles(name: string | undefined): string[] {
-  const [fileName = DEFAULT_PRESET_FILE] = (name ?? DEFAULT_PRESET_FILE).split('/')
-  if (fileName === DEFAULT_PRESET_FILE) return ['default.json', 'renovate.json']
-  return [PRESET_FILE_EXTENSION.test(fileName) ? fileName : `${fileName}.json`]
+  if (name === undefined || name === DEFAULT_PRESET_FILE) return ['default.json', 'renovate.json']
+  return [PRESET_FILE_EXTENSION.test(name) ? name : `${name}.json`]
 }
 
 /** Sorts every `github>` entry of the configs' top-level `extends` into pinned, floating or unsupported. */
@@ -128,7 +127,10 @@ export function classifyExtends(configs: readonly unknown[]): PresetClassificati
         continue
       }
       const {owner, repo, name, ref} = groups
-      if (owner === undefined || repo === undefined) {
+      // A `/` in the name selects a sub-preset inside the file. Resolving it would mean checking the
+      // selected key exists in the fetched document; until then it fails the gate rather than
+      // validating the containing file and ignoring the selector.
+      if (owner === undefined || repo === undefined || name?.includes('/') === true) {
         unsupported.add(entry)
       } else if (ref === undefined) {
         floating.add(entry)
