@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-18: [[bfra-me--works]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog descriptions remain dated
+snapshots; the canonical ingest record is in `knowledge/log.md`.
+
 Catalog refreshed 2026-10-18: [[bfra-me--renovate-action]] (repo) and
 [[github-actions-ci]] (topic). Existing catalog entries remain historical
 snapshots; the canonical ingest record is in `knowledge/log.md`.

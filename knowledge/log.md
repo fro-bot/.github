@@ -8196,3 +8196,57 @@ markers. Exactly one comment was posted.
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-10-18 09:43] ingest | bfra-me/works
+
+Refreshed [[bfra-me--works]] and [[github-actions-ci]] additively from public
+snapshot `fcfec271a83c24179bbaab01dddf385531b7d090`; updated the index's
+catalog refresh notice. Historical evidence and the existing stable node ID
+are preserved. The supplied corrections context contained no corrections.
+
+- Confirmed nine public-publishable package manifests with unchanged versions
+  since October 3, private root/docs/scripts, and an incomplete six-package
+  README inventory. Recorded pnpm 12.13.0, Vitest 5.0.4, ESLint 10.12.0,
+  Prettier 3.9.10, and the explicit type-coverage project selection.
+- Confirmed Fro Bot workflow present at v0.123.0 with explicit autoheal
+  branch-PR delivery; no missing-workflow proposal is warranted. Shared
+  Renovate callers advanced to v4.39.0; settings caller remains v4.16.0.
+- Preserved report-only benchmark and dry-run docs-sync boundaries. Added the
+  distinction between a package-local failure-suppressing test script, root
+  CI's separate Vitest invocation, and tolerated workspace-analysis failures.
+- Limited upstream reads to directory listings, README, manifests, and
+  workflows. No source code, issue/run history, registry state, or non-README
+  guidance was read. No new entity/comparison page was justified.
+
+Sources: https://github.com/bfra-me/works/tree/fcfec271a83c24179bbaab01dddf385531b7d090
+(`readme.md`, root/workspace and eleven child manifests, and nine workflows).
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+Working-tree handoff: repo/topic pages and catalog refreshed; this append-only
+entry is the canonical survey summary.
+
+- Passed `pnpm bootstrap`, `pnpm check-types`, `pnpm lint`, and `pnpm test`
+  (103 test files; 5,361 tests passed, three todo).
+- Read-only wiki validation scanned 47 pages and found zero deterministic
+  findings on touched paths (frontmatter, links, and catalog checks).
+- `git diff --check` passed; only the four permitted knowledge files changed.
+  Target public visibility was rechecked before handoff.
+
+The caller owns commit, push, and PR delivery. The single required response
+uses a control-repository commit comment, not an issue run notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c2f4806a3c6fb94ae5ffe707d00ec98c62e41101#commitcomment-205501445
+The returned body confirmed bot identification and both Run Summary markers;
+exactly one comment was posted.
+
+<!-- fro-bot:run-summary:end -->
+
+## [2026-10-18 09:48] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
