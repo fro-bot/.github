@@ -2,7 +2,7 @@ import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
-import {assertBranchWritable} from '@fro-bot/wiki-write-core'
+import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,

@@ -11,7 +11,7 @@ import {
   type PageChange,
   type PlanRepoPageMoveParams,
   type RepoPageMovePlan,
-} from '@fro-bot/wiki-write-core'
+} from '@fro.bot/wiki-write-core'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'

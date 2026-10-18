@@ -88,7 +88,7 @@ The import that looks like coverage and isn't:
 
 ```ts
 // Contributes zero mutant kills to the source module — exercises the built artifact.
-import {checkPrivateLeak} from '@fro-bot/wiki-write-core'
+import {checkPrivateLeak} from '@fro.bot/wiki-write-core'
 
 // Instrumented, and therefore counted.
 import {checkPrivateLeak} from './private-leak.ts'

@@ -1,8 +1,17 @@
 {
-  "name": "@fro-bot/wiki-write-core",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@fro.bot/wiki-write-core",
+  "version": "0.0.0-semantic-release",
   "description": "Shared validation and commit primitives for Fro Bot wiki writes",
+  "homepage": "https://github.com/fro-bot/.github/tree/main/packages/wiki-write-core#readme",
+  "bugs": {
+    "url": "https://github.com/fro-bot/.github/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fro-bot/.github.git",
+    "directory": "packages/wiki-write-core"
+  },
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -70,6 +79,12 @@
   ],
   "dependencies": {
     "@octokit/rest": "^22.0.1",
-    "yaml": "^2.6.0"
+    "yaml": "^2.8.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

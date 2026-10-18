@@ -2,7 +2,7 @@ import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
-import {CORRECTIONS_PATH} from '@fro-bot/wiki-write-core/corrections'
+import {CORRECTIONS_PATH} from '@fro.bot/wiki-write-core/corrections'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
   checkWikiAuthority,

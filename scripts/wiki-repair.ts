@@ -3,7 +3,7 @@ import type {
   CommitWikiChangesResult,
   OctokitClient,
   WikiLintFinding,
-} from '@fro-bot/wiki-write-core'
+} from '@fro.bot/wiki-write-core'
 import type {PrivateWikiLeak, WikiPageSnapshot} from './check-wiki-private-presence.ts'
 import type {RepoEntry} from './schemas.ts'
 import {createHash} from 'node:crypto'
@@ -18,7 +18,7 @@ import {
   rebuildWikiIndex,
   splitFrontmatter,
   WikiIngestError,
-} from '@fro-bot/wiki-write-core'
+} from '@fro.bot/wiki-write-core'
 import YAML from 'yaml'
 import {
   buildPublicSlugMap,

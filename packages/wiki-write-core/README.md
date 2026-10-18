@@ -1,16 +1,31 @@
-# `@fro-bot/wiki-write-core`
+# `@fro.bot/wiki-write-core`
 
-This package is distributed as unbundled ESM JavaScript with declaration files in the committed `dist/` directory. Node 24 consumers load the JavaScript build directly; no backend transpilation or install-time build step is required. The repository remains private and is not published to npm.
+Shared validation and commit primitives for Fro Bot wiki writes: snapshot lint, wiki ingest, privacy-core seams, frontmatter helpers, and rendering-policy validation.
 
-The package is intentionally **ESM-only**. Its exports declare `import` and `types` conditions, but no `require` condition or CommonJS build. CommonJS consumers fail at package resolution by design; the supported boundary is Node 24 ESM.
-
-Consumers should pin the git subdirectory dependency to an immutable commit:
+## Install
 
 ```bash
-pnpm add "@fro-bot/wiki-write-core@github:fro-bot/.github#<sha>&path:/packages/wiki-write-core"
+pnpm add @fro.bot/wiki-write-core
+# or: npm install @fro.bot/wiki-write-core
+# or: bun add @fro.bot/wiki-write-core
 ```
 
-Update the SHA only after reviewing the package export surface and the full repository gate. CI rebuilds `dist/` in a temporary directory and fails when the committed output differs, so the checked-in artifact cannot silently drift from `src/`.
+## Runtime requirements
+
+- Node `>=24`.
+- **ESM-only.** The exports declare `import` and `types` conditions, with no `require` condition and no CommonJS build. CommonJS consumers fail at package resolution by design.
+
+The package ships unbundled ESM JavaScript with declaration files from the committed `dist/` directory. No install-time build step is required. CI rebuilds `dist/` in a temporary directory and fails when the committed output differs from `src/`.
+
+## Fro Bot defaults
+
+The package targets the Fro Bot control plane and carries its coordinates as defaults. Each is overridable through the call's parameters.
+
+- `owner` defaults to `fro-bot` (`DEFAULT_OWNER`), and `repo` to `.github`.
+- The canonical write target is the `fro-bot/.github@data` tuple: `branch` defaults to `data`.
+- Tracked-repository metadata is read from `metadata/repos.yaml`.
+
+When a call receives no Octokit client (`params.octokit`), it reads `GITHUB_TOKEN` from the environment and fails with a remediation message if the variable is unset.
 
 The build also emits `dist/gate-contract.json` with `version` from `GATE_CONTRACT_VERSION` and `sourceTreeHash` from the same computed source hash embedded in `gate-contract.js`. Downstream writers can fetch this marker through the repository contents API; the same distribution drift check verifies the committed marker. `version` is the gate criterion: a mismatch means a deliberate contract break and refuses writes. `sourceTreeHash` is diagnostic only: it moves with ordinary source changes and reports drift in the pinned copy, but must never block writes.
 
@@ -19,8 +34,6 @@ The package exports `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` from its
 `GATE_SOURCE_TREE_HASH` is the automatic drift detector: compare it when you need to know whether the shipped gate inputs changed. `GATE_CONTRACT_VERSION` is a deliberate, human-set marker for an intentional consumer-visible contract break; it is not expected to change for every source edit. Neither value proves that dependencies or the runtime behave identically. Consumers should compare the source hash for ordinary gate-input drift and the contract version when deciding whether an intentional contract migration is required.
 
 `gate-contract.json` is intentionally not exposed through the package `exports` map. Consumers must fetch the control plane's current marker through the contents API while loading their pinned package copy locally; resolving the bundled marker would defeat that comparison.
-
-The package is the shared source for workflow CLIs and request-time consumers: snapshot lint, wiki ingest/build and commit primitives, privacy-core seams, frontmatter helpers, and rendering-policy validation.
 
 ## Finding kinds
 

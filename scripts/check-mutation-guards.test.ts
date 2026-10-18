@@ -1,4 +1,4 @@
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
@@ -22,6 +22,7 @@ import {
   scanDirectiveViolations,
   strykerConfigPath,
   VERDICTS,
+  wikiWriteCoreSubpathSourceFiles,
   type ChangedFileGateDeps,
   type DirectiveScanInput,
   type LocatedMutant,
@@ -1105,7 +1106,7 @@ describe('closure-based trigger set against the real config', () => {
   // (b) A changed file under the compiled packages/wiki-write-core/dist/ directory must also
   // proceed to run: several scripts/ mutate/testFiles entries (e.g.
   // scripts/check-wiki-authority.ts) import the package by name
-  // (`@fro-bot/wiki-write-core/...`), which resolves against dist/ at run time — a stale or
+  // (`@fro.bot/wiki-write-core/...`), which resolves against dist/ at run time — a stale or
   // hand-edited compiled file there can change this run's outcome even with no .ts source change.
   it('does NOT report not-applicable for a changed set of only a file under packages/wiki-write-core/dist/', async () => {
     expect(realTriggerSet.directoryPrefixes).toContain('packages/wiki-write-core/dist/')
@@ -1122,7 +1123,7 @@ describe('closure-based trigger set against the real config', () => {
   // — so the premise ("this file really is unreachable from every mutate/testFiles entry") is
   // visible in the test itself, not asserted by fiat. `scripts/reconcile-repos.ts` is a large,
   // wholly separate control-plane module (repo reconciliation/star-sync) with no import path
-  // — direct, transitive, or via a `@fro-bot/wiki-write-core` package-name reference — from any
+  // — direct, transitive, or via a `@fro.bot/wiki-write-core` package-name reference — from any
   // `mutate` or `testFiles` entry in `stryker.config.json`; it does not itself import, or get
   // imported by, anything in the mutation set. (`markdown-links.ts`, this test's previous
   // subject, no longer qualifies: the transitive-import fix now correctly reaches it through
@@ -1526,6 +1527,55 @@ describe('defaultStrykerSpawner (CI step-summary and credential isolation)', () 
         process.env.GITHUB_TOKEN = originalGithubToken
       }
       mockSpawnSync.mockReset()
+    }
+  })
+})
+
+describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
+  const sourceFilesFor = (source: string): string[] =>
+    wikiWriteCoreSubpathSourceFiles('scripts/fixture.ts', () => source)
+
+  it('maps the bare package specifier to the index source file', () => {
+    expect(sourceFilesFor(`import {x} from '@fro.bot/wiki-write-core'`)).toEqual([
+      'packages/wiki-write-core/src/index.ts',
+    ])
+  })
+
+  it('maps every subpath specifier shape to its source file', () => {
+    const source = [
+      `import {a} from '@fro.bot/wiki-write-core/wiki-slug'`,
+      `export * from '@fro.bot/wiki-write-core/private-leak'`,
+      `const m = await import('@fro.bot/wiki-write-core/schemas')`,
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/wiki-write-core/src/wiki-slug.ts',
+      'packages/wiki-write-core/src/private-leak.ts',
+      'packages/wiki-write-core/src/schemas.ts',
+    ])
+  })
+
+  it('rejects the former @fro-bot scope', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core/wiki-slug'`)).toEqual([])
+  })
+
+  it('rejects a lookalike scope where the dot is any other character', () => {
+    expect(sourceFilesFor(`import {x} from '@froxbot/wiki-write-core'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '@froxbot/wiki-write-core/wiki-slug'`)).toEqual([])
+  })
+
+  it('finds package references in the real scripts tree, so a scan that matches nothing cannot pass', () => {
+    const scriptsDirectory = join(resolve(import.meta.dirname, '..'), 'scripts')
+    const referencingFiles = readdirSync(scriptsDirectory)
+      .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+      .map(name => ({name, sources: wikiWriteCoreSubpathSourceFiles(`scripts/${name}`)}))
+      .filter(({sources}) => sources.length > 0)
+
+    expect(referencingFiles.length).toBeGreaterThanOrEqual(10)
+    for (const {sources} of referencingFiles) {
+      for (const source of sources) {
+        expect(existsSync(join(resolve(import.meta.dirname, '..'), source)), source).toBe(true)
+      }
     }
   })
 })
