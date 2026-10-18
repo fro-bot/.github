@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-18: [[marcusrbrown--marcusrbrown-com]] (repo) and
+[[github-pages]] (topic). Existing catalog entries and dated evidence remain;
+the canonical ingest record is in `knowledge/log.md`.
+
 Catalog refreshed 2026-10-15: [[marcusrbrown--extend-vscode]] (repo) and
 [[vscode-extensions]] (topic). Existing catalog descriptions are historical
 snapshots; the pages carry newer dated contracts. The canonical ingest record

@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-12
+updated: 2026-10-18
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 9e2adcc677240a5180aa40f84bc56def31453b20
+    accessed: 2026-10-18
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
     accessed: 2026-10-12
@@ -70,6 +73,27 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Compilation can be implicit in a deployment build (2026-10-18)
+
+At `9e2adcc6`, [[marcusrbrown--marcusrbrown-com]] retains its separate Pages
+workflow: lint, `pnpm run build`, upload `dist`, then deploy with `needs: build`.
+The manifest expands build to `tsc && vite build`, so compilation is enforced
+even without an explicitly named type-check job. PR CI additionally runs unit
+tests and a moderate-severity audit; those checks are not on the deployment
+dependency chain. No inspected workflow invokes the available `test:e2e`
+command or Lighthouse.
+
+This refines October 1's gate observation: trace both workflow dependencies
+and the scripts they invoke. A build can compile without running tests; a
+separate green PR workflow is not itself a deployment dependency. Live branch
+protections and deployment health were outside this survey. README's stale
+`github.io` badge remains an identity contradiction, not evidence about this
+brand site's deployment result or the portfolio's current health.
+
+Sources: [Deploy](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/package.json),
+[CI](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/.github/workflows/ci.yaml).
 
 ## Portfolio deployment: unit tests are not the whole PR gate (2026-10-12)
 

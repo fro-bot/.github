@@ -8055,3 +8055,48 @@ Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b3
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-10-18 07:40] ingest | marcusrbrown/marcusrbrown.com
+
+Refreshed the bounded public survey at `9e2adcc677240a5180aa40f84bc56def31453b20`.
+Read only the listing, README, package/workspace manifests, and all five
+workflow files. Corrections context contained no spans. Updated
+[[marcusrbrown--marcusrbrown-com]] and [[github-pages]] additively and refreshed
+their index references. Preserved earlier dated findings and pre-existing edits.
+
+Recorded pnpm 11.28.5, postcss override 8.5.30, Fro Bot v0.122.3, shared Renovate
+v4.39.0, and explicit CI App-token permissions. Fro Bot remains present; no
+onboarding draft is warranted. Clarified that deployment compiles through
+`tsc && vite build` but does not execute the independent PR gate's tests/audit.
+The caller's unspecified delivery mode, stale repository self-references, and
+older override-terminology contradiction remain documented. Historical runtime,
+queue, installed-dependency, and live-site claims were not rechecked. No new
+entity or comparison page was justified. Changes await caller-owned persistence.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/tree/9e2adcc677240a5180aa40f84bc56def31453b20
+(README.md, package.json, pnpm-workspace.yaml, .github/workflows/).
+
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed files updated; caller owns persistence. Existing
+  checkout changes were preserved. No GitHub issue run notice was used.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run --no-cache` passed (102 files, 5,358 tests, three
+  todos). Wiki frontmatter, pinned sources, wikilinks, related targets, catalog
+  references, log ordering, and diff whitespace checks passed.
+- Limitations: installation/build-writing `pnpm bootstrap`, `pnpm check-types`,
+  and `pnpm test` wrappers were omitted under the non-mutating-shell contract;
+  direct checks used the existing dependencies and build. Workflow guard
+  unavailable. The GitHub response contains delivery/check status only; this
+  log is the canonical ingest summary.
+
+<!-- fro-bot:run-summary:end -->
+
+## [2026-10-18 07:44] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
