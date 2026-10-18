@@ -8197,56 +8197,65 @@ Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
 
-## [2026-10-18 09:43] ingest | bfra-me/works
+## [2026-10-18 09:44] ingest | fro-bot/space-bus
 
-Refreshed [[bfra-me--works]] and [[github-actions-ci]] additively from public
-snapshot `fcfec271a83c24179bbaab01dddf385531b7d090`; updated the index's
-catalog refresh notice. Historical evidence and the existing stable node ID
-are preserved. The supplied corrections context contained no corrections.
+Confirmed public visibility and surveyed only directory listings, README,
+package manifest, and seven workflow files at
+`20ab67c56a39f12774d7dcb659e65848767bc03e`. The default-branch tree is unchanged
+from October 3. Added a dated source recheck to [[fro-bot--space-bus]],
+expanded [[opencode-plugins]] with the distinction between development pins,
+peer admission, and tested host compatibility, and cataloged both touched pages
+in `knowledge/index.md`. All earlier knowledge and source dates are preserved.
 
-- Confirmed nine public-publishable package manifests with unchanged versions
-  since October 3, private root/docs/scripts, and an incomplete six-package
-  README inventory. Recorded pnpm 12.13.0, Vitest 5.0.4, ESLint 10.12.0,
-  Prettier 3.9.10, and the explicit type-coverage project selection.
-- Confirmed Fro Bot workflow present at v0.123.0 with explicit autoheal
-  branch-PR delivery; no missing-workflow proposal is warranted. Shared
-  Renovate callers advanced to v4.39.0; settings caller remains v4.16.0.
-- Preserved report-only benchmark and dry-run docs-sync boundaries. Added the
-  distinction between a package-local failure-suppressing test script, root
-  CI's separate Vitest invocation, and tolerated workspace-analysis failures.
-- Limited upstream reads to directory listings, README, manifests, and
-  workflows. No source code, issue/run history, registry state, or non-README
-  guidance was read. No new entity/comparison page was justified.
+- Fro Bot remains present at `v0.112.0`; no missing-workflow follow-up is needed.
+- The workflow still has no explicit output mode or caller persistence step.
+  This confirms a structural delivery gap, not an observed failed execution.
+- README tool-count and `/registry` documentation drift, and watch-entry
+  omission of `registry-entry.ts`, remain visible in allowed sources.
+- Manifest `0.15.0`, plugin development pin `1.18.26`, broad plugin peer range,
+  CI default-export smoke scope, Changesets/OIDC release declarations, and
+  reusable workflow `v4.29.0` pins were reconfirmed.
+- Historical publication, advisory, issue/PR, automation-health, and source
+  history measurements were not refreshed. No new contradiction was found.
+- Corrections context was read as untrusted data and contained no records.
 
-Sources: https://github.com/bfra-me/works/tree/fcfec271a83c24179bbaab01dddf385531b7d090
-(`readme.md`, root/workspace and eleven child manifests, and nine workflows).
+Sources: https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e;
+https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md;
+https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json;
+https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows.
 
 <!-- fro-bot-agent -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-Working-tree handoff: repo/topic pages and catalog refreshed; this append-only
-entry is the canonical survey summary.
-
-- Passed `pnpm bootstrap`, `pnpm check-types`, `pnpm lint`, and `pnpm test`
-  (103 test files; 5,361 tests passed, three todo).
-- Read-only wiki validation scanned 47 pages and found zero deterministic
-  findings on touched paths (frontmatter, links, and catalog checks).
-- `git diff --check` passed; only the four permitted knowledge files changed.
-  Target public visibility was rechecked before handoff.
-
-The caller owns commit, push, and PR delivery. The single required response
-uses a control-repository commit comment, not an issue run notice.
-
-Delivery/check notice: https://github.com/fro-bot/.github/commit/c2f4806a3c6fb94ae5ffe707d00ec98c62e41101#commitcomment-205501445
-The returned body confirmed bot identification and both Run Summary markers;
-exactly one comment was posted.
+- Run: `39116366705`; four allowed files updated in the checked-out working
+  tree. The caller owns commit, push, and persistence. This log entry is the
+  canonical survey summary; no issue run notice is used.
+- Passed: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  `pnpm exec vitest run --no-cache` (103 files; 5,361 passed, three todo),
+  and `git diff --check`.
+- Wiki checks: all 47 content pages have valid wikilinks and index coverage;
+  both touched pages have complete frontmatter, pinned provenance, valid
+  related targets, and no deterministic findings. Historical body text is
+  preserved and the log is append-only. Two pre-existing broken Markdown
+  links on an unrelated page and four advisory findings remain unchanged.
+- Markdown scope: ESLint excludes `knowledge/`; wiki-specific structure and
+  link checks cover the additions. No workflows or implementation were edited.
+- Verification limits: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test`
+  wrappers install dependencies or write build artifacts outside allowed paths.
+  Used the cached toolchain and direct non-build checks instead.
+- The required single GitHub response uses a control-repository commit comment
+  pointing to this canonical record, with delivery/check status only.
 
 <!-- fro-bot:run-summary:end -->
 
-## [2026-10-18 09:48] ingest | repo:bfra-me/works
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c2f4806a3c6fb94ae5ffe707d00ec98c62e41101#commitcomment-205501506
+The returned body confirmed bot identification and both Run Summary markers.
+Exactly one comment was posted; public visibility was rechecked before posting.
 
-Surveyed bfra-me/works and updated the control-plane wiki.
+## [2026-10-18 09:50] ingest | repo:fro-bot/space-bus
 
-Sources: https://github.com/bfra-me/works
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus
