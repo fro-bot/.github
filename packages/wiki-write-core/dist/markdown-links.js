@@ -1,38 +1,26 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import process from 'node:process';
+import { findCodeRegions, findRegionAt } from "./code-regions.js";
 const MARKDOWN_LINK_PATTERN = /\[[^\]\n]+\]\(\s*(<[^>\n]+>|[^)\s]+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)/gu;
 /** Resolve live relative markdown links and report whether their targets exist. */
 export function resolveMarkdownLinks(content, containingFile, options = {}) {
     const links = [];
-    let fence;
+    const regions = findCodeRegions(content);
+    let lineOffset = 0;
     for (const [lineIndex, line] of content.split('\n').entries()) {
-        const fenceMatch = /^\s*(`{3,}|~{3,})/u.exec(line);
-        if (fenceMatch !== null) {
-            const marker = fenceMatch[1];
-            if (marker !== undefined) {
-                const character = marker[0] ?? '';
-                if (fence === undefined) {
-                    fence = { character, length: marker.length };
-                }
-                else if (fence.character === character && marker.length >= fence.length) {
-                    fence = undefined;
-                }
-            }
-            continue;
-        }
-        if (fence !== undefined) {
-            continue;
-        }
-        const codeSpans = findCodeSpans(line);
+        const currentLineOffset = lineOffset;
+        lineOffset += line.length + 1;
         for (const match of line.matchAll(MARKDOWN_LINK_PATTERN)) {
             const target = match[1];
             const matchIndex = match.index;
             if (target === undefined || matchIndex === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
                 continue;
             }
-            // Code spans bind tighter than links: a match that starts or ends inside one is literal text.
-            if (isInsideSpan(codeSpans, matchIndex) || isInsideSpan(codeSpans, matchIndex + match[0].length - 1)) {
+            // Code binds tighter than links: a match that starts or ends inside a fence or span is literal text.
+            const matchStart = currentLineOffset + matchIndex;
+            const matchLast = matchStart + match[0].length - 1;
+            if (findRegionAt(regions, matchStart) !== undefined || findRegionAt(regions, matchLast) !== undefined) {
                 continue;
             }
             const normalizedTarget = target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
@@ -51,60 +39,6 @@ export function resolveMarkdownLinks(content, containingFile, options = {}) {
         }
     }
     return links;
-}
-/**
- * Locate inline code spans on one line, per CommonMark: a run of N backticks opens a span that
- * closes at the next run of exactly N backticks. A run with no matching closer is literal text.
- * A backslash outside a span escapes the next character, so an escaped backtick never opens a span.
- */
-function findCodeSpans(line) {
-    const spans = [];
-    let index = 0;
-    while (index < line.length) {
-        const character = line[index];
-        if (character === '\\') {
-            index += 2;
-            continue;
-        }
-        if (character !== '`') {
-            index += 1;
-            continue;
-        }
-        const openEnd = skipBackticks(line, index);
-        const runLength = openEnd - index;
-        let searchFrom = openEnd;
-        let closeEnd = -1;
-        while (searchFrom < line.length) {
-            const closeStart = line.indexOf('`', searchFrom);
-            if (closeStart === -1) {
-                break;
-            }
-            const candidateEnd = skipBackticks(line, closeStart);
-            if (candidateEnd - closeStart === runLength) {
-                closeEnd = candidateEnd;
-                break;
-            }
-            searchFrom = candidateEnd;
-        }
-        if (closeEnd === -1) {
-            index = openEnd;
-        }
-        else {
-            spans.push({ start: index, end: closeEnd });
-            index = closeEnd;
-        }
-    }
-    return spans;
-}
-function skipBackticks(line, from) {
-    let index = from;
-    while (line[index] === '`') {
-        index += 1;
-    }
-    return index;
-}
-function isInsideSpan(spans, offset) {
-    return spans.some(span => offset >= span.start && offset < span.end);
 }
 function isSkippedTarget(target) {
     return target === '' || target.startsWith('#') || target.startsWith('//') || /^(?:https?:|mailto:)/iu.test(target);

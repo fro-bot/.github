@@ -83,6 +83,34 @@ describe('collectWikilinks', () => {
     // #then no targets are found
     expect(collectWikilinks('No links here.')).toEqual([])
   })
+
+  it('ignores a wikilink inside an inline code span', () => {
+    expect(collectWikilinks('Write `[[example]]` to link, or ``[[a ` b]]`` with a tick.')).toEqual([])
+  })
+
+  it('ignores a wikilink inside a fenced code block, including an unclosed one', () => {
+    expect(collectWikilinks(['```md', '[[example]]', '```'].join('\n'))).toEqual([])
+    expect(collectWikilinks(['~~~', '[[example]]', '~~~'].join('\n'))).toEqual([])
+    expect(collectWikilinks(['```', '[[example]]'].join('\n'))).toEqual([])
+  })
+
+  it('still finds a real wikilink next to a code span, on either side', () => {
+    expect(collectWikilinks('[[before]] then `[[literal]]` then [[after]]')).toEqual(['before', 'after'])
+    expect(collectWikilinks(['```', '[[literal]]', '```', '[[after-fence]]'].join('\n'))).toEqual(['after-fence'])
+  })
+
+  it('still finds an aliased wikilink outside code and reports its target', () => {
+    expect(collectWikilinks('`[[hidden|Hidden]]` but [[a|b]] is live')).toEqual(['a'])
+  })
+
+  it('does not let an escaped backtick or an unclosed backtick run hide a real wikilink', () => {
+    expect(collectWikilinks('A \\` tick then [[real]]')).toEqual(['real'])
+    expect(collectWikilinks('An unclosed ` tick then [[real]] and [[other]]')).toEqual(['real', 'other'])
+  })
+
+  it('drops a wikilink whose closing brackets land inside a code span', () => {
+    expect(collectWikilinks('[[open `x]]` and [[real]]')).toEqual(['real'])
+  })
 })
 
 describe('findWikilinkSpans', () => {
@@ -137,6 +165,20 @@ describe('findWikilinkSpans', () => {
   it('returns an empty list when there are no links', () => {
     expect(findWikilinkSpans('No links here.')).toEqual([])
     expect(findWikilinkSpans('')).toEqual([])
+  })
+
+  it('ignores wikilinks inside inline code spans and fenced code blocks', () => {
+    expect(findWikilinkSpans('Write `[[old]]` or ``[[old]]`` here.')).toEqual([])
+    expect(findWikilinkSpans(['```', '[[old]]', '```'].join('\n'))).toEqual([])
+  })
+
+  it('still reports a real and an aliased link next to code, with offsets into the original text', () => {
+    const content = '`[[old]]` [[old]] `[[old]]` [[old|label]]'
+
+    const spans = findWikilinkSpans(content)
+
+    expect(spans.map(span => content.slice(span.start, span.end))).toEqual(['[[old]]', '[[old|label]]'])
+    expect(spans.map(span => span.label)).toEqual([undefined, 'label'])
   })
 })
 

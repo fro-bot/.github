@@ -10,6 +10,7 @@ const wikiIngestModulePromise: Promise<{
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
+  validateWikilinks: typeof import('./wiki-ingest.js').validateWikilinks
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
 const {
@@ -18,6 +19,7 @@ const {
   countWikiPages,
   loadTrackedRepoNodeIds,
   parsePorcelainPaths,
+  validateWikilinks,
   WikiIngestError,
 } = await wikiIngestModulePromise
 
@@ -1806,5 +1808,36 @@ describe('countWikiPages', () => {
     // #when the paths are counted
     // #then the result is zero
     expect(countWikiPages([])).toBe(0)
+  })
+})
+
+describe('validateWikilinks', () => {
+  const page = (body: string): string =>
+    ['---', 'type: topic', 'title: Page', 'created: 2026-10-01', 'updated: 2026-10-01', '---', '', body, ''].join('\n')
+  const filesWith = (body: string): Record<string, string> => ({
+    'knowledge/wiki/topics/page.md': page(body),
+    'knowledge/wiki/topics/known.md': page('Known.'),
+  })
+
+  it('rejects a live wikilink to a missing page', () => {
+    expect(() => validateWikilinks(filesWith('See [[ghost]].'))).toThrow('[[ghost]]')
+  })
+
+  it('ignores a missing-page wikilink inside inline code', () => {
+    expect(() => validateWikilinks(filesWith('Write `[[ghost]]` or ``[[ghost|a ` b]]`` to link.'))).not.toThrow()
+  })
+
+  it('ignores a missing-page wikilink inside a fenced code block', () => {
+    expect(() => validateWikilinks(filesWith(['```md', '[[ghost]]', '```'].join('\n')))).not.toThrow()
+  })
+
+  it('still checks a real wikilink next to a code span', () => {
+    expect(() => validateWikilinks(filesWith('`[[ghost]]` then [[known]].'))).not.toThrow()
+    expect(() => validateWikilinks(filesWith('`[[known]]` then [[ghost]].'))).toThrow('[[ghost]]')
+  })
+
+  it('still checks the target of an aliased wikilink outside code', () => {
+    expect(() => validateWikilinks(filesWith('See [[known|Known page]].'))).not.toThrow()
+    expect(() => validateWikilinks(filesWith('See [[ghost|Known page]].'))).toThrow('[[ghost]]')
   })
 })

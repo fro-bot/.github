@@ -198,6 +198,35 @@ describe('planRepoPageMove: moving a repo page to a new slug', () => {
     expect(next[TOPIC_PATH]).toContain(`[[${OLD_SLUG}-extra]] and [[x${OLD_SLUG}]]`)
   })
 
+  it('leaves a link-shaped old slug inside inline code and fenced code untouched while repairing the live links', () => {
+    const tick = '`'
+    const fence = tick.repeat(3)
+    const prose = [
+      `Live [[${OLD_SLUG}]] and literal ${tick}[[${OLD_SLUG}]]${tick} and ${tick.repeat(2)}[[${OLD_SLUG}|a ${tick} tick]]${tick.repeat(2)} and live [[${OLD_SLUG}|label]].`,
+      '',
+      `${fence}md`,
+      `[[${OLD_SLUG}]]`,
+      fence,
+      '',
+      `After the fence [[${OLD_SLUG}]].`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+    const page = next[TOPIC_PATH] ?? ''
+    const body = page.slice(page.indexOf('Live '))
+
+    expect(body).toBe(
+      `${prose
+        .replace(`Live [[${OLD_SLUG}]]`, `Live [[${NEW_SLUG}]]`)
+        .replace(`and live [[${OLD_SLUG}|label]]`, `and live [[${NEW_SLUG}|label]]`)
+        .replace(`After the fence [[${OLD_SLUG}]]`, `After the fence [[${NEW_SLUG}]]`)}\n`,
+    )
+    expect(body).toContain(`${tick}[[${OLD_SLUG}]]${tick}`)
+    expect(body).toContain(`[[${OLD_SLUG}|a ${tick} tick]]`)
+    expect(body).toContain([`${fence}md`, `[[${OLD_SLUG}]]`, fence].join('\n'))
+  })
+
   it('appends exactly one manual-edit entry naming only the public old and new names, never rewriting history', () => {
     const next = applied(planRepoPageMove(moveParams()))
 
