@@ -74,15 +74,8 @@ const prompt = String(agentStep?.env?.TASK_PROMPT ?? '')
 /** The prompt with line wraps collapsed, for phrase assertions. */
 const flatPrompt = prompt.replaceAll(/\s+/g, ' ')
 const WORKSPACE_DIR = `${gh('github.workspace')}/.drafted-solutions`
-/**
- * Publish runs when there is new work (and only after a successful draft) or when only the review
- * request is owed (the draft job is then skipped, which must not block it). !cancelled() replaces
- * the implicit success() so a skipped draft does not skip publish; a failed or cancelled draft
- * still blocks it whenever has_work is true.
- */
-const PUBLISH_IF = gh(
-  "!cancelled() && needs.harvest.result == 'success' && (needs.harvest.outputs.has_work == 'true' || needs.harvest.outputs.review_needed == 'true') && (needs.draft.result == 'success' || needs.harvest.outputs.has_work != 'true')",
-)
+/** Publish runs only for new work, and (implicit success()) only after a successful draft. */
+const HAS_WORK = "needs.harvest.outputs.has_work == 'true'"
 
 describe('draft-solutions.yaml triggers and workflow-level contract', () => {
   it('runs Monday 06:00 UTC and on manual dispatch', () => {
@@ -104,13 +97,12 @@ describe('draft-solutions.yaml job order', () => {
     expect(draftJob?.needs).toBe('harvest')
     expect(draftJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
     expect(publishJob?.needs).toStrictEqual(['harvest', 'draft'])
-    expect(publishJob?.if).toBe(PUBLISH_IF)
+    expect(publishJob?.if).toBe(HAS_WORK)
   })
 
   it('harvest exposes has_work and the two pinned SHAs from its harvest step', () => {
     expect(harvestJob?.outputs).toStrictEqual({
       has_work: gh('steps.harvest.outputs.has_work'),
-      review_needed: gh('steps.harvest.outputs.review_needed'),
       draft_base_sha: gh('steps.harvest.outputs.draft_base_sha'),
       main_sha: gh('steps.harvest.outputs.main_sha'),
     })
@@ -147,91 +139,53 @@ describe('draft-solutions.yaml credential split', () => {
     expect(agentStep?.with?.prompt).toBe(gh('env.TASK_PROMPT'))
   })
 
-  describe('App-token mints (least privilege per mode)', () => {
-    const hasWork = "needs.harvest.outputs.has_work == 'true'"
-    const noWork = "needs.harvest.outputs.has_work != 'true'"
+  describe('App-token mint (least privilege)', () => {
     const scopesOf = (step: WorkflowStep | undefined) =>
       Object.fromEntries(Object.entries(step?.with ?? {}).filter(([key]) => key.startsWith('permission-')))
     const publishMint = publishJob?.steps.find(step => step.id === 'get-workflow-app-token')
-    const reviewMint = publishJob?.steps.find(step => step.id === 'get-review-app-token')
 
-    it('only publish mints App tokens', () => {
+    it('only publish mints an App token, and it mints exactly one', () => {
       const mintJobs = Object.entries(workflow.jobs)
         .filter(([, job]) => job.steps.some(isMint))
         .map(([name]) => name)
       expect(mintJobs).toStrictEqual(['publish'])
-      expect(publishJob?.steps.filter(isMint).map(step => step.id)).toStrictEqual([
-        'get-workflow-app-token',
-        'get-review-app-token',
-      ])
+      expect(publishJob?.steps.filter(isMint).map(step => step.id)).toStrictEqual(['get-workflow-app-token'])
     })
 
-    it('the publishing mint has exactly contents, pull-requests, and issues write, and runs only with work', () => {
+    it('the mint has exactly contents, pull-requests, and issues write, scoped to this repo', () => {
       expect(isMint(publishMint ?? {})).toBe(true)
       expect(scopesOf(publishMint)).toStrictEqual({
         'permission-contents': 'write',
         'permission-pull-requests': 'write',
         'permission-issues': 'write',
       })
-      expect(publishMint?.if).toBe(hasWork)
       expect(String(publishMint?.with?.repositories)).toContain('github.event.repository.name')
+      expect(publishMint?.with?.['client-id']).toBe(gh('secrets.APPLICATION_ID'))
+      expect(publishMint?.with?.['private-key']).toBe(gh('secrets.APPLICATION_PRIVATE_KEY'))
     })
 
-    it('the review-only mint has exactly pull-requests write, scoped to this repo, and runs only without work', () => {
-      expect(isMint(reviewMint ?? {})).toBe(true)
-      expect(scopesOf(reviewMint)).toStrictEqual({'permission-pull-requests': 'write'})
-      expect(reviewMint?.if).toBe(noWork)
-      expect(String(reviewMint?.with?.repositories)).toContain('github.event.repository.name')
-      expect(reviewMint?.with?.['client-id']).toBe(gh('secrets.APPLICATION_ID'))
-      expect(reviewMint?.with?.['private-key']).toBe(gh('secrets.APPLICATION_PRIVATE_KEY'))
+    it('the mint includes no workflows or administration scope', () => {
+      expect(publishMint?.with).not.toHaveProperty('permission-workflows')
+      expect(publishMint?.with).not.toHaveProperty('permission-administration')
     })
 
-    it('the two mints have mutually exclusive conditions, so a run mints exactly one token', () => {
-      // has_work == 'true' vs has_work != 'true' partition every value of the output.
-      const runsMint = (condition: string | undefined, work: string): boolean =>
-        condition === hasWork ? work === 'true' : condition === noWork ? work !== 'true' : false
-      for (const work of ['true', 'false', '']) {
-        const minted = [publishMint, reviewMint].filter(step => runsMint(step?.if, work))
-        expect(minted, `has_work=${JSON.stringify(work)}`).toHaveLength(1)
-      }
-    })
-
-    it('no mint includes a workflows scope or any scope beyond its own', () => {
-      for (const mint of publishJob?.steps.filter(isMint) ?? []) {
-        expect(mint.with).not.toHaveProperty('permission-workflows')
-        expect(mint.with).not.toHaveProperty('permission-administration')
-      }
-      expect(Object.keys(scopesOf(reviewMint))).toStrictEqual(['permission-pull-requests'])
-    })
-
-    it("each script step consumes only its own mint's token", () => {
-      const publishStep = publishJob?.steps.find(step => step.id === 'publish')
-      const reviewStep = publishJob?.steps.find(step => step.id === 'review-only')
-      expect(publishStep?.env?.GITHUB_TOKEN).toBe(gh('steps.get-workflow-app-token.outputs.token'))
-      expect(reviewStep?.env?.GITHUB_TOKEN).toBe(gh('steps.get-review-app-token.outputs.token'))
-      expect(JSON.stringify(publishStep)).not.toContain('get-review-app-token')
-      expect(JSON.stringify(reviewStep)).not.toContain('get-workflow-app-token')
-    })
-
-    it('both mints come after the artifact guard, before the script steps that use them', () => {
+    it('the mint comes after the artifact guard, before the publish step that uses it', () => {
       const steps = publishJob?.steps ?? []
       const guardIndex = steps.findIndex(step => step.name === '🚨 Fail on missing agent handoff')
       const indexOf = (id: string) => steps.findIndex(step => step.id === id)
       expect(indexOf('get-workflow-app-token')).toBeGreaterThan(guardIndex)
-      expect(indexOf('get-review-app-token')).toBeGreaterThan(guardIndex)
       expect(indexOf('publish')).toBeGreaterThan(indexOf('get-workflow-app-token'))
-      expect(indexOf('review-only')).toBeGreaterThan(indexOf('get-review-app-token'))
     })
   })
 
-  it('publish has no agent step and the minted tokens reach only the publish and review-only script steps', () => {
+  it('publish has no agent step and the minted token reaches only the publish script step', () => {
     expect(publishJob?.steps.find(isAgent)).toBeUndefined()
     const publishStep = publishJob?.steps.find(step => step.id === 'publish')
     expect(publishStep?.run).toContain('scripts/drafted-solutions-publish.ts')
+    expect(publishStep?.env?.GITHUB_TOKEN).toBe(gh('steps.get-workflow-app-token.outputs.token'))
 
     const tokenUsers = publishJob?.steps.filter(step => JSON.stringify(step).includes('.outputs.token')) ?? []
-    // Exactly the two script steps (publish with work, review-only without); neither runs agent code.
-    expect(tokenUsers.map(step => step.id)).toStrictEqual([publishStep?.id, 'review-only'])
+    expect(tokenUsers.map(step => step.id)).toStrictEqual([publishStep?.id])
   })
 
   it('every checkout in every job sets persist-credentials: false', () => {
@@ -322,73 +276,34 @@ describe('draft-solutions.yaml handoff plumbing', () => {
     expect(guardIndex).toBeGreaterThan(Math.max(handoffIndex, rowsIndex))
     expect(mintIndex).toBeGreaterThan(guardIndex)
     expect(steps[guardIndex]?.if).toBe(
-      "needs.harvest.outputs.has_work == 'true' && (steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure')",
+      "steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure'",
     )
     expect(steps[guardIndex]?.run).toContain('exit 1')
     expect(steps.filter(isDownload).every(step => String(step.with?.path).startsWith(WORKSPACE_DIR))).toBe(true)
   })
 
-  describe('publish job condition and review-only mode', () => {
-    const hasWork = "needs.harvest.outputs.has_work == 'true'"
+  describe('publish job condition', () => {
     const publishSteps = publishJob?.steps ?? []
-    const named = (name: string) => publishSteps.find(step => step.name === name)
 
-    it('runs for new work after a successful draft, or for review-only when the draft is skipped', () => {
+    it('runs only for new work, with the implicit success() so a failed or skipped draft blocks it', () => {
       const condition = String(publishJob?.if)
-      expect(condition).toContain('!cancelled()')
+      expect(condition).toBe(HAS_WORK)
       expect(condition).not.toContain('always()')
-      expect(condition).toContain("needs.harvest.result == 'success'")
-      expect(condition).toContain(
-        "needs.harvest.outputs.has_work == 'true' || needs.harvest.outputs.review_needed == 'true'",
-      )
-      // A skipped draft only passes when there is no work; with work, the draft must have succeeded.
-      expect(condition).toContain("needs.draft.result == 'success' || needs.harvest.outputs.has_work != 'true'")
+      expect(condition).not.toContain('!cancelled()')
     })
 
-    it('a failed or cancelled draft still blocks publish when there is work', () => {
-      // Evaluate the draft clause for each draft result with has_work true / false.
-      const draftClause = (result: string, work: boolean) => result === 'success' || !work
-      for (const result of ['failure', 'cancelled', 'skipped']) expect(draftClause(result, true)).toBe(false)
-      expect(draftClause('success', true)).toBe(true)
-      expect(draftClause('skipped', false)).toBe(true)
+    it('the draft job itself runs only for new work', () => {
+      expect(draftJob?.if).toBe(HAS_WORK)
     })
 
-    it('the draft job itself still only runs for new work', () => {
-      expect(draftJob?.if).toBe("needs.harvest.outputs.has_work == 'true'")
+    it('carries no step-level has_work branch: every step runs whenever the job does', () => {
+      for (const step of publishSteps) expect(step.if ?? '', step.name).not.toContain('has_work')
     })
 
-    it('skips the metadata overlay and every artifact download or guard in review-only mode', () => {
-      for (const name of [
-        '⤵ Overlay metadata from data branch',
-        '📥 Download digest artifact',
-        '📥 Download handoff artifact',
-        '📥 Download rows artifact',
-      ]) {
-        expect(named(name)?.if, name).toBe(hasWork)
-      }
-      expect(named('🚨 Fail on missing agent handoff')?.if).toContain(hasWork)
-    })
-
-    it('publishes only with work, and requests the review with the review-only token otherwise', () => {
-      const publish = publishSteps.find(step => step.id === 'publish')
-      const reviewOnly = publishSteps.find(step => step.id === 'review-only')
-      const mintIndex = publishSteps.findIndex(step => step.id === 'get-review-app-token')
-
-      expect(publish?.if).toBe(hasWork)
-      expect(reviewOnly?.if).toBe("needs.harvest.outputs.has_work != 'true'")
-      expect(publishSteps.indexOf(reviewOnly as WorkflowStep)).toBeGreaterThan(mintIndex)
-      expect(reviewOnly?.run).toBe('node scripts/drafted-solutions-publish.ts')
-      expect(reviewOnly?.env?.DRAFTED_SOLUTIONS_MODE).toBe('review-only')
-      expect(reviewOnly?.env?.GITHUB_TOKEN).toBe(gh('steps.get-review-app-token.outputs.token'))
-      expect(reviewOnly?.env?.GITHUB_REPOSITORY).toBe(gh('github.repository'))
-      // Review-only reads no digest, handoff, or rows.
-      for (const key of [
-        'DRAFTED_SOLUTIONS_DIGEST_PATH',
-        'DRAFTED_SOLUTIONS_HANDOFF_DIR',
-        'DRAFTED_SOLUTIONS_ROWS_PATH',
-      ]) {
-        expect(reviewOnly?.env?.[key]).toBeUndefined()
-      }
+    it('has no review-request step or review-only mode (drafted PRs are reviewed manually, fro-bot/agent#1520)', () => {
+      expect(JSON.stringify(publishJob)).not.toContain('review-only')
+      expect(JSON.stringify(publishJob)).not.toContain('DRAFTED_SOLUTIONS_MODE')
+      expect(JSON.stringify(harvestJob)).not.toContain('review_needed')
     })
   })
 

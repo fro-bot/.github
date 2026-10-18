@@ -192,13 +192,6 @@ const EXPECTED_ROWS: readonly Row[] = [
     permissions: {contents: 'write', 'pull-requests': 'write', issues: 'write'},
   },
   {
-    file: 'draft-solutions.yaml',
-    job: 'publish',
-    id: 'get-review-app-token',
-    kind: 'repo',
-    permissions: {'pull-requests': 'write'},
-  },
-  {
     file: 'fro-bot.yaml',
     job: 'fro-bot-wiki-ingest',
     id: 'app-token',
@@ -386,10 +379,10 @@ const OWNER_WIDE_WRITE_ALLOWED: readonly {readonly key: string; readonly owner: 
 ]
 
 /** Row count and file count the scan must cover; a refactor that stops matching mints fails loudly. */
-const EXPECTED_ROW_COUNT = 35
+const EXPECTED_ROW_COUNT = 34
 const EXPECTED_MINT_FILE_COUNT = 18
-/** Mint census before this change (31); the tree must never scan fewer. */
-const MINT_CENSUS_FLOOR = 32
+/** Mint census floor: the tree must never scan fewer. Lower it only when a mint is deliberately deleted. */
+const MINT_CENSUS_FLOOR = 31
 
 // ─── Scanner ────────────────────────────────────────────────────────────────
 
