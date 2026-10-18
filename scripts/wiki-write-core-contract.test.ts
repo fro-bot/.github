@@ -1,4 +1,4 @@
-import {lintWikiSnapshot as packageLintWikiSnapshot} from '@fro-bot/wiki-write-core'
+import {lintWikiSnapshot as packageLintWikiSnapshot} from '@fro.bot/wiki-write-core'
 import {describe, expect, it} from 'vitest'
 import {lintWikiSnapshot as cliLintWikiSnapshot} from './wiki-lint.ts'
 

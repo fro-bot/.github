@@ -16,7 +16,7 @@ import {
   type CorrectionsFile,
   type ReadUtf8File,
   type WriteUtf8File,
-} from '@fro-bot/wiki-write-core/corrections'
+} from '@fro.bot/wiki-write-core/corrections'
 
 type LifecycleCommand = 'record' | 'retire' | 'reconfirm' | 'supersede'
 

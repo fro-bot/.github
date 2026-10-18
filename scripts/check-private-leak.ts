@@ -4,7 +4,7 @@ import {execFileSync} from 'node:child_process'
 import {appendFileSync, readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
-import {checkPrivateLeak} from '@fro-bot/wiki-write-core/private-leak'
+import {checkPrivateLeak} from '@fro.bot/wiki-write-core/private-leak'
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile, type RepoEntry} from './schemas.ts'
@@ -14,7 +14,7 @@ import {buildPrivateNameTokens} from './wiki-slug.ts'
 // Types
 // ---------------------------------------------------------------------------
 
-export type {GuardResult} from '@fro-bot/wiki-write-core/private-leak'
+export type {GuardResult} from '@fro.bot/wiki-write-core/private-leak'
 
 /**
  * Result of a promotion scan.

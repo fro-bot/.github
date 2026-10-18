@@ -67,7 +67,7 @@ The build points at `knowledge/`, not `knowledge/wiki/`, so `knowledge/index.md`
 HTML pipeline (`order: 999`). It removes raw HTML nodes, scriptable elements,
 event-handler attributes, executable URLs, and inline styles before emission.
 This is the primary rendering control; the save-side
-`@fro-bot/wiki-write-core` validation only provides fast operator feedback.
+`@fro.bot/wiki-write-core` validation only provides fast operator feedback.
 
 ## No Generic Frontmatter Rendering
 

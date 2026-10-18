@@ -66,7 +66,7 @@
       "description": [
         "Automerge `minor` and `patch` update types of @bfra-me and @fro-bot packages (disable dashboard approval)."
       ],
-      "matchPackageNames": ["@bfra.me/**", "bfra-me/**", "@fro-bot/**", "fro-bot/**"],
+      "matchPackageNames": ["@bfra.me/**", "bfra-me/**", "@fro-bot/**", "@fro.bot/wiki-write-core", "fro-bot/**"],
       "matchUpdateTypes": ["minor", "patch"],
       "addLabels": ["automerge"],
       "dependencyDashboardApproval": false,
