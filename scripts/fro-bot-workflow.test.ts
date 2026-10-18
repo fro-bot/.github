@@ -561,14 +561,7 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
-          (
-            !endsWith(github.event.pull_request.user.login || '', '[bot]') ||
-            (
-              github.event.pull_request.user.login == 'fro-bot[bot]' &&
-              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
-              github.event.pull_request.head.repo.full_name == github.repository
-            )
-          )
+          !endsWith(github.event.pull_request.user.login || '', '[bot]')
         )
       ) && (
         (
@@ -579,17 +572,8 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         ) ||
         (
           github.event_name == 'pull_request' &&
-          (
-            (
-              !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-              (github.event.pull_request.user.login || '') != 'fro-bot'
-            ) ||
-            (
-              github.event.pull_request.user.login == 'fro-bot[bot]' &&
-              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
-              github.event.pull_request.head.repo.full_name == github.repository
-            )
-          )
+          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+          (github.event.pull_request.user.login || '') != 'fro-bot'
         ) ||
         (
           (github.event_name == 'issue_comment' ||
@@ -605,57 +589,19 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     expect(contentIf.replaceAll(/\s+/g, ' ').trim()).toBe(expectedIf.replaceAll(/\s+/g, ' ').trim())
   })
 
-  it('conjoins the drafted-PR exception with author, head ref, same-repo head, and the not-fork guard', () => {
-    const normalized = contentIf.replaceAll(/\s+/g, ' ')
-    const exception =
-      "( github.event.pull_request.user.login == 'fro-bot[bot]' && " +
-      "github.event.pull_request.head.ref == 'docs/drafted-solutions' && " +
-      'github.event.pull_request.head.repo.full_name == github.repository )'
-
-    // Both bot-excluding places carry the exception, each as an OR alternative to the bot exclusion.
-    expect(normalized.split(exception)).toHaveLength(3)
-    expect(normalized).toContain(
-      `!github.event.pull_request.head.repo.fork && ( !endsWith(github.event.pull_request.user.login || '', '[bot]') || ${exception} )`,
-    )
-    expect(normalized).toContain(
-      `github.event_name == 'pull_request' && ( ( !endsWith(github.event.pull_request.user.login || '', '[bot]') && (github.event.pull_request.user.login || '') != 'fro-bot' ) || ${exception} )`,
-    )
-  })
-
-  it('still excludes other [bot] authors and the fro-bot user outside the drafted exception', () => {
-    // The only literal bot login admitted is fro-bot[bot], and only inside the exception.
-    expect(contentIf.match(/'[^']*\[bot\]'/g)).toStrictEqual([
-      "'[bot]'", // outer guard
-      "'fro-bot[bot]'", // outer drafted exception
-      "'[bot]'", // issues branch
-      "'[bot]'", // pull_request branch
-      "'fro-bot[bot]'", // pull_request drafted exception
-    ])
-    expect(contentIf).toContain(`(github.event.pull_request.user.login || '') != 'fro-bot'`)
-    expect(contentIf).not.toContain("user.login == 'fro-bot' ")
-  })
-
   it.each([
-    ['renovate/* by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: 'renovate/foo'}), false],
-    ['data by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: 'data'}), false],
-    ['docs/drafted-solutions by fro-bot[bot]', pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch}), true],
+    ['fro-bot[bot] on a renovate/* head', pullRequestEvent({login: 'fro-bot[bot]', ref: 'renovate/foo'}), false],
+    ['fro-bot[bot] on the data head', pullRequestEvent({login: 'fro-bot[bot]', ref: 'data'}), false],
+    // Drafted-solutions PRs get manual review (fro-bot/agent#1520): no head-ref exemption from the bot exclusion.
+    ['fro-bot[bot] on docs/drafted-solutions', pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch}), false],
+    ['dependabot[bot]', pullRequestEvent({login: 'dependabot[bot]', ref: draftedBranch}), false],
+    ['the fro-bot user', pullRequestEvent({login: 'fro-bot', ref: 'feat/x'}), false],
     [
-      'docs/drafted-solutions by fro-bot[bot] from a fork',
-      pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch, fork: true, fullName: 'someone/.github'}),
+      'a human PR from a fork',
+      pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x', fork: true, fullName: 'someone/.github'}),
       false,
     ],
-    [
-      'docs/drafted-solutions by fro-bot[bot] from another repo (non-fork flag)',
-      pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch, fullName: 'someone/.github'}),
-      false,
-    ],
-    [
-      'docs/drafted-solutions by dependabot[bot]',
-      pullRequestEvent({login: 'dependabot[bot]', ref: draftedBranch}),
-      false,
-    ],
-    ['docs/drafted-solutions by the fro-bot user', pullRequestEvent({login: 'fro-bot', ref: draftedBranch}), false],
-    ['human PR', pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x'}), true],
+    ['a human PR', pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x'}), true],
   ])('evaluates the content-trigger predicate against a fixture: %s', (_name, event, expected) => {
     expect(evaluateExpression(contentIf, event)).toBe(expected)
   })
