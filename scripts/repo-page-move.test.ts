@@ -227,6 +227,71 @@ describe('planRepoPageMove: moving a repo page to a new slug', () => {
     expect(body).toContain([`${fence}md`, `[[${OLD_SLUG}]]`, fence].join('\n'))
   })
 
+  it('repairs live links around a line-leading triple-backtick span and leaves the literal bytes alone', () => {
+    const fence = '`'.repeat(3)
+    const prose = [
+      `${fence}[[${OLD_SLUG}]]${fence} is a literal example; live [[${OLD_SLUG}]] follows it.`,
+      '',
+      `Later live [[${OLD_SLUG}|label]].`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const plan = planRepoPageMove(moveParams({files}))
+    const next = applied(plan, files)
+    const page = next[TOPIC_PATH] ?? ''
+
+    expect(plan.outcome).toBe('moved')
+    expect(next[OLD_PAGE_PATH]).toBeUndefined()
+    expect(page.slice(page.indexOf(fence))).toBe(
+      [
+        `${fence}[[${OLD_SLUG}]]${fence} is a literal example; live [[${NEW_SLUG}]] follows it.`,
+        '',
+        `Later live [[${NEW_SLUG}|label]].`,
+        '',
+      ].join('\n'),
+    )
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+  })
+
+  it('does not treat a fence-like line with trailing text as a closing fence', () => {
+    const fence = '`'.repeat(3)
+    const prose = [
+      fence,
+      `${fence}not-a-close`,
+      `[[${OLD_SLUG}]] is a literal example.`,
+      fence,
+      '',
+      `Live [[${OLD_SLUG}]] after the fence.`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const plan = planRepoPageMove(moveParams({files}))
+    const next = applied(plan, files)
+    const page = next[TOPIC_PATH] ?? ''
+
+    expect(plan.outcome).toBe('moved')
+    expect(next[OLD_PAGE_PATH]).toBeUndefined()
+    expect(page.slice(page.indexOf(fence))).toBe(
+      [
+        fence,
+        `${fence}not-a-close`,
+        `[[${OLD_SLUG}]] is a literal example.`,
+        fence,
+        '',
+        `Live [[${NEW_SLUG}]] after the fence.`,
+        '',
+      ].join('\n'),
+    )
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+  })
+
+  it('blocks the move when a live broken link follows a line-leading triple-backtick span', () => {
+    const fence = '`'.repeat(3)
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${fence}[[x]]${fence} then [[ghost-page]].\n`})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'invalid-wikilinks')
+  })
+
   it('appends exactly one manual-edit entry naming only the public old and new names, never rewriting history', () => {
     const next = applied(planRepoPageMove(moveParams()))
 

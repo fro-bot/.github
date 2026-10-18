@@ -108,6 +108,35 @@ describe('collectWikilinks', () => {
     expect(collectWikilinks('An unclosed ` tick then [[real]] and [[other]]')).toEqual(['real', 'other'])
   })
 
+  it('does not let a rejected opening in code swallow a live wikilink that follows it', () => {
+    expect(collectWikilinks('`[[literal` then [[Real]]')).toEqual(['Real'])
+    expect(collectWikilinks('`[[` x]] then [[live]]')).toEqual(['live'])
+  })
+
+  it('treats a line-leading triple-backtick span as an inline span, not a fence', () => {
+    const tick = '`'.repeat(3)
+
+    expect(collectWikilinks(`${tick}[[hidden]]${tick} and [[live]]\n[[next]]`)).toEqual(['live', 'next'])
+  })
+
+  it('opens a tilde fence even when its info string contains backticks', () => {
+    expect(collectWikilinks(['~~~ js `x`', '[[hidden]]', '~~~', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('does not close a fence on a marker followed by trailing text', () => {
+    expect(collectWikilinks(['```', '```not-a-close', '[[hidden]]', '```', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('closes a fence on a longer marker or trailing whitespace, but not on a shorter one', () => {
+    expect(collectWikilinks(['```', '[[hidden]]', '`````', '[[live]]'].join('\n'))).toEqual(['live'])
+    expect(collectWikilinks(['```', '[[hidden]]', '```  \t', '[[live]]'].join('\n'))).toEqual(['live'])
+    expect(collectWikilinks(['`````', '[[a]]', '```', '[[b]]', '`````', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('does not open a fence from a marker indented four or more spaces', () => {
+    expect(collectWikilinks(['    ```', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
   it('drops a wikilink whose closing brackets land inside a code span', () => {
     expect(collectWikilinks('[[open `x]]` and [[real]]')).toEqual(['real'])
   })

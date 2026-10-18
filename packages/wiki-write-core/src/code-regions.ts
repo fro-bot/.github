@@ -4,13 +4,28 @@ export interface CodeRegion {
   readonly end: number
 }
 
+// Up to three spaces of indentation, then a run of three or more backticks or tildes and an info string.
+const FENCE_OPENER = /^ {0,3}(`{3,}|~{3,})/u
+// A closing fence carries nothing but spaces or tabs after the marker.
+const FENCE_CLOSER = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u
+
+interface OpenFence {
+  readonly character: string
+  readonly length: number
+  readonly start: number
+}
+
 /**
  * Locate fenced code blocks and inline code spans in markdown, as sorted, non-overlapping regions.
  * Link extractors use it so link-shaped text inside code stays literal.
  *
- * - A fence opens at a line starting with three or more backticks or tildes and closes at a line
- *   with the same character and at least as many. An unclosed fence runs to the end of the content.
- *   The fence lines themselves are part of the region.
+ * - A fence opens at a line with up to three spaces of indentation, then three or more backticks
+ *   or tildes. A backtick fence's info string may not contain a backtick; a line that breaks that
+ *   rule is not a fence and is parsed for inline spans instead. A tilde fence's info string may
+ *   contain anything.
+ * - A fence closes at a line of the same character, at least as long as the opener and followed
+ *   only by spaces or tabs. An unclosed fence runs to the end of the content. The fence lines
+ *   themselves are part of the region.
  * - Outside a fence, a run of N backticks opens an inline span that closes at the next run of
  *   exactly N backticks on the same line (CommonMark, minus spans that cross a line break). A run
  *   with no matching closer is literal text. A backslash outside a span escapes the next
@@ -18,27 +33,28 @@ export interface CodeRegion {
  */
 export function findCodeRegions(content: string): CodeRegion[] {
   const regions: CodeRegion[] = []
-  let fence: {readonly character: string; readonly length: number; readonly start: number} | undefined
+  let fence: OpenFence | undefined
   let lineStart = 0
 
   while (lineStart <= content.length) {
     const newline = content.indexOf('\n', lineStart)
     const lineEnd = newline === -1 ? content.length : newline
     const line = content.slice(lineStart, lineEnd)
-    const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1]
+    // A CRLF line ending is a line ending, not part of the line.
+    const text = line.endsWith('\r') ? line.slice(0, -1) : line
 
-    if (marker !== undefined) {
-      const character = marker[0] ?? ''
-      if (fence === undefined) {
-        fence = {character, length: marker.length, start: lineStart}
-      } else if (fence.character === character && marker.length >= fence.length) {
-        regions.push({start: fence.start, end: lineEnd})
-        fence = undefined
+    if (fence === undefined) {
+      const opener = parseFenceOpener(text)
+      if (opener === undefined) {
+        for (const span of findInlineSpans(line)) {
+          regions.push({start: lineStart + span.start, end: lineStart + span.end})
+        }
+      } else {
+        fence = {...opener, start: lineStart}
       }
-    } else if (fence === undefined) {
-      for (const span of findInlineSpans(line)) {
-        regions.push({start: lineStart + span.start, end: lineStart + span.end})
-      }
+    } else if (closesFence(text, fence)) {
+      regions.push({start: fence.start, end: lineEnd})
+      fence = undefined
     }
 
     lineStart = lineEnd + 1
@@ -49,6 +65,23 @@ export function findCodeRegions(content: string): CodeRegion[] {
   }
 
   return regions
+}
+
+function parseFenceOpener(text: string): {readonly character: string; readonly length: number} | undefined {
+  const match = FENCE_OPENER.exec(text)
+  const marker = match?.[1]
+  if (match === null || marker === undefined) {
+    return undefined
+  }
+
+  const character = marker.charAt(0)
+  const info = text.slice(match[0].length)
+  return character === '`' && info.includes('`') ? undefined : {character, length: marker.length}
+}
+
+function closesFence(text: string, fence: OpenFence): boolean {
+  const marker = FENCE_CLOSER.exec(text)?.[1]
+  return marker !== undefined && marker.startsWith(fence.character) && marker.length >= fence.length
 }
 
 /** The region that contains `offset`, if any. `regions` must come from {@link findCodeRegions}. */

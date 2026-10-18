@@ -163,6 +163,45 @@ describe('resolveMarkdownLinks', () => {
       expect(resolveTargets('[a `b](c.md) d` e](f.md)')).toEqual([])
     })
 
+    it('does not let a rejected bracket in code swallow a live link that follows it', () => {
+      expect(resolveTargets('`[literal` then [Real](real.md)')).toEqual(['real.md'])
+      expect(resolveTargets('``[a `` then [Real](real.md) and `[b` [Other](other.md)')).toEqual(['real.md', 'other.md'])
+    })
+
+    it('treats a line-leading triple-backtick span as an inline span, not a fence', () => {
+      const tick = '`'.repeat(3)
+
+      expect(resolveTargets(`${tick}[Broken](missing.md)${tick} and [Live](live.md)`)).toEqual(['live.md'])
+      expect(resolveTargets([`${tick}example${tick}`, '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+    })
+
+    it('opens a tilde fence even when its info string contains backticks', () => {
+      expect(resolveTargets(['~~~ js `x`', '[Broken](missing.md)', '~~~', '[Live](live.md)'].join('\n'))).toEqual([
+        'live.md',
+      ])
+    })
+
+    it('does not close a fence on a marker followed by trailing text', () => {
+      const content = ['```', '```not-a-close', '[Broken](missing.md)', '```', '[Live](live.md)'].join('\n')
+
+      expect(resolveTargets(content)).toEqual(['live.md'])
+    })
+
+    it('closes a fence on a longer marker, on trailing spaces or tabs, but not on a shorter one', () => {
+      expect(resolveTargets(['```', '[Broken](a.md)', '`````', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(resolveTargets(['```', '[Broken](a.md)', '```  \t', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(
+        resolveTargets(['`````', '[Broken](a.md)', '```', '[Still](b.md)', '`````', '[Live](live.md)'].join('\n')),
+      ).toEqual(['live.md'])
+    })
+
+    it('does not open a fence from a marker indented four or more spaces', () => {
+      expect(resolveTargets(['    ```', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(resolveTargets(['   ```', '[Broken](missing.md)', '   ```', '[Live](live.md)'].join('\n'))).toEqual([
+        'live.md',
+      ])
+    })
+
     // Regression for #3903: wiki-lint flagged the README footer example quoted in a wiki page as a broken link.
     it('does not report the link-shaped code span from the #3903 wiki line', () => {
       const line =

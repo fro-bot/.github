@@ -11,16 +11,27 @@ export function resolveMarkdownLinks(content, containingFile, options = {}) {
     for (const [lineIndex, line] of content.split('\n').entries()) {
         const currentLineOffset = lineOffset;
         lineOffset += line.length + 1;
-        for (const match of line.matchAll(MARKDOWN_LINK_PATTERN)) {
+        // The shared global pattern is stateful; every line restarts it and the loop runs it to exhaustion.
+        MARKDOWN_LINK_PATTERN.lastIndex = 0;
+        for (let match = MARKDOWN_LINK_PATTERN.exec(line); match !== null; match = MARKDOWN_LINK_PATTERN.exec(line)) {
             const target = match[1];
             const matchIndex = match.index;
-            if (target === undefined || matchIndex === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
+            if (target === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
                 continue;
             }
-            // Code binds tighter than links: a match that starts or ends inside a fence or span is literal text.
+            // Code binds tighter than links, so a match that touches a fence or span is literal text.
+            // A rejected match must not consume what follows it: the regex runs through any live link
+            // after an unclosed bracket in code. Resume after the region the match opened in, or just
+            // past its first character when it only closes inside one.
             const matchStart = currentLineOffset + matchIndex;
             const matchLast = matchStart + match[0].length - 1;
-            if (findRegionAt(regions, matchStart) !== undefined || findRegionAt(regions, matchLast) !== undefined) {
+            const openingRegion = findRegionAt(regions, matchStart);
+            if (openingRegion !== undefined) {
+                MARKDOWN_LINK_PATTERN.lastIndex = Math.max(openingRegion.end - currentLineOffset, matchIndex + 1);
+                continue;
+            }
+            if (findRegionAt(regions, matchLast) !== undefined) {
+                MARKDOWN_LINK_PATTERN.lastIndex = matchIndex + 1;
                 continue;
             }
             const normalizedTarget = target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
