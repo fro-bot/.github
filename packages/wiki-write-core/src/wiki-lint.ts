@@ -287,7 +287,8 @@ export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult
       })
     }
 
-    for (const target of collectWikilinks(page.body)) {
+    const wikilinkTargets = collectWikilinks(page.body)
+    for (const target of wikilinkTargets) {
       if (!pageTargets.has(target)) {
         deterministicFindings.push({
           kind: 'broken-wikilink',
@@ -314,7 +315,7 @@ export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult
       })
     }
 
-    if (!page.body.includes('[[')) {
+    if (wikilinkTargets.length === 0) {
       advisoryFindings.push({
         kind: 'missing-cross-reference',
         path: page.path,

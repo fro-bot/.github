@@ -118,4 +118,98 @@ describe('resolveMarkdownLinks', () => {
       },
     ])
   })
+
+  describe('inline code spans', () => {
+    const resolveTargets = (content: string): string[] =>
+      resolveMarkdownLinks(content, 'docs/guide.md', {files: {}}).map(link => link.target)
+
+    it('ignores a link inside a single-backtick code span', () => {
+      expect(resolveTargets('The footer is `[MIT](LICENSE)` today.')).toEqual([])
+    })
+
+    it('ignores a link inside a double-backtick code span that contains a backtick', () => {
+      expect(resolveTargets('Write ``a ` [Broken](missing.md)`` literally.')).toEqual([])
+    })
+
+    it('still ignores a link inside a fenced block', () => {
+      expect(resolveTargets(['```', '[Broken](missing.md)', '```'].join('\n'))).toEqual([])
+    })
+
+    it('still finds a real link on the same line as a code span', () => {
+      expect(resolveTargets('Use `[MIT](LICENSE)` or see [Guide](guide.md) and `code`.')).toEqual(['guide.md'])
+    })
+
+    it('finds a link whose text contains a code span', () => {
+      expect(resolveTargets('See [the `foo` guide](guide.md).')).toEqual(['guide.md'])
+    })
+
+    it('does not let an escaped backtick open a span', () => {
+      expect(resolveTargets('Literal \\` then [Real](real.md) then `[Fake](fake.md)`')).toEqual(['real.md'])
+      expect(resolveTargets('Literal \\` and [Real](real.md) and \\` end')).toEqual(['real.md'])
+    })
+
+    it('does not let a backtick run of a different length close a span', () => {
+      expect(resolveTargets('``[Broken](missing.md)` still open')).toEqual(['missing.md'])
+    })
+
+    it('does not let an unclosed backtick run swallow the rest of the line', () => {
+      expect(resolveTargets('An unclosed ` tick then [Real](real.md) and [Other](other.md)')).toEqual([
+        'real.md',
+        'other.md',
+      ])
+    })
+
+    it('drops a link that straddles a code span boundary', () => {
+      expect(resolveTargets('[a `b](c.md) d` e](f.md)')).toEqual([])
+    })
+
+    it('does not let a rejected bracket in code swallow a live link that follows it', () => {
+      expect(resolveTargets('`[literal` then [Real](real.md)')).toEqual(['real.md'])
+      expect(resolveTargets('``[a `` then [Real](real.md) and `[b` [Other](other.md)')).toEqual(['real.md', 'other.md'])
+    })
+
+    it('treats a line-leading triple-backtick span as an inline span, not a fence', () => {
+      const tick = '`'.repeat(3)
+
+      expect(resolveTargets(`${tick}[Broken](missing.md)${tick} and [Live](live.md)`)).toEqual(['live.md'])
+      expect(resolveTargets([`${tick}example${tick}`, '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+    })
+
+    it('opens a tilde fence even when its info string contains backticks', () => {
+      expect(resolveTargets(['~~~ js `x`', '[Broken](missing.md)', '~~~', '[Live](live.md)'].join('\n'))).toEqual([
+        'live.md',
+      ])
+    })
+
+    it('does not close a fence on a marker followed by trailing text', () => {
+      const content = ['```', '```not-a-close', '[Broken](missing.md)', '```', '[Live](live.md)'].join('\n')
+
+      expect(resolveTargets(content)).toEqual(['live.md'])
+    })
+
+    it('closes a fence on a longer marker, on trailing spaces or tabs, but not on a shorter one', () => {
+      expect(resolveTargets(['```', '[Broken](a.md)', '`````', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(resolveTargets(['```', '[Broken](a.md)', '```  \t', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(
+        resolveTargets(['`````', '[Broken](a.md)', '```', '[Still](b.md)', '`````', '[Live](live.md)'].join('\n')),
+      ).toEqual(['live.md'])
+    })
+
+    it('does not open a fence from a marker indented four or more spaces', () => {
+      expect(resolveTargets(['    ```', '[Live](live.md)'].join('\n'))).toEqual(['live.md'])
+      expect(resolveTargets(['   ```', '[Broken](missing.md)', '   ```', '[Live](live.md)'].join('\n'))).toEqual([
+        'live.md',
+      ])
+    })
+
+    // Regression for #3903: wiki-lint flagged the README footer example quoted in a wiki page as a broken link.
+    it('does not report the link-shaped code span from the #3903 wiki line', () => {
+      const line =
+        "- **License:** MIT (declared in `package.json` and README badge; GitHub `license` API reads null — no detectable `LICENSE` file, consistent across all surveys). **2026-09-16 addition:** the README's footer link is `[MIT](LICENSE)` — a relative link to a file that has never existed in the 66-blob tree. It renders as a live link and 404s. Small, but it is the same defect class as the build badge: a reference that looks resolved because nothing tries to resolve it."
+
+      expect(resolveMarkdownLinks(line, 'knowledge/wiki/repos/marcusrbrown--marcusrbrown-com.md', {files: {}})).toEqual(
+        [],
+      )
+    })
+  })
 })

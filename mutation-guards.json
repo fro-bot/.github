@@ -17,6 +17,10 @@
       "reason": "resolveMarkdownLinks' exists signal is consumed only by wiki-lint.ts, itself not-mutated pending relocation; no mutated module reaches this file."
     },
     {
+      "path": "packages/wiki-write-core/src/code-regions.ts",
+      "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the built dist rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts."
+    },
+    {
       "path": "packages/wiki-write-core/src/index.ts",
       "reason": "Pure re-export barrel with no logic of its own. The core logic lives in the modules it re-exports (corrections.ts, frontmatter.ts, gate-contract.ts, private-leak-adapter.ts, private-leak.ts, rendering-policy.ts, wiki-ingest.ts, wiki-lint.ts), each separately dispositioned in this list or stryker.config.json's mutate set."
     },

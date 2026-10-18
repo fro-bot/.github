@@ -115,7 +115,8 @@ export function lintWikiSnapshot(params) {
                 message: `Missing required frontmatter: ${missingFields.join(', ')}`,
             });
         }
-        for (const target of collectWikilinks(page.body)) {
+        const wikilinkTargets = collectWikilinks(page.body);
+        for (const target of wikilinkTargets) {
             if (!pageTargets.has(target)) {
                 deterministicFindings.push({
                     kind: 'broken-wikilink',
@@ -139,7 +140,7 @@ export function lintWikiSnapshot(params) {
                 message: `Page has not been updated in ${STALE_DAYS}+ days`,
             });
         }
-        if (!page.body.includes('[[')) {
+        if (wikilinkTargets.length === 0) {
             advisoryFindings.push({
                 kind: 'missing-cross-reference',
                 path: page.path,

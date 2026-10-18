@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { basename } from 'node:path';
 import { parse } from 'yaml';
+import { findCodeRegions, findRegionAt } from "./code-regions.js";
 /** Canonical root directory for wiki page content. Shared by every wiki script. */
 export const WIKI_ROOT = 'knowledge/wiki';
 /**
@@ -38,16 +39,31 @@ export function splitFrontmatter(content) {
 /**
  * The one wikilink grammar: `[[target]]` and `[[target|label]]`, closed by the first `]]`.
  * A link with an empty target, or with a `|` and an empty label, is not a link.
+ *
+ * Fenced code blocks and inline code spans are literal text: a `[[` that opens inside one, or a
+ * link whose closing `]]` lands inside one, is not a link.
  */
 function scanWikilinks(content) {
     const links = [];
+    const regions = findCodeRegions(content);
     const pattern = /\[\[/gu;
     let match = pattern.exec(content);
     while (match !== null) {
         const start = match.index;
+        const openingRegion = findRegionAt(regions, start);
+        if (openingRegion !== undefined) {
+            pattern.lastIndex = openingRegion.end;
+            match = pattern.exec(content);
+            continue;
+        }
         const close = content.indexOf(']]', start + 2);
         if (close === -1) {
             break;
+        }
+        if (findRegionAt(regions, close + 1) !== undefined) {
+            pattern.lastIndex = start + 2;
+            match = pattern.exec(content);
+            continue;
         }
         const inner = content.slice(start + 2, close);
         const separator = inner.indexOf('|');
