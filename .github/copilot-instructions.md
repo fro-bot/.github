@@ -52,7 +52,7 @@ If guidance conflicts, follow the order above.
 - Autonomous writes target the unprotected `data` branch (`main` has `enforce_admins: true`).
 - All metadata writes go through `scripts/commit-metadata.ts`. The one exception is the operator-dispatched rename workflow (`scripts/rename-tracked-repo.ts`), which writes `metadata/repos.yaml` together with the wiki page move in one atomic Git Data commit.
 - `data → main` promotes via the `Merge Data Branch` workflow (weekly; see [`merge-data.yaml`](workflows/merge-data.yaml) for schedule).
-- Drafted solution docs bypass `data`: the weekly [`draft-solutions.yaml`](workflows/draft-solutions.yaml) workflow commits `docs/solutions/` drafts to the `docs/drafted-solutions` branch and opens a PR that Fro Bot reviews; merge is manual, never automatic.
+- Drafted solution docs bypass `data`: the weekly [`draft-solutions.yaml`](workflows/draft-solutions.yaml) workflow commits `docs/solutions/` drafts to the `docs/drafted-solutions` branch and opens a PR that is reviewed and merged manually (Fro Bot cannot review a first-party App's PR, [fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)); merge is never automatic.
 - Conditional auto-merge: PRs touching only `knowledge/` or `metadata/` paths are labeled for auto-merge; PRs touching code paths require human approval. See [`metadata/README.md`](../metadata/README.md) for schema, credential expectations, and commit conventions.
 
 ## Required Workflow for Every Change

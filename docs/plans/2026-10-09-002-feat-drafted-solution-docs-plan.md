@@ -8,6 +8,8 @@ origin: docs/brainstorms/2026-10-09-drafted-solution-docs-requirements.md
 
 # feat: Draft solution docs from learning proposals
 
+> **2026-10-18:** drafted PRs are reviewed manually; the Fro Bot review requirement (including the `fro-bot.yaml` skip exception and the review request) was dropped because the agent can't review first-party App PRs, see [fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520). The text below is the original record and is left as written.
+
 ## Overview
 
 A new weekly workflow turns open learning proposals into one drafted `docs/solutions/` PR. A read-only harvest finds proposals the open draft does not yet cover; a no-write agent drafts doc changes and evidence rows into a workspace handoff; a trusted publish job validates the handoff, privacy-gates every public surface, and either appends a commit to the drafted branch and opens or updates the PR, or comments on and closes proposals when nothing changed. Fro Bot reviews that PR through a narrow exception; the daily report points to it.
