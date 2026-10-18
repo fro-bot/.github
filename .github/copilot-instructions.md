@@ -79,6 +79,8 @@ If you touched docs/instructions/agent files, ensure markdown lint rules still p
 
 If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `pnpm check:mutation-guards`.
 
+If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `pnpm check:renovate-config` (needs network and npm; installs the Renovate pinned in `main.yaml` into a scratch dir, never into the repo; CI runs it in the `Check Workflows` job).
+
 ## High-Risk Do / Don’t Patterns
 
 ### Package manager

@@ -125,6 +125,12 @@ This repository provides shared configurations and automation for the Fro Bot ec
    # Linting (ESLint runs Prettier via eslint-plugin-prettier)
    pnpm lint
 
+   # Renovate preset gate: validator (--strict --no-global) + allowedVersions range check.
+   # Needs network and npm: installs the Renovate pinned in .github/workflows/main.yaml
+   # (env.RENOVATE_VERSION) into $RENOVATE_PREFIX (default: <tmp>/renovate-<version>), outside
+   # node_modules and the lockfile, then fetches version-pinned github> presets.
+   pnpm check:renovate-config
+
    # Tests (Vitest, colocated as scripts/*.test.ts)
    pnpm test
 
@@ -198,7 +204,7 @@ Quality gates:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Main** | Lint, type checking, tests, and workflow validation | PR, push to main, dispatch |
+| **Main** | Lint, type checking, tests, workflow validation, and Renovate preset validation | PR, push to main, dispatch |
 | **CodeQL** | Security vulnerability analysis | PR, push to main, weekly |
 | **Dependency Review** | Block PRs introducing known-vulnerable packages | Pull request |
 | **Scorecard supply-chain security** | OpenSSF supply-chain security posture | Push to main, weekly |

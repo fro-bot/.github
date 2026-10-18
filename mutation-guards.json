@@ -87,6 +87,22 @@
     {
       "path": "scripts/check-override-floors.ts",
       "reason": "Supply-chain lint verifying pnpm-workspace.yaml override floors sit at or above their advisory's patched_versions (see PR #3871). It is a real security-relevant gate, but its rejection paths (fail-closed on unparseable audit output, unparseable ranges, unrecognized severities, and every missing/below-floor case) are enumerated and asserted directly in scripts/check-override-floors.test.ts, including a regression fixture reproducing PR #3871's own pre-fix floors. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here, matching scripts/check-solutions-examples.ts's precedent."
+    },
+    {
+      "path": "scripts/check-renovate-ranges.ts",
+      "reason": "CI lint that parses allowedVersions values with Renovate's own versioning API (renovate/dist/modules/versioning, util/string-match) and fails on anything Renovate would reject at lookup time. It protects the published default.json preset from a config-breaking edit, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Every verdict branch (npm range, regex form, rule-declared non-npm versioning, npm fallback, unknown versioning, non-string, templated skip) and the failing rule naming are asserted directly in scripts/check-renovate-ranges.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
+    },
+    {
+      "path": "scripts/renovate-runtime.ts",
+      "reason": "Locates, installs and loads the pinned scratch Renovate for the preset gate (pin parsing, prefix resolution, install-command shape, fail-loud version check). CI tooling, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Pin parsing, prefix resolution, install flags and the missing/mismatched-install failures are asserted in scripts/renovate-runtime.test.ts; the real module loading is exercised by its RENOVATE_PREFIX integration test."
+    },
+    {
+      "path": "scripts/install-renovate.ts",
+      "reason": "Thin CLI over installRenovate in scripts/renovate-runtime.ts: reads the pin, resolves the prefix, installs, prints the prefix. The logic it delegates to is tested there; this file holds no decision of its own."
+    },
+    {
+      "path": "scripts/check-renovate-config.ts",
+      "reason": "CI lint orchestrating renovate-config-validator (--strict --no-global) over default.json, .github/renovate.json5 and the version-pinned github> presets they extend, then the allowedVersions range check. It protects the published default.json preset, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Fetch retry/404 fall-through, floating/unsupported preset classification, fail-closed fetch errors, and the real validator's exit-code contract are asserted directly in scripts/check-renovate-config.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
     }
   ]
 }
