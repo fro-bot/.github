@@ -58,7 +58,7 @@
     },
     {
       "description": "Update my project dependencies without a minimum release age.",
-      "matchSourceUrlPrefixes": ["https://github.com/bfra-me", "https://github.com/fro-bot"],
+      "matchSourceUrls": ["https://github.com/bfra-me{/,}**", "https://github.com/fro-bot{/,}**"],
       "minimumReleaseAge": null,
       "prCreation": "immediate"
     },
