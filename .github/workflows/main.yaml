@@ -23,6 +23,17 @@ env:
   # in workflow files keeps it current. Renovate is not a repo dependency (its tree carries unfixed
   # advisories that fail `check:override-floors`); it is installed into a scratch prefix at check time.
   RENOVATE_VERSION: 44.165.2 # renovate: datasource=npm depName=renovate
+  # The release tools behind packages/wiki-write-core's release decision (scripts/wiki-write-core-release.ts
+  # reads these from this file). They are not repo dependencies either: semantic-release's tree carries
+  # `braces` with no patched version. Installed into a scratch prefix at check time.
+  SEMANTIC_RELEASE_VERSION: 25.0.9 # renovate: datasource=npm depName=semantic-release
+  SEMANTIC_RELEASE_EXEC_VERSION: 7.1.0 # renovate: datasource=npm depName=@semantic-release/exec
+  SEMANTIC_RELEASE_NPM_VERSION: 13.2.0 # renovate: datasource=npm depName=@semantic-release/npm
+  SEMANTIC_RELEASE_GITHUB_VERSION: 12.0.10 # renovate: datasource=npm depName=@semantic-release/github
+  SEMANTIC_RELEASE_COMMIT_ANALYZER_VERSION: 13.0.1 # renovate: datasource=npm depName=@semantic-release/commit-analyzer
+  SEMANTIC_RELEASE_NOTES_GENERATOR_VERSION: 14.1.1 # renovate: datasource=npm depName=@semantic-release/release-notes-generator
+  CONVENTIONAL_CHANGELOG_CONVENTIONALCOMMITS_VERSION: 10.4.1 # renovate: datasource=npm depName=conventional-changelog-conventionalcommits
+  CONVENTIONAL_CHANGELOG_WRITER_VERSION: 9.3.0 # renovate: datasource=npm depName=conventional-changelog-writer
 
 defaults:
   run:
@@ -163,6 +174,20 @@ jobs:
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
         run: pnpm exec vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
+
+      - name: 📦 Install Release Tools
+        # The pinned semantic-release tool set goes into a scratch prefix outside the checkout, with
+        # lifecycle scripts off. Nothing is added to package.json or pnpm-lock.yaml.
+        env:
+          WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
+        run: node scripts/wiki-write-core-release.ts install
+
+      - name: 🧪 Test Release Decision Against Pinned Release Tools
+        # `pnpm test` skips the tests that need the real plugins; run them here, against the install
+        # the previous step left in WIKI_WRITE_CORE_RELEASE_PREFIX. They fail if that prefix is empty.
+        env:
+          WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
+        run: pnpm exec vitest run scripts/wiki-write-core-release.test.ts
 
   check-wiki-authority:
     name: Check Wiki Authority
