@@ -72,6 +72,7 @@ function expression(body: string): string {
 const NEXT_RELEASE_VERSION = ['$', '{nextRelease.version}'].join('')
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
+// The npm trusted publisher binds to this filename.
 const workflowPath = join(repositoryRoot, '.github/workflows/release-wiki-write-core.yaml')
 const workflowRaw = readFileSync(workflowPath, 'utf8')
 const parsed: unknown = parse(workflowRaw)
@@ -128,10 +129,6 @@ describe('release-wiki-write-core.yaml structure', () => {
   it('serializes releases and never cancels one in flight', () => {
     expect(workflow.concurrency?.group).toBe('release-wiki-write-core')
     expect(workflow.concurrency?.['cancel-in-progress']).toBe(false)
-  })
-
-  it('is named by the filename the npm trusted publisher binds to', () => {
-    expect(workflowPath.endsWith('/.github/workflows/release-wiki-write-core.yaml')).toBe(true)
   })
 })
 
@@ -490,7 +487,20 @@ describe('publish: validate release decision (run under bash against a real repo
   it('accepts a consistent decision that has a package commit since the base tag', () => {
     expect(validate({type: 'minor', version: '0.2.0', baseTag: 'wiki-write-core-v0.1.0'})).toMatchObject({status: 0})
     expect(validate({type: 'patch', version: '0.1.1', baseTag: 'wiki-write-core-v0.1.0'})).toMatchObject({status: 0})
-    expect(validate({type: 'major', version: '1.0.0', baseTag: 'wiki-write-core-v0.1.0'})).toMatchObject({status: 0})
+  })
+
+  it('rejects a major release from a 0.x base, even when the version is the recomputed 1.0.0', () => {
+    const result = validate({type: 'major', version: '1.0.0', baseTag: 'wiki-write-core-v0.1.0'})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::a 0.x package does not release a major version')
+  })
+
+  it('accepts a major release from a base of 1.x or higher', () => {
+    gitIn(dir, 'tag', 'wiki-write-core-v1.2.0')
+    commit('feat!: break the package', 'packages/wiki-write-core/src/y.ts')
+
+    expect(validate({type: 'major', version: '2.0.0', baseTag: 'wiki-write-core-v1.2.0'})).toMatchObject({status: 0})
   })
 
   it.each([

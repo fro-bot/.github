@@ -116,7 +116,10 @@ export function selectBaseTag(tags: readonly string[]): string | undefined {
 
 export function incrementVersion(version: string, type: ReleaseType): string {
   const [major = 0, minor = 0, patch = 0] = version.split('.').map(Number)
-  if (type === 'major') return `${major + 1}.0.0`
+  if (type === 'major') {
+    if (major === 0) throw new Error('a 0.x package does not release a major version')
+    return `${major + 1}.0.0`
+  }
   if (type === 'minor') return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
 }
@@ -548,6 +551,6 @@ export async function main(
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.main) {
   await main()
 }

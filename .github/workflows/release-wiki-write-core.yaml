@@ -200,6 +200,9 @@ jobs:
             patch) expected="${major}.${minor}.$((patch + 1))" ;;
           esac
           [ "$DECISION_VERSION" = "$expected" ] || fail "the decided version is not the base tag version incremented by the decided type"
+          if [ "$DECISION_TYPE" = major ] && [ "$major" -eq 0 ]; then
+            fail "a 0.x package does not release a major version"
+          fi
 
           git rev-parse --verify --quiet "refs/tags/${DECISION_BASE_TAG}^{commit}" > /dev/null \
             || fail "the decided base tag is not present in this checkout"

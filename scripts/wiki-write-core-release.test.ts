@@ -1,7 +1,16 @@
 import type {Decision, Git, InstallCommand, PluginStep, ReleaseCommit, ToolPins} from './wiki-write-core-release.ts'
 
-import {execFileSync} from 'node:child_process'
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {execFileSync, spawnSync} from 'node:child_process'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
@@ -71,9 +80,15 @@ describe('incrementVersion', () => {
     ['0.1.7', 'minor', '0.2.0'],
     ['0.1.7', 'patch', '0.1.8'],
     ['0.10.9', 'patch', '0.10.10'],
-    ['0.9.9', 'major', '1.0.0'],
+    ['1.0.0', 'major', '2.0.0'],
+    ['1.4.2', 'major', '2.0.0'],
+    ['1.4.2', 'minor', '1.5.0'],
   ] as const)('%s + %s = %s', (base, type, expected) => {
     expect(incrementVersion(base, type)).toBe(expected)
+  })
+
+  it.each(['0.0.0', '0.1.0', '0.9.9'])('refuses a major release from the 0.x base %s', base => {
+    expect(() => incrementVersion(base, 'major')).toThrow('a 0.x package does not release a major version')
   })
 })
 
@@ -380,7 +395,7 @@ describe('decideRelease', () => {
     expect(analyzed).toEqual([])
   })
 
-  it('fails when a commit has no first parent to diff against', async () => {
+  it('surfaces an unreadable changed-path list as a failed decision', async () => {
     repo.commit('feat: x', PACKAGE_FILE)
     const failingGit: Git = args => {
       if (args[0] === 'diff') throw new Error('fatal: bad revision')
@@ -398,6 +413,40 @@ describe('decideRelease', () => {
         logger,
       }),
     ).rejects.toThrow(/cannot read the changed paths of commit/)
+  })
+
+  it('refuses a major release from a 0.x base, so the decision fails closed', async () => {
+    repo.commit('feat!: break the package', PACKAGE_FILE)
+
+    await expect(
+      decideRelease({
+        git: repo.git,
+        ref: 'HEAD',
+        releaserc,
+        plugins: {analyzeCommits: async () => 'major', generateNotes},
+        repositoryUrl: 'https://github.com/fro-bot/.github.git',
+        cwd: repo.dir,
+        logger,
+      }),
+    ).rejects.toThrow('a 0.x package does not release a major version')
+  })
+
+  it('releases a major version from a base of 1.x or higher', async () => {
+    repo.commit('fix: reach 1.x', PACKAGE_FILE)
+    repo.tag('wiki-write-core-v1.2.0')
+    repo.commit('feat!: break the package', PACKAGE_FILE)
+
+    const decision = await decideRelease({
+      git: repo.git,
+      ref: 'HEAD',
+      releaserc,
+      plugins: {analyzeCommits: async () => 'major', generateNotes},
+      repositoryUrl: 'https://github.com/fro-bot/.github.git',
+      cwd: repo.dir,
+      logger,
+    })
+
+    expect(decision).toMatchObject({release: true, type: 'major', version: '2.0.0', baseTag: 'wiki-write-core-v1.2.0'})
   })
 
   it('rejects an analyzer result that is not a release type', async () => {
@@ -664,6 +713,178 @@ describe('resolvePrefix', () => {
     )
     expect(resolvePrefix({RUNNER_TEMP: '/runner'})).toBe(join('/runner', 'wiki-write-core-release-tools'))
     expect(resolvePrefix({})).toBe(join(tmpdir(), 'wiki-write-core-release-tools'))
+  })
+})
+
+// Runs the script as a child process, the way the workflow does, against a real git repository and a
+// scratch prefix that holds stand-in plugins pinned to the versions the workflow declares.
+describe('command line', () => {
+  const scriptPath = join(repositoryRoot, 'scripts/wiki-write-core-release.ts')
+  const workflowFile = join(repositoryRoot, TOOLS_WORKFLOW_FILE)
+  const pins = parseToolPins(readFileSync(workflowFile, 'utf8'), TOOLS_WORKFLOW_FILE)
+  const releasercText = readFileSync(join(repositoryRoot, RELEASERC_FILE), 'utf8')
+
+  let repo: TestRepo
+  let scratch: string
+  let prefix: string
+
+  /** Installs every pinned tool as an empty package; the two plugins get a fake implementation. */
+  function installFakeTools(): void {
+    for (const {name} of RELEASE_TOOLS) {
+      const directory = join(prefix, 'node_modules', name)
+      mkdirSync(directory, {recursive: true})
+      writeFileSync(
+        join(directory, 'package.json'),
+        JSON.stringify({name, version: pins[name], type: 'module', main: 'index.js'}),
+      )
+      writeFileSync(join(directory, 'index.js'), 'export {}\n')
+    }
+    writeFileSync(
+      join(prefix, 'node_modules', '@semantic-release', 'commit-analyzer', 'index.js'),
+      'export const analyzeCommits = async () => process.env.FAKE_RELEASE_TYPE || null\n',
+    )
+    writeFileSync(
+      join(prefix, 'node_modules', '@semantic-release', 'release-notes-generator', 'index.js'),
+      "export const generateNotes = async (_config, context) => '## ' + context.nextRelease.version + '\\n\\nfake notes\\n\\n'\n",
+    )
+  }
+
+  function runCli(
+    script: string,
+    args: readonly string[],
+    extraEnv: Record<string, string> = {},
+  ): {status: number | null; stdout: string; stderr: string} {
+    const result = spawnSync(process.execPath, [script, ...args], {
+      cwd: repo.dir,
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH ?? '',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_SYSTEM: '/dev/null',
+        [PREFIX_ENV]: prefix,
+        ...extraEnv,
+      },
+    })
+    return {status: result.status, stdout: result.stdout, stderr: result.stderr}
+  }
+
+  function decide(extraEnv: Record<string, string> = {}, script = scriptPath, notesFile = join(scratch, 'notes.md')) {
+    return runCli(script, ['decide', '--workflow', workflowFile, '--notes', notesFile], extraEnv)
+  }
+
+  beforeEach(() => {
+    repo = createRepo()
+    scratch = mkdtempSync(join(tmpdir(), 'wiki-write-core-release-cli-'))
+    prefix = join(scratch, 'prefix')
+    installFakeTools()
+    repo.git(['remote', 'add', 'origin', 'https://github.com/fro-bot/.github.git'])
+    mkdirSync(join(repo.dir, dirname(RELEASERC_FILE)), {recursive: true})
+    writeFileSync(join(repo.dir, RELEASERC_FILE), releasercText)
+    repo.commit('chore: seed', 'README.md')
+    repo.tag('wiki-write-core-v0.0.0')
+  })
+
+  afterEach(() => {
+    rmSync(repo.dir, {recursive: true, force: true})
+    rmSync(scratch, {recursive: true, force: true})
+  })
+
+  it('runs main() when the script path contains a space', () => {
+    const spaced = join(scratch, 'a directory with spaces')
+    mkdirSync(spaced)
+    // `yaml` resolves through the repository's node_modules, so the copy links to it.
+    symlinkSync(join(repositoryRoot, 'node_modules'), join(spaced, 'node_modules'))
+    const copy = join(spaced, 'wiki-write-core-release.ts')
+    copyFileSync(scriptPath, copy)
+    repo.git(['tag', '--delete', 'wiki-write-core-v0.0.0'])
+
+    const result = decide({}, copy)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('no wiki-write-core-v* release tag is reachable from HEAD')
+  })
+
+  it('appends type, version and base-tag to GITHUB_OUTPUT, prints them, and writes the notes file', () => {
+    repo.commit('feat: add the thing', PACKAGE_FILE)
+    const githubOutput = join(scratch, 'github-output')
+    writeFileSync(githubOutput, 'existing=1\n')
+    const notesFile = join(scratch, 'nested', 'notes.md')
+
+    const result = decide({GITHUB_OUTPUT: githubOutput, FAKE_RELEASE_TYPE: 'minor'}, scriptPath, notesFile)
+
+    const expected = 'type=minor\nversion=0.1.0\nbase-tag=wiki-write-core-v0.0.0\n'
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(expected)
+    expect(readFileSync(githubOutput, 'utf8')).toBe(`existing=1\n${expected}`)
+    expect(readFileSync(notesFile, 'utf8')).toBe('## 0.1.0\n\nfake notes\n')
+  })
+
+  it('reports type=none and writes no notes when nothing releases', () => {
+    repo.commit('feat: scripts only', 'scripts/a.ts')
+    const githubOutput = join(scratch, 'github-output')
+    const notesFile = join(scratch, 'notes.md')
+
+    const result = decide({GITHUB_OUTPUT: githubOutput, FAKE_RELEASE_TYPE: 'minor'}, scriptPath, notesFile)
+
+    const expected = 'type=none\nversion=\nbase-tag=wiki-write-core-v0.0.0\n'
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(expected)
+    expect(readFileSync(githubOutput, 'utf8')).toBe(expected)
+    expect(existsSync(notesFile)).toBe(false)
+  })
+
+  it('reports type=none when the analyzer finds no releasable commit', () => {
+    repo.commit('chore: tidy the package', PACKAGE_FILE)
+
+    const result = decide()
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe('type=none\nversion=\nbase-tag=wiki-write-core-v0.0.0\n')
+  })
+
+  it('writes nothing to GITHUB_OUTPUT when the variable is unset', () => {
+    repo.commit('feat: add the thing', PACKAGE_FILE)
+
+    const result = decide({FAKE_RELEASE_TYPE: 'patch'})
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe('type=patch\nversion=0.0.1\nbase-tag=wiki-write-core-v0.0.0\n')
+  })
+
+  it('fails closed, with no output and no notes, on a major release from a 0.x base', () => {
+    repo.commit('feat!: break the package', PACKAGE_FILE)
+    const githubOutput = join(scratch, 'github-output')
+    const notesFile = join(scratch, 'notes.md')
+
+    const result = decide({GITHUB_OUTPUT: githubOutput, FAKE_RELEASE_TYPE: 'major'}, scriptPath, notesFile)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('a 0.x package does not release a major version')
+    expect(existsSync(githubOutput)).toBe(false)
+    expect(existsSync(notesFile)).toBe(false)
+  })
+
+  it.each([
+    ['an unknown command', ['bogus'], /usage: wiki-write-core-release\.ts <install\|decide>/],
+    ['no command', [], /usage: wiki-write-core-release\.ts/],
+    ['an unknown flag', ['decide', '--bogus', 'x'], /decide: unknown argument "--bogus"/],
+    ['a flag allowed only for another command', ['install', '--notes', 'x'], /install: unknown argument "--notes"/],
+    ['a flag without a value', ['decide', '--notes'], /decide: --notes requires a value/],
+    ['decide without --notes', ['decide', '--workflow', workflowFile], /decide: --notes <path> is required/],
+  ])('exits 1 with a message for %s', (_label, args, message) => {
+    const result = runCli(scriptPath, args)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toMatch(message)
+    expect(result.stdout).toBe('')
+  })
+
+  it('prints the prefix and installs nothing when the pinned tools are already present', () => {
+    const result = runCli(scriptPath, ['install', '--workflow', workflowFile])
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(`${prefix}\n`)
+    expect(result.stderr).toContain('already-installed')
   })
 })
 
