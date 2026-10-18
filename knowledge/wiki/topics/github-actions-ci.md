@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-15
+updated: 2026-10-18
 sources:
+  - url: https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/action.yaml
+    sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
+    accessed: 2026-10-18
   - url: https://github.com/marcusrbrown/infra/blob/d636f2690f4e778f05cbca6f008feba72287075e/apps/gateway/src/deploy.ts
     sha: d636f2690f4e778f05cbca6f008feba72287075e
     accessed: 2026-10-15
@@ -316,6 +319,33 @@ related:
 ---
 
 # GitHub Actions CI
+
+## An event alternative must not bypass feature opt-in (2026-10-18)
+
+[[bfra-me--renovate-action]]'s action manifest at `1fedb47e` gates cache
+restore/prepare on `enable-cache == 'true'`, but cache finalization and save
+both end their conditions with an ungrouped `|| github.event_name == 'push'`:
+
+```text
+(success() || failure()) && enabled && !hit || push
+```
+
+That parses as `((success || failure) && enabled && !hit) || push`, so push
+admits those steps even when the consumer selects `cache: false`. Finalization
+contains cache deletion and ownership adjustment; the save action targets the
+configured cache path. Source text establishes eligibility, not successful
+deletion, persistence, or an observed incident. The earlier repo-page shorthand
+that all cache maintenance was conditional on opt-in is therefore too broad.
+
+Keep invariant guards outside an event alternative: for the intended opt-in
+contract, use `(success || failure) && enabled && (!hit || push)`. Verify the
+event × enabled × hit cases, including push with caching disabled, rather than
+checking only the normal cache-miss path. The general failure mode is an OR
+branch that quietly drops every guard to its left; the same reasoning applies
+to authorization and dry-run switches, though neither was shown defective by
+this particular observation.
+
+Source: [action manifest](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/action.yaml).
 
 ## Health, compatibility, and rollout acceptance are separate checks (2026-10-15)
 
