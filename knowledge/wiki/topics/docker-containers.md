@@ -2,8 +2,14 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-09-30
+updated: 2026-10-14
 sources:
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-10-14
+  - url: https://github.com/marcusrbrown/containers
+    sha: 008a0d383c457c0f4b05b3db5e3b5d41e3787ed5
+    accessed: 2026-10-11
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-30
@@ -103,6 +109,24 @@ With a single `FROM ghcr.io/home-assistant/base:3.24@sha256:…` there is exactl
 
 **Separate build from publish by permission, not by flag.** The prior design ran one job with a `--test` flag on PRs and a full build on push — meaning the fork-reachable path executed inside a job declaring `packages: write` + `id-token: write`. The current design splits them: `build-addon` (pull requests, `contents: read`, `push: 'false'`) and `publish-addon` (default branch only, `packages: write` + `id-token: write`, cosign). A flag that gates publishing is a correctness control; a permission that makes publishing impossible is a security control, and only the second survives a bug in the flag.
 
+### Architecture aliases and generic manifests are separate contracts (2026-10-14)
+
+At unchanged `b7bcd528`, [[bfra-me--ha-addon-repository]]'s workflow passes
+`<version>` and `latest` to each architecture-specific image publisher, but
+only `<version>` to the generic multi-architecture manifest publisher. Its
+platform readback also inspects only the generic versioned reference.
+The two-platform verification is therefore scoped to that tag; it does not
+establish a generic multi-arch `latest` alias. Live registry contents and
+external action defaults were not read, so this is a declared-contract
+boundary rather than evidence of a missing or broken registry tag.
+
+For template consumers, preserve the distinction between the concrete image
+names used by builders and the generic image consumed by Home Assistant.
+If a generic moving alias is intended, it needs its own publication declaration
+and readback. Passing `latest` to a per-architecture image is insufficient
+evidence for the generic alias. Earlier push-versus-platform and
+validation-versus-publication observations remain complementary guarantees.
+
 ## CI/CD Patterns
 
 ### Build Pipeline
@@ -117,6 +141,31 @@ Registry push is gated on `github.event_name != 'pull_request'` to prevent PR bu
 #### A trigger is not a build matrix (2026-09-27)
 
 [[marcusrbrown--containers]]'s `build-publish.yaml` triggers on both `scripts/**` and `**/Dockerfile`, but its detection step filters the changed paths to `Dockerfile` only and returns an empty matrix for a scripts-only change. The build job then skips. The workflow declares that script changes matter while the matrix declares that they do not: a successful trigger is not evidence that a container was built. If scripts can affect published images, map those paths to the affected image(s), or remove the trigger if they cannot. The surveyed workflow establishes this routing mismatch; it does not establish an actual image regression.
+
+#### Build inputs need routing, not just a README promise (2026-10-11)
+
+At `008a0d38`, [[marcusrbrown--containers]]'s
+[`node/README.md`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/node/README.md)
+says application-code updates trigger builds. Its
+[`build-publish.yaml`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/build-publish.yaml)
+trigger matches Dockerfiles and `scripts/**`, and its matrix selects only
+Dockerfile diffs. Application-only changes under `node/alpine/` or
+`node/release/` match neither. This extends the September scripts-only finding:
+the trigger and matrix are two independent gates, and both must route an image's
+relevant inputs. Manual dispatch selects all active Dockerfiles but does not
+repair event-driven routing. Actual Dockerfile consumption and image regressions
+were not inspected.
+
+The same repo's
+[`test.yaml`](https://github.com/marcusrbrown/containers/blob/008a0d383c457c0f4b05b3db5e3b5d41e3787ed5/.github/workflows/test.yaml)
+illustrates a second boundary: an image build plus inspection and a shell-only
+command is not application acceptance. The named functionality step clears the
+entrypoint, runs `sh -c "exit 0"`, and only logs if it fails. It never launches
+the app or probes the documented health/info endpoints. Its aggregate build and
+security jobs accept skipped work as well as success. Consequently a green
+aggregate does not by itself establish either application startup or scan
+execution; distinguish legitimate no-change skips from work expected for a
+manual full check. These are source-contract findings, not observed failures.
 
 ### Security Scanning
 

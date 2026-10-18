@@ -2,8 +2,11 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-09-30
+updated: 2026-10-14
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 878b4225e448152dc63c8a41418812cb466c1fbf
+    accessed: 2026-10-14
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 6852f168e06bce3373901bea9fdb79bf4aee831f
     accessed: 2026-09-30
@@ -76,6 +79,24 @@ ESPHome is an open-source framework for configuring and building custom firmware
 The install page's widget is loaded from a hand-written `https://unpkg.com/esp-web-tools@8.0.3/...` module URL embedded in `static/index.md` — no manifest, no Renovate custom manager, no SRI hash (see [[marcusrbrown--esphome-life]], 2026-08-30). ESPHome's published CI/CD template gives you SHA-pinned actions and a Renovate-managed firmware version, but it hands the distribution widget over as a raw CDN string. Anyone adopting `esphome-project-template` inherits that gap. Mitigation: add a Renovate `customManagers` regex for the `esp-web-tools@<version>` token in `static/index.md`, or vendor the script.
 
 ## Version Pinning
+
+### Distribution contract rechecked (2026-10-14)
+
+At [[marcusrbrown--esphome-life]] commit `878b4225`, the CI workflow and
+devcontainer manifest still pin **2025.12.7**, with `esphome/build-action`
+**v7.4.0**. The September 30 output-forwarding defect persists: the
+`build-firmware` job exports the version, but the `build` completion gate
+declares no outputs, and `publish` reads the version from that gate.
+Compilation and job ordering still cannot establish that the combined
+browser-install manifest carries a valid top-level version.
+
+This is source-level confirmation only. Device configuration bodies,
+generated artifacts, deployed installer behavior, upstream releases, and
+Dependency Dashboard state were not read. The older approval-gate and CDN
+dependency findings below retain their original observation dates.
+
+Sources: [CI workflow](https://github.com/marcusrbrown/esphome.life/blob/878b4225e448152dc63c8a41418812cb466c1fbf/.github/workflows/ci.yaml),
+[devcontainer manifest](https://github.com/marcusrbrown/esphome.life/blob/878b4225e448152dc63c8a41418812cb466c1fbf/.devcontainer.json).
 
 ### Firmware build success does not validate distribution metadata (2026-09-30)
 

@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.com
 created: 2026-07-13
-updated: 2026-10-01
+updated: 2026-10-18
 node_id: R_kgDOPOkk2A
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
@@ -20,6 +20,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 6f975b1d7bb09ea515f2628ff50e2f4b8e68020d
     accessed: 2026-10-01
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 9e2adcc677240a5180aa40f84bc56def31453b20
+    accessed: 2026-10-18
 tags:
   - brand-site
   - react
@@ -54,7 +57,54 @@ related:
 
 Personal brand site for Marcus R. Brown ("Principal Software Engineer"). Single-page React 19 landing site deployed to [[github-pages]] at [marcusrbrown.com](https://marcusrbrown.com). Simpler than [[marcusrbrown--marcusrbrown-github-io]] (the full developer portfolio at mrbro.dev) — no routing, no theme system, no blog.
 
-## Current bounded observations (2026-10-01)
+## Current bounded observations (2026-10-18)
+
+Public `main` resolves to `9e2adcc677240a5180aa40f84bc56def31453b20`.
+Only the directory listing, README, package/workspace manifests, and all five
+workflow files were read. The listing still contains 66 files, including 15
+under `src/`, 15 under `scripts/`, and one E2E test. Matching paths establish
+layout continuity, not unchanged implementation. Historical outage, issue/PR,
+coverage, installed-version, and live-site claims below were not revalidated.
+
+- **Stack declarations:** React `^19.0.0`, TypeScript `^6.0.0`, Vite `^8.1.3`,
+  Vitest `^4.0.0`, and ESLint `^10.0.0` retain their ranges. pnpm advances from
+  October 1's 11.28.1 to **11.28.5**. Node's engine floor remains `>=22.0.0`;
+  setup-action internals were not read, so the current CI runtime is unverified.
+  The workspace still has 16 overrides; `postcss` is now **8.5.30**, previously
+  8.5.28. These declarations do not prove effective installed resolutions.
+- **Fro Bot is present**, pinned to
+  `7d273ac643c8f9c0dc8615222677693dc337adef` (**v0.122.3**, October 1:
+  v0.117.1). Three dispatch modes and the two daily crons persist. The caller
+  still ends at `Run Fro Bot`, with no explicit `output-mode` or subsequent
+  publication step. This is a missing explicit delivery contract, not proof
+  that the supplied PAT cannot publish. No workflow-onboarding draft is needed.
+- **PR CI versus deployment:** Quality Gate still requires lint, build, unit
+  tests, type checking, and dependency validation including the moderate audit.
+  Deploy runs lint and `build`, which expands to **`tsc && vite build`**; thus
+  deployment includes compilation without a separately named type-check job.
+  It does not execute unit tests, Playwright, or the audit, and depends only on
+  its own build job. No inspected workflow invokes `test:e2e` or Lighthouse.
+  CodeQL and Scorecard remain absent from the workflow listing.
+- CI's App-token step explicitly requests contents read and pull-requests write
+  with `actions/create-github-app-token` v3.3.0; build artifact upload is v7.0.2.
+  Renovate's reusable workflow now pins **bfra-me/.github v4.39.0**
+  (`e62de417e8e22026f63890558ace7c574ee2a31f`), up from v4.35.0. It still has
+  no cron and includes successful Deploy completion among its triggers.
+- **Contradictions retained:** README's badge, manifest repository URL, and all
+  three agent prompts still name `marcusrbrown.github.io`. README's pnpm
+  10.13.1+ and ESLint 9 wording still lag the manifest. Its `LICENSE` link has
+  no matching listed file. The manifest's override object remains top-level,
+  preserving October 1's correction to older `pnpm.overrides` terminology;
+  no package-manager execution was used to adjudicate resolution behavior.
+
+See [[github-pages]] for the compilation-versus-full-CI distinction.
+
+Sources: [README](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/README.md),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/package.json),
+[workspace](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/pnpm-workspace.yaml),
+[workflows](https://github.com/marcusrbrown/marcusrbrown.com/tree/9e2adcc677240a5180aa40f84bc56def31453b20/.github/workflows).
+
+## Earlier bounded observations (2026-10-01)
 
 Public `main` resolves to `6f975b1d7bb09ea515f2628ff50e2f4b8e68020d`.
 This pass reads only directory listings, README, package/workspace manifests,

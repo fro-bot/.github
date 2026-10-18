@@ -2,8 +2,11 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-10-02
+updated: 2026-10-18
 sources:
+  - url: https://github.com/bfra-me/renovate-action
+    sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
+    accessed: 2026-10-18
   - url: https://github.com/bfra-me/renovate-action
     sha: b214c0b1b1a1803e94ff36b9cafffc610e8b33dc
     accessed: 2026-10-02
@@ -67,6 +70,125 @@ node_id: R_kgDOKWu8zQ
 ---
 
 # bfra-me/renovate-action
+
+## Event-specific prompt and credential contracts (2026-10-18)
+
+At the same public `main` snapshot `1fedb47e67fdf65dea1f3acc7590b4e0761fe28a`,
+the Fro Bot workflow distinguishes job admission, custom prompt selection, and
+checkout credential persistence. These are separate predicates:
+
+| Event admitted by the job guard | Workflow-supplied `PROMPT` | Persist checkout credentials |
+| --- | --- | --- |
+| `pull_request` | `PR_REVIEW_PROMPT` | No |
+| `schedule` | `AUTOHEAL_PROMPT` | Yes |
+| `workflow_dispatch` | Nonempty custom input first; otherwise autoheal | Yes |
+| `issues` | Empty | No |
+| Non-PR `issue_comment` with trusted mention | Empty | No |
+| Trusted `pull_request_review_comment` or `discussion_comment` mention | Empty | Yes |
+
+The dispatch review-mode guard rejects an empty custom prompt before the
+agent runs. Ordinary PR conversation `issue_comment` events are excluded by
+the job guard's `github.event.issue.pull_request == null` condition, even
+though checkout contains a PR-issue ref expression. Review-line comments are
+a distinct admitted event. `workflow_call` is declared with a required prompt,
+and the selector has a custom-prompt arm for that name; this survey does not
+exercise reusable-call event-context behavior.
+
+**Clarification of the historical credential shorthand:** persistence is
+disabled on exactly `pull_request`, `issue_comment`, and `issues`, not on every
+review/comment trigger. Review-line and discussion comments are outside that
+denylist. An empty workflow prompt on an admitted event delegates to the
+action's event handling; it does not prove an empty effective task or a failed
+response. Likewise, persistence does not establish an authorized write, and
+the action separately receives `github-token` on every admitted event. No
+action implementation, event payload, execution log, or response was read.
+See [[github-actions-ci]] for the event-matrix audit pattern.
+
+Source: [Fro Bot workflow](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml).
+
+## Permitted-source refresh (2026-10-18)
+
+Public `main` at `1fedb47e67fdf65dea1f3acc7590b4e0761fe28a` retains nine
+workflows and the composite-action, Docker, TypeScript, committed-dist, and
+Astro/Starlight documentation layout. Evidence here is limited to directory
+listings, root/docs READMEs and package manifests, `action.yaml` (the action
+manifest), and all nine workflow files. No entrypoint, source/test body,
+configuration file, release history, issue, PR, or run was inspected. Earlier
+dated observations remain historical unless explicitly reconfirmed here.
+
+### Runtime authority versus version copy
+
+The action manifest now pins Renovate **44.166.0**, matching the root README's
+release link. It still declares `runs.using: composite` and invokes
+`renovatebot/github-action` **v46.3.1** with `docker-cmd-file` pointing to
+`docker/entrypoint.sh`, `docker-user: root`, and Docker-socket mounting enabled.
+GitHub App token creation advances to **v3.3.0**. The entrypoint's contents and
+installed tools were not reread; matching paths do not prove unchanged code.
+
+The documentation contradiction persists: root examples use `@v9`, the notes
+describe Renovate v43, and the docs README calls v9 current. The manifest still
+warns that Docker removal is planned for v10 and rejects non-container modes
+with v9 wording. These sources do not establish a new action release number
+or a revised removal horizon; they reconfirm Docker execution and stale copy
+against the accumulated v10 history below.
+
+The private ESM root manifest declares Node **24.22.0**, pnpm **11.28.5**,
+TypeScript **6.0.3**, ESLint **10.12.0**, Prettier **3.9.10**, and Vitest
+**4.1.11**; `@actions/core` **3.0.1** remains its sole runtime dependency.
+The docs package retains Astro `^7.0.0`, Starlight `^0.42.0`, and Sharp
+`^0.35.0`. Declared ranges are not installed-version evidence, and the root's
+`0.0.0-semantic-release` value is not a published release.
+
+### Cache opt-in is not enforced on the push branch
+
+**Correction to the broad cache description below:** restore and prepare are
+gated on `enable-cache == 'true'`, but finalization and save each use:
+
+```text
+(success() || failure()) && enable-cache == 'true' && cache-hit != 'true'
+  || github.event_name == 'push'
+```
+
+With `&&` binding more tightly than `||`, the push branch bypasses both the
+cache opt-in and cache-hit checks. Thus `cache: false` does not exclude these
+two steps on push events. Finalization contains cache deletion and ownership
+adjustment; save targets the configured cache directory. This is a static
+condition finding, not evidence that a cache was actually deleted or saved.
+The smallest follow-up is to keep opt-in outside the grouped hit/push
+alternative and verify the event × opt-in × hit truth table. See
+[[github-actions-ci]] for the cross-cutting guard pattern.
+
+### Workflow delivery and validation boundaries
+
+**Fro Bot is present**, now at agent **v0.123.0** (`1529cc2e`), retaining its
+03:30 UTC daily schedule, `review`/`autoheal` choices, six categories, and
+rotating daily-report prompt. `Run Fro Bot` remains the last step, with no
+explicit `output-mode` or caller-side file-delivery steps. Credential
+persistence remains event-scoped. This reconfirms the October 2 static gap;
+it does not establish effective runtime mode, missing PRs, or report health.
+
+`Main` still runs the local-action self-test only on default-branch pushes
+whose self-test filter matches, passing `dry-run: true`; the action manifest
+confirms that maps to `RENOVATE_DRY_RUN=extract`. Rebuilding the action and
+checking committed output are separate conditions: build runs for pushes or
+`src-changed`, while the diff assertion requires `dist-changed`. The external
+filter definitions were not read, so source-only drift coverage is unresolved.
+Renovate and post-release org dispatch now call `bfra-me/.github` **v4.39.0**;
+settings sync remains correctly pathed at **v4.16.0** with its daily 08:51 UTC
+cron. Renovate has no independent schedule in its local workflow. The release
+alert still requires a failed `Release` job and discovers reports through
+label AND marker, with a 100-issue lookup cap. None of these declarations
+proves recent execution success or failure.
+
+Sources: [tree](https://github.com/bfra-me/renovate-action/tree/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a),
+[action manifest](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/action.yaml),
+[README](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/README.md),
+[root manifest](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/package.json),
+[docs README](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/docs/README.md),
+[docs manifest](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/docs/package.json),
+[Main](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/main.yaml),
+[Fro Bot](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml),
+[workflows](https://github.com/bfra-me/renovate-action/tree/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows).
 
 ## Current permitted-source snapshot (2026-10-02)
 

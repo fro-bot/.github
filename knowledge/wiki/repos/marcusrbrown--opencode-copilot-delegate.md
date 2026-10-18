@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/opencode-copilot-delegate
 created: 2026-04-23
-updated: 2026-09-26
+updated: 2026-10-10
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 647200a3a3a99d874510da4f2f8c9efbcacd2ad8
+    accessed: 2026-10-10
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
     accessed: 2026-04-23
@@ -60,6 +63,65 @@ node_id: R_kgDOSKIp0Q
 # marcusrbrown/opencode-copilot-delegate
 
 OpenCode plugin that delegates tasks to GitHub Copilot CLI as background subprocesses with async completion notifications.
+
+## Bounded Source Snapshot (2026-10-10)
+
+At `647200a3`, the public repository's manifest still declares **0.12.1**,
+ESM, Node **>=24**, and three package exports: the default server entry,
+`./plugin` alias, and opt-in `./tui`. `oc-plugin: [server, tui]` declares both
+halves. This is a source-version observation, not a registry/release lookup.
+Only directory listings, README, `package.json`, and all six workflow files
+were read; source code, tests, configuration contents, issues, releases, and
+run telemetry were not rechecked. Earlier runtime and queue claims remain
+dated evidence rather than fresh verification.
+
+Compared with the September 26 manifest figures retained below: Biome **2.5.14 →
+2.5.15**, `@opencode-ai/plugin` dev pin **1.18.32 → 1.18.35**, and
+`@types/node` **24.13.6 → 24.19.1**. Current `solid-js` is **1.9.16**;
+TypeScript **7.0.2**, `@types/bun` **1.4.2**, `@opentui/core` and
+`@opentui/solid` **0.2.7**, and zod **^4.3.0** remain declared. The only
+peer is `@opencode-ai/plugin >=1.14.41`; the maintenance/review prompts
+still name an SDK peer that the manifest does not declare. Mise and Biome
+configuration pins were outside this pass's read scope.
+
+**The documentation contradiction persists.** README enumerates three tools
+and never names `copilot_resume`; the directory listing includes
+`src/tools/resume.ts` and `tests/resume.test.ts` alongside delegate/output/cancel.
+This supports retaining the earlier four-tool finding, without proving current
+registration behavior from filenames. README still describes
+`client.session.prompt` with a first-notification policy, against the earlier
+`promptAsync`/in-flight-count finding. That runtime discrepancy remains
+unresolved by these permitted reads. The exact-version example still says
+`0.1.0` while the manifest says `0.12.1`, and README is still shipped in
+`files[]`.
+
+**CI coverage is narrower than the manifest's test surface.** `ci.yaml`
+installs with Bun's frozen lockfile, typechecks, lints, builds, imports the
+built default entry under Node 24, asserts a sole function-valued default
+export, then runs **only `test:unit`** (`tests/*.test.ts`). The separate
+`test:tui` script preloads `@opentui/solid/preload` for `src/tui/__tests__`,
+and `test:integration` targets `tests/integration/`; neither is invoked by
+the six inspected workflows. The smoke test does not invoke the plugin
+factory or import `./tui`. See [[opencode-plugins]] for the distinction
+between package-entry shape and host behavior. Release remains gated on a
+successful main CI run or manual dispatch and uses Changesets with an App
+token and `id-token: write`; actual publication was not verified.
+
+**Fro Bot is present** at SHA-pinned **v0.119.0**, still scheduled daily at
+16:00 UTC. Its final step remains `Run Fro Bot`, with no explicit
+`output-mode` or downstream delivery step, despite a prompt asking for
+commits/pushes. This is the workflow's declared shape, not proof of failed
+delivery. Checkout still conditionally disables persisted credentials for
+`pull_request`, `issue_comment`, and `issues`; Fro Bot and Copilot setup use
+Bun `latest`. Renovate's reusable caller now carries **v4.37.0**, while
+settings sync retains bare SHA `f6a7976c5cc48af150f7de3df331362262f15a18`
+without a version comment. Neither pin proves live execution or update
+detection. A missing-Fro-Bot-workflow proposal is not warranted.
+
+Sources: [README](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/README.md),
+[manifest](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/package.json),
+[directory listing](https://github.com/marcusrbrown/opencode-copilot-delegate/tree/647200a3a3a99d874510da4f2f8c9efbcacd2ad8),
+and [workflows](https://github.com/marcusrbrown/opencode-copilot-delegate/tree/647200a3a3a99d874510da4f2f8c9efbcacd2ad8/.github/workflows).
 
 ## Overview
 

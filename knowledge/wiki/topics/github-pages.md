@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-08
+updated: 2026-10-18
 sources:
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: b174ddc23aca4b74fd69fd2238d3fcc3ad364044
+    accessed: 2026-10-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 9e2adcc677240a5180aa40f84bc56def31453b20
+    accessed: 2026-10-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-10-12
   - url: https://github.com/marcusrbrown/vbs
     sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
@@ -67,6 +76,79 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Multi-deck assembly needs per-deck asset bases (2026-10-18)
+
+At `b174ddc2`, [[marcusrbrown--presentations]] builds two independent stacks
+into one Pages artifact. CRA's manifest supplies a homepage ending in
+`/Presentations/Blockchain-Meetup-Feb-2017/`; Slidev's build script explicitly
+sets `/Presentations/Cheap-LLMs-Meetup-Aug-2026/` as its base. CI assembles their
+outputs under matching `_site/` subdirectories plus a root landing page. Copying
+a successful build into a directory is only the assembly half of the contract:
+its generated asset base must also agree. The older repo-page homepage lacking
+the CRA deck suffix is superseded by this manifest evidence; live asset loading
+was not tested.
+
+Deploy depends on both Build and Test, but Test covers only the CRA deck.
+Thus both builds and assembly are exercised on PRs while neither browser-level
+path correctness nor the listed demo shell tests are verified by this workflow.
+The SHA-pinned Bun installer still has no runtime-version input, so frozen
+dependency installation alone does not establish a reproducible toolchain.
+
+Artifact production and publication have separate gates here: configure/upload
+steps live inside Build, which does not depend on the sibling Test job. The
+Deploy job alone joins both dependencies. A main-branch build can upload its
+artifact while tests fail, without permitting deployment. When inspecting
+[[marcusrbrown--presentations]], distinguish an uploaded artifact from a
+test-approved deployment; this describes the job graph, not a sampled failure.
+
+Sources: [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Blockchain-Meetup-Feb-2017/package.json),
+[Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Cheap-LLMs-Meetup-Aug-2026/slides/package.json),
+[CI](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/ci.yaml).
+
+## Compilation can be implicit in a deployment build (2026-10-18)
+
+At `9e2adcc6`, [[marcusrbrown--marcusrbrown-com]] retains its separate Pages
+workflow: lint, `pnpm run build`, upload `dist`, then deploy with `needs: build`.
+The manifest expands build to `tsc && vite build`, so compilation is enforced
+even without an explicitly named type-check job. PR CI additionally runs unit
+tests and a moderate-severity audit; those checks are not on the deployment
+dependency chain. No inspected workflow invokes the available `test:e2e`
+command or Lighthouse.
+
+This refines October 1's gate observation: trace both workflow dependencies
+and the scripts they invoke. A build can compile without running tests; a
+separate green PR workflow is not itself a deployment dependency. Live branch
+protections and deployment health were outside this survey. README's stale
+`github.io` badge remains an identity contradiction, not evidence about this
+brand site's deployment result or the portfolio's current health.
+
+Sources: [Deploy](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/package.json),
+[CI](https://github.com/marcusrbrown/marcusrbrown.com/blob/9e2adcc677240a5180aa40f84bc56def31453b20/.github/workflows/ci.yaml).
+
+## Portfolio deployment: unit tests are not the whole PR gate (2026-10-12)
+
+At `8a1567df`, [[marcusrbrown--marcusrbrown-github-io]] explicitly runs lint,
+Vitest unit tests, and build in its Pages build job before artifact upload;
+deployment depends on that job. Its manifest's build also compiles the root
+and OpenCode TypeScript projects before Vite and blog prerendering. This is
+a positive instance of the historical lint/test deployment pattern below,
+unlike the separately documented [[marcusrbrown--marcusrbrown-com]] brand site.
+
+The deployment does not execute coverage, browser tests, Lighthouse, the RSC
+boundary check, or the moderate-severity audit gate. Those commands being
+available in the manifest or separate PR CI does not put them on the deploy
+dependency chain. The portfolio's root README also claims automated visual
+comparisons, whereas its visual-suite README describes manual screenshot
+artifacts without snapshot matching. Preserve that contradiction rather than
+equating a test-suite label with pixel-comparison evidence. No live deployment,
+branch protection, or analytics activation was checked.
+
+Sources: [Deploy](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/deploy.yaml),
+[CI](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/ci.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/package.json),
+[visual README](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/tests/visual/README.md).
 
 ## Separate deployment workflows do not inherit CI gates (2026-10-08)
 
