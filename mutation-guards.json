@@ -90,7 +90,7 @@
     },
     {
       "path": "scripts/check-renovate-ranges.ts",
-      "reason": "CI lint that parses allowedVersions values with Renovate's own versioning API (renovate/dist/modules/versioning, util/string-match) and fails on anything Renovate would reject at lookup time. It protects the published default.json preset from a config-breaking edit, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Every verdict branch (npm range, regex form, rule-declared non-npm versioning, npm fallback, unknown versioning, non-string, templated skip) and the failing rule naming are asserted directly in scripts/check-renovate-ranges.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
+      "reason": "CI lint that parses allowedVersions values with Renovate's own versioning API (renovate/dist/modules/versioning, util/string-match) and fails on anything Renovate would reject at lookup time. It protects the published default.json preset from a config-breaking edit, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Every verdict branch (npm range, regex form, rule-declared non-npm versioning, semver fallback, unknown versioning, non-string, templated skip) and the failing rule naming are asserted directly in scripts/check-renovate-ranges.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
     },
     {
       "path": "scripts/renovate-runtime.ts",

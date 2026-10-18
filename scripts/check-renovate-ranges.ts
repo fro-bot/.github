@@ -21,9 +21,9 @@ import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from './renovate-
  *   2. `getRegexPredicate(value)`: `/.../` and `!/.../` forms. A regex Renovate cannot compile
  *      yields no predicate and falls through to the next branches, where it fails.
  *   3. `versioning.isValid(value)` for the rule's `versioning`.
- *   4. `semver.validRange(value)` as a last-resort npm syntax fallback (checked here through the
- *      npm versioning's `isValid`, which is `validRange` after legacy-x-range normalization, so it
- *      is marginally more permissive than Renovate's raw call).
+ *   4. raw `semver.validRange(value)` as a last-resort npm syntax fallback, for every versioning.
+ *      It is the `semver` package from the same scratch install, called without the legacy-x-range
+ *      normalization the npm versioning applies in step 3: `1.x.5` is valid for `npm` but not here.
  *   5. Otherwise Renovate throws. This script reports the rule instead.
  *
  * Deliberate divergence: when a rule sets no `versioning`, Renovate's runtime default depends on the
@@ -49,6 +49,8 @@ export interface VersioningEngine {
   readonly hasRegexPredicate: (value: string) => boolean
   /** `versioning.get(spec).isValid(value)`. */
   readonly isValid: (spec: string, value: string) => boolean
+  /** Raw `semver.validRange(value) !== null`, the fallback `filterVersions` tries after `isValid`. */
+  readonly isValidSemverRange: (value: string) => boolean
 }
 
 export const DEFAULT_CONFIG_FILES = ['default.json', '.github/renovate.json5'] as const
@@ -66,7 +68,7 @@ export interface AllowedVersionsEntry {
 }
 
 export type RangeVerdict =
-  | {readonly kind: 'valid'; readonly via: 'regex' | 'versioning' | 'npm-fallback'}
+  | {readonly kind: 'valid'; readonly via: 'regex' | 'versioning' | 'semver-fallback'}
   | {readonly kind: 'templated'}
   | {readonly kind: 'invalid'; readonly reason: string}
 
@@ -173,7 +175,7 @@ export function checkAllowedVersion(entry: AllowedVersionsEntry, engine: Version
 
   try {
     if (engine.isValid(versioningSpec, value)) return {kind: 'valid', via: 'versioning'}
-    if (engine.isValid('npm', value)) return {kind: 'valid', via: 'npm-fallback'}
+    if (engine.isValidSemverRange(value)) return {kind: 'valid', via: 'semver-fallback'}
   } catch (error) {
     return {kind: 'invalid', reason: `versioning ${JSON.stringify(versioningSpec)} failed: ${errorMessage(error)}`}
   }

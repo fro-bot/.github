@@ -1,9 +1,11 @@
+import type {MockInstance} from 'vitest'
 import type {FetchText, PinnedPreset, RunValidator} from './check-renovate-config.ts'
 import type {VersioningEngine} from './check-renovate-ranges.ts'
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {pathToFileURL} from 'node:url'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {
@@ -42,13 +44,27 @@ describe('classifyExtends', () => {
     ])
 
     expect(result.pinned.map(found => [found.spec, found.ref, found.candidates])).toEqual([
-      ['github>bfra-me/renovate-config#5.1.0', '5.1.0', ['default.json', 'default.json5']],
+      ['github>bfra-me/renovate-config#5.1.0', '5.1.0', ['default.json', 'renovate.json']],
       [PINNED, '5.1.0', ['fro-bot.json5']],
-      ['github>acme/cfg:security#v2', 'v2', ['security.json', 'security.json5']],
+      ['github>acme/cfg:security#v2', 'v2', ['security.json']],
       ['github>acme/cfg:rules.json#v2', 'v2', ['rules.json']],
     ])
     expect(result.floating).toEqual([])
     expect(result.unsupported).toEqual([])
+  })
+
+  it.each([
+    ['github>acme/cfg#v1', ['default.json', 'renovate.json']],
+    ['github>acme/cfg:default#v1', ['default.json', 'renovate.json']],
+    ['github>acme/cfg:default/sub#v1', ['default.json', 'renovate.json']],
+    ['github>acme/cfg:default.json5#v1', ['default.json5']],
+    ['github>acme/cfg:rules#v1', ['rules.json']],
+    ['github>acme/cfg:rules/sub#v1', ['rules.json']],
+    ['github>acme/cfg:rules.json5#v1', ['rules.json5']],
+    ['github>acme/cfg:rules.jsonc#v1', ['rules.jsonc']],
+    ['github>acme/cfg:rules.yaml#v1', ['rules.yaml.json']],
+  ])('resolves %s to the files Renovate reads, in order', (spec, candidates) => {
+    expect(classifyExtends([{extends: [spec]}]).pinned.map(found => found.candidates)).toEqual([candidates])
   })
 
   it('reports floating presets instead of fetching a moving target', () => {
@@ -102,13 +118,50 @@ describe('fetchPinnedPreset', () => {
     const calls: string[] = []
     const fetchText: FetchText = async url => {
       calls.push(url)
-      return url.endsWith('/security.json') ? {status: 404, text: ''} : {status: 200, text: '{}'}
+      return url.endsWith('/default.json') ? {status: 404, text: ''} : {status: 200, text: '{}'}
     }
 
-    const fetched = await fetchPinnedPreset(preset({candidates: ['security.json', 'security.json5']}), fetchText)
+    const fetched = await fetchPinnedPreset(preset({candidates: ['default.json', 'renovate.json']}), fetchText)
 
-    expect(fetched.file).toBe('security.json5')
+    expect(fetched.file).toBe('renovate.json')
     expect(calls).toHaveLength(2)
+  })
+
+  it('reads renovate.json for a default preset that has no default.json, never default.json5', async () => {
+    const defaultPreset = classifyExtends([{extends: ['github>acme/cfg#v1']}]).pinned[0]
+    if (defaultPreset === undefined) throw new Error('expected a pinned preset')
+    const repository = (files: Record<string, string>): FetchText => {
+      return async url => {
+        const text = files[url.split('/').pop() ?? '']
+        return text === undefined ? {status: 404, text: ''} : {status: 200, text}
+      }
+    }
+
+    const fromRenovateJson = await fetchPinnedPreset(
+      defaultPreset,
+      repository({'renovate.json': '{"from":"renovate.json"}', 'default.json5': '{"from":"default.json5"}'}),
+    )
+    const fromDefaultJson = await fetchPinnedPreset(
+      defaultPreset,
+      repository({'default.json': '{"from":"default.json"}', 'renovate.json': '{"from":"renovate.json"}'}),
+    )
+
+    expect(fromRenovateJson.file).toBe('renovate.json')
+    expect(fromDefaultJson.file).toBe('default.json')
+    await expect(fetchPinnedPreset(defaultPreset, repository({'default.json5': '{}'}))).rejects.toThrow(
+      /none of default\.json, renovate\.json exist/,
+    )
+  })
+
+  it('does not guess a .json5 file for an extensionless named preset', async () => {
+    const named = classifyExtends([{extends: ['github>acme/cfg:security#v1']}]).pinned[0]
+    if (named === undefined) throw new Error('expected a pinned preset')
+
+    await expect(
+      fetchPinnedPreset(named, async url =>
+        url.endsWith('/security.json5') ? {status: 200, text: '{}'} : {status: 404, text: ''},
+      ),
+    ).rejects.toThrow(/none of security\.json exist/)
   })
 
   it('retries transient failures and then succeeds', async () => {
@@ -148,16 +201,18 @@ const harness = {
     isKnownVersioning: () => true,
     hasRegexPredicate: () => false,
     isValid: (_spec: string, value: string) => !value.includes('(('),
+    isValidSemverRange: () => false,
   } satisfies VersioningEngine,
 }
 
 describe('checkRenovateConfig', () => {
   let rootDir: string
+  let stdout: MockInstance<typeof process.stdout.write>
 
   beforeEach(async () => {
     rootDir = await mkdtemp(join(tmpdir(), 'check-renovate-config-test-'))
     await mkdir(join(rootDir, '.github'))
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   })
 
@@ -194,6 +249,67 @@ describe('checkRenovateConfig', () => {
     expect(files).toHaveLength(3)
     expect(files?.slice(0, 2)).toEqual([join(rootDir, 'default.json'), join(rootDir, '.github', 'renovate.json5')])
     expect(files?.[2]).toMatch(/fro-bot\.json5$/)
+  })
+
+  it('lists a floating ref inside a fetched preset as not validated', async () => {
+    await writeConfigs({extends: [PINNED]})
+    const result = await checkRenovateConfig({
+      ...harness,
+      rootDir,
+      runValidator: okValidator,
+      fetchText: async () => ({
+        status: 200,
+        text: '{"extends": ["github>bfra-me/renovate-config:default.json5", "local>fro-bot/.github"]}',
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.floating).toEqual(['github>bfra-me/renovate-config:default.json5'])
+    expect(stdout).toHaveBeenCalledWith(
+      'check-renovate-config: not validated (no #ref, floating): github>bfra-me/renovate-config:default.json5\n',
+    )
+  })
+
+  it('fetches and validates a pinned preset reached through another preset, once', async () => {
+    const nested = 'github>acme/cfg:rules#v1'
+    await writeConfigs({extends: [PINNED]})
+    const urls: string[] = []
+    const seen: string[][] = []
+
+    const result = await checkRenovateConfig({
+      ...harness,
+      rootDir,
+      runValidator: files => {
+        seen.push([...files])
+        return {exitCode: 0, output: ''}
+      },
+      fetchText: async url => {
+        urls.push(url)
+        if (url.endsWith('/fro-bot.json5')) return {status: 200, text: `{"extends": ["${nested}"]}`}
+        if (url.endsWith('/rules.json')) return {status: 200, text: '{"extends": ["github>acme/cfg:rules#v1"]}'}
+        return {status: 404, text: ''}
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(urls).toEqual([
+      'https://raw.githubusercontent.com/bfra-me/renovate-config/5.1.0/fro-bot.json5',
+      'https://raw.githubusercontent.com/acme/cfg/v1/rules.json',
+    ])
+    expect(seen[0]).toHaveLength(4)
+  })
+
+  it('fails closed on an unresolvable github ref inside a fetched preset', async () => {
+    await writeConfigs({extends: [PINNED]})
+
+    const result = await checkRenovateConfig({
+      ...harness,
+      rootDir,
+      runValidator: okValidator,
+      fetchText: async () => ({status: 200, text: '{"extends": ["github>acme/cfg//nested#v1"]}'}),
+    })
+
+    expect(result).toMatchObject({ok: false, unsupported: ['github>acme/cfg//nested#v1']})
   })
 
   it('fails when the validator exits non-zero', async () => {
@@ -315,4 +431,117 @@ describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('real validator (pinn
 
     expect(parseConfig("{ // comment\n a: 'x', b: [1,], }")).toEqual({a: 'x', b: [1]})
   }, 60_000)
+})
+
+// The whole gate against the pinned runtime and its real validator, with the network replaced by a
+// fixture repository. Pins the preset-file lookup to Renovate's own resolver and the RE2 requirement.
+describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('gate end to end (pinned Renovate install)', () => {
+  let rootDir: string
+
+  beforeEach(async () => {
+    rootDir = await mkdtemp(join(tmpdir(), 'check-renovate-config-e2e-'))
+    await mkdir(join(rootDir, '.github'))
+    await writeFile(join(rootDir, 'default.json'), JSON.stringify({extends: ['github>acme/cfg#v1']}))
+    await writeFile(join(rootDir, '.github', 'renovate.json5'), '{extends: ["local>fro-bot/.github"]}')
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await rm(rootDir, {recursive: true, force: true})
+  })
+
+  async function runGate(files: Record<string, string>) {
+    const version = await readPinnedVersion(process.cwd())
+    const runtime = await loadRenovateRuntime(resolvePrefix(version), version)
+    return checkRenovateConfig({
+      rootDir,
+      parseConfig: runtime.parseConfig,
+      engine: runtime.versioning,
+      runValidator: (validatorFiles, cwd) => runRenovateValidator(runtime.validatorPath, validatorFiles, cwd),
+      fetchText: async url => {
+        const text = files[url.split('/').pop() ?? '']
+        return text === undefined ? {status: 404, text: ''} : {status: 200, text}
+      },
+    })
+  }
+
+  it('validates renovate.json when the preset has no default.json, and ignores default.json5', async () => {
+    const result = await runGate({
+      'renovate.json': '{"packageRules": [{"matchPackageNames": ["a"], "allowedVersions": "/^(?!2)/"}]}',
+      'default.json5': '{"packageRules": [{"matchPackageNames": ["a"], "allowedVersions": "<2"}]}',
+    })
+
+    // With RE2 both the validator and the range check reject the lookahead; renovate.json was the file read.
+    expect(result).toMatchObject({ok: false, fetchFailures: [], validatorOk: false, rangesOk: false})
+  }, 120_000)
+
+  it('does not resolve a default preset that only exists as default.json5', async () => {
+    const result = await runGate({'default.json5': '{"packageRules": [{"allowedVersions": "<2"}]}'})
+
+    expect(result.ok).toBe(false)
+    expect(result.fetchFailures).toHaveLength(1)
+    expect(result.fetchFailures[0]).toMatch(/none of default\.json, renovate\.json exist/)
+  }, 120_000)
+
+  it('prefers default.json over renovate.json', async () => {
+    const result = await runGate({
+      'default.json': '{"packageRules": [{"matchPackageNames": ["a"], "allowedVersions": "<2"}]}',
+      'renovate.json': '{"packageRules": [{"matchPackageNames": ["a"], "allowedVersions": "/^(?!2)/"}]}',
+    })
+
+    expect(result).toMatchObject({ok: true, rangesOk: true, validatorOk: true})
+  }, 120_000)
+})
+
+/** The file names Renovate's own `fetchPreset` requests for `spec`, in order, from the pinned install. */
+async function renovateRequests(spec: string): Promise<string[]> {
+  const version = await readPinnedVersion(process.cwd())
+  const dist = join(resolvePrefix(version), 'node_modules', 'renovate', 'dist', 'config', 'presets')
+  const {parsePreset} = (await import(pathToFileURL(join(dist, 'parse.js')).href)) as {
+    parsePreset: (input: string) => {repo: string; presetName: string; presetPath?: string; tag?: string}
+  }
+  const {fetchPreset} = (await import(pathToFileURL(join(dist, 'util.js')).href)) as {
+    fetchPreset: (options: Record<string, unknown>) => Promise<unknown>
+  }
+  const parsed = parsePreset(spec)
+  const requested: string[] = []
+  await fetchPreset({
+    repo: parsed.repo,
+    filePreset: parsed.presetName,
+    presetPath: parsed.presetPath,
+    endpoint: 'https://api.github.com/',
+    tag: parsed.tag,
+    fetch: async (_repo: string, fileName: string) => {
+      requested.push(fileName)
+      throw new Error('dep not found')
+    },
+  }).catch(() => undefined)
+  return requested
+}
+
+// Renovate's own `fetchPreset` decides which file a `github>` preset reads; the gate's candidates must
+// be exactly the files it asks for, in order.
+describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('preset file lookup (pinned Renovate resolver)', () => {
+  it.each([
+    'github>acme/cfg#v1',
+    'github>acme/cfg:default#v1',
+    'github>acme/cfg:default/sub#v1',
+    'github>acme/cfg:default.json5#v1',
+    'github>acme/cfg:rules#v1',
+    'github>acme/cfg:rules/sub#v1',
+    'github>acme/cfg:rules.json#v1',
+    'github>acme/cfg:rules.json5#v1',
+    'github>acme/cfg:rules.jsonc#v1',
+    'github>acme/cfg:rules.yaml#v1',
+  ])(
+    'asks for the same files as the gate for %s',
+    async spec => {
+      const [found] = classifyExtends([{extends: [spec]}]).pinned
+
+      expect(found?.candidates).toEqual(await renovateRequests(spec))
+    },
+    60_000,
+  )
 })

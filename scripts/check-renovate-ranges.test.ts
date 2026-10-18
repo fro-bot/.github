@@ -15,8 +15,9 @@ import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from './renovate-
 /**
  * Stand-in for Renovate's versioning API, discriminating only as much as these tests need:
  * `npm` takes space/`||`-joined comparators and rejects commas, `pep440` takes comma-joined
- * specifiers, `docker` accepts no range at all. Real semantics are covered by the RENOVATE_PREFIX
- * integration test below.
+ * specifiers, `docker` accepts no range at all. The semver fallback is raw `semver.validRange`: no
+ * legacy `x` ranges (`1.x.5`), which only the npm versioning normalizes. Real semantics are covered
+ * by the RENOVATE_PREFIX integration test below.
  */
 const engine: VersioningEngine = {
   isKnownVersioning: spec => ['npm', 'pep440', 'docker', 'regex'].includes(spec.split(':')[0] ?? ''),
@@ -35,6 +36,7 @@ const engine: VersioningEngine = {
     if (spec === 'pep440') return /^[<>=~!\d.,\s]+$/.test(value)
     return false
   },
+  isValidSemverRange: value => /^[<>=^~\d.*\s|-]+$/.test(value),
 }
 
 function entry(value: unknown, versioning?: string): AllowedVersionsEntry {
@@ -124,9 +126,14 @@ describe('checkAllowedVersion', () => {
     expect(invalidReason(verdict)).toContain('versioning="pep440"')
   })
 
-  it('falls back to npm range syntax when the declared versioning cannot parse the value', () => {
+  it('falls back to raw semver range syntax when the declared versioning cannot parse the value', () => {
     // Mirrors Renovate's "Falling back to npm semver syntax for allowedVersions" branch.
-    expect(checkAllowedVersion(entry('<3.14', 'docker'), engine)).toEqual({kind: 'valid', via: 'npm-fallback'})
+    expect(checkAllowedVersion(entry('<3.14', 'docker'), engine)).toEqual({kind: 'valid', via: 'semver-fallback'})
+  })
+
+  it('does not apply the npm versioning legacy-range normalization to the semver fallback', () => {
+    expect(checkAllowedVersion(entry('1.x.5'), engine)).toEqual({kind: 'valid', via: 'versioning'})
+    expect(invalidReason(checkAllowedVersion(entry('1.x.5', 'docker'), engine))).toContain('versioning="docker"')
   })
 
   it('rejects an unknown versioning rather than letting Renovate silently fall back to semver-coerced', () => {
@@ -239,5 +246,28 @@ describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('against the pinned R
     expect(verdicts('>=3.10,<3.14')).toBe('invalid')
     expect(verdicts('<1', 'definitely-not-a-versioning')).toBe('invalid')
     expect(verdicts('<3', String.raw`regex:^(?<major>\d+)$`)).toBe('valid')
+  })
+
+  it('rejects a regex RE2 cannot compile, which JavaScript RegExp would accept', async () => {
+    const real = await realEngine()
+
+    // Lookahead is valid JavaScript but RE2 has no such operator: with RE2 it is not a regex
+    // predicate, so the value falls through and parses as neither a range nor a version.
+    expect(real.hasRegexPredicate('/^(?!2)/')).toBe(false)
+    expect(checkAllowedVersion(entry('/^(?!2)/'), real).kind).toBe('invalid')
+    expect(checkAllowedVersion(entry('/^(?!2)/', 'docker'), real).kind).toBe('invalid')
+    expect(checkAllowedVersion(entry(String.raw`/^(?:1|3)\./`), real).kind).toBe('valid')
+  })
+
+  it('applies the raw semver fallback, not the npm legacy-range normalization', async () => {
+    const real = await realEngine()
+    const verdicts = (value: string, versioning?: string) => checkAllowedVersion(entry(value, versioning), real).kind
+
+    expect(real.isValidSemverRange('1.x.5')).toBe(false)
+    expect(real.isValidSemverRange('<3.14')).toBe(true)
+    expect(verdicts('1.x.5', 'docker')).toBe('invalid')
+    // The npm versioning itself normalizes `1.x.5`, so a rule that selects npm (or none) still passes.
+    expect(verdicts('1.x.5', 'npm')).toBe('valid')
+    expect(verdicts('1.x.5')).toBe('valid')
   })
 })

@@ -32,7 +32,8 @@ import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from './renovate-
  *
  * Presets with no `#ref` (floating default branch) and `local>` presets are not fetched: validating
  * a moving target would make the gate non-deterministic. They are listed in the output so the gap is
- * visible rather than implied.
+ * visible rather than implied. The same classification applies to the `extends` of every fetched
+ * preset, so a floating ref behind a pinned preset is listed too, and a pinned one is fetched.
  */
 
 const RAW_HOST = 'https://raw.githubusercontent.com'
@@ -93,10 +94,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+const DEFAULT_PRESET_FILE = 'default'
+const PRESET_FILE_EXTENSION = /\.json[5c]?$/
+
+/**
+ * The files Renovate's `fetchPreset` (`config/presets/util.ts`) reads for a `github>` preset, in
+ * order. The first `/`-separated segment of the preset name is the file; later segments select a
+ * sub-preset inside it. `default` (also the name when none is given) reads `default.json`, then
+ * `renovate.json` when that does not exist. Any other name reads exactly one file: itself when it
+ * ends in `.json`, `.json5` or `.jsonc`, else `<name>.json`. There is no `.json5` guessing.
+ */
 function candidateFiles(name: string | undefined): string[] {
-  if (name === undefined) return ['default.json', 'default.json5']
-  if (name.endsWith('.json') || name.endsWith('.json5')) return [name]
-  return [`${name}.json`, `${name}.json5`]
+  const [fileName = DEFAULT_PRESET_FILE] = (name ?? DEFAULT_PRESET_FILE).split('/')
+  if (fileName === DEFAULT_PRESET_FILE) return ['default.json', 'renovate.json']
+  return [PRESET_FILE_EXTENSION.test(fileName) ? fileName : `${fileName}.json`]
 }
 
 /** Sorts every `github>` entry of the configs' top-level `extends` into pinned, floating or unsupported. */
@@ -205,13 +216,19 @@ export async function checkRenovateConfig(options: RenovateConfigCheckOptions): 
   }
 
   const classification = classifyExtends(sources.map(source => source.config))
+  // A fetched preset's own `extends` is classified the same way, so a floating or unresolvable ref
+  // behind a pinned preset is listed instead of hidden. `queue` grows while it is iterated.
+  const queue = [...classification.pinned]
+  const queued = new Set(queue.map(preset => preset.spec))
+  const floating = new Set(classification.floating)
+  const unsupported = new Set(classification.unsupported)
   const fetchFailures: string[] = []
   const scratch = await mkdtemp(join(tmpdir(), 'check-renovate-config-'))
 
   try {
     const validatorFiles = [...localPaths]
 
-    for (const [index, preset] of classification.pinned.entries()) {
+    for (const [index, preset] of queue.entries()) {
       try {
         const fetched = await fetchPinnedPreset(preset, fetchText)
         // One directory per preset: two presets can both be named `default.json`.
@@ -220,10 +237,17 @@ export async function checkRenovateConfig(options: RenovateConfigCheckOptions): 
         const path = join(directory, basename(fetched.file))
         await writeFile(path, fetched.text)
         validatorFiles.push(path)
-        sources.push({
-          source: `${preset.owner}/${preset.repo}@${preset.ref}:${fetched.file}`,
-          config: parseConfig(fetched.text),
-        })
+        const config = parseConfig(fetched.text)
+        sources.push({source: `${preset.owner}/${preset.repo}@${preset.ref}:${fetched.file}`, config})
+
+        const nested = classifyExtends([config])
+        for (const found of nested.pinned) {
+          if (queued.has(found.spec)) continue
+          queued.add(found.spec)
+          queue.push(found)
+        }
+        for (const spec of nested.floating) floating.add(spec)
+        for (const spec of nested.unsupported) unsupported.add(spec)
       } catch (error) {
         fetchFailures.push(errorMessage(error))
       }
@@ -244,20 +268,20 @@ export async function checkRenovateConfig(options: RenovateConfigCheckOptions): 
     for (const failure of fetchFailures) {
       process.stderr.write(`check-renovate-config: could not fetch or parse preset: ${failure}\n`)
     }
-    for (const spec of classification.unsupported) {
+    for (const spec of unsupported) {
       process.stderr.write(`check-renovate-config: unsupported github preset shape, cannot validate: ${spec}\n`)
     }
-    for (const spec of classification.floating) {
+    for (const spec of floating) {
       process.stdout.write(`check-renovate-config: not validated (no #ref, floating): ${spec}\n`)
     }
 
     return {
-      ok: validatorOk && ranges.ok && fetchFailures.length === 0 && classification.unsupported.length === 0,
+      ok: validatorOk && ranges.ok && fetchFailures.length === 0 && unsupported.size === 0,
       validatorOk,
       rangesOk: ranges.ok,
       fetchFailures,
-      floating: classification.floating,
-      unsupported: classification.unsupported,
+      floating: [...floating],
+      unsupported: [...unsupported],
     }
   } finally {
     await rm(scratch, {recursive: true, force: true})

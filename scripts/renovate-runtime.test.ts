@@ -1,13 +1,17 @@
 import type {InstallCommand} from './renovate-runtime.ts'
 
+import {spawnSync} from 'node:child_process'
 import {mkdirSync, writeFileSync} from 'node:fs'
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import process from 'node:process'
+import {fileURLToPath} from 'node:url'
 
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 
 import {
+  assertRegexEngineIsRe2,
   assertRenovateInstalled,
   installRenovate,
   loadRenovateRuntime,
@@ -100,38 +104,79 @@ describe('installed version checks', () => {
     expect(await assertRenovateInstalled(prefix, '1.2.3')).toBe(join(prefix, 'node_modules', 'renovate'))
   })
 
-  it('does not run npm when the pinned version is already installed', async () => {
+  it('runs nothing when the pinned version is installed and RE2 already works', async () => {
     await fakeInstall('1.2.3')
     const commands: InstallCommand[] = []
 
-    const outcome = await installRenovate(prefix, '1.2.3', command => {
-      commands.push(command)
-      return {status: 0}
-    })
+    const outcome = await installRenovate(
+      prefix,
+      '1.2.3',
+      command => {
+        commands.push(command)
+        return {status: 0}
+      },
+      () => true,
+    )
 
     expect(outcome).toBe('already-installed')
     expect(commands).toEqual([])
   })
 
-  it('installs the exact version outside any project, without writing a manifest or lockfile', async () => {
+  it('builds only re2 when a reused install has no working RE2', async () => {
+    await fakeInstall('1.2.3')
     const commands: InstallCommand[] = []
+    let built = false
 
-    const outcome = await installRenovate(prefix, '1.2.3', command => {
-      commands.push(command)
-      // Stand-in for npm: leave behind what a successful install would.
-      const directory = join(prefix, 'node_modules', 'renovate')
-      mkdirSync(directory, {recursive: true})
-      writeFileSync(join(directory, 'package.json'), JSON.stringify({version: '1.2.3'}))
-      return {status: 0}
-    })
+    const outcome = await installRenovate(
+      prefix,
+      '1.2.3',
+      command => {
+        commands.push(command)
+        built = true
+        return {status: 0}
+      },
+      () => built,
+    )
+
+    expect(outcome).toBe('already-installed')
+    expect(commands).toEqual([
+      {
+        command: 'npm',
+        args: ['run', 'install', '--no-audit', '--no-fund'],
+        cwd: join(prefix, 'node_modules', 're2'),
+      },
+    ])
+  })
+
+  it('installs the exact version with scripts off, then builds only re2', async () => {
+    const commands: InstallCommand[] = []
+    let built = false
+
+    const outcome = await installRenovate(
+      prefix,
+      '1.2.3',
+      command => {
+        commands.push(command)
+        if (command.args[0] === 'install') {
+          // Stand-in for npm: leave behind what a successful install would.
+          const directory = join(prefix, 'node_modules', 'renovate')
+          mkdirSync(directory, {recursive: true})
+          writeFileSync(join(directory, 'package.json'), JSON.stringify({version: '1.2.3'}))
+        } else {
+          built = true
+        }
+        return {status: 0}
+      },
+      () => built,
+    )
 
     expect(outcome).toBe('installed')
-    expect(commands).toHaveLength(1)
-    const [command] = commands
-    expect(command?.command).toBe('npm')
+    expect(commands).toHaveLength(2)
+    const [install, rebuild] = commands
+    expect(install?.command).toBe('npm')
     // cwd is the scratch prefix, so npm can never see the repository's package.json.
-    expect(command?.cwd).toBe(prefix)
-    expect(command?.args).toEqual([
+    expect(install?.cwd).toBe(prefix)
+    expect(install?.args).toEqual([
       'install',
       '--prefix',
       prefix,
@@ -142,22 +187,149 @@ describe('installed version checks', () => {
       '--no-fund',
       'renovate@1.2.3',
     ])
+    // The build is `npm run install` inside re2 alone: no `--ignore-scripts`, no other package.
+    expect(rebuild).toEqual({
+      command: 'npm',
+      args: ['run', 'install', '--no-audit', '--no-fund'],
+      cwd: join(prefix, 'node_modules', 're2'),
+    })
+  })
+
+  it('fails when the re2 build exits non-zero or cannot start', async () => {
+    await fakeInstall('1.2.3')
+
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: 1}),
+        () => false,
+      ),
+    ).rejects.toThrow(/npm run install \(re2\) exited 1/)
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: null, error: new Error('ENOENT npm')}),
+        () => false,
+      ),
+    ).rejects.toThrow(/npm run install \(re2\) failed to start: ENOENT npm/)
+  })
+
+  it('fails when the re2 build exits 0 but RE2 still does not load', async () => {
+    await fakeInstall('1.2.3')
+
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: 0}),
+        () => false,
+      ),
+    ).rejects.toThrow(/RE2 is still not usable/)
   })
 
   it('fails when npm exits non-zero, and when it cannot start', async () => {
-    await expect(installRenovate(prefix, '1.2.3', () => ({status: 1}))).rejects.toThrow(/exited 1/)
     await expect(
-      installRenovate(prefix, '1.2.3', () => ({status: null, error: new Error('ENOENT npm')})),
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: 1}),
+        () => true,
+      ),
+    ).rejects.toThrow(/exited 1/)
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: null, error: new Error('ENOENT npm')}),
+        () => true,
+      ),
     ).rejects.toThrow(/failed to start: ENOENT npm/)
   })
 
   it('fails when npm exits 0 but the pinned version is not what landed', async () => {
-    await expect(installRenovate(prefix, '1.2.3', () => ({status: 0}))).rejects.toThrow(/not installed/)
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: 0}),
+        () => true,
+      ),
+    ).rejects.toThrow(/not installed/)
 
     await mkdir(join(prefix, 'node_modules', 'renovate'), {recursive: true})
     await writeFile(join(prefix, 'node_modules', 'renovate', 'package.json'), JSON.stringify({version: '9.9.9'}))
-    await expect(installRenovate(prefix, '1.2.3', () => ({status: 0}))).rejects.toThrow(
-      /is 9\.9\.9 but .* pins 1\.2\.3/,
-    )
+    await expect(
+      installRenovate(
+        prefix,
+        '1.2.3',
+        () => ({status: 0}),
+        () => true,
+      ),
+    ).rejects.toThrow(/is 9\.9\.9 but .* pins 1\.2\.3/)
   })
+})
+
+describe('assertRegexEngineIsRe2', () => {
+  it('accepts only an available RE2 engine', () => {
+    expect(() => {
+      assertRegexEngineIsRe2({regexEngineStatus: {type: 'available'}}, '/p')
+    }).not.toThrow()
+  })
+
+  it.each([
+    ['unavailable', {type: 'unavailable', err: new Error('Cannot find module re2.node')}, /unavailable.*re2\.node/],
+    ['ignored', {type: 'ignored'}, /"ignored"/],
+    ['missing', undefined, /undefined/],
+  ])('fails closed when the engine status is %s', (_label, status, message) => {
+    expect(() => {
+      assertRegexEngineIsRe2({regexEngineStatus: status}, '/p')
+    }).toThrow(message)
+  })
+
+  it('fails closed when the regex module has no status export at all', () => {
+    expect(() => {
+      assertRegexEngineIsRe2({}, '/p')
+    }).toThrow(/not using the RE2 regex engine/)
+  })
+})
+
+// Needs the pinned install in RENOVATE_PREFIX (the `Check Workflows` job and `pnpm check:renovate-config`
+// provide it); skipped by a plain `pnpm test`.
+describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('against the pinned Renovate install', () => {
+  const runtimeModule = fileURLToPath(new URL('renovate-runtime.ts', import.meta.url))
+
+  // Fresh process per case: Renovate picks its regex engine once, at module load.
+  function loadInFreshProcess(env: NodeJS.ProcessEnv) {
+    const script = String.raw`
+      import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from ${JSON.stringify(runtimeModule)}
+      const version = await readPinnedVersion(process.cwd())
+      const runtime = await loadRenovateRuntime(resolvePrefix(version), version)
+      process.stdout.write(JSON.stringify({
+        lookaheadIsPredicate: runtime.versioning.hasRegexPredicate('/^(?!2)/'),
+        unanchoredIsPredicate: runtime.versioning.hasRegexPredicate('/^1\./'),
+      }))
+    `
+    return spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {...process.env, ...env},
+    })
+  }
+
+  it('loads with a working RE2, which rejects the lookahead JavaScript accepts', () => {
+    const result = loadInFreshProcess({})
+
+    expect(result.stderr).toBe('')
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({lookaheadIsPredicate: false, unanchoredIsPredicate: true})
+  }, 60_000)
+
+  it('refuses to load when RE2 is not the active regex engine', () => {
+    const result = loadInFreshProcess({RENOVATE_X_IGNORE_RE2: 'true'})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('not using the RE2 regex engine')
+  }, 60_000)
 })

@@ -162,7 +162,7 @@ jobs:
         # install the previous step left in RENOVATE_PREFIX.
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
-        run: pnpm exec vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts
+        run: pnpm exec vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
 
   check-wiki-authority:
     name: Check Wiki Authority
