@@ -128,7 +128,7 @@ jobs:
 
       - name: 🤖 Draft solution docs
         id: agent
-        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
+        uses: fro-bot/agent@1529cc2e956fae72d97bfe08968d564a2e50f94b # v0.123.0
         timeout-minutes: 45
         env:
           TASK_PROMPT: |
@@ -367,7 +367,7 @@ jobs:
       - id: get-workflow-app-token
         name: 🔑 Mint write token
         if: needs.harvest.outputs.has_work == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -385,7 +385,7 @@ jobs:
       - id: get-review-app-token
         name: 🔑 Mint review-request token
         if: needs.harvest.outputs.has_work != 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
