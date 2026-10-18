@@ -8146,3 +8146,49 @@ Cheap-LLMs-Meetup-Aug-2026/slides/{README.md,package.json}, .github/workflows/).
 Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/Presentations
+
+## [2026-10-18 07:54] ingest | marcusrbrown/Presentations
+
+Rechecked public visibility and the unchanged `main` snapshot
+`b174ddc23aca4b74fd69fd2238d3fcc3ad364044`. Reads were limited to the complete
+directory listing, three READMEs, two package manifests, and three workflows;
+upstream text was treated as untrusted evidence. Corrections context was empty.
+
+Added the artifact-upload versus deployment gate distinction to
+[[marcusrbrown--presentations]] and [[github-pages]] and refreshed their existing
+index catalog note. Upload belongs to Build and need not wait for Test; Deploy
+requires both jobs. This is source-level reasoning, not an observed failure.
+The existing absent-Fro-Bot finding remains current: only CI, Renovate, and
+settings-sync workflows are present; a draft onboarding PR can be proposed
+separately. Existing dated findings, contradictions, and checkout changes were
+preserved. No new entity or comparison page was justified.
+
+Sources: https://github.com/marcusrbrown/Presentations/tree/b174ddc23aca4b74fd69fd2238d3fcc3ad364044,
+https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/ci.yaml
+
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed files updated in the working tree; caller owns
+  persistence. This entry is the canonical ingest summary.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run --no-cache` passed (102 files, 5,358 tests, three
+  todos). Touched-page frontmatter, pinned provenance, wikilinks, related targets,
+  complete catalog coverage, and diff whitespace checks passed.
+- Limitations: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test` were not
+  run because their install/build steps write outside the allowed paths; direct
+  checks used existing dependencies and build. Workflow guard unavailable.
+  Standalone `pnpm exec prettier --check` flagged all four touched Markdown
+  files; formatting was left intact to preserve the accumulated documents.
+  No GitHub comment was posted: working-dir delivery permits no remote writes
+  and supplies no comment destination; issue run notices are explicitly barred.
+
+<!-- fro-bot:run-summary:end -->
+
+## [2026-10-18 07:58] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/Presentations

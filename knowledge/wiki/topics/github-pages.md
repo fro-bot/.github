@@ -95,6 +95,13 @@ path correctness nor the listed demo shell tests are verified by this workflow.
 The SHA-pinned Bun installer still has no runtime-version input, so frozen
 dependency installation alone does not establish a reproducible toolchain.
 
+Artifact production and publication have separate gates here: configure/upload
+steps live inside Build, which does not depend on the sibling Test job. The
+Deploy job alone joins both dependencies. A main-branch build can upload its
+artifact while tests fail, without permitting deployment. When inspecting
+[[marcusrbrown--presentations]], distinguish an uploaded artifact from a
+test-approved deployment; this describes the job graph, not a sampled failure.
+
 Sources: [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Blockchain-Meetup-Feb-2017/package.json),
 [Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Cheap-LLMs-Meetup-Aug-2026/slides/package.json),
 [CI](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/ci.yaml).

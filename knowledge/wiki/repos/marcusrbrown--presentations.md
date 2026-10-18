@@ -81,6 +81,12 @@ layout continuity, not unchanged file contents.
   the CRA deck's `yarn test`. The listed demo shell test and the README's PDF
   export command are not invoked; no browser or deployed-site check is present.
   Pages write/OIDC permissions remain scoped to Deploy.
+- **Artifact upload is not the test gate.** Configure Pages and Upload Pages
+  artifact run inside Build, independently of the sibling Test job. A main-branch
+  run can therefore upload the assembled artifact even if CRA tests fail;
+  `Deploy` still requires both jobs to succeed. Artifact availability does not
+  establish successful tests or publication. This is a workflow dependency
+  observation, not an observed failed run.
 - **Shared workflow pins advanced.** Both reusable callers now reference
   `e62de417e8e22026f63890558ace7c574ee2a31f` (v4.39.0), superseding October 2's
   v4.35.0 snapshot. Settings sync still calls the correctly named settings

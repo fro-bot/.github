@@ -4,7 +4,8 @@ Master catalog of all wiki pages, organized by type.
 
 Catalog refreshed 2026-10-18: [[marcusrbrown--presentations]] (repo) and
 [[github-pages]] (topic). Existing entries and dated observations are retained;
-the canonical ingest record is in `knowledge/log.md`.
+the canonical ingest record is in `knowledge/log.md`. Both pages also catalog
+the distinction between artifact-upload and deployment dependency gates.
 
 Catalog refreshed 2026-10-18: [[marcusrbrown--marcusrbrown-com]] (repo) and
 [[github-pages]] (topic). Existing catalog entries and dated evidence remain;
