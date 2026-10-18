@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-18
 sources:
+  - url: https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml
+    sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
+    accessed: 2026-10-18
   - url: https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/action.yaml
     sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
     accessed: 2026-10-18
@@ -319,6 +322,32 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Audit admission, prompt routing, and credentials per event (2026-10-18)
+
+[[bfra-me--renovate-action]] at `1fedb47e` supplies explicit local prompts for
+PR review, scheduled autoheal, and manual custom/autoheal tasks. Admitted
+issue and mention-comment events instead receive an empty local `PROMPT`.
+That is a dependency on action-level event handling, not proof that those
+events receive no effective task. A declared trigger alone does not prove
+admission: ordinary PR `issue_comment` mentions are excluded by the job guard,
+while trusted review-line mentions have a separate admitted event path.
+
+Its credential expression excludes exactly `pull_request`, `issue_comment`,
+and `issues`; it retains checkout credentials on `pull_request_review_comment`
+and `discussion_comment`. This narrows older fleet shorthand that the shared
+three-event denylist withholds persistence on all review triggers. The action
+also receives its own `github-token`, independently of checkout persistence.
+
+Build an event matrix with separate columns for job admission, selected local
+prompt or action fallback, checkout ref, credential persistence, action token,
+and delivery owner. Include each comment family explicitly. Neither an empty
+custom prompt nor a credential setting establishes the action's effective
+behavior without its contract or execution evidence; a workflow-only survey
+should preserve that uncertainty rather than infer a broken response or an
+unauthorized write. The matrix complements the separate delivery checks below.
+
+Source: [Fro Bot workflow](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml).
 
 ## An event alternative must not bypass feature opt-in (2026-10-18)
 

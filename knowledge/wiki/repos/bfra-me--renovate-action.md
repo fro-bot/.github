@@ -71,6 +71,41 @@ node_id: R_kgDOKWu8zQ
 
 # bfra-me/renovate-action
 
+## Event-specific prompt and credential contracts (2026-10-18)
+
+At the same public `main` snapshot `1fedb47e67fdf65dea1f3acc7590b4e0761fe28a`,
+the Fro Bot workflow distinguishes job admission, custom prompt selection, and
+checkout credential persistence. These are separate predicates:
+
+| Event admitted by the job guard | Workflow-supplied `PROMPT` | Persist checkout credentials |
+| --- | --- | --- |
+| `pull_request` | `PR_REVIEW_PROMPT` | No |
+| `schedule` | `AUTOHEAL_PROMPT` | Yes |
+| `workflow_dispatch` | Nonempty custom input first; otherwise autoheal | Yes |
+| `issues` | Empty | No |
+| Non-PR `issue_comment` with trusted mention | Empty | No |
+| Trusted `pull_request_review_comment` or `discussion_comment` mention | Empty | Yes |
+
+The dispatch review-mode guard rejects an empty custom prompt before the
+agent runs. Ordinary PR conversation `issue_comment` events are excluded by
+the job guard's `github.event.issue.pull_request == null` condition, even
+though checkout contains a PR-issue ref expression. Review-line comments are
+a distinct admitted event. `workflow_call` is declared with a required prompt,
+and the selector has a custom-prompt arm for that name; this survey does not
+exercise reusable-call event-context behavior.
+
+**Clarification of the historical credential shorthand:** persistence is
+disabled on exactly `pull_request`, `issue_comment`, and `issues`, not on every
+review/comment trigger. Review-line and discussion comments are outside that
+denylist. An empty workflow prompt on an admitted event delegates to the
+action's event handling; it does not prove an empty effective task or a failed
+response. Likewise, persistence does not establish an authorized write, and
+the action separately receives `github-token` on every admitted event. No
+action implementation, event payload, execution log, or response was read.
+See [[github-actions-ci]] for the event-matrix audit pattern.
+
+Source: [Fro Bot workflow](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml).
+
 ## Permitted-source refresh (2026-10-18)
 
 Public `main` at `1fedb47e67fdf65dea1f3acc7590b4e0761fe28a` retains nine
