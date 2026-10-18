@@ -381,11 +381,7 @@ const OWNER_WIDE_WRITE_ALLOWED: readonly {readonly key: string; readonly owner: 
 /** Row count and file count the scan must cover; a refactor that stops matching mints fails loudly. */
 const EXPECTED_ROW_COUNT = 34
 const EXPECTED_MINT_FILE_COUNT = 18
-/**
- * Mint census floor: the tree must never scan fewer. Lowered 32 -> 31 on 2026-10-18 because the
- * draft-solutions review-only mint (`get-review-app-token`) was deleted when drafted PRs moved to
- * manual review (fro-bot/agent#1520); a deleted mint is the one legitimate reason to lower it.
- */
+/** Mint census floor: the tree must never scan fewer. Lower it only when a mint is deliberately deleted. */
 const MINT_CENSUS_FLOOR = 31
 
 // ─── Scanner ────────────────────────────────────────────────────────────────

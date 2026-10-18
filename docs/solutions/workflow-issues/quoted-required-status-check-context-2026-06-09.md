@@ -138,14 +138,11 @@ deliberate exception to the rule above. Its job-level `if:` skips bot-authored P
 review them, Renovate PRs report skipped, and the maintainer approves them manually. A skipped job
 reports Success, which satisfies the required check, so this is a silent pass by design.
 
-The weekly drafted-docs PR is opened by `fro-bot[bot]` and is covered by the same skip. #3971 carved
-out an exact-match exception for it (author, head ref and repository all matched) so Fro Bot would
-review it. That exception was removed on 2026-10-18: the agent cannot review a PR authored by the
-first-party App ([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520), closed not planned),
-so the operator reviews drafted PRs manually and the skip is back to a plain bot exclusion. The
-carve-out routed the PR into a required check whose reviewer could not act, which is the same silent pass
-again. If a job-level `if:` has to skip a required check, keep it this explicit and name the reason where
-it is written. The surrounding pipeline is described in
+The weekly drafted-docs PR is opened by `fro-bot[bot]` and is covered by the same skip. The operator
+reviews it manually, because the agent does not review PRs authored by the first-party App
+([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)). If a job-level `if:` has to
+skip a required check, keep it explicit and name the reason where it is written. The surrounding
+pipeline is described in
 [Agent drafts, trusted job publishes](../best-practices/agent-drafts-trusted-publish-split-2026-10-10.md).
 
 ## Why This Matters

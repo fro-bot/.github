@@ -32,14 +32,12 @@ PR #3971 (merged 2026-10-09, merge commit `267cf77613a807e002465634cdaadb0cc381f
 
 The defects were never in what the agent wrote. Each was a fail-open gap between "validation passed" and "the write landed".
 
-**Update 2026-10-18:** the Fro Bot review requirement was dropped. Drafted PRs are authored by the first-party App `fro-bot[bot]`, which the agent cannot review ([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520), closed not planned), so the operator reviews and merges them manually. The review request, review-only mode and the `fro-bot.yaml` exception described in the original round-2 and round-3 fixes were deleted. Guidance item 4 records the lesson.
-
 ## Guidance
 
 1. **Three jobs, one trust direction.**
    - `harvest` is read-only, mints no App token and runs no agent. It writes the digest and pins two commits: `draft_base_sha`, the commit the agent edits, and `main_sha` (`draft-solutions.yaml:20-25`).
    - `draft` runs the agent under a read-only `GITHUB_TOKEN` (`:99-102`, with the rationale at `:228-231`). The agent step still receives the model credentials (`:232-235`). The job cannot write to the repository, but it is not free of secrets.
-   - `publish` runs trusted default-branch code and is the only job that mints a write token (`:357-370`). The single mint is scoped to this repository with contents, pull-requests and issues write. (An earlier review-only mint with pull-requests write was removed on 2026-10-18 with the review request it served.)
+   - `publish` runs trusted default-branch code and is the only job that mints a write token (`:357-370`). The single mint is scoped to this repository with contents, pull-requests and issues write.
 
    The step that builds the handoff runs inside `draft`, so it is not a trust boundary. `publish` re-validates everything.
 
@@ -49,11 +47,9 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
 
 4. **Don't build a review exception for a first-party App's PRs.** A job skipped by a job-level `if:` reports Success, and when that job's check is required, the skip satisfies it ([Quote required-status-check contexts that contain a colon](../workflow-issues/quoted-required-status-check-context-2026-06-09.md)). The required `Fro Bot` job skips bot-authored PRs on purpose: Fro Bot does not review them, Renovate PRs report skipped, and the maintainer approves them manually.
 
-   #3971 tried to carve out the drafted PR: an exact-match exception in the `fro-bot.yaml` job `if:` (author `fro-bot[bot]`, head `docs/drafted-solutions`, same repository) plus a `requestReviewers` call after every PR write. It could never produce a review. The agent skips bot senders and accepts a `review_requested` only when a human with write access sent it. CODEOWNERS (`* @fro-bot @marcusrbrown`) already auto-requests `fro-bot` as the App, so that request is never the human one. The self-review guard also never approves a PR whose author matches the reviewer once `[bot]` is stripped ([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520), closed not planned on 2026-10-13: PRs authored by the first-party App keep manual review).
+   The drafted PR is authored by `fro-bot[bot]`. The agent skips bot-authored PRs, and its self-review guard never approves a PR whose author matches the reviewer once `[bot]` is stripped ([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)). So the operator reviews and merges the drafted PR, and the `Fro Bot` job keeps its plain bot exclusion. A bot exception in a required check whose reviewer cannot act lets the check pass without a review.
 
-   What remained was plumbing that routed the PR into a required check whose reviewer could not act, so the check could go green without a review. That is the vacuous pass this repo's other required-check guidance warns about. The exception, the review request, review-only mode and their tests were deleted on 2026-10-18.
-
-   The lesson: before building plumbing so an agent reviews a PR, confirm the agent will accept that PR's author and trigger. If the author is the first-party App, the PR belongs to a human reviewer, and the skip stays as it was. If a bot exception is ever truly needed, keep it an exact predicate (author, branch and repository all matched), because a loose one widens a required check's silent pass.
+   Before building plumbing so an agent reviews a PR, confirm the agent accepts that PR's author and trigger. If a bot exception is ever needed, make it an exact predicate (author, branch and repository all matched), because a loose one widens a required check's silent pass.
 
 5. **Never write what nobody verified.** Unverified proposals are rejected from the coverage table (`scripts/drafted-solutions-pr-body.ts:255-262`) and closed directly with a comment. They never appear in the PR body, because a `Closes #N` line there would close them as completed when the PR merges (`:340` renders those lines). `closeProposal` closes only a `covered` row as completed and everything else as `not_planned` (`scripts/drafted-solutions-publish.ts:543`).
 
@@ -114,8 +110,7 @@ Two claims need care:
 | Round | State | Findings | Where fixed |
 | --- | --- | --- | --- |
 | 1 | Changes requested | Probe failure treated as "absent"; same-file edits overwritten; destructive reset racing a PR open; superseded coverage rows; PR body over 65,536 characters; prompt called the drafting branch "main" | `draft-solutions.yaml:309-323`; `publish.ts:273-289`, `:489`, `:503`, `:568-570`, `:599`; pins at `draft-solutions.yaml:20-25` and `:141-144` |
-| 2 | Changes requested | A PR reopened just before `updateRef`; four dropped claims rejected by the validator; review-request recovery | `publish.ts:499-500`; field limits in the prompt, `:206-215`; review-only mode (removed 2026-10-18, see guidance 4) |
-| 3 | Dismissed | The review-only token was over-scoped | Narrowed to pull-requests write only (mint removed 2026-10-18, see guidance 4) |
+| 2 | Changes requested | A PR reopened just before `updateRef`; four dropped claims rejected by the validator | `publish.ts:499-500`; field limits in the prompt, `:206-215` |
 | 4 | Approved | None | n/a |
 
 The round-2 reopen window is structurally fail-closed rather than proven closed: a PR that appears after the final check still cannot have its tree replaced, because the branch is never reused. That is argued from the code, not reproduced against a live race.

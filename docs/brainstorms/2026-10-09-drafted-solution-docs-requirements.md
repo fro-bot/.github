@@ -5,8 +5,6 @@ topic: drafted-solution-docs
 
 # Drafted Solution Docs
 
-> **2026-10-18:** drafted PRs are reviewed manually; the Fro Bot review requirement (including the `fro-bot.yaml` skip exception and the review request) was dropped because the agent can't review first-party App PRs, see [fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520). The text below is the original record and is left as written.
-
 ## Summary
 
 A scheduled job turns open learning proposals into one drafted docs PR: each claim verified against its source evidence, related proposals consolidated, new or extended `docs/solutions/` docs written, and a per-proposal evidence table recorded. A no-write agent drafts; a trusted publish job gates and opens the PR. Fro Bot reviews it through a narrow exception to its self-skip rule; the operator reviews and merges, and the proposals close with it.
