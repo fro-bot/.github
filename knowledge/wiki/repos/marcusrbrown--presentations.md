@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/Presentations
 created: 2026-08-05
-updated: 2026-10-02
+updated: 2026-10-18
 sources:
   - url: https://github.com/marcusrbrown/Presentations
     sha: 34321a4c4a38c99c4bd8b683f267ddba05cd6fe4
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/Presentations
     sha: cafbee055c4bdb552c55e9b9ef62aa3e7d1f7c39
     accessed: 2026-10-02
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: b174ddc23aca4b74fd69fd2238d3fcc3ad364044
+    accessed: 2026-10-18
 tags:
   - presentations
   - slides
@@ -51,6 +54,62 @@ node_id: MDEwOlJlcG9zaXRvcnk4MjcxMzM5Ng==
 Marcus R. Brown's slide-deck archive — "A collection of presentations I've given." A polyglot **monorepo of independent talks**, each in its own top-level directory with its own build toolchain, published to [[github-pages]] at `marcusrbrown.github.io/Presentations/`. Created 2017-02-21; the oldest deck dates to that first commit, the newest was added 2026-08-04.
 
 ## Overview
+
+### Bounded source re-check (2026-10-18)
+
+Public visibility and default branch `main` were confirmed before inspecting
+`b174ddc23aca4b74fd69fd2238d3fcc3ad364044`. The complete recursive listing
+still contains 53 entries, 42 blobs, two deck directories, and three workflows;
+there is no root package/workspace manifest. Matching path counts establish
+layout continuity, not unchanged file contents.
+
+- **Independent toolchains persist.** The CRA manifest declares React/ReactDOM
+  18.3.1, Spectacle 10.2.3, `react-scripts` 5.0.1, `gh-pages` 6.3.0, and
+  `assert: npm:assert@2.1.0`. Slidev still declares CLI `^52.1.0` and theme
+  `0.25.0`. Neither manifest pins a package-manager version. CI uses frozen
+  Yarn and Bun installs, Node 20.20.2, and a SHA-pinned Bun setup action without
+  `bun-version`; dependency freezing and runtime pinning remain distinct.
+- **The two deployed subpaths have explicit build contracts.** CRA's current
+  `homepage` is `https://marcusrbrown.github.io/Presentations/Blockchain-Meetup-Feb-2017/`,
+  whereas Slidev's build sets `--base /Presentations/Cheap-LLMs-Meetup-Aug-2026/`.
+  CI copies their outputs to those respective `_site/` directories and copies
+  root `index.html` alongside them. This supersedes the older Deck 1 bullet
+  below that gives only `/Presentations` as its homepage; it does not establish
+  when the subpath changed. See [[github-pages]] for the build/assembly boundary.
+- **Deploy gates remain bounded.** Build compiles both decks and assembles the
+  site on PRs. Main-only Deploy depends on Build and Test, but Test invokes only
+  the CRA deck's `yarn test`. The listed demo shell test and the README's PDF
+  export command are not invoked; no browser or deployed-site check is present.
+  Pages write/OIDC permissions remain scoped to Deploy.
+- **Shared workflow pins advanced.** Both reusable callers now reference
+  `e62de417e8e22026f63890558ace7c574ee2a31f` (v4.39.0), superseding October 2's
+  v4.35.0 snapshot. Settings sync still calls the correctly named settings
+  workflow and schedules at 14:19 UTC. Renovate still has no cron and chains to
+  successful CI completion. Its OR guard still permits bot edits on a literal
+  reading; the September observed-skip contradiction is retained, not resolved
+  by source inspection.
+- **Fro Bot workflow remains absent.** The complete workflow set is `ci.yaml`,
+  `renovate.yaml`, and `update-repo-settings.yaml`; none invokes Fro Bot. A
+  follow-up draft onboarding PR can be proposed separately.
+
+Root README remains a title and CI badge. The Slidev README describes Bun
+development/build/PDF export and links the listed `OUTLINE.md`. CRA's README
+documents legacy branch-based `gh-pages` deployment, and its manifest retains
+that command; inspected CI instead publishes the assembled Pages artifact.
+These are distinct documented paths, not evidence of current manual use.
+
+**Evidence boundary:** only directory listings, READMEs, package manifests,
+and workflow contents were read. No slides, application/demo source, notes,
+settings, Renovate config, or lockfile contents were read or executed. Earlier
+queue, advisory, archive-state, branch-protection, runtime-health, and live-site
+claims remain dated evidence and were not revalidated.
+
+Sources: [listing](https://github.com/marcusrbrown/Presentations/tree/b174ddc23aca4b74fd69fd2238d3fcc3ad364044),
+[CRA manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Blockchain-Meetup-Feb-2017/package.json),
+[Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Cheap-LLMs-Meetup-Aug-2026/slides/package.json),
+[CI](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/ci.yaml),
+[Renovate](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/renovate.yaml),
+[settings sync](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/update-repo-settings.yaml).
 
 ### Bounded source re-check (2026-10-02)
 

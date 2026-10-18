@@ -4,6 +4,9 @@ title: GitHub Pages
 created: 2026-04-18
 updated: 2026-10-18
 sources:
+  - url: https://github.com/marcusrbrown/Presentations
+    sha: b174ddc23aca4b74fd69fd2238d3fcc3ad364044
+    accessed: 2026-10-18
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 9e2adcc677240a5180aa40f84bc56def31453b20
     accessed: 2026-10-18
@@ -73,6 +76,28 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Multi-deck assembly needs per-deck asset bases (2026-10-18)
+
+At `b174ddc2`, [[marcusrbrown--presentations]] builds two independent stacks
+into one Pages artifact. CRA's manifest supplies a homepage ending in
+`/Presentations/Blockchain-Meetup-Feb-2017/`; Slidev's build script explicitly
+sets `/Presentations/Cheap-LLMs-Meetup-Aug-2026/` as its base. CI assembles their
+outputs under matching `_site/` subdirectories plus a root landing page. Copying
+a successful build into a directory is only the assembly half of the contract:
+its generated asset base must also agree. The older repo-page homepage lacking
+the CRA deck suffix is superseded by this manifest evidence; live asset loading
+was not tested.
+
+Deploy depends on both Build and Test, but Test covers only the CRA deck.
+Thus both builds and assembly are exercised on PRs while neither browser-level
+path correctness nor the listed demo shell tests are verified by this workflow.
+The SHA-pinned Bun installer still has no runtime-version input, so frozen
+dependency installation alone does not establish a reproducible toolchain.
+
+Sources: [CRA manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Blockchain-Meetup-Feb-2017/package.json),
+[Slidev manifest](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/Cheap-LLMs-Meetup-Aug-2026/slides/package.json),
+[CI](https://github.com/marcusrbrown/Presentations/blob/b174ddc23aca4b74fd69fd2238d3fcc3ad364044/.github/workflows/ci.yaml).
 
 ## Compilation can be implicit in a deployment build (2026-10-18)
 

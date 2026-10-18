@@ -8056,74 +8056,93 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-10-18 07:45] ingest | bfra-me/renovate-action
+## [2026-10-18 07:40] ingest | marcusrbrown/marcusrbrown.com
 
-Surveyed public `main` at `1fedb47e67fdf65dea1f3acc7590b4e0761fe28a` using
-directory listings, root/docs READMEs and package manifests, the action
-manifest, and all nine workflow files. Upstream content was treated as
-untrusted evidence. Corrections context contained no records.
+Refreshed the bounded public survey at `9e2adcc677240a5180aa40f84bc56def31453b20`.
+Read only the listing, README, package/workspace manifests, and all five
+workflow files. Corrections context contained no spans. Updated
+[[marcusrbrown--marcusrbrown-com]] and [[github-pages]] additively and refreshed
+their index references. Preserved earlier dated findings and pre-existing edits.
 
-Updated [[bfra-me--renovate-action]] and [[github-actions-ci]] additively and
-cataloged both in `knowledge/index.md`, preserving accumulated observations
-and all pre-existing checkout changes.
+Recorded pnpm 11.28.5, postcss override 8.5.30, Fro Bot v0.122.3, shared Renovate
+v4.39.0, and explicit CI App-token permissions. Fro Bot remains present; no
+onboarding draft is warranted. Clarified that deployment compiles through
+`tsc && vite build` but does not execute the independent PR gate's tests/audit.
+The caller's unspecified delivery mode, stale repository self-references, and
+older override-terminology contradiction remain documented. Historical runtime,
+queue, installed-dependency, and live-site claims were not rechecked. No new
+entity or comparison page was justified. Changes await caller-owned persistence.
 
-- Renovate 44.166.0 still executes through the Docker-backed composite action;
-  README/docs v9 guidance and the manifest's v10 Docker-removal warning remain
-  stale against the previously recorded v10 history.
-- Cache finalization/save allow every push through their trailing OR branch,
-  bypassing `cache: false`. Corrected the older broad opt-in description and
-  recorded the guard-grouping pattern in the CI topic. No cache mutation or
-  run incident was observed.
-- Fro Bot is present at v0.123.0. The workflow still has no explicit output
-  mode or post-agent delivery steps; actual PR/report outcomes were not read.
-- The default-branch-only self-test still uses extraction dry-run. Build and
-  committed-dist comparison have different gates; external filter coverage
-  remains unverified under the read restriction.
-- Manifest toolchain advances to Node 24.22.0 and pnpm 11.28.5. Renovate/org
-  dispatch callers advance to shared-workflow v4.39.0; settings remains at
-  v4.16.0. Release-alert discovery still requires label AND marker.
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/tree/9e2adcc677240a5180aa40f84bc56def31453b20
+(README.md, package.json, pnpm-workspace.yaml, .github/workflows/).
 
-Sources: https://github.com/bfra-me/renovate-action/tree/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a;
-https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/action.yaml;
-https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/README.md;
-https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/package.json;
-https://github.com/bfra-me/renovate-action/tree/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/docs;
-https://github.com/bfra-me/renovate-action/tree/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows.
-
-<!-- fro-bot-agent -->
+<!-- fro-bot -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Delivery: four allowed files updated in the working tree; caller owns
-  persistence. This entry is the canonical ingest summary.
+- Delivery: four allowed files updated; caller owns persistence. Existing
+  checkout changes were preserved. No GitHub issue run notice was used.
 - Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
-  and `pnpm exec vitest run --no-cache` passed (102 files, 5,358 tests passed,
-  three todo). Diff whitespace passed.
-- Wiki validation: all 47 pages pass wikilink and index coverage checks; both
-  touched pages pass frontmatter, pinned-source, related-page, and deterministic
-  lint checks. Two pre-existing broken Markdown links on an unrelated page and
-  four advisory findings remain. The initial custom validator incorrectly
-  included the scaffold README; rerunning with only wiki content pages passed.
-- Markdown check scope: repository ESLint explicitly ignores `knowledge/`;
-  the targeted invocation confirmed that exclusion. Wiki-specific structural
-  and link validation above covers the edited pages.
-- Limits: install/build-writing wrappers are excluded by the non-mutating
-  shell and allowed-path contract; direct checks use cached dependencies.
-  Workflow guard unavailable (`guard-unavailable`).
-- Response delivery: the required single GitHub response uses a control-repo
-  commit comment with check/delivery status and a pointer here, keeping the
-  ingest summary solely in this log and using no issue run notice.
-- Public visibility was rechecked before delivery. Exactly one commit comment
-  was posted; its returned body confirmed bot identification and both Run
-  Summary markers.
+  and `pnpm exec vitest run --no-cache` passed (102 files, 5,358 tests, three
+  todos). Wiki frontmatter, pinned sources, wikilinks, related targets, catalog
+  references, log ordering, and diff whitespace checks passed.
+- Limitations: installation/build-writing `pnpm bootstrap`, `pnpm check-types`,
+  and `pnpm test` wrappers were omitted under the non-mutating-shell contract;
+  direct checks used the existing dependencies and build. Workflow guard
+  unavailable. The GitHub response contains delivery/check status only; this
+  log is the canonical ingest summary.
 
 <!-- fro-bot:run-summary:end -->
 
-Delivery/check notice: https://github.com/fro-bot/.github/commit/898209884dee4b338cc73a78cb774a9d3949466a#commitcomment-205494339
+## [2026-10-18 07:44] ingest | repo:marcusrbrown/marcusrbrown.com
 
-## [2026-10-18 07:51] ingest | repo:bfra-me/renovate-action
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
 
-Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
 
-Sources: https://github.com/bfra-me/renovate-action
+## [2026-10-18 07:47] ingest | marcusrbrown/Presentations
+
+Surveyed the public `main` snapshot at
+`b174ddc23aca4b74fd69fd2238d3fcc3ad364044`, reading only directory listings,
+three READMEs, two package manifests, and all three workflow files. Corrections
+context contained no spans. Updated [[marcusrbrown--presentations]] and
+[[github-pages]] additively and cataloged both in the index; preserved accumulated
+history and pre-existing checkout changes.
+
+Recorded shared callers at v4.39.0, the continuing independent Yarn/CRA and
+Bun/Slidev toolchains, and the missing Fro Bot workflow for a separately proposed
+draft onboarding PR. Added the per-deck asset-base/assembly contract and explicitly
+superseded the older CRA homepage without its deck suffix. Deployment still gates
+on both builds and CRA tests, without demo-shell, browser, or PDF checks; Bun's
+runtime version remains unspecified. Historical runtime, queue, advisory,
+archive-state, and live-site claims were not rechecked. No new entity or comparison
+page was justified. Caller owns persistence; no issue run notice was used.
+
+Sources: https://github.com/marcusrbrown/Presentations/tree/b174ddc23aca4b74fd69fd2238d3fcc3ad364044
+(README.md, Blockchain-Meetup-Feb-2017/{README.md,package.json},
+Cheap-LLMs-Meetup-Aug-2026/slides/{README.md,package.json}, .github/workflows/).
+
+<!-- fro-bot -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Delivery: four allowed files updated; caller owns persistence. Existing
+  checkout changes were preserved; the ingest summary is recorded only here.
+- Verification: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  and `pnpm exec vitest run --no-cache` passed (102 files, 5,358 tests, three
+  todos). Wiki frontmatter, pinned provenance, wikilinks, related targets,
+  complete catalog coverage, append ordering, and diff whitespace checks passed.
+- Limitations: installation/build-writing wrappers (`pnpm bootstrap`,
+  `pnpm check-types`, `pnpm test`) were omitted under the non-mutating-shell
+  contract; direct checks used existing dependencies and build. Workflow guard
+  unavailable. No issue run notice was posted.
+
+<!-- fro-bot:run-summary:end -->
+
+## [2026-10-18 07:52] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/Presentations
