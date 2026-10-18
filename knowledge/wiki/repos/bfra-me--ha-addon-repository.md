@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-09-30
+updated: 2026-10-14
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-30
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
+    accessed: 2026-10-14
 tags:
   - home-assistant
   - addon
@@ -65,6 +68,54 @@ node_id: R_kgDOIKWaJA
 Template repository for a Home Assistant add-on repository. GitHub template (`is_template: true`) under the `bfra-me` org, used as the blueprint when starting a new HA add-on collection. The repo ships one example add-on (`example/`) that gets built and published to GHCR.
 
 This is the bfra-me ecosystem's add-on counterpart to Marcus's runtime [[marcusrbrown--ha-config]] — where ha-config consumes add-ons and integrations, this repo defines the scaffolding for building and publishing new ones.
+
+## 2026-10-14 — Unchanged source, distinct tag contracts
+
+Public `main` still resolves to **`b7bcd528f511809e0f5906af42ca6ff131c1ff1e`**.
+The complete directory listing, both READMEs, repository and add-on manifests,
+and all seven workflows were rechecked. No source change supersedes the
+September 30 static findings. Earlier issue, run, advisory, registry, and
+applied-protection observations remain historical; none was refreshed here.
+Dockerfiles, scripts, settings, and external action implementations were not read.
+
+The template still declares example version **1.2.8**, architectures `aarch64`
+and `amd64`, and `ghcr.io/bfra-me/addon-example`. Repository name and maintainer
+remain placeholders. **Fro Bot is present**, pinned to v0.112.0, with the daily
+15:30 UTC schedule; no missing-workflow onboarding draft is warranted. Its
+two-step caller still has no explicit output mode or post-agent persistence
+stage. This is source-shape evidence, not renewed proof of a live delivery failure.
+Reusable Renovate and settings workflows remain at v4.29.0; the scheduled
+prompt's “currently v4.16.6” wording is historical guidance, not the actual pin.
+
+### Architecture tags do not establish generic tag availability
+
+[`main.yaml`](https://github.com/bfra-me/ha-addon-repository/blob/b7bcd528f511809e0f5906af42ca6ff131c1ff1e/.github/workflows/main.yaml)
+derives architecture-specific images (`aarch64-addon-example` and
+`amd64-addon-example`) from the generic manifest image. Each architecture's
+publish action receives both the version and `latest`. The separate
+multi-architecture publisher receives **only the version** in `image-tags`,
+and registry platform verification inspects only the generic versioned reference.
+
+Consequently, the source declares a generic `:1.2.8` publication path but no
+explicit generic `:latest` publication or verification. An architecture-specific
+`latest` tag is not evidence that `ghcr.io/bfra-me/addon-example:latest` exists
+or has both platforms. External action defaults and live registry state were
+not inspected, so actual generic alias availability remains unverified. This
+narrows any reading of “latest” as a repository-wide multi-arch guarantee;
+see [[docker-containers]].
+
+### Workflow execution is broader than image selection
+
+The workflow runs on main pushes, PRs, and manual dispatch, but its changed
+add-on selector monitors only `apparmor.txt`, `config.json`, `config.yaml`,
+`config.yml`, `Dockerfile`, and `rootfs/**` within discovered add-on directories.
+README, changelog, translations, and workflow files are not in that selector.
+The separate `.github/scripts/**` filter gates release-integrity regression
+tests, not the build matrix. Thus starting Main does not itself request an
+image rebuild; manual dispatch exposes no force-build input. Actual dispatch
+selection depends on the pinned paths-filter action, whose implementation was
+outside this pass. The earlier validation-versus-publication finding also
+persists: publish jobs do not depend on `Lint` or release-integrity success.
 
 ## 2026-09-30 — Static contract recheck
 

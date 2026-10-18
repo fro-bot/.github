@@ -2,9 +2,76 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-10
+updated: 2026-10-14
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.122.1
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.24
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/dashboard/blob/f12fde0d877e70f1951d0b25b0c54a778e4edbcb/src/gateway/operator-contract/run-summary.ts
+    sha: f12fde0d877e70f1951d0b25b0c54a778e4edbcb
+    accessed: 2026-10-14
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38481473838
+    accessed: 2026-10-14
+  - url: https://github.com/marcusrbrown/infra/tree/bc6bf3c03bd9c22f6e4fc606ad443083b195a435
+    sha: bc6bf3c03bd9c22f6e4fc606ad443083b195a435
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6153677776
+    accessed: 2026-10-14
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-14
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.120.0
+    accessed: 2026-10-12
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.22
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38150071995
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38173307577
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra
+    sha: 07486ed6cf81d481f0ea7a9e25b0743969b92b6b
+    accessed: 2026-10-12
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-12
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38113063394
+    accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/infra
+    sha: d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.20
+    sha: 5535b0dbe6f9f152740468ddc56c50b41d78666a
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.119.2
+    sha: 83ed683da24111bd1474eb4bda39715ed5799bc2
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6104169505
+    accessed: 2026-10-11
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/infra/actions/runs/38107582154
+    accessed: 2026-10-11
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-11
+  - url: https://github.com/fro-bot/.github/issues/3512
+    accessed: 2026-10-10
+  - url: https://github.com/users/fro-bot/projects/1
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/agent/releases/tag/v0.119.0
+    accessed: 2026-10-10
+  - url: https://github.com/fro-bot/agent/pull/1767
+    sha: 432de95828d99f5fb36f8d82ebe2f11a5aedc883
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra/pull/1502
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra/actions/runs/37895560601
+    sha: 3216bb06abb13bcedf8ca56f0feb52d5b212d201
+    accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/infra
+    sha: 9e5e289fb0c70cba2dfe2adc8cb09237a4040d93
+    accessed: 2026-10-10
+  - url: https://dashboard.fro.bot/operator/health
+    accessed: 2026-10-10
   - url: https://github.com/fro-bot/dashboard
     sha: fd3c553691ae162846c4163060a26289fc224277
     accessed: 2026-10-10
@@ -142,6 +209,167 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-14 — contract adoption includes closed-set consumers
+
+GitHub Releases now identifies agent **v0.122.1**, whose tagged contract is
+**1.11.0**, and dashboard **2026.10.24**, whose tagged contract remains **1.9.0**.
+This supersedes October 12's latest-release snapshot; public operator health
+still reports **1.9.0**. The October 13 tracker comment's pending-release claim
+is historical: v0.122.1 published later that evening. Release availability does
+not authorize a standalone gateway cutover.
+
+At dashboard `f12fde0`, `src/gateway/operator-contract/run-summary.ts` accepts
+only queued, running, succeeded, failed, and cancelled summary statuses.
+`parseRunSummaryList` skips invalid items. Agent contract 1.11.0 adds
+`waiting_for_question` and `waiting_for_approval` to summaries: changing only
+the dashboard version constant could satisfy the handshake while silently
+dropping waiting runs from its index. Adopt the wire vocabulary, parser,
+list/card rendering, fixtures, and question-notification route together.
+Verification needs waiting and settled summaries plus reconnect and terminal
+cases; a successful health response alone cannot exercise this consumer.
+
+The actual dashboard deployment in [run 38481473838](https://github.com/marcusrbrown/infra/actions/runs/38481473838)
+completed **2026-10-13 23:11:26 UTC**. Post-convergence logs identify healthy
+running dashboard digest
+`sha256:efd71a845ba5bd419e5c31fbea3ec65353a873d2342a8687d5d20c96f10cdaba`
+and active compose tag **2026.10.24**. Infrastructure source at `bc6bf3c`
+still records dashboard **2026.10.21** and gateway **v0.119.2**. Preserve this
+ledger/deployment distinction and the paired, volume-aware rollback constraint
+from [[marcusrbrown--infra]]. Authenticated production acceptance was not run;
+the dedicated tracker still owns issue-body and Project reconciliation.
+
+## 2026-10-12 — latest releases diverge before the next paired cutover
+
+GitHub Releases identifies agent **v0.120.0** and dashboard **2026.10.22** as
+latest. Their tagged operator-contract files declare **1.10.0** and **1.9.0**,
+respectively. This supersedes October 11's latest-release parity snapshot,
+not the production observation: public `/operator/health` still returns
+`{"ok":true,"contractVersion":"1.9.0"}`. Exact-match contract enforcement means
+latest release selection is not automatically a compatible deployment pair.
+
+The actual dashboard job in [run 38150071995](https://github.com/marcusrbrown/infra/actions/runs/38150071995)
+succeeded at **2026-10-12 04:52:54 UTC**. Its logs reference target image
+**2026.10.22** with digest
+`sha256:6731b2d8af94e3b7d6e39affa4d3fca8bd38a561dd57ec7a79082eb3bfab32a7`.
+Infrastructure main at `07486ed6cf81d481f0ea7a9e25b0743969b92b6b` still records
+**2026.10.21** in `apps/dashboard/docker-compose.yaml`, while
+`apps/gateway/upstream.json` records **v0.119.2**. Treat this as a source-ledger
+versus deployment-run discrepancy; public health does not identify the serving
+image digest. Gateway [run 38173307577](https://github.com/marcusrbrown/infra/actions/runs/38173307577)
+completed its actual deployment job at **04:55:51 UTC**. Two newer green router
+runs skipped both gateway and dashboard jobs, so their overall success is not
+fresh deployment evidence.
+
+[#3512](https://github.com/fro-bot/.github/issues/3512)'s body still claims
+**1.8.0 / v0.118.2 / 2026.10.15** and calls six Project-Done items Open.
+The parent Project item remains **In Progress**, consistent with incomplete
+authenticated acceptance. The dedicated tracker owns reconciliation. Preserve
+the fail-closed contract check and the paired, volume-aware rollback constraint
+from [[marcusrbrown--infra]]; this readback does not verify authenticated SSE,
+question continuation, cancellation, logout, or privacy behavior.
+
+## 2026-10-11 — later deploy and health readback supersedes the pending snapshot
+
+The later daily readback observes public `/operator/health` returning
+`{"ok":true,"contractVersion":"1.9.0"}`. This contradicts and supersedes the
+earlier same-day **1.8.0** observation below; both remain dated evidence.
+Tagged agent **v0.119.2** and dashboard **2026.10.20** still declare **1.9.0**.
+
+The gateway router [run 38113063394](https://github.com/marcusrbrown/infra/actions/runs/38113063394)
+completed its actual `deploy-gateway / deploy-gateway` job successfully at
+**05:02:17 UTC**. Dashboard [run 38107582154](https://github.com/marcusrbrown/infra/actions/runs/38107582154)
+completed `deploy-dashboard` successfully at **05:04:21 UTC**, replacing its
+earlier pending state. The older dashboard 2026.10.18 attempt now reports
+failure; 2026.10.19 remains cancelled. Neither should be retried merely to
+clear a historical queue.
+
+Infrastructure main at `d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9` now records
+gateway **v0.119.2** in `apps/gateway/upstream.json` and dashboard
+**2026.10.20** with the published image digest in
+`apps/dashboard/docker-compose.yaml`. The older audit-pin lag described below
+is therefore historical, not the current ledger state.
+
+These independent checks establish successful deployment jobs, updated source
+intent, and a live contract response. They do **not** establish the running image
+digest, authenticated SSE `ready`, question answer/skip continuation, Discord
+settlement, terminal cleanup, expired-output recovery, or the remaining
+approval/cancellation/logout/privacy acceptance checks. [#3512](https://github.com/fro-bot/.github/issues/3512)
+still remains Open and Project 1 remains **In Progress / waiting**. Its body
+still lists the six fixed producer/dashboard defects as Open while their
+Project items are Done; production readiness and source completion remain
+separate. The dedicated tracker owns reconciliation. Preserve the paired
+rollback and earlier volume-snapshot requirement for [[marcusrbrown--infra]].
+
+Sources: [gateway pin](https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/gateway/upstream.json),
+[dashboard pin](https://github.com/marcusrbrown/infra/blob/d7b2b9e8f50dcccc7e0e9991ae872d81a51e67c9/apps/dashboard/docker-compose.yaml),
+[live health](https://dashboard.fro.bot/operator/health), and the deployment runs
+above; accessed 2026-10-11.
+
+## 2026-10-11 — released contract parity is not deployed contract parity
+
+GitHub Releases now identifies agent **v0.119.2** and dashboard **2026.10.20**
+as latest. Their tagged `packages/gateway/src/operator-contract/version.ts`
+and `src/gateway/operator-contract/version.ts` both declare **1.9.0**.
+Fresh public `/operator/health` still returns **1.8.0**. This supersedes
+October 10's latest-release snapshot, not its runtime observation. Health
+does not establish the serving image digest or authenticated SSE behavior.
+
+[#3512's body](https://github.com/fro-bot/.github/issues/3512) calls agent
+#1736, #1737, #1739, #1740 and dashboard #583, #584 **Open**; live issues are
+**Closed**, and Project 1 marks all six **Done / ready now**. The later
+[tracker comment](https://github.com/fro-bot/.github/issues/3512#issuecomment-6104169505)
+already distinguishes the 1.9.0 release from the unfinished production gate.
+The parent remains **Open / In Progress / waiting**, consistent with outstanding
+acceptance checks; dashboard #585 and #586 remain **Open / Todo / ready now**.
+
+GitHub ancestry comparisons place agent [#1771](https://github.com/fro-bot/agent/pull/1771)
+in v0.119.2 and dashboard [#599](https://github.com/fro-bot/dashboard/pull/599)
+and [#600](https://github.com/fro-bot/dashboard/pull/600) in 2026.10.20.
+That proves release inclusion, not live segment boundaries, question handling,
+expired-output recovery, or Cancel-control cleanup.
+
+The latest [2026.10.20 deploy](https://github.com/marcusrbrown/infra/actions/runs/38107582154)
+is **pending**; the 2026.10.18 deploy is **waiting**, and 2026.10.19 was
+**cancelled**. The latest successful dashboard deploy remains 2026.10.17,
+with audit [#1502](https://github.com/marcusrbrown/infra/pull/1502) open.
+Infrastructure main still pins gateway v0.118.2 and dashboard 2026.10.15.
+Neither queued intent nor the older audit ledger identifies a newer running image.
+
+For [[fro-bot--agent]] and [[marcusrbrown--infra]], exact-match contract checking
+means even sequential paired deploys have a mismatch interval. Select fixed,
+verified-compatible releases in one maintenance window; verify gateway health
+then authenticated SSE and consumer flows. Keep the earlier volume-snapshot
+rollback requirement. Tracker writes remain the dedicated workflow's responsibility.
+
+## 2026-10-10 — deployment execution can precede the audit pin
+
+The rollout body in [#3512](https://github.com/fro-bot/.github/issues/3512)
+still names agent issues #1736, #1737, and #1740 as **Open**. Live issue state
+is **Closed**, and Project 1 marks each **Done / ready now**. The third mismatch
+is new since yesterday: OAuth default landing closed through
+[#1767](https://github.com/fro-bot/agent/pull/1767). The overall rollout remains
+**Open / In Progress / waiting**, consistent with unfinished production checks.
+
+Latest published agent **v0.119.0** contains the merge commits for checkout
+projection (#1743) and question handling (#1749), as established by GitHub
+commit comparisons. #1767's merge commit is not its ancestor. Infrastructure's
+gateway source pin remains **v0.118.2**. Release inclusion therefore improved
+for question handling since the October 9 snapshot, but neither that comparison
+nor source closure establishes production behavior.
+
+Dashboard [deploy run 37895560601](https://github.com/marcusrbrown/infra/actions/runs/37895560601)
+completed successfully for **2026.10.17**. Its
+[audit PR #1502](https://github.com/marcusrbrown/infra/pull/1502) is still open,
+while infrastructure main's compose pin and #3512's deployment table still say
+**2026.10.15**. This is a deploy-then-record workflow: the main-branch pin is
+an audit ledger that can lag executed deployment, not an independent serving
+version oracle. Fresh public health returns contract **1.8.0**, which does not
+identify a running image digest. No authenticated regression sweep was replayed.
+
+Keep source fixed, release included, deploy executed, audit recorded, and runtime
+verified separate. Dedicated tracker ownership and the volume-snapshot/paired-image
+rollback requirement remain; earlier dated snapshots are preserved below.
 
 ## 2026-10-10 — bounded source snapshot and documented consumer boundaries
 

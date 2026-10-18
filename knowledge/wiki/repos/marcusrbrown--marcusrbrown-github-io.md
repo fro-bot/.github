@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.github.io
 created: 2026-04-25
-updated: 2026-09-28
+updated: 2026-10-12
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -115,6 +115,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: aa563beb2426b9bd94ff26a5d35ea48042050b7b
     accessed: 2026-09-28
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-10-12
 tags:
   - brand-site
   - react
@@ -679,6 +682,61 @@ The name still resolves to public repo id `1174807412` / node id `R_kgDORgYjdA` 
 - **Path-sensitive PR checks are now explicit.** `ci.yaml` uses `dorny/paths-filter` and separate gates for unit tests, build, and TypeScript type-check (the latter includes inputs beyond build). `e2e-tests.yaml` gates E2E, visual, and accessibility suites independently, sharing a build only if any suite needs it; its summaries distinguish a skipped suite from a passed one. `performance.yaml` gates only PR audits, while main pushes, dispatches, and the Monday schedule still run audits; malformed filter outputs fail closed. `quality-gate` in CI still requires job success, so a skipped *step* inside a successful job is not proof the corresponding check ran. The path mapping lives in `.github/filters.yaml`, which was not read in this limited survey; category completeness is unverified. See [[github-actions-ci]].
 - **A live wording contradiction:** `tests/visual/README.md` says the visual tests save screenshots with `page.screenshot({ path })` for manual review and **do not use `toMatchSnapshot()` for automated diff comparison**. Yet `e2e-tests.yaml` labels a successful visual job “All screenshots matched.” That success demonstrates the job's steps passed, not screenshot parity. Treat the older “visual regression” claims on this page and [[github-pages]] as test-suite names, not evidence of automatic pixel comparison. The README's stack table also still says “pnpm v11.1.3+” and “Vite 7”; the current manifest requires `engines.pnpm >=11.11.0` and pins `pnpm@11.27.0`, while Vite remains `7.3.6`.
 - **Deployment and updater remain distinct.** `deploy.yaml` builds with `GITHUB_PAGES=true`, injects optional `VITE_UMAMI_WEBSITE_ID` only at the build step, and uploads `dist/` to Pages; the workflow does not reveal whether the repo variable is set, so activation is not inferred. `blog-refresh.yaml` publishes semantic changes to one rolling PR using a late-minted App token; `renovate.yaml` calls `bfra-me/.github` at v4.31.0 on an hourly `17 * * * *` schedule. Eight workflow files still exist. The manifest holds React 19, React Router `^7.18.2`, TypeScript 5.9.3, Vite 7.3.6, Vitest 4.1.11, Playwright 1.63.0, Node `>=24`, and pnpm 11.27.0. Security overrides and three advisory exceptions live in `pnpm-workspace.yaml`; the CI `pnpm audit --audit-level moderate` gate remains. The current README's clone/badge links still use the old `marcusrbrown/mrbro.dev` name; their resolution was not tested.
+
+## Current deployment and evidence boundaries (2026-10-12)
+
+At `8a1567dfedb1258675e4cfa39d2e5c1854dc3487`, the public target's README
+and manifest still identify the **mrbro.dev developer portfolio**, not the
+historical brand site now documented at [[marcusrbrown--marcusrbrown-com]].
+The old brand-site sections and name-collision record above remain historical.
+The README still uses `marcusrbrown/mrbro.dev` in clone, Codespaces, and badge
+links, while `package.json` declares the surveyed `marcusrbrown.github.io`
+repository URL. Those old links were not followed.
+
+- **Deployment has its own lint/test/compiler chain.** `deploy.yaml` runs
+  lint, `pnpm run test` (Vitest), and `pnpm run build` before uploading `dist`;
+  the deploy job depends on that build job. The manifest expands build into
+  `check-types`, Vite, and blog prerendering; `check-types` compiles both the
+  root project and `.opencode/tsconfig.json`. Unlike the separate brand-site
+  deployment, this portfolio does execute unit tests before Pages upload.
+  It does not invoke coverage, Playwright, Lighthouse, the RSC boundary check,
+  or `pnpm audit` in deployment. Separate PR CI runs coverage conditionally
+  and the RSC/advisory checks unconditionally. See [[github-pages]] for the
+  distinction between merge checks and deployment dependencies.
+- **Fro Bot remains present at v0.113.2**, SHA
+  `43023e5b9755fe307c03ede1067cc182564d30e3`. Scheduled autoheal explicitly
+  selects `branch-pr`; generic interactive execution is separate from bounded
+  live-audit discovery and its deterministic reporter. The reporter's write
+  mode defaults to `disabled`, and dispatched `live-audit` explicitly selects
+  `disabled`. The workflow's existence establishes configuration, not live
+  activation or successful findings publication. No missing-workflow onboarding
+  proposal is justified. The workflow directory still contains eight files.
+- **Visual claims still conflict.** The root README promises automated
+  screenshot comparisons, while `tests/visual/README.md` explicitly describes
+  screenshot artifacts for manual review without `toMatchSnapshot()`.
+  This independently preserves the September 28 contradiction; source test
+  implementations were not read, so automated pixel parity is not established.
+- **Current manifest contract:** React `^19.0.0`, React Router `^7.18.2`,
+  TypeScript 5.9.3, Vite 7.3.6, Vitest 4.1.11, Playwright 1.63.0,
+  `pnpm@11.27.0`, Node `>=24.0.0`, and pnpm engine `>=11.11.0`.
+  The README's pnpm prerequisite remains `11.1.3+`, below the manifest engine
+  floor. README badge metrics are checked-in claims, not current test results.
+- **Analytics state remains unmeasured.** The build still injects optional
+  `VITE_UMAMI_WEBSITE_ID` from the repository variable only on the build step.
+  Its value, the deployed tracker, DNS, and live site behavior were not read.
+  Older disabled-in-production statements remain dated observations.
+
+Evidence was limited to directory listings, README files, the package manifest,
+and workflow definitions pinned to this SHA. Issues, PRs, workflow runs, other
+configuration files, and implementation source were not inspected; earlier
+queue and runtime findings are not refreshed by this observation.
+
+Sources: [README](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/README.md),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/package.json),
+[Deploy](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/deploy.yaml),
+[CI](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/ci.yaml),
+[Fro Bot](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/fro-bot.yaml),
+[visual README](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/tests/visual/README.md).
 
 ## Survey History
 
