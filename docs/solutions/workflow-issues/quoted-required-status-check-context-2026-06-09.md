@@ -6,7 +6,7 @@ module: github-actions-workflows
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
-last_updated: 2026-10-10
+last_updated: 2026-10-18
 verified: 2026-06-09
 applies_when:
   - Adding or renaming a required_status_checks.contexts entry in .github/settings.yml
@@ -138,21 +138,11 @@ deliberate exception to the rule above. Its job-level `if:` skips bot-authored P
 review them, Renovate PRs report skipped, and the maintainer approves them manually. A skipped job
 reports Success, which satisfies the required check, so this is a silent pass by design.
 
-The weekly drafted-docs PR is opened by `fro-bot[bot]` and does need a review, so the exception is
-narrowed with an exact predicate instead of being removed (`fro-bot.yaml:491-496`):
-
-```text
-!endsWith(github.event.pull_request.user.login || '', '[bot]') ||
-(
-  github.event.pull_request.user.login == 'fro-bot[bot]' &&
-  github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
-  github.event.pull_request.head.repo.full_name == github.repository
-)
-```
-
-The bot, the branch and the repository must all match, so no other bot PR gains a review and the
-skip stays explicit. If a job-level `if:` has to skip a required check, make it this narrow and name
-the reason where it is written. The surrounding pipeline is described in
+The weekly drafted-docs PR is opened by `fro-bot[bot]` and is covered by the same skip. The operator
+reviews it manually, because the agent does not review PRs authored by the first-party App
+([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)). If a job-level `if:` has to
+skip a required check, keep it explicit and name the reason where it is written. The surrounding
+pipeline is described in
 [Agent drafts, trusted job publishes](../best-practices/agent-drafts-trusted-publish-split-2026-10-10.md).
 
 ## Why This Matters

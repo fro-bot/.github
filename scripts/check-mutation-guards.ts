@@ -1002,13 +1002,13 @@ function defaultReadSource(absolutePath: string): string {
 /** The one internal package this repo builds, and the two directories a subpath import maps between. */
 const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
 const WIKI_WRITE_CORE_DIST_DIR = 'packages/wiki-write-core/dist'
-// `from '@fro-bot/wiki-write-core'` (bare, group 1 undefined) or
-// `from '@fro-bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug') — matches the
+// `from '@fro.bot/wiki-write-core'` (bare, group 1 undefined) or
+// `from '@fro.bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug') — matches the
 // same three reference shapes as the relative patterns above (static from-clause, dynamic
 // `import(...)`, and `export ... from`) in one pattern, since all three share the same
 // `from '...'`/`import('...')` text shape this is a plain textual scan over.
 const WIKI_WRITE_CORE_SPECIFIER_PATTERN =
-  /(?:from\s+['"]|import\(\s*['"])@fro-bot\/wiki-write-core(?:\/([\w-]+))?['"]/gu
+  /(?:from\s+['"]|import\(\s*['"])@fro\.bot\/wiki-write-core(?:\/([\w-]+))?['"]/gu
 
 /**
  * Resolves a dynamic-import template literal's raw content (e.g. `./x${'.js'}`) by inlining
@@ -1204,13 +1204,13 @@ export function reachedModulesTransitive(
 }
 
 /**
- * Resolves every `@fro-bot/wiki-write-core[/subpath]` specifier a file references directly
+ * Resolves every `@fro.bot/wiki-write-core[/subpath]` specifier a file references directly
  * (static from-clause, dynamic `import(...)`, or `export ... from`) to the *source* file the
  * subpath's `package.json` `exports` map points to at build time — `<subpath>` (or `index` for
  * the bare package specifier) maps to `packages/wiki-write-core/src/<subpath>.ts`. This is the
  * relative-import extractor's blind spot: a `scripts/` file that imports the package by name
  * (e.g. `scripts/check-private-leak.ts`'s `import {checkPrivateLeak} from
- * '@fro-bot/wiki-write-core/private-leak'`) has no `./`/`../` specifier for `directSpecifiers`
+ * '@fro.bot/wiki-write-core/private-leak'`) has no `./`/`../` specifier for `directSpecifiers`
  * to find, so the relative-only reach computation above would never connect it to the source
  * file whose compiled output it actually depends on.
  */
@@ -1229,7 +1229,7 @@ export function wikiWriteCoreSubpathSourceFiles(
 export interface ImportClosure {
   readonly files: ReadonlySet<string>
   /**
-   * True when any visited file references the `@fro-bot/wiki-write-core` package by name
+   * True when any visited file references the `@fro.bot/wiki-write-core` package by name
    * (any subpath, or the bare barrel) rather than only by relative path — see
    * `wikiWriteCoreSubpathSourceFiles`. `buildTriggerSet` uses this to decide whether the
    * compiled* `packages/wiki-write-core/dist/` directory also needs to be a trigger: a
@@ -1243,7 +1243,7 @@ export interface ImportClosure {
 /**
  * The transitive relative-import closure of every entry in `entries` — each entry's own
  * `reachedModulesTransitive` result, plus (recursively) the same for every
- * `@fro-bot/wiki-write-core` subpath specifier reference resolved to its source file (see
+ * `@fro.bot/wiki-write-core` subpath specifier reference resolved to its source file (see
  * `wikiWriteCoreSubpathSourceFiles`), so a package-by-name reference from a `mutate`/
  * `testFiles` entry still pulls its source counterpart — and that counterpart's own further
  * imports — into the closure. `entries` itself is not included in the returned `files`; the

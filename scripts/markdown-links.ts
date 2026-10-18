@@ -1,1 +1,1 @@
-export * from '@fro-bot/wiki-write-core/markdown-links'
+export * from '@fro.bot/wiki-write-core/markdown-links'

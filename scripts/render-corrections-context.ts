@@ -8,7 +8,7 @@ import {
   readCorrections,
   type CorrectionRecord,
   type CorrectionsReadResult,
-} from '@fro-bot/wiki-write-core/corrections'
+} from '@fro.bot/wiki-write-core/corrections'
 
 const CONTEXT_PATH = '.github/corrections-context.json'
 

@@ -24,9 +24,9 @@
  *     exist (a leftover from a PR closed without merging fails the run closed until the operator
  *     deletes it) and is created at a single-parent commit on main; an open PR gets a delta
  *     commit with a non-forced update. A PR that appears or reappears before the ref write,
- *     a createRef conflict, or a create-422 fails the run closed; the next run reconciles. A Fro Bot review is requested
- *     after every PR write (create, delta commit, body-only update); a failure other than 422
- *     fails the run after the write landed, and the next write retries it.
+ *     a createRef conflict, or a create-422 fails the run closed; the next run reconciles. No review
+ *     is requested: the operator reviews drafted PRs manually, because the agent cannot review a PR
+ *     authored by the first-party App (fro-bot/agent#1520).
  *
  * Routing (outcome x drafted PR open x doc changes):
  *   new-doc / extension -> always in the PR body (they require doc changes in the handoff).
@@ -46,9 +46,6 @@
  *   `DRAFTED_SOLUTIONS_ROWS_PATH` (the agent's evidence rows: a JSON array of coverage rows), and
  *   optionally `DRAFTED_SOLUTIONS_RESULT_PATH` (result JSON destination). Covered docs are verified
  *   through the API, on the tree that will back the PR; no checkout is read.
- * - env `DRAFTED_SOLUTIONS_MODE=review-only` instead runs {@link reviewOnlyDraftedSolutions}: only
- *   `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are needed (no digest, handoff, or rows), the open
- *   drafted PR is re-found and the Fro Bot review requested, and nothing else is written.
  * - stdout: one-line JSON result. exit 0 on success, 1 on any fail-closed condition.
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
@@ -80,7 +77,6 @@ import {
   parseDigest,
   readRefSha,
   reauthorizeRows,
-  REVIEWER_LOGIN,
   type DraftedDigest,
   type OpenDraftedPr,
 } from './drafted-solutions-shared.ts'
@@ -135,7 +131,6 @@ export type PublishResult =
   | ({mode: 'updated-pr'; prNumber: number; commitSha: string} & DirectClosures)
   | ({mode: 'updated-pr-body'; prNumber: number} & DirectClosures)
   | ({mode: 'closed-proposals'} & DirectClosures)
-  | {mode: 'review-requested'; prNumber: number}
 
 interface StagedFile {
   path: string
@@ -431,30 +426,6 @@ async function commitFiles(
   return commit.data.sha
 }
 
-/**
- * Requests the Fro Bot review. `fro-bot.yaml` does not review on `opened`, so the request is the
- * only thing that triggers the required review; it follows every PR write, not just creation, so a
- * transient failure is repaired by the next write. 422 means already requested (or already acted);
- * anything else fails the run after the write landed. The message carries no upstream text.
- */
-async function requestReview(
-  octokit: OctokitClient,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  failureMessage: string,
-): Promise<void> {
-  try {
-    await octokit.rest.pulls.requestReviewers({owner, repo, pull_number: prNumber, reviewers: [REVIEWER_LOGIN]})
-  } catch (error: unknown) {
-    if (errorStatus(error) === 422) return
-    throw new DraftedSolutionsError(failureMessage)
-  }
-}
-
-const reviewFailure = (prNumber: number, verb: 'opened' | 'updated'): string =>
-  `drafted PR #${prNumber} ${verb} but requesting review failed`
-
 /** Parses and re-authorizes the rows of an open drafted PR; its body is rendered from them. */
 async function existingRowsOf(
   octokit: OctokitClient,
@@ -508,7 +479,6 @@ async function writePr(
   if (openPr !== null && files.length === 0) {
     // Covered rows only: repair the PR body without touching the branch.
     await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
-    await requestReview(octokit, owner, repo, openPr.number, reviewFailure(openPr.number, 'updated'))
     return {mode: 'updated-pr-body', prNumber: openPr.number}
   }
 
@@ -518,7 +488,6 @@ async function writePr(
     const commitSha = await commitFiles(octokit, owner, repo, baseSha, files)
     await octokit.rest.git.updateRef({owner, repo, ref: DRAFTED_UPDATE_REF, sha: commitSha, force: false})
     await octokit.rest.pulls.update({owner, repo, pull_number: openPr.number, body})
-    await requestReview(octokit, owner, repo, openPr.number, reviewFailure(openPr.number, 'updated'))
     return {mode: 'updated-pr', prNumber: openPr.number, commitSha}
   }
 
@@ -550,7 +519,6 @@ async function writePr(
     if (errorStatus(error) === 422) throw new DraftedSolutionsError(PR_APPEARED_MESSAGE)
     throw error
   }
-  await requestReview(octokit, owner, repo, createdNumber, reviewFailure(createdNumber, 'opened'))
   return {mode: 'created-pr', prNumber: createdNumber, commitSha}
 }
 
@@ -667,32 +635,6 @@ async function publishCore(params: PublishParams, tokens: PublicOutputTokens): P
   return prWrite === null ? {mode: 'closed-proposals', closed, skipped} : {...prWrite, closed, skipped}
 }
 
-export interface ReviewOnlyParams {
-  octokit: OctokitClient
-  owner: string
-  repo: string
-  logger?: PublishLogger
-}
-
-/**
- * Review-only reconciliation: the drafted PR still lacks its Fro Bot review (harvest's
- * `review_needed`), whether or not any proposal is left to draft. Re-finds the PR with the shared
- * predicate and requests the review (422 tolerated). Reads nothing from the agent and writes
- * nothing else: no handoff, rows, digest, ref, body, or issue is touched, and no public text is
- * produced, so there is nothing for the privacy gate to scan.
- */
-export async function reviewOnlyDraftedSolutions(params: ReviewOnlyParams): Promise<PublishResult> {
-  const {octokit, owner, repo} = params
-  const logger = params.logger ?? DEFAULT_LOGGER
-  const openPr = await findOpenDraftedPr(octokit, owner, repo)
-  if (openPr === null) {
-    logger.info('no open drafted PR; nothing to request a review on')
-    return {mode: 'noop'}
-  }
-  await requestReview(octokit, owner, repo, openPr.number, `requesting review on drafted PR #${openPr.number} failed`)
-  return {mode: 'review-requested', prNumber: openPr.number}
-}
-
 /** Validates, gates, then writes. See the module header for the contract. */
 export async function publishDraftedSolutions(params: PublishParams): Promise<PublishResult> {
   let tokens: PublicOutputTokens
@@ -725,14 +667,11 @@ async function createRealOctokit(token: string): Promise<OctokitClient> {
 
 /**
  * The CLI entry, with its environment and I/O injected. Returns the exit code instead of exiting.
- * Review-only mode needs only `GITHUB_TOKEN` and `GITHUB_REPOSITORY`; its failures print only
- * messages this module wrote (an unexpected API error is reduced to a fixed line, so no upstream
- * text reaches the log). Publish mode's messages are already scrubbed by the privacy gate.
+ * Failure messages are already scrubbed by the privacy gate.
  */
 export async function runCli(env: Record<string, string | undefined>, deps: CliDeps = {}): Promise<number> {
   const stdout = deps.stdout ?? ((text: string) => process.stdout.write(text))
   const stderr = deps.stderr ?? ((text: string) => process.stderr.write(text))
-  const reviewOnly = env.DRAFTED_SOLUTIONS_MODE === 'review-only'
 
   const required = (name: string): string => {
     const value = env[name]
@@ -747,24 +686,14 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
     }
     const octokit = await (deps.createOctokit ?? createRealOctokit)(required('GITHUB_TOKEN'))
 
-    let result: PublishResult
-    try {
-      result = reviewOnly
-        ? await reviewOnlyDraftedSolutions({octokit, owner, repo})
-        : await publishDraftedSolutions({
-            octokit,
-            owner,
-            repo,
-            digestPath: required('DRAFTED_SOLUTIONS_DIGEST_PATH'),
-            handoffDir: required('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
-            rowsPath: required('DRAFTED_SOLUTIONS_ROWS_PATH'),
-          })
-    } catch (error: unknown) {
-      if (reviewOnly && !(error instanceof DraftedSolutionsError)) {
-        throw new DraftedSolutionsError('review-only run failed unexpectedly')
-      }
-      throw error
-    }
+    const result = await publishDraftedSolutions({
+      octokit,
+      owner,
+      repo,
+      digestPath: required('DRAFTED_SOLUTIONS_DIGEST_PATH'),
+      handoffDir: required('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
+      rowsPath: required('DRAFTED_SOLUTIONS_ROWS_PATH'),
+    })
 
     const line = `${JSON.stringify(result)}\n`
     stdout(line)

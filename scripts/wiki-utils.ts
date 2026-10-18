@@ -1,1 +1,1 @@
-export * from '@fro-bot/wiki-write-core/wiki-utils'
+export * from '@fro.bot/wiki-write-core/wiki-utils'

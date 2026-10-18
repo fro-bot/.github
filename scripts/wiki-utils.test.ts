@@ -83,6 +83,63 @@ describe('collectWikilinks', () => {
     // #then no targets are found
     expect(collectWikilinks('No links here.')).toEqual([])
   })
+
+  it('ignores a wikilink inside an inline code span', () => {
+    expect(collectWikilinks('Write `[[example]]` to link, or ``[[a ` b]]`` with a tick.')).toEqual([])
+  })
+
+  it('ignores a wikilink inside a fenced code block, including an unclosed one', () => {
+    expect(collectWikilinks(['```md', '[[example]]', '```'].join('\n'))).toEqual([])
+    expect(collectWikilinks(['~~~', '[[example]]', '~~~'].join('\n'))).toEqual([])
+    expect(collectWikilinks(['```', '[[example]]'].join('\n'))).toEqual([])
+  })
+
+  it('still finds a real wikilink next to a code span, on either side', () => {
+    expect(collectWikilinks('[[before]] then `[[literal]]` then [[after]]')).toEqual(['before', 'after'])
+    expect(collectWikilinks(['```', '[[literal]]', '```', '[[after-fence]]'].join('\n'))).toEqual(['after-fence'])
+  })
+
+  it('still finds an aliased wikilink outside code and reports its target', () => {
+    expect(collectWikilinks('`[[hidden|Hidden]]` but [[a|b]] is live')).toEqual(['a'])
+  })
+
+  it('does not let an escaped backtick or an unclosed backtick run hide a real wikilink', () => {
+    expect(collectWikilinks('A \\` tick then [[real]]')).toEqual(['real'])
+    expect(collectWikilinks('An unclosed ` tick then [[real]] and [[other]]')).toEqual(['real', 'other'])
+  })
+
+  it('does not let a rejected opening in code swallow a live wikilink that follows it', () => {
+    expect(collectWikilinks('`[[literal` then [[Real]]')).toEqual(['Real'])
+    expect(collectWikilinks('`[[` x]] then [[live]]')).toEqual(['live'])
+  })
+
+  it('treats a line-leading triple-backtick span as an inline span, not a fence', () => {
+    const tick = '`'.repeat(3)
+
+    expect(collectWikilinks(`${tick}[[hidden]]${tick} and [[live]]\n[[next]]`)).toEqual(['live', 'next'])
+  })
+
+  it('opens a tilde fence even when its info string contains backticks', () => {
+    expect(collectWikilinks(['~~~ js `x`', '[[hidden]]', '~~~', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('does not close a fence on a marker followed by trailing text', () => {
+    expect(collectWikilinks(['```', '```not-a-close', '[[hidden]]', '```', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('closes a fence on a longer marker or trailing whitespace, but not on a shorter one', () => {
+    expect(collectWikilinks(['```', '[[hidden]]', '`````', '[[live]]'].join('\n'))).toEqual(['live'])
+    expect(collectWikilinks(['```', '[[hidden]]', '```  \t', '[[live]]'].join('\n'))).toEqual(['live'])
+    expect(collectWikilinks(['`````', '[[a]]', '```', '[[b]]', '`````', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('does not open a fence from a marker indented four or more spaces', () => {
+    expect(collectWikilinks(['    ```', '[[live]]'].join('\n'))).toEqual(['live'])
+  })
+
+  it('drops a wikilink whose closing brackets land inside a code span', () => {
+    expect(collectWikilinks('[[open `x]]` and [[real]]')).toEqual(['real'])
+  })
 })
 
 describe('findWikilinkSpans', () => {
@@ -137,6 +194,20 @@ describe('findWikilinkSpans', () => {
   it('returns an empty list when there are no links', () => {
     expect(findWikilinkSpans('No links here.')).toEqual([])
     expect(findWikilinkSpans('')).toEqual([])
+  })
+
+  it('ignores wikilinks inside inline code spans and fenced code blocks', () => {
+    expect(findWikilinkSpans('Write `[[old]]` or ``[[old]]`` here.')).toEqual([])
+    expect(findWikilinkSpans(['```', '[[old]]', '```'].join('\n'))).toEqual([])
+  })
+
+  it('still reports a real and an aliased link next to code, with offsets into the original text', () => {
+    const content = '`[[old]]` [[old]] `[[old]]` [[old|label]]'
+
+    const spans = findWikilinkSpans(content)
+
+    expect(spans.map(span => content.slice(span.start, span.end))).toEqual(['[[old]]', '[[old|label]]'])
+    expect(spans.map(span => span.label)).toEqual([undefined, 'label'])
   })
 })
 

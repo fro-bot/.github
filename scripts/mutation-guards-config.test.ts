@@ -132,7 +132,7 @@ function treeOf(path: string): 'packages' | 'scripts' | undefined {
  *    Closes Test 3's blind spot: the original cross-tree-only check silently passed a `mutate`
  *    entry with no same-tree test reaching it at all (nothing to flag as "crossing" when
  *    nothing reaches it), which is exactly the shape a `dist/`-shell test produces — e.g. the
- *    scripts-side `export * from '@fro-bot/wiki-write-core/wiki-slug'` shell reaches a package
+ *    scripts-side `export * from '@fro.bot/wiki-write-core/wiki-slug'` shell reaches a package
  *    specifier `reach` cannot resolve, so re-adding the package module to `mutate` on the
  *    strength of that scripts-side test alone would have been invisible before this rule.
  *    A cross-tree reach does not count toward satisfying this rule for the reached entry

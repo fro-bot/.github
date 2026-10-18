@@ -11,7 +11,7 @@ import {
   type PageChange,
   type PlanRepoPageMoveParams,
   type RepoPageMovePlan,
-} from '@fro-bot/wiki-write-core'
+} from '@fro.bot/wiki-write-core'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'
@@ -196,6 +196,100 @@ describe('planRepoPageMove: moving a repo page to a new slug', () => {
     const next = applied(planRepoPageMove(moveParams({files})), files)
 
     expect(next[TOPIC_PATH]).toContain(`[[${OLD_SLUG}-extra]] and [[x${OLD_SLUG}]]`)
+  })
+
+  it('leaves a link-shaped old slug inside inline code and fenced code untouched while repairing the live links', () => {
+    const tick = '`'
+    const fence = tick.repeat(3)
+    const prose = [
+      `Live [[${OLD_SLUG}]] and literal ${tick}[[${OLD_SLUG}]]${tick} and ${tick.repeat(2)}[[${OLD_SLUG}|a ${tick} tick]]${tick.repeat(2)} and live [[${OLD_SLUG}|label]].`,
+      '',
+      `${fence}md`,
+      `[[${OLD_SLUG}]]`,
+      fence,
+      '',
+      `After the fence [[${OLD_SLUG}]].`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+    const page = next[TOPIC_PATH] ?? ''
+    const body = page.slice(page.indexOf('Live '))
+
+    expect(body).toBe(
+      `${prose
+        .replace(`Live [[${OLD_SLUG}]]`, `Live [[${NEW_SLUG}]]`)
+        .replace(`and live [[${OLD_SLUG}|label]]`, `and live [[${NEW_SLUG}|label]]`)
+        .replace(`After the fence [[${OLD_SLUG}]]`, `After the fence [[${NEW_SLUG}]]`)}\n`,
+    )
+    expect(body).toContain(`${tick}[[${OLD_SLUG}]]${tick}`)
+    expect(body).toContain(`[[${OLD_SLUG}|a ${tick} tick]]`)
+    expect(body).toContain([`${fence}md`, `[[${OLD_SLUG}]]`, fence].join('\n'))
+  })
+
+  it('repairs live links around a line-leading triple-backtick span and leaves the literal bytes alone', () => {
+    const fence = '`'.repeat(3)
+    const prose = [
+      `${fence}[[${OLD_SLUG}]]${fence} is a literal example; live [[${OLD_SLUG}]] follows it.`,
+      '',
+      `Later live [[${OLD_SLUG}|label]].`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const plan = planRepoPageMove(moveParams({files}))
+    const next = applied(plan, files)
+    const page = next[TOPIC_PATH] ?? ''
+
+    expect(plan.outcome).toBe('moved')
+    expect(next[OLD_PAGE_PATH]).toBeUndefined()
+    expect(page.slice(page.indexOf(fence))).toBe(
+      [
+        `${fence}[[${OLD_SLUG}]]${fence} is a literal example; live [[${NEW_SLUG}]] follows it.`,
+        '',
+        `Later live [[${NEW_SLUG}|label]].`,
+        '',
+      ].join('\n'),
+    )
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+  })
+
+  it('does not treat a fence-like line with trailing text as a closing fence', () => {
+    const fence = '`'.repeat(3)
+    const prose = [
+      fence,
+      `${fence}not-a-close`,
+      `[[${OLD_SLUG}]] is a literal example.`,
+      fence,
+      '',
+      `Live [[${OLD_SLUG}]] after the fence.`,
+    ].join('\n')
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${prose}\n`})
+
+    const plan = planRepoPageMove(moveParams({files}))
+    const next = applied(plan, files)
+    const page = next[TOPIC_PATH] ?? ''
+
+    expect(plan.outcome).toBe('moved')
+    expect(next[OLD_PAGE_PATH]).toBeUndefined()
+    expect(page.slice(page.indexOf(fence))).toBe(
+      [
+        fence,
+        `${fence}not-a-close`,
+        `[[${OLD_SLUG}]] is a literal example.`,
+        fence,
+        '',
+        `Live [[${NEW_SLUG}]] after the fence.`,
+        '',
+      ].join('\n'),
+    )
+    expect(() => validateWikilinks(wikiPagesOnly(next))).not.toThrow()
+  })
+
+  it('blocks the move when a live broken link follows a line-leading triple-backtick span', () => {
+    const fence = '`'.repeat(3)
+    const files = snapshot({[TOPIC_PATH]: `${topicPage()}\n${fence}[[x]]${fence} then [[ghost-page]].\n`})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'invalid-wikilinks')
   })
 
   it('appends exactly one manual-edit entry naming only the public old and new names, never rewriting history', () => {

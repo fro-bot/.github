@@ -6,7 +6,6 @@ import path from 'node:path'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildMergeShaMarker} from './capture-learnings-harvest.ts'
-import {harvestDraftedProposals} from './drafted-solutions-harvest.ts'
 import {
   FIELD_LIMITS,
   hashProposalBody,
@@ -18,7 +17,6 @@ import {
 import {
   DRAFTED_PR_TITLE,
   publishDraftedSolutions,
-  reviewOnlyDraftedSolutions,
   runCli,
   type PublishParams,
   type PublishResult,
@@ -107,7 +105,6 @@ const WRITE_OPS = new Set([
   'git.updateRef',
   'pulls.create',
   'pulls.update',
-  'pulls.requestReviewers',
   'issues.createComment',
   'issues.update',
 ])
@@ -123,9 +120,6 @@ interface FakeOptions {
   createRejectedWithoutPr?: boolean
   /** An open PR exists but the drafted branch ref does not. */
   branchMissing?: boolean
-  reviewRequestError?: unknown
-  /** The first N review requests fail with a 500 (a transient outage); later ones succeed. */
-  reviewRequestFailures?: number
   /** Comments already on proposal issues, by issue number. */
   existingComments?: Record<number, {body: string; user: {login: string}}[]>
   /** The next issues.update fails once (a close that did not land). */
@@ -163,8 +157,6 @@ function makeFake(options: FakeOptions) {
   const hooks: {afterCreateCommit?: () => void; beforeCreateRef?: () => void} = {}
   /** Blob SHA overrides, keyed `<commit>:<path>`; the default is a stable per-path blob. */
   const blobShas = new Map<string, string>()
-  /** Logins requested as reviewers, per PR number. */
-  const requestedReviewers = new Map<number, string[]>()
   let counter = 0
 
   const record = <T>(op: string, args: Record<string, unknown>, result: T): T => {
@@ -226,23 +218,6 @@ function makeFake(options: FakeOptions) {
         const pull = pulls.find(candidate => candidate.number === args.pull_number)
         if (pull !== undefined && args.body !== undefined) pull.body = args.body
         return record('pulls.update', args, {data: {}})
-      }),
-      listRequestedReviewers: vi.fn(async (args: {pull_number: number}) => ({
-        data: {users: (requestedReviewers.get(args.pull_number) ?? []).map(login => ({login})), teams: []},
-      })),
-      listReviews: vi.fn(async () => ({data: []})),
-      requestReviewers: vi.fn(async (args: {pull_number: number; reviewers: string[]}) => {
-        record('pulls.requestReviewers', args, undefined)
-        if (options.reviewRequestError !== undefined) throw options.reviewRequestError
-        if ((options.reviewRequestFailures ?? 0) > 0) {
-          options.reviewRequestFailures = (options.reviewRequestFailures ?? 0) - 1
-          throw Object.assign(new Error('review request unavailable'), {status: 500})
-        }
-        requestedReviewers.set(args.pull_number, [
-          ...(requestedReviewers.get(args.pull_number) ?? []),
-          ...args.reviewers,
-        ])
-        return {data: {}}
       }),
     },
     repos: {
@@ -415,7 +390,7 @@ const docPath = (n: number): string => `docs/solutions/best-practices/doc-${n}.m
 // ---------------------------------------------------------------------------
 
 describe('publishDraftedSolutions: doc changes without an open PR', () => {
-  it('resets the branch to main head, commits once, opens a PR with closing lines, requests review', async () => {
+  it('resets the branch to main head, commits once, opens a PR with closing lines', async () => {
     const issues = [makeIssue(11), makeIssue(12)]
     const fake = makeFake({issues})
 
@@ -437,7 +412,6 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     const create = callsOf(fake, 'pulls.create')[0]?.args as {title: string; body: string; head: string; base: string}
     expect(create).toMatchObject({title: DRAFTED_PR_TITLE, head: 'docs/drafted-solutions', base: 'main'})
     expect(create.body.match(/^Closes #\d+$/gm)).toStrictEqual(['Closes #11', 'Closes #12'])
-    expect(callsOf(fake, 'pulls.requestReviewers')[0]?.args).toMatchObject({pull_number: 901, reviewers: ['fro-bot']})
   })
 
   it('writes the exact handoff content into blobs and uses the digest body hash for rows', async () => {
@@ -558,24 +532,6 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     expect(callsOf(fake, 'pulls.create')).toHaveLength(0)
   })
 
-  it('tolerates a 422 from the review request (already requested)', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], reviewRequestError: Object.assign(new Error('x'), {status: 422})})
-
-    await expect(
-      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).resolves.toMatchObject({mode: 'created-pr'})
-  })
-
-  it('surfaces other review-request failures', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], reviewRequestError: Object.assign(new Error('boom'), {status: 500})})
-
-    await expect(
-      run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
-  })
-
   it('a create-422 because a PR appeared fails closed: no body repair, no PR update', async () => {
     const issue = makeIssue(11)
     const fake = makeFake({issues: [issue], createRace: true})
@@ -585,7 +541,6 @@ describe('publishDraftedSolutions: doc changes without an open PR', () => {
     ).rejects.toThrow(/drafted PR appeared during publish; the next run reconciles it/)
 
     expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
   })
 })
 
@@ -1725,194 +1680,7 @@ describe('publishDraftedSolutions: the PR body size bound', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Review requests follow every drafted PR write
-// ---------------------------------------------------------------------------
-
-describe('publishDraftedSolutions: the review request follows every drafted PR write', () => {
-  const reviewCalls = (fake: Fake) => callsOf(fake, 'pulls.requestReviewers')
-
-  it('requests a review after a delta commit on an open PR', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], pulls: [makePull()]})
-
-    const result = await run(fake, {proposals: [issue], rows: [agentRow(issue)], changed: {[docPath(11)]: DOC_BODY}})
-
-    expect(result.mode).toBe('updated-pr')
-    expect(reviewCalls(fake)).toHaveLength(1)
-    expect(reviewCalls(fake)[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
-  })
-
-  it('requests a review after a body-only update', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], pulls: [makePull()], branchDocs: [EXISTING_DOC]})
-
-    const result = await run(fake, {proposals: [issue], rows: [coveredRow(issue)]})
-
-    expect(result.mode).toBe('updated-pr-body')
-    expect(reviewCalls(fake)).toHaveLength(1)
-    expect(reviewCalls(fake)[0]?.args).toMatchObject({pull_number: 900})
-  })
-
-  it('requests no review when there is no PR write (direct closes only)', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue]})
-
-    await run(fake, {proposals: [issue], rows: [unverifiedRow(issue)]})
-
-    expect(reviewCalls(fake)).toHaveLength(0)
-  })
-
-  it('tolerates a 422 (already requested) on update paths', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({
-      issues: [issue],
-      pulls: [makePull()],
-      branchDocs: [EXISTING_DOC],
-      reviewRequestError: Object.assign(new Error('already requested'), {status: 422}),
-    })
-
-    await expect(run(fake, {proposals: [issue], rows: [coveredRow(issue)]})).resolves.toMatchObject({
-      mode: 'updated-pr-body',
-    })
-  })
-
-  it('a failed request on create exits non-zero after the PR exists; the next write retries it', async () => {
-    const first = makeIssue(11)
-    const second = makeIssue(12)
-    const fake = makeFake({issues: [first, second], reviewRequestFailures: 1})
-
-    await expect(
-      run(fake, {proposals: [first], rows: [agentRow(first)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
-    // The PR and its coverage exist even though the run failed.
-    expect(fake.pulls).toHaveLength(1)
-    expect(bodyRowIssues(fake)).toStrictEqual([11])
-    expect(reviewCalls(fake)).toHaveLength(1)
-
-    // The next run's harvest pins the branch head the failed run left behind.
-    const branchHead = fake.refs.get(BRANCH_REF) ?? ''
-    fake.treeDocs.set(branchHead, new Set([docPath(11)]))
-    const retry = await run(fake, {
-      proposals: [second],
-      rows: [agentRow(second)],
-      changed: {[docPath(12)]: DOC_BODY},
-      draftBaseSha: branchHead,
-    })
-
-    expect(retry.mode).toBe('updated-pr')
-    expect(reviewCalls(fake)).toHaveLength(2)
-    expect(reviewCalls(fake)[1]?.args).toMatchObject({pull_number: 901, reviewers: ['fro-bot']})
-  })
-
-  it('names no agent text in the failure message', async () => {
-    const issue = makeIssue(11)
-    const fake = makeFake({issues: [issue], reviewRequestError: Object.assign(new Error(PRIVATE_TOKEN), {status: 500})})
-
-    const failure = await run(fake, {
-      proposals: [issue],
-      rows: [agentRow(issue)],
-      changed: {[docPath(11)]: DOC_BODY},
-    }).then(
-      () => undefined,
-      (error: unknown) => error,
-    )
-
-    expect(failure).toBeInstanceOf(DraftedSolutionsError)
-    expect((failure as Error).message).toBe('drafted PR #901 opened but requesting review failed')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Review-only reconciliation (no new work)
-// ---------------------------------------------------------------------------
-
-describe('reviewOnlyDraftedSolutions', () => {
-  const reviewOnly = async (fake: Fake) =>
-    reviewOnlyDraftedSolutions({octokit: fake.octokit, owner: OWNER, repo: REPO, logger: {info: () => undefined}})
-
-  it('requests the review on the open drafted PR and writes nothing else', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull()]})
-
-    const result = await reviewOnly(fake)
-
-    expect(result).toStrictEqual({mode: 'review-requested', prNumber: 900})
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(1)
-    expect(callsOf(fake, 'pulls.requestReviewers')[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
-    // No ref, commit, blob, tree, PR body, or issue write of any kind.
-    expect(fake.calls.filter(call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers')).toStrictEqual([])
-    expect(callsOf(fake, 'issues.update')).toHaveLength(0)
-    expect(callsOf(fake, 'issues.createComment')).toHaveLength(0)
-    expect(callsOf(fake, 'pulls.update')).toHaveLength(0)
-  })
-
-  it('tolerates a 422 (already requested)', async () => {
-    const fake = makeFake({
-      issues: [],
-      pulls: [makePull()],
-      reviewRequestError: Object.assign(new Error('already requested'), {status: 422}),
-    })
-
-    await expect(reviewOnly(fake)).resolves.toStrictEqual({mode: 'review-requested', prNumber: 900})
-  })
-
-  it('fails the run on any other request failure, with a message that carries no upstream text', async () => {
-    const fake = makeFake({
-      issues: [],
-      pulls: [makePull()],
-      reviewRequestError: Object.assign(new Error(PRIVATE_TOKEN), {status: 500}),
-    })
-
-    await expect(reviewOnly(fake)).rejects.toThrow(/^requesting review on drafted PR #900 failed$/)
-  })
-
-  it('does nothing when no drafted PR is open', async () => {
-    const fake = makeFake({issues: []})
-
-    await expect(reviewOnly(fake)).resolves.toStrictEqual({mode: 'noop'})
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
-  })
-
-  it('aborts on a PR on the drafted branch that fails the shared predicate, requesting nothing', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull({user: {login: 'someone-else'}})]})
-
-    await expect(reviewOnly(fake)).rejects.toThrow(DraftedSolutionsError)
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
-  })
-
-  it('recovers an initial request failure with no new work: harvest flags review_needed, review-only requests it', async () => {
-    const proposal = makeIssue(11)
-    const fake = makeFake({issues: [proposal], reviewRequestFailures: 1})
-
-    // 1. The doc-changing run creates the PR and records coverage, but the review request fails.
-    await expect(
-      run(fake, {proposals: [proposal], rows: [agentRow(proposal)], changed: {[docPath(11)]: DOC_BODY}}),
-    ).rejects.toThrow(/drafted PR #901 opened but requesting review failed/)
-    expect(fake.pulls).toHaveLength(1)
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(1)
-
-    // 2. Next harvest: the proposal is covered, so there is no work, but the review is still owed.
-    const harvest = async () => harvestDraftedProposals({octokit: fake.octokit, owner: OWNER, repo: REPO})
-    const afterFailure = await harvest()
-    expect(afterFailure.hasWork).toBe(false)
-    expect(afterFailure.reviewNeeded).toBe(true)
-
-    // 3. Review-only publish requests it, writing nothing else.
-    const writesBefore = fake.calls.filter(
-      call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers',
-    ).length
-    await reviewOnly(fake)
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(2)
-    expect(fake.calls.filter(call => WRITE_OPS.has(call.op) && call.op !== 'pulls.requestReviewers')).toHaveLength(
-      writesBefore,
-    )
-
-    // 4. The next harvest sees the request and asks for nothing more.
-    expect((await harvest()).reviewNeeded).toBe(false)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// CLI entry: review-only mode needs no digest, handoff, or rows
+// CLI entry
 // ---------------------------------------------------------------------------
 
 async function cli(fake: Fake, env: Record<string, string>) {
@@ -1930,96 +1698,55 @@ async function cli(fake: Fake, env: Record<string, string>) {
   return {status, stdout: stdout.join(''), stderr: stderr.join(''), tokensSeen}
 }
 
-describe('publish CLI entry (DRAFTED_SOLUTIONS_MODE=review-only)', () => {
-  // Only what the review-only workflow step sets: no digest, handoff, or rows variables.
-  const reviewOnlyEnv = (extra: Record<string, string> = {}): Record<string, string> => ({
-    GITHUB_TOKEN: 'review-only-token',
+describe('publish CLI entry', () => {
+  const baseEnv = (extra: Record<string, string> = {}): Record<string, string> => ({
+    GITHUB_TOKEN: 'publish-token',
     GITHUB_REPOSITORY: FULL_NAME,
-    DRAFTED_SOLUTIONS_MODE: 'review-only',
     ...extra,
   })
 
-  it('success: exits 0, prints the result JSON to stdout, and writes it to the result path', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'drafted-cli-test-'))
-    tempDirs.push(dir)
-    const resultPath = path.join(dir, 'result.json')
-    const fake = makeFake({issues: [], pulls: [makePull()]})
-
-    const result = await cli(fake, reviewOnlyEnv({DRAFTED_SOLUTIONS_RESULT_PATH: resultPath}))
-
-    expect(result.status).toBe(0)
-    expect(JSON.parse(result.stdout)).toStrictEqual({mode: 'review-requested', prNumber: 900})
-    expect(await readFile(resultPath, 'utf8')).toBe(result.stdout)
-    expect(result.stderr).toBe('')
-    expect(result.tokensSeen).toStrictEqual(['review-only-token'])
-    expect(callsOf(fake, 'pulls.requestReviewers')[0]?.args).toMatchObject({pull_number: 900, reviewers: ['fro-bot']})
-  })
-
-  it('success without a result path: stdout only, still exit 0', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull()]})
-
-    const result = await cli(fake, reviewOnlyEnv())
-
-    expect(result.status).toBe(0)
-    expect(JSON.parse(result.stdout)).toMatchObject({mode: 'review-requested'})
-  })
-
-  it('no open drafted PR: exits 0 with a noop result', async () => {
+  it('requires GITHUB_TOKEN and a well-formed GITHUB_REPOSITORY', async () => {
     const fake = makeFake({issues: []})
 
-    const result = await cli(fake, reviewOnlyEnv())
-
-    expect(result.status).toBe(0)
-    expect(JSON.parse(result.stdout)).toStrictEqual({mode: 'noop'})
-  })
-
-  it('request failure: exits 1 with the fixed message and none of the upstream error text', async () => {
-    const fake = makeFake({
-      issues: [],
-      pulls: [makePull()],
-      reviewRequestError: Object.assign(new Error(`${PRIVATE_TOKEN} upstream detail`), {status: 500}),
-    })
-
-    const result = await cli(fake, reviewOnlyEnv())
-
-    expect(result.status).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).toBe('::error::drafted-solutions-publish: requesting review on drafted PR #900 failed\n')
-    expect(result.stderr).not.toContain(PRIVATE_TOKEN)
-  })
-
-  it('an unexpected API error exits 1 without echoing its text', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull()]})
-    vi.mocked(fake.octokit.rest.pulls.list).mockRejectedValueOnce(new Error(`boom ${PRIVATE_TOKEN}`))
-
-    const result = await cli(fake, reviewOnlyEnv())
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).not.toContain(PRIVATE_TOKEN)
-    expect(result.stderr).toContain('::error::drafted-solutions-publish:')
-  })
-
-  it('still requires GITHUB_TOKEN and a well-formed GITHUB_REPOSITORY', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull()]})
-
-    const noToken = await cli(fake, {GITHUB_REPOSITORY: FULL_NAME, DRAFTED_SOLUTIONS_MODE: 'review-only'})
-    const badRepo = await cli(fake, reviewOnlyEnv({GITHUB_REPOSITORY: 'not-a-repo'}))
+    const noToken = await cli(fake, {GITHUB_REPOSITORY: FULL_NAME})
+    const badRepo = await cli(fake, baseEnv({GITHUB_REPOSITORY: 'not-a-repo'}))
 
     expect(noToken.status).toBe(1)
     expect(noToken.stderr).toContain('GITHUB_TOKEN is required')
     expect(badRepo.status).toBe(1)
     expect(badRepo.stderr).toContain('GITHUB_REPOSITORY must be "owner/repo"')
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
+    expect(writeCalls(fake)).toStrictEqual([])
   })
 
-  it('without the mode, the digest, handoff, and rows variables are still required', async () => {
-    const fake = makeFake({issues: [], pulls: [makePull()]})
+  it('requires the digest, handoff, and rows variables', async () => {
+    const fake = makeFake({issues: []})
 
-    const result = await cli(fake, {GITHUB_TOKEN: 't', GITHUB_REPOSITORY: FULL_NAME})
+    const result = await cli(fake, baseEnv())
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('DRAFTED_SOLUTIONS_DIGEST_PATH is required')
-    expect(callsOf(fake, 'pulls.requestReviewers')).toHaveLength(0)
+    expect(writeCalls(fake)).toStrictEqual([])
+  })
+
+  it('success: exits 0, prints the result JSON to stdout, and writes it to the result path', async () => {
+    const fake = makeFake({issues: []})
+    const paths = await arrange({proposals: [], rows: []})
+    const resultPath = path.join(path.dirname(paths.digestPath), 'result.json')
+
+    const result = await cli(
+      fake,
+      baseEnv({
+        DRAFTED_SOLUTIONS_DIGEST_PATH: paths.digestPath,
+        DRAFTED_SOLUTIONS_HANDOFF_DIR: paths.handoffDir,
+        DRAFTED_SOLUTIONS_ROWS_PATH: paths.rowsPath,
+        DRAFTED_SOLUTIONS_RESULT_PATH: resultPath,
+      }),
+    )
+
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout)).toStrictEqual({mode: 'noop'})
+    expect(await readFile(resultPath, 'utf8')).toBe(result.stdout)
+    expect(result.tokensSeen).toStrictEqual(['publish-token'])
   })
 })
 
