@@ -40,6 +40,7 @@
     "fileName": "reports/mutation/mutation.json"
   },
   "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [".worktrees"],
   "allowConsoleColors": false,
   "timeoutMS": 30000,
   "dryRunTimeoutMinutes": 8
