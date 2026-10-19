@@ -126,7 +126,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
    pnpm lint
 
    # Renovate preset gate: validator (--strict --no-global) + allowedVersions range check.
-   # Needs network and npm: installs the Renovate pinned in .github/workflows/main.yaml
+   # Needs network and Bun: installs the Renovate pinned in .github/workflows/main.yaml
    # (env.RENOVATE_VERSION) into $RENOVATE_PREFIX (default: <tmp>/renovate-<version>), outside
    # node_modules and the lockfile, then fetches version-pinned github> presets.
    pnpm check:renovate-config
