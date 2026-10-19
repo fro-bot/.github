@@ -1,0 +1,5 @@
+[install]
+linker = "hoisted"
+exact = true
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = ["@bfra.me/eslint-config", "@bfra.me/prettier-config", "@bfra.me/tsconfig"]
