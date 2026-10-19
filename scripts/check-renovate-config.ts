@@ -28,7 +28,7 @@ import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from './renovate-
  * Network: only pinned presets are fetched, over unauthenticated HTTPS from raw.githubusercontent.com.
  * A ref is the only input, so the same commit of this repository always validates the same bytes. A
  * preset that cannot be fetched is a FAILURE, never a skip. This is why the gate runs as its own CI
- * step instead of inside `pnpm lint`, which is network-free.
+ * step instead of inside `bun run lint`, which is network-free.
  *
  * Presets with no `#ref` (floating default branch) and `local>` presets are not fetched: validating
  * a moving target would make the gate non-deterministic. They are listed in the output so the gap is

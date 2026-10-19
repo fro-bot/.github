@@ -22,7 +22,7 @@ import {parse as parseYaml} from 'yaml'
  * those commits. The type, version and base tag go out as job outputs; the notes go to a file.
  *
  * Release tools are NOT dependencies of this repository: their transitive tree carries advisories
- * with no published fix, which `pnpm lint` (`check:override-floors`) fails on. One exact version of
+ * with no published fix, which `bun run lint` (`check:override-floors`) fails on. One exact version of
  * each is installed into a scratch prefix outside the repo (`install`), and the two plugins are
  * loaded from there. The versions are declared in the top-level `env` of a workflow file, each with a
  * `# renovate: datasource=npm depName=...` comment that the inherited bfra-me regex manager keeps
@@ -412,7 +412,7 @@ const MINIMUM_RELEASE_AGE_SECONDS = 259_200
 /**
  * Installs the pinned tools into `prefix` with lifecycle scripts off. `cwd` is the prefix itself and
  * `--no-save` keeps Bun from writing a lockfile, so the repository's `package.json` and
- * `pnpm-lock.yaml` are never touched. `--minimum-release-age` refuses any package version published
+ * `bun.lock` are never touched. `--minimum-release-age` refuses any package version published
  * less than 3 days ago, transitive dependencies included.
  */
 export async function installReleaseTools(

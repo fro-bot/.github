@@ -351,7 +351,7 @@ export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) 
 /**
  * Load and parse `quartz.config.yaml` from `cwd`, resolving the `yaml` package from the WORKING
  * DIRECTORY (e.g. quartz-build/), not from this script's own location. In the publish-wiki build
- * job, repo-root node_modules does not exist (that job never runs `pnpm bootstrap` — it only runs
+ * job, repo-root node_modules does not exist (that job never runs `bun run bootstrap` — it only runs
  * `npm ci` inside quartz-build/), so a bare `import('yaml')` resolved from scripts/ would walk up
  * to repo root and fail every time. `createRequire` rooted at `cwd` resolves `yaml` the same way
  * the old inline script did when it ran with cwd=quartz-build (Quartz's own dependency).
