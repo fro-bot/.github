@@ -4,7 +4,7 @@
 
 Fro Bot is a trickster-helper character whose memory, decisions, and automated behavior all grow in public on GitHub. This repository is the character's brain: persona definition, allowlist, collaborator-access reconciliation, Karpathy-style knowledge wiki, and the TypeScript scripts and GitHub Actions workflows that run every autonomous cycle.
 
-The codebase runs on Node 24 with native TypeScript execution (strip-only, no build step), pnpm, Vitest, and ESLint. Autonomous writes go to an unprotected `data` branch that promotes into `main` via a conditional-auto-merge workflow.
+The codebase runs on Node 24 with native TypeScript execution (strip-only, no build step), Bun for package management, Vitest, and ESLint. Autonomous writes go to an unprotected `data` branch that promotes into `main` via a conditional-auto-merge workflow.
 
 ## Documentation
 
@@ -38,7 +38,7 @@ The codebase runs on Node 24 with native TypeScript execution (strip-only, no bu
 ## Automation
 
 - [Main CI](/.github/workflows/main.yaml): lint, type-check, test, load production scripts under Node strip-only, and actionlint workflow YAML
-- [Setup Action](/.github/actions/setup/action.yaml): reusable composite action for pnpm bootstrap and dependency caching
+- [Setup Action](/.github/actions/setup/action.yaml): reusable composite action for Bun setup and a frozen-lockfile dependency install
 - [Fro Bot agent](/.github/workflows/fro-bot.yaml): reusable agent entrypoint for issue interaction, PR review, scheduled oversight, and manual dispatch with persona injection
 - [Fro Bot autoheal](/.github/workflows/fro-bot-autoheal.yaml): self-healing oversight pass that produces daily autoheal reports
 - [Poll Invitations](/.github/workflows/poll-invitations.yaml): scheduled allowlist-gated repository invitation handler
@@ -68,15 +68,15 @@ The codebase runs on Node 24 with native TypeScript execution (strip-only, no bu
 
 ## Configuration
 
-- [Package](package.json): project metadata, scripts, pinned pnpm version, dependencies
+- [Package](package.json): project metadata, scripts, pinned Bun version, overrides, dependencies
 - [TypeScript](tsconfig.json): strict compiler configuration extending `@bfra.me/tsconfig`
 - [ESLint](eslint.config.ts): `@bfra.me/eslint-config` with `erasableSyntaxOnly: true` for strip-only compliance
-- [Tool versions](mise.toml): pinned Node and pnpm versions
+- [Tool versions](mise.toml): pinned Node, Bun, and Python versions
 - [Editor](.editorconfig): consistent coding style across editors
 
 ## Optional
 
-- [pnpm workspace](pnpm-workspace.yaml): pnpm configuration for the repository
+- [Bun configuration](bunfig.toml): install settings (hoisted layout, exact versions, 3-day release-age floor)
 - [Cache management](/.github/workflows/manage-cache.yaml): CI cache maintenance
 - [Issue management](/.github/workflows/manage-issues.yaml): auto-close of daily report issues after 3 days
 - [Apply Branding](/.github/workflows/apply-branding.yaml): applies shared brand assets to downstream repos

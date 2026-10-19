@@ -310,14 +310,16 @@ env:
        unavailable to the token, note "security alerts unavailable" under "Needs
        Human Attention" — do not guess.
 
-       Override floors are the exception to one-PR-per-package: `pnpm lint` runs
-       `node scripts/check-override-floors.ts`, which audits every live advisory
-       against the pnpm overrides in pnpm-workspace.yaml at once, so a PR fixing
-       only some flagged packages stays red and cannot merge. Run it on a clean
-       checkout of main, collect every package it flags, and fix them all in ONE
-       combined PR on the stable branch `fix/security-override-floors` (raise
-       each override floor to its patched version, each with an advisory
-       comment). Before opening, look for an open Fro-Bot-authored PR for this
+       Override floors are the exception to one-PR-per-package: `bun run lint` runs
+       `node scripts/check-override-floors.ts`, which fails on every high or
+       critical advisory `bun audit` reports against the installed tree at once,
+       so a PR fixing only some flagged packages stays red and cannot merge. Run
+       it on a clean checkout of main, collect every package it flags, and fix
+       them all in ONE combined PR on the stable branch
+       `fix/security-override-floors` (raise each floor in the `overrides` map of
+       package.json to its patched version and regenerate bun.lock with
+       `bun install`, recording each advisory in docs/override-floors.md).
+       Before opening, look for an open Fro-Bot-authored PR for this
        root cause (head `fix/security-override-floors` or an earlier
        per-package override-floor PR); if one exists, push to it, extend it to
        cover every flagged package, and update its description instead of
@@ -339,8 +341,8 @@ env:
           gates, or branch protection. Report gaps; never relax them.
 
     4. CODE QUALITY
-       Run the repository's own validation: pnpm bootstrap, pnpm check-types,
-       pnpm lint, pnpm test. Apply safe mechanical fixes (lint/format autofixes)
+       Run the repository's own validation: bun run bootstrap, bun run check-types,
+       bun run lint, bun run test. Apply safe mechanical fixes (lint/format autofixes)
        on a PR branch — never commit directly to main. If a check fails and the
        fix is not minimal/reversible, open or update an issue and log it.
 

@@ -13,6 +13,7 @@ This is the foundational `.github` repository for Fro Bot, an AI-powered GitHub 
 
 Additional high-signal config:
 
+- `bunfig.toml` (install settings: hoisted layout, exact versions, 3-day release-age floor)
 - `tsconfig.json` (extends `@bfra.me/tsconfig`)
 - `eslint.config.ts` (uses `@bfra.me/eslint-config`)
 - `common-settings.yaml` (repository settings contract)
@@ -23,7 +24,9 @@ If guidance conflicts, follow the order above.
 
 - This repo is the automation/config control center for the Fro Bot org.
 - Keep changes minimal and targeted; avoid broad refactors.
-- Use **pnpm only** (never npm/yarn).
+- Use **Bun** for dependencies and package scripts (`bun run <script>`, `bunx <bin>`); never npm/yarn/pnpm. Never run bare `bun test` or `bun build`: those are Bun built-ins, not the package scripts.
+- Node 24 is still the runtime for `scripts/*.ts` (`node scripts/<name>.ts`), Vitest, and Stryker, which run through their package binaries.
+- npm stays in these places only: `npm publish` and the publish job's tool install in `release-wiki-write-core.yaml` (with `min-release-age=3`), `npm pack` in the package test, and the Quartz site build in `publish-wiki.yaml`. The private-leak scan and the `coverage` script also run on Node.
 - Use existing conventions from `@bfra.me/*` configs.
 
 ## Architecture & Key Components
@@ -32,6 +35,7 @@ If guidance conflicts, follow the order above.
 - Automation hub (`.github/workflows/`, `.github/actions/`)
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
+- Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; why each override floor exists: [`docs/override-floors.md`](../docs/override-floors.md))
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
 - Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix with Bun (3-day `--minimum-release-age` floor), never `package.json` or the lockfile; the publish job installs its tools with npm and `--min-release-age=3`
@@ -68,25 +72,25 @@ If guidance conflicts, follow the order above.
 Run these commands in repository root before finalizing:
 
 ```bash
-pnpm bootstrap
-pnpm check-types
-pnpm lint
-pnpm test
+bun run bootstrap
+bun run check-types
+bun run lint
+bun run test
 ```
 
 If you touched workflows, also validate YAML shape and action references in modified files.
 
 If you touched docs/instructions/agent files, ensure markdown lint rules still pass.
 
-If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `pnpm check:mutation-guards`.
+If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `bun run check:mutation-guards`.
 
-If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `pnpm check:renovate-config` (needs network and Bun; installs the Renovate pinned in `main.yaml` into a scratch dir with a 3-day `--minimum-release-age` floor, never into the repo; CI runs it in the `Check Workflows` job).
+If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `bun run check:renovate-config` (needs network and Bun; installs the Renovate pinned in `main.yaml` into a scratch dir with a 3-day `--minimum-release-age` floor, never into the repo; CI runs it in the `Check Workflows` job).
 
 ## High-Risk Do / Don’t Patterns
 
 ### Package manager
 
-- **Do:** `pnpm bootstrap`
+- **Do:** `bun run bootstrap`
 - **Don’t:** `npm install`, `yarn install`, or lockfile rewrites from other managers
 
 ### Workflow setup

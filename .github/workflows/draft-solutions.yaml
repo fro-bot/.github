@@ -111,7 +111,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The agent runs `pnpm lint` (link and solutions-example gates) before finishing.
+      # The agent runs `bun run lint` (link and solutions-example gates) before finishing.
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -219,7 +219,7 @@ jobs:
               categories, no nested directories, no deletions or renames.
             - Do not create issues, comments, branches, commits, or PRs. Do not push. Do not modify
               workflows, scripts, or configuration.
-            - Before finishing, run `pnpm lint` and fix every failure it reports in your docs.
+            - Before finishing, run `bun run lint` and fix every failure it reports in your docs.
             - Before finishing, run `node scripts/drafted-solutions-validate-rows.ts` (offline; it reads
               .drafted-solutions/rows.json and the digest) and fix every rejected row, then run it
               again until it exits 0.

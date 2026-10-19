@@ -97,7 +97,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ### Prerequisites
 
 - **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
-- **pnpm** 11 (exact version pinned in [`package.json`](package.json) under `packageManager`)
+- **Bun** (exact version pinned in [`package.json`](package.json) under `packageManager`; installs dependencies and runs package scripts)
 - **Git** for version control
 - Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
@@ -113,29 +113,29 @@ This repository provides shared configurations and automation for the Fro Bot ec
 2. **Install dependencies:**
 
    ```bash
-   pnpm bootstrap
+   bun run bootstrap
    ```
 
 3. **Run quality checks:**
 
    ```bash
    # Type checking
-   pnpm check-types
+   bun run check-types
 
    # Linting (ESLint runs Prettier via eslint-plugin-prettier)
-   pnpm lint
+   bun run lint
 
    # Renovate preset gate: validator (--strict --no-global) + allowedVersions range check.
    # Needs network and Bun: installs the Renovate pinned in .github/workflows/main.yaml
    # (env.RENOVATE_VERSION) into $RENOVATE_PREFIX (default: <tmp>/renovate-<version>), outside
    # node_modules and the lockfile, then fetches version-pinned github> presets.
-   pnpm check:renovate-config
+   bun run check:renovate-config
 
    # Tests (Vitest, colocated as scripts/*.test.ts)
-   pnpm test
+   bun run test
 
    # Coverage
-   pnpm coverage
+   bun run coverage
    ```
 
    > [!NOTE] A few `scripts/*.test.ts` files (e.g. `fro-bot-workflow.test.ts`) shell out to `bash` and a fake `git` fixture to exercise workflow `run:` blocks directly; these are verified on Linux CI and macOS, not tested on Windows.
@@ -144,7 +144,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
    ```bash
    # Auto-fix lint and formatting via ESLint
-   pnpm fix
+   bun run fix
    ```
 
 > [!TIP] This repository follows strict development standards. Make sure to run quality checks before committing changes.
@@ -192,7 +192,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`.github/settings.yml`](.github/settings.yml) | Probot-managed settings for this repository (branch protection, required checks) |
 | [`.github/renovate.json5`](.github/renovate.json5) | Automated dependency management configuration |
 | [`eslint.config.ts`](eslint.config.ts) | Lint + format configuration (ESLint runs Prettier via `eslint-plugin-prettier`) |
-| [`mise.toml`](mise.toml) | Pinned Node, pnpm, and Python versions |
+| [`mise.toml`](mise.toml) | Pinned Node, Bun, and Python versions |
 | [`tsconfig.json`](tsconfig.json) | TypeScript strict-mode configuration (native TS execution) |
 | [`vitest.config.ts`](vitest.config.ts) | Vitest configuration for colocated `scripts/*.test.ts` files |
 
