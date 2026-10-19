@@ -8,7 +8,7 @@ resolution_type: workflow_improvement
 severity: medium
 date: 2026-05-02
 last_updated: 2026-07-04
-module: .github/workflows/wiki-lint.yaml + scripts/wiki-lint.ts
+module: .github/workflows/wiki-lint.yaml + scripts/wiki-lint.ts + packages/wiki-write-core/src/wiki-lint.ts
 related_components:
   - development_workflow
 tags:
@@ -49,7 +49,7 @@ That also meant the failure path had to be explicit. If the workflow could not r
 
 ## Solution
 
-The implementation restores the authoritative snapshot, lints it, emits findings, uploads a report artifact, and — as of the `wiki-repair` job — feeds deterministic findings into an automated repair path. Detection itself stays report-only; the `wiki-lint` job never writes.
+The implementation restores the authoritative snapshot, lints it, emits findings, uploads a report artifact, and — as of the `wiki-repair` job — feeds deterministic findings into an automated repair path. Detection itself stays report-only; the `wiki-lint` job never writes to the repository, the `data` branch, or issues. It runs with `contents: read` and only writes the report files, step summary, and step outputs on the runner, which it then uploads as an artifact.
 
 `.github/workflows/wiki-lint.yaml` restores `knowledge/` from `origin/data`, records the snapshot SHA, runs lint only on restore success, and routes restore failure through the same reporting surface:
 
@@ -116,30 +116,37 @@ The implementation restores the authoritative snapshot, lints it, emits findings
 
 The `wiki-lint` job exposes `repairable` and `snapshot_sha` as job outputs. Two downstream jobs consume the uploaded artifact: `wiki-lint-issue-sync` (always runs; files issues for advisory and unaddressed findings) and `wiki-repair` (gated on `needs.wiki-lint.outputs.repairable == 'true'`). `wiki-repair` re-derives repairable findings itself via `scripts/wiki-repair.ts` rather than trusting the lint report as a write authority, mints its own least-privilege write token, and commits fixes for the deterministic finding classes (`index-drift`, `orphan-page`, `missing-frontmatter`, `invalid-frontmatter`) through `commitWikiChanges()`. Advisory/judgment findings (`stale-claim`, `missing-cross-reference`, `knowledge-gap`) remain issue-only — `wiki-repair` never touches them.
 
-`scripts/wiki-lint.ts` implements a detect/report-only engine around `lintWikiSnapshot()`, `writeWikiLintOutputs()`, `writeWikiLintFailureOutputs()`, and `runWikiLint()`.
+`scripts/wiki-lint.ts` is a thin entry point: it re-exports `@fro.bot/wiki-write-core/wiki-lint` and calls `runWikiLintCli()` when run directly. The detect/report-only engine lives in `packages/wiki-write-core/src/wiki-lint.ts`, around `lintWikiSnapshot()`, `writeWikiLintOutputs()`, `writeWikiLintFailureOutputs()`, and `runWikiLint()`, with `runWikiLintCli()` as the environment-driven entry point.
 
 - Deterministic findings: `broken-wikilink`, `orphan-page`, `index-drift`, `missing-frontmatter`, `invalid-frontmatter`
 - Advisory findings: `stale-claim`, `missing-cross-reference`, `knowledge-gap`
 
-The linter treats aliases as valid link targets by adding both the page slug and any frontmatter aliases into the target set, which prevents alias-backed links from false-positiving:
+The linter treats aliases as valid link targets by adding both the page slug and any frontmatter aliases into the target set, which prevents alias-backed links from false-positiving. `packages/wiki-write-core/src/wiki-lint.ts` filters each page's frontmatter aliases down to non-empty strings and hands them to the shared `collectPageTargets()` in `packages/wiki-write-core/src/wiki-utils.ts`:
 
 ```ts
 function collectPageTargets(pages: readonly ParsedPage[]): Set<string> {
-  const targets = new Set<string>()
+  return collectWikiPageTargets(
+    pages.map(page => ({
+      slug: page.slug,
+      aliases: Array.isArray(page.frontmatter.aliases)
+        ? page.frontmatter.aliases.filter((alias): alias is string => typeof alias === 'string' && alias.trim() !== '')
+        : [],
+    })),
+  )
+}
+```
 
+```ts
+export function collectPageTargets(
+  pages: readonly {readonly slug: string; readonly aliases: readonly string[]}[],
+): Set<string> {
+  const targets = new Set<string>()
   for (const page of pages) {
     targets.add(page.slug)
-
-    const aliases = page.frontmatter.aliases
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        if (typeof alias === 'string' && alias.trim() !== '') {
-          targets.add(alias)
-        }
-      }
+    for (const alias of page.aliases) {
+      targets.add(alias)
     }
   }
-
   return targets
 }
 ```
@@ -157,7 +164,7 @@ The fix works because it matches the repo's `data`-branch wiki source and preser
 - **False positives are reduced:** alias-backed wikilinks resolve against both slugs and aliases.
 - **Page coverage is broader:** `missing-cross-reference` now applies to any page body with no wikilinks, not just repo pages.
 - **Failure is reported:** the workflow still routes restore failure through `writeWikiLintFailureOutputs()`, although the current workflow message is a fixed `origin/data is unavailable` string rather than a fully diagnosed restore error.
-- **Detection and repair stay separated:** `wiki-lint` never writes; `wiki-repair` only runs when the lint job's own `repairable` output says deterministic findings exist, and it re-derives those findings independently before committing.
+- **Detection and repair stay separated:** the `wiki-lint` job never writes to the repository or the `data` branch; `wiki-repair` only runs when the lint job's own `repairable` output says deterministic findings exist, and it re-derives those findings independently before committing.
 
 ## Prevention
 
