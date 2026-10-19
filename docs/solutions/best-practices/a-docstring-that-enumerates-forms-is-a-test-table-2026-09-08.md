@@ -4,7 +4,7 @@ date: 2026-09-08
 last_updated: 2026-09-08
 verified: 2026-09-08
 category: best-practices
-module: scripts/check-mutation-guards.ts
+module: scripts/mutation-guards-reach.ts
 problem_type: best_practice
 component: tooling
 severity: high
@@ -56,20 +56,20 @@ Documentation drift is normally a readability problem. In a classifier it is a c
 
 Enumeration as a table rather than prose:
 
-<!-- verify: isPureReexportBarrel from scripts/mutation-guards-config.test.ts -->
+<!-- verify: isPureReexportBarrel from scripts/mutation-guards-reach.ts -->
 ```ts
 // Every form the docstring claims, driven through the real matcher. The matcher takes
 // a path and a source reader, so each row is a fixture file rather than a bare line.
 it.each([
   ['export * from "./x"', true],
   ['export type * from "./x"', true],   // the form the pattern originally missed
-  ['export {a} from "./x"', false],
+  ['export {a} from "./x"', true],
 ])('classifies %s as barrel=%s', (source, expected) => {
   expect(isPureReexportBarrel('fixture.ts', () => source)).toBe(expected)
 })
 ```
 
-The live table is in `scripts/mutation-guards-config.test.ts`.
+The live table is in `scripts/mutation-guards-reach.test.ts`, next to the matcher in `scripts/mutation-guards-reach.ts`.
 
 ## Related
 
