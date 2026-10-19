@@ -1,7 +1,7 @@
 ---
 title: 'feat: Publish wiki-write-core to npm as @fro.bot/wiki-write-core'
 type: feat
-status: active
+status: completed
 date: 2026-10-18
 deepened: 2026-10-18
 ---

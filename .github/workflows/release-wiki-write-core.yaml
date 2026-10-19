@@ -1,0 +1,271 @@
+# Releases @fro.bot/wiki-write-core to npm on every merge to main that changes the package.
+#
+# Three jobs, split by what they may hold:
+#   decide  (contents: read)  runs repository code: picks the commits that touch the package and computes
+#                             the release type, version and notes. Holds no credential.
+#   build   (contents: read)  proves the committed packages/wiki-write-core/dist equals a fresh build.
+#   publish (contents: write, id-token: write, environment: release) runs NO repository code: it validates
+#                             decide's outputs against fixed patterns, writes a pure-data semantic-release
+#                             config from the template below, and publishes the committed dist from its own
+#                             checkout.
+#
+# The npm trusted publisher is bound to this workflow's filename. Rename it only together with that binding.
+name: Release Wiki Write Core
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege default: no token capabilities at the workflow level. Each job grants only what it needs.
+permissions: {}
+
+# Serialize releases; never cancel one mid-flight.
+concurrency:
+  group: release-wiki-write-core
+  cancel-in-progress: false
+
+env:
+  # The one declaration of the release tools. scripts/wiki-write-core-release.ts reads these from this file
+  # for the scratch install, and the inherited bfra-me regex manager for `*_VERSION: x # renovate: ...` in
+  # workflow files keeps them current. They are not repo dependencies: semantic-release's tree carries
+  # `braces` with no patched version, which `check:override-floors` fails on. `publish` installs the first
+  # four; `decide` installs all eight.
+  SEMANTIC_RELEASE_VERSION: 25.0.9 # renovate: datasource=npm depName=semantic-release
+  SEMANTIC_RELEASE_EXEC_VERSION: 7.1.0 # renovate: datasource=npm depName=@semantic-release/exec
+  SEMANTIC_RELEASE_NPM_VERSION: 13.2.0 # renovate: datasource=npm depName=@semantic-release/npm
+  SEMANTIC_RELEASE_GITHUB_VERSION: 12.0.10 # renovate: datasource=npm depName=@semantic-release/github
+  SEMANTIC_RELEASE_COMMIT_ANALYZER_VERSION: 13.0.1 # renovate: datasource=npm depName=@semantic-release/commit-analyzer
+  SEMANTIC_RELEASE_NOTES_GENERATOR_VERSION: 14.1.1 # renovate: datasource=npm depName=@semantic-release/release-notes-generator
+  CONVENTIONAL_CHANGELOG_CONVENTIONALCOMMITS_VERSION: 10.4.1 # renovate: datasource=npm depName=conventional-changelog-conventionalcommits
+  CONVENTIONAL_CHANGELOG_WRITER_VERSION: 9.3.0 # renovate: datasource=npm depName=conventional-changelog-writer
+
+defaults:
+  run:
+    shell: bash -Eeuo pipefail {0}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Decide job: credential-free. Runs repository code, so it holds read scopes only.
+  # ---------------------------------------------------------------------------
+  decide:
+    name: Decide package release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      type: ${{ steps.decision.outputs.type }}
+      version: ${{ steps.decision.outputs.version }}
+      base-tag: ${{ steps.decision.outputs.base-tag }}
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 📦 Install Release Tools
+        env:
+          WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
+        run: node scripts/wiki-write-core-release.ts install
+
+      - name: 🧪 Test Release Decision Against Pinned Release Tools
+        env:
+          WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
+        run: pnpm exec vitest run scripts/wiki-write-core-release.test.ts
+
+      - name: 🔎 Decide release
+        id: decision
+        env:
+          WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
+        run: node scripts/wiki-write-core-release.ts decide --notes "$RUNNER_TEMP/release-notes/notes.md"
+
+      - name: 📤 Upload release notes
+        if: steps.decision.outputs.type != 'none'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes/notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Build job: credential-free. Proves the committed dist is what a fresh build produces; nothing it
+  # builds is published.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Verify package build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: ✅ Verify committed package build
+        run: pnpm check:wiki-write-core-dist
+
+  # ---------------------------------------------------------------------------
+  # Publish job: the only job with write scopes and the release environment. It runs no repository script and
+  # executes no command taken from another job's output.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish package
+    needs: [decide, build]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.decide.result == 'success' &&
+      needs.build.result == 'success' &&
+      contains(fromJSON('["major","minor","patch"]'), needs.decide.outputs.type)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # No registry-url: it would write an .npmrc that forces token auth and defeat npm trusted publishing
+      # (OIDC).
+      - name: 📦 Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: 🔒 Require npm >= 11.5.1
+        id: npm-gate
+        run: |
+          version=$(npm --version)
+          oldest=$(printf '%s\n' 11.5.1 "$version" | sort -V | head -n 1)
+          if [ "$oldest" != "11.5.1" ]; then
+            echo "::error::npm $version is older than 11.5.1, which trusted publishing requires"
+            exit 1
+          fi
+
+      - name: 📥 Install release tools
+        id: install
+        run: |
+          tools="$RUNNER_TEMP/wiki-write-core-release-tools"
+          mkdir -p "$tools"
+          npm install --prefix "$tools" --no-save --no-package-lock --ignore-scripts --no-audit --no-fund \
+            "semantic-release@${SEMANTIC_RELEASE_VERSION}" \
+            "@semantic-release/exec@${SEMANTIC_RELEASE_EXEC_VERSION}" \
+            "@semantic-release/npm@${SEMANTIC_RELEASE_NPM_VERSION}" \
+            "@semantic-release/github@${SEMANTIC_RELEASE_GITHUB_VERSION}"
+
+      # Every value below came from `decide`, which runs repository code. None is executed or interpolated into
+      # a command: each is matched against a fixed pattern, the version is recomputed from the base tag and type,
+      # and git confirms the package really changed since the base tag. The values are never echoed.
+      - name: 🛡 Validate release decision
+        id: validate
+        env:
+          DECISION_TYPE: ${{ needs.decide.outputs.type }}
+          DECISION_VERSION: ${{ needs.decide.outputs.version }}
+          DECISION_BASE_TAG: ${{ needs.decide.outputs.base-tag }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+
+          [[ $DECISION_TYPE =~ ^(major|minor|patch)$ ]] || fail "the decided release type is not major, minor or patch"
+          [[ $DECISION_VERSION =~ $semver_re ]] || fail "the decided version is not x.y.z"
+          [[ $DECISION_BASE_TAG == wiki-write-core-v* ]] || fail "the decided base tag is not a wiki-write-core-v tag"
+          base_version=${DECISION_BASE_TAG#wiki-write-core-v}
+          [[ $base_version =~ $semver_re ]] || fail "the decided base tag is not a wiki-write-core-v tag"
+
+          IFS=. read -r major minor patch <<< "$base_version"
+          case "$DECISION_TYPE" in
+            major) expected="$((major + 1)).0.0" ;;
+            minor) expected="${major}.$((minor + 1)).0" ;;
+            patch) expected="${major}.${minor}.$((patch + 1))" ;;
+          esac
+          [ "$DECISION_VERSION" = "$expected" ] || fail "the decided version is not the base tag version incremented by the decided type"
+          if [ "$DECISION_TYPE" = major ] && [ "$major" -eq 0 ]; then
+            fail "a 0.x package does not release a major version"
+          fi
+
+          git rev-parse --verify --quiet "refs/tags/${DECISION_BASE_TAG}^{commit}" > /dev/null \
+            || fail "the decided base tag is not present in this checkout"
+          git merge-base --is-ancestor "refs/tags/${DECISION_BASE_TAG}" HEAD \
+            || fail "the decided base tag is not an ancestor of the checked-out commit"
+          count=$(git rev-list --count "refs/tags/${DECISION_BASE_TAG}..HEAD" -- packages/wiki-write-core/)
+          if [ "$count" -lt 1 ]; then
+            fail "no commit since the base tag changes packages/wiki-write-core/"
+          fi
+
+      - name: 📥 Download release notes
+        id: notes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes
+
+      # The package's own .releaserc.yaml is deleted so the config below is the only one semantic-release can
+      # find. It is pure data: the notes file is only ever `cat`, and the version assertion compares strings.
+      - name: 🧾 Stage release config
+        id: stage
+        env:
+          DECISION_TYPE: ${{ needs.decide.outputs.type }}
+          DECISION_VERSION: ${{ needs.decide.outputs.version }}
+        run: |
+          notes_dir="$RUNNER_TEMP/release-notes"
+          notes="$notes_dir/notes.md"
+          if [ "$(find "$notes_dir" -mindepth 1 | wc -l)" -ne 1 ] || [ ! -f "$notes" ] || [ -L "$notes" ] || [ ! -s "$notes" ]; then
+            echo "::error::the release notes artifact must contain exactly one non-empty regular file, notes.md"
+            exit 1
+          fi
+
+          rm -f packages/wiki-write-core/.releaserc.yaml
+          jq -n \
+            --arg type "$DECISION_TYPE" \
+            --arg version "$DECISION_VERSION" \
+            --arg notes "$notes" \
+            --arg repositoryUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" \
+            '{
+              branches: ["main"],
+              tagFormat: "wiki-write-core-v${version}",
+              repositoryUrl: $repositoryUrl,
+              plugins: [
+                ["@semantic-release/exec", {
+                  analyzeCommitsCmd: ("echo " + $type),
+                  verifyReleaseCmd: ("test \"${nextRelease.version}\" = \"" + $version + "\""),
+                  generateNotesCmd: ("cat \"" + $notes + "\"")
+                }],
+                ["@semantic-release/npm", {pkgRoot: "packages/wiki-write-core"}],
+                ["@semantic-release/github", {
+                  releasedLabels: false,
+                  successComment: false,
+                  failComment: false,
+                  failTitle: false
+                }]
+              ]
+            }' > .releaserc.json
+
+      - name: 🚀 Release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_PROVENANCE: 'true'
+          npm_config_ignore_scripts: 'true'
+        run: '"$RUNNER_TEMP/wiki-write-core-release-tools/node_modules/.bin/semantic-release" --ci'

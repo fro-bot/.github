@@ -9,6 +9,23 @@
       enabled: false,
     },
     {
+      // These tools are pinned in release-wiki-write-core.yaml, not in package.json, so the patch-update
+      // default above would leave them unmaintained.
+      description: 'Re-enable patch updates for the pinned release tools of @fro.bot/wiki-write-core.',
+      matchUpdateTypes: ['patch'],
+      matchPackageNames: [
+        '@semantic-release/commit-analyzer',
+        '@semantic-release/exec',
+        '@semantic-release/github',
+        '@semantic-release/npm',
+        '@semantic-release/release-notes-generator',
+        'conventional-changelog-conventionalcommits',
+        'conventional-changelog-writer',
+        'semantic-release',
+      ],
+      enabled: true,
+    },
+    {
       description: 'Do not group TypeScript and Python with other updates',
       matchPackageNames: ['python', 'typescript'],
       groupName: null,

@@ -34,6 +34,7 @@ If guidance conflicts, follow the order above.
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
+- Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix, never `package.json` or the lockfile
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
 - Documented solutions (`docs/solutions/`, categorized learnings and fixes with YAML frontmatter for searchability)
@@ -49,7 +50,7 @@ If guidance conflicts, follow the order above.
 
 ### Autonomous Commits
 
-- Autonomous writes target the unprotected `data` branch (`main` has `enforce_admins: true`).
+- Autonomous writes target the `data` branch, which a repository ruleset restricts to the Fro Bot App (`main` has `enforce_admins: true`).
 - All metadata writes go through `scripts/commit-metadata.ts`. The one exception is the operator-dispatched rename workflow (`scripts/rename-tracked-repo.ts`), which writes `metadata/repos.yaml` together with the wiki page move in one atomic Git Data commit.
 - `data → main` promotes via the `Merge Data Branch` workflow (weekly; see [`merge-data.yaml`](workflows/merge-data.yaml) for schedule).
 - Drafted solution docs bypass `data`: the weekly [`draft-solutions.yaml`](workflows/draft-solutions.yaml) workflow commits `docs/solutions/` drafts to the `docs/drafted-solutions` branch and opens a PR that is reviewed and merged manually (Fro Bot cannot review a first-party App's PR, [fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)); merge is never automatic.

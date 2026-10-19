@@ -158,7 +158,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 31 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 32 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -235,6 +235,7 @@ Fro Bot control plane:
 | **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |
 | **Publish Wiki** | Build the Quartz site from the wiki and deploy it to GitHub Pages | Push to main touching `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, or `quartz-site/**`; dispatch |
 | **Unpublish Wiki (emergency takedown)** | Replace the live wiki site with a static "unavailable" page | Manual dispatch |
+| **Release Wiki Write Core** | Publish `@fro.bot/wiki-write-core` to npm with provenance when a merge changes `packages/wiki-write-core/`: a credential-free job decides the release and a job in the `release` environment publishes the committed `dist` | Push to main; dispatch |
 
 Repository management:
 

@@ -38,3 +38,45 @@ The package exports `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` from its
 ## Finding kinds
 
 `WikiLintFindingKind` includes `correction-eroded` for a blocking active-correction failure and `correction-needs-reconfirmation` for an advisory lifecycle or formatting-only change. Both retain the existing `{kind, path, message, target?}` runtime shape and fingerprint derivation. Consumers with exhaustive matches must handle both kinds.
+
+## Releasing
+
+A merge to `main` that changes `packages/wiki-write-core/` releases the package through `.github/workflows/release-wiki-write-core.yaml`. Versions are the `wiki-write-core-v<version>` tags (for example `wiki-write-core-v0.1.1`), and each tag has a GitHub release.
+
+Only commits that touch `packages/wiki-write-core/` are analyzed. The commit type decides the release:
+
+| Commit                                                                                          | Release |
+| ----------------------------------------------------------------------------------------------- | ------- |
+| Breaking change (`!` or a `BREAKING CHANGE:` footer)                                            | minor   |
+| `feat`                                                                                          | minor   |
+| `fix`, `build`, `docs(readme)`                                                                  | patch   |
+| `build(dev)`, other `docs`, `chore`, `ci`, `test`, `refactor`, `skip`, non-conventional commits | none    |
+
+- A scoped suppression wins over a breaking marker: `build(dev)!:` releases nothing.
+- While the package is 0.x it never releases a major version; a breaking change is a minor bump.
+- A commit containing `[skip release]` (or `[release skip]`) is ignored by the release analysis.
+
+### Publishing
+
+The `publish` job uses npm trusted publishing (OIDC) from `release-wiki-write-core.yaml` in the `release` environment, and publishes with provenance. There is no npm token. It publishes the committed `dist/`, which the `build` job proves equals a fresh build.
+
+Verify a release:
+
+- `npm view @fro.bot/wiki-write-core dist-tags.latest` returns the released version.
+- `npm view @fro.bot/wiki-write-core@<version> --json` lists the provenance attestation under `dist.attestations`.
+- The version page on npmjs.com shows the provenance badge, linking to `fro-bot/.github` and `release-wiki-write-core.yaml`.
+
+### Failure recovery
+
+Start from the registry and tag state, not from the run's conclusion: a green run can release nothing.
+
+| State | Recovery |
+| --- | --- |
+| No tag, no npm version | Fix the cause, then run the workflow with `workflow_dispatch` on `main` |
+| Green run, package commits since the last tag, no release (`main` moved past the checkout, or the push run was skipped by `[skip ci]`) | `workflow_dispatch` on `main` |
+| Tag present, version neither live nor staged on npm | Delete the tag and its GitHub release if one exists, then `workflow_dispatch` on `main`. Do this before merging any other package change |
+| Tag and GitHub release present, npm skipped the publish (for example `private` in the manifest) | Fix the manifest, delete the tag and GitHub release, then `workflow_dispatch` on `main` |
+| Version staged on npm instead of live | Promote it on npm, then set the trusted publisher to allow `npm publish` |
+| OIDC publish fails (expired, misconfigured or stage-only trusted publisher) | Delete and recreate the trusted publisher: owner `fro-bot`, repo `.github`, workflow `release-wiki-write-core.yaml`, environment `release`, allowed action `npm publish`. Then resolve the tag as in the third row |
+| Tag and version live, no GitHub release | Create the GitHub release from the tag. Never delete the tag |
+| Bad version published | Deprecate it and ship a fix release. Never delete the tag |

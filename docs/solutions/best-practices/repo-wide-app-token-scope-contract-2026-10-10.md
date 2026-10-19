@@ -1,8 +1,8 @@
 ---
 title: Pin every App token mint in a repo-wide contract test
 date: 2026-10-10
-last_updated: 2026-10-10
-verified: 2026-10-10
+last_updated: 2026-10-12
+verified: 2026-10-12
 category: best-practices
 module: github-workflows
 problem_type: best_practice
@@ -44,6 +44,9 @@ Before PR #3974 (parent commit `6b999fa`), eight mint steps across seven workflo
    - Deleting a cache, by key or by id, requires actions write.
    - `GET /installation/repositories` has no entry in the permission table. "No permission needed" is an inference from that absence.
    - Adding labels requires issues write, but the endpoint carries `additional-permissions: true` without naming the extra permission. Do not assume issues write alone is enough on a pull request.
+7. **Pin consumer bindings as well as mint scopes.** Assert the exact discovery/writer environment expressions and reject extra consumers, including job-level fields and duplicate references. A correctly scoped mint does not prove the right client receives it. In #3974, the initial review found that swapping the two expressions escaped mint-only assertions; follow-up commits added binding checks and negative fixtures before merge.
+8. **Exercise the CLI boundary and use contract-valid fixtures.** Cover plan/dispatch selection, missing or empty token/output inputs, and blank dispatch lists, not just helpers and workflow declarations. Bootstrap doubles should return a complete `DataBranchBootstrapResult` under an explicit return type rather than bypassing the contract with `as never`. Both changes landed before #3974 merged; they are established coverage, not outstanding recommendations.
+9. **Separate local routing evidence from live authorization evidence.** Preserve a post-merge validation sequence for the changed workflows and explicitly record which recovery branches ran. A green mock-based suite cannot prove GitHub accepts the narrower token, and a successful normal run does not establish authorization for a rarely exercised recovery call.
 
 ## Why This Matters
 
@@ -104,6 +107,8 @@ const MINT_CENSUS_FLOOR = 32
 
 The matcher is `stepOutputPattern` (`:425-434`). Its fixtures (`:36-47`) include `steps [ '${id}' ] . outputs [ "token" ]`. The binding checks (`BINDING_SPECS`, `:1057-1074`) cover the two split jobs only, `reconcile-repos` and `update-metadata`.
 
+**Consumer and entrypoint evidence.** `scripts/app-token-scope-guard.test.ts` rejects swapped bindings, missing environment variables, duplicate consumers, and additional token references. `scripts/dispatch-renovate.test.ts` exercises `runCli`: only the exact first argument `plan` selects planning; missing or empty required inputs reject without discovery or dispatch calls. The bootstrap fixtures in `scripts/update-metadata.test.ts` and `scripts/reconcile-repos.test.ts` explicitly return `Promise<DataBranchBootstrapResult>` with `created`, `ref`, and `sha`. The final #3974 review confirmed the binding and fixture issues described above were addressed before merge. Live authorization remains a separate verification obligation; the manual `manage-cache` dispatch path was not exercised.
+
 **Run evidence after merge.** These runs executed on the merged code. None of their logs contains a `403` or "Resource not accessible by integration".
 
 | Workflow            | Run         | Result  | Tokens minted                                                       |
@@ -125,3 +130,5 @@ The matcher is `stepOutputPattern` (`:425-434`). Its fixtures (`:36-47`) include
 - [A policy scanner must parse tokens, not prose — and the tool may normalise away what you are checking for](a-policy-scanner-must-parse-tokens-not-prose-2026-09-08.md)
 - [Agent and automation steps need their GitHub token wired explicitly](../workflow-issues/required-github-token-for-agent-steps-2026-06-22.md)
 - PR #3974 (merge `a72ffde`).
+- Source PR merge commit: `a72ffde95ef7df585e13e72b2a264db5c153c98e`.
+- Sibling authority lesson: `docs/solutions/security-issues/wiki-authority-guard-branch-name-spoofable-2026-10-10.md` — [check repository identity as well as the data branch name](../security-issues/wiki-authority-guard-branch-name-spoofable-2026-10-10.md).
