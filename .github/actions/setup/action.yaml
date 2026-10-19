@@ -1,13 +1,6 @@
 ---
-# Based on https://github.com/bfra-me/works/blob/7217b637351a0b251d1d0c2158614210c7efdad0/.github/actions/pnpm-install/action.yaml
 name: Setup
 description: Setup build environment and install dependencies
-
-inputs:
-  cache-version:
-    default: '0'
-    description: Cache version. Can be incremented to invalidate the cache.
-    required: false
 
 runs:
   steps:
@@ -19,42 +12,13 @@ runs:
         version: ${{ env.MISE_VERSION }}
 
     - name: Install Bun
-      env:
-        BUN_VERSION: 1.4.3 # renovate: datasource=npm depName=bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
-        bun-version: ${{ env.BUN_VERSION }}
+        bun-version-file: package.json
         no-cache: true
 
-    - id: configure-cache
-      name: Configure cache
-      run: |
-        if [ ! `which pnpm` ]; then
-          echo "pnpm is not installed"
-          exit 1
-        fi
-        pnpm_store_path="$(pnpm store path --silent)"
-        if [ -z "$pnpm_store_path" ]; then
-          echo "Failed to get pnpm store path"
-          exit 1
-        fi
-        mkdir -p "$pnpm_store_path" || exit 1
-        echo "path=$pnpm_store_path" >> $GITHUB_OUTPUT
-        year_month=$(date -u '+%Y-%m')
-        base_key="pnpm-store-v${{ inputs.cache-version }}-${{ runner.os }}-${year_month}-"
-        echo "key=${base_key}${{ hashFiles('**/pnpm-lock.yaml') }}" >> $GITHUB_OUTPUT
-        echo "restore-keys=${base_key}" >> $GITHUB_OUTPUT
-      shell: 'bash -Eeuo pipefail {0}'
-
-    - name: Restore pnpm store cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.configure-cache.outputs.key }}
-        path: ${{ steps.configure-cache.outputs.path }}
-        restore-keys: ${{ steps.configure-cache.outputs.restore-keys }}
-
     - name: Install dependencies
-      run: pnpm bootstrap
+      run: bun install --frozen-lockfile
       shell: bash -Eeuo pipefail {0}
 
   using: composite

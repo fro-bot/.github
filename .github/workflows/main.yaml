@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  # The one declaration of the Renovate used by `pnpm check:renovate-config`. scripts/renovate-runtime.ts
+  # The one declaration of the Renovate used by `bun run check:renovate-config`. scripts/renovate-runtime.ts
   # reads it from this file, and the inherited bfra-me regex manager for `*_VERSION: x # renovate: ...`
   # in workflow files keeps it current. Renovate is not a repo dependency (its tree carries unfixed
   # advisories that fail `check:override-floors`); it is installed into a scratch prefix at check time.
@@ -47,7 +47,7 @@ jobs:
       - env:
           TIMING: 1
         name: 💅🏽 Lint
-        run: pnpm lint
+        run: bun run lint
 
   check-types:
     name: Check Types
@@ -65,7 +65,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: ✅ Validate Types
-        run: pnpm check-types
+        run: bun run check-types
 
   test:
     name: Test
@@ -83,7 +83,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: 🧪 Run Tests
-        run: pnpm test
+        run: bun run test
 
   check-wiki-write-core-dist:
     name: Check Wiki Write Core Dist
@@ -101,7 +101,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: ✅ Verify committed package build
-        run: pnpm check:wiki-write-core-dist
+        run: bun run check:wiki-write-core-dist
 
   test-scripts-load:
     name: Test Scripts Load
@@ -151,32 +151,32 @@ jobs:
 
       - name: ✅ Validate Renovate Config
         # default.json is a public preset consumed by every repo that extends local>fro-bot/.github.
-        # Separate from `pnpm lint` because it needs the network: it installs the pinned Renovate
+        # Separate from `bun run lint` because it needs the network: it installs the pinned Renovate
         # (RENOVATE_VERSION above) into a scratch prefix and fetches version-pinned github> presets.
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
-        run: pnpm check:renovate-config
+        run: bun run check:renovate-config
 
       - name: 🧪 Test Renovate Gate Against Pinned Renovate
-        # `pnpm test` skips the tests that need a real Renovate install; run them here, against the
+        # `bun run test` skips the tests that need a real Renovate install; run them here, against the
         # install the previous step left in RENOVATE_PREFIX.
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
-        run: pnpm exec vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
+        run: bunx vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
 
       - name: 📦 Install Release Tools
         # The semantic-release tool set pinned in release-wiki-write-core.yaml goes into a scratch prefix
-        # outside the checkout, with lifecycle scripts off. Nothing is added to package.json or pnpm-lock.yaml.
+        # outside the checkout, with lifecycle scripts off. Nothing is added to package.json or bun.lock.
         env:
           WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
         run: node scripts/wiki-write-core-release.ts install
 
       - name: 🧪 Test Release Decision Against Pinned Release Tools
-        # `pnpm test` skips the tests that need the real plugins; run them here, against the install
+        # `bun run test` skips the tests that need the real plugins; run them here, against the install
         # the previous step left in WIKI_WRITE_CORE_RELEASE_PREFIX. They fail if that prefix is empty.
         env:
           WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
-        run: pnpm exec vitest run scripts/wiki-write-core-release.test.ts
+        run: bunx vitest run scripts/wiki-write-core-release.test.ts
 
   check-wiki-authority:
     name: Check Wiki Authority
@@ -226,7 +226,7 @@ jobs:
       - name: 🧬 Check Mutation Guards
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pnpm check:mutation-guards
+        run: bun run check:mutation-guards
 
       - name: ⬆ Upload mutation report
         if: always()
