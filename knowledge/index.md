@@ -2,6 +2,14 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-19: [[marcusrbrown--gpt]] (repo), [[langchain]]
+and [[github-pages]] (topics). Existing entries and dated evidence remain;
+the canonical ingest record is in `knowledge/log.md`.
+
+Catalog refreshed 2026-10-18: [[fro-bot--space-bus]] (repo) and
+[[opencode-plugins]] (topic). Existing catalog entries and dated evidence
+are retained; the canonical ingest record is in `knowledge/log.md`.
+
 Catalog refreshed 2026-10-18: [[bfra-me--renovate-action]] (repo) and
 [[github-actions-ci]] (topic). Existing catalog entries remain historical
 snapshots; the canonical ingest record is in `knowledge/log.md`.

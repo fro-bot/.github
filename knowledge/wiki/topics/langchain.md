@@ -2,8 +2,11 @@
 type: topic
 title: LangChain
 created: 2026-04-18
-updated: 2026-10-04
+updated: 2026-10-19
 sources:
+  - url: https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json
+    sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
+    accessed: 2026-10-19
   - url: https://github.com/marcusrbrown/gpt/blob/129b109d2783c67289a2ee3d64cf385698e79a16/package.json
     sha: 129b109d2783c67289a2ee3d64cf385698e79a16
     accessed: 2026-10-04
@@ -39,6 +42,14 @@ By contrast, [[marcusrbrown--gpt]] is the ecosystem's reference point for the **
 ## GPT package-family snapshot (2026-10-04)
 
 The manifest at `129b109d2783c67289a2ee3d64cf385698e79a16` in [[marcusrbrown--gpt]] declares `langchain` **1.5.15**, `@langchain/core` **1.2.14**, `@langchain/openai` **1.6.1**, `@langchain/anthropic` **1.5.11**, and `@langchain/langgraph` **1.4.7**. These supersede the August version snapshot above; the OpenAI integration has crossed into the 1.6 minor line while LangGraph retains its older pin. Package-family members need not have matching minor versions. This manifest establishes declared dependencies, not installed resolution, runtime interoperability, or the current updater suppression state. The provider abstraction remains README-described; application imports were outside the survey's permitted reads.
+
+## GPT package-family recheck (2026-10-19)
+
+At `81a5aed0ca3454c115f5b776244f4455a5de69f0`, [[marcusrbrown--gpt]] declares `langchain` **1.5.18**, `@langchain/core` **1.2.18**, `@langchain/openai` **1.6.2**, `@langchain/anthropic` **1.5.12**, and unchanged `@langchain/langgraph` **1.4.7**. These are newer declarations than the October 4 snapshot, retained above. The workspace manifest still constrains transitive `langsmith` to `>=0.6.0`.
+
+The family continues to move at different minor versions. Movement in four packages does not prove compatibility with the fifth, and a stationary LangGraph pin does not by itself establish updater suppression. The README still describes a provider abstraction, but application imports, lockfile resolution, tests, and updater state were not inspected in this bounded survey.
+
+Sources: [package manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/pnpm-workspace.yaml), [README](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/readme.md).
 
 ## Migration Patterns
 

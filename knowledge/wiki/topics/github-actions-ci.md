@@ -4,6 +4,12 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-18
 sources:
+  - url: https://github.com/bfra-me/works/blob/fcfec271a83c24179bbaab01dddf385531b7d090/.github/workflows/main.yaml
+    sha: fcfec271a83c24179bbaab01dddf385531b7d090
+    accessed: 2026-10-18
+  - url: https://github.com/bfra-me/works/blob/fcfec271a83c24179bbaab01dddf385531b7d090/packages/semantic-release/package.json
+    sha: fcfec271a83c24179bbaab01dddf385531b7d090
+    accessed: 2026-10-18
   - url: https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml
     sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
     accessed: 2026-10-18
@@ -322,6 +328,27 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Keep failure suppression scoped to the invoked command (2026-10-18)
+
+[[bfra-me--works]] at `fcfec271` declares the semantic-release package test
+command as `pnpm build && vitest run --typecheck || true`. The trailing
+fallback covers both commands: a failed build can skip Vitest and still yield
+success, while a failed Vitest invocation can also yield success. This is a
+property of that package script, not proof of passing tests or of failure in
+the separate root test lane. Main invokes root `pnpm run test`, whose manifest
+script is `vitest run`; determining its exact test discovery requires reading
+configuration outside this survey's permitted scope.
+
+Main also marks the workspace-analysis command `continue-on-error: true`
+before uploading its JSON report, and the final aggregate job prints
+"All checks passed!". That message cannot certify clean analyzer findings.
+Distinguish command exit status, tolerated step failure, report contents, and
+aggregate job status before interpreting a green check. The earlier
+declaration-versus-delivery and report-only benchmark distinctions remain.
+
+Sources: the pinned Main workflow and semantic-release manifest above, plus
+the [root manifest](https://github.com/bfra-me/works/blob/fcfec271a83c24179bbaab01dddf385531b7d090/package.json).
 
 ## Audit admission, prompt routing, and credentials per event (2026-10-18)
 

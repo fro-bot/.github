@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-18
+updated: 2026-10-19
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
+    accessed: 2026-10-19
   - url: https://github.com/marcusrbrown/Presentations
     sha: b174ddc23aca4b74fd69fd2238d3fcc3ad364044
     accessed: 2026-10-18
@@ -76,6 +79,29 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## GPT: compilation is conditional on cache admission (2026-10-19)
+
+At `81a5aed0`, [[marcusrbrown--gpt]] still deploys with `needs: build`, while
+lint and unit tests remain siblings. Its manifest expands build to
+`tsgo && vite build`, so executing build checks types as well as bundling.
+However, push/PR cache hits skip that command; dispatch forces it to run.
+The build cache key omits `pnpm-workspace.yaml`, `vite.config.ts`,
+`src/index.css`, and the setup action, although those inputs can affect the
+result. A declared compile-and-bundle script therefore does not establish
+fresh compilation for every deployed artifact. This refines October 4's
+observation; it is not evidence of a particular stale deployment.
+
+Browser-test admission is a separate contract again. E2E coverage explicitly
+accepts dispatch, whereas visual dispatch selects an independent baseline-update
+job and invokes the homepage-only `test:visual:ci` script. Accessibility dispatch
+and performance dispatch/schedule still depend on skipped preparation without a
+status-function override. These workflow declarations do not prove browser tests
+ran or passed, nor do they make those tests deployment prerequisites.
+
+Sources: [Main workflow](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/.github/workflows/main.yaml),
+[manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json),
+[test workflows](https://github.com/marcusrbrown/gpt/tree/81a5aed0ca3454c115f5b776244f4455a5de69f0/.github/workflows).
 
 ## Multi-deck assembly needs per-deck asset bases (2026-10-18)
 

@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-10-04
+updated: 2026-10-19
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -47,6 +47,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 88809b5d8fddb8e9bfd4c7eaf0b5307a95100565
     accessed: 2026-10-04
+  - url: https://github.com/fro-bot/systematic
+    sha: 6b0398e4bf614a1dd504997140bc8d85e572e5c7
+    accessed: 2026-10-19
 tags:
   - documentation
   - github-pages
@@ -69,6 +72,36 @@ related:
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+## Output layout persists across a new snapshot (2026-10-19)
+
+The public repository still defaults to `gh-pages`, now at commit
+`6b0398e4bf614a1dd504997140bc8d85e572e5c7`. A complete, non-truncated
+recursive directory listing at that commit retains the October 4 layout:
+17 root entries, 3 getting-started directories, 14 guide directories,
+38 agent-reference directories (37 named agents plus `readme/`),
+32 skill-reference directories, and 71 immediate component directories.
+The guide and reference directory names also match the October 4 baseline.
+The schema tree still lists only `latest/` and `v3/`.
+
+This newer commit with the same directory inventory establishes layout
+continuity, not byte-identical content or a frozen published contract.
+Generated HTML, registry JSON, schema JSON, and bundled agent/skill bodies
+were outside the permitted reads. No current package version, registry record
+count, schema fingerprint, live HTTP availability, or release/deploy timing
+is inferred. The earlier publish/deploy-race diagnosis remains withdrawn;
+the September 21 correction below still applies. See [[github-pages]].
+
+There is no README file, dependency manifest, `.github/` directory, or
+committed workflow in this snapshot. In particular, **no Fro Bot workflow
+is present on the surveyed default branch**. A separate follow-up draft PR
+may be proposed, but must account for this being generated deployment output
+and the historically recorded upstream-owned deployment. The upstream workflow
+and live Actions state were not rechecked; absence here does not establish
+that automation is absent upstream. The `reference/agents/readme/` route is
+a directory containing rendered output, not a source README eligible for reading.
+
+Source: [pinned output tree](https://github.com/fro-bot/systematic/tree/6b0398e4bf614a1dd504997140bc8d85e572e5c7).
 
 ## Build-output inventory and counting boundary (2026-10-04)
 

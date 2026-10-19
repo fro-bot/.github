@@ -3,8 +3,11 @@ type: repo
 title: marcusrbrown/gpt
 node_id: R_kgDOK0Z5CA
 created: 2026-04-18
-updated: 2026-10-04
+updated: 2026-10-19
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
+    accessed: 2026-10-19
   - url: https://github.com/marcusrbrown/gpt
     sha: 129b109d2783c67289a2ee3d64cf385698e79a16
     accessed: 2026-10-04
@@ -90,6 +93,28 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30, and now *explained*: `node` sits inside blocked Renovate PR #2662 (see the 2026-09-20 section). Renovate detects `24.21.0`
 - **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
 - **Counts (2026-09-20):** 1 star, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** — the identical queue to 2026-09-03, same numbers, same members (see the measurement correction below)
+
+## 2026-10-19 bounded source recheck
+
+Public `main` snapshot: `81a5aed0ca3454c115f5b776244f4455a5de69f0`. Only directory listings, the root README, package/workspace manifests, and six workflow files were read. Earlier issue queues, updater suppression, alerts, publication, and run-health measurements remain historical; no current operational outcome is inferred here.
+
+### Dependency movement does not prove updater recovery
+
+The manifest now declares Vite **8.3.4**, ESLint **10.12.0**, Prettier **3.9.10**, Playwright **1.64.1**, and Vitest/coverage **4.1.12**. Other declarations include React **19.2.5**, TypeScript **5.9.3**, pnpm **11.11.0**, MCP SDK **1.31.0**, and native-preview **20260703.1**. LangChain is **1.5.18**, core **1.2.18**, OpenAI integration **1.6.2**, and Anthropic integration **1.5.12**; LangGraph remains **1.4.7**. These supersede October 4's corresponding version figures without establishing resolution or interoperability; see [[langchain]].
+
+The workspace manifest retains the same nine override keys and floors recorded on October 4. Declared constraints are not a present-day advisory audit. Neither version movement elsewhere nor an unchanged LangGraph pin proves that September's blocked Renovate branches have recovered or remain blocked; that requires evidence outside this survey's permitted reads.
+
+### Automation presence and delivery remain separate
+
+Fro Bot is present at **v0.124.0**, SHA `65481810674416d28c213b8f80c6683f9d0b51a9`, with review/maintenance/autoheal modes and 03:30/15:30 UTC schedules. The workflow still ends at `timeout: 0`, declares no `output-mode`, and has no post-agent persistence stage. Conditional checkout credentials remain. This confirms the caller's static delivery gap, not a sampled failure or a claim about the pinned action's internals. No missing-Fro-Bot follow-up draft is warranted. The README and all three embedded prompts still describe Vite 7, contradicting the Vite 8 manifest.
+
+### Test commands, event admission, and deploy gates
+
+`main.yaml` still deploys with `needs: build`; lint and unit tests are sibling jobs. The manifest expands build to `tsgo && vite build`, so a cache-miss build includes type checking even though unit tests are outside deployment's dependency chain. Dispatch forces build/test execution, but push/PR cache hits skip their commands. The build key still omits the workspace manifest, Vite configuration, stylesheet, and setup action. See [[github-pages]] for this distinction between a declared build pipeline and execution on a particular event.
+
+`test-coverage.yaml` explicitly admits push and dispatch E2E jobs; the separately listed `test-e2e.yaml.disabled` therefore remains insufficient evidence that E2E is disabled. Accessibility dispatch and performance dispatch/schedule still depend on skipped `Prepare` jobs without an explicit status-function override. Visual dispatch instead selects a separate baseline-update job with no `Prepare` dependency; it is not admission to the regular visual-test job. Both visual testing and baseline updates invoke `test:visual:ci`, whose manifest script selects only the homepage spec, rather than the whole listed visual suite. These are workflow contracts, not observed test results.
+
+Sources: [README](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/readme.md), [package manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/pnpm-workspace.yaml), [workflow directory](https://github.com/marcusrbrown/gpt/tree/81a5aed0ca3454c115f5b776244f4455a5de69f0/.github/workflows).
 
 ## 2026-10-04 bounded survey — committed overrides, unchanged delivery boundary
 
