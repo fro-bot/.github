@@ -487,14 +487,7 @@ jobs:
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
-          (
-            !endsWith(github.event.pull_request.user.login || '', '[bot]') ||
-            (
-              github.event.pull_request.user.login == 'fro-bot[bot]' &&
-              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
-              github.event.pull_request.head.repo.full_name == github.repository
-            )
-          )
+          !endsWith(github.event.pull_request.user.login || '', '[bot]')
         )
       ) && (
         (
@@ -505,17 +498,8 @@ jobs:
         ) ||
         (
           github.event_name == 'pull_request' &&
-          (
-            (
-              !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-              (github.event.pull_request.user.login || '') != 'fro-bot'
-            ) ||
-            (
-              github.event.pull_request.user.login == 'fro-bot[bot]' &&
-              github.event.pull_request.head.ref == 'docs/drafted-solutions' &&
-              github.event.pull_request.head.repo.full_name == github.repository
-            )
-          )
+          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+          (github.event.pull_request.user.login || '') != 'fro-bot'
         ) ||
         (
           (github.event_name == 'issue_comment' ||
@@ -615,7 +599,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
+        uses: fro-bot/agent@1529cc2e956fae72d97bfe08968d564a2e50f94b # v0.123.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -761,7 +745,7 @@ jobs:
 
       - name: 🔑 Mint App token for wiki ingest
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -873,7 +857,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
+        uses: fro-bot/agent@1529cc2e956fae72d97bfe08968d564a2e50f94b # v0.123.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1045,7 +1029,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
+        uses: fro-bot/agent@1529cc2e956fae72d97bfe08968d564a2e50f94b # v0.123.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1196,7 +1180,7 @@ jobs:
       # narrower than the FRO_BOT_PAT this step used to borrow from the observe agent.
       - name: 🔑 Mint App token for report discovery
         id: report-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -1361,7 +1345,7 @@ jobs:
 
       - name: 🔑 Mint App token for wiki ingest
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}

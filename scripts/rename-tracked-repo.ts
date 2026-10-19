@@ -4,7 +4,7 @@
  * moves the repo's wiki page, repairs `[[old]]` links and `related:` entries, rebuilds the index and
  * appends a single `manual-edit` log entry. Metadata and wiki never disagree in the resulting commit.
  *
- * Architecture: a pure decision core (`@fro-bot/wiki-write-core`'s `planRepoPageMove`) plus this
+ * Architecture: a pure decision core (`@fro.bot/wiki-write-core`'s `planRepoPageMove`) plus this
  * module's evidence checks and atomic writer, with every client injected. Nothing here calls
  * `commitWikiChanges` or `commitMetadata`: the former replays on conflict and skips deletions on a
  * truncated tree, the latter cannot express a multi-file commit. This is the one metadata writer
@@ -37,7 +37,7 @@ import {
   type PlanRepoPageMoveParams,
   type RepoPageMoveBlockReason,
   type RepoPageMovePlan,
-} from '@fro-bot/wiki-write-core'
+} from '@fro.bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
 
 import {assertReposFile, NODE_ID_PATTERN, type RepoEntry} from './schemas.ts'

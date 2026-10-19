@@ -1,4 +1,4 @@
-import {GATE_SOURCE_TREE_HASH} from '@fro-bot/wiki-write-core'
+import {GATE_SOURCE_TREE_HASH} from '@fro.bot/wiki-write-core'
 import {describe, expect, it} from 'vitest'
 
 describe('gate contract', () => {

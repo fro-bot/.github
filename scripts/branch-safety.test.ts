@@ -3,7 +3,7 @@
  * `rename-tracked-repo.ts` share. Each consumer's own suite pins its error shape; this table pins the
  * rule itself, including the canonical `fro-bot/.github@data` exemption.
  */
-import {assertBranchWritable, type BranchProtectionClient, type BranchRefusal} from '@fro-bot/wiki-write-core'
+import {assertBranchWritable, type BranchProtectionClient, type BranchRefusal} from '@fro.bot/wiki-write-core'
 import {describe, expect, it, vi} from 'vitest'
 
 interface Data {

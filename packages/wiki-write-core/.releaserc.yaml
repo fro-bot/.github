@@ -1,0 +1,56 @@
+# Release policy for @fro.bot/wiki-write-core. Read only by scripts/wiki-write-core-release.ts in the
+# credential-free `decide` job; the `publish` job deletes this file and runs semantic-release from a
+# gated config written by .github/workflows/release-wiki-write-core.yaml.
+branches:
+  - main
+
+tagFormat: 'wiki-write-core-v${version}'
+
+analyzeCommits:
+  releaseRules:
+    # The package stays 0.x: a breaking change is a minor bump, never major. The scoped suppression
+    # rules below still win when a breaking commit also matches one of them (`build(dev)!:` releases
+    # nothing).
+    - breaking: true
+      release: minor
+    - type: build
+      release: patch
+    - type: build
+      scope: dev
+      release: false
+    - type: docs
+      release: patch
+      scope: readme
+    - type: skip
+      release: false
+
+preset: conventionalcommits
+
+presetConfig:
+  types:
+    - type: feat
+      section: Features
+    - type: features
+      section: Features
+    - type: build
+      section: Build System
+    - type: fix
+      section: Bug Fixes
+    - type: docs
+      section: Documentation
+    - type: test
+      section: Tests
+    - type: ci
+      section: Continuous Integration
+    - type: style
+      section: Styles
+    - type: refactor
+      section: Code Refactoring
+    - type: perf
+      section: Performance Improvements
+    - type: revert
+      section: Reverts
+    - type: chore
+      section: Miscellaneous Chores
+    - type: skip
+      effect: hidden

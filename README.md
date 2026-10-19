@@ -125,6 +125,12 @@ This repository provides shared configurations and automation for the Fro Bot ec
    # Linting (ESLint runs Prettier via eslint-plugin-prettier)
    pnpm lint
 
+   # Renovate preset gate: validator (--strict --no-global) + allowedVersions range check.
+   # Needs network and npm: installs the Renovate pinned in .github/workflows/main.yaml
+   # (env.RENOVATE_VERSION) into $RENOVATE_PREFIX (default: <tmp>/renovate-<version>), outside
+   # node_modules and the lockfile, then fetches version-pinned github> presets.
+   pnpm check:renovate-config
+
    # Tests (Vitest, colocated as scripts/*.test.ts)
    pnpm test
 
@@ -152,7 +158,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 31 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 32 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -198,7 +204,7 @@ Quality gates:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Main** | Lint, type checking, tests, and workflow validation | PR, push to main, dispatch |
+| **Main** | Lint, type checking, tests, workflow validation, and Renovate preset validation | PR, push to main, dispatch |
 | **CodeQL** | Security vulnerability analysis | PR, push to main, weekly |
 | **Dependency Review** | Block PRs introducing known-vulnerable packages | Pull request |
 | **Scorecard supply-chain security** | OpenSSF supply-chain security posture | Push to main, weekly |
@@ -212,7 +218,7 @@ Fro Bot control plane:
 | --- | --- | --- |
 | **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
-| **Draft Solutions** | Draft `docs/solutions/` entries from open `learning-proposal` issues into one `docs/drafted-solutions` PR; Fro Bot reviews it, a human merges | Monday 06:00 UTC, dispatch |
+| **Draft Solutions** | Draft `docs/solutions/` entries from open `learning-proposal` issues into one `docs/drafted-solutions` PR; reviewed and merged manually | Monday 06:00 UTC, dispatch |
 | **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos; auto-stars collab/contrib repos | Daily 05:17 UTC, dispatch |
@@ -229,6 +235,7 @@ Fro Bot control plane:
 | **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |
 | **Publish Wiki** | Build the Quartz site from the wiki and deploy it to GitHub Pages | Push to main touching `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, or `quartz-site/**`; dispatch |
 | **Unpublish Wiki (emergency takedown)** | Replace the live wiki site with a static "unavailable" page | Manual dispatch |
+| **Release Wiki Write Core** | Publish `@fro.bot/wiki-write-core` to npm with provenance when a merge changes `packages/wiki-write-core/`: a credential-free job decides the release and a job in the `release` environment publishes the committed `dist` | Push to main; dispatch |
 
 Repository management:
 
@@ -366,7 +373,7 @@ Any single key missing produces zero PR actions; eligible findings fall back to 
 
 The **Draft Solutions** workflow turns open `learning-proposal` issues (up to five per run, oldest first) into `docs/solutions/` changes on one stable branch, `docs/drafted-solutions`, with one PR. A read-only agent verifies each claim against the merged PR, its reviews and CI runs, and current `main`, then drafts or extends docs; a separate no-agent job validates the handoff (only `docs/solutions/<category>/*.md`, no deletions), runs the private-repo gate on every file, the PR title and body, and every comment, and only then writes. The agent edits a commit pinned by the harvest job, and the publish job refuses to overwrite a file that changed on the live branch or `main` while it drafted (the run fails and the next one redrafts). The branch is never force-pushed or reused: with no open PR it must not exist, so a leftover from a PR closed without merging fails the run closed until you delete it (merged PRs delete theirs), and a PR that appears mid-run fails the run closed too. The PR body carries a per-proposal evidence table and one `Closes #N` line per recorded proposal; it is bounded to GitHub's 65,536-character limit, and a new decision for a proposal replaces its earlier row.
 
-Proposals whose claims cannot be verified are commented on and closed as not planned right away, never recorded in the PR. Proposals an existing doc already covers are recorded in the PR when one is open or the run changes docs, and are otherwise commented on and closed as completed. Fro Bot reviews the drafted PR (the only App-authored PR it reviews); nothing is auto-merged, so a human merges it, and merging closes the proposals. Every PR write re-requests the Fro Bot review, and a run that finds the drafted PR with no review request and no review on its head requests it even when no proposal is left to draft (publish, review-only).
+Proposals whose claims cannot be verified are commented on and closed as not planned right away, never recorded in the PR. Proposals an existing doc already covers are recorded in the PR when one is open or the run changes docs, and are otherwise commented on and closed as completed. The operator reviews and merges the drafted PR manually; Fro Bot does not review it, because the agent cannot review a PR authored by the first-party App ([fro-bot/agent#1520](https://github.com/fro-bot/agent/issues/1520)). Nothing is auto-merged, and merging closes the proposals.
 
 ### Recurring Pattern Proposals
 

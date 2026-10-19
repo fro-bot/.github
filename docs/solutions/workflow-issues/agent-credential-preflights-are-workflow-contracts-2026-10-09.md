@@ -180,7 +180,7 @@ failure is an unsafe ambiguity.
 
 The same contract covers every step that overlays `metadata/` from `data`. At `8792b53` there are
 15 overlay steps across the workflows, plus one exempt step, the `wiki-lint` restore. The canonical
-form is in `.github/workflows/draft-solutions.yaml:315-329`:
+form is in `.github/workflows/draft-solutions.yaml:309-323`:
 
 ```bash
 status=0

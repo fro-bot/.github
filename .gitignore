@@ -38,6 +38,9 @@ coverage
 .context/
 .review/
 
+# Repo-local git worktrees (other branches' checkouts; never tracked, never scanned)
+/.worktrees/
+
 # Digest/bodies handoff dirs the capture workflows place inside the workspace for the agent
 .capture-learnings/
 .capture-patterns/

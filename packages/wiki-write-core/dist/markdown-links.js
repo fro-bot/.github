@@ -1,33 +1,37 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import process from 'node:process';
+import { findCodeRegions, findRegionAt } from "./code-regions.js";
 const MARKDOWN_LINK_PATTERN = /\[[^\]\n]+\]\(\s*(<[^>\n]+>|[^)\s]+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)/gu;
 /** Resolve live relative markdown links and report whether their targets exist. */
 export function resolveMarkdownLinks(content, containingFile, options = {}) {
     const links = [];
-    let fence;
+    const regions = findCodeRegions(content);
+    let lineOffset = 0;
     for (const [lineIndex, line] of content.split('\n').entries()) {
-        const fenceMatch = /^\s*(`{3,}|~{3,})/u.exec(line);
-        if (fenceMatch !== null) {
-            const marker = fenceMatch[1];
-            if (marker !== undefined) {
-                const character = marker[0] ?? '';
-                if (fence === undefined) {
-                    fence = { character, length: marker.length };
-                }
-                else if (fence.character === character && marker.length >= fence.length) {
-                    fence = undefined;
-                }
-            }
-            continue;
-        }
-        if (fence !== undefined) {
-            continue;
-        }
-        for (const match of line.matchAll(MARKDOWN_LINK_PATTERN)) {
+        const currentLineOffset = lineOffset;
+        lineOffset += line.length + 1;
+        // The shared global pattern is stateful; every line restarts it and the loop runs it to exhaustion.
+        MARKDOWN_LINK_PATTERN.lastIndex = 0;
+        for (let match = MARKDOWN_LINK_PATTERN.exec(line); match !== null; match = MARKDOWN_LINK_PATTERN.exec(line)) {
             const target = match[1];
             const matchIndex = match.index;
-            if (target === undefined || matchIndex === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
+            if (target === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
+                continue;
+            }
+            // Code binds tighter than links, so a match that touches a fence or span is literal text.
+            // A rejected match must not consume what follows it: the regex runs through any live link
+            // after an unclosed bracket in code. Resume after the region the match opened in, or just
+            // past its first character when it only closes inside one.
+            const matchStart = currentLineOffset + matchIndex;
+            const matchLast = matchStart + match[0].length - 1;
+            const openingRegion = findRegionAt(regions, matchStart);
+            if (openingRegion !== undefined) {
+                MARKDOWN_LINK_PATTERN.lastIndex = Math.max(openingRegion.end - currentLineOffset, matchIndex + 1);
+                continue;
+            }
+            if (findRegionAt(regions, matchLast) !== undefined) {
+                MARKDOWN_LINK_PATTERN.lastIndex = matchIndex + 1;
                 continue;
             }
             const normalizedTarget = target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;

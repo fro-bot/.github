@@ -7,7 +7,7 @@ import {
   parseCorrections,
   serializeCorrections,
   type CorrectionsFile,
-} from '@fro-bot/wiki-write-core/corrections'
+} from '@fro.bot/wiki-write-core/corrections'
 import {describe, expect, it} from 'vitest'
 import {buildHelp, CorrectionLifecycleCliError, findRepositoryRoot, main, toFailure} from './correction-lifecycle.ts'
 

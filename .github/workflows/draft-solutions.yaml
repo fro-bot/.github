@@ -34,7 +34,6 @@ jobs:
       pull-requests: read
     outputs:
       has_work: ${{ steps.harvest.outputs.has_work }}
-      review_needed: ${{ steps.harvest.outputs.review_needed }}
       draft_base_sha: ${{ steps.harvest.outputs.draft_base_sha }}
       main_sha: ${{ steps.harvest.outputs.main_sha }}
     steps:
@@ -78,7 +77,6 @@ jobs:
               echo "| Has work | $(jq -r '.hasWork' "$harvest") |"
               echo "| Proposals to draft | $(jq '.proposals // 0' "$harvest") |"
               echo "| Drafted PR | $(jq -r '.prState' "$harvest") |"
-              echo "| Review needed | $(jq -r '.reviewNeeded' "$harvest") |"
             else
               echo "| Has work | (harvest result unavailable) |"
             fi
@@ -128,7 +126,7 @@ jobs:
 
       - name: 🤖 Draft solution docs
         id: agent
-        uses: fro-bot/agent@83ed683da24111bd1474eb4bda39715ed5799bc2 # v0.119.2
+        uses: fro-bot/agent@1529cc2e956fae72d97bfe08968d564a2e50f94b # v0.123.0
         timeout-minutes: 45
         env:
           TASK_PROMPT: |
@@ -282,10 +280,8 @@ jobs:
   publish:
     name: Publish drafted solution docs
     needs: [harvest, draft]
-    # Runs for new work (only after a successful draft) or when only the review request is owed:
-    # then the draft job is skipped, and !cancelled() (instead of the implicit success()) keeps that
-    # skip from skipping publish. A failed or cancelled draft still blocks it whenever has_work.
-    if: ${{ !cancelled() && needs.harvest.result == 'success' && (needs.harvest.outputs.has_work == 'true' || needs.harvest.outputs.review_needed == 'true') && (needs.draft.result == 'success' || needs.harvest.outputs.has_work != 'true') }}
+    # Runs only for new work, and (implicit success()) only after a successful draft.
+    if: needs.harvest.outputs.has_work == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -308,7 +304,6 @@ jobs:
       # silently publish with stale privacy data, so it fails the step, as does a failing
       # fetch or checkout.
       - name: ⤵ Overlay metadata from data branch
-        if: needs.harvest.outputs.has_work == 'true'
         run: |
           set -euo pipefail
           status=0
@@ -329,7 +324,6 @@ jobs:
 
       # The digest comes from the harvest job, never from the agent job.
       - name: 📥 Download digest artifact
-        if: needs.harvest.outputs.has_work == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: drafted-solutions-digest
@@ -337,7 +331,6 @@ jobs:
 
       - name: 📥 Download handoff artifact
         id: download-handoff
-        if: needs.harvest.outputs.has_work == 'true'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -346,7 +339,6 @@ jobs:
 
       - name: 📥 Download rows artifact
         id: download-rows
-        if: needs.harvest.outputs.has_work == 'true'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -356,67 +348,35 @@ jobs:
       # Fail with an explicit message, before any token is minted, instead of an opaque
       # download error or a half-validated publish.
       - name: 🚨 Fail on missing agent handoff
-        if: needs.harvest.outputs.has_work == 'true' && (steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure')
+        if: steps.download-handoff.outcome == 'failure' || steps.download-rows.outcome == 'failure'
         run: |
           echo "::error::The agent produced no drafted-solutions handoff or rows artifact. It must write .drafted-solutions/rows.json; check the draft job."
           exit 1
         shell: bash
 
-      # Two mints with mutually exclusive conditions, so a run holds exactly one token and a
-      # review-only run never holds contents or issues write.
       - id: get-workflow-app-token
         name: 🔑 Mint write token
-        if: needs.harvest.outputs.has_work == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           # Scope to this repo only — smallest blast radius.
           repositories: ${{ github.event.repository.name }}
           # drafted-solutions-publish.ts writes the drafted branch (git data API), opens or
-          # updates the PR and requests review, and comments on / closes proposal issues.
+          # updates the PR, and comments on / closes proposal issues.
           # No `workflows` scope: the path policy makes workflow files unreachable anyway.
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
 
-      # Review-only runs (no proposal left to draft) only request a review, so their token carries
-      # pull-requests write and nothing else.
-      - id: get-review-app-token
-        name: 🔑 Mint review-request token
-        if: needs.harvest.outputs.has_work != 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.APPLICATION_ID }}
-          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          # Scope to this repo only — smallest blast radius.
-          repositories: ${{ github.event.repository.name }}
-          # drafted-solutions-publish.ts in review-only mode only calls pulls.requestReviewers.
-          permission-pull-requests: write
-
       - name: 📬 Publish drafted solution docs
         id: publish
-        if: needs.harvest.outputs.has_work == 'true'
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DRAFTED_SOLUTIONS_DIGEST_PATH: ${{ github.workspace }}/.drafted-solutions/drafted-solutions-digest.json
           DRAFTED_SOLUTIONS_HANDOFF_DIR: ${{ github.workspace }}/.drafted-solutions/handoff
           DRAFTED_SOLUTIONS_ROWS_PATH: ${{ github.workspace }}/.drafted-solutions/rows.json
-          DRAFTED_SOLUTIONS_RESULT_PATH: ${{ runner.temp }}/drafted-solutions-result.json
-        run: node scripts/drafted-solutions-publish.ts
-        shell: bash
-
-      # Review-only: no proposal is left to draft, but the drafted PR still lacks its Fro Bot
-      # review (a request failed earlier). Reads no digest, handoff, or rows; re-finds the PR with
-      # the shared predicate, requests the review, and writes nothing else.
-      - name: 🔔 Request Fro Bot review (review-only)
-        id: review-only
-        if: needs.harvest.outputs.has_work != 'true'
-        env:
-          GITHUB_TOKEN: ${{ steps.get-review-app-token.outputs.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          DRAFTED_SOLUTIONS_MODE: review-only
           DRAFTED_SOLUTIONS_RESULT_PATH: ${{ runner.temp }}/drafted-solutions-result.json
         run: node scripts/drafted-solutions-publish.ts
         shell: bash

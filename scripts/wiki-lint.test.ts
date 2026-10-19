@@ -55,6 +55,63 @@ function buildIndex(lines: string[]): string {
   ].join('\n')
 }
 
+describe('lintWikiSnapshot: wikilinks in code', () => {
+  const lintBody = (bodyLines: string[]) => {
+    const files = Object.fromEntries([
+      [
+        'knowledge/index.md',
+        buildIndex([
+          '## Repos',
+          '',
+          '_No repo pages yet._',
+          '',
+          '## Topics',
+          '',
+          '- [[github-actions-ci]] — GitHub Actions CI',
+          '',
+          '## Entities',
+          '',
+          '_No entity pages yet._',
+          '',
+          '## Comparisons',
+          '',
+          '_No comparison pages yet._',
+        ]),
+      ],
+      buildPage({
+        path: 'knowledge/wiki/topics/github-actions-ci.md',
+        type: 'topic',
+        title: 'GitHub Actions CI',
+        tags: ['ci'],
+        bodyLines,
+      }),
+    ])
+    return lintWikiSnapshot({files, now: new Date('2026-05-02T00:00:00Z')})
+  }
+
+  it('does not report a broken wikilink for link-shaped text in inline code or a fence', () => {
+    const result = lintBody(['Write `[[ghost]]` to link.', '', '```md', '[[ghost]]', '```'])
+
+    expect(result.deterministicFindings).toEqual([])
+  })
+
+  it('still reports a broken wikilink next to a code span, including an aliased one', () => {
+    const result = lintBody(['`[[ghost]]` then [[missing|Label]].'])
+
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'broken-wikilink', target: 'missing'}),
+    ])
+  })
+
+  it('counts a page whose only wikilinks sit in code as having no cross-reference', () => {
+    const result = lintBody(['Only `[[github-actions-ci]]` in code.'])
+
+    expect(result.advisoryFindings).toEqual(
+      expect.arrayContaining([expect.objectContaining({kind: 'missing-cross-reference'})]),
+    )
+  })
+})
+
 describe('lintWikiSnapshot', () => {
   it('returns a clean result for a consistent wiki snapshot', () => {
     const files = Object.fromEntries([
