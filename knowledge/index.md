@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-19: [[fro-bot--systematic]] (repo) and
+[[github-pages]] (topic). Existing catalog entries and dated observations
+are retained; the canonical ingest record is in `knowledge/log.md`.
+
 Catalog refreshed 2026-10-18: [[fro-bot--space-bus]] (repo) and
 [[opencode-plugins]] (topic). Existing catalog entries and dated evidence
 are retained; the canonical ingest record is in `knowledge/log.md`.

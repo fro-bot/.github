@@ -8259,3 +8259,60 @@ Exactly one comment was posted; public visibility was rechecked before posting.
 Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-10-19 10:55] ingest | fro-bot/systematic
+
+Surveyed the public default branch `gh-pages` at pinned commit
+`6b0398e4bf614a1dd504997140bc8d85e572e5c7` using repository identity metadata
+and complete directory listings only. Updated [[fro-bot--systematic]] and
+[[github-pages]], and cataloged both in `knowledge/index.md`.
+
+- The commit changed since October 4, but the listed layout persists:
+  17 root entries, 3 getting-started directories, 14 guides, 38 agent-reference
+  directories (37 named agents plus `readme/`), 32 skill-reference directories,
+  71 component directories, and only `latest/` and `v3/` schema directories.
+- No README file, dependency manifest, `.github/` directory, or committed
+  Fro Bot workflow is present in this snapshot. Recorded the missing-workflow
+  follow-up opportunity with the generated-output/upstream-ownership boundary;
+  no upstream workflow or live Actions state was inspected.
+- No generated HTML, registry/schema JSON, or bundled agent/skill bodies were
+  read. Current package version, registry record count, schema fingerprint,
+  HTTP availability, and release/deploy timing remain unmeasured. Existing
+  historical observations and the September 21 diagnosis withdrawal are retained.
+- Corrections context was read as untrusted data and contained no records.
+
+Sources: https://github.com/fro-bot/systematic/tree/6b0398e4bf614a1dd504997140bc8d85e572e5c7
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Run: `39240240870`. Four allowed files updated in the checked-out working
+  tree; the caller owns persistence. Pre-existing working-tree edits are preserved.
+- Passed: `pnpm lint`, `pnpm exec tsc --noEmit --project ./tsconfig.json`,
+  `pnpm exec vitest run --no-cache` (109 files; 5,620 passed, 43 skipped,
+  three todo), and `git diff --check`.
+- Wiki validation: 47 pages checked, zero deterministic findings; both touched
+  pages have required frontmatter, pinned provenance, and valid related targets.
+  Four pre-existing advisory findings remain on unrelated pages/index coverage.
+- Markdown scope: ESLint excludes `knowledge/`; wiki-specific structure,
+  wikilinks, and index consistency were checked directly.
+- Verification limits: `pnpm bootstrap`, `pnpm check-types`, and `pnpm test`
+  install dependencies or write build artifacts outside the allowed paths.
+  Used the cached toolchain and direct non-build checks instead.
+- This entry is the canonical ingest summary. The required single GitHub
+  response is a control-repository commit comment pointing here with delivery
+  and check status only; no issue run notice is used.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/109b0daaffd8bc7ef185306eba5af0a60de38ce5#commitcomment-205615185
+The returned body confirmed bot identification and both Run Summary markers.
+Exactly one comment was posted after confirming the control repository is public.
+
+## [2026-10-19 10:56] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic

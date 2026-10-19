@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-18
+updated: 2026-10-19
 sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: 6b0398e4bf614a1dd504997140bc8d85e572e5c7
+    accessed: 2026-10-19
   - url: https://github.com/marcusrbrown/Presentations
     sha: b174ddc23aca4b74fd69fd2238d3fcc3ad364044
     accessed: 2026-10-18
@@ -76,6 +79,24 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## A changed deploy snapshot can retain the same route inventory (2026-10-19)
+
+[[fro-bot--systematic]] moved from October 4's `88809b5d` snapshot to
+`6b0398e4` while retaining the same listed guide and reference directory names:
+14 guides, 38 agent-reference directories (including a README route), and
+32 skill-reference directories. Its 17 root entries, 71 component directories,
+and `schemas/latest/` plus `schemas/v3/` layout also persist. Directory stability
+does not prove content stability: a listing cannot establish the current
+registry version, schema bytes, or runtime behavior of those artifacts.
+
+No source README, dependency manifest, or `.github/` workflow is present in
+this default-branch output snapshot. Keep missing-workflow follow-up scoped to
+that branch; the historically upstream-owned build requires separate evidence
+before assigning an automation gap. No source or deployed artifact bodies were
+read for this observation.
+
+Source: [pinned output tree](https://github.com/fro-bot/systematic/tree/6b0398e4bf614a1dd504997140bc8d85e572e5c7).
 
 ## Multi-deck assembly needs per-deck asset bases (2026-10-18)
 
