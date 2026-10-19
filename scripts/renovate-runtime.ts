@@ -1,7 +1,7 @@
 import type {VersioningEngine} from './check-renovate-ranges.ts'
 
 import {spawnSync} from 'node:child_process'
-import {mkdir, readFile} from 'node:fs/promises'
+import {mkdir, readFile, writeFile} from 'node:fs/promises'
 import {createRequire} from 'node:module'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -16,7 +16,7 @@ import {parse as parseYaml} from 'yaml'
  * Renovate is deliberately NOT a dependency of this repository: its transitive tree brings
  * advisories with no published fix (`braces`, `sprintf-js`) into `pnpm audit`, which `pnpm lint`
  * (`check:override-floors`) fails on. Instead one exact version is installed into a scratch
- * prefix outside the repo at check time (`npm install --prefix`, no lockfile written) and every
+ * prefix outside the repo at check time (`bun install` in the prefix, no lockfile written) and every
  * Renovate module is resolved from there.
  *
  * The version is declared in exactly one place: the workflow-level `env.RENOVATE_VERSION` of
@@ -104,9 +104,23 @@ export interface InstallCommand {
 
 export type RunInstall = (command: InstallCommand) => {status: number | null; error?: Error | undefined}
 
+/**
+ * `process.env` without the `npm_package_*` variables a package-script runner (`pnpm run`) leaks in. Bun keeps
+ * an inherited `npm_package_json`, so `bun run install` inside `re2` would otherwise hand re2's
+ * `install-from-cache` this repository's manifest, find no GitHub repository to download the prebuilt
+ * binary from, and compile from source. Without the leak Bun points it at re2's own `package.json`.
+ */
+function envWithoutPackageContext(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('npm_package_')))
+}
+
 const runInstallCommand: RunInstall = ({command, args, cwd}) =>
-  // stdout is reserved for the prefix path; npm progress goes to stderr.
-  spawnSync(command, [...args], {cwd, stdio: ['ignore', process.stderr, process.stderr]})
+  // stdout is reserved for the prefix path; install progress goes to stderr.
+  spawnSync(command, [...args], {
+    cwd,
+    env: envWithoutPackageContext(),
+    stdio: ['ignore', process.stderr, process.stderr],
+  })
 
 /**
  * Whether the RE2 native binding under `prefix` loads and compiles a pattern, which is the same test
@@ -129,16 +143,21 @@ function runCommand(run: RunInstall, command: InstallCommand, label: string): vo
   if (result.status !== 0) throw new Error(`${label} exited ${String(result.status)}`)
 }
 
+/** Release-age floor for the scratch install, in seconds (3 days). */
+const MINIMUM_RELEASE_AGE_SECONDS = 259_200
+
 /**
- * Installs the pinned Renovate into `prefix` and makes sure its RE2 binding works. `cwd` is the
- * prefix itself and `--no-save --no-package-lock` keeps npm from writing a manifest or lockfile
- * anywhere, so the repo's `package.json` and `pnpm-lock.yaml` are never touched.
+ * Installs the pinned Renovate into `prefix` and makes sure its RE2 binding works. The prefix gets its
+ * own `package.json` pinning Renovate exactly, `cwd` is the prefix itself and `--no-save` keeps Bun
+ * from writing a lockfile, so the repo's `package.json` and `pnpm-lock.yaml` are never touched.
+ * `--minimum-release-age` refuses any package version published less than 3 days ago, transitive
+ * dependencies included.
  *
  * `--ignore-scripts` keeps lifecycle scripts off for every package, which leaves `re2` without its
  * native binding; Renovate then validates regexes with JavaScript `RegExp` (lookahead and
  * backreferences pass) while downstream runs use RE2 and reject them. So the one `install` script of
- * `re2` (download the prebuilt binary, else compile) is run directly with `npm run`, which is not
- * gated by `--ignore-scripts` or npm 12's `allowScripts`. No other package's script runs.
+ * `re2` (download the prebuilt binary, else compile) is run directly with `bun run`, which is not
+ * gated by `--ignore-scripts`. No other package's script runs.
  */
 export async function installRenovate(
   prefix: string,
@@ -150,26 +169,20 @@ export async function installRenovate(
 
   if (!alreadyInstalled) {
     await mkdir(prefix, {recursive: true})
+    await writeFile(
+      join(prefix, 'package.json'),
+      `${JSON.stringify({name: 'renovate-runtime', private: true, dependencies: {renovate: version}}, null, 2)}\n`,
+    )
     runCommand(
       run,
       {
-        command: 'npm',
-        args: [
-          'install',
-          '--prefix',
-          prefix,
-          '--no-save',
-          '--no-package-lock',
-          '--ignore-scripts',
-          '--no-audit',
-          '--no-fund',
-          `renovate@${version}`,
-        ],
+        command: 'bun',
+        args: ['install', `--minimum-release-age=${MINIMUM_RELEASE_AGE_SECONDS}`, '--ignore-scripts', '--no-save'],
         cwd: prefix,
       },
-      `npm install renovate@${version}`,
+      `bun install renovate@${version}`,
     )
-    // The explicit post-condition: npm exiting 0 is not proof the pinned version landed.
+    // The explicit post-condition: bun exiting 0 is not proof the pinned version landed.
     await assertRenovateInstalled(prefix, version)
   }
 
@@ -177,11 +190,11 @@ export async function installRenovate(
     runCommand(
       run,
       {
-        command: 'npm',
-        args: ['run', 'install', '--no-audit', '--no-fund'],
+        command: 'bun',
+        args: ['run', 'install'],
         cwd: join(prefix, 'node_modules', 're2'),
       },
-      'npm run install (re2)',
+      'bun run install (re2)',
     )
     assertRe2Available(prefix, re2Available)
   }

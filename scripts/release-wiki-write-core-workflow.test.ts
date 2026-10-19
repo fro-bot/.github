@@ -247,6 +247,7 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
     ])
     expect(script).toContain('--ignore-scripts')
     expect(script).toContain('--no-package-lock')
+    expect(script).toContain('--min-release-age=3')
     expect(script).not.toMatch(/commit-analyzer|release-notes-generator|conventional-changelog/u)
   })
 
@@ -257,12 +258,12 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
     expect(setupNode?.with?.['node-version']).toBe(24)
   })
 
-  it('checks npm >= 11.5.1, validates the decision, stages the config, then releases, in that order', () => {
+  it('checks npm >= 11.10.0, validates the decision, stages the config, then releases, in that order', () => {
     const order = ['npm-gate', 'install', 'validate', 'notes', 'stage', 'release'].map(id =>
       stepIndexById(publishJob, id),
     )
     expect(order).toEqual([...order].sort((a, b) => a - b))
-    expect(runOf(stepById(publishJob, 'npm-gate'))).toContain('11.5.1')
+    expect(runOf(stepById(publishJob, 'npm-gate'))).toContain('11.10.0')
     expect(runOf(stepById(publishJob, 'validate'))).toContain('git merge-base --is-ancestor')
     expect(runOf(stepById(publishJob, 'validate'))).toContain('git rev-list --count')
   })

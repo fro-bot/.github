@@ -153,13 +153,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: 🔒 Require npm >= 11.5.1
+      - name: 🔒 Require npm >= 11.10.0
         id: npm-gate
         run: |
           version=$(npm --version)
-          oldest=$(printf '%s\n' 11.5.1 "$version" | sort -V | head -n 1)
-          if [ "$oldest" != "11.5.1" ]; then
-            echo "::error::npm $version is older than 11.5.1, which trusted publishing requires"
+          oldest=$(printf '%s\n' 11.10.0 "$version" | sort -V | head -n 1)
+          if [ "$oldest" != "11.10.0" ]; then
+            echo "::error::npm $version is older than 11.10.0, which trusted publishing and min-release-age require"
             exit 1
           fi
 
@@ -168,7 +168,7 @@ jobs:
         run: |
           tools="$RUNNER_TEMP/wiki-write-core-release-tools"
           mkdir -p "$tools"
-          npm install --prefix "$tools" --no-save --no-package-lock --ignore-scripts --no-audit --no-fund \
+          npm install --prefix "$tools" --no-save --no-package-lock --ignore-scripts --no-audit --no-fund --min-release-age=3 \
             "semantic-release@${SEMANTIC_RELEASE_VERSION}" \
             "@semantic-release/exec@${SEMANTIC_RELEASE_EXEC_VERSION}" \
             "@semantic-release/npm@${SEMANTIC_RELEASE_NPM_VERSION}" \

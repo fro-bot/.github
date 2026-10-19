@@ -403,13 +403,17 @@ export interface InstallCommand {
 export type RunInstall = (command: InstallCommand) => {status: number | null; error?: Error | undefined}
 
 const runInstallCommand: RunInstall = ({command, args, cwd}) =>
-  // stdout is reserved for the prefix path; npm progress goes to stderr.
+  // stdout is reserved for the prefix path; install progress goes to stderr.
   spawnSync(command, [...args], {cwd, stdio: ['ignore', process.stderr, process.stderr]})
+
+/** Release-age floor for the scratch install, in seconds (3 days). */
+const MINIMUM_RELEASE_AGE_SECONDS = 259_200
 
 /**
  * Installs the pinned tools into `prefix` with lifecycle scripts off. `cwd` is the prefix itself and
- * `--no-package-lock` keeps npm from writing a lockfile, so the repository's `package.json` and
- * `pnpm-lock.yaml` are never touched.
+ * `--no-save` keeps Bun from writing a lockfile, so the repository's `package.json` and
+ * `pnpm-lock.yaml` are never touched. `--minimum-release-age` refuses any package version published
+ * less than 3 days ago, transitive dependencies included.
  */
 export async function installReleaseTools(
   prefix: string,
@@ -426,13 +430,13 @@ export async function installReleaseTools(
   await mkdir(prefix, {recursive: true})
   await writeFile(join(prefix, 'package.json'), buildToolManifest(pins))
   const result = run({
-    command: 'npm',
-    args: ['install', '--prefix', prefix, '--ignore-scripts', '--no-package-lock', '--no-audit', '--no-fund'],
+    command: 'bun',
+    args: ['install', `--minimum-release-age=${MINIMUM_RELEASE_AGE_SECONDS}`, '--ignore-scripts', '--no-save'],
     cwd: prefix,
   })
-  if (result.error !== undefined) throw new Error(`npm install failed to start: ${errorMessage(result.error)}`)
-  if (result.status !== 0) throw new Error(`npm install exited ${String(result.status)}`)
-  // The explicit post-condition: npm exiting 0 is not proof the pinned versions landed.
+  if (result.error !== undefined) throw new Error(`bun install failed to start: ${errorMessage(result.error)}`)
+  if (result.status !== 0) throw new Error(`bun install exited ${String(result.status)}`)
+  // The explicit post-condition: bun exiting 0 is not proof the pinned versions landed.
   await assertToolsInstalled(prefix, pins)
   return 'installed'
 }

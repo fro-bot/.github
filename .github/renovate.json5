@@ -1,6 +1,8 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: ['local>fro-bot/.github'],
+  minimumReleaseAge: '3 days',
+  vulnerabilityAlerts: {minimumReleaseAge: '3 days'},
   packageRules: [
     {
       description: 'Disable patch updates except for select dependencies.',

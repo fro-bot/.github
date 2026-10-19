@@ -34,7 +34,7 @@ If guidance conflicts, follow the order above.
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
-- Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix, never `package.json` or the lockfile
+- Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix with Bun (3-day `--minimum-release-age` floor), never `package.json` or the lockfile; the publish job installs its tools with npm and `--min-release-age=3`
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
 - Documented solutions (`docs/solutions/`, categorized learnings and fixes with YAML frontmatter for searchability)
@@ -80,7 +80,7 @@ If you touched docs/instructions/agent files, ensure markdown lint rules still p
 
 If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `pnpm check:mutation-guards`.
 
-If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `pnpm check:renovate-config` (needs network and npm; installs the Renovate pinned in `main.yaml` into a scratch dir, never into the repo; CI runs it in the `Check Workflows` job).
+If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `pnpm check:renovate-config` (needs network and Bun; installs the Renovate pinned in `main.yaml` into a scratch dir with a 3-day `--minimum-release-age` floor, never into the repo; CI runs it in the `Check Workflows` job).
 
 ## High-Risk Do / Don’t Patterns
 
