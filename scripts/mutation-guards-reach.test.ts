@@ -2,7 +2,13 @@ import {readFileSync} from 'node:fs'
 import {relative, resolve} from 'node:path'
 
 import {describe, expect, it} from 'vitest'
-import {directSpecifiers, readStrykerConfig, strykerConfigPath, type SourceReader} from './check-mutation-guards.ts'
+import {
+  directSpecifiers,
+  reachedModulesTransitive,
+  readStrykerConfig,
+  strykerConfigPath,
+  type SourceReader,
+} from './check-mutation-guards.ts'
 import {
   findMutateEntriesWithoutSourceReach,
   isPureReexportBarrel,
@@ -22,11 +28,13 @@ function toRepoRelative(absolutePath: string): string {
 }
 
 /**
- * Correct traversal reads a file at most three times: the entry's own specifier scan, then one
- * barrel probe and one specifier scan if a cycle or self-import reaches the entry again. A
- * traversal that follows a node twice reads it four times, so this reader turns lost dedup into
- * an immediate failure instead of a hang. It also throws on any path outside the fixture, which
- * proves a missing target is never read.
+ * Correct traversal reads a regular (non-barrel) module at most three times: the entry's own
+ * specifier scan, then one barrel probe and one specifier scan if a cycle or self-import reaches
+ * the entry again. A traversal that follows a regular module twice reads it four or more times,
+ * so this reader turns lost dedup into an immediate failure instead of a hang. A barrel is read
+ * only by the probe, so following one twice reads it twice and this cap does not catch that; the
+ * reached set is identical in that case, so nothing observable is lost. The reader also throws
+ * on any path outside the fixture, which proves a missing target is never read.
  */
 const MAX_READS_PER_FILE = 3
 
@@ -108,6 +116,8 @@ describe('isPureReexportBarrel', () => {
     ["export * as N from './fixture-a.ts'\n", true],
     ["export {value} from './fixture-a.ts'\n", true],
     ["export type {value} from './fixture-a.ts'\n", true],
+    ['export {value} from "./fixture-a.ts"\n', true],
+    ['export type {value} from "./fixture-a.ts"\n', true],
     ["export  type  *  as  NS  from  './fixture-a.ts'  ;", true],
     ["export  type  {a}  from  './fixture-a.ts'  ;", true],
     ["export  {a,\n b}  from  './fixture-a.ts'  ;", true],
@@ -119,17 +129,24 @@ describe('isPureReexportBarrel', () => {
     ["export * as $ns_1 from './fixture-a.ts'\n", true],
     ["// header\nexport * from './fixture-a.ts'\n", true],
     ["export * from './fixture-a.ts'\nexport {b} from './fixture-b.ts'\n", true],
-    // Compact forms are valid TypeScript, but the pattern requires whitespace around `from`, so
-    // a barrel written this way is not stripped and counts as direct reach. A known fail-open,
+    // Compact forms are valid TypeScript that the pattern does not strip, so a barrel written
+    // this way is not classified as a barrel and counts as direct reach. A known fail-open,
     // pinned and not endorsed; Prettier formatting makes these shapes unlikely in this repo.
+    // `export *from'…'`: whitespace is required after `*` and between `from` and the quote.
     ["export *from'./fixture-a.ts'", false],
+    // `export type{a}from'…'` and `export{a}from'…'`: whitespace is required between `from`
+    // and the quote.
     ["export type{a}from'./fixture-a.ts';", false],
     ["export{a}from'./fixture-a.ts';", false],
+    // `export type* from '…'`: whitespace is required between `type` and `*`.
     ["export type* from './fixture-a.ts'", false],
     // A module's own code, a bare side-effect import, or trailing text next to a re-export.
     ["export function own(): number {\n  return 1\n}\nexport * from './fixture-a.ts'\n", false],
     ["import './fixture-side-effect.ts'\nexport * from './fixture-a.ts'\n", false],
     ["export * from './fixture-a.ts' trailing\n", false],
+    // Own code that contains a quote after a re-export must survive the strip, so the
+    // specifier class cannot span past the closing quote of the re-export.
+    ["export * from './fixture-a.ts'\nexport const own = 'x'\n", false],
     ['export const value = 1\n', false],
   ])('classifies %j as barrel=%s', (source, expected) => {
     expect(isPureReexportBarrel('scripts/fixture-barrel.ts', () => source)).toBe(expected)
@@ -244,6 +261,36 @@ describe('sourceReachTransitive (in memory)', () => {
     ).toEqual([fixturePath('outer'), fixturePath('regular')])
   })
 
+  it('follows the specifiers of an entry that is itself a barrel', () => {
+    expect(
+      reachedFrom({
+        [ENTRY]: reexporting('a'),
+        [fixturePath('a')]: LEAF,
+      }),
+    ).toEqual([fixturePath('a')])
+  })
+
+  it('marks an entry barrel reached, without following it again, when a cycle returns to it', () => {
+    expect(
+      reachedFrom({
+        [ENTRY]: reexporting('a'),
+        [fixturePath('a')]: `import {value} from './fixture-entry.test.ts'\nexport const own = 1\n`,
+      }),
+    ).toEqual([fixturePath('a'), ENTRY])
+  })
+
+  it('keeps following later modules after skipping a barrel queued ahead of them', () => {
+    expect(
+      reachedFrom({
+        [ENTRY]: importing('barrel', 'sibling'),
+        [fixturePath('barrel')]: reexporting('hidden'),
+        [fixturePath('hidden')]: LEAF,
+        [fixturePath('sibling')]: importing('downstream'),
+        [fixturePath('downstream')]: LEAF,
+      }),
+    ).toEqual([fixturePath('barrel'), fixturePath('downstream'), fixturePath('sibling')])
+  })
+
   it('follows a module that has own code next to a re-export', () => {
     expect(
       reachedFrom({
@@ -252,6 +299,30 @@ describe('sourceReachTransitive (in memory)', () => {
         [fixturePath('target')]: LEAF,
       }),
     ).toEqual([fixturePath('mixed'), fixturePath('target')])
+  })
+})
+
+// `reachedModulesTransitive` checks existence with `existsSync` and takes no injected `exists`,
+// so the comparison runs on real repo test files. Each closure below contains no pure barrel,
+// which is the one case where the two walks differ; the first test asserts that precondition.
+describe('sourceReachTransitive against reachedModulesTransitive on barrel-free real closures', () => {
+  const readReal: SourceReader = path => readFileSync(path, 'utf8')
+  const entries = [
+    'scripts/mutation-guards-reach.test.ts',
+    'scripts/mutation-guards-config.test.ts',
+    'scripts/drafted-solutions-harvest.test.ts',
+  ]
+
+  it.each(entries)('%s has no pure barrel in its closure', entry => {
+    const reached = [...reachedModulesTransitive(entry, readReal)]
+    expect(reached.length).toBeGreaterThan(0)
+    expect(reached.filter(path => isPureReexportBarrel(path, readReal))).toEqual([])
+  })
+
+  it.each(entries)('%s reaches the same modules under both walks', entry => {
+    const wide = [...reachedModulesTransitive(entry, readReal)].sort()
+    const strict = [...sourceReachTransitive(entry, readReal)].sort()
+    expect(strict).toEqual(wide)
   })
 })
 

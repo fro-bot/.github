@@ -4,7 +4,7 @@ date: 2026-09-08
 last_updated: 2026-09-08
 verified: 2026-09-08
 category: best-practices
-module: scripts/check-mutation-guards.ts
+module: scripts/mutation-guards-reach.ts
 problem_type: best_practice
 component: tooling
 severity: high
