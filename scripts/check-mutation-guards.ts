@@ -1125,9 +1125,9 @@ export function stripComments(content: string): string {
  * every pattern requires a leading `./` or `../` (see `wikiWriteCoreSubpathSourceFiles` for
  * the separate package-specifier scan this wrapper's trigger-set closure also needs).
  *
- * Exported so `scripts/mutation-guards-config.test.ts` can build its own stricter,
- * barrel-excluding reach walk on the same specifier extraction, rather than reimplementing
- * the regex/comment-stripping machinery a second time.
+ * Exported so `scripts/mutation-guards-reach.ts` can build its own stricter, barrel-excluding
+ * reach walk on the same specifier extraction, rather than reimplementing the
+ * regex/comment-stripping machinery a second time.
  */
 export function directSpecifiers(repoRelativeFilePath: string, readSource: SourceReader): string[] {
   const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
@@ -1191,7 +1191,6 @@ export function reachedModulesTransitive(
     const current = followQueue.shift()
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
-    if (!existsSync(join(repositoryRoot, current))) continue
     for (const target of directSpecifiers(current, readSource)) {
       if (!existsSync(join(repositoryRoot, target))) continue
       if (reached.has(target)) continue
