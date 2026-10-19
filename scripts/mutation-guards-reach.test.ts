@@ -28,13 +28,15 @@ function toRepoRelative(absolutePath: string): string {
 }
 
 /**
- * Correct traversal reads a regular (non-barrel) module at most three times: the entry's own
- * specifier scan, then one barrel probe and one specifier scan if a cycle or self-import reaches
- * the entry again. A traversal that follows a regular module twice reads it four or more times,
- * so this reader turns lost dedup into an immediate failure instead of a hang. A barrel is read
- * only by the probe, so following one twice reads it twice and this cap does not catch that; the
- * reached set is identical in that case, so nothing observable is lost. The reader also throws
- * on any path outside the fixture, which proves a missing target is never read.
+ * Caps reads per path in the in-memory traversal tests only; the real-file tests have no read
+ * cap. A regular (non-barrel) module is read at most three times: the entry's own specifier scan,
+ * then one barrel probe and one specifier scan if a cycle or self-import reaches the entry again.
+ * A traversal that follows a regular module twice reads it four or more times, so this reader
+ * turns lost dedup into an immediate failure instead of a hang. A non-entry barrel is read only
+ * by the probe, so following one twice reads it twice and this cap does not catch that; the
+ * reached set is identical in that case. An entry barrel is read by its own specifier scan, and
+ * once more by the probe if a cycle returns to it. The reader also throws on any path outside
+ * the fixture, which proves a missing target is never read.
  */
 const MAX_READS_PER_FILE = 3
 
@@ -129,16 +131,16 @@ describe('isPureReexportBarrel', () => {
     ["export * as $ns_1 from './fixture-a.ts'\n", true],
     ["// header\nexport * from './fixture-a.ts'\n", true],
     ["export * from './fixture-a.ts'\nexport {b} from './fixture-b.ts'\n", true],
-    // Compact forms are valid TypeScript that the pattern does not strip, so a barrel written
-    // this way is not classified as a barrel and counts as direct reach. A known fail-open,
-    // pinned and not endorsed; Prettier formatting makes these shapes unlikely in this repo.
-    // `export *from'…'`: whitespace is required after `*` and between `from` and the quote.
+    // Known fail-open shapes, pinned and not endorsed; Prettier formatting makes them unlikely
+    // in this repo. These compact forms are valid TypeScript, but `directSpecifiers` requires
+    // whitespace after `from`, so it extracts no specifier from them: the forwarded module is
+    // unreached from that file, and a change to it does not trigger the gate.
     ["export *from'./fixture-a.ts'", false],
-    // `export type{a}from'…'` and `export{a}from'…'`: whitespace is required between `from`
-    // and the quote.
     ["export type{a}from'./fixture-a.ts';", false],
     ["export{a}from'./fixture-a.ts';", false],
-    // `export type* from '…'`: whitespace is required between `type` and `*`.
+    // `export type* from '…'` does yield a specifier, but the classifier requires whitespace
+    // between `type` and `*`, so it is not stripped. The module counts as a non-barrel and its
+    // forwarding counts as reach.
     ["export type* from './fixture-a.ts'", false],
     // A module's own code, a bare side-effect import, or trailing text next to a re-export.
     ["export function own(): number {\n  return 1\n}\nexport * from './fixture-a.ts'\n", false],
@@ -147,6 +149,7 @@ describe('isPureReexportBarrel', () => {
     // Own code that contains a quote after a re-export must survive the strip, so the
     // specifier class cannot span past the closing quote of the re-export.
     ["export * from './fixture-a.ts'\nexport const own = 'x'\n", false],
+    ["export * from './fixture-a.ts' ; export const own = 'x'\n", false],
     ['export const value = 1\n', false],
   ])('classifies %j as barrel=%s', (source, expected) => {
     expect(isPureReexportBarrel('scripts/fixture-barrel.ts', () => source)).toBe(expected)
@@ -270,7 +273,7 @@ describe('sourceReachTransitive (in memory)', () => {
     ).toEqual([fixturePath('a')])
   })
 
-  it('marks an entry barrel reached, without following it again, when a cycle returns to it', () => {
+  it('marks an entry barrel reached when a cycle returns to it', () => {
     expect(
       reachedFrom({
         [ENTRY]: reexporting('a'),

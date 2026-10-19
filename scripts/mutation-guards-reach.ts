@@ -46,10 +46,12 @@ function barrelExportStatementPattern(): RegExp {
  * file whose only possible effect on any test is forwarding another module's exports untouched,
  * never a file that could itself run logic a test exercises.
  *
- * Compact forms with no whitespace around `from` (`export *from'./a.ts'`,
- * `export type{a}from'./a.ts'`) are valid TypeScript that the pattern does not strip. A barrel
- * written that way is classified as non-barrel, so its forwarding counts as direct reach — a
- * known fail-open, pinned by the truth table in `scripts/mutation-guards-reach.test.ts`.
+ * Known fail-open shapes, pinned by the truth table in `scripts/mutation-guards-reach.test.ts`.
+ * `export *from'./a.ts'`, `export type{a}from'./a.ts'` and `export{a}from'./a.ts'` are missed by
+ * `directSpecifiers`, which requires whitespace after `from`, so the forwarded module is
+ * unreached from that file and a change to it does not trigger the gate. `export type* from
+ * './a.ts'` does yield a specifier, but the pattern requires whitespace between `type` and `*`,
+ * so it is not stripped: the module is a non-barrel and its forwarding counts as reach.
  */
 export function isPureReexportBarrel(repoRelativeFilePath: string, readSource: SourceReader): boolean {
   const content = stripComments(readSource(join(repositoryRoot(), repoRelativeFilePath)))
