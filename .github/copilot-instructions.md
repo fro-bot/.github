@@ -34,6 +34,7 @@ If guidance conflicts, follow the order above.
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
+- Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix, never `package.json` or the lockfile
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
 - Documented solutions (`docs/solutions/`, categorized learnings and fixes with YAML frontmatter for searchability)
