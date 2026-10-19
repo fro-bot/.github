@@ -274,7 +274,7 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
   })
 
   it('puts the publish credentials and script policy on the semantic-release step only', () => {
-    const guarded = ['NPM_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'npm_config_ignore_scripts', 'NPM_CONFIG_PROVENANCE']
+    const guarded = ['GITHUB_TOKEN', 'GH_TOKEN', 'npm_config_ignore_scripts', 'NPM_CONFIG_PROVENANCE']
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps) {
         if (step.id === 'release') continue
@@ -286,7 +286,6 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
     expect(stepById(publishJob, 'release').env).toEqual({
       GITHUB_TOKEN: expression('github.token'),
       GH_TOKEN: expression('github.token'),
-      NPM_TOKEN: expression('secrets.NPM_TOKEN'),
       NPM_CONFIG_PROVENANCE: 'true',
       npm_config_ignore_scripts: 'true',
     })
