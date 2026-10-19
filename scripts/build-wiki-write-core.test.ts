@@ -634,8 +634,8 @@ describe('wiki-write-core build inputs', () => {
 
     expect(calls).toEqual([
       [
-        'pnpm',
-        ['exec', 'tsc', '--showConfig', '--project', '/repo/tsconfig.build.json', '--pretty', 'false'],
+        'bunx',
+        ['tsc', '--showConfig', '--project', '/repo/tsconfig.build.json', '--pretty', 'false'],
         {cwd: repositoryRoot(), encoding: 'utf8'},
       ],
     ])
@@ -986,8 +986,8 @@ describe('wiki-write-core build inputs', () => {
     runTypeScriptBuild('/tmp/out-dir', {buildConfigPath: '/repo/tsconfig.build.json', cwd: '/repo', spawn: fakeSpawn})
     expect(calls).toEqual([
       [
-        'pnpm',
-        ['exec', 'tsc', '--project', '/repo/tsconfig.build.json', '--outDir', '/tmp/out-dir', '--pretty', 'false'],
+        'bunx',
+        ['tsc', '--project', '/repo/tsconfig.build.json', '--outDir', '/tmp/out-dir', '--pretty', 'false'],
         {cwd: '/repo', stdio: 'inherit'},
       ],
     ])
@@ -1002,8 +1002,8 @@ describe('wiki-write-core build inputs', () => {
     runTypeScriptBuild('/tmp/out-dir', {spawn: fakeSpawn})
     expect(calls).toEqual([
       [
-        'pnpm',
-        ['exec', 'tsc', '--project', buildConfig(), '--outDir', '/tmp/out-dir', '--pretty', 'false'],
+        'bunx',
+        ['tsc', '--project', buildConfig(), '--outDir', '/tmp/out-dir', '--pretty', 'false'],
         {cwd: repositoryRoot(), stdio: 'inherit'},
       ],
     ])

@@ -218,7 +218,7 @@ describe('draft-solutions.yaml checkout refs', () => {
 })
 
 describe('draft-solutions.yaml handoff plumbing', () => {
-  it('the agent job installs dependencies so it can run pnpm lint', () => {
+  it('the agent job installs dependencies so it can run bun run lint', () => {
     expect(draftJob?.steps.some(step => step.uses === './.github/actions/setup')).toBe(true)
   })
 
@@ -394,10 +394,10 @@ describe('draft-solutions.yaml agent prompt', () => {
       expect(flatPrompt).toContain('every claim stays recorded')
     })
 
-    it('requires running the local validator, with pnpm lint, before finishing', () => {
+    it('requires running the local validator, with bun run lint, before finishing', () => {
       expect(prompt).toContain('node scripts/drafted-solutions-validate-rows.ts')
       expect(flatPrompt).toContain('fix every rejected row')
-      expect(flatPrompt).toContain('run `pnpm lint`')
+      expect(flatPrompt).toContain('run `bun run lint`')
     })
 
     const digest: DraftedDigest = {
@@ -483,7 +483,7 @@ describe('draft-solutions.yaml agent prompt', () => {
     expect(flatPrompt).toContain('extend it instead of writing a new one')
     expect(prompt).toContain('<slug>-YYYY-MM-DD.md')
     expect(prompt).toContain('Knowledge-track sections')
-    expect(prompt).toContain('run `pnpm lint`')
+    expect(prompt).toContain('run `bun run lint`')
   })
 
   it('bounds writes to existing solution categories, with no deletions, and tells the agent to omit bodyHash', () => {

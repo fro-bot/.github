@@ -127,7 +127,7 @@ function listScriptsGateFiles(dir: string): string[] {
  * re-exports (`packages/wiki-write-core/src/index.ts`, eight `export *` targets) makes any
  * test that imports it "reach" every module the barrel forwards to, whether or not that test
  * exercises any of that module's actual logic; the only evidence a promotion to `mutate` is
- * safe* is a live `pnpm check:mutation-guards` run's per-module kill count, not this
+ * safe* is a live `bun run check:mutation-guards` run's per-module kill count, not this
  * structural floor. `findMutateEntriesWithoutSourceReach` (`./mutation-guards-reach.ts`) closes the specific barrel
  * hole in this floor: it requires same-tree reach through at least one non-barrel hop, so a
  * `mutate` entry reachable only through `index.ts`'s `export *` forwarding no longer passes

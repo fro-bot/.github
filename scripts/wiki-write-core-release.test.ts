@@ -889,7 +889,7 @@ describe('command line', () => {
 })
 
 // Needs the pinned install in WIKI_WRITE_CORE_RELEASE_PREFIX (the `Check Workflows` job provides it
-// through `node scripts/wiki-write-core-release.ts install`); skipped by a plain `pnpm test`. With the
+// through `node scripts/wiki-write-core-release.ts install`); skipped by a plain `bun run test`. With the
 // variable set but nothing installed there, every case fails.
 describe.skipIf(process.env[PREFIX_ENV] === undefined)('against the pinned release tools', () => {
   const prefix = resolvePrefix()
