@@ -266,7 +266,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
           npm_config_ignore_scripts: 'true'
         run: '"$RUNNER_TEMP/wiki-write-core-release-tools/node_modules/.bin/semantic-release" --ci'
