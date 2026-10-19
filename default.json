@@ -40,7 +40,7 @@
     },
     {
       "description": "Group GitHub actions except for @bfra-me.",
-      "matchDepTypes": ["action"],
+      "matchDepTypes": ["action", "workflow"],
       "matchPackageNames": ["!bfra-me/{/,}**"],
       "groupName": "GitHub Actions"
     },
