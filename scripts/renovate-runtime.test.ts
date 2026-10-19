@@ -1,7 +1,7 @@
 import type {InstallCommand} from './renovate-runtime.ts'
 
 import {spawnSync} from 'node:child_process'
-import {mkdirSync, writeFileSync} from 'node:fs'
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs'
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -141,8 +141,8 @@ describe('installed version checks', () => {
     expect(outcome).toBe('already-installed')
     expect(commands).toEqual([
       {
-        command: 'npm',
-        args: ['run', 'install', '--no-audit', '--no-fund'],
+        command: 'bun',
+        args: ['run', 'install'],
         cwd: join(prefix, 'node_modules', 're2'),
       },
     ])
@@ -158,7 +158,7 @@ describe('installed version checks', () => {
       command => {
         commands.push(command)
         if (command.args[0] === 'install') {
-          // Stand-in for npm: leave behind what a successful install would.
+          // Stand-in for bun: leave behind what a successful install would.
           const directory = join(prefix, 'node_modules', 'renovate')
           mkdirSync(directory, {recursive: true})
           writeFileSync(join(directory, 'package.json'), JSON.stringify({version: '1.2.3'}))
@@ -173,24 +173,17 @@ describe('installed version checks', () => {
     expect(outcome).toBe('installed')
     expect(commands).toHaveLength(2)
     const [install, rebuild] = commands
-    expect(install?.command).toBe('npm')
-    // cwd is the scratch prefix, so npm can never see the repository's package.json.
+    expect(install?.command).toBe('bun')
+    // cwd is the scratch prefix, so bun can never see the repository's package.json.
     expect(install?.cwd).toBe(prefix)
-    expect(install?.args).toEqual([
-      'install',
-      '--prefix',
-      prefix,
-      '--no-save',
-      '--no-package-lock',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund',
-      'renovate@1.2.3',
-    ])
-    // The build is `npm run install` inside re2 alone: no `--ignore-scripts`, no other package.
+    expect(install?.args).toEqual(['install', '--minimum-release-age=259200', '--ignore-scripts', '--no-save'])
+    expect(JSON.parse(readFileSync(join(prefix, 'package.json'), 'utf8'))).toMatchObject({
+      dependencies: {renovate: '1.2.3'},
+    })
+    // The build is `bun run install` inside re2 alone: no `--ignore-scripts`, no other package.
     expect(rebuild).toEqual({
-      command: 'npm',
-      args: ['run', 'install', '--no-audit', '--no-fund'],
+      command: 'bun',
+      args: ['run', 'install'],
       cwd: join(prefix, 'node_modules', 're2'),
     })
   })
@@ -205,15 +198,15 @@ describe('installed version checks', () => {
         () => ({status: 1}),
         () => false,
       ),
-    ).rejects.toThrow(/npm run install \(re2\) exited 1/)
+    ).rejects.toThrow(/bun run install \(re2\) exited 1/)
     await expect(
       installRenovate(
         prefix,
         '1.2.3',
-        () => ({status: null, error: new Error('ENOENT npm')}),
+        () => ({status: null, error: new Error('ENOENT bun')}),
         () => false,
       ),
-    ).rejects.toThrow(/npm run install \(re2\) failed to start: ENOENT npm/)
+    ).rejects.toThrow(/bun run install \(re2\) failed to start: ENOENT bun/)
   })
 
   it('fails when the re2 build exits 0 but RE2 still does not load', async () => {
@@ -229,7 +222,7 @@ describe('installed version checks', () => {
     ).rejects.toThrow(/RE2 is still not usable/)
   })
 
-  it('fails when npm exits non-zero, and when it cannot start', async () => {
+  it('fails when bun exits non-zero, and when it cannot start', async () => {
     await expect(
       installRenovate(
         prefix,
@@ -242,13 +235,13 @@ describe('installed version checks', () => {
       installRenovate(
         prefix,
         '1.2.3',
-        () => ({status: null, error: new Error('ENOENT npm')}),
+        () => ({status: null, error: new Error('ENOENT bun')}),
         () => true,
       ),
-    ).rejects.toThrow(/failed to start: ENOENT npm/)
+    ).rejects.toThrow(/failed to start: ENOENT bun/)
   })
 
-  it('fails when npm exits 0 but the pinned version is not what landed', async () => {
+  it('fails when bun exits 0 but the pinned version is not what landed', async () => {
     await expect(
       installRenovate(
         prefix,

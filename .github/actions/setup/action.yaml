@@ -18,6 +18,14 @@ runs:
       with:
         version: ${{ env.MISE_VERSION }}
 
+    - name: Install Bun
+      env:
+        BUN_VERSION: 1.4.3 # renovate: datasource=npm depName=bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: ${{ env.BUN_VERSION }}
+        no-cache: true
+
     - id: configure-cache
       name: Configure cache
       run: |

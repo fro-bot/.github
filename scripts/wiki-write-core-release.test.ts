@@ -626,7 +626,7 @@ describe('scratch tool install', () => {
     expect(manifest.overrides).toEqual({'conventional-changelog-writer': pins['conventional-changelog-writer']})
   })
 
-  it('installs with lifecycle scripts off and no lockfile, with the scratch prefix as the working directory', async () => {
+  it('installs with lifecycle scripts off, no lockfile and the release-age floor, with the scratch prefix as the working directory', async () => {
     const commands: InstallCommand[] = []
 
     const outcome = await installReleaseTools(prefix, pins, command => {
@@ -638,8 +638,8 @@ describe('scratch tool install', () => {
     expect(outcome).toBe('installed')
     expect(commands).toEqual([
       {
-        command: 'npm',
-        args: ['install', '--prefix', prefix, '--ignore-scripts', '--no-package-lock', '--no-audit', '--no-fund'],
+        command: 'bun',
+        args: ['install', '--minimum-release-age=259200', '--ignore-scripts', '--no-save'],
         cwd: prefix,
       },
     ])
@@ -674,14 +674,14 @@ describe('scratch tool install', () => {
     expect(commands).toHaveLength(1)
   })
 
-  it('fails when npm exits non-zero or cannot start', async () => {
-    await expect(installReleaseTools(prefix, pins, () => ({status: 1}))).rejects.toThrow(/npm install exited 1/)
+  it('fails when bun exits non-zero or cannot start', async () => {
+    await expect(installReleaseTools(prefix, pins, () => ({status: 1}))).rejects.toThrow(/bun install exited 1/)
     await expect(
-      installReleaseTools(prefix, pins, () => ({status: null, error: new Error('ENOENT npm')})),
-    ).rejects.toThrow(/npm install failed to start: ENOENT npm/)
+      installReleaseTools(prefix, pins, () => ({status: null, error: new Error('ENOENT bun')})),
+    ).rejects.toThrow(/bun install failed to start: ENOENT bun/)
   })
 
-  it('fails when npm exits 0 but the pinned versions are not what landed', async () => {
+  it('fails when bun exits 0 but the pinned versions are not what landed', async () => {
     await expect(installReleaseTools(prefix, pins, () => ({status: 0}))).rejects.toThrow(/is not installed under/)
   })
 
