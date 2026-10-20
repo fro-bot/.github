@@ -1,7 +1,7 @@
 ---
 title: 'refactor: Migrate from pnpm to Bun'
 type: refactor
-status: active
+status: completed
 date: 2026-10-19
 origin: docs/brainstorms/2026-10-19-bun-migration-requirements.md
 deepened: 2026-10-19
@@ -11,7 +11,7 @@ deepened: 2026-10-19
 
 ## Overview
 
-fro-bot/.github moves from pnpm to Bun in five PRs, opened one at a time. PR 1 moves the two tool installs that run outside the repo lockfile to Bun, with a 3-day release-age floor. That closes the 2026-10-19 incident class. PR 2 switches the package manager in one atomic change. PRs 3, 4 and 5 switch the runtime for scripts, Vitest and Stryker. A tool switches only after its required checks pass on Bun. A tool that fails them stays on Node as a named exception. The migration is parity only: it adds no gates, tests or checks beyond what the pnpm setup has today.
+fro-bot/.github moves from pnpm to Bun in five PRs, opened one at a time. PR 1 moves the two tool installs that run outside the repo lockfile to Bun, with a 3-day release-age floor. That closes the 2026-10-19 incident class. PR 2 switches the package manager in one atomic change. PR 3 switches the runtime for scripts. U6 and U7 tested Vitest and Stryker on Bun. Neither matched Node, so both stay on Node (see Open Questions). A tool switches only after its required checks pass on Bun. A tool that fails them stays on Node as a named exception. The migration is parity only: it adds no gates, tests or checks beyond what the pnpm setup has today.
 
 ## Problem Frame
 
@@ -219,12 +219,14 @@ agent, dashboard and space-bus use Bun. This repo still runs pnpm, with Node 24 
 
 ### Deferred to Implementation
 
-- Does re2's install script build the RE2 binding when run through Bun? U1 proves it. If it doesn't, that one step keeps an npm invocation. The existing RE2 assertions stay either way.
-- Does Review Dependencies handle `bun.lock`? Observe it on PR 2. If it fails, stop and ask.
-- Does the Renovate host allow `bun run` in `postUpgradeTasks`? Watch the first Renovate PR after PR 2 merges.
-- Do Vitest and Stryker run on Bun's runtime with the same results as Node? U6 and U7 decide this from evidence.
-- Does every package script run correctly under Bun's script shell, since Bun has no `shellEmulator`? Check this in U2.
-- The lock import drops one pnpm-only entry, `ts-declaration-location@1.0.7`. U2 confirms that nothing in the Bun tree requires it before relying on the import.
+- **RE2 build under Bun (U1):** re2's install script runs through `bun run install` and fetches its prebuilt binary. The binary is built for Node's ABI (`NODE_MODULE_VERSION` 137) and Bun 1.4.3 requires 147, so RE2 loads only under Node. `check:renovate-config` therefore stays on Node.
+- **Review Dependencies (PR 2):** passed on `bun.lock`.
+- **Renovate `postUpgradeTasks` (PR 2):** the host's `allowedCommands` permits `bun run bootstrap` and `bun run fix`, and Renovate regenerated `bun.lock` on its first PRs after the cutover.
+- **Bun script shell (U2):** every package script runs under it.
+- **`ts-declaration-location@1.0.7` (U2):** it was an optional peer that pnpm auto-installed, and nothing in the Bun tree needs it.
+- **Vitest on Bun (U6):** on the full suite, `bun --bun vitest run` matches Node on every file and test name (5648 passed, 43 skipped, 3 todo), and the release real-plugin suite matches (105). The three Renovate real-plugin suites fail 13 of 102 tests on Bun because of the same RE2 ABI mismatch. Vitest stays on Node.
+- **Stryker on Bun (U7):** under `bunx --bun stryker run`, Stryker instruments all 2,733 mutants, then cannot load `@stryker-mutator/vitest-runner` and runs none. Vite 8.0.16 calls `Error.captureStackTrace` on an object that is not an `Error`, which Node accepts and Bun 1.4.3 rejects. Stryker stays on Node, where the baseline is clean (2,699 killed, 34 ignored).
+- **When to re-test U6 and U7:** a Bun release that loads re2's prebuilt binding, and a Bun or Vite release that accepts the `Error.captureStackTrace` call.
 
 ## High-Level Technical Design
 
@@ -240,7 +242,7 @@ flowchart LR
 
 ## Implementation Units
 
-- [ ] **Unit 1: Tool installs on Bun with the 3-day floor (PR 1)**
+- [x] **Unit 1: Tool installs on Bun with the 3-day floor (PR 1)**
 
 **Goal:** Close the incident class.
 
@@ -273,7 +275,7 @@ flowchart LR
 
 **Verification:** Check Workflows passes.
 
-- [ ] **Unit 2: Manifests and lockfile on Bun (PR 2)**
+- [x] **Unit 2: Manifests and lockfile on Bun (PR 2)**
 
 **Goal:** Bun manages packages, and every floor, build allowlist entry and workspace link is preserved.
 
@@ -302,7 +304,7 @@ flowchart LR
 - `bun pm untrusted` lists nothing that needs a build.
 - The dist hash is unchanged.
 
-- [ ] **Unit 3: Override-floor gate on `bun audit` (PR 2)**
+- [x] **Unit 3: Override-floor gate on `bun audit` (PR 2)**
 
 **Goal:** Keep the gate fail-closed on Bun's audit output.
 
@@ -331,7 +333,7 @@ flowchart LR
 
 **Verification:** `bun run check:override-floors` passes, and mutation guards report 0 survivors for this module.
 
-- [ ] **Unit 4: CI, gates, prompts and guidance on Bun (PR 2)**
+- [x] **Unit 4: CI, gates, prompts and guidance on Bun (PR 2)**
 
 **Goal:** Every CI install path uses Bun. Every gate watches the Bun files. Guidance matches the new setup.
 
@@ -362,7 +364,7 @@ flowchart LR
 
 **Verification:** All 14 required contexts pass on the PR. After merge, the first private-leak scan and the first Renovate PR succeed.
 
-- [ ] **Unit 5: Scripts on Bun (PR 3)**
+- [x] **Unit 5: Scripts on Bun (PR 3)**
 
 **Goal:** Run `scripts/*.ts` under Bun, except the named exceptions.
 
@@ -385,7 +387,7 @@ flowchart LR
 
 **Verification:** The required contexts pass. After merge, dispatches of the scheduled workflows succeed, run one at a time with operator approval.
 
-- [ ] **Unit 6: Vitest on Bun (PR 4)**
+- [x] **Unit 6: Vitest on Bun (PR 4)**
 
 **Goal:** Run the test suite on Bun's runtime with the same results.
 
@@ -404,7 +406,7 @@ flowchart LR
 
 **Verification:** "Test" and "Check Workflows" pass on Bun. The PR body records the count comparison.
 
-- [ ] **Unit 7: Stryker on Bun or a named Node exception (PR 5)**
+- [x] **Unit 7: Stryker on Bun or a named Node exception (PR 5)**
 
 **Goal:** Settle the mutation gate's runtime with evidence.
 
@@ -441,7 +443,7 @@ flowchart LR
 | A broken private-leak install on `main` blocks every PR, because the scan runs `main`'s workflow and `enforce_admins` is on. | The scan stays on Node. The install change gets a local dry run before PR 2. The first post-merge scan is watched. |
 | Review Dependencies cannot read `bun.lock`. | Stop and ask. |
 | The Renovate host rejects `bun run`. | Watch the first Renovate PR. The operator updates the host config. |
-| Vitest or Stryker misbehave under Bun. | U6 and U7 switch only on matching evidence. |
+| Vitest or Stryker misbehave under Bun. | U6 and U7 switched only on matching evidence. Neither matched, so both stay on Node. |
 | A squash title could trigger a release. | PR titles use `refactor:`, `chore:` or `ci:`, which do not release. Never dispatch the release workflow during the rollout. |
 
 ## Documentation / Operational Notes
