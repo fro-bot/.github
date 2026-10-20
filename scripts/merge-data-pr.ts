@@ -95,11 +95,9 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
 
   const comparison = await compareBranches({octokit, owner, repo, baseBranch, headBranch})
 
-  if (
-    comparison.data.ahead_by === 0 ||
-    comparison.data.total_commits === 0 ||
-    (comparison.data.files?.length ?? 0) === 0
-  ) {
+  // The changed-file list alone decides: `data` keeps history, so commits ahead of `main` (for
+  // example the merge-back, whose first-parent diff is empty) do not mean there is anything to promote.
+  if ((comparison.data.files?.length ?? 0) === 0) {
     return {
       createdPullRequest: false,
       pullRequestNumber: null,
@@ -358,6 +356,12 @@ async function maybeUpdateBehindPullRequest(params: {
       return 'behind'
     }
 
+    // The server-side merge of `main` into the head conflicts: the PR is conflicted, so route it to
+    // the conflict alert rather than failing the run with a generic API error.
+    if (isMergeConflictError(error)) {
+      return 'dirty'
+    }
+
     if (isRetryableGitHubApiError(error)) {
       params.logger.warn(
         `${formatApiWarning(error, `updating PR #${params.pullRequestNumber} branch from ${params.repo}`)}; continuing because the PR already exists and a later run can retry the branch update.`,
@@ -516,7 +520,10 @@ async function maybeCreateStaleDivergenceAlert(params: {
   comparison: Awaited<ReturnType<typeof compareBranches>>['data']
   now: Date
 }): Promise<number | null> {
-  const lastCommitDate = params.comparison.commits.at(-1)?.commit?.committer?.date
+  // The newest one-parent commit is the newest write: a merge-back has two parents and says nothing
+  // about how long `data` writes have waited for promotion.
+  const lastCommitDate = params.comparison.commits.findLast(commit => commit.parents.length === 1)?.commit?.committer
+    ?.date
 
   if (lastCommitDate === undefined || lastCommitDate === null) {
     return null
@@ -579,8 +586,13 @@ async function findExistingPullRequest(params: {
       commit_sha: params.commitSha,
     })
 
+    // The head commit's associated PRs include closed and merged ones, e.g. the last promotion.
     const pullRequest = response.data.find(candidate => {
-      return candidate.head?.ref === params.headBranch && candidate.base?.ref === params.baseBranch
+      return (
+        candidate.state === 'open' &&
+        candidate.head?.ref === params.headBranch &&
+        candidate.base?.ref === params.baseBranch
+      )
     })
 
     return pullRequest === undefined ? null : {number: pullRequest.number, html_url: pullRequest.html_url}
@@ -702,7 +714,7 @@ function createStaleAlertBody(params: {
 }): string {
   return [
     `${params.headBranch} is still ${params.aheadBy} commit(s) ahead of ${params.baseBranch}.`,
-    `Latest commit on ${params.headBranch}: ${params.lastCommitDate}.`,
+    `Latest write on ${params.headBranch}: ${params.lastCommitDate}.`,
     'Review the branch and merge backlog before autonomous data changes drift further.',
   ].join('\n')
 }
@@ -713,11 +725,15 @@ function createConflictAlertBody(params: {
   headBranch: string
   baseBranch: string
 }): string {
+  const resolution =
+    params.headBranch === DEFAULT_HEAD_BRANCH
+      ? `Only the Fro Bot App writes \`${params.headBranch}\`, so do not push to it. The next merge-data run merges \`${params.baseBranch}\` back into it; if the PR is still conflicted after that run, the conflicting paths need a Fro Bot writer on \`${params.headBranch}\` to settle them.`
+      : 'Manual resolution is required: resolve the conflicts, push to the head branch, and re-run the promotion.'
   return [
     `PR #${params.pullRequestNumber} (${params.pullRequestUrl}) is born conflicted.`,
     '',
     `The \`${params.headBranch}\` → \`${params.baseBranch}\` data promotion cannot be merged automatically.`,
-    'Manual resolution is required: resolve the conflicts, push to the head branch, and re-run the promotion.',
+    resolution,
     '',
     'This alert will not be duplicated while this issue remains open.',
   ].join('\n')

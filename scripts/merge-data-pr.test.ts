@@ -76,7 +76,9 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
             data: {
               files: [{filename: 'knowledge/runbooks/test.md'}],
               merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(1)}}},
-              commits: [{sha: 'data-commit-sha', commit: {committer: {date: isoDaysAgo(1)}}}],
+              commits: [
+                {sha: 'data-commit-sha', parents: [{sha: 'parent-sha'}], commit: {committer: {date: isoDaysAgo(1)}}},
+              ],
               ahead_by: 1,
               behind_by: 0,
               total_commits: 1,
@@ -155,7 +157,9 @@ describe('mergeDataPr', () => {
         data: {
           files: [{filename: 'scripts/merge-data-pr.ts'}],
           merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(1)}}},
-          commits: [{sha: 'code-commit-sha', commit: {committer: {date: isoDaysAgo(1)}}}],
+          commits: [
+            {sha: 'code-commit-sha', parents: [{sha: 'parent-sha'}], commit: {committer: {date: isoDaysAgo(1)}}},
+          ],
           ahead_by: 1,
           behind_by: 0,
           total_commits: 1,
@@ -255,7 +259,9 @@ describe('mergeDataPr', () => {
         data: {
           files: [{filename: 'metadata/repos.yaml'}],
           merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(20)}}},
-          commits: [{sha: 'stale-data-commit-sha', commit: {committer: {date: isoDaysAgo(20)}}}],
+          commits: [
+            {sha: 'stale-data-commit-sha', parents: [{sha: 'parent-sha'}], commit: {committer: {date: isoDaysAgo(20)}}},
+          ],
           ahead_by: 3,
           behind_by: 0,
           total_commits: 3,
@@ -291,6 +297,7 @@ describe('mergeDataPr', () => {
           {
             number: 55,
             html_url: 'https://github.com/fro-bot/.github/pull/55',
+            state: 'open',
             head: {ref: 'data'},
             base: {ref: 'main'},
           },
@@ -351,6 +358,7 @@ describe('mergeDataPr', () => {
           {
             number: 55,
             html_url: 'https://github.com/fro-bot/.github/pull/55',
+            state: 'open',
             head: {ref: 'data'},
             base: {ref: 'main'},
           },
@@ -637,6 +645,7 @@ describe('mergeDataPr', () => {
           {
             number: 55,
             html_url: 'https://github.com/fro-bot/.github/pull/55',
+            state: 'open',
             head: {ref: 'data'},
             base: {ref: 'main'},
           },
@@ -664,6 +673,7 @@ describe('mergeDataPr', () => {
           {
             number: 55,
             html_url: 'https://github.com/fro-bot/.github/pull/55',
+            state: 'open',
             head: {ref: 'data'},
             base: {ref: 'main'},
           },
@@ -943,7 +953,9 @@ describe('mergeDataPr', () => {
         data: {
           files: [{filename: 'metadata/repos.yaml'}],
           merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(20)}}},
-          commits: [{sha: 'stale-data-commit-sha', commit: {committer: {date: isoDaysAgo(20)}}}],
+          commits: [
+            {sha: 'stale-data-commit-sha', parents: [{sha: 'parent-sha'}], commit: {committer: {date: isoDaysAgo(20)}}},
+          ],
           ahead_by: 3,
           behind_by: 0,
           total_commits: 3,
@@ -1210,7 +1222,9 @@ describe('mergeDataPr', () => {
         data: {
           files: [{filename: 'metadata/repos.yaml'}],
           merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(20)}}},
-          commits: [{sha: 'stale-data-commit-sha', commit: {committer: {date: isoDaysAgo(20)}}}],
+          commits: [
+            {sha: 'stale-data-commit-sha', parents: [{sha: 'parent-sha'}], commit: {committer: {date: isoDaysAgo(20)}}},
+          ],
           ahead_by: 3,
           behind_by: 0,
           total_commits: 3,
@@ -1302,5 +1316,226 @@ describe('upsertAlertIssue', () => {
     expect(number).toBe(7)
     expect(update).toHaveBeenCalledWith({owner: 'fro-bot', repo: '.github', issue_number: 7, body: 'fresh body'})
     expect(create).not.toHaveBeenCalled()
+  })
+})
+
+function compareWith(overrides: {
+  files?: {filename: string}[]
+  commits?: {sha: string; parents: {sha: string}[]; commit: {committer: {date: string}}}[]
+  ahead_by?: number
+  total_commits?: number
+}) {
+  return async () => ({
+    data: {
+      files: [{filename: 'metadata/repos.yaml'}],
+      merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(1)}}},
+      commits: [{sha: 'data-commit-sha', parents: [{sha: 'p'}], commit: {committer: {date: isoDaysAgo(1)}}}],
+      ahead_by: 1,
+      behind_by: 0,
+      total_commits: 1,
+      ...overrides,
+    },
+  })
+}
+
+describe('mergeDataPr with a persistent data branch', () => {
+  const NOW = new Date('2026-04-16T00:00:00.000Z')
+
+  it('opens no PR when data is ahead only by commits that change no file', async () => {
+    // #given the merge-back left data 2 commits ahead of main with an empty file diff
+    const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'https://example.test/pull/42'}}))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: compareWith({files: [], ahead_by: 2, total_commits: 2}),
+      createPullRequest,
+    })
+
+    // #when the promotion script runs
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    // #then there is nothing to promote
+    expect(result.createdPullRequest).toBe(false)
+    expect(result.label).toBeNull()
+    expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it('decides on the file list alone, not on commit counts', async () => {
+    // #given a compare with changed files but zero commits counted ahead
+    const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'https://example.test/pull/42'}}))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: compareWith({ahead_by: 0, total_commits: 0}),
+      createPullRequest,
+    })
+
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    expect(result.createdPullRequest).toBe(true)
+    expect(createPullRequest).toHaveBeenCalledOnce()
+  })
+
+  it('dates the stale alert from the newest one-parent commit, not from a newer merge-back', async () => {
+    // #given a write 15 days old and a merge-back from today
+    const createIssue = vi.fn(async (_params: CreateIssueParams) => ({data: {number: 77, html_url: 'u'}}))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: compareWith({
+        commits: [
+          {sha: 'write', parents: [{sha: 'p'}], commit: {committer: {date: isoDaysAgo(15)}}},
+          {sha: 'merge-back', parents: [{sha: 'main'}, {sha: 'write'}], commit: {committer: {date: isoDaysAgo(0)}}},
+        ],
+        ahead_by: 2,
+        total_commits: 2,
+      }),
+      createIssue,
+    })
+
+    // #when the promotion script runs
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    // #then the stale alert fires, dated from the write
+    expect(result.staleAlertIssueNumber).toBe(77)
+    const params = createIssue.mock.calls[0]?.[0]
+    expect(params?.title).toBe('Stale data branch divergence: data is older than 14 days')
+    expect(params?.body).toContain(`Latest write on data: ${isoDaysAgo(15)}.`)
+    expect(params?.body).toContain('data is still 2 commit(s) ahead of main.')
+  })
+
+  it('does not alert when the newest one-parent commit is recent, even if an older one is stale', async () => {
+    const createIssue = vi.fn(async () => ({data: {number: 77, html_url: 'u'}}))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: compareWith({
+        commits: [
+          {sha: 'old', parents: [{sha: 'p'}], commit: {committer: {date: isoDaysAgo(30)}}},
+          {sha: 'new', parents: [{sha: 'p'}], commit: {committer: {date: isoDaysAgo(2)}}},
+        ],
+      }),
+      createIssue,
+    })
+
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    expect(result.staleAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+  })
+
+  it('does not alert when every commit is a merge', async () => {
+    const createIssue = vi.fn(async () => ({data: {number: 77, html_url: 'u'}}))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: compareWith({
+        commits: [
+          {sha: 'merge-back', parents: [{sha: 'main'}, {sha: 'write'}], commit: {committer: {date: isoDaysAgo(30)}}},
+        ],
+      }),
+      createIssue,
+    })
+
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    expect(result.staleAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+  })
+
+  it('ignores a merged promotion PR on the head commit and opens a new one', async () => {
+    // #given the newest commit's associated PRs include the last, merged promotion PR
+    const createPullRequest = vi.fn(async () => ({data: {number: 60, html_url: 'https://example.test/pull/60'}}))
+    const octokit = mockOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({
+        data: [
+          {
+            number: 55,
+            html_url: 'https://example.test/pull/55',
+            state: 'closed',
+            head: {ref: 'data'},
+            base: {ref: 'main'},
+          },
+        ],
+      }),
+      createPullRequest,
+    })
+
+    // #when the promotion script runs
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    // #then a fresh PR is created, not the merged one reused
+    expect(createPullRequest).toHaveBeenCalledOnce()
+    expect(result.pullRequestNumber).toBe(60)
+  })
+
+  it('reuses the open PR when a closed one is listed beside it', async () => {
+    const createPullRequest = vi.fn(async () => ({data: {number: 60, html_url: 'https://example.test/pull/60'}}))
+    const octokit = mockOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({
+        data: [
+          {number: 55, html_url: 'u55', state: 'closed', head: {ref: 'data'}, base: {ref: 'main'}},
+          {number: 56, html_url: 'u56', state: 'open', head: {ref: 'data'}, base: {ref: 'main'}},
+        ],
+      }),
+      createPullRequest,
+    })
+
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    expect(result.pullRequestNumber).toBe(56)
+    expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it('routes an updateBranch merge-conflict 422 to the conflict alert without telling the operator to push to data', async () => {
+    // #given an open promotion PR that is behind, and GitHub's server-side merge of main hits a conflict
+    const updateBranch = vi.fn(async () => {
+      throw Object.assign(new Error('Validation Failed'), {
+        status: 422,
+        response: {data: {message: 'merge conflict between base and head', errors: []}},
+      })
+    })
+    const createIssue = vi.fn(async (_params: CreateIssueParams) => ({data: {number: 111, html_url: 'u'}}))
+    const octokit = mockOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({
+        data: [
+          {
+            number: 55,
+            html_url: 'https://example.test/pull/55',
+            state: 'open',
+            head: {ref: 'data'},
+            base: {ref: 'main'},
+          },
+        ],
+      }),
+      getPullRequest: async () => ({data: {mergeable_state: 'behind', head: {sha: 'existing-pr-head-sha'}}}),
+      updateBranch,
+      createIssue,
+    })
+
+    // #when the promotion script runs
+    const result = await mergeDataPr({octokit, now: NOW})
+
+    // #then the run reports the PR as conflicted and files the alert
+    expect(result.conflicted).toBe(true)
+    expect(result.conflictAlertIssueNumber).toBe(111)
+    const alert = createIssue.mock.calls[0]?.[0]
+    expect(alert?.title).toBe('Conflicted data promotion PR: data -> main (PR #55)')
+    expect(alert?.body).toBe(
+      [
+        'PR #55 (https://example.test/pull/55) is born conflicted.',
+        '',
+        'The `data` → `main` data promotion cannot be merged automatically.',
+        'Only the Fro Bot App writes `data`, so do not push to it. The next merge-data run merges `main` back into it; if the PR is still conflicted after that run, the conflicting paths need a Fro Bot writer on `data` to settle them.',
+        '',
+        'This alert will not be duplicated while this issue remains open.',
+      ].join('\n'),
+    )
+  })
+
+  it('keeps the push-to-the-head-branch instruction for any other head branch', async () => {
+    const createIssue = vi.fn(async (_params: CreateIssueParams) => ({data: {number: 111, html_url: 'u'}}))
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'sha'}}}),
+      createIssue,
+    })
+
+    await mergeDataPr({octokit, headBranch: 'feature', now: NOW})
+
+    const alert = createIssue.mock.calls[0]?.[0]
+    expect(alert?.body).toContain(
+      'Manual resolution is required: resolve the conflicts, push to the head branch, and re-run the promotion.',
+    )
+    expect(alert?.body).not.toContain('Only the Fro Bot App')
   })
 })

@@ -25,6 +25,8 @@ function assertMergeDataWorkflow(value: unknown): asserts value is {
         run?: string
         uses?: string
         with?: Record<string, unknown>
+        env?: Record<string, string>
+        id?: string
         'continue-on-error'?: boolean
         if?: string
       }[]
@@ -128,11 +130,49 @@ describe('merge-data.yaml workflow step order', () => {
     expect(workflowRaw).not.toContain('client_payload')
   })
 
+  it('runs the merge-back after Setup and before the data checkout, the gates and the promotion PR', () => {
+    // #given the step positions
+    const indexOf = (predicate: (step: (typeof steps)[number]) => boolean): number => steps.findIndex(predicate)
+    const mergeBack = indexOf(step => step.run?.includes('merge-back-data.ts') === true)
+    const setup = indexOf(step => step.uses === './.github/actions/setup')
+    const dataCheckout = indexOf(
+      step => step.uses?.startsWith('actions/checkout@') === true && step.with?.ref === 'data',
+    )
+    const presenceGate = indexOf(step => step.run?.includes('check-wiki-private-presence.ts') === true)
+    const fetchRef = indexOf(step => step.run?.includes('git fetch') === true && step.run.includes('data'))
+    const promotionGate = indexOf(step => step.run?.includes('check-private-leak.ts --promotion') === true)
+    const promotion = indexOf(step => step.run?.includes('merge-data-pr.ts') === true)
+
+    // #then every step exists, and the merge-back sits strictly between Setup and everything that reads data
+    for (const position of [mergeBack, setup, dataCheckout, presenceGate, fetchRef, promotionGate, promotion]) {
+      expect(position).toBeGreaterThanOrEqual(0)
+    }
+    expect(setup).toBeLessThan(mergeBack)
+    expect(mergeBack).toBeLessThan(dataCheckout)
+    expect(mergeBack).toBeLessThan(presenceGate)
+    expect(mergeBack).toBeLessThan(fetchRef)
+    expect(mergeBack).toBeLessThan(promotionGate)
+    expect(mergeBack).toBeLessThan(promotion)
+  })
+
+  it('gives the merge-back the App token, runs it with bun, and lets nothing neuter it', () => {
+    const mergeBack = steps.find(step => step.run?.includes('merge-back-data.ts'))
+    const tokenStep = steps.find(step => step.id === 'get-workflow-app-token')
+
+    expect(tokenStep).toBeDefined()
+    expect(mergeBack?.run).toBe('bun scripts/merge-back-data.ts')
+    expect(mergeBack?.env).toEqual({GITHUB_TOKEN: '$' + '{{ steps.get-workflow-app-token.outputs.token }}'})
+    // a failure must fail the job: no continue-on-error, no conditional skip
+    expect(mergeBack?.['continue-on-error']).toBeUndefined()
+    expect(mergeBack?.if).toBeUndefined()
+  })
+
   it('preserves the existing gate and promotion step ordering', () => {
     expect(steps.map(step => step.name)).toEqual([
       'Get Workflow Access Token',
       '⤵ Checkout Branch',
       '📦 Setup',
+      '🔁 Merge main into data',
       '⤵ Fetch data branch for privacy check',
       '🔒 Block private wiki pages',
       '🔒 Fetch data ref for promotion diff',
