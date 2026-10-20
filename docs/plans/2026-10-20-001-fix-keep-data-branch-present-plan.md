@@ -224,7 +224,7 @@ flowchart TD
 
 ## Implementation Units
 
-- [ ] **Unit 1: Workflow-file feasibility probe**
+- [x] **Unit 1: Workflow-file feasibility probe**
 
 **Goal:** Show, with the production App token, whether a Git Data commit with parents `[main, X]` and a tree that differs from X in workflow files can be written to a branch with `updateRef`.
 
@@ -246,6 +246,8 @@ flowchart TD
 - If the write passes, continue with the plan. If it fails, stop and revisit the design before U2.
 
 **Test expectation:** none. This is a live probe, and its evidence is the saved run log.
+
+**Result:** passed (run 39500750191). With a `contents: write`-only token, `updateRef` returned 200 and moved the scratch ref to `b13331a`. That commit has parents `[aff178a, e535a17]` and `fro-bot[bot]` as author and committer. It changes 24 workflow files compared with the old tip, and its diff against `main` contains only the 7 data-owned files. Both probe branches were deleted.
 
 **Verification:**
 - **Pass:** `updateRef` returns 200, and a read of the scratch branch returns the new commit SHA. Any other status, or a tip that did not move, is a failure, and the plan stops before U2.
