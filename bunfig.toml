@@ -1,4 +1,9 @@
+# Match Node: no automatic .env loading.
+env = false
+
 [install]
+# Match Node: a missing import fails instead of auto-installing. Read from the cwd only.
+auto = "disable"
 linker = "hoisted"
 exact = true
 minimumReleaseAge = 259200

@@ -75,7 +75,7 @@ async function main(): Promise<number> {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {
-    process.exit(await main())
+    process.exitCode = await main()
   } catch (error: unknown) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exit(1)

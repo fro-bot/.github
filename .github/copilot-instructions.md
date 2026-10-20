@@ -27,7 +27,7 @@ If guidance conflicts, follow the order above.
 - Use **Bun** for dependencies and package scripts (`bun run <script>`, `bunx --no-install <bin>`); never yarn or pnpm; npm only in the places listed below. Never run bare `bun test` or `bun build`: those are Bun built-ins, not the package scripts.
 - Bun is the runtime for `scripts/*.ts` (`bun scripts/<name>.ts`). Node 24 is the runtime for Vitest and Stryker, which run through their package binaries.
 - npm stays in these places only: `npm publish` and the publish job's tool install in `release-wiki-write-core.yaml` (with `min-release-age=3`), `npm pack` in the package test, and the Quartz site build in `publish-wiki.yaml`.
-- These also run on Node: the private-leak scan (`scripts/check-private-leak.ts`), the "Test Scripts Load" job in `main.yaml` (the strip-only import smoke test), the `coverage` script, and `check:renovate-config` (its `re2` native binding is built for Node's ABI and does not load under Bun, so `scripts/install-renovate.ts` and `scripts/check-renovate-config.ts` run with `node`).
+- These also run on Node: the private-leak scan (`scripts/check-private-leak.ts`), the "Test Scripts Load" job in `main.yaml` (the strip-only import smoke test), the Vitest step of the `coverage` script (its build step runs on Bun), and `check:renovate-config` (its `re2` native binding is built for Node's ABI and does not load under Bun, so `scripts/install-renovate.ts` and `scripts/check-renovate-config.ts` run with `node`).
 - Use existing conventions from `@bfra.me/*` configs.
 
 ## Architecture & Key Components
@@ -38,7 +38,7 @@ If guidance conflicts, follow the order above.
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
 - Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; the root `overrides` map pins 13 floors; [`docs/override-floors.md`](../docs/override-floors.md) records the rationale for three of them: brace-expansion, source-map-js and undici)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
-- Control-plane TypeScript (`scripts/*.ts`, executed with Bun; no build step)
+- Control-plane TypeScript (`scripts/*.ts`, executed with Bun except the Node exceptions listed under Repository Contract; no build step)
 - Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix with Bun (3-day `--minimum-release-age` floor), never `package.json` or the lockfile; the publish job installs its tools with npm and `--min-release-age=3`
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)

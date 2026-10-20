@@ -115,7 +115,7 @@ jobs:
       # is correct before plugin code is fetched.
       - name: 🔒 Verify lockfile coverage (pre-install)
         working-directory: quartz-build
-        run: bun "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" coverage
+        run: bun --no-install --no-env-file "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" coverage
         shell: bash -Eeuo pipefail {0}
 
       # Install strictly from the lockfile — never --from-config/--latest,
@@ -134,7 +134,7 @@ jobs:
       # pinned commit, and fails just as hard as a mismatched SHA.
       - name: 🔒 Verify lockfile integrity (post-install)
         working-directory: quartz-build
-        run: bun "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" integrity
+        run: bun --no-install --no-env-file "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" integrity
         shell: bash -Eeuo pipefail {0}
 
       # Build with the local pinned binary (`node ./quartz/bootstrap-cli.mjs`),

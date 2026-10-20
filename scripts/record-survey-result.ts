@@ -274,12 +274,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(0)
     }
     const nonFatalOutcome = formatRecordSurveyResultNonFatalOutcome(error, process.env)
-    if (nonFatalOutcome !== undefined) {
+    if (nonFatalOutcome === undefined) {
+      process.stderr.write(`record-survey-result: ${formatRecordSurveyResultError(error, process.env)}\n`)
+      process.exit(1)
+    } else {
       process.stdout.write(nonFatalOutcome.stdout)
       process.stderr.write(nonFatalOutcome.stderr)
-      process.exit(nonFatalOutcome.exitCode)
+      process.exitCode = nonFatalOutcome.exitCode
     }
-    process.stderr.write(`record-survey-result: ${formatRecordSurveyResultError(error, process.env)}\n`)
-    process.exit(1)
   }
 }

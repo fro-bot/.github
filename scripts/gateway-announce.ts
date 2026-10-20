@@ -223,7 +223,7 @@ export async function runCli(
 async function main(): Promise<void> {
   const result = await runCli(process.env)
   process.stdout.write(`${JSON.stringify(result)}\n`)
-  process.exit(0)
+  process.exitCode = 0
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

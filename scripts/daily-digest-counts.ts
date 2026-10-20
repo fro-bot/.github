@@ -134,7 +134,7 @@ async function main(): Promise<void> {
       count_status: 'error',
     }
     process.stdout.write(`${JSON.stringify(errorResult)}\n`)
-    process.exit(0)
+    return
   }
 
   let result: DigestCounts
@@ -150,10 +150,9 @@ async function main(): Promise<void> {
       count_status: 'error',
     }
     process.stdout.write(`${JSON.stringify(errorResult)}\n`)
-    process.exit(0)
+    return
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)
-  process.exit(0)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

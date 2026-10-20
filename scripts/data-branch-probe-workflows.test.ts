@@ -121,7 +121,7 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))('%s', (_key, 
     expect(result.stdout).toContain(String(code))
     expect(overlayWasAttempted(result.trace)).toBe(false)
     // Nothing downstream of a failed probe may run (e.g. the onboarded gate's script).
-    expect(result.trace.some(line => line.startsWith('bun'))).toBe(false)
+    expect(result.trace.some(line => /^(?:bun|node) /.test(line))).toBe(false)
   })
 })
 
@@ -182,7 +182,7 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))(
         const result = runStepWithStubs(step.run, {lsRemoteExit: 0, failSubcommand: subcommand})
 
         expect(result.status).not.toBe(0)
-        expect(result.trace.some(line => line.startsWith('bun'))).toBe(false)
+        expect(result.trace.some(line => /^(?:bun|node) /.test(line))).toBe(false)
         expect(result.stdout).not.toContain('continuing')
         expect(`${result.stdout}${result.stderr}`).not.toMatch(/::warning::/)
         if (ANNOUNCES_OVERLAY_FAILURE.has(step.key)) {
