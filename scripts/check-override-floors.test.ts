@@ -106,6 +106,38 @@ describe('checkOverrideFloors', () => {
     expect(result).toEqual({ok: true, problems: []})
   })
 
+  it('passes an info record', () => {
+    expect(checkOverrideFloors({runAudit: auditOf({katex: [record({severity: 'info'})]})})).toEqual({
+      ok: true,
+      problems: [],
+    })
+  })
+
+  it('fails a high record that carries no url, with url left undefined', () => {
+    const withoutUrl = {id: 1000000, severity: 'high', vulnerable_versions: '<4.1.3'}
+    const result = checkOverrideFloors({runAudit: auditOf({'fast-uri': [withoutUrl]})})
+
+    expect(result.ok).toBe(false)
+    expect(result.problems).toEqual([
+      {
+        kind: 'blocking-advisory',
+        packageName: 'fast-uri',
+        advisoryId: 1000000,
+        severity: 'high',
+        vulnerableVersions: '<4.1.3',
+        url: undefined,
+      },
+    ])
+  })
+
+  it('ignores a url that is not a string', () => {
+    const result = checkOverrideFloors({
+      runAudit: auditOf({'fast-uri': [{id: 1, severity: 'high', vulnerable_versions: '<4.1.3', url: 42}]}),
+    })
+
+    expect(result.problems).toEqual([expect.objectContaining({kind: 'blocking-advisory', url: undefined})])
+  })
+
   it('passes a package whose record list is empty', () => {
     expect(checkOverrideFloors({runAudit: auditOf({lodash: []})})).toEqual({ok: true, problems: []})
   })
@@ -121,6 +153,7 @@ describe('checkOverrideFloors', () => {
         advisoryId: 1000000,
         severity: 'high',
         vulnerableVersions: '<4.1.3',
+        url: 'https://github.com/advisories/GHSA-xxxx-xxxx-xxxx',
       },
     ])
   })
@@ -140,6 +173,7 @@ describe('checkOverrideFloors', () => {
         advisoryId: 1097678,
         severity: 'critical',
         vulnerableVersions: '>=1.0.0 <1.2.6',
+        url: 'https://github.com/advisories/GHSA-xxxx-xxxx-xxxx',
       },
     ])
   })
@@ -157,6 +191,7 @@ describe('checkOverrideFloors', () => {
         advisoryId: 7,
         severity: 'high',
         vulnerableVersions: '<4.1.3',
+        url: 'https://github.com/advisories/GHSA-xxxx-xxxx-xxxx',
       },
     ])
   })
@@ -255,6 +290,22 @@ describe('formatProblem', () => {
         advisoryId: 1106913,
         severity: 'high',
         vulnerableVersions: '<6.14.0',
+        url: 'https://github.com/advisories/GHSA-2g4f-4pwh-qvx6',
+      }),
+    ).toBe(
+      'ajv: advisory 1106913 (HIGH) affects an installed version in vulnerable range "<6.14.0"; advisory: https://github.com/advisories/GHSA-2g4f-4pwh-qvx6',
+    )
+  })
+
+  it('omits the advisory URL when the record has none', () => {
+    expect(
+      formatProblem({
+        kind: 'blocking-advisory',
+        packageName: 'ajv',
+        advisoryId: 1106913,
+        severity: 'high',
+        vulnerableVersions: '<6.14.0',
+        url: undefined,
       }),
     ).toBe('ajv: advisory 1106913 (HIGH) affects an installed version in vulnerable range "<6.14.0"')
   })

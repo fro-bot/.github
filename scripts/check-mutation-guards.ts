@@ -951,7 +951,7 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * JSON report, never this return value. Exported as an injectable seam for testing.
  */
 export function defaultStrykerSpawner(): void {
-  const run = spawnSync('bunx', ['stryker', 'run', strykerConfigPath], {
+  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath], {
     cwd: repositoryRoot,
     stdio: 'inherit',
     env: buildStrykerSpawnEnv(),

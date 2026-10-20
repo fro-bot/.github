@@ -3,28 +3,29 @@ import {execFileSync} from 'node:child_process'
 import process from 'node:process'
 
 /**
- * Fails when the installed dependency tree carries an advisory at `high` or `critical` severity.
+ * Fails when the locked dependency tree carries an advisory at `high` or `critical` severity.
  *
  * `dependency-review.yaml` scans only manifest files that change in a pull request, so a
  * vulnerable transitive dependency already resting in the lockfile is invisible to it. Nothing
  * else in CI reads the standing lockfile.
  *
- * Advisories come from `bun audit --json`, which audits INSTALLED versions only. Its output is a
- * map keyed by package name; each value is an array of advisory records carrying `id`,
- * `severity` and `vulnerable_versions` (no patched range). `{}` means the tree is clean. Because
- * the audit already describes what is installed, the gate no longer reads the `overrides` map:
- * any installed copy inside a high or critical vulnerable range fails, even when a floored copy
- * of the same package sits beside it.
+ * Advisories come from `bun audit --json`, which audits the locked package graph in `bun.lock`,
+ * including devDependencies and other-platform optional packages, because no `--prod` flag is
+ * passed. Its output is a map keyed by package name; each value is an array of advisory records
+ * carrying `id`, `severity` and `vulnerable_versions` (no patched range), and usually a `url`.
+ * `{}` means the tree is clean. The gate does not read the `overrides` map: any locked copy
+ * inside a high or critical vulnerable range fails, even when a floored copy of the same package
+ * sits beside it.
  *
  * Anything this script cannot interpret is a FAILURE, not a skip: empty or non-JSON output, a
  * top level that is not a package map, a package entry that is not an array, an advisory record
- * missing `id`, `severity` or `vulnerable_versions`, or a severity outside low, moderate, high and
- * critical. `bun audit` exits non-zero whenever any advisory exists, so exit status alone is not
+ * missing `id`, `severity` or `vulnerable_versions`, or a severity outside info, low, moderate,
+ * high and critical. `bun audit` exits non-zero whenever any advisory exists, so exit status alone is not
  * the failure signal — unparseable output is. Records below `high` are skipped.
  */
 
 const BLOCKING_SEVERITIES: readonly string[] = ['high', 'critical']
-const SKIPPED_SEVERITIES: readonly string[] = ['low', 'moderate']
+const SKIPPED_SEVERITIES: readonly string[] = ['info', 'low', 'moderate']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -101,11 +102,12 @@ interface RawAdvisory {
   readonly id: number | string
   readonly severity: string
   readonly vulnerableVersions: string
+  readonly url: string | undefined
 }
 
 function parseRawAdvisory(value: unknown): RawAdvisory | undefined {
   if (!isRecord(value)) return undefined
-  const {id, severity, vulnerable_versions: vulnerableVersions} = value
+  const {id, severity, vulnerable_versions: vulnerableVersions, url} = value
   if (
     (typeof id !== 'number' && typeof id !== 'string') ||
     typeof severity !== 'string' ||
@@ -113,7 +115,7 @@ function parseRawAdvisory(value: unknown): RawAdvisory | undefined {
   ) {
     return undefined
   }
-  return {id, severity, vulnerableVersions}
+  return {id, severity, vulnerableVersions, url: typeof url === 'string' ? url : undefined}
 }
 
 export type FloorProblem =
@@ -123,6 +125,8 @@ export type FloorProblem =
       readonly advisoryId: number | string
       readonly severity: string
       readonly vulnerableVersions: string
+      /** The advisory page, which names the fixed release. Absent when `bun audit` omits it. */
+      readonly url: string | undefined
     }
   | {
       readonly kind: 'unrecognized-severity'
@@ -181,6 +185,7 @@ export function checkOverrideFloors(options: CheckOverrideFloorsOptions = {}): C
           advisoryId: advisory.id,
           severity: advisory.severity,
           vulnerableVersions: advisory.vulnerableVersions,
+          url: advisory.url,
         })
       } else if (!SKIPPED_SEVERITIES.includes(advisory.severity)) {
         problems.push({
@@ -199,7 +204,7 @@ export function checkOverrideFloors(options: CheckOverrideFloorsOptions = {}): C
 export function formatProblem(problem: FloorProblem): string {
   switch (problem.kind) {
     case 'blocking-advisory':
-      return `${problem.packageName}: advisory ${String(problem.advisoryId)} (${problem.severity.toUpperCase()}) affects an installed version in vulnerable range "${problem.vulnerableVersions}"`
+      return `${problem.packageName}: advisory ${String(problem.advisoryId)} (${problem.severity.toUpperCase()}) affects an installed version in vulnerable range "${problem.vulnerableVersions}"${problem.url === undefined ? '' : `; advisory: ${problem.url}`}`
     case 'unrecognized-severity':
       return `${problem.packageName}: advisory ${String(problem.advisoryId)} has an unrecognized severity "${problem.severity}"`
     case 'unparseable-package-entry':

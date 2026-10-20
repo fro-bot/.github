@@ -635,7 +635,7 @@ describe('wiki-write-core build inputs', () => {
     expect(calls).toEqual([
       [
         'bunx',
-        ['tsc', '--showConfig', '--project', '/repo/tsconfig.build.json', '--pretty', 'false'],
+        ['--no-install', 'tsc', '--showConfig', '--project', '/repo/tsconfig.build.json', '--pretty', 'false'],
         {cwd: repositoryRoot(), encoding: 'utf8'},
       ],
     ])
@@ -987,7 +987,16 @@ describe('wiki-write-core build inputs', () => {
     expect(calls).toEqual([
       [
         'bunx',
-        ['tsc', '--project', '/repo/tsconfig.build.json', '--outDir', '/tmp/out-dir', '--pretty', 'false'],
+        [
+          '--no-install',
+          'tsc',
+          '--project',
+          '/repo/tsconfig.build.json',
+          '--outDir',
+          '/tmp/out-dir',
+          '--pretty',
+          'false',
+        ],
         {cwd: '/repo', stdio: 'inherit'},
       ],
     ])
@@ -1003,7 +1012,7 @@ describe('wiki-write-core build inputs', () => {
     expect(calls).toEqual([
       [
         'bunx',
-        ['tsc', '--project', buildConfig(), '--outDir', '/tmp/out-dir', '--pretty', 'false'],
+        ['--no-install', 'tsc', '--project', buildConfig(), '--outDir', '/tmp/out-dir', '--pretty', 'false'],
         {cwd: repositoryRoot(), stdio: 'inherit'},
       ],
     ])

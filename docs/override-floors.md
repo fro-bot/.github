@@ -1,6 +1,6 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins a floor for each package below. This file records why a floor exists and when it can go.
+The root `package.json` `overrides` map pins 13 floors. This file records the rationale for the three that have one: brace-expansion, source-map-js and undici.
 
 ## `brace-expansion`
 

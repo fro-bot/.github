@@ -201,7 +201,9 @@ describe('release-wiki-write-core.yaml gating', () => {
     const installIndex = stepIndexById(decideJob, 'decision') - 2
     const steps = decideJob?.steps ?? []
     expect(runOf(steps[installIndex] ?? {})).toBe('node scripts/wiki-write-core-release.ts install')
-    expect(runOf(steps[installIndex + 1] ?? {})).toBe('bunx vitest run scripts/wiki-write-core-release.test.ts')
+    expect(runOf(steps[installIndex + 1] ?? {})).toBe(
+      'bunx --no-install vitest run scripts/wiki-write-core-release.test.ts',
+    )
     const prefixes = steps.slice(installIndex, installIndex + 3).map(step => step.env?.WIKI_WRITE_CORE_RELEASE_PREFIX)
     expect(new Set(prefixes)).toEqual(new Set([`${expression('runner.temp')}/wiki-write-core-release`]))
   })

@@ -316,9 +316,11 @@ env:
        so a PR fixing only some flagged packages stays red and cannot merge. Run
        it on a clean checkout of main, collect every package it flags, and fix
        them all in ONE combined PR on the stable branch
-       `fix/security-override-floors` (raise each floor in the `overrides` map of
-       package.json to its patched version and regenerate bun.lock with
-       `bun install`, recording each advisory in docs/override-floors.md).
+       `fix/security-override-floors` (raise the floor in the `overrides` map of
+       package.json to a version outside the advisory's vulnerable range; the
+       advisory URL in the gate output names the fixed release; then regenerate
+       bun.lock with `bun install` and record each advisory in
+       docs/override-floors.md).
        Before opening, look for an open Fro-Bot-authored PR for this
        root cause (head `fix/security-override-floors` or an earlier
        per-package override-floor PR); if one exists, push to it, extend it to

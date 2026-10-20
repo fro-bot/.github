@@ -24,9 +24,10 @@ If guidance conflicts, follow the order above.
 
 - This repo is the automation/config control center for the Fro Bot org.
 - Keep changes minimal and targeted; avoid broad refactors.
-- Use **Bun** for dependencies and package scripts (`bun run <script>`, `bunx <bin>`); never npm/yarn/pnpm. Never run bare `bun test` or `bun build`: those are Bun built-ins, not the package scripts.
+- Use **Bun** for dependencies and package scripts (`bun run <script>`, `bunx --no-install <bin>`); never yarn or pnpm; npm only in the places listed below. Never run bare `bun test` or `bun build`: those are Bun built-ins, not the package scripts.
 - Node 24 is still the runtime for `scripts/*.ts` (`node scripts/<name>.ts`), Vitest, and Stryker, which run through their package binaries.
-- npm stays in these places only: `npm publish` and the publish job's tool install in `release-wiki-write-core.yaml` (with `min-release-age=3`), `npm pack` in the package test, and the Quartz site build in `publish-wiki.yaml`. The private-leak scan and the `coverage` script also run on Node.
+- npm stays in these places only: `npm publish` and the publish job's tool install in `release-wiki-write-core.yaml` (with `min-release-age=3`), `npm pack` in the package test, and the Quartz site build in `publish-wiki.yaml`.
+- The private-leak scan and the `coverage` script also run on Node.
 - Use existing conventions from `@bfra.me/*` configs.
 
 ## Architecture & Key Components
@@ -35,7 +36,7 @@ If guidance conflicts, follow the order above.
 - Automation hub (`.github/workflows/`, `.github/actions/`)
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
-- Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; why each override floor exists: [`docs/override-floors.md`](../docs/override-floors.md))
+- Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; the root `overrides` map pins 13 floors; [`docs/override-floors.md`](../docs/override-floors.md) records the rationale for three of them: brace-expansion, source-map-js and undici)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
 - Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix with Bun (3-day `--minimum-release-age` floor), never `package.json` or the lockfile; the publish job installs its tools with npm and `--min-release-age=3`
