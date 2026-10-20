@@ -179,7 +179,7 @@ Every squash promotion deletes `data` through `delete_branch_on_merge`. The gate
 - **`updateBranch` stays.** `main` requires branches to be up to date, and the server-side merge already passes the workflow check. On an open promotion PR it cannot conflict on owned paths, because no other promotion lands while that PR is open. A 422 merge conflict goes to the existing conflict alert instead of a generic throw.
 - **Alerts reuse merge-data's existing deduplicated issue alerts.** `merge-data-pr.ts` exports its helpers unchanged, and no new channel is added. When the head is `data`, the conflict alert drops its "push to the head branch" instruction, because only the App can write `data` and the next merge-data run rebuilds it.
 - **Cross-run concurrency.** Dispatch runs and manual or scheduled runs keep their separate concurrency groups. Compare-and-set on the `data` ref is the only guarantee between runs. Overlapping runs can leave a promotion PR's file list stale until the next run, and they cannot lose or corrupt a write.
-- **Mutation coverage.** `scripts/merge-back-data.ts` matches none of the name patterns the mutation-guards config tests enforce, so nothing requires listing it. Whether it should be mutated anyway is an operator call (see Open Questions).
+- **Mutation coverage.** `scripts/merge-back-data.ts` and its test are added to the Stryker `mutate` and `testFiles` lists. The config tests don't require this, but the script writes to `data` unattended, so it gets the full gate.
 - **One delivery.** The ruleset and the merge-back merge together. A ruleset without the merge-back would keep stale history and replay it. A merge-back without the ruleset does nothing, since a bootstrapped `data` already contains `main`.
 
 ## Open Questions
@@ -199,7 +199,6 @@ Every squash promotion deletes `data` through `delete_branch_on_merge`. The gate
 
 - **Empty bypass list:** whether GitHub accepts `bypass_actors: []`. The plugin passes the value through unchanged, and U5's readback confirms what GitHub stored.
 - **Error shape:** the exact HTTP status and body for a workflow-permission rejection. U1 records them.
-- **Mutation coverage for the merge-back:** whether to add `scripts/merge-back-data.ts` to the Stryker `mutate` list, or record it as `not-mutated` with a reason. The rename writer is the precedent: it is `not-mutated`, and its note says to re-evaluate it once it gains an unattended caller.
 
 ## High-Level Technical Design
 
@@ -290,6 +289,7 @@ flowchart TD
 **Files:**
 - Create: `scripts/merge-back-data.ts`
 - Test: `scripts/merge-back-data.test.ts`
+- Modify: `stryker.config.json` (add the script to `mutate` and its test to `testFiles`)
 - Modify, if needed: `scripts/git-data-fake.ts` (recursive trees, compare)
 
 **Approach:**
@@ -331,6 +331,7 @@ flowchart TD
 **Verification:**
 - Every scenario passes against the fake.
 - The script loads under strip-only Node.
+- `check:mutation-guards` reports clean, with the new module in the report and no surviving mutants.
 
 - [ ] **Unit 4: Wire into merge-data and fix the promotion script**
 
