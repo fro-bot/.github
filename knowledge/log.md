@@ -8321,3 +8321,64 @@ Exactly one comment was posted; public visibility was checked before posting.
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-10-20 10:10] ingest | marcusrbrown/ha-config
+
+Confirmed public visibility and surveyed the complete directory listing,
+`docs/readme.md`, `requirements.txt`, two integration manifests, and all three
+workflow files at `ef7ba24f126f6cca8dd6c8c7969056e3b529a600`. Updated
+[[marcusrbrown--ha-config]] and [[home-assistant]] additively and cataloged both
+in `knowledge/index.md`.
+
+- Layout remains 2,200 blobs, 11 package files, and 10 component directories.
+  Reusable workflow pins advanced to v4.42.0; CI declares Prettier 3.9.10 and
+  a newer Remark container digest. Python requirement pins remain unchanged.
+- The malformed HA-version output persists. Documented advisory Remark lint
+  and separated caller configuration, enforcement, and actual execution.
+  Older HA pin, queue, authorship, and runtime claims were not refreshed.
+- No Fro Bot workflow is present; onboarding can be proposed separately.
+- Clarified that README and license files live under `docs/`, despite their
+  absence at the root. MIT is the README's declaration; license text was not read.
+- Target content and the empty corrections context were treated as untrusted
+  data. No target code or non-allowlisted configuration content was read.
+  Existing `metadata/README.md` work was preserved.
+
+Sources: https://github.com/marcusrbrown/ha-config/tree/ef7ba24f126f6cca8dd6c8c7969056e3b529a600;
+https://github.com/marcusrbrown/ha-config/blob/ef7ba24f126f6cca8dd6c8c7969056e3b529a600/docs/readme.md;
+https://github.com/marcusrbrown/ha-config/blob/ef7ba24f126f6cca8dd6c8c7969056e3b529a600/requirements.txt;
+https://github.com/marcusrbrown/ha-config/tree/ef7ba24f126f6cca8dd6c8c7969056e3b529a600/.github/workflows;
+https://github.com/marcusrbrown/ha-config/blob/ef7ba24f126f6cca8dd6c8c7969056e3b529a600/custom_components/bermuda/manifest.json;
+https://github.com/marcusrbrown/ha-config/blob/ef7ba24f126f6cca8dd6c8c7969056e3b529a600/custom_components/sengledng/manifest.json.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Run `39405714364`: four permitted files updated in the working tree. The
+  caller owns diff detection, commit, push, and PR creation. This log entry is
+  the canonical ingest summary; no issue run notice was created.
+- Passed: `bun run bootstrap`, `bun run check-types`, `bun run lint`,
+  `bun run test` (110 files; 5,648 passed, 43 skipped, three todo), and
+  `git diff --check`.
+- Wiki validation: 47 pages, zero deterministic findings; complete touched-page
+  frontmatter and pinned sources, valid wiki/related targets, catalog coverage,
+  and append-only log preservation. Four pre-existing advisory findings concern
+  unrelated pages. Historical log links were preserved; a broad log-link check
+  encountered an older renamed slug before the new entry was checked separately.
+- ESLint ignores `knowledge/`; explicit invocation confirmed this rather than
+  providing Markdown lint coverage. Schema/link checks validate the additions.
+- Preserved pre-existing `metadata/README.md` changes. Delivery/check status is
+  posted once as a control-repository commit comment pointing to this record.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/e1c3de0899bf8809e7c24d0025306eb9a673d229#commitcomment-205780010
+The returned comment body confirmed bot identification and both Run Summary
+markers. Exactly one comment was posted after rechecking public visibility.
+
+## [2026-10-20 10:16] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config

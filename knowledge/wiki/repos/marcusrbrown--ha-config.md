@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/ha-config
 created: 2025-06-18
-updated: 2026-09-21
+updated: 2026-10-20
 node_id: R_kgDOJ_bMaQ
 sources:
   - url: https://github.com/marcusrbrown/ha-config
@@ -41,6 +41,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 35ed8b7920f1f0c14faafeff3c89e4eb74db649e
     accessed: 2026-09-21
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: ef7ba24f126f6cca8dd6c8c7969056e3b529a600
+    accessed: 2026-10-20
 tags:
   - home-assistant
   - home-assistant-config
@@ -71,6 +74,65 @@ related:
 Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-controlled Home Assistant setup with CI validation, custom components, and ESPHome device management via git submodule.
 
 ## Overview
+
+### 2026-10-20 source snapshot
+
+The public `main` tree is now `ef7ba24f126f6cca8dd6c8c7969056e3b529a600`.
+This dated snapshot supersedes the older version figures below; earlier survey
+observations remain historical evidence. Reads were limited to directory
+listings, README files, dependency manifests, and workflow files. No issues,
+PRs, run logs, implementation files, or deployment state were inspected.
+
+- The complete recursive listing still contains **2,200 blobs**, the same
+  **11 package filenames**, **10 custom-component directories**, and **three
+  workflow files**. Matching counts establish layout continuity, not unchanged
+  implementation bytes. The `esphome` gitlink is now
+  `381a4d1694ac2f5d0c3fa639d3bff9dd440830ac`; its target repository was not read.
+- `requirements.txt` still declares `esphome==2025.12.7` and
+  `yamllint==1.38.0`. These are declarations, not installed-version evidence.
+  The sampled integration manifests declare Bermuda `0.8.4` with no external
+  requirements and Sengled NG `0.4.2` with `asyncio-mqtt==0.16.2`. This confirms
+  the latter pin remains in the vendored manifest, without establishing current
+  Renovate ownership rules or what HACS has deployed.
+- Both reusable workflows now reference SHA
+  `22ed95a3440f8fee5776e1dccd08dd48f64f689f` (**v4.42.0**), superseding
+  September's v4.31.0. They still call distinct, correctly named upstream
+  `renovate.yaml` and `update-repo-settings.yaml` paths. Settings sync remains
+  scheduled at **03:00 UTC daily**; Renovate retains event-driven triggers and
+  its successful-CI guard on `workflow_run`.
+- CI now declares **Prettier 3.9.10** and Remark container digest
+  `sha256:078de89945c94d200bb2d52737196dc27ecc07ab219da37e61dde089c498d5d5`.
+  Checkout remains **v6.1.0** at four call sites; YAML lint remains v1.5.0,
+  Prettier action v4.3, and HA config action v1.4.1. The post-upgrade formatter
+  configuration was outside the permitted reads, so coupled-version parity
+  was not rechecked.
+- **The malformed version-output write remains:**
+  `echo '{value}={$HA_VERSION}' >> $GITHUB_OUTPUT` still cannot populate the
+  `outputs.value` consumed by the HA action. The earlier fallback explanation
+  is retained as historical upstream evidence; this pass did not inspect the
+  action implementation or read `.HA_VERSION`, and therefore does not renew
+  the claim that the file still contains `2025.6.3`.
+- **Remark lint is advisory:** its action step has `continue-on-error: true`.
+  Although HA validation lists the Remark job in `needs`, a failing Remark
+  command can be tolerated rather than blocking the downstream job. A required
+  job name is not proof that its underlying Markdown lint command must pass;
+  see [[home-assistant]] for the validation-layer distinction.
+
+**Documentation clarification:** the root has no README or license file, but
+`docs/readme.md` does describe the repository and links an MIT license at
+`docs/license.md`, whose presence is confirmed by the directory listing. The
+September statement about missing root files must not be generalized to missing
+repository documentation or licensing. License text was outside the permitted
+reads, so MIT is recorded as the README's declaration. Its ESPHome link still
+uses the historical `esphome.life` spelling; the accumulated
+[[marcusrbrown--esphome-life]] page is retained.
+
+**Fro Bot remains absent:** the only workflow files are `ci.yaml`,
+`renovate.yaml`, and `update-repo-settings.yaml`; none calls the Fro Bot agent.
+A separate follow-up draft PR can propose onboarding. Workflow presence was
+checked statically; enabled state, successful execution, queue age, authorship,
+Renovate name-collision rules, and branch protection were not revalidated.
+The older claims below should not be read as October runtime measurements.
 
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
