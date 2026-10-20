@@ -112,9 +112,13 @@ labels:
     color: '#fcf2e1'
     description: Agent is currently working on this
 
-# Restricts `data` branch writes to the Fro Bot App. No `deletion` rule: promotion relies on
-# auto-delete-on-merge (delete_branch_on_merge in common-settings.yaml) followed by the App
-# reseeding `data` from `main`, and a deletion rule would break that reseed.
+# `data` is a persistent branch. Two rulesets target it: the first restricts writes to the Fro Bot App,
+# the second blocks deletion for every actor, including the App and the automatic head-branch deletion
+# that follows a promotion merge (delete_branch_on_merge in common-settings.yaml stays on for every other
+# branch). The deletion rule sits in its own ruleset with no bypass actors: in the App ruleset the App's
+# bypass would cover deletion too. Each merge-data run merges `main` back into `data`
+# (scripts/merge-back-data.ts); the bootstrap only recreates a missing `data` branch. To delete `data`
+# on purpose, remove the deletion ruleset from this file first.
 rulesets:
   - name: 'data branch: Fro Bot App only'
     target: branch
@@ -132,3 +136,15 @@ rulesets:
       - actor_id: 218644
         actor_type: Integration
         bypass_mode: always
+
+  - name: 'data branch: no deletion'
+    target: branch
+    enforcement: active
+    conditions:
+      ref_name:
+        include:
+          - refs/heads/data
+        exclude: []
+    rules:
+      - type: deletion
+    bypass_actors: []
