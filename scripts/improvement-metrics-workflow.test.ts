@@ -230,7 +230,7 @@ describe('improvement-metrics.yaml workflow contract', () => {
 
   it('the report step runs the result-file-owning script directly under pipefail', () => {
     const reportStep = reportJob?.steps.find(step => step.id === 'report')
-    expect(String(reportStep?.run ?? '').trim()).toBe('node scripts/improvement-metrics-report.ts')
+    expect(String(reportStep?.run ?? '').trim()).toBe('bun scripts/improvement-metrics-report.ts')
     expect(String((reportStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
   })
 
@@ -243,7 +243,7 @@ describe('improvement-metrics.yaml workflow contract', () => {
     const detectStep = detectJob?.steps.find(step => step.id === 'detect')
     const run = String(detectStep?.run ?? '')
     expect(run).not.toContain('tee')
-    expect(run.trim()).toBe('node scripts/improvement-metrics-detect.ts')
+    expect(run.trim()).toBe('bun scripts/improvement-metrics-detect.ts')
   })
 
   it('the digest artifact retains for 1 day, not the default longer window', () => {

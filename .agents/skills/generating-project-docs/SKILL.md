@@ -37,7 +37,7 @@ Before writing anything, gather these from the live repo:
 | `package.json`                                        | name, description, scripts, packageManager (Bun version), engines, repository         |
 | `README.md` (current)                                 | banner, badges, navigation, section order, voice                                       |
 | `.github/workflows/`                                  | workflow names, triggers, purposes (read each `name:` and top-level `on:` block)       |
-| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test summary (`bun run test`)                 |
+| `scripts/*.ts`                                        | TypeScript entrypoints (run with `bun scripts/<name>.ts`), exported functions, test summary (`bun run test`) |
 | `metadata/*.yaml`                                     | metadata files in scope and their schemas                                              |
 | `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities)                                  |
 | `persona/`, `branding/`, `assets/`                    | character + brand asset inventory                                                      |
@@ -45,6 +45,8 @@ Before writing anything, gather these from the live repo:
 | `git log --oneline -15`                               | recent change context                                                                  |
 
 Counts (workflows, scripts, tests, metadata files, wiki pages) MUST come from `ls`, `find`, or `bun run test` output. Never guess or carry over from the previous draft.
+
+Runtime claims follow `.github/copilot-instructions.md`: Bun runs `scripts/*.ts` and package scripts. Node 24 runs Vitest, Stryker, the private-leak scan, the "Test Scripts Load" job, the `coverage` script and `check:renovate-config`. npm stays only for `npm publish` with the publish job's tool install, `npm pack` in the package test, and the Quartz site build.
 
 ## Style Rules (Non-Negotiable)
 

@@ -19,7 +19,7 @@ const BASELINE_HASH_PATTERN = /^[0-9a-f]{64}$/
  * paths, not git-ignored) so a positive detection always corresponds to a real
  * transferable delta. See wiki-change-detect-core.ts for the hash and eligibility contract.
  *
- * Usage: `node scripts/wiki-change-detect.ts baseline|detect`
+ * Usage: `bun scripts/wiki-change-detect.ts baseline|detect`
  *   baseline — writes `hash=<sha256>` to GITHUB_OUTPUT.
  *   detect   — compares against WIKI_CHANGE_BASELINE_HASH and writes `changed=true|false`.
  *

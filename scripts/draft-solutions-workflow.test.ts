@@ -254,7 +254,7 @@ describe('draft-solutions.yaml handoff plumbing', () => {
     const firstUploadIndex = steps.findIndex(isUpload)
     expect(buildIndex).toBeGreaterThan(agentIndex)
     expect(firstUploadIndex).toBeGreaterThan(buildIndex)
-    expect(steps[buildIndex]?.run).toBe('node scripts/drafted-solutions-handoff-build.ts')
+    expect(steps[buildIndex]?.run).toBe('bun scripts/drafted-solutions-handoff-build.ts')
     expect(isAgent(steps[buildIndex] ?? {})).toBe(false)
   })
 
@@ -395,7 +395,7 @@ describe('draft-solutions.yaml agent prompt', () => {
     })
 
     it('requires running the local validator, with bun run lint, before finishing', () => {
-      expect(prompt).toContain('node scripts/drafted-solutions-validate-rows.ts')
+      expect(prompt).toContain('bun scripts/drafted-solutions-validate-rows.ts')
       expect(flatPrompt).toContain('fix every rejected row')
       expect(flatPrompt).toContain('run `bun run lint`')
     })

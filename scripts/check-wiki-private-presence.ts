@@ -414,7 +414,7 @@ export function formatLeakReport(leaks: readonly PrivateWikiLeak[]): string {
     '',
     `Leak count: ${leaks.length}`,
     'Identifiers are redacted from this public log. To map them to repositories,',
-    'run `node scripts/resolve-private.ts` locally with operator credentials and',
+    'run `bun scripts/resolve-private.ts` locally with operator credentials and',
     'inspect the data branch wiki pages directly.',
   ].join('\n')}\n`
 }

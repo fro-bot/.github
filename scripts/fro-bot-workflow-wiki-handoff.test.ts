@@ -48,9 +48,7 @@ const AGENT_USES_PREFIX = 'fro-bot/agent@'
 const HANDOFF_VAR = 'WIKI_CONTEXT_HANDOFF_PATH'
 // Literal GitHub Actions expression syntax — split to dodge eslint's no-template-curly-in-string rule.
 const EXPECTED_LINKED_COMMAND =
-  "WIKI_CONTEXT_HANDOFF_PATH='" +
-  '$' +
-  "{{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked"
+  "WIKI_CONTEXT_HANDOFF_PATH='" + '$' + "{{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked"
 const EXPRESSION = /\$\{\{ ([^}]+?) \}\}/gu
 
 interface AgentJobWiring {
@@ -158,12 +156,12 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
       })
 
       // #then the path the agent is told to read is the path the producer wrote
-      expect(commandRendered).toBe(`${HANDOFF_VAR}='${producerRendered}' node scripts/wiki-context-expand.ts linked`)
+      expect(commandRendered).toBe(`${HANDOFF_VAR}='${producerRendered}' bun scripts/wiki-context-expand.ts linked`)
     })
 
     it('query mode takes no handoff variable and the no-echo guidance is kept', () => {
       const queryCommand = extractCommandLine(wiring.prompt, '"<short grounded query>"')
-      expect(queryCommand).toBe('node scripts/wiki-context-expand.ts query "<short grounded query>"')
+      expect(queryCommand).toBe('bun scripts/wiki-context-expand.ts query "<short grounded query>"')
       expect(wiring.prompt).toContain('Do not print or echo that path')
       expect(wiring.prompt.toLowerCase()).toContain('optional')
     })
@@ -313,7 +311,7 @@ describe('wiki-context-expand as the agent shell runs it (handoff variable not i
       await writeSelectedPathsHandoff(join(dir, 'handoff.json'), ['knowledge/wiki/repos/fro-bot--agent.md'])
 
       // #when the pre-fix command shape runs with the variable absent
-      const result = runInAgentShell(`node ${SCRIPT_RELATIVE} linked`, dir)
+      const result = runInAgentShell(`bun ${SCRIPT_RELATIVE} linked`, dir)
 
       // #then it degrades to an empty result — the bug the inline assignment fixes
       expect(result.mode).toBe('linked')

@@ -707,5 +707,5 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  process.exit(await runCli(process.env))
+  process.exitCode = await runCli(process.env)
 }

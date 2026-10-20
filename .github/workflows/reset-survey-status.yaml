@@ -48,4 +48,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
           TARGETS: ${{ inputs.targets }}
-        run: node scripts/reset-survey-status.ts
+        run: bun scripts/reset-survey-status.ts

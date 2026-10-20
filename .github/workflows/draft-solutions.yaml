@@ -51,7 +51,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DRAFTED_SOLUTIONS_DIGEST_PATH: ${{ runner.temp }}/drafted-solutions-digest.json
-        run: node scripts/drafted-solutions-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
+        run: bun scripts/drafted-solutions-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
         shell: bash
 
       - name: 📤 Upload digest artifact
@@ -220,7 +220,7 @@ jobs:
             - Do not create issues, comments, branches, commits, or PRs. Do not push. Do not modify
               workflows, scripts, or configuration.
             - Before finishing, run `bun run lint` and fix every failure it reports in your docs.
-            - Before finishing, run `node scripts/drafted-solutions-validate-rows.ts` (offline; it reads
+            - Before finishing, run `bun scripts/drafted-solutions-validate-rows.ts` (offline; it reads
               .drafted-solutions/rows.json and the digest) and fix every rejected row, then run it
               again until it exits 0.
             - Write rows.json to exactly .drafted-solutions/rows.json. Output nothing else.
@@ -245,7 +245,7 @@ jobs:
         if: steps.agent.outcome == 'success'
         env:
           DRAFTED_SOLUTIONS_HANDOFF_DIR: ${{ github.workspace }}/.drafted-solutions/handoff
-        run: node scripts/drafted-solutions-handoff-build.ts
+        run: bun scripts/drafted-solutions-handoff-build.ts
         shell: bash
 
       # include-hidden-files is required: both paths sit in a dot-directory. A missing
@@ -378,7 +378,7 @@ jobs:
           DRAFTED_SOLUTIONS_HANDOFF_DIR: ${{ github.workspace }}/.drafted-solutions/handoff
           DRAFTED_SOLUTIONS_ROWS_PATH: ${{ github.workspace }}/.drafted-solutions/rows.json
           DRAFTED_SOLUTIONS_RESULT_PATH: ${{ runner.temp }}/drafted-solutions-result.json
-        run: node scripts/drafted-solutions-publish.ts
+        run: bun scripts/drafted-solutions-publish.ts
         shell: bash
 
       - if: always()

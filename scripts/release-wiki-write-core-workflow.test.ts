@@ -200,7 +200,7 @@ describe('release-wiki-write-core.yaml gating', () => {
   it('runs the real-plugin integration tests against the scratch install before deciding', () => {
     const installIndex = stepIndexById(decideJob, 'decision') - 2
     const steps = decideJob?.steps ?? []
-    expect(runOf(steps[installIndex] ?? {})).toBe('node scripts/wiki-write-core-release.ts install')
+    expect(runOf(steps[installIndex] ?? {})).toBe('bun scripts/wiki-write-core-release.ts install')
     expect(runOf(steps[installIndex + 1] ?? {})).toBe(
       'bunx --no-install vitest run scripts/wiki-write-core-release.test.ts',
     )

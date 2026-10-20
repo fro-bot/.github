@@ -124,7 +124,7 @@ jobs:
           # proper encoding.
           CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
             {"fro-bot":"${{ steps.dispatch-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.dispatch-token-marcusrbrown.outputs.token }}"}
-        run: node scripts/cross-repo-dispatch.ts dispatch
+        run: bun scripts/cross-repo-dispatch.ts dispatch
 
       - name: 📋 Write dispatch summary
         if: always()
@@ -270,7 +270,7 @@ jobs:
           # proper encoding.
           CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
             {"fro-bot":"${{ steps.track-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.track-token-marcusrbrown.outputs.token }}"}
-        run: node scripts/cross-repo-dispatch.ts track
+        run: bun scripts/cross-repo-dispatch.ts track
 
       - name: 📋 Write track summary
         if: always()

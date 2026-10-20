@@ -79,6 +79,15 @@ jobs:
         with:
           node-version: 24
 
+      # Bun runs only the repo's lockfile gate scripts; Quartz itself stays on
+      # Node and npm. No repo dependency install and no cache: the gates resolve
+      # `yaml` from quartz-build/node_modules.
+      - name: 📦 Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+
       # Quartz's own dependencies must be installed before the lockfile
       # gates and plugin install below — the CLI and the gate scripts
       # resolve js-yaml/yargs from quartz-build/node_modules.
@@ -106,7 +115,7 @@ jobs:
       # is correct before plugin code is fetched.
       - name: 🔒 Verify lockfile coverage (pre-install)
         working-directory: quartz-build
-        run: node "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" coverage
+        run: bun --no-install --no-env-file "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" coverage
         shell: bash -Eeuo pipefail {0}
 
       # Install strictly from the lockfile — never --from-config/--latest,
@@ -125,7 +134,7 @@ jobs:
       # pinned commit, and fails just as hard as a mismatched SHA.
       - name: 🔒 Verify lockfile integrity (post-install)
         working-directory: quartz-build
-        run: node "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" integrity
+        run: bun --no-install --no-env-file "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" integrity
         shell: bash -Eeuo pipefail {0}
 
       # Build with the local pinned binary (`node ./quartz/bootstrap-cli.mjs`),

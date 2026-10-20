@@ -1780,7 +1780,7 @@ describe('runPromotionCli — Fix E: CLI-level tests via injectable seams', () =
       )
       expect(stderrText).toContain('Matched files (private tokens redacted):')
       expect(stderrText).toContain(
-        'To look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml',
+        'To look up the private repository locally, run: GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts metadata/repos.yaml',
       )
       expect(stderrText).toContain('(This prints a node_id → owner/name table for all private entries.)')
       expect(stderrText).toContain('To resolve: redact the private name from the data branch and re-run the promotion.')

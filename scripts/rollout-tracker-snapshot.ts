@@ -474,7 +474,7 @@ async function main(): Promise<void> {
   const decision = decideComment(snapshot, hash, previousMarker)
 
   process.stdout.write(`${JSON.stringify(decision)}\n`)
-  process.exit(0)
+  process.exitCode = 0
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

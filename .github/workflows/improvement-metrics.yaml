@@ -89,7 +89,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           IMPROVEMENT_METRICS_DIGEST_PATH: ${{ runner.temp }}/improvement-metrics-digest.json
         # pipefail retained even without a pipe, for consistency with the report step.
-        run: node scripts/improvement-metrics-detect.ts
+        run: bun scripts/improvement-metrics-detect.ts
         shell: bash -Eeuo pipefail {0}
 
       - name: 📤 Upload digest artifact
@@ -187,7 +187,7 @@ jobs:
           IMPROVEMENT_METRICS_RESULT_PATH: ${{ runner.temp }}/improvement-metrics-result.json
         # The report script owns the result-file write, so there is no second writer
         # that can clobber the result after the script completes.
-        run: node scripts/improvement-metrics-report.ts
+        run: bun scripts/improvement-metrics-report.ts
         shell: bash -Eeuo pipefail {0}
 
       - if: always()

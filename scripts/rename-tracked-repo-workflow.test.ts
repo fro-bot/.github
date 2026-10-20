@@ -117,12 +117,12 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
 
     expect(consumers).toHaveLength(1)
     expect(consumers[0]?.env?.RENAME_WRITER_TOKEN).toBe(gh('steps.writer-token.outputs.token'))
-    expect(consumers[0]?.run).toBe('node scripts/rename-tracked-repo.ts')
+    expect(consumers[0]?.run).toBe('bun scripts/rename-tracked-repo.ts')
   })
 
   it('feeds the evidence reads the unprivileged workflow token, never the App token or a PAT', async () => {
     const steps = await loadSteps()
-    const rename = steps.find(step => step.run === 'node scripts/rename-tracked-repo.ts')
+    const rename = steps.find(step => step.run === 'bun scripts/rename-tracked-repo.ts')
 
     expect(rename?.env?.GITHUB_TOKEN).toBe(gh('github.token'))
     expect(stringsIn(steps).join('\n')).not.toMatch(/secrets\.(?!APPLICATION_ID|APPLICATION_PRIVATE_KEY)/u)
@@ -130,7 +130,7 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
 
   it('takes its inputs through env only, never interpolated into a command', async () => {
     const steps = await loadSteps()
-    const rename = steps.find(step => step.run === 'node scripts/rename-tracked-repo.ts')
+    const rename = steps.find(step => step.run === 'bun scripts/rename-tracked-repo.ts')
 
     expect(rename?.env?.NODE_ID).toBe(gh('inputs.node_id'))
     expect(rename?.env?.OLD_NAME).toBe(gh('inputs.old_name'))

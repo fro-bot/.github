@@ -67,7 +67,7 @@ jobs:
         env:
           GRANDFATHER_WIKI_REPOS_DIR: ../knowledge/wiki/repos
         working-directory: data-branch-check
-        run: node ../scripts/check-wiki-private-presence.ts
+        run: bun --no-install --no-env-file ../scripts/check-wiki-private-presence.ts
 
       # Promotion privacy gate: blocks merge if a private repo name appears in the data→main diff.
       # Design: three-dot diff (origin/main...origin/data) against private node_ids from data's
@@ -88,4 +88,4 @@ jobs:
       - name: 🔀 Open data merge PR
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
-        run: node scripts/merge-data-pr.ts
+        run: bun scripts/merge-data-pr.ts

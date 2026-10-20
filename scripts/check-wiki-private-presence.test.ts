@@ -1215,7 +1215,7 @@ describe('formatLeakReport (redaction)', () => {
         '',
         'Leak count: 2',
         'Identifiers are redacted from this public log. To map them to repositories,',
-        'run `node scripts/resolve-private.ts` locally with operator credentials and',
+        'run `bun scripts/resolve-private.ts` locally with operator credentials and',
         'inspect the data branch wiki pages directly.',
       ].join('\n')}\n`,
     )

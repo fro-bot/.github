@@ -4,7 +4,7 @@
 
 Fro Bot is a trickster-helper character whose memory, decisions, and automated behavior all grow in public on GitHub. This repository is the character's brain: persona definition, allowlist, collaborator-access reconciliation, Karpathy-style knowledge wiki, and the TypeScript scripts and GitHub Actions workflows that run every autonomous cycle.
 
-The codebase runs on Node 24 with native TypeScript execution (strip-only, no build step), Bun for package management, Vitest, and ESLint. Autonomous writes go to an unprotected `data` branch that promotes into `main` via a conditional-auto-merge workflow.
+The codebase runs its TypeScript scripts on Bun (no build step) and manages packages with Bun. Vitest and Stryker run on Node 24, as do the private-leak scan, the strip-only import smoke test, the `coverage` script, and `check:renovate-config`. Linting uses ESLint. Autonomous writes go to an unprotected `data` branch that promotes into `main` via a conditional-auto-merge workflow.
 
 ## Documentation
 
@@ -21,7 +21,7 @@ The codebase runs on Node 24 with native TypeScript execution (strip-only, no bu
 
 ## Control Plane
 
-- [Scripts directory](scripts/): TypeScript entrypoints executed with Node 24 native TS -- no build step; `.ts` import extensions required
+- [Scripts directory](scripts/): TypeScript entrypoints run with Bun -- no build step; `.ts` import extensions required
 - [Metadata README](metadata/README.md): schemas for `metadata/*.yaml` (allowlist, repos, renovate dispatch, social cooldowns) and the `data` branch commit contract
 - [Commit helper](scripts/commit-metadata.ts): typed mutator-based writer for `metadata/*.yaml` on the `data` branch with 409-conflict retry and branch protection guards
 - [Repo reconciliation](scripts/reconcile-repos.ts): pure decision engine + thin I/O shell that syncs `metadata/repos.yaml` with actual collaborator access, with progressive dispatch pipeline (90s stagger, per-run cap, staleness gate)

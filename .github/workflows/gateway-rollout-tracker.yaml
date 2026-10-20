@@ -42,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
         run: |
           set -euo pipefail
-          RESULT="$(node scripts/rollout-tracker-snapshot.ts)"
+          RESULT="$(bun scripts/rollout-tracker-snapshot.ts)"
           SHOULD_COMMENT="$(echo "$RESULT" | jq -r '.should_comment')"
           REASON="$(echo "$RESULT" | jq -r '.reason')"
           HASH="$(echo "$RESULT" | jq -r '.hash')"

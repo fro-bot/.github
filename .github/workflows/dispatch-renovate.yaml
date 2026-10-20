@@ -40,7 +40,7 @@ jobs:
         name: 🗺 Plan Renovate targets
         env:
           GITHUB_TOKEN: ${{ steps.discovery-token.outputs.token }}
-        run: node scripts/dispatch-renovate.ts plan
+        run: bun scripts/dispatch-renovate.ts plan
 
       # actions: write covers listWorkflowRuns and createWorkflowDispatch on the planned repos only.
       # An empty plan skips this mint, so `repositories:` can never resolve empty (owner-wide).
@@ -61,4 +61,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.dispatch-token.outputs.token }}
           DISPATCH_REPOSITORIES: ${{ steps.plan.outputs.repositories }}
-        run: node scripts/dispatch-renovate.ts
+        run: bun scripts/dispatch-renovate.ts

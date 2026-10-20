@@ -97,7 +97,7 @@ jobs:
           # on the next run via the staleness gate, producing a progressive day-over-day
           # cadence instead of bursty fan-outs that exhaust upstream capacity.
           RECONCILE_MAX_DISPATCHES_PER_RUN: '12'
-        run: node scripts/reconcile-repos.ts | tee "$RUNNER_TEMP/reconcile-result.json"
+        run: bun scripts/reconcile-repos.ts | tee "$RUNNER_TEMP/reconcile-result.json"
         shell: bash
 
       - if: always()

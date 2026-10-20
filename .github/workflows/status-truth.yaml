@@ -98,7 +98,7 @@ jobs:
           snapshot_error="${RUNNER_TEMP}/rollout-snapshot-error.log"
           trap 'rm -f "$tmp_snapshot" "$snapshot_error"' EXIT
 
-          if node scripts/rollout-tracker-snapshot.ts 2>"$snapshot_error" | jq -e '.snapshot' > "$tmp_snapshot"; then
+          if bun scripts/rollout-tracker-snapshot.ts 2>"$snapshot_error" | jq -e '.snapshot' > "$tmp_snapshot"; then
             mv "$tmp_snapshot" "$snapshot_path"
             item_count=$(jq '.items | length' "$snapshot_path" 2>/dev/null || echo 0)
             echo "rollout-snapshot: loaded snapshot with ${item_count} item(s)"
@@ -121,7 +121,7 @@ jobs:
           STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH: ${{ steps.rollout-snapshot.outputs.snapshot_path || '' }}
           # Scheduled runs default to dry-run=true; only workflow_dispatch can set false.
           STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
-        run: node scripts/status-truth-detect.ts
+        run: bun scripts/status-truth-detect.ts
 
       - name: 📤 Upload report artifact
         if: always()
@@ -246,7 +246,7 @@ jobs:
           STATUS_TRUTH_OPEN_RESULT_PATH: ${{ runner.temp }}/status-truth-open-result.json
           # Scheduled runs default to dry-run=true; only workflow_dispatch can set false.
           STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
-        run: node scripts/status-truth-proposals.ts
+        run: bun scripts/status-truth-proposals.ts
 
       - name: 📋 Write open summary
         if: always()
@@ -428,7 +428,7 @@ jobs:
           STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
           STATUS_TRUTH_PRS_ENABLED: ${{ vars.STATUS_TRUTH_PRS_ENABLED }}
           STATUS_TRUTH_PRS_DISPATCH_INPUT: ${{ github.event.inputs.open_prs || 'false' }}
-        run: node scripts/status-truth-prs.ts
+        run: bun scripts/status-truth-prs.ts
 
       - name: 📋 Write PR execution summary
         if: always()

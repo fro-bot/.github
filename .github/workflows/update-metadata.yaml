@@ -56,4 +56,4 @@ jobs:
         env:
           UPDATE_METADATA_DISCOVERY_TOKEN: ${{ steps.discovery-token.outputs.token }}
           UPDATE_METADATA_WRITER_TOKEN: ${{ steps.writer-token.outputs.token }}
-        run: node scripts/update-metadata.ts
+        run: bun scripts/update-metadata.ts

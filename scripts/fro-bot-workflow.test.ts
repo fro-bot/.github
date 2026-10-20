@@ -316,7 +316,7 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
     expect(security).toContain('`fix/security-override-floors`')
     expect(security).toContain('push to it')
     expect(security).toContain('instead of opening another')
-    expect(security).toContain('only when `node scripts/check-override-floors.ts` exits 0')
+    expect(security).toContain('only when `bun scripts/check-override-floors.ts` exits 0')
   })
 
   it('both the remediate and observe prompts state the guarded-paths boundary explicitly', () => {

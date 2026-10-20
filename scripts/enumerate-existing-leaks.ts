@@ -131,7 +131,7 @@ export function enumerateLeaks(input: EnumerateLeaksInput): LeakSurface[] {
           description: `knowledge/wiki/repos/${filename} is named after ${canonical}`,
           remediation: {
             action: 'delete-page',
-            command: `# Operator removes knowledge/wiki/repos/${filename} on the data branch and rebuilds the index via 'node scripts/rebuild-wiki-index.ts'.`,
+            command: `# Operator removes knowledge/wiki/repos/${filename} on the data branch and rebuilds the index via 'bun scripts/rebuild-wiki-index.ts'.`,
           },
         })
       }
@@ -332,7 +332,7 @@ async function main(): Promise<void> {
   if (argv.includes('--help') || argv.length === 0) {
     process.stdout.write(
       `${[
-        'Usage: node scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name> [--private ...] [--branch <ref>]',
+        'Usage: bun scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name> [--private ...] [--branch <ref>]',
         '',
         'Scans the local checkout for surfaces where the supplied private repo identifiers appear',
         'in public artifacts (commit subjects on main, recent Survey Repo workflow runs,',
@@ -343,8 +343,8 @@ async function main(): Promise<void> {
         'merge-data PR. Operators should run both passes for full coverage.',
         '',
         'Examples:',
-        '  node scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name>',
-        '  node scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name> --branch origin/data',
+        '  bun scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name>',
+        '  bun scripts/enumerate-existing-leaks.ts --private <node_id>:<owner>/<name> --branch origin/data',
         '',
         'For each surface, the operator decides REMEDIATE (run the printed command) or ACCEPT',
         '(record the disclosure in metadata/README.md). Phase 0 closes when every surface has',
