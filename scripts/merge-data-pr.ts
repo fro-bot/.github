@@ -406,6 +406,48 @@ async function maybeCreateConflictAlert(params: {
   return alert.data.number
 }
 
+/**
+ * File one open alert issue per exact `title`, paginating every open issue so dedup holds however
+ * many are open. An existing alert keeps its place and gets the current `body`, so a persistent
+ * condition stays one issue whose text follows the latest run. Returns the issue number.
+ */
+export async function upsertAlertIssue(params: {
+  octokit: OctokitClient
+  owner: string
+  repo: string
+  title: string
+  body: string
+}): Promise<number> {
+  const existingIssues = await params.octokit.paginate(params.octokit.rest.issues.listForRepo, {
+    owner: params.owner,
+    repo: params.repo,
+    state: 'open',
+    per_page: 100,
+  })
+
+  const existingAlert = existingIssues.find(issue => issue.title === params.title)
+
+  if (existingAlert !== undefined) {
+    await params.octokit.rest.issues.update({
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: existingAlert.number,
+      body: params.body,
+    })
+
+    return existingAlert.number
+  }
+
+  const alert = await params.octokit.rest.issues.create({
+    owner: params.owner,
+    repo: params.repo,
+    title: params.title,
+    body: params.body,
+  })
+
+  return alert.data.number
+}
+
 async function waitForKnownMergeableState(params: {
   octokit: OctokitClient
   owner: string

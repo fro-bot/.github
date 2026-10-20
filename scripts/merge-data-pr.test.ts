@@ -1,6 +1,6 @@
 import type {MergeDataPrLogger, OctokitClient} from './merge-data-pr.ts'
 import {describe, expect, it, vi} from 'vitest'
-import {mergeDataPr, MergeDataPrError} from './merge-data-pr.ts'
+import {mergeDataPr, MergeDataPrError, upsertAlertIssue} from './merge-data-pr.ts'
 
 interface CreateIssueParams {
   owner: string
@@ -1246,5 +1246,61 @@ describe('mergeDataPr', () => {
     // #then the non-retryable failure surfaces instead of being swallowed
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toContain('Validation failed')
+  })
+})
+
+function alertOctokit(open: {number: number; title: string}[]) {
+  const create = vi.fn(async (_params: CreateIssueParams) => ({data: {number: 501}}))
+  const update = vi.fn(async (_params: {owner: string; repo: string; issue_number: number; body: string}) => ({
+    data: {},
+  }))
+  const listForRepo = vi.fn(async () => ({data: open}))
+  const paginate = vi.fn(async (fn: unknown, _opts: unknown) => {
+    const call = fn as () => Promise<{data: unknown[]}>
+    return (await call()).data
+  })
+  const octokit = {paginate, rest: {issues: {create, update, listForRepo}}} as unknown as OctokitClient
+  return {octokit, create, update, paginate, listForRepo}
+}
+
+describe('upsertAlertIssue', () => {
+  const TITLE = 'Data merge-back blocked: unowned changes on data'
+
+  it('files a new issue when no open issue has the exact title', async () => {
+    const {octokit, create, update, paginate, listForRepo} = alertOctokit([
+      {number: 7, title: `${TITLE} (older wording)`},
+      {number: 8, title: 'Unrelated'},
+    ])
+
+    const number = await upsertAlertIssue({octokit, owner: 'fro-bot', repo: '.github', title: TITLE, body: 'body'})
+
+    expect(number).toBe(501)
+    expect(create).toHaveBeenCalledWith({owner: 'fro-bot', repo: '.github', title: TITLE, body: 'body'})
+    expect(update).not.toHaveBeenCalled()
+    expect(paginate).toHaveBeenCalledWith(listForRepo, {
+      owner: 'fro-bot',
+      repo: '.github',
+      state: 'open',
+      per_page: 100,
+    })
+  })
+
+  it('updates the body of the open issue with the exact title instead of filing a duplicate', async () => {
+    const {octokit, create, update} = alertOctokit([
+      {number: 8, title: 'Unrelated'},
+      {number: 7, title: TITLE},
+    ])
+
+    const number = await upsertAlertIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      title: TITLE,
+      body: 'fresh body',
+    })
+
+    expect(number).toBe(7)
+    expect(update).toHaveBeenCalledWith({owner: 'fro-bot', repo: '.github', issue_number: 7, body: 'fresh body'})
+    expect(create).not.toHaveBeenCalled()
   })
 })

@@ -1276,7 +1276,14 @@ describe('createGitDataFake', () => {
       ['dir', 'tree'],
       ['top.md', 'blob'],
     ])
-    expect(deep.data.tree.map(entry => entry.path)).toEqual(['dir/a.md', 'dir/sub/b.md', 'top.md'])
+    // Like the real API, a recursive read lists the directories above the files too.
+    expect(deep.data.tree.map(entry => [entry.path, entry.type])).toEqual([
+      ['dir', 'tree'],
+      ['dir/a.md', 'blob'],
+      ['dir/sub', 'tree'],
+      ['dir/sub/b.md', 'blob'],
+      ['top.md', 'blob'],
+    ])
   })
 
   it('stores and returns blobs as base64', async () => {
