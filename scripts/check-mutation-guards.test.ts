@@ -899,8 +899,8 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('stryker.config.json')).toBe(true)
     expect(triggerSet.files.has('mutation-guards.json')).toBe(true)
     expect(triggerSet.files.has('package.json')).toBe(true)
-    expect(triggerSet.files.has('pnpm-lock.yaml')).toBe(true)
-    expect(triggerSet.files.has('pnpm-workspace.yaml')).toBe(true)
+    expect(triggerSet.files.has('bun.lock')).toBe(true)
+    expect(triggerSet.files.has('bunfig.toml')).toBe(true)
     expect(triggerSet.files.has('scripts/check-mutation-guards.ts')).toBe(true)
     expect(triggerSet.files.has('scripts/mutation-guards-config.test.ts')).toBe(true)
     expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
@@ -970,13 +970,13 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
     expect(result).toBeUndefined()
   })
 
-  // Scenario (edge case 1): changed set includes only pnpm-lock.yaml — a fixed infrastructure
+  // Scenario (edge case 1): changed set includes only bun.lock — a fixed infrastructure
   // file, not a mutate/testFiles entry — still proceeds to run.
-  it('proceeds to run when the changed set includes only pnpm-lock.yaml', async () => {
+  it('proceeds to run when the changed set includes only bun.lock', async () => {
     const result = await evaluateTriggerGate(
       fakeTriggerConfig(),
       PULL_REQUEST_EVENT,
-      fakeGateDeps({fetchChangedFiles: () => ['pnpm-lock.yaml']}),
+      fakeGateDeps({fetchChangedFiles: () => ['bun.lock']}),
     )
     expect(result).toBeUndefined()
   })

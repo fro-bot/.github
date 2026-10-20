@@ -69,8 +69,8 @@ describe('main.yaml check-mutation-guards job', () => {
     expect(setupStep).toBeDefined()
   })
 
-  it('runs pnpm check:mutation-guards with GH_TOKEN set', () => {
-    const checkStep = job?.steps?.find(step => step.run === 'pnpm check:mutation-guards')
+  it('runs bun run check:mutation-guards with GH_TOKEN set', () => {
+    const checkStep = job?.steps?.find(step => step.run === 'bun run check:mutation-guards')
     expect(checkStep).toBeDefined()
     const expressionStart = '$' + '{{'
     expect(checkStep?.env?.GH_TOKEN).toBe(`${expressionStart} github.token }}`)

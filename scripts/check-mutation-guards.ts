@@ -951,7 +951,7 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * JSON report, never this return value. Exported as an injectable seam for testing.
  */
 export function defaultStrykerSpawner(): void {
-  const run = spawnSync('pnpm', ['exec', 'stryker', 'run', strykerConfigPath], {
+  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath], {
     cwd: repositoryRoot,
     stdio: 'inherit',
     env: buildStrykerSpawnEnv(),
@@ -1303,8 +1303,8 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
   'mutation-guards.json',
   'vitest.config.ts',
   'package.json',
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
+  'bun.lock',
+  'bunfig.toml',
   'scripts/check-mutation-guards.ts',
   'scripts/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',

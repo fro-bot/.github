@@ -34,17 +34,17 @@ Before writing anything, gather these from the live repo:
 
 | Source                                                | What to extract                                                                        |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `package.json`                                        | name, description, scripts, packageManager (pnpm version), engines, repository         |
+| `package.json`                                        | name, description, scripts, packageManager (Bun version), engines, repository         |
 | `README.md` (current)                                 | banner, badges, navigation, section order, voice                                       |
 | `.github/workflows/`                                  | workflow names, triggers, purposes (read each `name:` and top-level `on:` block)       |
-| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test summary (`pnpm test`)                 |
+| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test summary (`bun run test`)                 |
 | `metadata/*.yaml`                                     | metadata files in scope and their schemas                                              |
 | `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities)                                  |
 | `persona/`, `branding/`, `assets/`                    | character + brand asset inventory                                                      |
-| `mise.toml`                                           | tool versions (Node, pnpm)                                                             |
+| `mise.toml`                                           | tool versions (Node, Bun, Python)                                                             |
 | `git log --oneline -15`                               | recent change context                                                                  |
 
-Counts (workflows, scripts, tests, metadata files, wiki pages) MUST come from `ls`, `find`, or `pnpm test` output. Never guess or carry over from the previous draft.
+Counts (workflows, scripts, tests, metadata files, wiki pages) MUST come from `ls`, `find`, or `bun run test` output. Never guess or carry over from the previous draft.
 
 ## Style Rules (Non-Negotiable)
 
@@ -101,7 +101,7 @@ For section-scoped updates: read the current document, locate the section by hea
 
 **Accuracy (always):**
 
-- Every count matches the inventory (`ls`, `find`, `pnpm test` output — do not pipe or truncate test output)
+- Every count matches the inventory (`ls`, `find`, `bun run test` output — do not pipe or truncate test output)
 - Every workflow listed has a real `.github/workflows/*.yaml` file
 - Every script listed has a real `scripts/*.ts` file
 - Every link resolves (relative paths exist, external URLs are correct)
@@ -118,7 +118,7 @@ For section-scoped updates: read the current document, locate the section by hea
 
 | Mistake                                                                | Fix                                                                   |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Carrying over counts from previous draft                               | Re-derive every count from a live `ls` / `find` / `pnpm test` run     |
+| Carrying over counts from previous draft                               | Re-derive every count from a live `ls` / `find` / `bun run test` run     |
 | Adding "Robust", "Powerful", "Enterprise-grade" language               | Delete it. State the fact instead.                                    |
 | Listing a workflow that doesn't exist                                  | Cross-check against `ls .github/workflows/`                           |
 | Using bare `<img>` instead of `<picture>` or `<img ... width="100%" />` | Match the existing header block exactly                               |
@@ -134,7 +134,7 @@ For section-scoped updates: read the current document, locate the section by hea
 ls .github/workflows/                      # workflow count + names
 ls scripts/*.ts | grep -v test             # production script count
 ls scripts/*.test.ts                       # test file count
-pnpm test                                  # test summary (do not pipe or truncate)
+bun run test                                # test summary (do not pipe or truncate)
 ls metadata/*.yaml                         # metadata file count
 find knowledge/wiki -name '*.md' | wc -l   # wiki page count
 git log --oneline -15                      # recent change context

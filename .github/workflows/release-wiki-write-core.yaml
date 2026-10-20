@@ -78,7 +78,7 @@ jobs:
       - name: 🧪 Test Release Decision Against Pinned Release Tools
         env:
           WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
-        run: pnpm exec vitest run scripts/wiki-write-core-release.test.ts
+        run: bunx --no-install vitest run scripts/wiki-write-core-release.test.ts
 
       - name: 🔎 Decide release
         id: decision
@@ -117,7 +117,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: ✅ Verify committed package build
-        run: pnpm check:wiki-write-core-dist
+        run: bun run check:wiki-write-core-dist
 
   # ---------------------------------------------------------------------------
   # Publish job: the only job with write scopes and the release environment. It runs no repository script and

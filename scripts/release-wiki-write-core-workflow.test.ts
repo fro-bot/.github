@@ -201,7 +201,9 @@ describe('release-wiki-write-core.yaml gating', () => {
     const installIndex = stepIndexById(decideJob, 'decision') - 2
     const steps = decideJob?.steps ?? []
     expect(runOf(steps[installIndex] ?? {})).toBe('node scripts/wiki-write-core-release.ts install')
-    expect(runOf(steps[installIndex + 1] ?? {})).toBe('pnpm exec vitest run scripts/wiki-write-core-release.test.ts')
+    expect(runOf(steps[installIndex + 1] ?? {})).toBe(
+      'bunx --no-install vitest run scripts/wiki-write-core-release.test.ts',
+    )
     const prefixes = steps.slice(installIndex, installIndex + 3).map(step => step.env?.WIKI_WRITE_CORE_RELEASE_PREFIX)
     expect(new Set(prefixes)).toEqual(new Set([`${expression('runner.temp')}/wiki-write-core-release`]))
   })
@@ -214,7 +216,7 @@ describe('release-wiki-write-core.yaml gating', () => {
   })
 
   it('verifies the committed dist in build', () => {
-    expect((buildJob?.steps ?? []).map(step => step.run)).toContain('pnpm check:wiki-write-core-dist')
+    expect((buildJob?.steps ?? []).map(step => step.run)).toContain('bun run check:wiki-write-core-dist')
   })
 })
 
@@ -225,7 +227,7 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
     for (const step of steps) {
       expect(String(step.uses ?? '')).not.toMatch(/^\.\//u)
       const script = step.run ?? ''
-      expect(script).not.toMatch(/\bpnpm\b|\bnpx\b|\bnode\s|scripts\//u)
+      expect(script).not.toMatch(/\bbunx?\b|\bnpx\b|\bnode\s|scripts\//u)
     }
   })
 

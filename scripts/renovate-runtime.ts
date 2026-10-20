@@ -14,7 +14,7 @@ import {parse as parseYaml} from 'yaml'
  * Locates, installs and loads the Renovate used by the preset gate.
  *
  * Renovate is deliberately NOT a dependency of this repository: its transitive tree brings
- * advisories with no published fix (`braces`, `sprintf-js`) into `pnpm audit`, which `pnpm lint`
+ * advisories with no published fix (`braces`, `sprintf-js`) into `bun audit`, which `bun run lint`
  * (`check:override-floors`) fails on. Instead one exact version is installed into a scratch
  * prefix outside the repo at check time (`bun install` in the prefix, no lockfile written) and every
  * Renovate module is resolved from there.
@@ -85,7 +85,7 @@ export async function assertRenovateInstalled(prefix: string, version: string): 
   const installed = await readInstalledVersion(prefix)
   if (installed === undefined) {
     throw new Error(
-      `Renovate is not installed under ${PREFIX_ENV}=${prefix}. Run \`node scripts/install-renovate.ts\` (or \`pnpm check:renovate-config\`, which does) first.`,
+      `Renovate is not installed under ${PREFIX_ENV}=${prefix}. Run \`node scripts/install-renovate.ts\` (or \`bun run check:renovate-config\`, which does) first.`,
     )
   }
   if (installed !== version) {
@@ -105,7 +105,7 @@ export interface InstallCommand {
 export type RunInstall = (command: InstallCommand) => {status: number | null; error?: Error | undefined}
 
 /**
- * `process.env` without the `npm_package_*` variables a package-script runner (`pnpm run`) leaks in. Bun keeps
+ * `process.env` without the `npm_package_*` variables a package-script runner (`bun run`) leaks in. Bun keeps
  * an inherited `npm_package_json`, so `bun run install` inside `re2` would otherwise hand re2's
  * `install-from-cache` this repository's manifest, find no GitHub repository to download the prebuilt
  * binary from, and compile from source. Without the leak Bun points it at re2's own `package.json`.
@@ -149,7 +149,7 @@ const MINIMUM_RELEASE_AGE_SECONDS = 259_200
 /**
  * Installs the pinned Renovate into `prefix` and makes sure its RE2 binding works. The prefix gets its
  * own `package.json` pinning Renovate exactly, `cwd` is the prefix itself and `--no-save` keeps Bun
- * from writing a lockfile, so the repo's `package.json` and `pnpm-lock.yaml` are never touched.
+ * from writing a lockfile, so the repo's `package.json` and `bun.lock` are never touched.
  * `--minimum-release-age` refuses any package version published less than 3 days ago, transitive
  * dependencies included.
  *

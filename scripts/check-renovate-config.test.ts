@@ -396,7 +396,7 @@ describe('checkRenovateConfig', () => {
 
 // Exercises the real validator binary from the pinned install, so the flags (`--strict --no-global`)
 // and exit-code contract this gate relies on are pinned by tests. Skipped unless RENOVATE_PREFIX is
-// set. `pnpm test` leaves it unset (no network, no install); the `Check Workflows` CI job installs
+// set. `bun run test` leaves it unset (no network, no install); the `Check Workflows` CI job installs
 // the pin, sets RENOVATE_PREFIX and runs these files in a dedicated step.
 describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('real validator (pinned Renovate install)', () => {
   let dir: string

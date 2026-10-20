@@ -9,8 +9,8 @@
 #     for the script and metadata/repos.yaml. The PR diff is fetched as pure data
 #     via the GitHub compare API pinned to the workflow_run head SHA, never from a
 #     checked-out tree.
-#   - NO actions/cache restore. The shared setup action restores a pnpm cache that
-#     a PR workflow could poison. This job installs deps fresh with no cache.
+#   - NO dependency cache and NO cached Bun binary. This job installs deps fresh so a
+#     PR workflow cannot poison what the scan runs.
 #   - FRO_BOT_POLL_PAT is passed ONLY as a step-level env on the scan step. The
 #     script forwards it into the resolver subprocess under a scrubbed env (no
 #     GH_TOKEN/GITHUB_TOKEN inheritance) — mirroring the --promotion gitEnv pattern.
@@ -62,10 +62,9 @@ jobs:
           ref: main
           fetch-depth: 1
 
-      # Minimal node + pnpm setup via mise — no cache restore.
-      # Uses the same mise-action pin as .github/actions/setup but skips the
-      # actions/cache step entirely so a PR workflow cannot poison the store.
-      - name: 📦 Install mise (node + pnpm)
+      # Minimal node setup via mise — no cache restore.
+      # Uses the same mise-action pin as .github/actions/setup, with mise's own cache off.
+      - name: 📦 Install mise (node)
         env:
           MISE_VERSION: 2026.10.6 # renovate: datasource=github-releases packageName=jdx/mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
@@ -74,11 +73,18 @@ jobs:
           # Disable mise's own cache so no PR-poisonable cache is restored.
           cache: false
 
-      # Install production deps (yaml package is required by check-private-leak.ts).
-      # --prefer-offline is fine here since there is no cache to restore from.
+      # Bun runs only the install here; the scan itself runs on Node.
+      - name: 📦 Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+
+      # Install deps (yaml package is required by check-private-leak.ts).
+      # --frozen-lockfile installs exactly what bun.lock records.
       # --ignore-scripts prevents lifecycle hooks from running untrusted code.
       - name: 📦 Install dependencies (no cache)
-        run: pnpm install --prefer-offline --ignore-scripts --loglevel warn
+        run: bun install --frozen-lockfile --ignore-scripts
 
       # Run the scan. FRO_BOT_POLL_PAT is scoped to this step only.
       # The script reads GITHUB_EVENT_PATH (set automatically by Actions to the

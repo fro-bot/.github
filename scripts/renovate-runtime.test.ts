@@ -288,8 +288,8 @@ describe('assertRegexEngineIsRe2', () => {
   })
 })
 
-// Needs the pinned install in RENOVATE_PREFIX (the `Check Workflows` job and `pnpm check:renovate-config`
-// provide it); skipped by a plain `pnpm test`.
+// Needs the pinned install in RENOVATE_PREFIX (the `Check Workflows` job and `bun run check:renovate-config`
+// provide it); skipped by a plain `bun run test`.
 describe.skipIf(process.env.RENOVATE_PREFIX === undefined)('against the pinned Renovate install', () => {
   const runtimeModule = fileURLToPath(new URL('renovate-runtime.ts', import.meta.url))
 

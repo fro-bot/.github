@@ -54,9 +54,9 @@ interface RunTypeScriptBuildOptions {
 export function runTypeScriptBuild(outputDirectory: string, options: RunTypeScriptBuildOptions = {}): void {
   const spawn = options.spawn ?? execFileSync
   spawn(
-    'pnpm',
+    'bunx',
     [
-      'exec',
+      '--no-install',
       'tsc',
       '--project',
       options.buildConfigPath ?? buildConfig(),
@@ -189,10 +189,14 @@ export async function computeSourceTreeHash(options: SourceTreeHashOptions = {})
 
 export function resolveBuildConfig(configPath: string, options: {spawn?: typeof execFileSync} = {}): unknown {
   const spawn = options.spawn ?? execFileSync
-  const resolvedConfig = spawn('pnpm', ['exec', 'tsc', '--showConfig', '--project', configPath, '--pretty', 'false'], {
-    cwd: repositoryRoot(),
-    encoding: 'utf8',
-  })
+  const resolvedConfig = spawn(
+    'bunx',
+    ['--no-install', 'tsc', '--showConfig', '--project', configPath, '--pretty', 'false'],
+    {
+      cwd: repositoryRoot(),
+      encoding: 'utf8',
+    },
+  )
   return JSON.parse(resolvedConfig) as unknown
 }
 

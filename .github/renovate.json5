@@ -47,7 +47,7 @@
     },
   ],
   postUpgradeTasks: {
-    commands: ['pnpm run bootstrap', 'pnpm run fix'],
+    commands: ['bun run bootstrap', 'bun run fix'],
     executionMode: 'branch',
   },
 }

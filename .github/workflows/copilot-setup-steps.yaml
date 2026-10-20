@@ -28,7 +28,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: ✅ Validate Types
-        run: pnpm check-types
+        run: bun run check-types
 
       - name: ✅ Validate Lint
-        run: pnpm lint
+        run: bun run lint

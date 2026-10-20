@@ -1426,7 +1426,7 @@ describe('runCli', () => {
 // ---------------------------------------------------------------------------
 //
 // The publish-wiki build job's coverage step runs with cwd=quartz-build/ and
-// NEVER runs `pnpm bootstrap` at the repo root — only `npm ci` inside
+// NEVER runs `bun run bootstrap` at the repo root — only `npm ci` inside
 // quartz-build/. So repo-root node_modules does not exist in that job, and a
 // bare `import('yaml')` resolved from this script's own directory (scripts/)
 // would walk up to repo root and fail every time. These tests prove
