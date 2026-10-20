@@ -1,9 +1,9 @@
 /**
- * Test support: run a workflow step's `run:` block under bash with stub `git` and `node` on PATH.
+ * Test support: run a workflow step's `run:` block under bash with stub `git`, `bun` and `node` on PATH.
  *
  * The stubs log every invocation to a trace file and never touch the network or the repo, so a
  * contract test can assert what a step would have done for a given `git ls-remote` exit code.
- * `git ls-remote` exits per the configured code; every other git subcommand and every `node`
+ * `git ls-remote` exits per the configured code; every other git subcommand and every `bun` / `node`
  * invocation exits 0 (optionally overridden).
  */
 
@@ -17,7 +17,7 @@ export interface StepRun {
   status: number
   stdout: string
   stderr: string
-  /** One line per stubbed `git` / `node` invocation, as `git <args>` / `node <args>`. */
+  /** One line per stubbed `git` / `bun` / `node` invocation, as `git <args>` / `bun <args>` / `node <args>`. */
   trace: string[]
 }
 
@@ -46,11 +46,11 @@ const STUB = (tool: string): string =>
     'exit 0',
   ].join('\n')
 
-/** Executes `script` under bash in a temp directory with stubbed `git` and `node`. */
+/** Executes `script` under bash in a temp directory with stubbed `git`, `bun` and `node`. */
 export function runStepWithStubs(script: string, options: StepRunOptions): StepRun {
   const dir = mkdtempSync(join(tmpdir(), 'workflow-step-'))
   try {
-    for (const tool of ['git', 'node']) {
+    for (const tool of ['git', 'bun', 'node']) {
       writeFileSync(join(dir, tool), STUB(tool))
       chmodSync(join(dir, tool), 0o755)
     }

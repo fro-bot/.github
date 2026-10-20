@@ -311,7 +311,7 @@ env:
        Human Attention" — do not guess.
 
        Override floors are the exception to one-PR-per-package: `bun run lint` runs
-       `node scripts/check-override-floors.ts`, which fails on every high or
+       `bun scripts/check-override-floors.ts`, which fails on every high or
        critical advisory `bun audit` reports against the installed tree at once,
        so a PR fixing only some flagged packages stays red and cannot merge. Run
        it on a clean checkout of main, collect every package it flags, and fix
@@ -326,7 +326,7 @@ env:
        per-package override-floor PR); if one exists, push to it, extend it to
        cover every flagged package, and update its description instead of
        opening another. Open or update the PR only when
-       `node scripts/check-override-floors.ts` exits 0 on that branch; if it
+       `bun scripts/check-override-floors.ts` exits 0 on that branch; if it
        still fails, log it under "Needs Human Attention".
 
     3. CONTROL-PLANE INTEGRITY (highest-value for this repo)
@@ -542,7 +542,7 @@ jobs:
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-fro-bot.json
-        run: node scripts/wiki-handoff-baseline.ts
+        run: bun scripts/wiki-handoff-baseline.ts
 
       - name: 🎭 Load Persona
         id: persona
@@ -577,7 +577,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
-        run: node scripts/wiki-query.ts
+        run: bun scripts/wiki-query.ts
 
       - name: Query solutions context
         id: solutions-query
@@ -599,7 +599,7 @@ jobs:
               github.event.comment.body ||
               ''
             }}
-        run: node scripts/solutions-query.ts
+        run: bun scripts/solutions-query.ts
 
       - name: Run Fro Bot
         id: fro-bot-agent
@@ -642,8 +642,8 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
-            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
+            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
 
             Run the linked command exactly as written, including the inline
             `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
@@ -691,7 +691,7 @@ jobs:
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-fro-bot
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-fro-bot.json
-        run: node scripts/wiki-handoff-build.ts
+        run: bun scripts/wiki-handoff-build.ts
 
       # Baseline scoping (see the build step's env) can legitimately narrow a manifest
       # to empty even when the outer wiki-changes diff-hash flagged something — e.g. an
@@ -745,7 +745,7 @@ jobs:
       - name: Validate and apply wiki handoff
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
-        run: node scripts/wiki-handoff-apply.ts
+        run: bun scripts/wiki-handoff-apply.ts
 
       - name: 🔑 Mint App token for wiki ingest
         id: app-token
@@ -766,7 +766,7 @@ jobs:
           WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
         run: |
           warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
-          if node scripts/wiki-ingest.ts 2>"$warning_file"; then
+          if bun scripts/wiki-ingest.ts 2>"$warning_file"; then
             status=0
           else
             status=$?
@@ -826,7 +826,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
-        run: node scripts/wiki-query.ts
+        run: bun scripts/wiki-query.ts
 
       - name: Query solutions context
         id: solutions-query
@@ -836,7 +836,7 @@ jobs:
           SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
           SOLUTIONS_QUERY_TITLE: ''
           SOLUTIONS_QUERY_BODY: ''
-        run: node scripts/solutions-query.ts
+        run: bun scripts/solutions-query.ts
 
       # Sync wiki from data branch (above) intentionally dirties knowledge/**
       # relative to HEAD so wiki-query.ts reads the freshest content. This job
@@ -900,8 +900,8 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
-            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
+            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
 
             Run the linked command exactly as written, including the inline
             `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
@@ -967,7 +967,7 @@ jobs:
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-observe.json
-        run: node scripts/wiki-handoff-baseline.ts
+        run: bun scripts/wiki-handoff-baseline.ts
 
       - name: 🎭 Load Persona
         id: persona
@@ -990,7 +990,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
-        run: node scripts/wiki-query.ts
+        run: bun scripts/wiki-query.ts
 
       # Overlay metadata/ from the data branch so this run can derive digest
       # counts and scan metadata/repos.yaml (category 6) from live data.
@@ -1029,7 +1029,7 @@ jobs:
           SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
           SOLUTIONS_QUERY_TITLE: ''
           SOLUTIONS_QUERY_BODY: ''
-        run: node scripts/solutions-query.ts
+        run: bun scripts/solutions-query.ts
 
       - name: Run Fro Bot
         id: fro-bot-agent
@@ -1072,8 +1072,8 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally run one of:
 
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' node scripts/wiki-context-expand.ts linked`
-            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
+            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
 
             Run the linked command exactly as written, including the inline
             `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
@@ -1119,7 +1119,7 @@ jobs:
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff-observe
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-observe.json
-        run: node scripts/wiki-handoff-build.ts
+        run: bun scripts/wiki-handoff-build.ts
 
       # Baseline scoping (see the build step's env) can legitimately narrow a manifest
       # to empty even when the outer wiki-changes diff-hash flagged something — e.g. an
@@ -1234,7 +1234,7 @@ jobs:
           set -euo pipefail
           TODAY_UTC="$(date -u +%Y-%m-%d)"
           export TODAY_UTC
-          RESULT="$(node scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
+          RESULT="$(bun scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
           REPOS_TRACKED="$(echo "$RESULT" | jq '.repos_tracked')"
           SURVEYS_TODAY="$(echo "$RESULT" | jq '.surveys_today')"
           COUNT_STATUS="$(echo "$RESULT" | jq -r '.count_status')"
@@ -1306,7 +1306,7 @@ jobs:
             --arg report_url "$REPORT_URL" \
             '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
           export EVENT_CONTEXT_JSON
-          node scripts/gateway-announce.ts
+          bun scripts/gateway-announce.ts
 
   # ── Trusted writer: applies the fro-bot-observe job's wiki handoff artifact to `data` ──
   fro-bot-observe-wiki-ingest:
@@ -1345,7 +1345,7 @@ jobs:
       - name: Validate and apply wiki handoff
         env:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
-        run: node scripts/wiki-handoff-apply.ts
+        run: bun scripts/wiki-handoff-apply.ts
 
       - name: 🔑 Mint App token for wiki ingest
         id: app-token
@@ -1366,7 +1366,7 @@ jobs:
           WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
         run: |
           warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
-          if node scripts/wiki-ingest.ts 2>"$warning_file"; then
+          if bun scripts/wiki-ingest.ts 2>"$warning_file"; then
             status=0
           else
             status=$?

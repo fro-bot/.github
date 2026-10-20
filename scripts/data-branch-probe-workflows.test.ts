@@ -120,8 +120,8 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))('%s', (_key, 
     expect(result.stdout).toContain('::error::')
     expect(result.stdout).toContain(String(code))
     expect(overlayWasAttempted(result.trace)).toBe(false)
-    // Nothing downstream of a failed probe may run (e.g. the onboarded gate's node script).
-    expect(result.trace.some(line => line.startsWith('node'))).toBe(false)
+    // Nothing downstream of a failed probe may run (e.g. the onboarded gate's script).
+    expect(result.trace.some(line => line.startsWith('bun'))).toBe(false)
   })
 })
 
@@ -182,7 +182,7 @@ describe.each(overlaySteps.map(step => [step.key, step] as const))(
         const result = runStepWithStubs(step.run, {lsRemoteExit: 0, failSubcommand: subcommand})
 
         expect(result.status).not.toBe(0)
-        expect(result.trace.some(line => line.startsWith('node'))).toBe(false)
+        expect(result.trace.some(line => line.startsWith('bun'))).toBe(false)
         expect(result.stdout).not.toContain('continuing')
         expect(`${result.stdout}${result.stderr}`).not.toMatch(/::warning::/)
         if (ANNOUNCES_OVERLAY_FAILURE.has(step.key)) {
@@ -228,7 +228,7 @@ describe.each(steps.filter(step => step.file === 'survey-repo.yaml' && step.run.
       const result = runStepWithStubs(survey.run, {lsRemoteExit: code})
 
       expect(result.status).toBe(0)
-      expect(result.trace).toContain('node scripts/check-repo-onboarded.ts')
+      expect(result.trace).toContain('bun scripts/check-repo-onboarded.ts')
     })
   },
 )

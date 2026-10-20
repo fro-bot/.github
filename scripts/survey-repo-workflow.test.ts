@@ -345,7 +345,7 @@ describe('survey-repo correction injection contract', () => {
     const correctionStep = steps.find(step => step.name === 'Load correction context')
     const run = correctionStep?.run ?? ''
 
-    expect(run).toContain('node scripts/render-corrections-context.ts')
+    expect(run).toContain('bun scripts/render-corrections-context.ts')
     expect(run).not.toContain('GITHUB_OUTPUT')
     expect(run).not.toContain('client_payload')
     expect(run).toContain('exit "$status"')
@@ -436,7 +436,7 @@ describe('survey-repo.yaml App-token persistence migration', () => {
   it('survey-repo builds a wiki handoff artifact instead of committing to data directly', () => {
     const buildStep = surveyJob?.steps.find(step => step.name === 'Build wiki handoff artifact')
     const uploadStep = surveyJob?.steps.find(step => step.name === 'Upload wiki handoff artifact')
-    expect(buildStep?.run).toBe('node scripts/wiki-handoff-build.ts')
+    expect(buildStep?.run).toBe('bun scripts/wiki-handoff-build.ts')
     expect(uploadStep?.uses).toContain('actions/upload-artifact@')
     expect(surveyJob?.steps.find(step => step.name === 'Commit wiki ingest to data branch')).toBeUndefined()
   })
@@ -516,8 +516,8 @@ describe('survey-repo.yaml wiki change detection: shared script, no inline git-d
     const baselineStep = surveyJob?.steps.find(step => step.id === 'wiki-baseline')
     const detectStep = surveyJob?.steps.find(step => step.id === 'wiki-changes')
 
-    expect(String(baselineStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts baseline')
-    expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
+    expect(String(baselineStep?.run ?? '')).toBe('bun scripts/wiki-change-detect.ts baseline')
+    expect(String(detectStep?.run ?? '')).toBe('bun scripts/wiki-change-detect.ts detect')
   })
 
   it('Detect wiki survey changes feeds the baseline hash through env, not a re-read of the diff', () => {
@@ -581,8 +581,8 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
       const surveyCheck = surveyJob?.steps.find(step => step.name === 'Check repo onboarded')
 
       expect(checkStep()?.id).toBe('onboarded-persist')
-      expect(String(checkStep()?.run ?? '')).toContain('node scripts/check-repo-onboarded.ts')
-      expect(String(surveyCheck?.run ?? '')).toContain('node scripts/check-repo-onboarded.ts')
+      expect(String(checkStep()?.run ?? '')).toContain('bun scripts/check-repo-onboarded.ts')
+      expect(String(surveyCheck?.run ?? '')).toContain('bun scripts/check-repo-onboarded.ts')
       expect(String(checkStep()?.env?.REPO_OWNER ?? '')).toContain('needs.survey-resolve.outputs.resolve-owner')
       expect(String(checkStep()?.env?.REPO_NAME ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
     })
@@ -595,7 +595,7 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
       // Both the fetch and the restore refuse to continue on failure.
       expect(run.match(/exit 1/g)?.length).toBeGreaterThanOrEqual(2)
       // The overlay precedes the check.
-      expect(run.indexOf('git restore')).toBeLessThan(run.indexOf('node scripts/check-repo-onboarded.ts'))
+      expect(run.indexOf('git restore')).toBeLessThan(run.indexOf('bun scripts/check-repo-onboarded.ts'))
     })
 
     it("runs after the trusted recheck and before the wiki commit, under the commit step's own preconditions", () => {
@@ -1613,12 +1613,12 @@ describe('Unit 1 remediation: content-only detection routes index-only no-ops th
 
   it('exactly one baseline step and three detect steps are wired to it', () => {
     const baselineStep = steps.find(step => step.id === 'wiki-baseline')
-    expect(String(baselineStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts baseline')
+    expect(String(baselineStep?.run ?? '')).toBe('bun scripts/wiki-change-detect.ts baseline')
     expect(steps.filter(step => step.id === 'wiki-baseline')).toHaveLength(1)
 
     for (const detectStep of [detect1, detect2, detect3]) {
       expect(String(detectStep?.env?.WIKI_CHANGE_BASELINE_HASH ?? '')).toContain('steps.wiki-baseline.outputs.hash')
-      expect(String(detectStep?.run ?? '')).toBe('node scripts/wiki-change-detect.ts detect')
+      expect(String(detectStep?.run ?? '')).toBe('bun scripts/wiki-change-detect.ts detect')
     }
     expect([detect1, detect2, detect3].filter(step => step !== undefined)).toHaveLength(3)
   })

@@ -73,4 +73,4 @@ jobs:
           RENAME_WRITER_TOKEN: ${{ steps.writer-token.outputs.token }}
           NODE_ID: ${{ inputs.node_id }}
           OLD_NAME: ${{ inputs.old_name }}
-        run: node scripts/rename-tracked-repo.ts
+        run: bun scripts/rename-tracked-repo.ts

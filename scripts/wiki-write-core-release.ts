@@ -383,12 +383,12 @@ export async function assertToolsInstalled(prefix: string, pins: ToolPins): Prom
     const installed = await readInstalledVersion(prefix, name)
     if (installed === undefined) {
       throw new Error(
-        `${name} is not installed under ${PREFIX_ENV}=${prefix}. Run \`node scripts/wiki-write-core-release.ts install\` first.`,
+        `${name} is not installed under ${PREFIX_ENV}=${prefix}. Run \`bun scripts/wiki-write-core-release.ts install\` first.`,
       )
     }
     if (installed !== pins[name]) {
       throw new Error(
-        `${name} under ${prefix} is ${installed} but the workflow pins ${pins[name]}. Re-run \`node scripts/wiki-write-core-release.ts install\`.`,
+        `${name} under ${prefix} is ${installed} but the workflow pins ${pins[name]}. Re-run \`bun scripts/wiki-write-core-release.ts install\`.`,
       )
     }
   }

@@ -41,7 +41,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
           METADATA_WRITE_TOKEN: ${{ steps.metadata-token.outputs.token }}
-        run: node scripts/handle-invitation.ts
+        run: bun scripts/handle-invitation.ts
 
       # Best-effort Discord presence: announce accepted public invitations to the
       # gateway, which posts in Fronomenal as the Fro Bot user. Only public,
@@ -62,7 +62,7 @@ jobs:
             --argjson repos "$INVITATIONS_REPOS" \
             '{count: $count, repos: $repos}')"
           export EVENT_CONTEXT_JSON
-          node scripts/gateway-announce.ts
+          bun scripts/gateway-announce.ts
 
       # Bluesky posting is disabled pending re-evaluation of social channels.
       # The script (scripts/bluesky-post.ts) is intentionally retained for future
@@ -74,5 +74,5 @@ jobs:
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
           INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
         run: |
-          node scripts/bluesky-post.ts \
+          bun scripts/bluesky-post.ts \
             "🌐 Just accepted ${INVITATIONS_ACCEPTED} collaboration invitation(s) on GitHub. The network grows ✨ #GitHub #OpenSource"

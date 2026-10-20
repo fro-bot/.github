@@ -207,7 +207,7 @@ function parseArguments(args: readonly string[]): ParsedArguments {
     throw new CorrectionLifecycleCliError(
       'INVALID_ARGUMENT',
       'correction-lifecycle requires record, retire, reconfirm, or supersede',
-      'Run `node scripts/correction-lifecycle.ts <command> --help` for the command fields.',
+      'Run `bun scripts/correction-lifecycle.ts <command> --help` for the command fields.',
     )
   }
 

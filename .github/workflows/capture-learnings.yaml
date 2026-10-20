@@ -77,7 +77,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
-        run: node scripts/capture-learnings-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
+        run: bun scripts/capture-learnings-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
         shell: bash
 
       - name: 📤 Upload digest artifact
@@ -378,7 +378,7 @@ jobs:
           CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
           CAPTURE_LEARNINGS_BODIES_PATH: ${{ runner.temp }}/capture-learnings-bodies.json
           CAPTURE_LEARNINGS_RESULT_PATH: ${{ runner.temp }}/capture-learnings-result.json
-        run: node scripts/capture-learnings-open.ts | tee "$RUNNER_TEMP/open-output.json"
+        run: bun scripts/capture-learnings-open.ts | tee "$RUNNER_TEMP/open-output.json"
         shell: bash
 
       - if: always()

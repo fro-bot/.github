@@ -9,10 +9,10 @@ import {mergeWikiLogs, rebuildWikiIndex} from '@fro.bot/wiki-write-core'
  * conflicts on the shared wiki catalog files.
  *
  * Usage:
- *   node scripts/rebuild-wiki-index.ts
+ *   bun scripts/rebuild-wiki-index.ts
  *     Rebuild `knowledge/index.md` from all files under `knowledge/wiki/**`.
  *
- *   node scripts/rebuild-wiki-index.ts --merge-logs <path1> <path2> [...]
+ *   bun scripts/rebuild-wiki-index.ts --merge-logs <path1> <path2> [...]
  *     Merge multiple log.md files chronologically into `knowledge/log.md`.
  *     Dedupes entries by `(timestamp, target)`; preserves canonical header.
  *

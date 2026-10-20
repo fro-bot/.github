@@ -46,7 +46,7 @@ Fro Bot is an AI-powered GitHub bot for repository review, maintenance, and cont
 
 ⚙️ **Development Standards**
 
-- Node 24 native TypeScript scripts with strict type-checking and strip-only compatibility checks
+- Bun-run TypeScript scripts with strict type-checking and Node strip-only compatibility checks
 - ESLint + Prettier enforcement and colocated Vitest coverage for `scripts/*.ts`
 - Canonical AI-assistant guidance in [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
 
@@ -96,8 +96,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 ### Prerequisites
 
-- **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
-- **Bun** (exact version pinned in [`package.json`](package.json) under `packageManager`; installs dependencies and runs package scripts)
+- **Bun** (exact version pinned in [`package.json`](package.json) under `packageManager`; installs dependencies, runs package scripts and runs `scripts/*.ts` with no build step)
+- **Node.js** 24 (pinned in [`mise.toml`](mise.toml); runs Vitest, Stryker, the private-leak scan, the "Test Scripts Load" job, the `coverage` script and `check:renovate-config`)
 - **Git** for version control
 - Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
@@ -174,7 +174,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 │   └── wiki/{repos,topics,entities,comparisons}/
 ├── metadata/               # Versioned control-plane state (YAML)
 ├── persona/                # Fro Bot voice and character definition
-├── scripts/                # TypeScript entrypoints (Node 24 native TS)
+├── scripts/                # TypeScript entrypoints (run with Bun)
 ├── common-settings.yaml    # Shared repository settings for downstream repos
 ├── eslint.config.ts        # Linting configuration
 ├── mise.toml               # Pinned tool versions

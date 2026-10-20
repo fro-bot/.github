@@ -58,7 +58,7 @@ jobs:
           WIKI_LINT_REPORT_PATH: wiki-lint-report.md
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
           WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data_sha }}
-        run: node scripts/wiki-lint.ts
+        run: bun scripts/wiki-lint.ts
 
       - name: Compute repairable output
         id: repairable
@@ -86,7 +86,7 @@ jobs:
           WIKI_LINT_REPORT_PATH: wiki-lint-report.md
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
           WIKI_LINT_FAILURE_MESSAGE: 'cannot lint wiki snapshot: origin/data is unavailable'
-        run: node scripts/wiki-lint.ts
+        run: bun scripts/wiki-lint.ts
 
       - name: Upload wiki lint artifact
         if: always()
@@ -135,7 +135,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
-        run: node scripts/wiki-lint-issues.ts
+        run: bun scripts/wiki-lint-issues.ts
 
   # ---------------------------------------------------------------------------
   # Repair job: runs only when the lint job's dedicated repairable-classes
@@ -203,7 +203,7 @@ jobs:
           WIKI_REPAIR_DATA_TIP_SHA: ${{ steps.restore-data.outputs.data_sha }}
           WIKI_REPAIR_OWNER: ${{ github.repository_owner }}
           WIKI_REPAIR_REPO: ${{ github.event.repository.name }}
-        run: node scripts/wiki-repair.ts
+        run: bun scripts/wiki-repair.ts
 
       - name: 📋 Write repair summary
         if: always()

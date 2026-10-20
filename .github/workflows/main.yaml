@@ -169,7 +169,7 @@ jobs:
         # outside the checkout, with lifecycle scripts off. Nothing is added to package.json or bun.lock.
         env:
           WIKI_WRITE_CORE_RELEASE_PREFIX: ${{ runner.temp }}/wiki-write-core-release
-        run: node scripts/wiki-write-core-release.ts install
+        run: bun scripts/wiki-write-core-release.ts install
 
       - name: 🧪 Test Release Decision Against Pinned Release Tools
         # `bun run test` skips the tests that need the real plugins; run them here, against the install
@@ -200,7 +200,7 @@ jobs:
       - name: 🛡 Enforce Wiki Authority
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/check-wiki-authority.ts
+        run: bun scripts/check-wiki-authority.ts
 
   check-mutation-guards:
     name: Check Mutation Guards

@@ -109,7 +109,7 @@ A private repo's existence, name, or content must never reach a public surface. 
 
   The gate posts a `Security: Private Leak Scan` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). It is registered as a required status check on `main`.
 
-**Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
+**Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
 
 ### `renovate.yaml`
 

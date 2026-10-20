@@ -729,7 +729,7 @@ function buildTokensForName(nameWithOwner: string): string[] {
  * Approach: replace each private token (case-insensitive) found in the path with
  * `[REDACTED]`. This keeps the path structure operator-actionable (directory depth,
  * extension, surrounding segments are preserved) while never printing the literal
- * private name. Operators can run `node scripts/resolve-private.ts metadata/repos.yaml`
+ * private name. Operators can run `bun scripts/resolve-private.ts metadata/repos.yaml`
  * to map node_ids back to owner/name.
  */
 function redactPathTokens(filePath: string, privateTokens: readonly string[]): string {
@@ -1028,7 +1028,7 @@ export async function runPromotionCli(
     process.stderr.write(`  - ${file}\n`)
   }
   process.stderr.write(
-    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
+    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts metadata/repos.yaml\n',
   )
   process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
   process.stderr.write('To resolve: redact the private name from the data branch and re-run the promotion.\n')
@@ -1213,7 +1213,7 @@ export async function main(
   // Not read by any parser, not compared by any assertion, does not affect classification, exit
   // status, redaction, or downstream parsing — purely a human instruction for the PR author.
   // Removing the call entirely (CallExpression) is equally unobservable for the same reason.
-  process.stderr.write('\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n')
+  process.stderr.write('\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts metadata/repos.yaml\n')
   // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
   process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
   // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
