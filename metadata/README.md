@@ -60,7 +60,7 @@ Field notes:
 
 Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows, all running under the Fro Bot App identity (`fro-bot[bot]`). The ruleset in `.github/settings.yml` enforces this: it bypasses only the App, so no other identity can push a direct `update` or `creation` write to `data` — though a repo admin can still edit or remove the ruleset itself. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
 
-**Interim state:** reconcile's own integrity check (`verifyDataBranchIntegrity`) hasn't caught up to the ruleset yet — it still accepts both `fro-bot` and `fro-bot[bot]` as legitimate `data` tip authors, and only checks the tip commit. It will require every commit since the last reseed to be `fro-bot[bot]`-authored once a promotion has reseeded `data`.
+**Interim state:** reconcile's own integrity check (`verifyDataBranchIntegrity`) hasn't caught up to the ruleset yet — it still accepts both `fro-bot` and `fro-bot[bot]` as legitimate `data` tip authors, and only checks the tip commit.
 
 **Lockout recovery:** if App writers start failing with ruleset rejections (say, a wrong bypass ID in `.github/settings.yml`), fix or remove the ruleset there on `main` — the ruleset doesn't cover `main` itself. The next `Update Repo Settings` run applies the fix. A repo admin can also edit the ruleset directly under repository settings as an emergency step.
 
@@ -226,6 +226,16 @@ git push origin data
 That last `git push origin data` now has to authenticate as the Fro Bot App: the `data`-branch ruleset in `.github/settings.yml` bypasses only the App's `Integration` actor, so pushing with a personal credential or `FRO_BOT_PAT` is rejected. Mint a short-lived App installation token (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`) and push with that, or land the edit through an App-authenticated workflow instead.
 
 The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. For faster turnaround, trigger it manually via `gh workflow run merge-data.yaml`.
+
+### The `data` branch lifecycle
+
+`data` persists through promotions. Two rulesets in `.github/settings.yml` target it: one restricts writes to the Fro Bot App, and `data branch: no deletion` blocks deletion for every actor, App included, so the squash merge of a promotion PR does not delete it. `delete_branch_on_merge` stays on for every other branch.
+
+Each `Merge Data Branch` run starts with a merge-back (`scripts/merge-back-data.ts`), before the privacy gates and the promotion compare. It writes one `fro-bot[bot]`-authored commit onto `data` with parents `[main, data]` and a tree that takes every data-owned path from `data` and every other path from `main`. Data-owned paths are the ones the authority guard covers (`scripts/check-wiki-authority.ts`); a data-owned path that `data` lacks is absent from the result. The promotion PR then shows only the writes made on `data` since the last promotion, and no PR opens when there are none. When `data` already contains `main`, nothing is written. When `data` is missing, the run bootstraps it from `main` first; the bootstrap is the recovery path, not part of the promotion cycle.
+
+- **Unowned changes fail the run.** If `data` changed a path outside the data-owned set (for example `metadata/README.md`) to content that neither the merge base nor `main` holds, the merge-back writes nothing, the run fails, and a `Data merge-back blocked: unowned changes on data` issue lists the paths. Only the App writes `data`, so the path clears when the same content lands on `main` through an ordinary pull request.
+- **Owned paths change only through `data`.** The authority guard blocks a revert PR on `main`, so revert a bad promotion with an App-authenticated write to `data`; the next promotion carries it.
+- **Deleting `data` on purpose** needs the `data branch: no deletion` ruleset removed from `.github/settings.yml` first (merged to `main` and applied by `Update Repo Settings`). The next writer or merge-data run then bootstraps a fresh branch from `main`.
 
 `metadata/README.md` (this file) and other human documentation remain editable through normal PRs to `main` — the guard targets only `metadata/*.{yaml,yml}`.
 

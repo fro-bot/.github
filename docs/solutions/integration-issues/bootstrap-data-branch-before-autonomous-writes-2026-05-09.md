@@ -6,11 +6,11 @@ module: data-branch-bootstrap
 problem_type: integration_issue
 component: tooling
 severity: high
-last_updated: 2026-07-04
+last_updated: 2026-10-20
 verified: 2026-05-09
 symptoms:
-  - GitHub deleted the data source branch after a data-to-main promotion PR was squash-merged.
-  - Autonomous metadata and wiki writers could not safely write to the missing data branch.
+  - The data branch is missing: never created, or deleted on purpose after its deletion ruleset was removed.
+  - Autonomous metadata and wiki writers cannot safely write to the missing data branch.
   - Manual branch restoration risked creating a human-authored data tip that failed integrity checks.
   - Concurrent writer startup could race while recreating the same missing data ref.
 root_cause: missing_workflow_step
@@ -33,27 +33,29 @@ tags:
 
 ## Problem
 
-Autonomous writers in this repository use the unprotected `data` branch as their durable write
-target, then promote safe changes to `main` through a PR. After a data-to-main promotion PR was
-squash-merged, GitHub deleted the `data` source branch. The next metadata or wiki write then had no
-safe branch to target.
+Autonomous writers in this repository use the `data` branch as their durable write target, then
+promote safe changes to `main` through a PR. `data` persists through promotions: a deletion-only
+ruleset with no bypass actors blocks the automatic head-branch deletion that follows the squash
+merge, and each merge-data run merges `main` back into `data`. The branch can still be missing, at
+first creation or after a deliberate deletion that removed the ruleset first. A write then has no safe
+branch to target.
 
 Recreating `data` directly from `main` is not enough. If the restored tip is authored by a human, the
 data-branch integrity guard can reject it even when the tree contents are correct.
 
 ## Symptoms
 
-- A data-to-main promotion PR succeeded, but the `data` source branch was deleted afterward.
+- The `data` branch does not exist when a writer starts.
 - Metadata and wiki writers could fail before reading or updating their target files.
-- Restoring `data` manually risked a wrong-author branch tip.
-- Multiple autonomous writers could concurrently observe missing `data` and race on `createRef`.
-- A writer could bootstrap `data`, then see a `404` if the branch disappeared again before a
+- Restoring `data` manually risks a wrong-author branch tip.
+- Multiple autonomous writers can concurrently observe missing `data` and race on `createRef`.
+- A writer can bootstrap `data`, then see a `404` if the branch disappears again before a
   follow-on content or ref read.
 
 ## What Didn't Work
 
-- **Relying on the promotion workflow to preserve `data`.** GitHub can delete the source branch after
-  merge, so writers need their own safe bootstrap path.
+- **Relying on one process to keep `data` present.** A missing branch can come from first setup, a
+  deliberate deletion or a removed ruleset, so writers need their own safe bootstrap path.
 - **Restoring `data` as a human actor.** That fixes branch existence but violates the author model
   enforced by the integrity guard.
 - **Treating every GitHub `422` as benign.** For ref creation, `422` only means the create failed. It
@@ -164,7 +166,9 @@ implementation.
 
 - Put missing-branch recovery in shared writer utilities, not individual workflow call sites.
 - Treat ref-creation `422` responses as recoverable only after verifying the ref exists afterward.
-- Restore `data` through `bootstrapDataBranch()` rather than manually recreating the branch.
+- Restore `data` through `bootstrapDataBranch()` rather than manually recreating the branch. The
+  merge-data merge-back (`scripts/merge-back-data.ts`) calls it first when `data` is missing, and
+  otherwise leaves the existing branch in place.
 - Check both GitHub branch protection shapes before writing:
   - `response.data.protected`
   - `response.data.protection?.enabled`
@@ -175,6 +179,7 @@ implementation.
 
 - PR: [#3272 — Bootstrap data before autonomous writes](https://github.com/fro-bot/.github/pull/3272)
 - Related promotion: [#3271 — Merge data into main](https://github.com/fro-bot/.github/pull/3271)
+- Plan: [Keep the data branch present through promotion](../../plans/2026-10-20-001-fix-keep-data-branch-present-plan.md)
 - Related alert: [#3256 — Reconcile integrity alert](https://github.com/fro-bot/.github/issues/3256)
 - Related doc: [Data Merge PR recovery must distinguish GitHub 422s and mergeability races](merge-data-pr-github-422-race-recovery-2026-05-02.md)
 - Related doc: [Silent failures in autonomous multi-step pipelines](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md)

@@ -561,9 +561,7 @@ function fetchPrivateNodeIds(
     if (!branchExists) {
       // Step 3b: data branch ABSENT → fall back to main checkout on disk.
       // The workflow checks out ref: main, so metadata/repos.yaml is present in CWD.
-      process.stderr.write(
-        'check-private-leak: data branch absent (post-squash window) — falling back to main metadata/repos.yaml\n',
-      )
+      process.stderr.write('check-private-leak: data branch absent — falling back to main metadata/repos.yaml\n')
       const mainYaml = mainReposYamlReader('metadata/repos.yaml')
       return extractPrivateNodeIds(mainYaml)
     }
