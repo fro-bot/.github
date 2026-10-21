@@ -4,11 +4,12 @@
  * - Writes one commit on `data` with parents `[main, data]`: `main`'s tree, with every data-owned path
  *   (`isDataOwnedPath`) taken from `data`. Nothing is written when `data` already contains `main`.
  * - Fails closed, filing an alert and writing nothing, when an unowned path on `data` differs from both
- *   the merge base and `main`. Checked on every run.
- * - Retries only on an `updateRef` 409/422, up to 3 attempts, re-reading everything each time. It never
- *   forces the ref update.
- * - Errors reach output as a fixed code and never as an upstream message. The HTTP status appears on
- *   the generic `API_ERROR` line only; `BOOTSTRAP_<code>` errors carry no status.
+ *   the merge base and `main`, and `main` has not moved since the attempt read it. Checked on every run.
+ *   The block is reported on output even when the alert cannot be delivered.
+ * - Re-reads everything, up to 3 attempts, when `updateRef` answers 409/422 or `main` moved during an
+ *   attempt that found unowned changes. It never forces the ref update.
+ * - Errors reach output as a fixed code and never as an upstream message. The HTTP status appears only on
+ *   `API_ERROR`, `RETRIES_EXHAUSTED` and `ALERT_DELIVERY_FAILED` lines; `BOOTSTRAP_<code>` errors carry none.
  */
 
 import process from 'node:process'
@@ -114,12 +115,22 @@ export interface MergeBackParams {
 export type MergeBackOutcome =
   | {readonly result: 'noop'}
   | {readonly result: 'merged'; readonly commit: string; readonly attempts: number}
-  | {readonly result: 'blocked'; readonly paths: readonly string[]}
+  | {
+      readonly result: 'blocked'
+      readonly paths: readonly string[]
+      /** Present when the alert issue could not be filed or updated: the block is real either way. */
+      readonly alertFailure?: {readonly status: number | undefined}
+    }
 
 /** One attempt's result: a final outcome, or `updateRef` saying the branch moved (409) or the update is not a fast-forward (422). */
-type AttemptResult = MergeBackOutcome | {readonly result: 'raced'; readonly status: number}
+type AttemptResult =
+  | MergeBackOutcome
+  | {readonly result: 'raced'; readonly status: number}
+  /** `main` advanced while the attempt ran, so what it read may be stale: read everything again. */
+  | {readonly result: 'main-moved'}
 
-export type MergeBackErrorCode = 'TREE_TRUNCATED' | 'TREE_MALFORMED' | 'PROTECTED_BRANCH' | 'RETRIES_EXHAUSTED'
+export type MergeBackErrorCode =
+  'TREE_TRUNCATED' | 'TREE_MALFORMED' | 'PROTECTED_BRANCH' | 'RETRIES_EXHAUSTED' | 'MAIN_MOVED'
 
 export class MergeBackError extends Error {
   readonly code: MergeBackErrorCode
@@ -251,7 +262,15 @@ async function attemptMergeBack(params: MergeBackParams, attempt: number): Promi
 
   const unowned = findUnownedChanges(base, main, data)
   if (unowned.length > 0) {
-    await params.fileAlert(buildAlert(unowned))
+    // `data` may already hold a newer `main` (another run's merge-back) than the tip read above, which
+    // makes inherited changes look unowned. Alert only against a `main` that has not moved since.
+    const mainNow = (await client.rest.git.getRef({owner, repo, ref: 'heads/main'})).data.object.sha
+    if (mainNow !== mainSha) return {result: 'main-moved'}
+    try {
+      await params.fileAlert(buildAlert(unowned))
+    } catch (error: unknown) {
+      return {result: 'blocked', paths: unowned, alertFailure: {status: statusOf(error)}}
+    }
     return {result: 'blocked', paths: unowned}
   }
 
@@ -288,14 +307,15 @@ async function attemptMergeBack(params: MergeBackParams, attempt: number): Promi
   return {result: 'merged', commit: commit.data.sha, attempts: attempt}
 }
 
-export async function mergeBackData(params: MergeBackParams): Promise<MergeBackOutcome> {
-  let lastRace = 409
-  for (let attempt = 1; attempt <= maxAttempts(); attempt += 1) {
-    const result = await attemptMergeBack(params, attempt)
-    if (result.result !== 'raced') return result
-    lastRace = result.status
+export async function mergeBackData(params: MergeBackParams, attempt = 1): Promise<MergeBackOutcome> {
+  const result = await attemptMergeBack(params, attempt)
+  if (result.result !== 'raced' && result.result !== 'main-moved') return result
+  if (attempt >= maxAttempts()) {
+    throw result.result === 'raced'
+      ? new MergeBackError('RETRIES_EXHAUSTED', result.status)
+      : new MergeBackError('MAIN_MOVED')
   }
-  throw new MergeBackError('RETRIES_EXHAUSTED', lastRace)
+  return mergeBackData(params, attempt + 1)
 }
 
 /**
@@ -330,7 +350,13 @@ export async function runCli(env: Record<string, string | undefined>): Promise<n
     })
 
     if (outcome.result === 'blocked') {
-      return fail(`BLOCKED (unowned_paths=${outcome.paths.length}). Nothing was written; an alert issue was filed.`)
+      const count = outcome.paths.length
+      if (outcome.alertFailure === undefined) {
+        return fail(`BLOCKED (unowned_paths=${count}). Nothing was written; an alert issue was filed.`)
+      }
+      fail(`BLOCKED (unowned_paths=${count}). Nothing was written.`)
+      const {status} = outcome.alertFailure
+      return fail(status === undefined ? 'ALERT_DELIVERY_FAILED' : `ALERT_DELIVERY_FAILED (status=${status})`)
     }
     process.stdout.write(
       outcome.result === 'noop'

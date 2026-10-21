@@ -73,6 +73,24 @@ function withGit(client: FakeClient, git: Partial<FakeClient['rest']['git']>): F
   return {rest: {repos: client.rest.repos, git: {...client.rest.git, ...git}}}
 }
 
+/**
+ * Makes the n-th `heads/main` read (1-based) return the current tip and then run `afterRead`, so a
+ * test can move `main` or `data` right after an attempt captured the tip.
+ */
+function movingMain(fake: GitDataFake, afterRead: (readNumber: number) => void | Promise<void>): FakeClient {
+  let reads = 0
+  return withGit(fake.client, {
+    getRef: async params => {
+      const result = await fake.client.rest.git.getRef(params)
+      if (params.ref === 'heads/main') {
+        reads += 1
+        await afterRead(reads)
+      }
+      return result
+    },
+  })
+}
+
 function methods(fake: GitDataFake): string[] {
   return fake.calls.map(call => call.method)
 }
@@ -557,21 +575,112 @@ describe('mergeBackData: fail closed on unowned changes (R6)', () => {
     expect(lines.some(line => line.includes('more'))).toBe(false)
   })
 
-  it('does not call a failing alert helper a pass', async () => {
+  it('still reports the block, with the alert failure status, when the alert cannot be delivered', async () => {
     const fake = createRepo()
     fake.commit('main', {'scripts/c.ts': 'c\n'})
     fake.advance({'scripts/b.ts': 'b changed\n'})
     const {params} = harness(fake)
 
-    await expect(
-      mergeBackData({
-        ...params,
-        fileAlert: async () => {
-          throw new Error('alert failed')
-        },
-      }),
-    ).rejects.toThrow('alert failed')
+    const outcome = await mergeBackData({
+      ...params,
+      fileAlert: async () => {
+        throw Object.assign(new Error('alert failed'), {status: 403})
+      },
+    })
+
+    expect(outcome).toEqual({result: 'blocked', paths: ['scripts/b.ts'], alertFailure: {status: 403}})
     expect(writes(fake)).toEqual([])
+  })
+
+  it('reports an alert failure without a status as an undefined status', async () => {
+    const fake = createRepo()
+    fake.commit('main', {'scripts/c.ts': 'c\n'})
+    fake.advance({'scripts/b.ts': 'b changed\n'})
+    const {params} = harness(fake)
+
+    const outcome = await mergeBackData({
+      ...params,
+      fileAlert: async () => {
+        throw new Error('alert failed')
+      },
+    })
+
+    expect(outcome).toEqual({result: 'blocked', paths: ['scripts/b.ts'], alertFailure: {status: undefined}})
+  })
+})
+
+describe('mergeBackData: overlapping merge-backs (main moves under an attempt)', () => {
+  it('retries instead of alerting when another run merged a newer main into data after this run read main (M0/M1)', async () => {
+    // #given this run captured main at M0, then another run merged M1 into data, so data inherits M1's
+    // changes to an unowned path
+    const fake = createRepo()
+    fake.commit('main', {'scripts/b.ts': 'b M0\n'})
+    const other = harness(fake)
+    const client = movingMain(fake, async readNumber => {
+      if (readNumber !== 1) return
+      fake.commit('main', {'scripts/b.ts': 'b M1\n'})
+      await other.run()
+    })
+    const mine = harness(fake, client)
+
+    // #when this run proceeds
+    const outcome = await mine.run()
+
+    // #then it re-reads, finds nothing unowned against the settled main, and files no alert
+    expect(mine.alerts).toEqual([])
+    expect(other.alerts).toEqual([])
+    expect(other.alerts).toEqual([])
+    expect(outcome).toEqual({result: 'noop'})
+    expect(fake.files('data')['scripts/b.ts']).toBe('b M1\n')
+    expect(callsTo(fake, 'getRef').filter(call => call.ref === 'heads/main').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('alerts once a retry finds the violation against a main that stayed put', async () => {
+    // #given main moves once (during the first attempt) and data carries a genuine unowned write
+    const fake = createRepo()
+    fake.advance({'scripts/evil.ts': 'evil\n'})
+    const client = movingMain(fake, readNumber => {
+      if (readNumber === 1) fake.commit('main', {'scripts/c.ts': 'c\n'})
+    })
+    const mine = harness(fake, client)
+
+    const outcome = await mine.run()
+
+    expect(outcome).toEqual({result: 'blocked', paths: ['scripts/evil.ts']})
+    expect(mine.alerts).toHaveLength(1)
+    expect(writes(fake)).toEqual([])
+  })
+
+  it('fails with MAIN_MOVED, without an alert, when main moves on every attempt', async () => {
+    const fake = createRepo()
+    fake.advance({'scripts/evil.ts': 'evil\n'})
+    // the first read of an attempt is odd, the pre-alert re-read is even: move main after each odd read
+    const client = movingMain(fake, readNumber => {
+      // bounded, so a retry loop that failed to stop at the limit would end differently instead of hanging
+      if (readNumber % 2 === 1 && readNumber <= 12) fake.commit('main', {'scripts/c.ts': `c ${readNumber}\n`})
+    })
+    const mine = harness(fake, client)
+
+    const error = await rejection(mine.run())
+
+    expect(error).toMatchObject({name: 'MergeBackError', code: 'MAIN_MOVED'})
+    expect((error as Error).message).toBe('merge-back-data: MAIN_MOVED')
+    expect(mine.alerts).toEqual([])
+    expect(writes(fake)).toEqual([])
+    expect(callsTo(fake, 'getRef').filter(call => call.ref === 'heads/main')).toHaveLength(6)
+  })
+
+  it('reports the last failure when a ref race is followed by main moving', async () => {
+    const fake = createRepo()
+    fake.advance({'scripts/evil.ts': 'evil\n'})
+    const client = movingMain(fake, readNumber => {
+      if (readNumber % 2 === 1 && readNumber <= 12) fake.commit('main', {'scripts/c.ts': `c ${readNumber}\n`})
+    })
+
+    const error = await rejection(harness(fake, client).run())
+
+    expect(error).toMatchObject({code: 'MAIN_MOVED'})
+    expect((error as MergeBackError).status).toBeUndefined()
   })
 })
 
@@ -857,7 +966,7 @@ describe('runCli', () => {
   }
 
   /** The fake as an Octokit: the Git Data surface plus the issue calls the alert helper makes. */
-  function octokitFor(fake: GitDataFake, issues: Issue[] = []) {
+  function octokitFor(fake: GitDataFake, issues: Issue[] = [], createError?: Error) {
     const created: {title: string; body: string}[] = []
     const updated: {issue_number: number; body: string}[] = []
     const listForRepo = async () => ({data: issues})
@@ -868,6 +977,7 @@ describe('runCli', () => {
         issues: {
           listForRepo,
           create: async (params: {title: string; body: string}) => {
+            if (createError !== undefined) throw createError
             created.push(params)
             return {data: {number: 900}}
           },
@@ -947,6 +1057,40 @@ describe('runCli', () => {
       '::error::merge-back-data: BLOCKED (unowned_paths=1). Nothing was written; an alert issue was filed.\n',
     ])
     expect(writes(fake)).toEqual([])
+  })
+
+  it('keeps the block visible, with the alert failure status, when the alert cannot be filed', async () => {
+    const fake = createRepo()
+    fake.commit('main', {'scripts/b.ts': 'b main\n'})
+    fake.advance({'metadata/README.md': 'readme from data\n'})
+    octokitFor(fake, [], Object.assign(new Error('secret detail from upstream'), {status: 403}))
+
+    const code = await runCli({GITHUB_TOKEN: 'tok'})
+
+    expect(code).toBe(1)
+    expect(stderr).toEqual([
+      '::error::merge-back-data: BLOCKED (unowned_paths=1). Nothing was written.\n',
+      '::error::merge-back-data: ALERT_DELIVERY_FAILED (status=403)\n',
+    ])
+    // the repository is public: neither a path name nor an upstream message may reach the output
+    expect(stderr.join('')).not.toContain('README')
+    expect(stderr.join('')).not.toContain('secret')
+    expect(stdout).toEqual([])
+    expect(writes(fake)).toEqual([])
+  })
+
+  it('prints ALERT_DELIVERY_FAILED without a status when the alert failure has none', async () => {
+    const fake = createRepo()
+    fake.commit('main', {'scripts/b.ts': 'b main\n'})
+    fake.advance({'metadata/README.md': 'readme from data\n'})
+    octokitFor(fake, [], new Error('network'))
+
+    expect(await runCli({GITHUB_TOKEN: 'tok'})).toBe(1)
+
+    expect(stderr).toEqual([
+      '::error::merge-back-data: BLOCKED (unowned_paths=1). Nothing was written.\n',
+      '::error::merge-back-data: ALERT_DELIVERY_FAILED\n',
+    ])
   })
 
   it('updates the existing alert instead of filing a second one', async () => {
