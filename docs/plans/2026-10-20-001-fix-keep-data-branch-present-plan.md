@@ -253,7 +253,7 @@ flowchart TD
 - **Pass:** `updateRef` returns 200, and a read of the scratch branch returns the new commit SHA. Any other status, or a tip that did not move, is a failure, and the plan stops before U2.
 - Neither probe branch remains on the remote.
 
-- [ ] **Unit 2: Share the data-owned path set**
+- [x] **Unit 2: Share the data-owned path set**
 
 **Goal:** Give the authority guard and the merge-back a single definition of data-owned paths.
 
@@ -280,7 +280,7 @@ flowchart TD
 - The guard tests pass unchanged.
 - Mutation guards still report clean for `check-wiki-authority.ts`.
 
-- [ ] **Unit 3: Merge-back writer**
+- [x] **Unit 3: Merge-back writer**
 
 **Goal:** Implement the ownership merge, the refined R6 check and the retry contract.
 
@@ -335,7 +335,7 @@ flowchart TD
 - The script loads under strip-only Node.
 - `check:mutation-guards` reports clean, with the new module in the report and no surviving mutants.
 
-- [ ] **Unit 4: Wire into merge-data and fix the promotion script**
+- [x] **Unit 4: Wire into merge-data and fix the promotion script**
 
 **Goal:** Run the merge-back first, block on its failure, and make the promotion script correct when `data` keeps its history.
 
@@ -366,7 +366,7 @@ flowchart TD
 **Verification:**
 - The workflow contract and merge-data-pr tests pass, and actionlint is clean on `merge-data.yaml`.
 
-- [ ] **Unit 5: Deletion ruleset**
+- [x] **Unit 5: Deletion ruleset**
 
 **Goal:** Declare a separate deletion-only ruleset on `data` with no bypass actors.
 
@@ -393,7 +393,7 @@ flowchart TD
 - The settings test passes.
 - After merge, the readback lists both rulesets, and the deletion ruleset shows an empty bypass list.
 
-- [ ] **Unit 6: Docs and comments**
+- [x] **Unit 6: Docs and comments**
 
 **Goal:** Describe the persistent lifecycle accurately.
 
