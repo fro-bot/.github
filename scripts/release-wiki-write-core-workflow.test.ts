@@ -291,6 +291,7 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
       GH_TOKEN: expression('github.token'),
       NPM_CONFIG_PROVENANCE: 'true',
       npm_config_ignore_scripts: 'true',
+      npm_config_workspaces_update: 'false',
     })
   })
 
