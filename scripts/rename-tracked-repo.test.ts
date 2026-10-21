@@ -1234,6 +1234,20 @@ describe('runCli', () => {
 // ---------------------------------------------------------------------------
 
 describe('createGitDataFake', () => {
+  it('rejects createRef for a ref that is not fully qualified, like the real API', async () => {
+    const fake = createGitDataFake()
+    const sha = fake.head()
+
+    await expect(
+      fake.client.rest.git.createRef({owner: 'o', repo: 'r', ref: 'heads/other', sha}),
+    ).rejects.toMatchObject({status: 422})
+    expect(fake.hasBranch('other')).toBe(false)
+    expect(fake.hasBranch('heads/other')).toBe(false)
+
+    await fake.client.rest.git.createRef({owner: 'o', repo: 'r', ref: 'refs/heads/other', sha})
+    expect(fake.hasBranch('other')).toBe(true)
+  })
+
   it('rejects a non-fast-forward updateRef with 422', async () => {
     const fake = createGitDataFake({files: {'a.md': 'a'}})
     const base = fake.head()

@@ -3,6 +3,7 @@ import type {MergeBackAlert, MergeBackOutcome} from './merge-back-data.ts'
 import process from 'node:process'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {isDataOwnedPath} from './check-wiki-authority.ts'
+import {DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {createGitDataFake} from './git-data-fake.ts'
 import {mergeBackData, MergeBackError, runCli} from './merge-back-data.ts'
 
@@ -12,6 +13,20 @@ const octokitMock = vi.hoisted(() => ({
   constructed: [] as {auth?: string}[],
   make: undefined as undefined | (() => unknown),
 }))
+
+// The real bootstrap runs unless a test sets `override`, to make it fail the way GitHub would.
+const bootstrapMock = vi.hoisted(() => ({
+  override: undefined as undefined | (() => Promise<never>),
+}))
+
+vi.mock('./data-branch-bootstrap.ts', async importOriginal => {
+  const actual = await importOriginal<typeof import('./data-branch-bootstrap.ts')>()
+  return {
+    ...actual,
+    bootstrapDataBranch: async (params: Parameters<typeof actual.bootstrapDataBranch>[0]) =>
+      bootstrapMock.override === undefined ? actual.bootstrapDataBranch(params) : bootstrapMock.override(),
+  }
+})
 
 vi.mock('@octokit/rest', () => ({
   // A plain function: `new` on it yields the object it returns.
@@ -576,13 +591,13 @@ describe('mergeBackData: tree reads', () => {
   })
 
   it('ignores directory entries in a recursive read', async () => {
-    // #given owned and unowned files nested under directories, which the real API lists as `tree` entries
+    // #given an unowned file added under a nested directory, which the real API lists as `tree` entries too
     const fake = createRepo({...BASE, 'knowledge/wiki/repos/deep/dir/page.md': 'p\n', 'tools/x/y.ts': 'y\n'})
     fake.commit('main', {'scripts/b.ts': 'b main\n'})
+    fake.advance({'scripts/nested/x.ts': 'x\n'})
 
-    // #then the directories are neither violations nor tree items
-    const merged = await expectMerged(harness(fake).run())
-    expect(merged.attempts).toBe(1)
+    // #then only the file is reported: no directory path leaks into the list
+    expect(await harness(fake).run()).toEqual({result: 'blocked', paths: ['scripts/nested/x.ts']})
   })
 
   it('fails the run before any write when a tree read is truncated', async () => {
@@ -820,6 +835,7 @@ describe('runCli', () => {
     stderr = []
     octokitMock.constructed.length = 0
     octokitMock.make = undefined
+    bootstrapMock.override = undefined
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
       stdout.push(String(chunk))
       return true
@@ -969,6 +985,25 @@ describe('runCli', () => {
 
     expect(stderr).toEqual(['::error::merge-back-data: API_ERROR (status=422)\n'])
     expect(stderr.join('')).not.toContain('secret')
+  })
+
+  it('prints a bootstrap failure as BOOTSTRAP_<code>, never as UNEXPECTED_FAILURE', async () => {
+    // #given data is missing and the bootstrap cannot find main
+    const fake = createRepo()
+    fake.deleteBranch('data')
+    octokitFor(fake)
+    bootstrapMock.override = async () => {
+      throw new DataBranchBootstrapError({
+        code: 'MAIN_BRANCH_NOT_FOUND',
+        message: 'secret detail from upstream',
+        remediation: 'restore main',
+      })
+    }
+
+    // #then the run fails with the fixed code line only
+    expect(await runCli({GITHUB_TOKEN: 'tok'})).toBe(1)
+    expect(stderr).toEqual(['::error::merge-back-data: BOOTSTRAP_MAIN_BRANCH_NOT_FOUND\n'])
+    expect(stdout).toEqual([])
   })
 
   it('prints an error whose status is not a number as UNEXPECTED_FAILURE', async () => {

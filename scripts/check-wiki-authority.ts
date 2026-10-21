@@ -31,8 +31,7 @@ function frobotAuthors(): ReadonlySet<string> {
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
  *
- * Exported so the `data` merge-back (`scripts/merge-back-data.ts`) shares this one definition of
- * the data-owned path set.
+ * Exported for its tests; `isDataOwnedPath` is the shared entry point `merge-back-data.ts` uses.
  *
  * Function, not const: same static-mutant workaround as `frobotAuthors()` above.
  */

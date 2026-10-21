@@ -430,7 +430,9 @@ export function createGitDataFake(options: GitDataFakeOptions = {}): GitDataFake
         createRef: async params => {
           record('createRef', params)
           requireCommit(params.sha)
-          const name = params.ref.replace(/^refs\/heads\//u, '')
+          // Like the real API, a ref that is not fully qualified (`heads/data`) is a 422.
+          if (!params.ref.startsWith('refs/heads/')) throw httpError(422, 'Reference is not fully qualified')
+          const name = params.ref.slice('refs/heads/'.length)
           // Like the real API, creating a ref that already exists is a 422.
           if (refs.has(name)) throw httpError(422, 'Reference already exists')
           refs.set(name, params.sha)

@@ -1,25 +1,12 @@
 /**
- * Ownership merge of `main` into `data`, run at the start of every merge-data run.
+ * Merges `main` into `data` at the start of every merge-data run.
  *
- * `data` is no longer deleted by a promotion, so it keeps history that was already squash-promoted.
- * A git merge of `main` into it would replay that history and conflict whenever a promoted line
- * changed again on `data`. This writes one commit instead, whose tree is `main`'s tree with every
- * data-owned path (the authority guard's set, `isDataOwnedPath`) taken from `data` and absent where
- * `data` lacks it, and whose parents are `[main, data]`. Each path has one owner, so it cannot conflict.
- *
- * Rules:
- * - Fail closed on an unowned path that `data` changed to something neither its merge base nor `main`
- *   holds: the writer broke the ownership rule. Nothing is written, an alert issue is filed, the run
- *   fails. The same content landing on `main` clears it. Checked on every run, no-op runs included.
- * - Nothing is written when `data` already contains `main`'s tip.
- * - A missing `data` branch is bootstrapped from `main` first.
- * - Full recursive trees; a truncated tree fails the run. Never a forced ref update.
- * - Only an `updateRef` 409/422 is retried: everything is re-read and the check re-run, 3 attempts.
- *   A blob, tree or commit error is terminal.
- * - Errors reach output as a fixed code and an HTTP status, never as an upstream message.
- *
- * Literals sit inside functions, not top-level consts: a top-level literal is a static mutant that no
- * test can kill (see `a-mutation-score-can-measure-nothing-2026-09-08.md`).
+ * - Writes one commit on `data` with parents `[main, data]`: `main`'s tree, with every data-owned path
+ *   (`isDataOwnedPath`) taken from `data`. Nothing is written when `data` already contains `main`.
+ * - Fails closed, filing an alert and writing nothing, when an unowned path on `data` differs from both
+ *   the merge base and `main`. Checked on every run.
+ * - Retries only on an `updateRef` 409/422, up to 3 attempts, re-reading everything each time. It never
+ *   forces the ref update.
  */
 
 import process from 'node:process'
@@ -27,7 +14,7 @@ import process from 'node:process'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 
 import {isDataOwnedPath} from './check-wiki-authority.ts'
-import {bootstrapDataBranch} from './data-branch-bootstrap.ts'
+import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {upsertAlertIssue} from './merge-data-pr.ts'
 
 type EntryMode = '100644' | '100755' | '120000' | '160000'
@@ -351,6 +338,7 @@ export async function runCli(env: Record<string, string | undefined>): Promise<n
     return 0
   } catch (error: unknown) {
     if (error instanceof MergeBackError) return fail(error.message.replace('merge-back-data: ', ''))
+    if (error instanceof DataBranchBootstrapError) return fail(`BOOTSTRAP_${error.code}`)
     const status = statusOf(error)
     return fail(status === undefined ? 'UNEXPECTED_FAILURE' : `API_ERROR (status=${status})`)
   }

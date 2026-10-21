@@ -112,13 +112,8 @@ labels:
     color: '#fcf2e1'
     description: Agent is currently working on this
 
-# `data` is a persistent branch. Two rulesets target it: the first restricts writes to the Fro Bot App,
-# the second blocks deletion for every actor, including the App and the automatic head-branch deletion
-# that follows a promotion merge (delete_branch_on_merge in common-settings.yaml stays on for every other
-# branch). The deletion rule sits in its own ruleset with no bypass actors: in the App ruleset the App's
-# bypass would cover deletion too. Each merge-data run merges `main` back into `data`
-# (scripts/merge-back-data.ts); the bootstrap only recreates a missing `data` branch. To delete `data`
-# on purpose, remove the deletion ruleset from this file first.
+# `data` is a persistent branch. A deletion-only ruleset with no bypass actors protects it.
+# To delete `data` on purpose, remove that ruleset from this file first.
 rulesets:
   - name: 'data branch: Fro Bot App only'
     target: branch
