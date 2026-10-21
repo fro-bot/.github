@@ -124,10 +124,11 @@ function collectWikiFrontmatter(files) {
 /**
  * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
  *
- * A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and replays the same files
- * on it, up to `maxRetries` attempts. The replay is guarded: if any path in the write set (files and
- * deletions) differs on the new head from the tree the files were derived from (the first head read),
- * another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and nothing is written.
+ * Every attempt is guarded: if any path in the write set (files and deletions) differs on the head read
+ * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
+ * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
+ * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard.
  */
 export async function commitWikiChanges(params) {
     const owner = params.owner ?? DEFAULT_OWNER;
@@ -151,7 +152,7 @@ export async function commitWikiChanges(params) {
     if (shouldBootstrapDataBranch) {
         await bootstrapDataBranch();
     }
-    // The tree the write set was derived from: the head tree of the first successful read.
+    // The tree the write set was derived from, once resolved (see `CommitWikiChangesParams.baseCommitSha`).
     let baseTreeSha;
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
         // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
@@ -161,12 +162,22 @@ export async function commitWikiChanges(params) {
             await assertWritableWikiBranch(octokit, owner, repo, branch);
             const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
             const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: head.data.object.sha });
-            if (baseTreeSha === undefined) {
-                baseTreeSha = commit.data.tree.sha;
+            let guardBaseTreeSha;
+            if (params.baseCommitSha === undefined) {
+                baseTreeSha ??= commit.data.tree.sha;
+                guardBaseTreeSha = baseTreeSha;
             }
-            else if (commit.data.tree.sha !== baseTreeSha) {
+            else if (params.baseCommitSha === null) {
+                // `main` moves, so its tip is read again each attempt.
+                guardBaseTreeSha = await readCommitTreeSha(octokit, owner, repo, await readMainTipSha(octokit, owner, repo));
+            }
+            else {
+                baseTreeSha ??= await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha);
+                guardBaseTreeSha = baseTreeSha;
+            }
+            if (commit.data.tree.sha !== guardBaseTreeSha) {
                 await assertWriteSetUnchanged(octokit, owner, repo, {
-                    baseTreeSha,
+                    baseTreeSha: guardBaseTreeSha,
                     headTreeSha: commit.data.tree.sha,
                     paths: [...Object.keys(params.files), ...(params.deletedPaths ?? [])],
                     location: `${owner}/${repo}@${branch}`,
@@ -259,6 +270,14 @@ async function getPresentPathsInTree(octokit, owner, repo, treeSha) {
     if (!Array.isArray(tree))
         return new Set();
     return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])));
+}
+async function readMainTipSha(octokit, owner, repo) {
+    const ref = await octokit.rest.git.getRef({ owner, repo, ref: 'heads/main' });
+    return ref.data.object.sha;
+}
+async function readCommitTreeSha(octokit, owner, repo, sha) {
+    const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: sha });
+    return commit.data.tree.sha;
 }
 /**
  * Fail closed unless every path in the write set has the same tree entry (sha, mode, type; absence
@@ -857,8 +876,15 @@ function formatTimestamp(value) {
     const minute = `${value.getUTCMinutes()}`.padStart(2, '0');
     return `${year}-${month}-${day} ${hour}:${minute}`;
 }
+/**
+ * Read the existing wiki files from the working tree, and report the data-branch commit they were
+ * synced from: `WIKI_INGEST_DATA_TIP_SHA`, when the workflow exports the tip it synced `knowledge/` from.
+ * Without it there is no recorded base and the commit guards from its own first read.
+ */
 async function loadExistingWikiFiles() {
     const files = {};
+    const recordedTip = process.env.WIKI_INGEST_DATA_TIP_SHA;
+    const baseCommitSha = recordedTip === undefined || recordedTip === '' ? undefined : recordedTip;
     for (const path of [INDEX_PATH, LOG_PATH]) {
         try {
             files[path] = await readFile(path, 'utf8');
@@ -899,7 +925,7 @@ async function loadExistingWikiFiles() {
             }
         }
     }
-    return files;
+    return { files, baseCommitSha };
 }
 async function loadWorkingTreeWikiFiles(paths) {
     const files = {};
@@ -1021,7 +1047,7 @@ export async function runWikiIngestCli(dependencies = {}) {
     const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections;
     const commitWikiChangesImpl = dependencies.commitWikiChanges ?? commitWikiChanges;
     const getChangedWikiPathsImpl = dependencies.getChangedWikiPaths ?? getChangedWikiPaths;
-    const existingFiles = await loadExistingWikiFiles();
+    const { files: existingFiles, baseCommitSha } = await loadExistingWikiFiles();
     let correctionRead;
     try {
         correctionRead = await readCorrectionsImpl();
@@ -1126,6 +1152,7 @@ export async function runWikiIngestCli(dependencies = {}) {
         message,
         files: built.files,
         deletedPaths: built.deletedPaths,
+        ...(baseCommitSha === undefined ? {} : { baseCommitSha }),
     });
     const pagesChanged = countWikiPages(committedPagePaths);
     await emitPagesChanged(pagesChanged);

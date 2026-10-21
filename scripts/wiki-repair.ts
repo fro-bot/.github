@@ -512,6 +512,7 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
         branch: WIKI_REPAIR_DATA_BRANCH,
         message: WIKI_REPAIR_COMMIT_MESSAGE,
         files: changedFiles,
+        baseCommitSha: tree.tipSha,
         maxRetries: 1,
       })
     } catch (error: unknown) {

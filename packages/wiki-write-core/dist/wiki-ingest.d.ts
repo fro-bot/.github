@@ -55,6 +55,18 @@ export interface CommitWikiChangesParams {
     message: string;
     files: Record<string, string>;
     deletedPaths?: readonly string[];
+    /**
+     * The data-branch commit `files` and `deletedPaths` were derived from: the base of the write guard.
+     * Every attempt, the first included, compares each write-set path on the head it reads with the same
+     * path in this commit's tree and fails closed if any differs.
+     * - A commit SHA: that commit's tree is the base.
+     * - `null`: `data` did not exist when the files were derived, so they came from `main`; the base is
+     *   `main`'s tip tree, which a freshly bootstrapped `data` shares. A concurrent writer that created
+     *   `data` and wrote a write-set path fails the guard.
+     * - Omitted: the head tree of the first successful read in this call is the base, so only changes
+     *   after that read are caught.
+     */
+    baseCommitSha?: string | null;
     octokit?: OctokitClient;
     maxRetries?: number;
     /**
@@ -94,10 +106,11 @@ export declare function buildWikiIngestChanges(params: BuildWikiIngestChangesPar
 /**
  * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
  *
- * A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and replays the same files
- * on it, up to `maxRetries` attempts. The replay is guarded: if any path in the write set (files and
- * deletions) differs on the new head from the tree the files were derived from (the first head read),
- * another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and nothing is written.
+ * Every attempt is guarded: if any path in the write set (files and deletions) differs on the head read
+ * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
+ * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
+ * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard.
  */
 export declare function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult>;
 export declare function validateWikilinks(files: Record<string, string>): void;

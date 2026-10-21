@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {describe, expect, it, vi} from 'vitest'
 
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
-import {rebuildWikiIndex} from './wiki-ingest.ts'
+import {commitWikiChanges, rebuildWikiIndex} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
 import {
   gateWikiRepairs,
@@ -657,6 +657,7 @@ describe('runWikiRepair', () => {
     const callArgs = commitWikiChangesMock.mock.calls[0]?.[0]
     expect(callArgs?.branch).toBe(WIKI_REPAIR_DATA_BRANCH)
     expect(callArgs?.message).toBe(WIKI_REPAIR_COMMIT_MESSAGE)
+    expect(callArgs?.baseCommitSha).toBe('tip-1')
     expect(Object.keys(callArgs?.files ?? {})).toEqual(['knowledge/index.md'])
   })
 
@@ -944,5 +945,106 @@ describe('runWikiRepair', () => {
     expect(result.aborted).toBe(1)
     expect(result.privacy_blocked).toBe(1)
     expect(commitWikiChangesMock).not.toHaveBeenCalled()
+  })
+})
+
+function driftedFiles(): Record<string, string> {
+  const files = buildCleanFiles()
+  files['knowledge/index.md'] = buildIndex([
+    '## Repos',
+    '',
+    '- [[fro-bot--github]] — Fro Bot .github',
+    '- [[ghost--repo]] — Ghost Repo',
+    '',
+    '## Topics',
+    '',
+    '- [[github-actions-ci]] — GitHub Actions CI',
+    '',
+    '## Entities',
+    '',
+    '_No entity pages yet._',
+    '',
+    '## Comparisons',
+    '',
+    '_No comparison pages yet._',
+  ])
+  return files
+}
+
+describe('runWikiRepair with the real writer (the base is the tip the tree was loaded from)', () => {
+  interface Entry {
+    path: string
+    mode: string
+    type: string
+    sha: string
+  }
+
+  const entry = (path: string, sha: string): Entry => ({path, mode: '100644', type: 'blob', sha})
+
+  /** `tip-1` is the tip the tree was loaded from; the first write-time read already sees `tip-2`. */
+  function world(tip2: Entry[]) {
+    const trees: Record<string, Entry[]> = {
+      'tree-tip-1': [entry('knowledge/index.md', 'index-v1'), entry('scripts/x.ts', 'x-v1')],
+      'tree-tip-2': tip2,
+    }
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'repair-commit'}}))
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const updateRef = vi.fn(async () => ({data: {}}))
+    const octokit = {
+      rest: {
+        repos: {getBranch: async () => ({data: {name: 'data', commit: {sha: 'tip-2'}}})},
+        git: {
+          getRef: async () => ({data: {object: {sha: 'tip-2'}}}),
+          getCommit: async (args: {commit_sha: string}) => ({
+            data: {sha: args.commit_sha, tree: {sha: `tree-${args.commit_sha}`}},
+          }),
+          getTree: async (args: {tree_sha: string}) => ({data: {truncated: false, tree: trees[args.tree_sha] ?? []}}),
+          createBlob,
+          createTree: async () => ({data: {sha: 'tree-after'}}),
+          createCommit,
+          updateRef,
+        },
+      },
+    }
+    const loadTree = vi
+      .fn()
+      .mockResolvedValueOnce(makeTree(driftedFiles(), 'tip-1'))
+      .mockResolvedValueOnce(makeTree(driftedFiles(), 'tip-2'))
+    // The pre-commit tip check passes against the loaded tip, then the data branch has moved.
+    const getCurrentDataTipSha = vi.fn().mockResolvedValueOnce('tip-1').mockResolvedValue('tip-2')
+    const run = async () =>
+      runWikiRepair({
+        loadTree,
+        getCurrentDataTipSha,
+        commitWikiChanges: async params =>
+          commitWikiChanges({...params, owner: 'fro-bot', repo: '.github', octokit: octokit as never}),
+      })
+    return {run, createCommit, createBlob, updateRef, loadTree}
+  }
+
+  it('fails closed and reloads when a commit landed on the repaired path since the load', async () => {
+    // #given data moved past the loaded tip and rewrote the index the repair is about to replace
+    const w = world([entry('knowledge/index.md', 'index-v2'), entry('scripts/x.ts', 'x-v1')])
+
+    // #when the repair runs
+    const result = await w.run()
+
+    // #then the first attempt wrote nothing; the retry reloaded the new tip and then wrote once
+    expect(result.conflict_retries).toBe(1)
+    expect(w.loadTree).toHaveBeenCalledTimes(2)
+    expect(w.createCommit).toHaveBeenCalledTimes(1)
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-2'])
+    expect(w.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes once, with no retry, when the commit since the load touched only an unowned path', async () => {
+    const w = world([entry('knowledge/index.md', 'index-v1'), entry('scripts/x.ts', 'x-v2')])
+
+    const result = await w.run()
+
+    expect(result.conflict_retries).toBe(0)
+    expect(w.loadTree).toHaveBeenCalledTimes(1)
+    expect(w.createCommit).toHaveBeenCalledTimes(1)
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-2'])
   })
 })

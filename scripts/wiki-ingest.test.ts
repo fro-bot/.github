@@ -1,5 +1,9 @@
 import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
 
@@ -10,6 +14,7 @@ const wikiIngestModulePromise: Promise<{
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
+  runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
   validateWikilinks: typeof import('./wiki-ingest.js').validateWikilinks
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
@@ -19,6 +24,7 @@ const {
   countWikiPages,
   loadTrackedRepoNodeIds,
   parsePorcelainPaths,
+  runWikiIngestCli,
   validateWikilinks,
   WikiIngestError,
 } = await wikiIngestModulePromise
@@ -2088,6 +2094,217 @@ describe('commitWikiChanges (guarded replay after a ref race)', () => {
 
     expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
     expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+})
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => {
+      throw new Error('expected a rejection')
+    },
+    (error: unknown) => error,
+  )
+}
+
+describe('commitWikiChanges (base guard on every attempt)', () => {
+  interface Entry {
+    path: string
+    mode: string
+    type: string
+    sha: string
+  }
+
+  const entry = (path: string, sha: string): Entry => ({path, mode: '100644', type: 'blob', sha})
+
+  const baseEntries = (): Entry[] => [
+    entry('knowledge/index.md', 'index-v1'),
+    entry('knowledge/log.md', 'log-v1'),
+    entry('knowledge/wiki/repos/page.md', 'page-v1'),
+    entry('scripts/x.ts', 'x-v1'),
+  ]
+
+  const withEntry = (entries: Entry[], next: Entry): Entry[] => [
+    ...entries.filter(candidate => candidate.path !== next.path),
+    next,
+  ]
+
+  const files = {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'}
+
+  /**
+   * Commits by SHA name `tip-<name>`, trees `tree-<name>`; `main` is `tip-main`. `head` is what the
+   * commit's first `getRef` for `data` returns, which may already be past the base.
+   */
+  function world(params: {head: 'base' | 'concurrent'; concurrent: Entry[]; mainTip?: Entry[]}) {
+    const trees: Record<string, Entry[]> = {
+      'tree-base': baseEntries(),
+      'tree-concurrent': params.concurrent,
+      'tree-main': params.mainTip ?? baseEntries(),
+    }
+    const getRef = vi.fn(async (args: {ref: string}) => ({
+      data: {object: {sha: args.ref === 'heads/main' ? 'tip-main' : `tip-${params.head}`}},
+    }))
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {sha: args.commit_sha, tree: {sha: `tree-${args.commit_sha.replace('tip-', '')}`}},
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => ({
+      data: {truncated: false, tree: trees[args.tree_sha] ?? []},
+    }))
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async (_args: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi.fn(async (_args: {sha: string}) => ({data: {ref: 'refs/heads/data'}}))
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createBlob, createTree, createCommit, updateRef})
+    const commit = async (extra: {baseCommitSha?: string | null} = {}) =>
+      commitWikiChanges({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): ingest',
+        files,
+        maxRetries: 3,
+        ...extra,
+      })
+    const writes = () =>
+      createBlob.mock.calls.length +
+      createTree.mock.calls.length +
+      createCommit.mock.calls.length +
+      updateRef.mock.calls.length
+    return {commit, getTree, getCommit, createCommit, updateRef, writes}
+  }
+
+  it('succeeds on a clean first attempt when the head is the base, without reading any tree', async () => {
+    const w = world({head: 'base', concurrent: baseEntries()})
+
+    const result = await w.commit({baseCommitSha: 'tip-base'})
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.getTree).not.toHaveBeenCalled()
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-base'])
+  })
+
+  it('fails closed on attempt 1, writing nothing, when a writer changed knowledge/log.md after the base', async () => {
+    // #given a commit landed between the files being derived (tip-base) and the first read
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+
+    // #when the write runs with its base
+    const error = await rejectionOf(w.commit({baseCommitSha: 'tip-base'}))
+
+    // #then it fails with the conflict error before creating a blob, tree, commit or ref update
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(w.writes()).toBe(0)
+  })
+
+  it('fails closed on attempt 1 when a writer changed knowledge/index.md after the base', async () => {
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/index.md', 'index-v2'))})
+
+    expect(await rejectionOf(w.commit({baseCommitSha: 'tip-base'}))).toMatchObject({
+      code: 'CONFLICT_EXHAUSTED',
+    })
+    expect(w.writes()).toBe(0)
+  })
+
+  it('replays on attempt 1 when the commit after the base touched only an unowned path (merge-back style)', async () => {
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('scripts/x.ts', 'x-v2'))})
+
+    const result = await w.commit({baseCommitSha: 'tip-base'})
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-concurrent'])
+  })
+
+  it('keeps the old behavior without a base: the first read is the base, so a head already past it is replayed', async () => {
+    // #given no base is passed and the head already carries a different log
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+
+    // #when the write runs
+    const result = await w.commit()
+
+    // #then it lands on that head, with no tree comparison at all
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.getTree).not.toHaveBeenCalled()
+  })
+
+  describe('an absent base (`null`: data did not exist, the files came from main)', () => {
+    it('succeeds when data is the bootstrap of main', async () => {
+      const w = world({head: 'main' as 'base', concurrent: baseEntries()})
+
+      expect(await w.commit({baseCommitSha: null})).toMatchObject({committed: true, attempts: 1})
+      expect(w.getTree).not.toHaveBeenCalled()
+    })
+
+    it('fails closed when a writer created data and wrote a write-set path', async () => {
+      const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+
+      expect(await rejectionOf(w.commit({baseCommitSha: null}))).toMatchObject({
+        code: 'CONFLICT_EXHAUSTED',
+      })
+      expect(w.writes()).toBe(0)
+    })
+
+    it('replays when the writer touched only an unowned path', async () => {
+      const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('scripts/x.ts', 'x-v2'))})
+
+      expect(await w.commit({baseCommitSha: null})).toMatchObject({committed: true, attempts: 1})
+    })
+  })
+})
+
+describe('runWikiIngestCli (base from the synced data tip)', () => {
+  const originalCwd = process.cwd()
+  const originalTip = process.env.WIKI_INGEST_DATA_TIP_SHA
+  const page = createWikiPage({path: 'knowledge/wiki/repos/alice--project.md', type: 'repo', title: 'alice/project'})
+
+  function inTempWiki(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'wiki-ingest-cli-'))
+    mkdirSync(join(dir, 'knowledge/wiki/repos'), {recursive: true})
+    writeFileSync(join(dir, page.path), page.content)
+    process.chdir(dir)
+    return dir
+  }
+
+  async function run() {
+    const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => [page.path],
+      commitWikiChanges: commit as never,
+    })
+    return commit
+  }
+
+  function restore(dir: string): void {
+    process.chdir(originalCwd)
+    rmSync(dir, {recursive: true, force: true})
+    if (originalTip === undefined) delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    else process.env.WIKI_INGEST_DATA_TIP_SHA = originalTip
+  }
+
+  it('passes the recorded tip as the commit base', async () => {
+    const dir = inTempWiki()
+    process.env.WIKI_INGEST_DATA_TIP_SHA = 'synced-tip'
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      const commit = await run()
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({baseCommitSha: 'synced-tip'})
+    } finally {
+      vi.restoreAllMocks()
+      restore(dir)
+    }
+  })
+
+  it.each([undefined, ''])('passes no base key when the tip is %j', async tip => {
+    const dir = inTempWiki()
+    if (tip === undefined) delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    else process.env.WIKI_INGEST_DATA_TIP_SHA = tip
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      const commit = await run()
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('baseCommitSha')
+    } finally {
+      vi.restoreAllMocks()
+      restore(dir)
+    }
   })
 })
 
