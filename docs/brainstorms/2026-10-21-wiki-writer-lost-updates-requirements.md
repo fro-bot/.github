@@ -7,7 +7,7 @@ topic: wiki-writer-lost-updates
 
 ## Summary
 
-An agent hands off only the wiki pages it edited, together with its log entry as text. The trusted writer builds `knowledge/log.md` and `knowledge/index.md` from its own fresh sync of `data`. Before committing, it checks every handed-off page against the commit the agent started from. If another writer changed one of those pages, the writer refuses. A survey that conflicts re-runs straight away from a fresh sync.
+The trusted writer takes only the agent's edited pages, its deletions and the log entries it appended. It builds `knowledge/log.md` and `knowledge/index.md` from its own fresh sync of `data`. Before committing, it checks every handed-off page against the commit the agent started from. If another writer changed one of those pages, the writer refuses. A survey that conflicts re-runs straight away from a fresh sync.
 
 ---
 
@@ -44,10 +44,10 @@ Two smaller problems sit in the same writers:
 
 **Handoff contents**
 
-- R1. A handoff carries only wiki pages, page deletions, and the agent's log entry as text. It never carries `log.md` or `index.md`.
-- R2. The agent prompts stop asking for edits to `log.md` and `index.md`. They ask for the log entry text instead.
-- R3. Ingest builds `log.md` and `index.md` from the writer's own sync of `data`. It appends one entry, carrying the agent's text when present and the workflow's summary otherwise. Every entry already on `data` survives, in its original order.
-- R4. A handoff produced before this change, which still carries `log.md` or `index.md`, is applied with those two files ignored rather than rejected.
+- R1. A handed-off `log.md` or `index.md` is never applied as a file. The writer uses only the agent's pages, its page deletions, and the log entries the agent appended.
+- R2. The agent's appended entries are the text its `log.md` adds after the `log.md` at the agent's starting commit. If the agent changed anything before that point, its entries are dropped.
+- R3. Ingest builds `log.md` and `index.md` from the writer's own sync of `data`. It appends the agent's entries and its own summary entry. Every entry already on `data` survives, in its original order.
+- R4. The agent prompts stop asking for edits to `index.md`. Handoffs built before this change apply unchanged under R1 and R2.
 
 **Page check**
 
@@ -70,12 +70,12 @@ Two smaller problems sit in the same writers:
 
 ## Acceptance Examples
 
-- AE1. **Covers R1, R3, R6.** Survey A's agent syncs. Survey B's agent syncs, and B's agent edits page Q. Survey A persists. Survey B persists. `data` keeps both surveys' log entries and index rows, along with A's pages and B's page Q.
+- AE1. **Covers R1, R2, R3, R6.** Survey A's agent syncs. Survey B's agent syncs, and B's agent edits page Q. Survey A persists. Survey B persists. `data` keeps both surveys' log entries and index rows, along with A's pages and B's page Q.
 - AE2. **Covers R6, R9.** Surveys A and B both edit `topics/github-actions-ci.md`, and A persists first. B is refused, re-runs from a fresh sync, and lands. The page then holds both contributions.
 - AE3. **Covers R5, R6.** An agent job syncs at S1 and edits page P. Another writer changes only page Q. The writer lands P and keeps the change to Q.
 - AE4. **Covers R6, R8.** One writer deletes a page and another edits it. Whichever lands second is refused, in both orders.
 - AE5. **Covers R7.** The agent commit is empty, unknown, or not an ancestor of the `data` head. The write is refused.
-- AE6. **Covers R4.** A pre-change artifact that carries `log.md` and `index.md` is applied. Those two files are ignored, and the log and index come from the writer's sync.
+- AE6. **Covers R2, R4.** An agent rewrites an older log entry as well as appending its own. Its entries are dropped, the writer's summary entry lands, and every existing entry on `data` is intact.
 - AE7. **Covers R10.** A survey conflicts on its last attempt. The run fails loudly, and the next reconcile re-dispatches it.
 - AE8. **Covers R11.** An event ingest is refused. The run fails loudly and is not re-run.
 - AE9. **Covers R12.** wiki-repair aborts, and the job fails.
@@ -105,7 +105,7 @@ Two smaller problems sit in the same writers:
 ## Key Decisions
 
 - **Fix the handoff, not the timing.** The writers that lost data did not overlap. The stale bytes came from the artifact, so the artifact stops carrying the shared files, and its pages are checked against the agent's starting commit.
-- **The log entry travels as text.** The agent's entry today is the detailed record of each survey, while the workflow summary is a fixed one-liner. Appending the agent's text onto the writer's fresh `log.md` keeps that detail without shipping the file.
+- **The agent's log entries are derived, not shipped.** The agent's entry is the detailed record of each survey, while the workflow summary is a fixed one-liner. Taking only what the agent appended, measured against its starting commit, keeps that detail, needs no prompt or artifact change, and works for artifacts built before the deploy.
 - **Fail closed on page conflicts, then re-run the survey.** Reconciling two edits to one page needs judgment. The re-run lets the agent start from the other survey's change, and waiting would cost the same agent run and a slot in a later batch.
 - **Conflict failures retry the next day.** A conflict is transient, so the 14–30 day interval used for other failures would be the wrong penalty.
 - **The agent's commit comes from the sync step.** The agent can rewrite its checkout and artifact, but the sync step finishes before the agent starts, and its job output carries the commit.
@@ -125,7 +125,6 @@ Two smaller problems sit in the same writers:
 ### Deferred to Planning
 
 - [Affects R9][Technical] How is the re-run dispatched, how is the attempt counted, and what is the bound?
-- [Affects R3, R1][Technical] What format does the agent's log entry text use, and where does it sit in the handoff?
 - [Affects R6][Technical] How does the writer tell a page conflict apart from the #4032 guard's own refusal and from a ref-race exhaustion, so that only page conflicts re-run?
 
 ---
