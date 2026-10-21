@@ -2,11 +2,14 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-09-15
+updated: 2026-10-20
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-09-15
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: ef7ba24f126f6cca8dd6c8c7969056e3b529a600
+    accessed: 2026-10-20
 tags: [home-assistant, iot, smart-home, yaml, automation, addon, supply-chain, tempio, builder, release-integrity]
 related:
   - marcusrbrown--ha-config
@@ -34,6 +37,25 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 The preferred pattern splits configuration by domain into `packages/` directory files, each self-contained with entities, automations, and integrations for a single concern. Used in [[marcusrbrown--ha-config]].
 
 ### CI Validation
+
+#### Configuration, command enforcement, and runtime are separate evidence layers
+
+The 2026-10-20 workflow read for [[marcusrbrown--ha-config]] confirms four
+validation jobs, but its Remark action step is explicitly
+`continue-on-error: true`. Listing that job in HA validation's `needs` does not
+make a failing Markdown lint command blocking. Likewise, the version-extraction
+step still writes the literal `{value}={$HA_VERSION}` rather than the `value`
+output its caller consumes. A dependency edge and a declared input do not prove
+the intended checks and version handoff actually enforce their contracts.
+
+**Dated clarification:** the repo's September survey records that the pinned
+HA action independently reads `.HA_VERSION` when the explicit input is empty.
+That historical fallback explains why a broken handoff can coexist with correct
+validation, refining the direct-pin wording below. October's limited survey
+did not read the pin file, upstream action implementation, or execution logs;
+it confirms the caller defect, not a current HA version, deployment, or green run.
+The unchanged `esphome==2025.12.7` requirement is independently verified from
+the dependency manifest and should not be conflated with the HA core version.
 
 Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
 

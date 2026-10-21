@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/marcusrbrown
 created: 2026-04-18
-updated: 2026-10-06
+updated: 2026-10-21
 node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: a2c762b8f355597c551226258e349a2bf99d0543
+    accessed: 2026-10-21
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: 340a317382d8bb9436ad01e3c916e4a7cb14f4ac
     accessed: 2026-10-06
@@ -79,6 +82,69 @@ related:
 # marcusrbrown/marcusrbrown
 
 Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automation system that generates and maintains his public GitHub profile, including sponsor tracking, badge automation, A/B content testing, and scheduled profile updates via [[github-actions-ci]].
+
+## Bounded source snapshot — 2026-10-21
+
+The public `main` snapshot is `a2c762b8f355597c551226258e349a2bf99d0543`.
+Evidence is limited to the complete recursive directory listing, `README.md`,
+`package.json`, `pnpm-workspace.yaml`, and all six workflow files. The trusted
+GitHub identity matches this page's existing `node_id`. Implementation, templates,
+lockfile resolutions, settings, issues, PRs, alerts, and run history were not read.
+Older operational measurements below remain historical, not current health claims.
+
+### Dependency policy: an upper bound is not a patched floor
+
+The manifest now selects pnpm **11.28.6**, Vitest and `@vitest/ui` **4.1.12**,
+Prettier **3.9.10**, and `@types/node` **24.19.2**. Shared config declarations remain
+`@bfra.me/eslint-config` 0.54.0, `@bfra.me/prettier-config` 0.16.13, and
+`@bfra.me/tsconfig` 0.13.2; `tsx` remains 4.23.15. These supersede the October 6
+manifest versions where they differ. The Node type package still does not identify
+the runtime, and neither TypeScript nor ESLint is a direct dependency despite the
+lint script invoking both commands.
+
+The workspace now pins `vite: 7.3.7`, versus October 6's 7.3.6. Its `js-yaml`
+constraint remains `>=4.3.2 <5`. More importantly, the two parent-scoped
+`brace-expansion` entries have different semantics:
+
+| Parent selector | Current declared constraint | What the declaration establishes |
+| --- | --- | --- |
+| `minimatch@3>brace-expansion` | `<6` | Upper bound only; no minimum patched version or major-1 compatibility boundary |
+| `minimatch@10>brace-expansion` | `>=5.0.7` | Explicit minimum version |
+
+The September 7 section records the first selector as `>=1.1.16 <2`; the present
+`<6` declaration contradicts carrying that older patched-floor description forward.
+The adjacent comment still says each incompatible parent line gets its own patched
+floor, but the first range does not encode one. This is a constraint/comment
+mismatch, not proof that a vulnerable or incompatible version is installed.
+No lockfile or advisory-state inspection was performed. See [[github-actions-ci]]
+for the general distinction between declared range shape and resolved evidence.
+
+### Workflow and public-content contracts retained
+
+**Fro Bot is present**, now at agent **v0.125.1**, SHA
+`df330ed27cccb3c4105f5dfe0f4918dc8a7238f2`; a missing-workflow onboarding draft
+is not warranted. The review/maintenance/autoheal modes and 04:30/16:30 UTC
+schedules remain. The caller still ends at `Run Fro Bot`, supplies no `output-mode`,
+and checks out with `persist-credentials: false`. This establishes the same
+explicit caller-side delivery gap, not current agent permission or delivery results.
+The jq fork preflight still collapses `false` through `// "unknown"`, and direct
+PR admission still excludes fork heads, `[bot]` authors, and `fro-bot`.
+
+Both reusable callers now use `bfra-me/.github` **v4.42.0**, SHA
+`22ed95a3440f8fee5776e1dccd08dd48f64f689f`. Settings sync still declares 21:32 UTC,
+contradicting Fro Bot's unchanged 02:55 stagger comment. `Main` still runs only
+`pnpm lint`; the available Vitest script and six listed test files are not a
+workflow-executed PR test gate.
+
+Profile generation still runs every six hours, tolerates sponsor/badge fetch
+failures only, copies README/highlights from templates, runs `pnpm fix`, and
+writes generated content onto selected PR heads or proposes `build/update-readme`
+on `main`. The PR selector includes the package manifest and lockfile but omits
+`pnpm-workspace.yaml`, including for the policy changes described above. Current
+rider counts, merge outcomes, and security-remediation delivery remain unmeasured.
+The README retains the 22-year principal-engineer/architect positioning,
+agent-native systems focus, consulting availability, and `marcusrbrown.com` link
+observed October 6; its six-hour footer describes cadence, not verified freshness.
 
 ## Bounded source snapshot — 2026-10-06
 

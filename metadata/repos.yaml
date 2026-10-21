@@ -4,11 +4,11 @@ repos:
     name: ha-config
     added: 2026-04-17
     onboarding_status: onboarded
-    last_survey_at: 2026-10-05
-    last_survey_status: failure
+    last_survey_at: 2026-10-20
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-11-04
+    next_survey_eligible_at: 2026-11-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ_bMaQ
@@ -105,11 +105,11 @@ repos:
     name: infra
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-06
+    last_survey_at: 2026-10-21
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-11-06
+    next_survey_eligible_at: 2026-11-21
     discovery_channel: collab
     private: false
     node_id: R_kgDOR4g8TA
@@ -118,12 +118,12 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-06
+    last_survey_at: 2026-10-21
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-11-06
+    next_survey_eligible_at: 2026-11-22
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
     database_id: 319928661
@@ -170,11 +170,11 @@ repos:
     name: systematic
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-05
+    last_survey_at: 2026-10-20
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-11-06
+    next_survey_eligible_at: 2026-11-22
     discovery_channel: collab
     private: false
     node_id: R_kgDORAJegA
