@@ -2154,7 +2154,7 @@ describe('commitWikiChanges (base guard on every attempt)', () => {
     const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
     const updateRef = vi.fn(async (_args: {sha: string}) => ({data: {ref: 'refs/heads/data'}}))
     const octokit = createOctokitMock({getRef, getCommit, getTree, createBlob, createTree, createCommit, updateRef})
-    const commit = async (extra: {baseCommitSha?: string | null} = {}) =>
+    const commit = async (extra: {baseCommitSha?: string} = {}) =>
       commitWikiChanges({
         octokit,
         owner: 'fro-bot',
@@ -2225,28 +2225,62 @@ describe('commitWikiChanges (base guard on every attempt)', () => {
     expect(w.getTree).not.toHaveBeenCalled()
   })
 
-  describe('an absent base (`null`: data did not exist, the files came from main)', () => {
-    it('succeeds when data is the bootstrap of main', async () => {
-      const w = world({head: 'main' as 'base', concurrent: baseEntries()})
-
-      expect(await w.commit({baseCommitSha: null})).toMatchObject({committed: true, attempts: 1})
-      expect(w.getTree).not.toHaveBeenCalled()
+  it('keeps an SHA base fixed across retries: a concurrent write that is later promoted is still rejected', async () => {
+    // #given attempt 1 reads the base head and loses the ref race; a writer then changes log.md, and the
+    // change is promoted, so both the data head and main now carry it
+    vi.useFakeTimers()
+    const trees: Record<string, Entry[]> = {
+      'tree-base': baseEntries(),
+      'tree-promoted': withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2')),
+    }
+    const getRef = vi.fn(async (args: {ref: string}) => {
+      if (args.ref === 'heads/main') return {data: {object: {sha: 'tip-promoted'}}}
+      return {
+        data: {
+          object: {
+            sha: getRef.mock.calls.filter(([a]) => a.ref === 'heads/data').length === 1 ? 'tip-base' : 'tip-promoted',
+          },
+        },
+      }
     })
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {sha: args.commit_sha, tree: {sha: `tree-${args.commit_sha.replace('tip-', '')}`}},
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => ({
+      data: {truncated: false, tree: trees[args.tree_sha] ?? []},
+    }))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(args: {sha: string}) => Promise<unknown>>()
+      .mockRejectedValueOnce(Object.assign(new Error('raced'), {status: 409}))
+      .mockResolvedValue({data: {ref: 'refs/heads/data'}})
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createCommit, updateRef})
 
-    it('fails closed when a writer created data and wrote a write-set path', async () => {
-      const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+    try {
+      const settled = rejectionOf(
+        commitWikiChanges({
+          octokit,
+          owner: 'fro-bot',
+          repo: '.github',
+          branch: 'data',
+          message: 'feat(knowledge): ingest',
+          files,
+          baseCommitSha: 'tip-base',
+          maxRetries: 3,
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(30_000)
 
-      expect(await rejectionOf(w.commit({baseCommitSha: null}))).toMatchObject({
-        code: 'CONFLICT_EXHAUSTED',
-      })
-      expect(w.writes()).toBe(0)
-    })
-
-    it('replays when the writer touched only an unowned path', async () => {
-      const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('scripts/x.ts', 'x-v2'))})
-
-      expect(await w.commit({baseCommitSha: null})).toMatchObject({committed: true, attempts: 1})
-    })
+      // #then the retry rejects against the original base and the concurrent content is not overwritten
+      expect(await settled).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+      expect(updateRef).toHaveBeenCalledTimes(1)
+      expect(createCommit).toHaveBeenCalledTimes(1)
+      // the base commit is resolved once (plus the one head read of it) and main is never consulted
+      expect(getCommit.mock.calls.filter(([args]) => args.commit_sha === 'tip-base')).toHaveLength(2)
+      expect(getRef.mock.calls.some(([args]) => args.ref === 'heads/main')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

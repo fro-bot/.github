@@ -97,14 +97,12 @@ export interface CommitWikiChangesParams {
    * The data-branch commit `files` and `deletedPaths` were derived from: the base of the write guard.
    * Every attempt, the first included, compares each write-set path on the head it reads with the same
    * path in this commit's tree and fails closed if any differs.
-   * - A commit SHA: that commit's tree is the base.
-   * - `null`: `data` did not exist when the files were derived, so they came from `main`; the base is
-   *   `main`'s tip tree, which a freshly bootstrapped `data` shares. A concurrent writer that created
-   *   `data` and wrote a write-set path fails the guard.
+   * - A commit SHA: that commit's tree is the base. It is resolved once and never re-read, so the base
+   *   stays fixed across retries.
    * - Omitted: the head tree of the first successful read in this call is the base, so only changes
    *   after that read are caught.
    */
-  baseCommitSha?: string | null
+  baseCommitSha?: string
   octokit?: OctokitClient
   maxRetries?: number
   /**
@@ -361,17 +359,12 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
 
       const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
       const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: head.data.object.sha})
-      let guardBaseTreeSha: string
-      if (params.baseCommitSha === undefined) {
-        baseTreeSha ??= commit.data.tree.sha
-        guardBaseTreeSha = baseTreeSha
-      } else if (params.baseCommitSha === null) {
-        // `main` moves, so its tip is read again each attempt.
-        guardBaseTreeSha = await readCommitTreeSha(octokit, owner, repo, await readMainTipSha(octokit, owner, repo))
-      } else {
-        baseTreeSha ??= await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha)
-        guardBaseTreeSha = baseTreeSha
-      }
+      // Resolved on the first attempt and reused: the base must not move while the write retries.
+      baseTreeSha ??=
+        params.baseCommitSha === undefined
+          ? commit.data.tree.sha
+          : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha)
+      const guardBaseTreeSha = baseTreeSha
       if (commit.data.tree.sha !== guardBaseTreeSha) {
         await assertWriteSetUnchanged(octokit, owner, repo, {
           baseTreeSha: guardBaseTreeSha,
@@ -494,11 +487,6 @@ async function getPresentPathsInTree(
   const tree: unknown = response.data.tree
   if (!Array.isArray(tree)) return new Set()
   return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])))
-}
-
-async function readMainTipSha(octokit: OctokitClient, owner: string, repo: string): Promise<string> {
-  const ref = await octokit.rest.git.getRef({owner, repo, ref: 'heads/main'})
-  return ref.data.object.sha
 }
 
 async function readCommitTreeSha(octokit: OctokitClient, owner: string, repo: string, sha: string): Promise<string> {

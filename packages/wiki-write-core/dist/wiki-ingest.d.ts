@@ -59,14 +59,12 @@ export interface CommitWikiChangesParams {
      * The data-branch commit `files` and `deletedPaths` were derived from: the base of the write guard.
      * Every attempt, the first included, compares each write-set path on the head it reads with the same
      * path in this commit's tree and fails closed if any differs.
-     * - A commit SHA: that commit's tree is the base.
-     * - `null`: `data` did not exist when the files were derived, so they came from `main`; the base is
-     *   `main`'s tip tree, which a freshly bootstrapped `data` shares. A concurrent writer that created
-     *   `data` and wrote a write-set path fails the guard.
+     * - A commit SHA: that commit's tree is the base. It is resolved once and never re-read, so the base
+     *   stays fixed across retries.
      * - Omitted: the head tree of the first successful read in this call is the base, so only changes
      *   after that read are caught.
      */
-    baseCommitSha?: string | null;
+    baseCommitSha?: string;
     octokit?: OctokitClient;
     maxRetries?: number;
     /**

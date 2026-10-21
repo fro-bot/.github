@@ -162,19 +162,12 @@ export async function commitWikiChanges(params) {
             await assertWritableWikiBranch(octokit, owner, repo, branch);
             const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
             const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: head.data.object.sha });
-            let guardBaseTreeSha;
-            if (params.baseCommitSha === undefined) {
-                baseTreeSha ??= commit.data.tree.sha;
-                guardBaseTreeSha = baseTreeSha;
-            }
-            else if (params.baseCommitSha === null) {
-                // `main` moves, so its tip is read again each attempt.
-                guardBaseTreeSha = await readCommitTreeSha(octokit, owner, repo, await readMainTipSha(octokit, owner, repo));
-            }
-            else {
-                baseTreeSha ??= await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha);
-                guardBaseTreeSha = baseTreeSha;
-            }
+            // Resolved on the first attempt and reused: the base must not move while the write retries.
+            baseTreeSha ??=
+                params.baseCommitSha === undefined
+                    ? commit.data.tree.sha
+                    : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha);
+            const guardBaseTreeSha = baseTreeSha;
             if (commit.data.tree.sha !== guardBaseTreeSha) {
                 await assertWriteSetUnchanged(octokit, owner, repo, {
                     baseTreeSha: guardBaseTreeSha,
@@ -270,10 +263,6 @@ async function getPresentPathsInTree(octokit, owner, repo, treeSha) {
     if (!Array.isArray(tree))
         return new Set();
     return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])));
-}
-async function readMainTipSha(octokit, owner, repo) {
-    const ref = await octokit.rest.git.getRef({ owner, repo, ref: 'heads/main' });
-    return ref.data.object.sha;
 }
 async function readCommitTreeSha(octokit, owner, repo, sha) {
     const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: sha });
