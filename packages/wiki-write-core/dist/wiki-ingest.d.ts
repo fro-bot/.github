@@ -91,6 +91,14 @@ export declare class WikiIngestError extends Error {
     });
 }
 export declare function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): BuildWikiIngestChangesResult;
+/**
+ * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
+ *
+ * A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and replays the same files
+ * on it, up to `maxRetries` attempts. The replay is guarded: if any path in the write set (files and
+ * deletions) differs on the new head from the tree the files were derived from (the first head read),
+ * another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and nothing is written.
+ */
 export declare function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult>;
 export declare function validateWikilinks(files: Record<string, string>): void;
 /**

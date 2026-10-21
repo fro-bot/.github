@@ -1855,6 +1855,242 @@ describe('commitWikiChanges (422 handling)', () => {
   })
 })
 
+describe('commitWikiChanges (guarded replay after a ref race)', () => {
+  interface Entry {
+    path: string
+    mode: string
+    type: string
+    sha: string
+  }
+
+  const entry = (path: string, sha: string, overrides: Partial<Entry> = {}): Entry => ({
+    path,
+    mode: '100644',
+    type: 'blob',
+    sha,
+    ...overrides,
+  })
+
+  /** The head the write was derived from: the files it will replay, plus an unrelated script. */
+  const baseEntries = (): Entry[] => [
+    entry('knowledge/index.md', 'index-v1'),
+    entry('knowledge/log.md', 'log-v1'),
+    entry('knowledge/wiki/repos/page.md', 'page-v1'),
+    entry('knowledge/wiki/repos/old.md', 'old-v1'),
+    entry('scripts/x.ts', 'x-v1'),
+    {path: 'knowledge', mode: '040000', type: 'tree', sha: 'dir-sha'},
+  ]
+
+  const replace = (entries: Entry[], path: string, next: Entry | undefined): Entry[] => [
+    ...entries.filter(candidate => candidate.path !== path),
+    ...(next === undefined ? [] : [next]),
+  ]
+
+  const files = {
+    'knowledge/index.md': '# Wiki Index\n',
+    'knowledge/log.md': '# Wiki Log\n',
+    'knowledge/wiki/repos/page.md': '# Page\n',
+  }
+
+  interface UpdateRefParams {
+    owner: string
+    repo: string
+    ref: string
+    sha: string
+    force: false
+  }
+
+  /**
+   * A first attempt that reads `base`, builds, and loses the ref race; the retry then reads
+   * `concurrent`, the head another writer moved to.
+   */
+  function scenario(params: {
+    status: 409 | 422
+    concurrent: Entry[]
+    truncatedConcurrent?: boolean
+    deletedPaths?: string[]
+  }) {
+    const treesBySha: Record<string, {entries: Entry[]; truncated: boolean}> = {
+      'tree-base': {entries: baseEntries(), truncated: false},
+      'tree-concurrent': {entries: params.concurrent, truncated: params.truncatedConcurrent ?? false},
+    }
+    const getRef = vi
+      .fn<(args: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>>()
+      .mockResolvedValueOnce({data: {object: {sha: 'tip-base'}}})
+      .mockResolvedValue({data: {object: {sha: 'tip-concurrent'}}})
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {
+        sha: args.commit_sha,
+        tree: {sha: args.commit_sha === 'tip-base' ? 'tree-base' : 'tree-concurrent'},
+      },
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => {
+      const found = treesBySha[args.tree_sha]
+      return {data: {truncated: found?.truncated ?? false, tree: found?.entries ?? []}}
+    })
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async (_args: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(args: UpdateRefParams) => Promise<unknown>>()
+      .mockRejectedValueOnce(Object.assign(new Error('raced'), {status: params.status}))
+      .mockResolvedValue({data: {ref: 'refs/heads/data'}})
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createBlob, createTree, createCommit, updateRef})
+
+    const run = async () => {
+      vi.useFakeTimers()
+      try {
+        const settled = commitWikiChanges({
+          octokit,
+          owner: 'fro-bot',
+          repo: '.github',
+          branch: 'data',
+          message: 'feat(knowledge): ingest',
+          files,
+          deletedPaths: params.deletedPaths,
+          maxRetries: 3,
+        }).then(
+          value => ({value}) as const,
+          (error: unknown) => ({error}) as const,
+        )
+        await vi.advanceTimersByTimeAsync(30_000)
+        return await settled
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+    return {run, createBlob, createTree, createCommit, updateRef}
+  }
+
+  it.each([409, 422] as const)(
+    'replays on a %i when the concurrent commit changed only an unrelated path (a)',
+    async status => {
+      // #given a merge-back-style commit that changed scripts/x.ts and nothing in the write set
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+      })
+
+      // #when the retry runs
+      const outcome = await mocks.run()
+
+      // #then the files replay on the new head
+      expect(outcome).toMatchObject({value: {committed: true, attempts: 2}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(2)
+      expect(mocks.createCommit.mock.calls.map(([args]) => args.parents)).toEqual([['tip-base'], ['tip-concurrent']])
+    },
+  )
+
+  it.each([409, 422] as const)(
+    'fails closed on a %i when the concurrent commit changed knowledge/log.md (b)',
+    async status => {
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'knowledge/log.md', entry('knowledge/log.md', 'log-v2')),
+      })
+
+      const outcome = await mocks.run()
+
+      // #then it fails with the conflict error and writes nothing on the retry: the ref stays where the
+      // concurrent writer left it, with its log entry
+      expect(outcome).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+      expect(mocks.createBlob).toHaveBeenCalledTimes(Object.keys(files).length)
+      expect(mocks.createTree).toHaveBeenCalledTimes(1)
+      expect(mocks.createCommit).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it.each([409, 422] as const)(
+    'fails closed on a %i when the concurrent commit changed knowledge/index.md (c)',
+    async status => {
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'knowledge/index.md', entry('knowledge/index.md', 'index-v2')),
+      })
+
+      const outcome = await mocks.run()
+
+      expect(outcome).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+      expect(mocks.createCommit).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('fails closed when the concurrent commit changed a page in the write set (d)', async () => {
+    const mocks = scenario({
+      status: 422,
+      concurrent: replace(
+        baseEntries(),
+        'knowledge/wiki/repos/page.md',
+        entry('knowledge/wiki/repos/page.md', 'page-v2'),
+      ),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when the concurrent commit created a write-set path that was absent from the base (absence is a value)', async () => {
+    const mocks = scenario({
+      status: 409,
+      deletedPaths: ['knowledge/wiki/repos/ghost.md'],
+      concurrent: [...baseEntries(), entry('knowledge/wiki/repos/ghost.md', 'ghost-v1')],
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when the concurrent commit removed a write-set path (absence is a value)', async () => {
+    const mocks = scenario({status: 409, concurrent: replace(baseEntries(), 'knowledge/log.md', undefined)})
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('compares mode and type, not only the sha', async () => {
+    const mocks = scenario({
+      status: 409,
+      concurrent: replace(baseEntries(), 'knowledge/log.md', entry('knowledge/log.md', 'log-v1', {mode: '100755'})),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+  })
+
+  it('also guards a path being deleted', async () => {
+    const mocks = scenario({
+      status: 422,
+      deletedPaths: ['knowledge/wiki/repos/old.md'],
+      concurrent: replace(baseEntries(), 'knowledge/wiki/repos/old.md', entry('knowledge/wiki/repos/old.md', 'old-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('replays when a deleted path is unchanged on the new head', async () => {
+    const mocks = scenario({
+      status: 422,
+      deletedPaths: ['knowledge/wiki/repos/old.md'],
+      concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({value: {committed: true, attempts: 2}})
+  })
+
+  it('fails closed when a tree read is truncated, because the write set cannot be verified', async () => {
+    const mocks = scenario({
+      status: 409,
+      truncatedConcurrent: true,
+      concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('countWikiPages', () => {
   it('counts pages in all four category directories', () => {
     // #given paths covering all four wiki entry categories

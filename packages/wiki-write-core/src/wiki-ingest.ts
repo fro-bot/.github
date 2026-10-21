@@ -301,6 +301,14 @@ function collectWikiFrontmatter(files: Record<string, string>): Map<string, Wiki
   return frontmatter
 }
 
+/**
+ * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
+ *
+ * A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and replays the same files
+ * on it, up to `maxRetries` attempts. The replay is guarded: if any path in the write set (files and
+ * deletions) differs on the new head from the tree the files were derived from (the first head read),
+ * another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and nothing is written.
+ */
 export async function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult> {
   const owner = params.owner ?? DEFAULT_OWNER
   const repo = params.repo ?? DEFAULT_REPO
@@ -328,6 +336,9 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
     await bootstrapDataBranch()
   }
 
+  // The tree the write set was derived from: the head tree of the first successful read.
+  let baseTreeSha: string | undefined
+
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
     // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
@@ -337,6 +348,16 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
 
       const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
       const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: head.data.object.sha})
+      if (baseTreeSha === undefined) {
+        baseTreeSha = commit.data.tree.sha
+      } else if (commit.data.tree.sha !== baseTreeSha) {
+        await assertWriteSetUnchanged(octokit, owner, repo, {
+          baseTreeSha,
+          headTreeSha: commit.data.tree.sha,
+          paths: [...Object.keys(params.files), ...(params.deletedPaths ?? [])],
+          location: `${owner}/${repo}@${branch}`,
+        })
+      }
 
       const tree: {
         path: string
@@ -451,6 +472,53 @@ async function getPresentPathsInTree(
   const tree: unknown = response.data.tree
   if (!Array.isArray(tree)) return new Set()
   return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])))
+}
+
+/**
+ * Fail closed unless every path in the write set has the same tree entry (sha, mode, type; absence
+ * counts) on the new head as in the tree the files were derived from. A replay onto a head where
+ * another writer touched one of them would silently overwrite that writer's change.
+ */
+async function assertWriteSetUnchanged(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  params: {baseTreeSha: string; headTreeSha: string; paths: readonly string[]; location: string},
+): Promise<void> {
+  const refuse = (reason: string): never => {
+    throw new WikiIngestError({
+      code: 'CONFLICT_EXHAUSTED',
+      message: `wiki ingest did not replay onto ${params.location}: ${reason}`,
+      remediation:
+        'Another writer updated the data branch concurrently. Retry the workflow so it rebuilds on the new head.',
+    })
+  }
+  const base = await readTreeEntries(octokit, owner, repo, params.baseTreeSha)
+  const head = await readTreeEntries(octokit, owner, repo, params.headTreeSha)
+  if (base === undefined || head === undefined)
+    return refuse('a tree read was truncated, so the write set cannot be verified')
+  if (params.paths.some(path => base.get(path) !== head.get(path))) {
+    return refuse('another writer changed a path in the write set')
+  }
+}
+
+/** Path to `mode type sha`, for every non-directory entry. `undefined` when the read is truncated. */
+async function readTreeEntries(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  treeSha: string,
+): Promise<Map<string, string> | undefined> {
+  const response = await octokit.rest.git.getTree({owner, repo, tree_sha: treeSha, recursive: 'true'})
+  if (response.data.truncated === true) return undefined
+  const tree: unknown = response.data.tree
+  const entries = new Map<string, string>()
+  if (!Array.isArray(tree)) return entries
+  for (const entry of tree) {
+    if (!isRecord(entry) || typeof entry.path !== 'string' || entry.type === 'tree') continue
+    entries.set(entry.path, `${String(entry.mode)} ${String(entry.type)} ${String(entry.sha)}`)
+  }
+  return entries
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
