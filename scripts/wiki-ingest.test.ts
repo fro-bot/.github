@@ -1737,27 +1737,121 @@ describe('parsePorcelainPaths', () => {
   })
 })
 
-describe('commitWikiChanges (422 surfacing)', () => {
-  it('does not retry 422 updateRef failures', async () => {
-    const updateRef = vi
-      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
-      .mockRejectedValue(Object.assign(new Error('Validation failed'), {status: 422}))
+describe('commitWikiChanges (422 handling)', () => {
+  interface UpdateRefParams {
+    owner: string
+    repo: string
+    ref: string
+    sha: string
+    force: false
+  }
 
-    // #given a non-conflict updateRef failure from GitHub
+  const notFastForward = (): Error => Object.assign(new Error('Update is not a fast forward'), {status: 422})
+
+  const baseParams = {
+    owner: 'fro-bot',
+    repo: '.github',
+    branch: 'data',
+    message: 'feat(knowledge): ingest',
+    files: {'knowledge/index.md': '# Wiki Index\n'},
+  }
+
+  it('retries an updateRef 422 on a re-read tip and lands the commit', async () => {
+    // #given the first ref update is rejected as not a fast forward (the branch moved after the tip read)
+    vi.useFakeTimers()
+    const getRef = vi
+      .fn<(params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>>()
+      .mockResolvedValueOnce({data: {object: {sha: 'old-tip'}}})
+      .mockResolvedValueOnce({data: {object: {sha: 'new-tip'}}})
+    const getCommit = vi.fn(async (params: {commit_sha: string}) => ({
+      data: {sha: params.commit_sha, tree: {sha: `tree-of-${params.commit_sha}`}},
+    }))
+    const createTree = vi.fn(async (_params: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_params: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(params: UpdateRefParams) => Promise<unknown>>()
+      .mockRejectedValueOnce(notFastForward())
+      .mockResolvedValueOnce({data: {ref: 'refs/heads/data'}})
+
+    try {
+      const resultPromise = commitWikiChanges({
+        ...baseParams,
+        octokit: createOctokitMock({getRef, getCommit, createTree, createCommit, updateRef}),
+        maxRetries: 3,
+      })
+
+      // #when the retry delay elapses
+      await vi.advanceTimersByTimeAsync(3000)
+      const result = await resultPromise
+
+      // #then the second attempt rebuilds on the new tip and the replayed files land
+      expect(result).toEqual({committed: true, commitSha: 'commit-after-write', attempts: 2})
+      expect(updateRef).toHaveBeenCalledTimes(2)
+      expect(createTree.mock.calls.map(([params]) => params.base_tree)).toEqual(['tree-of-old-tip', 'tree-of-new-tip'])
+      expect(createCommit.mock.calls.map(([params]) => params.parents)).toEqual([['old-tip'], ['new-tip']])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('raises CONFLICT_EXHAUSTED after every attempt hits an updateRef 422', async () => {
+    vi.useFakeTimers()
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(notFastForward())
+
+    try {
+      // #given a ref update that is never a fast forward
+      const resultPromise = commitWikiChanges({
+        ...baseParams,
+        octokit: createOctokitMock({updateRef}),
+        maxRetries: 3,
+      })
+      const assertion = expect(resultPromise).rejects.toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+
+      // #when the whole bound is consumed
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      // #then it fails with the conflict exhaustion error after exactly the bound
+      await assertion
+      expect(updateRef).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry a createTree 422', async () => {
+    const createTree = vi.fn(async () => {
+      throw Object.assign(new Error('Validation failed'), {status: 422})
+    })
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>()
+
+    // #given a tree rejected as invalid
     const action = commitWikiChanges({
-      octokit: createOctokitMock({updateRef}),
-      owner: 'fro-bot',
-      repo: '.github',
-      branch: 'data',
-      message: 'feat(knowledge): fail fast on 422',
-      files: {'knowledge/index.md': '# Wiki Index\n'},
+      ...baseParams,
+      octokit: createOctokitMock({createTree, updateRef}),
       maxRetries: 3,
     })
 
-    // #when the updateRef call fails with status 422
-    // #then the original error bubbles without retries
+    // #then the original error bubbles at once, with no retry and no ref update
     await expect(action).rejects.toMatchObject({status: 422})
-    expect(updateRef).toHaveBeenCalledTimes(1)
+    expect(createTree).toHaveBeenCalledTimes(1)
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('does not retry a createCommit 422', async () => {
+    const createCommit = vi.fn(async () => {
+      throw Object.assign(new Error('Validation failed'), {status: 422})
+    })
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>()
+
+    const action = commitWikiChanges({
+      ...baseParams,
+      octokit: createOctokitMock({createCommit, updateRef}),
+      maxRetries: 3,
+    })
+
+    await expect(action).rejects.toMatchObject({status: 422})
+    expect(createCommit).toHaveBeenCalledTimes(1)
+    expect(updateRef).not.toHaveBeenCalled()
   })
 })
 

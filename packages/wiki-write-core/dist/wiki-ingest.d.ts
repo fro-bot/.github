@@ -59,7 +59,7 @@ export interface CommitWikiChangesParams {
     maxRetries?: number;
     /**
      * Idempotent data-branch bootstrap. Called before data-branch writes so wiki
-     * ingest recovers when GitHub deletes the `data` source ref after promotion.
+     * ingest recovers when the `data` branch is missing: it recreates the branch from `main`.
      */
     bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>;
 }

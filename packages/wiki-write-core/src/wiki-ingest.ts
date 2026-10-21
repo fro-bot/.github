@@ -97,7 +97,7 @@ export interface CommitWikiChangesParams {
   maxRetries?: number
   /**
    * Idempotent data-branch bootstrap. Called before data-branch writes so wiki
-   * ingest recovers when GitHub deletes the `data` source ref after promotion.
+   * ingest recovers when the `data` branch is missing: it recreates the branch from `main`.
    */
   bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>
 }
@@ -329,6 +329,9 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
   }
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
+    // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
+    let updatingRef = false
     try {
       await assertWritableWikiBranch(octokit, owner, repo, branch)
 
@@ -371,6 +374,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         parents: [commit.data.sha],
       })
 
+      updatingRef = true
       await octokit.rest.git.updateRef({
         owner,
         repo,
@@ -386,12 +390,14 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         continue
       }
 
-      if (isConflictError(error) && attempt < maxRetries) {
+      const refRace = isConflictError(error) || (updatingRef && isApiErrorStatus(error, 422))
+
+      if (refRace && attempt < maxRetries) {
         await delayConflictRetry(attempt)
         continue
       }
 
-      if (isConflictError(error)) {
+      if (refRace) {
         throw new WikiIngestError({
           code: 'CONFLICT_EXHAUSTED',
           message: `wiki ingest exhausted ${maxRetries} attempt(s) updating ${owner}/${repo}@${branch}`,

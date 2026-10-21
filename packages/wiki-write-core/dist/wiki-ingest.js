@@ -144,6 +144,9 @@ export async function commitWikiChanges(params) {
         await bootstrapDataBranch();
     }
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+        // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
+        // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
+        let updatingRef = false;
         try {
             await assertWritableWikiBranch(octokit, owner, repo, branch);
             const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
@@ -175,6 +178,7 @@ export async function commitWikiChanges(params) {
                 tree: createdTree.data.sha,
                 parents: [commit.data.sha],
             });
+            updatingRef = true;
             await octokit.rest.git.updateRef({
                 owner,
                 repo,
@@ -189,11 +193,12 @@ export async function commitWikiChanges(params) {
                 await bootstrapDataBranch();
                 continue;
             }
-            if (isConflictError(error) && attempt < maxRetries) {
+            const refRace = isConflictError(error) || (updatingRef && isApiErrorStatus(error, 422));
+            if (refRace && attempt < maxRetries) {
                 await delayConflictRetry(attempt);
                 continue;
             }
-            if (isConflictError(error)) {
+            if (refRace) {
                 throw new WikiIngestError({
                     code: 'CONFLICT_EXHAUSTED',
                     message: `wiki ingest exhausted ${maxRetries} attempt(s) updating ${owner}/${repo}@${branch}`,
