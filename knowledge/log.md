@@ -8384,3 +8384,23 @@ pairs. Exactly one comment was posted, after checking public visibility.
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-10-21 04:17] manual-edit | topic:github-actions-ci
+
+Daily oversight added the distinction between cancellation request admission,
+observed terminal state, and execution containment before checkout reuse. The
+pinned infrastructure workflow supplies the bounded Actions readback pattern;
+the operator's acceptance report supplies a separately attributed agent-run
+containment counterexample. No production cancellation was attempted. Existing
+dated claims and incoming survey edits remain intact. Updated the index and left
+the wiki diff in the working tree for the trusted ingest job.
+
+Sources: https://github.com/marcusrbrown/infra/blob/6def8731340caa2f0966d536825107629354ecc3/.github/workflows/cancel-superseded-dashboard-deploys.yaml;
+https://github.com/fro-bot/.github/issues/3512#issuecomment-6295776281;
+https://github.com/fro-bot/agent/issues/1889.
+
+## [2026-10-21 04:26] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@f193b3ce0a51deb45347a96162176881b98beede
