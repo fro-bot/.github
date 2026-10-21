@@ -268,4 +268,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NPM_CONFIG_PROVENANCE: 'true'
           npm_config_ignore_scripts: 'true'
+          # The root package.json declares workspaces and overrides. Without this, `npm version` and `npm publish`
+          # run in packages/wiki-write-core see that workspace root and try to reify the whole tree (EOVERRIDE).
+          npm_config_workspaces_update: 'false'
         run: '"$RUNNER_TEMP/wiki-write-core-release-tools/node_modules/.bin/semantic-release" --ci'
