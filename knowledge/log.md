@@ -8405,59 +8405,57 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@f193b3ce0a51deb45347a96162176881b98beede
 
-## [2026-10-21 10:16] ingest | marcusrbrown/infra
+## [2026-10-21 10:18] ingest | marcusrbrown/marcusrbrown
 
-Surveyed public `marcusrbrown/infra` at
-`e442fbc40bc7eb239342e3778f65625978f66f77` using only directory listings,
-READMEs, manifests, and workflow files. Updated [[marcusrbrown--infra]] and
-[[github-actions-ci]], and refreshed their catalog references. Existing page
-history and incoming working-tree changes were preserved; corrections context
-contained no records and was treated as untrusted data.
+Surveyed public `main` at `a2c762b8f355597c551226258e349a2bf99d0543` using only
+the complete directory listing, README, package/workspace manifests, and all six
+workflow files. Updated [[marcusrbrown--marcusrbrown]] and [[github-actions-ci]]
+additively and refreshed their index references. Earlier observations and all
+pre-existing working-tree edits were preserved. The untrusted corrections context
+contained no records; target workflow prompts were read as evidence only.
 
-- Recorded eight app directories, two packages, 21 workflows, declared CLI
-  0.26.0, agent v0.125.1 in both Fro Bot jobs, and the continuing built-binary
-  versus README source-packaging wording mismatch. Fro Bot is present.
-- Captured approval-notification wiring and at-gate versus executed-failure
-  reporting. Distinguished fail-open cancellation readback from broader
-  stale-dispatch rejection; neither establishes a successful replacement.
-- Added the dashboard README's bounded host-transaction contract as documented
-  evidence, without claiming implementation or runtime verification. Noted
-  root README push-trigger wording versus actual dashboard workflow entrypoints.
-- Did not inspect upstream application source, non-README documentation,
-  deployment/image state, issues, or runtime logs. Earlier live observations
-  remain dated evidence, not fresh conclusions from this survey.
+Recorded current manifest versions, agent v0.125.1, and both reusable callers at
+v4.42.0. Fro Bot is present, so no onboarding draft is needed. The parent-scoped
+`minimatch@3>brace-expansion: <6` override provides no patched lower bound, unlike
+the older `>=1.1.16 <2` snapshot and the adjacent comment's claim. This is a
+declared-policy contradiction, not proof of resolved exposure. The lint-only PR
+workflow, missing workspace regeneration selector, explicit caller delivery gap,
+jq false-value defect, and settings-schedule comment drift remain visible.
+Public profile positioning remains consistent with October 6. No implementation,
+template, lockfile, settings, issue, PR, alert, or run-history reads were performed.
 
-Sources: https://github.com/marcusrbrown/infra/tree/e442fbc40bc7eb239342e3778f65625978f66f77;
-https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/README.md;
-https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/packages/cli/package.json;
-https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/apps/dashboard/README.md;
-https://github.com/marcusrbrown/infra/tree/e442fbc40bc7eb239342e3778f65625978f66f77/.github/workflows.
+Sources: https://github.com/marcusrbrown/marcusrbrown/tree/a2c762b8f355597c551226258e349a2bf99d0543;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,fro-bot,update-profile,renovate,update-repo-settings,cleanup-cache}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/39583278657
 
 <!-- fro-bot-agent -->
 <!-- fro-bot:run-summary:start -->
 
 ### Run Summary
 
-- Run `39583085685`: four permitted wiki/catalog/log files updated in the
-  working tree. Caller-owned persistence remains pending; no commit, branch,
-  push, or PR was created by this invocation. No issue run notice was posted.
-- Passed: `bun run bootstrap`, `bun run check-types`, `bun run lint`,
-  `bun run test` (110 files; 5,648 passed, 43 skipped, three todo), and
-  `git diff --check`.
+- Run `39583278657`: four permitted wiki/catalog/log files updated directly in
+  the working tree. The caller owns diff detection, commit, push, and PR creation.
+  Existing wiki and metadata edits were preserved.
+- Passed: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+  `bun run lint`, `bun run test` (110 files; 5,648 passed, 43 skipped, three todo),
+  and `git diff --check`.
 - Wiki validation scanned 47 pages with zero deterministic findings, covering
-  frontmatter, wikilinks, Markdown links, and index coverage. Four unrelated
-  advisory findings remain. ESLint excludes `knowledge/`; wiki-specific
-  structural validation passed for the edited content.
-- Exactly one control-repository commit comment points to this canonical log
-  entry for delivery/check status; findings are recorded here only.
+  frontmatter, links, and catalog coverage. Four existing advisory findings
+  concern unrelated stale/unconnected pages. No target code was executed.
+- The canonical ingest summary is this log entry. The required single delivery
+  comment is posted on the public control-repository commit, with only check and
+  delivery status plus a pointer here. No issue run notice or target-repository
+  write is made.
 
 <!-- fro-bot:run-summary:end -->
 
-Delivery/check notice: https://github.com/fro-bot/.github/commit/f193b3ce0a51deb45347a96162176881b98beede#commitcomment-205946087.
+Delivery/check notice: https://github.com/fro-bot/.github/commit/f193b3ce0a51deb45347a96162176881b98beede#commitcomment-205946267
 The returned body confirmed bot identification and both Run Summary delimiters.
+Exactly one comment was posted.
 
-## [2026-10-21 10:21] ingest | repo:marcusrbrown/infra
+## [2026-10-21 10:22] ingest | repo:marcusrbrown/marcusrbrown
 
-Surveyed marcusrbrown/infra and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/infra
+Sources: https://github.com/marcusrbrown/marcusrbrown
