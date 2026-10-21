@@ -7,6 +7,8 @@
  *   the merge base and `main`. Checked on every run.
  * - Retries only on an `updateRef` 409/422, up to 3 attempts, re-reading everything each time. It never
  *   forces the ref update.
+ * - Errors reach output as a fixed code, plus the HTTP status when the API returned one, and never as an
+ *   upstream message.
  */
 
 import process from 'node:process'
