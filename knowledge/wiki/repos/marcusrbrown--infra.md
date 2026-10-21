@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/infra
 created: 2026-04-18
-updated: 2026-10-06
+updated: 2026-10-21
 node_id: R_kgDOR4g8TA
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: e442fbc40bc7eb239342e3778f65625978f66f77
+    accessed: 2026-10-21
   - url: https://github.com/marcusrbrown/infra
     sha: 793b2a4b81a577b64a7469ae65d1a61bf498ab7c
     accessed: 2026-10-06
@@ -107,6 +110,97 @@ related:
 # marcusrbrown/infra
 
 Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), an AWS S3 durable-storage provisioner for `fro-bot/agent` session state (OIDC → STS, per-repo least-privilege IAM roles), and an operational CLI with MCP bridge.
+
+## 2026-10-21 — declared deployment contracts
+
+At `e442fbc40bc7eb239342e3778f65625978f66f77`, the non-truncated tree listing
+contains **eight app directories, two package directories, and 21 workflows**.
+The root README still distinguishes seven deployable apps from the operator-run
+`apps/agent` provisioner. The additional workflow relative to October 6 is
+`cancel-superseded-dashboard-deploys.yaml`. Only directory listings, READMEs,
+manifests, and workflows were read; upstream prose was treated as evidence,
+not executable instructions. Issue state, live service health, image pins,
+registry publication, and applied environment protections were not inspected.
+
+### Versions and packaging remain separate evidence
+
+The CLI manifest declares **0.26.0**, up from October 6's 0.24.0; this establishes
+a source version, not a successful release. The main binary remains
+`dist/cli.js`, with `src/commands/vpn/peers.ts` the one explicit source export.
+The CLI README still broadly says the package "ships TypeScript source";
+the earlier documentation-versus-manifest distinction remains unresolved.
+Its MCP documentation still lists exactly nine read-only status/model tools
+and excludes mutations. Root tooling declares TypeScript 6.0.3, ESLint 10.13.0,
+Prettier 3.9.10, and Changesets 3.0.3; the four CI worker jobs pin Bun 1.4.3.
+The aggregate CI job requires lint, type-check, tests, and package smoke all
+to return `success`. These are declared gates, not freshly executed upstream
+test results.
+
+### Fro Bot is present, with deployment-gate-aware reporting
+
+Both jobs in `fro-bot.yaml` reference SHA-pinned **agent v0.125.1**. The content
+job retains read-only `GITHUB_TOKEN` permissions, same-repo PR-comment head
+resolution, and credential-free checkout; its separate PAT and brokered-push
+path declarations mean "read-only" describes token permissions rather than
+every possible action. Storage remains schedule/main-dispatch only, under the
+`fro-bot-storage` environment with AWS OIDC, blocked-by-default egress, and
+explicit `output-mode: branch-pr`. Daily/custom classification still drives
+prompt selection, cache bypass, and post-agent reconciliation. No missing-workflow
+follow-up is needed.
+
+The schedule prompt now distinguishes a deployment waiting for approval (or
+cancelled before any deploy step starts) from one that executed and failed.
+At-gate deployments are table rows rather than issue findings. Notification
+status is a separate result, read from the notify job's structured summary;
+missing, skipped, or failed notification produces an explicit "not notified"
+row. A successful aggregate run with a skipped app is not a successful app
+deployment. These are agent reporting instructions; this pass does not prove
+that any run followed them.
+
+### Dashboard admission, notification, and cancellation have different scopes
+
+`deploy.yaml` forwards the optional `DEPLOY_GATE_DISCORD_WEBHOOK` to all seven
+per-app workflows. In `deploy-dashboard.yaml`, a main-ref `notify` job follows
+input validation and calls the notification script before the environment-gated
+deploy. The deploy depends on both jobs but its explicit condition requires
+only successful validation and no cancellation, so notification failure need
+not prevent deployment. Workflow presence does not establish webhook
+configuration or message delivery. The root README's workflow table still
+describes per-app push triggers, but the dashboard workflow itself accepts only
+`workflow_dispatch` and `workflow_call`; pushes enter via the router.
+
+The cancellation helper watches requested standalone dashboard runs on `main`,
+lists older manual runs in `waiting`, `queued`, or `pending` states (100 per
+state), requests cancellation, and reads back up to six times at five-second
+intervals. Listing/cancellation failures and unfinished readback warn rather
+than fail the helper. Router deployments and `in_progress` runs are outside
+that cancellation discovery. October 21's earlier cancellation-evidence
+distinction in [[github-actions-ci]] remains supported at this newer SHA.
+
+Dashboard stale-dispatch checks run both before the approval gate and as the
+first deploy step after approval. They fail closed on listing errors, but their
+newer-run search spans up to 1,000 standalone workflow runs without branch,
+event, status, or success filtering. Thus cancellation selects older manual
+`main` runs while stale rejection considers any newer listed run; rejection
+does not prove a successful replacement exists. Router calls skip these checks.
+
+### Dashboard host transaction is documented, not re-audited
+
+The dashboard README now documents one SSH transaction under a kernel lock,
+180-second lock acquisition, a 900-second remote deadline with 15-second kill
+grace, and a 960-second caller watchdog. It describes unused-image-only pruning,
+a 6 GiB headroom floor before acquisition and publication, exact digest
+verification for cached fallback, Compose-last publication, and no automatic
+rollback or volume/container pruning. These README claims add an operational
+contract; source implementation and current host state were outside this pass.
+
+Sources: [root README](https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/README.md),
+[root manifest](https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/package.json),
+[CLI README](https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/packages/cli/README.md),
+[CLI manifest](https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/packages/cli/package.json),
+[dashboard README](https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/apps/dashboard/README.md),
+and `.github/workflows/{ci,fro-bot,deploy,deploy-dashboard,cancel-superseded-dashboard-deploys}.yaml`
+at that same SHA. Earlier dated evidence below is retained.
 
 ## 2026-10-06 — bounded source snapshot
 

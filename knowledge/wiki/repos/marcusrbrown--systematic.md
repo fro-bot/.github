@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-10-05
+updated: 2026-10-20
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 041aeaf9e74c70b048dfd86d6e9bcd170a6ec064
+    accessed: 2026-10-20
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
     accessed: 2026-04-24
@@ -81,6 +84,113 @@ node_id: R_kgDORAJegA
 Compound-engineering workflow system for AI coding harnesses. Published to npm as `@fro.bot/systematic`. Adapted from the [Compound Engineering Plugin (CEP)](https://github.com/EveryInc/compound-engineering-plugin) for Claude Code, now evolving independently.
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
+
+## 2026-10-20 bounded snapshot
+
+Public `main` at **`041aeaf9e74c70b048dfd86d6e9bcd170a6ec064`**. Evidence is
+limited to directory listings, READMEs, manifests, and selected workflow files.
+Workflow declarations establish intended behavior, not successful executions;
+implementation scripts, lock contents, issues, releases, branch protections,
+and deployed artifacts were not inspected. Earlier dated observations remain
+historical evidence, with the changed contracts distinguished below.
+
+### Release approval replaces direct main-push publishing
+
+**The October 5 release-job topology is superseded.** `main.yaml` now gives its
+`Release` job no `needs` or job-level `if`: it renders a release credential-free
+on every PR and main push. For a `release/pending` PR it checks out the exact
+head, renders from its parent, and compares the complete generated changelog.
+That status is a validation surface, not the publishing job.
+
+The separate `release.yaml` verifies whether the main commit is an approved
+release merge, builds `dist/` in a read-only job, and passes decision/build
+artifacts to an environment-scoped publisher. The publisher checks the live
+main tip and dist digest, installs with lifecycle scripts disabled, stages the
+generated release configuration, rechecks the live `RELEASE_HOLD` variable,
+and invokes semantic-release with npm OIDC. These are explicit workflow steps;
+the verifier's approval logic and generated configuration were outside scope.
+
+The same workflow renders a pending release from current main and maintains
+one App-authored `release/pending` PR, arming squash auto-merge against its head.
+`release-gate.yaml` supplies a deterministic **Wednesday/Sunday 15:00 UTC** gate
+or maintainer dispatch: a read-only decision job names twelve required checks,
+including `Host Contract`; a separate PAT job approves the inspected head and
+rechecks it; an OIDC job attests an approval subject containing repo, PR, head,
+and review ID. This declares a split between deciding, approving, attesting,
+and publishing. It does not prove which repository variables, environments,
+or branch rules are currently configured.
+
+### Host Contract now aggregates PR-only shards
+
+The earlier serial, step-gated integration job has become a gate, **four
+shards**, and an `always()` aggregator named `Host Contract`. Relevant PR
+paths include source, tests, scripts, evals, skills, agents, registry, manifests,
+lockfile, and `.github/`; **main pushes explicitly skip the suite**. Malformed
+filter output fails closed. Each required shard builds first, requires the
+OpenCode host, and uploads JUnit/log evidence even after suite failure. The
+aggregator checks the union through `host-contract-guard.ts` and independently
+requires successful shard results. A green main-push aggregator therefore
+does not establish that integration tests ran on that push. Actual protection
+settings were not read; the old transitive dependency through `Release` no
+longer describes this workflow. See [[opencode-plugins]].
+
+### Release consumers now separate builds from write credentials
+
+Docs and Claude plugin publishing now respond to published releases or an
+explicit tag dispatch. Both fetch a target validator from the default branch
+before checking out the tag, declare expected-author/latest-release admission,
+and build read-only before a separate publishing job. This supersedes the
+October 5 Claude publisher's successful-main-release dependency and the older
+single-job docs deployment description.
+
+Docs deploy uses the `docs` environment, rejects `.git` entries, symlinks, and
+special files before minting its App token, then rechecks latest-release
+freshness before writing [[fro-bot--systematic]]. Deployment is serialized with
+`cancel-in-progress: false` and `queue: max`, replacing the historical
+cancel-in-progress contract. Claude publication preserves executable modes in
+a tar artifact, rejects `.git` archive entries, and disables Git hooks and
+fsmonitor while updating its branch. These distinct checks are not evidence
+of complete artifact-safety parity.
+
+`release-notes.yaml` separately narrates stable releases, expects the narrative
+dispatcher to verify a `## What's new` body, and rebuilds docs for the latest
+tag even when narrating an older release. Thus publishing and narration now
+have separate failure surfaces; runtime success was not checked.
+
+### Packaging and automation deltas
+
+- The three optional harness peers and npm entry points remain. Runtime
+  dependencies now list only `js-yaml`, `jsonc-parser`, and `zod`; the October 5
+  manifest's `tree-sitter-bash` and `web-tree-sitter` declarations are absent.
+  This proves a manifest change, not removal of every transitive parser.
+- The README still claims **31 skills / 37 agents**, against **32 immediate
+  skill directories / 37 agent Markdown files**, excluding the review README.
+  The count contradiction persists. The README also documents `npx skills`
+  installation as portable content **without tool registration**.
+- Current declared pins include OpenCode plugin/SDK **1.19.3**, agent-browser
+  **0.39.1**, typebox **1.4.1**, and zod **4.6.7**. Biome remains **2.5.15**,
+  TypeScript **7.0.2**, and `@types/bun` remains `latest`. The docs workspace
+  declares Playwright **1.64.1**; no installed versions were measured.
+- **Fro Bot is present**, pinned to **v0.124.1**
+  (`0e317f0c78fed3aa5db3d6610f1a089ca13c4d04`); no onboarding draft is needed.
+  It declares brokered extra paths `skills,agents,tests,registry`, an approval
+  eligibility decision, and an `always()` backstop dismissing disallowed
+  approvals. Scheduled/empty-autoheal dispatch `branch-pr` routing and
+  `timeout: 0` remain. Shared settings/Renovate callers now pin **v4.41.0**.
+- The directory listing contains **12 workflows**, versus eight on October 5.
+  The local eval README still limits cases to OpenCode source/installed modes
+  and explicitly disclaims OS isolation and multi-harness eval coverage.
+
+Sources at the pinned commit:
+[manifest](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/package.json),
+[README](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/README.md),
+[Main](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/main.yaml),
+[Release](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/release.yaml),
+[Release Gate](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/release-gate.yaml),
+[Docs](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/docs.yaml),
+[Claude publisher](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/publish-claude-code-plugin.yaml),
+[Release Notes](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/release-notes.yaml),
+and [Fro Bot](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/fro-bot.yaml).
 
 ## 2026-10-05 bounded snapshot
 

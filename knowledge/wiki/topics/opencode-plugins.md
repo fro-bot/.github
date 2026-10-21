@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-10-18
+updated: 2026-10-20
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 041aeaf9e74c70b048dfd86d6e9bcd170a6ec064
+    accessed: 2026-10-20
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-10-18
@@ -103,6 +106,34 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-10-20: integration status is conditional evidence
+
+[[marcusrbrown--systematic]] now declares a PR path gate, four real-host
+integration shards, and an `always()` `Host Contract` aggregator. Main pushes
+explicitly mark the suite not required. When required, the aggregator applies
+the skipped-test/pass-floor guard to all four JUnit/log pairs and independently
+requires successful shard results. Building each shard before test discovery
+retains the earlier protection against a missing `dist/` skipping assertions.
+
+**Qualification to the September/October release-gating observations:** the
+`Release` job no longer depends on `Host Contract`; it is a credential-free
+renderer, while a separate release-gate workflow explicitly names Host Contract
+among twelve checks. Protection settings and verifier implementation were not
+read. The durable distinction is between a green conditional status, actual
+host execution on a specific PR, and approval of that exact head. Those are
+three separate claims, even when the status name stays unchanged.
+
+The same bounded snapshot distinguishes installation surfaces: the README's
+portable `npx skills` path promises content without tool registration, whereas
+the optional-peer manifest still declares native OpenCode/Pi entries and a
+Claude marketplace branch. Content availability is not runtime capability
+parity. The README's 31-skill claim still conflicts with 32 immediate skill
+directories; the 37-agent count agrees after excluding the review README.
+
+Sources: [Main workflow](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/main.yaml),
+[release gate](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/.github/workflows/release-gate.yaml),
+and [README](https://github.com/marcusrbrown/systematic/blob/041aeaf9e74c70b048dfd86d6e9bcd170a6ec064/README.md).
 
 ## Plugin API Surface
 

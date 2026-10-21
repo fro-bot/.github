@@ -2,8 +2,16 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-18
+updated: 2026-10-21
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown/blob/a2c762b8f355597c551226258e349a2bf99d0543/pnpm-workspace.yaml
+    sha: a2c762b8f355597c551226258e349a2bf99d0543
+    accessed: 2026-10-21
+  - url: https://github.com/marcusrbrown/infra/blob/6def8731340caa2f0966d536825107629354ecc3/.github/workflows/cancel-superseded-dashboard-deploys.yaml
+    sha: 6def8731340caa2f0966d536825107629354ecc3
+    accessed: 2026-10-21
+  - url: https://github.com/fro-bot/.github/issues/3512#issuecomment-6295776281
+    accessed: 2026-10-21
   - url: https://github.com/bfra-me/works/blob/fcfec271a83c24179bbaab01dddf385531b7d090/.github/workflows/main.yaml
     sha: fcfec271a83c24179bbaab01dddf385531b7d090
     accessed: 2026-10-18
@@ -328,6 +336,33 @@ related:
 ---
 
 # GitHub Actions CI
+
+## A parent-scoped override needs an actual lower bound (2026-10-21)
+
+In [[marcusrbrown--marcusrbrown]] at
+`a2c762b8f355597c551226258e349a2bf99d0543`, the workspace comment says two
+incompatible `minimatch` major lines receive separate patched floors for
+`brace-expansion`. The `minimatch@10>brace-expansion` range is `>=5.0.7`, but
+`minimatch@3>brace-expansion` is only `<6`. Parent scoping identifies which edge
+to override; it does not supply a missing lower bound or preserve the parent's
+original major compatibility. The older repo-page snapshot recorded
+`>=1.1.16 <2` for the latter edge; that description is historical, not current.
+
+Review range semantics separately from advisory comments and installed versions.
+An upper-only range cannot prove a patched floor, while even a correctly shaped
+floor does not prove which version the lockfile resolves. The bounded manifest
+read establishes a policy/comment mismatch, not present exposure or a runtime
+compatibility failure. The same repo's PR-generation selector omits this workspace
+manifest, so a workspace-only policy change does not independently select that
+regeneration job; it does not bypass the separate `Main` lint workflow.
+
+## Cancellation admission, terminal state, and execution containment are separate proofs (2026-10-21)
+
+[[marcusrbrown--infra]] at `6def8731` cancels older manually dispatched dashboard deployments waiting at approval gates, then reads each run back with a bounded retry budget. An accepted cancellation request is not evidence that the run reached `completed` with conclusion `cancelled`; a different terminal conclusion is reported separately, and a still-pending run produces an operator warning. The workflow deliberately fails open and excludes router-dispatched deployments, so its green result does not certify that every superseded deployment stopped.
+
+The operator acceptance report on [the rollout tracker](https://github.com/fro-bot/.github/issues/3512#issuecomment-6295776281) supplies a separate containment counterexample: a run displayed as cancelled reportedly continued writing to its checkout for eleven minutes and blocked later launches with uncommitted changes, tracked in [agent #1889](https://github.com/fro-bot/agent/issues/1889). This is reported production evidence, not a reproduction by this oversight pass, and it concerns agent execution rather than GitHub Actions cancellation. Neither an HTTP acknowledgement nor a UI terminal label proves process-tree termination or checkout reusability.
+
+For control-plane dispatch and operator acceptance, record three outcomes independently: cancellation request accepted, authoritative terminal state observed, and execution/writes stopped before resource reuse. Verify the last with an execution-side signal and a clean subsequent launch, rather than silently cleaning the checkout or weakening the dirty-tree refusal. Preserve the earlier health/compatibility/acceptance distinction below; cancellation adds another independent gate.
 
 ## Keep failure suppression scoped to the invoked command (2026-10-18)
 
