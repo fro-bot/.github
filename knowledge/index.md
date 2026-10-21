@@ -2,6 +2,10 @@
 
 Master catalog of all wiki pages, organized by type.
 
+Catalog refreshed 2026-10-21: [[marcusrbrown--infra]] (repo) and
+[[github-actions-ci]] (topic). Existing catalog entries and dated evidence remain;
+the canonical ingest record is in `knowledge/log.md`.
+
 2026-10-21 oversight: [[github-actions-ci]] distinguishes cancellation admission,
 observed terminal state, and execution containment before checkout reuse. Earlier
 dated evidence and existing catalog entries remain intact.

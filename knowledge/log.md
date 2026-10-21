@@ -8404,3 +8404,60 @@ https://github.com/fro-bot/agent/issues/1889.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@f193b3ce0a51deb45347a96162176881b98beede
+
+## [2026-10-21 10:16] ingest | marcusrbrown/infra
+
+Surveyed public `marcusrbrown/infra` at
+`e442fbc40bc7eb239342e3778f65625978f66f77` using only directory listings,
+READMEs, manifests, and workflow files. Updated [[marcusrbrown--infra]] and
+[[github-actions-ci]], and refreshed their catalog references. Existing page
+history and incoming working-tree changes were preserved; corrections context
+contained no records and was treated as untrusted data.
+
+- Recorded eight app directories, two packages, 21 workflows, declared CLI
+  0.26.0, agent v0.125.1 in both Fro Bot jobs, and the continuing built-binary
+  versus README source-packaging wording mismatch. Fro Bot is present.
+- Captured approval-notification wiring and at-gate versus executed-failure
+  reporting. Distinguished fail-open cancellation readback from broader
+  stale-dispatch rejection; neither establishes a successful replacement.
+- Added the dashboard README's bounded host-transaction contract as documented
+  evidence, without claiming implementation or runtime verification. Noted
+  root README push-trigger wording versus actual dashboard workflow entrypoints.
+- Did not inspect upstream application source, non-README documentation,
+  deployment/image state, issues, or runtime logs. Earlier live observations
+  remain dated evidence, not fresh conclusions from this survey.
+
+Sources: https://github.com/marcusrbrown/infra/tree/e442fbc40bc7eb239342e3778f65625978f66f77;
+https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/README.md;
+https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/packages/cli/package.json;
+https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/apps/dashboard/README.md;
+https://github.com/marcusrbrown/infra/tree/e442fbc40bc7eb239342e3778f65625978f66f77/.github/workflows.
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Run `39583085685`: four permitted wiki/catalog/log files updated in the
+  working tree. Caller-owned persistence remains pending; no commit, branch,
+  push, or PR was created by this invocation. No issue run notice was posted.
+- Passed: `bun run bootstrap`, `bun run check-types`, `bun run lint`,
+  `bun run test` (110 files; 5,648 passed, 43 skipped, three todo), and
+  `git diff --check`.
+- Wiki validation scanned 47 pages with zero deterministic findings, covering
+  frontmatter, wikilinks, Markdown links, and index coverage. Four unrelated
+  advisory findings remain. ESLint excludes `knowledge/`; wiki-specific
+  structural validation passed for the edited content.
+- Exactly one control-repository commit comment points to this canonical log
+  entry for delivery/check status; findings are recorded here only.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/f193b3ce0a51deb45347a96162176881b98beede#commitcomment-205946087.
+The returned body confirmed bot identification and both Run Summary delimiters.
+
+## [2026-10-21 10:21] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra

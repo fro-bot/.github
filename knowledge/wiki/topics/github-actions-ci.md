@@ -4,6 +4,15 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-21
 sources:
+  - url: https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/.github/workflows/deploy-dashboard.yaml
+    sha: e442fbc40bc7eb239342e3778f65625978f66f77
+    accessed: 2026-10-21
+  - url: https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/.github/workflows/cancel-superseded-dashboard-deploys.yaml
+    sha: e442fbc40bc7eb239342e3778f65625978f66f77
+    accessed: 2026-10-21
+  - url: https://github.com/marcusrbrown/infra/blob/e442fbc40bc7eb239342e3778f65625978f66f77/.github/workflows/fro-bot.yaml
+    sha: e442fbc40bc7eb239342e3778f65625978f66f77
+    accessed: 2026-10-21
   - url: https://github.com/marcusrbrown/infra/blob/6def8731340caa2f0966d536825107629354ecc3/.github/workflows/cancel-superseded-dashboard-deploys.yaml
     sha: 6def8731340caa2f0966d536825107629354ecc3
     accessed: 2026-10-21
@@ -333,6 +342,34 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Replacement admission and approval notification need independent outcomes (2026-10-21)
+
+[[marcusrbrown--infra]] at `e442fbc4` extends the cancellation distinction below:
+the helper discovers only older standalone manual `main` dashboard runs in
+`waiting`, `queued`, or `pending` states, but the deploy's pre-gate and
+post-approval stale checks reject a manual dispatch if **any newer listed run**
+exists. That newer-run query has no branch, event, status, or success filter
+and is bounded to 1,000 runs. Router calls skip stale rejection and are outside
+the helper's cancellation scope. Neither rejecting old work nor accepting a
+cancel request proves that a suitable replacement deployed successfully.
+Record discovery scope and replacement success separately from cancellation.
+
+The dashboard workflow also separates input validation, pre-gate notification,
+and the environment-gated deploy. Its deploy job depends on validation and
+notification but explicitly permits proceeding after notification failure when
+validation succeeded and the run was not cancelled. Its Fro Bot reporting
+prompt correspondingly treats waiting/pre-step-cancelled deployments as table
+rows, distinguishes sent versus skipped/failed/missing notification summaries,
+and reserves deploy-failure issues for jobs that actually started steps.
+Workflow wiring establishes these contracts; it does not establish configured
+webhooks, delivered messages, applied reviewer rules, or successful deployment.
+
+For approval-gated automation, report four facts independently: input admitted,
+operator notified, deploy execution started, and target deployment succeeded.
+An aggregate run's success or a green fail-open helper cannot substitute for
+those per-stage outcomes. Preserve the earlier terminal-state and execution
+containment evidence below; this source-only survey did not recheck it live.
 
 ## Cancellation admission, terminal state, and execution containment are separate proofs (2026-10-21)
 
