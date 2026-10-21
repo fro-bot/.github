@@ -618,6 +618,7 @@ jobs:
           echo "private=false" >> "$GITHUB_OUTPUT"
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
         uses: ./.github/actions/sync-wiki
 
@@ -678,6 +679,7 @@ jobs:
           steps.onboarded-persist.outputs.onboarded == 'true'
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
           WIKI_OPERATION: survey
           WIKI_TARGET: 'repo:${{ needs.survey-repo.outputs.target-repository }}'
           REPO_NODE_ID: ${{ inputs.node_id }}

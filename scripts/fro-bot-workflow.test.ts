@@ -684,6 +684,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     'case "$1" in',
     '  ls-remote) next_from_sequence FAKE_GIT_LS_REMOTE_EXITS "$FAKE_GIT_TRACE_FILE.ls-remote-count" FAKE_GIT_LS_REMOTE_EXIT ;;',
     '  fetch) next_from_sequence FAKE_GIT_FETCH_EXITS "$FAKE_GIT_TRACE_FILE.fetch-count" FAKE_GIT_FETCH_EXIT ;;',
+    '  rev-parse) echo "$FAKE_GIT_REV_PARSE_OUTPUT"; exit "$FAKE_GIT_REV_PARSE_EXIT" ;;',
     '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
     '  *) exit 0 ;;',
     'esac',
@@ -696,6 +697,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     trace: string[]
     sleeps: string[]
     pwned: boolean
+    githubOutput: string
   } {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
@@ -712,8 +714,13 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
       writeFileSync(scriptPath, runScript)
       const traceFile = join(dir, 'trace')
       writeFileSync(traceFile, '')
+      const outputFile = join(dir, 'github-output')
+      writeFileSync(outputFile, '')
       const runEnv = {
         SYNC_WIKI_RETRY_DELAY_SECONDS: '0',
+        GITHUB_OUTPUT: outputFile,
+        FAKE_GIT_REV_PARSE_OUTPUT: 'abc123def456',
+        FAKE_GIT_REV_PARSE_EXIT: '0',
         ...env,
         PATH: `${dir}:${process.env.PATH ?? ''}`,
         FAKE_GIT_TRACE_FILE: traceFile,
@@ -734,7 +741,8 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
       const stderr = readFileSync(stderrFile, 'utf8')
       const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
       const sleeps = readFileSync(sleepLog, 'utf8').split('\n').filter(Boolean)
-      return {...result, stderr, trace, sleeps, pwned: existsSync(join(dir, 'pwned'))}
+      const githubOutput = readFileSync(outputFile, 'utf8')
+      return {...result, stderr, trace, sleeps, githubOutput, pwned: existsSync(join(dir, 'pwned'))}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -743,6 +751,8 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
   it('branch present, fetch and restore succeed: exits clean with no warning or skip message', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
     expect(result.status).toBe(0)
+    // the synced commit is exported for the ingest write guard
+    expect(result.githubOutput).toBe('data-sha=abc123def456\n')
     expect(result.stdout).not.toContain('::warning::')
     expect(result.stdout).not.toContain('not yet established')
   })
@@ -752,6 +762,40 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.status).toBe(0)
     expect(result.stdout).not.toContain('::warning::')
     expect(result.stdout.toLowerCase()).toContain('not yet established')
+    // no data branch, so there is no synced commit to export
+    expect(result.githubOutput).toBe('')
+  })
+
+  it('writes data-sha only after the fetch and the restore both succeeded', () => {
+    const fetchFails = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
+    const restoreFails = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '1',
+    })
+    const probeFails = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXIT: '128',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+    })
+
+    for (const result of [fetchFails, restoreFails, probeFails]) {
+      expect(result.status).not.toBe(0)
+      expect(result.githubOutput).toBe('')
+    }
+  })
+
+  it('fails closed, with no output, when the fetched commit cannot be resolved', () => {
+    const result = runSyncStep({
+      FAKE_GIT_LS_REMOTE_EXIT: '0',
+      FAKE_GIT_FETCH_EXIT: '0',
+      FAKE_GIT_RESTORE_EXIT: '0',
+      FAKE_GIT_REV_PARSE_EXIT: '128',
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.githubOutput).toBe('')
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'rev-parse'])
   })
 
   it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed after 3 attempts with a byte-identical ::error::, no fetch/restore attempted', () => {
@@ -788,7 +832,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.status).toBe(0)
     expect(result.stdout).not.toContain('::error::')
     expect(result.stdout.match(/::warning::/g)).toHaveLength(1)
-    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'fetch', 'restore'])
+    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'fetch', 'rev-parse', 'restore'])
   })
 
   it('fetch fails twice, then succeeds: restore runs, exits clean, exactly two ::warning:: lines', () => {
@@ -800,7 +844,7 @@ describe('sync-wiki composite action: wiki sync failure visibility (shell-flow f
     expect(result.status).toBe(0)
     expect(result.stdout).not.toContain('::error::')
     expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
-    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch', 'restore'])
+    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch', 'rev-parse', 'restore'])
   })
 
   it('probe exit 2 (branch absent) is never retried: exactly one ls-remote call, no ::warning::', () => {
@@ -1241,5 +1285,54 @@ describe('fro-bot-observe-announce: 🔒 Validate digest values — extract-and-
   it('the announce step never runs unless this step set valid=true (structural check pairing the fixture runs above)', () => {
     const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
     expect(String(announceStep?.if ?? '')).toBe("steps.validated.outputs.valid == 'true'")
+  })
+})
+
+describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts (contract)', () => {
+  const syncWikiAction = parse(
+    readFileSync(resolve(import.meta.dirname, '../.github/actions/sync-wiki/action.yaml'), 'utf8'),
+  ) as {
+    outputs?: Record<string, {value?: string}>
+    runs?: {steps?: WorkflowStep[]}
+  }
+  const syncStep = syncWikiAction.runs?.steps?.find(step => step.name === 'Sync wiki from data branch')
+  const expressionStart = '$' + '{{'
+
+  it('declares data-sha, sourced from the sync step', () => {
+    expect(syncStep?.id).toBe('sync')
+    expect(syncWikiAction.outputs?.['data-sha']?.value).toBe(`${expressionStart} steps.sync.outputs.data-sha }}`)
+  })
+
+  it('resolves FETCH_HEAD after the fetch, and writes the output after the restore, inside the fetch-success branch only', () => {
+    const run = syncStep?.run ?? ''
+    const fetchAt = run.indexOf('run_with_retry "data branch fetch"')
+    const resolveAt = run.indexOf('git rev-parse FETCH_HEAD')
+    const restoreAt = run.indexOf('git restore --source FETCH_HEAD')
+    const writeAt = run.indexOf('>> "$GITHUB_OUTPUT"')
+    const notEstablishedAt = run.indexOf('data branch not yet established')
+
+    expect(fetchAt).toBeGreaterThanOrEqual(0)
+    expect(resolveAt).toBeGreaterThan(fetchAt)
+    expect(restoreAt).toBeGreaterThan(resolveAt)
+    expect(writeAt).toBeGreaterThan(restoreAt)
+    expect(notEstablishedAt).toBeGreaterThan(writeAt)
+    expect(run.match(/GITHUB_OUTPUT/g)).toHaveLength(1)
+  })
+
+  it.each([
+    ['fro-bot-wiki-ingest', 'Ingest wiki insight changes'],
+    ['fro-bot-observe-wiki-ingest', 'Ingest wiki insight changes'],
+  ])('%s exports the sync step output to wiki-ingest.ts through env, not run:', (jobName, stepName) => {
+    const job = froBotParsed.jobs[jobName]
+    const syncIndex = findStepIndex(job, step => step.uses === './.github/actions/sync-wiki')
+    const ingestIndex = findStepIndex(job, step => step.name === stepName)
+    const ingestStep = job?.steps?.[ingestIndex]
+
+    expect(syncIndex).toBeGreaterThanOrEqual(0)
+    expect(ingestIndex).toBeGreaterThan(syncIndex)
+    expect(job?.steps?.[syncIndex]?.id).toBe('sync-wiki')
+    expect(ingestStep?.run).toContain('bun scripts/wiki-ingest.ts')
+    expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+    expect(ingestStep?.run).not.toContain('data-sha')
   })
 })

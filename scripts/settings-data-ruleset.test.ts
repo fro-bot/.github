@@ -1,10 +1,10 @@
 /**
- * Guards `.github/settings.yml`'s `data`-branch ruleset. The bfra-me/.github
- * `update-repository-settings` action's `rulesets` plugin (pinned v4.33.0, `6f33c678`)
+ * Guards `.github/settings.yml`'s `data`-branch rulesets. The bfra-me/.github
+ * `update-repository-settings` action's `rulesets` plugin (pinned v4.42.0, `22ed95a3`)
  * passes each entry's fields straight through to the Repository Rulesets REST API,
  * matches entries by `name` (case-insensitively), and deletes any ruleset it doesn't find
  * declared here — so a typo or a dropped rule silently weakens or removes enforcement on
- * the next settings run. This test pins the declared shape so drift fails CI instead of
+ * the next settings run. This test pins the declared shapes so drift fails CI instead of
  * fro-bot's `data` branch.
  *
  * `common-settings.yaml` has no `rulesets` key, and `mergeConfigs` in the action's
@@ -62,6 +62,9 @@ assertRulesetsShape(commonSettingsParsed, 'common-settings.yaml')
 
 const rulesets = repoSettingsParsed.rulesets ?? []
 
+const APP_RULESET_NAME = 'data branch: Fro Bot App only'
+const DELETION_RULESET_NAME = 'data branch: no deletion'
+
 function targetsDataBranch(ruleset: Ruleset): boolean {
   const refName = ruleset.conditions?.ref_name
   return refName?.include?.length === 1 && refName.include[0] === 'refs/heads/data' && refName.exclude?.length === 0
@@ -69,16 +72,26 @@ function targetsDataBranch(ruleset: Ruleset): boolean {
 
 const dataRulesets = rulesets.filter(targetsDataBranch)
 
-describe('.github/settings.yml rulesets: data branch is App-only', () => {
+function rulesetNamed(name: string): Ruleset | undefined {
+  return rulesets.find(ruleset => ruleset.name === name)
+}
+
+const appRuleset = rulesetNamed(APP_RULESET_NAME)
+const deletionRuleset = rulesetNamed(DELETION_RULESET_NAME)
+
+describe('.github/settings.yml rulesets: data branch is App-only and cannot be deleted', () => {
   it('common-settings.yaml declares no rulesets (a base array would not merge away a local one, but there is none to worry about)', () => {
     expect(commonSettingsParsed.rulesets).toBeUndefined()
   })
 
-  it('has exactly one ruleset targeting refs/heads/data, and it is active', () => {
-    expect(dataRulesets).toHaveLength(1)
-    expect(dataRulesets[0]?.target).toBe('branch')
-    expect(dataRulesets[0]?.enforcement).toBe('active')
-    expect(dataRulesets[0]?.conditions?.ref_name).toEqual({include: ['refs/heads/data'], exclude: []})
+  it('has exactly two rulesets targeting refs/heads/data, and both are active branch rulesets', () => {
+    expect(dataRulesets).toHaveLength(2)
+    expect(dataRulesets.map(ruleset => ruleset.name).sort()).toEqual([APP_RULESET_NAME, DELETION_RULESET_NAME].sort())
+    for (const ruleset of dataRulesets) {
+      expect(ruleset.target).toBe('branch')
+      expect(ruleset.enforcement).toBe('active')
+      expect(ruleset.conditions?.ref_name).toEqual({include: ['refs/heads/data'], exclude: []})
+    }
   })
 
   it('does not treat a ruleset that excludes refs/heads/data as targeting the data branch', () => {
@@ -90,40 +103,64 @@ describe('.github/settings.yml rulesets: data branch is App-only', () => {
     ).toBe(false)
   })
 
-  it('declares exactly the {update, non_fast_forward, creation} rule types', () => {
-    const dataRuleset = dataRulesets[0]
-    const ruleTypes = (dataRuleset?.rules ?? []).map(rule => rule.type).sort()
-    expect(ruleTypes).toEqual(['creation', 'non_fast_forward', 'update'])
-  })
+  describe(`the "${APP_RULESET_NAME}" ruleset`, () => {
+    it('exists', () => {
+      expect(appRuleset).toBeDefined()
+    })
 
-  it('has no `deletion` rule (promotion relies on auto-delete-on-merge + the App reseeding `data` from `main`)', () => {
-    const dataRuleset = dataRulesets[0]
-    const ruleTypes = (dataRuleset?.rules ?? []).map(rule => rule.type)
-    expect(
-      ruleTypes,
-      'a `deletion` rule would block the auto-delete-on-merge + App-reseed promotion cycle documented in .github/settings.yml',
-    ).not.toContain('deletion')
-  })
-
-  it('has exactly one bypass actor: the Fro Bot App (Integration, bypass_mode always, actor_id 218644)', () => {
-    const dataRuleset = dataRulesets[0]
-    const bypassActors = dataRuleset?.bypass_actors ?? []
-    expect(bypassActors).toHaveLength(1)
-    expect(bypassActors[0]?.actor_type).toBe('Integration')
-    expect(bypassActors[0]?.bypass_mode).toBe('always')
-    expect(bypassActors[0]?.actor_id).toBe(FRO_BOT_APP_ID)
-    expect(bypassActors[0]?.actor_id).not.toBe(FRO_BOT_BOT_USER_ID)
-  })
-
-  it('has no RepositoryRole, User, Team, OrganizationAdmin, or DeployKey bypass actor', () => {
-    const dataRuleset = dataRulesets[0]
-    const bypassActorTypes = (dataRuleset?.bypass_actors ?? []).map(actor => actor.actor_type)
-    const disallowedTypes = ['RepositoryRole', 'User', 'Team', 'OrganizationAdmin', 'DeployKey']
-    for (const disallowed of disallowedTypes) {
+    it('declares exactly the {update, non_fast_forward, creation} rule types, and no `deletion` rule', () => {
+      const ruleTypes = (appRuleset?.rules ?? []).map(rule => rule.type).sort()
+      expect(ruleTypes).toEqual(['creation', 'non_fast_forward', 'update'])
       expect(
-        bypassActorTypes,
-        `bypass actor type "${disallowed}" is not allowed on the data branch ruleset`,
-      ).not.toContain(disallowed)
+        ruleTypes,
+        'a `deletion` rule here would be covered by the Fro Bot App bypass; deletion is blocked by its own ruleset',
+      ).not.toContain('deletion')
+    })
+
+    it('has exactly one bypass actor: the Fro Bot App (Integration, bypass_mode always, actor_id 218644)', () => {
+      const bypassActors = appRuleset?.bypass_actors ?? []
+      expect(bypassActors).toHaveLength(1)
+      expect(bypassActors[0]?.actor_type).toBe('Integration')
+      expect(bypassActors[0]?.bypass_mode).toBe('always')
+      expect(bypassActors[0]?.actor_id).toBe(FRO_BOT_APP_ID)
+      expect(bypassActors[0]?.actor_id).not.toBe(FRO_BOT_BOT_USER_ID)
+    })
+
+    it('has no RepositoryRole, User, Team, OrganizationAdmin, or DeployKey bypass actor', () => {
+      const bypassActorTypes = (appRuleset?.bypass_actors ?? []).map(actor => actor.actor_type)
+      const disallowedTypes = ['RepositoryRole', 'User', 'Team', 'OrganizationAdmin', 'DeployKey']
+      for (const disallowed of disallowedTypes) {
+        expect(
+          bypassActorTypes,
+          `bypass actor type "${disallowed}" is not allowed on the data branch ruleset`,
+        ).not.toContain(disallowed)
+      }
+    })
+  })
+
+  describe(`the "${DELETION_RULESET_NAME}" ruleset`, () => {
+    it('exists', () => {
+      expect(deletionRuleset).toBeDefined()
+    })
+
+    it('declares exactly the `deletion` rule', () => {
+      expect((deletionRuleset?.rules ?? []).map(rule => rule.type)).toEqual(['deletion'])
+    })
+
+    it('declares an explicit, empty `bypass_actors` array: nobody, not even the App, may delete `data`', () => {
+      // No `?? []` fallback: an omitted key must fail here, because the plugin passes the field
+      // through and an absent key is not the same declaration as an empty list.
+      expect(deletionRuleset).toHaveProperty('bypass_actors')
+      expect(Array.isArray(deletionRuleset?.bypass_actors)).toBe(true)
+      expect(deletionRuleset?.bypass_actors).toEqual([])
+    })
+  })
+
+  it('has no ruleset on `data` that carries both a `deletion` rule and a bypass actor', () => {
+    for (const ruleset of dataRulesets) {
+      const hasDeletion = (ruleset.rules ?? []).some(rule => rule.type === 'deletion')
+      const hasBypass = (ruleset.bypass_actors ?? []).length > 0
+      expect(hasDeletion && hasBypass, `ruleset "${ruleset.name}" lets an actor bypass the deletion rule`).toBe(false)
     }
   })
 })

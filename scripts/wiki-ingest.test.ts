@@ -1,5 +1,9 @@
 import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
 
@@ -10,6 +14,7 @@ const wikiIngestModulePromise: Promise<{
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
+  runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
   validateWikilinks: typeof import('./wiki-ingest.js').validateWikilinks
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
@@ -19,6 +24,7 @@ const {
   countWikiPages,
   loadTrackedRepoNodeIds,
   parsePorcelainPaths,
+  runWikiIngestCli,
   validateWikilinks,
   WikiIngestError,
 } = await wikiIngestModulePromise
@@ -1737,27 +1743,602 @@ describe('parsePorcelainPaths', () => {
   })
 })
 
-describe('commitWikiChanges (422 surfacing)', () => {
-  it('does not retry 422 updateRef failures', async () => {
-    const updateRef = vi
-      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
-      .mockRejectedValue(Object.assign(new Error('Validation failed'), {status: 422}))
+describe('commitWikiChanges (422 handling)', () => {
+  interface UpdateRefParams {
+    owner: string
+    repo: string
+    ref: string
+    sha: string
+    force: false
+  }
 
-    // #given a non-conflict updateRef failure from GitHub
+  const notFastForward = (): Error => Object.assign(new Error('Update is not a fast forward'), {status: 422})
+
+  const baseParams = {
+    owner: 'fro-bot',
+    repo: '.github',
+    branch: 'data',
+    message: 'feat(knowledge): ingest',
+    files: {'knowledge/index.md': '# Wiki Index\n'},
+  }
+
+  it('retries an updateRef 422 on a re-read tip and lands the commit', async () => {
+    // #given the first ref update is rejected as not a fast forward (the branch moved after the tip read)
+    vi.useFakeTimers()
+    const getRef = vi
+      .fn<(params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>>()
+      .mockResolvedValueOnce({data: {object: {sha: 'old-tip'}}})
+      .mockResolvedValueOnce({data: {object: {sha: 'new-tip'}}})
+    const getCommit = vi.fn(async (params: {commit_sha: string}) => ({
+      data: {sha: params.commit_sha, tree: {sha: `tree-of-${params.commit_sha}`}},
+    }))
+    const createTree = vi.fn(async (_params: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_params: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(params: UpdateRefParams) => Promise<unknown>>()
+      .mockRejectedValueOnce(notFastForward())
+      .mockResolvedValueOnce({data: {ref: 'refs/heads/data'}})
+
+    try {
+      const resultPromise = commitWikiChanges({
+        ...baseParams,
+        octokit: createOctokitMock({getRef, getCommit, createTree, createCommit, updateRef}),
+        maxRetries: 3,
+      })
+
+      // #when the retry delay elapses
+      await vi.advanceTimersByTimeAsync(3000)
+      const result = await resultPromise
+
+      // #then the second attempt rebuilds on the new tip and the replayed files land
+      expect(result).toEqual({committed: true, commitSha: 'commit-after-write', attempts: 2})
+      expect(updateRef).toHaveBeenCalledTimes(2)
+      expect(createTree.mock.calls.map(([params]) => params.base_tree)).toEqual(['tree-of-old-tip', 'tree-of-new-tip'])
+      expect(createCommit.mock.calls.map(([params]) => params.parents)).toEqual([['old-tip'], ['new-tip']])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('raises CONFLICT_EXHAUSTED after every attempt hits an updateRef 422', async () => {
+    vi.useFakeTimers()
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(notFastForward())
+
+    try {
+      // #given a ref update that is never a fast forward
+      const resultPromise = commitWikiChanges({
+        ...baseParams,
+        octokit: createOctokitMock({updateRef}),
+        maxRetries: 3,
+      })
+      const assertion = expect(resultPromise).rejects.toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+
+      // #when the whole bound is consumed
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      // #then it fails with the conflict exhaustion error after exactly the bound
+      await assertion
+      expect(updateRef).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry a createTree 422', async () => {
+    const createTree = vi.fn(async () => {
+      throw Object.assign(new Error('Validation failed'), {status: 422})
+    })
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>()
+
+    // #given a tree rejected as invalid
     const action = commitWikiChanges({
-      octokit: createOctokitMock({updateRef}),
-      owner: 'fro-bot',
-      repo: '.github',
-      branch: 'data',
-      message: 'feat(knowledge): fail fast on 422',
-      files: {'knowledge/index.md': '# Wiki Index\n'},
+      ...baseParams,
+      octokit: createOctokitMock({createTree, updateRef}),
       maxRetries: 3,
     })
 
-    // #when the updateRef call fails with status 422
-    // #then the original error bubbles without retries
+    // #then the original error bubbles at once, with no retry and no ref update
     await expect(action).rejects.toMatchObject({status: 422})
-    expect(updateRef).toHaveBeenCalledTimes(1)
+    expect(createTree).toHaveBeenCalledTimes(1)
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('does not retry a createCommit 422', async () => {
+    const createCommit = vi.fn(async () => {
+      throw Object.assign(new Error('Validation failed'), {status: 422})
+    })
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>()
+
+    const action = commitWikiChanges({
+      ...baseParams,
+      octokit: createOctokitMock({createCommit, updateRef}),
+      maxRetries: 3,
+    })
+
+    await expect(action).rejects.toMatchObject({status: 422})
+    expect(createCommit).toHaveBeenCalledTimes(1)
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+})
+
+describe('commitWikiChanges (guarded replay after a ref race)', () => {
+  interface Entry {
+    path: string
+    mode: string
+    type: string
+    sha: string
+  }
+
+  const entry = (path: string, sha: string, overrides: Partial<Entry> = {}): Entry => ({
+    path,
+    mode: '100644',
+    type: 'blob',
+    sha,
+    ...overrides,
+  })
+
+  /** The head the write was derived from: the files it will replay, plus an unrelated script. */
+  const baseEntries = (): Entry[] => [
+    entry('knowledge/index.md', 'index-v1'),
+    entry('knowledge/log.md', 'log-v1'),
+    entry('knowledge/wiki/repos/page.md', 'page-v1'),
+    entry('knowledge/wiki/repos/old.md', 'old-v1'),
+    entry('scripts/x.ts', 'x-v1'),
+    {path: 'knowledge', mode: '040000', type: 'tree', sha: 'dir-sha'},
+  ]
+
+  const replace = (entries: Entry[], path: string, next: Entry | undefined): Entry[] => [
+    ...entries.filter(candidate => candidate.path !== path),
+    ...(next === undefined ? [] : [next]),
+  ]
+
+  const files = {
+    'knowledge/index.md': '# Wiki Index\n',
+    'knowledge/log.md': '# Wiki Log\n',
+    'knowledge/wiki/repos/page.md': '# Page\n',
+  }
+
+  interface UpdateRefParams {
+    owner: string
+    repo: string
+    ref: string
+    sha: string
+    force: false
+  }
+
+  /**
+   * A first attempt that reads `base`, builds, and loses the ref race; the retry then reads
+   * `concurrent`, the head another writer moved to.
+   */
+  function scenario(params: {
+    status: 409 | 422
+    concurrent: Entry[]
+    truncatedConcurrent?: boolean
+    deletedPaths?: string[]
+  }) {
+    const treesBySha: Record<string, {entries: Entry[]; truncated: boolean}> = {
+      'tree-base': {entries: baseEntries(), truncated: false},
+      'tree-concurrent': {entries: params.concurrent, truncated: params.truncatedConcurrent ?? false},
+    }
+    const getRef = vi
+      .fn<(args: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>>()
+      .mockResolvedValueOnce({data: {object: {sha: 'tip-base'}}})
+      .mockResolvedValue({data: {object: {sha: 'tip-concurrent'}}})
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {
+        sha: args.commit_sha,
+        tree: {sha: args.commit_sha === 'tip-base' ? 'tree-base' : 'tree-concurrent'},
+      },
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => {
+      const found = treesBySha[args.tree_sha]
+      return {data: {truncated: found?.truncated ?? false, tree: found?.entries ?? []}}
+    })
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async (_args: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(args: UpdateRefParams) => Promise<unknown>>()
+      .mockRejectedValueOnce(Object.assign(new Error('raced'), {status: params.status}))
+      .mockResolvedValue({data: {ref: 'refs/heads/data'}})
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createBlob, createTree, createCommit, updateRef})
+
+    const run = async () => {
+      vi.useFakeTimers()
+      try {
+        const settled = commitWikiChanges({
+          octokit,
+          owner: 'fro-bot',
+          repo: '.github',
+          branch: 'data',
+          message: 'feat(knowledge): ingest',
+          files,
+          deletedPaths: params.deletedPaths,
+          maxRetries: 3,
+        }).then(
+          value => ({value}) as const,
+          (error: unknown) => ({error}) as const,
+        )
+        await vi.advanceTimersByTimeAsync(30_000)
+        return await settled
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+    return {run, createBlob, createTree, createCommit, updateRef}
+  }
+
+  it.each([409, 422] as const)(
+    'replays on a %i when the concurrent commit changed only an unrelated path (a)',
+    async status => {
+      // #given a merge-back-style commit that changed scripts/x.ts and nothing in the write set
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+      })
+
+      // #when the retry runs
+      const outcome = await mocks.run()
+
+      // #then the files replay on the new head
+      expect(outcome).toMatchObject({value: {committed: true, attempts: 2}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(2)
+      expect(mocks.createCommit.mock.calls.map(([args]) => args.parents)).toEqual([['tip-base'], ['tip-concurrent']])
+    },
+  )
+
+  it.each([409, 422] as const)(
+    'fails closed on a %i when the concurrent commit changed knowledge/log.md (b)',
+    async status => {
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'knowledge/log.md', entry('knowledge/log.md', 'log-v2')),
+      })
+
+      const outcome = await mocks.run()
+
+      // #then it fails with the conflict error and writes nothing on the retry: the ref stays where the
+      // concurrent writer left it, with its log entry
+      expect(outcome).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+      expect(mocks.createBlob).toHaveBeenCalledTimes(Object.keys(files).length)
+      expect(mocks.createTree).toHaveBeenCalledTimes(1)
+      expect(mocks.createCommit).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it.each([409, 422] as const)(
+    'fails closed on a %i when the concurrent commit changed knowledge/index.md (c)',
+    async status => {
+      const mocks = scenario({
+        status,
+        concurrent: replace(baseEntries(), 'knowledge/index.md', entry('knowledge/index.md', 'index-v2')),
+      })
+
+      const outcome = await mocks.run()
+
+      expect(outcome).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+      expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+      expect(mocks.createCommit).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('fails closed when the concurrent commit changed a page in the write set (d)', async () => {
+    const mocks = scenario({
+      status: 422,
+      concurrent: replace(
+        baseEntries(),
+        'knowledge/wiki/repos/page.md',
+        entry('knowledge/wiki/repos/page.md', 'page-v2'),
+      ),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when the concurrent commit created a write-set path that was absent from the base (absence is a value)', async () => {
+    const mocks = scenario({
+      status: 409,
+      deletedPaths: ['knowledge/wiki/repos/ghost.md'],
+      concurrent: [...baseEntries(), entry('knowledge/wiki/repos/ghost.md', 'ghost-v1')],
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed when the concurrent commit removed a write-set path (absence is a value)', async () => {
+    const mocks = scenario({status: 409, concurrent: replace(baseEntries(), 'knowledge/log.md', undefined)})
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('compares mode and type, not only the sha', async () => {
+    const mocks = scenario({
+      status: 409,
+      concurrent: replace(baseEntries(), 'knowledge/log.md', entry('knowledge/log.md', 'log-v1', {mode: '100755'})),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+  })
+
+  it('also guards a path being deleted', async () => {
+    const mocks = scenario({
+      status: 422,
+      deletedPaths: ['knowledge/wiki/repos/old.md'],
+      concurrent: replace(baseEntries(), 'knowledge/wiki/repos/old.md', entry('knowledge/wiki/repos/old.md', 'old-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('replays when a deleted path is unchanged on the new head', async () => {
+    const mocks = scenario({
+      status: 422,
+      deletedPaths: ['knowledge/wiki/repos/old.md'],
+      concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({value: {committed: true, attempts: 2}})
+  })
+
+  it('fails closed when a tree read is truncated, because the write set cannot be verified', async () => {
+    const mocks = scenario({
+      status: 409,
+      truncatedConcurrent: true,
+      concurrent: replace(baseEntries(), 'scripts/x.ts', entry('scripts/x.ts', 'x-v2')),
+    })
+
+    expect(await mocks.run()).toMatchObject({error: {code: 'CONFLICT_EXHAUSTED'}})
+    expect(mocks.updateRef).toHaveBeenCalledTimes(1)
+  })
+})
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => {
+      throw new Error('expected a rejection')
+    },
+    (error: unknown) => error,
+  )
+}
+
+describe('commitWikiChanges (base guard on every attempt)', () => {
+  interface Entry {
+    path: string
+    mode: string
+    type: string
+    sha: string
+  }
+
+  const entry = (path: string, sha: string): Entry => ({path, mode: '100644', type: 'blob', sha})
+
+  const baseEntries = (): Entry[] => [
+    entry('knowledge/index.md', 'index-v1'),
+    entry('knowledge/log.md', 'log-v1'),
+    entry('knowledge/wiki/repos/page.md', 'page-v1'),
+    entry('scripts/x.ts', 'x-v1'),
+  ]
+
+  const withEntry = (entries: Entry[], next: Entry): Entry[] => [
+    ...entries.filter(candidate => candidate.path !== next.path),
+    next,
+  ]
+
+  const files = {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'}
+
+  /**
+   * Commits by SHA name `tip-<name>`, trees `tree-<name>`; `main` is `tip-main`. `head` is what the
+   * commit's first `getRef` for `data` returns, which may already be past the base.
+   */
+  function world(params: {head: 'base' | 'concurrent'; concurrent: Entry[]; mainTip?: Entry[]}) {
+    const trees: Record<string, Entry[]> = {
+      'tree-base': baseEntries(),
+      'tree-concurrent': params.concurrent,
+      'tree-main': params.mainTip ?? baseEntries(),
+    }
+    const getRef = vi.fn(async (args: {ref: string}) => ({
+      data: {object: {sha: args.ref === 'heads/main' ? 'tip-main' : `tip-${params.head}`}},
+    }))
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {sha: args.commit_sha, tree: {sha: `tree-${args.commit_sha.replace('tip-', '')}`}},
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => ({
+      data: {truncated: false, tree: trees[args.tree_sha] ?? []},
+    }))
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async (_args: {base_tree: string}) => ({data: {sha: 'tree-after-write'}}))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi.fn(async (_args: {sha: string}) => ({data: {ref: 'refs/heads/data'}}))
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createBlob, createTree, createCommit, updateRef})
+    const commit = async (extra: {baseCommitSha?: string} = {}) =>
+      commitWikiChanges({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): ingest',
+        files,
+        maxRetries: 3,
+        ...extra,
+      })
+    const writes = () =>
+      createBlob.mock.calls.length +
+      createTree.mock.calls.length +
+      createCommit.mock.calls.length +
+      updateRef.mock.calls.length
+    return {commit, getTree, getCommit, createCommit, updateRef, writes}
+  }
+
+  it('succeeds on a clean first attempt when the head is the base, without reading any tree', async () => {
+    const w = world({head: 'base', concurrent: baseEntries()})
+
+    const result = await w.commit({baseCommitSha: 'tip-base'})
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.getTree).not.toHaveBeenCalled()
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-base'])
+  })
+
+  it('fails closed on attempt 1, writing nothing, when a writer changed knowledge/log.md after the base', async () => {
+    // #given a commit landed between the files being derived (tip-base) and the first read
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+
+    // #when the write runs with its base
+    const error = await rejectionOf(w.commit({baseCommitSha: 'tip-base'}))
+
+    // #then it fails with the conflict error before creating a blob, tree, commit or ref update
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(w.writes()).toBe(0)
+  })
+
+  it('fails closed on attempt 1 when a writer changed knowledge/index.md after the base', async () => {
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/index.md', 'index-v2'))})
+
+    expect(await rejectionOf(w.commit({baseCommitSha: 'tip-base'}))).toMatchObject({
+      code: 'CONFLICT_EXHAUSTED',
+    })
+    expect(w.writes()).toBe(0)
+  })
+
+  it('replays on attempt 1 when the commit after the base touched only an unowned path (merge-back style)', async () => {
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('scripts/x.ts', 'x-v2'))})
+
+    const result = await w.commit({baseCommitSha: 'tip-base'})
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-concurrent'])
+  })
+
+  it('keeps the old behavior without a base: the first read is the base, so a head already past it is replayed', async () => {
+    // #given no base is passed and the head already carries a different log
+    const w = world({head: 'concurrent', concurrent: withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2'))})
+
+    // #when the write runs
+    const result = await w.commit()
+
+    // #then it lands on that head, with no tree comparison at all
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(w.getTree).not.toHaveBeenCalled()
+  })
+
+  it('keeps an SHA base fixed across retries: a concurrent write that is later promoted is still rejected', async () => {
+    // #given attempt 1 reads the base head and loses the ref race; a writer then changes log.md, and the
+    // change is promoted, so both the data head and main now carry it
+    vi.useFakeTimers()
+    const trees: Record<string, Entry[]> = {
+      'tree-base': baseEntries(),
+      'tree-promoted': withEntry(baseEntries(), entry('knowledge/log.md', 'log-v2')),
+    }
+    const getRef = vi.fn(async (args: {ref: string}) => {
+      if (args.ref === 'heads/main') return {data: {object: {sha: 'tip-promoted'}}}
+      return {
+        data: {
+          object: {
+            sha: getRef.mock.calls.filter(([a]) => a.ref === 'heads/data').length === 1 ? 'tip-base' : 'tip-promoted',
+          },
+        },
+      }
+    })
+    const getCommit = vi.fn(async (args: {commit_sha: string}) => ({
+      data: {sha: args.commit_sha, tree: {sha: `tree-${args.commit_sha.replace('tip-', '')}`}},
+    }))
+    const getTree = vi.fn(async (args: {tree_sha: string}) => ({
+      data: {truncated: false, tree: trees[args.tree_sha] ?? []},
+    }))
+    const createCommit = vi.fn(async (_args: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
+    const updateRef = vi
+      .fn<(args: {sha: string}) => Promise<unknown>>()
+      .mockRejectedValueOnce(Object.assign(new Error('raced'), {status: 409}))
+      .mockResolvedValue({data: {ref: 'refs/heads/data'}})
+    const octokit = createOctokitMock({getRef, getCommit, getTree, createCommit, updateRef})
+
+    try {
+      const settled = rejectionOf(
+        commitWikiChanges({
+          octokit,
+          owner: 'fro-bot',
+          repo: '.github',
+          branch: 'data',
+          message: 'feat(knowledge): ingest',
+          files,
+          baseCommitSha: 'tip-base',
+          maxRetries: 3,
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      // #then the retry rejects against the original base and the concurrent content is not overwritten
+      expect(await settled).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+      expect(updateRef).toHaveBeenCalledTimes(1)
+      expect(createCommit).toHaveBeenCalledTimes(1)
+      // the base commit is resolved once (plus the one head read of it) and main is never consulted
+      expect(getCommit.mock.calls.filter(([args]) => args.commit_sha === 'tip-base')).toHaveLength(2)
+      expect(getRef.mock.calls.some(([args]) => args.ref === 'heads/main')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('runWikiIngestCli (base from the synced data tip)', () => {
+  const originalCwd = process.cwd()
+  const originalTip = process.env.WIKI_INGEST_DATA_TIP_SHA
+  const page = createWikiPage({path: 'knowledge/wiki/repos/alice--project.md', type: 'repo', title: 'alice/project'})
+
+  function inTempWiki(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'wiki-ingest-cli-'))
+    mkdirSync(join(dir, 'knowledge/wiki/repos'), {recursive: true})
+    writeFileSync(join(dir, page.path), page.content)
+    process.chdir(dir)
+    return dir
+  }
+
+  async function run() {
+    const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => [page.path],
+      commitWikiChanges: commit as never,
+    })
+    return commit
+  }
+
+  function restore(dir: string): void {
+    process.chdir(originalCwd)
+    rmSync(dir, {recursive: true, force: true})
+    if (originalTip === undefined) delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    else process.env.WIKI_INGEST_DATA_TIP_SHA = originalTip
+  }
+
+  it('passes the recorded tip as the commit base', async () => {
+    const dir = inTempWiki()
+    process.env.WIKI_INGEST_DATA_TIP_SHA = 'synced-tip'
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      const commit = await run()
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({baseCommitSha: 'synced-tip'})
+    } finally {
+      vi.restoreAllMocks()
+      restore(dir)
+    }
+  })
+
+  it.each([undefined, ''])('passes no base key when the tip is %j', async tip => {
+    const dir = inTempWiki()
+    if (tip === undefined) delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    else process.env.WIKI_INGEST_DATA_TIP_SHA = tip
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      const commit = await run()
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('baseCommitSha')
+    } finally {
+      vi.restoreAllMocks()
+      restore(dir)
+    }
   })
 })
 

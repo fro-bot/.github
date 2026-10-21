@@ -8,6 +8,8 @@ import {
   checkWikiAuthority,
   fetchChangedFiles,
   formatBlockMessage,
+  guardedPatterns,
+  isDataOwnedPath,
   readPullRequestContext,
 } from './check-wiki-authority.ts'
 
@@ -840,6 +842,52 @@ describe('checkWikiAuthority', () => {
       })
       expect(result).toEqual({ok: true})
     })
+  })
+})
+
+describe('isDataOwnedPath / guardedPatterns (shared data-owned set)', () => {
+  it.each([
+    'knowledge/wiki/repos/fro-bot--agent.md',
+    'knowledge/wiki/topics/nested/deep.md',
+    'knowledge/wiki/entities/x.md',
+    'knowledge/wiki/comparisons/y.md',
+    'knowledge/index.md',
+    'knowledge/log.md',
+    'knowledge/corrections.yaml',
+    'metadata/repos.yaml',
+    'metadata/allowlist.yml',
+  ])('owns %s', path => {
+    // #given a path every data writer may produce
+    // #when the shared predicate evaluates it
+    // #then it is data-owned
+    expect(isDataOwnedPath(path)).toBe(true)
+  })
+
+  it.each([
+    'knowledge/wiki/README.md',
+    'knowledge/schema.md',
+    'knowledge/README.md',
+    'metadata/README.md',
+    'metadata/sub/repos.yaml',
+    '.github/workflows/x.yaml',
+    'scripts/x.ts',
+    'knowledge/wiki/repos/page.txt',
+    'xknowledge/log.md',
+  ])('does not own %s', path => {
+    // #given human-owned scaffolding, workflows and code
+    // #when the shared predicate evaluates it
+    // #then it is not data-owned
+    expect(isDataOwnedPath(path)).toBe(false)
+  })
+
+  it('exposes the same pattern list the guard consumes, with zero arity', () => {
+    // #given the exported pattern source
+    // #then it is a zero-arity function whose patterns agree with the predicate
+    expect(guardedPatterns).toHaveLength(0)
+    expect(guardedPatterns()).toHaveLength(5)
+    for (const path of ['knowledge/log.md', 'metadata/repos.yaml', 'scripts/x.ts']) {
+      expect(guardedPatterns().some(pattern => pattern.test(path))).toBe(isDataOwnedPath(path))
+    }
   })
 })
 

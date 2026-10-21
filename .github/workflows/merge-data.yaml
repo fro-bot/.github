@@ -46,6 +46,15 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # Merge main into data (the ownership merge) before anything reads data: the privacy gates and the
+      # promotion compare below then see the merged-back branch. It must precede the data checkout, and a
+      # failure must stop the job, so it has no continue-on-error or if:. The App token: contents write for
+      # the non-force ref update on data, issues write for the unowned-changes alert.
+      - name: 🔁 Merge main into data
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        run: bun scripts/merge-back-data.ts
+
       # Two checkouts: scripts live on main, the wiki/metadata being promoted live on data.
       # The privacy check below runs from the data subtree to gate the actual merge content.
       - name: ⤵ Fetch data branch for privacy check

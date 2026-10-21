@@ -31,9 +31,11 @@ function frobotAuthors(): ReadonlySet<string> {
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
  *
+ * Exported for its tests; `isDataOwnedPath` is the shared entry point `merge-back-data.ts` uses.
+ *
  * Function, not const: same static-mutant workaround as `frobotAuthors()` above.
  */
-function guardedPatterns(): readonly RegExp[] {
+export function guardedPatterns(): readonly RegExp[] {
   return [
     /^knowledge\/wiki\/[^/]+\/.+\.md$/,
     /^knowledge\/index\.md$/,
@@ -41,6 +43,11 @@ function guardedPatterns(): readonly RegExp[] {
     /^knowledge\/corrections\.yaml$/,
     /^metadata\/[^/]+\.ya?ml$/,
   ]
+}
+
+/** Whether `path` is data-owned, i.e. matches one of `guardedPatterns()`. */
+export function isDataOwnedPath(path: string): boolean {
+  return guardedPatterns().some(pattern => pattern.test(path))
 }
 
 export interface GuardInput {
@@ -82,8 +89,7 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * originates from a fork.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
-  const patterns = guardedPatterns()
-  const guardedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
+  const guardedFiles = input.files.filter(isDataOwnedPath)
   if (guardedFiles.length === 0) {
     return {ok: true}
   }

@@ -375,6 +375,21 @@ describe('survey-repo correction injection contract', () => {
     expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
   })
 
+  it('survey-persist exports the synced data commit to wiki-ingest.ts through env, from a sync step that precedes it', () => {
+    const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+    const syncIndex = persistSteps.findIndex(step => step.uses === './.github/actions/sync-wiki')
+    const ingestIndex = persistSteps.findIndex(step => step.name === 'Commit wiki ingest to data branch')
+    const ingestStep = persistSteps[ingestIndex]
+    const expressionStart = '$' + '{{'
+
+    expect(syncIndex).toBeGreaterThanOrEqual(0)
+    expect(ingestIndex).toBeGreaterThan(syncIndex)
+    expect(persistSteps[syncIndex]?.id).toBe('sync-wiki')
+    expect(ingestStep?.run).toContain('bun scripts/wiki-ingest.ts')
+    expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+    expect(ingestStep?.run).not.toContain('data-sha')
+  })
+
   it('Sync wiki from data branch precedes Capture wiki baseline (baseline must hash post-sync content)', () => {
     const names = steps.map(step => step.name ?? '')
     const syncIndex = names.indexOf('Sync wiki from data branch')

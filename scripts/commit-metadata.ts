@@ -75,8 +75,9 @@ export interface CommitMetadataParams {
   allowUnsafeBranch?: boolean
   /**
    * Idempotent data-branch bootstrap. Called before data-branch writes so
-   * shared metadata writers recover when GitHub deletes the `data` source ref
-   * after a promotion PR is merged.
+   * shared metadata writers recover when the `data` branch is missing. `data`
+   * persists through promotions, so this is the recovery path, not part of the
+   * normal promotion cycle.
    */
   bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>
 }

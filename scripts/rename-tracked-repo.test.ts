@@ -1234,6 +1234,20 @@ describe('runCli', () => {
 // ---------------------------------------------------------------------------
 
 describe('createGitDataFake', () => {
+  it('rejects createRef for a ref that is not fully qualified, like the real API', async () => {
+    const fake = createGitDataFake()
+    const sha = fake.head()
+
+    await expect(
+      fake.client.rest.git.createRef({owner: 'o', repo: 'r', ref: 'heads/other', sha}),
+    ).rejects.toMatchObject({status: 422})
+    expect(fake.hasBranch('other')).toBe(false)
+    expect(fake.hasBranch('heads/other')).toBe(false)
+
+    await fake.client.rest.git.createRef({owner: 'o', repo: 'r', ref: 'refs/heads/other', sha})
+    expect(fake.hasBranch('other')).toBe(true)
+  })
+
   it('rejects a non-fast-forward updateRef with 422', async () => {
     const fake = createGitDataFake({files: {'a.md': 'a'}})
     const base = fake.head()
@@ -1276,7 +1290,14 @@ describe('createGitDataFake', () => {
       ['dir', 'tree'],
       ['top.md', 'blob'],
     ])
-    expect(deep.data.tree.map(entry => entry.path)).toEqual(['dir/a.md', 'dir/sub/b.md', 'top.md'])
+    // Like the real API, a recursive read lists the directories above the files too.
+    expect(deep.data.tree.map(entry => [entry.path, entry.type])).toEqual([
+      ['dir', 'tree'],
+      ['dir/a.md', 'blob'],
+      ['dir/sub', 'tree'],
+      ['dir/sub/b.md', 'blob'],
+      ['top.md', 'blob'],
+    ])
   })
 
   it('stores and returns blobs as base64', async () => {

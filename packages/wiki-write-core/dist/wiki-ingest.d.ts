@@ -55,11 +55,21 @@ export interface CommitWikiChangesParams {
     message: string;
     files: Record<string, string>;
     deletedPaths?: readonly string[];
+    /**
+     * The data-branch commit `files` and `deletedPaths` were derived from: the base of the write guard.
+     * Every attempt, the first included, compares each write-set path on the head it reads with the same
+     * path in this commit's tree and fails closed if any differs.
+     * - A commit SHA: that commit's tree is the base. It is resolved once and never re-read, so the base
+     *   stays fixed across retries.
+     * - Omitted: the head tree of the first successful read in this call is the base, so only changes
+     *   after that read are caught.
+     */
+    baseCommitSha?: string;
     octokit?: OctokitClient;
     maxRetries?: number;
     /**
      * Idempotent data-branch bootstrap. Called before data-branch writes so wiki
-     * ingest recovers when GitHub deletes the `data` source ref after promotion.
+     * ingest recovers when the `data` branch is missing: it recreates the branch from `main`.
      */
     bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>;
 }
@@ -91,6 +101,15 @@ export declare class WikiIngestError extends Error {
     });
 }
 export declare function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): BuildWikiIngestChangesResult;
+/**
+ * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
+ *
+ * Every attempt is guarded: if any path in the write set (files and deletions) differs on the head read
+ * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
+ * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
+ * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ */
 export declare function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult>;
 export declare function validateWikilinks(files: Record<string, string>): void;
 /**

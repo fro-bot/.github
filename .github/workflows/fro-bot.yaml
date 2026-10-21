@@ -734,6 +734,7 @@ jobs:
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         uses: ./.github/actions/sync-wiki
 
       - name: Download wiki handoff artifact
@@ -759,6 +760,7 @@ jobs:
       - name: Ingest wiki insight changes
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
           WIKI_OPERATION: event
           WIKI_TARGET: 'repo:${{ github.repository }}'
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
@@ -1334,6 +1336,7 @@ jobs:
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         uses: ./.github/actions/sync-wiki
 
       - name: Download wiki handoff artifact
@@ -1359,6 +1362,7 @@ jobs:
       - name: Ingest wiki insight changes
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
           WIKI_OPERATION: event
           WIKI_TARGET: 'repo:${{ github.repository }}'
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.

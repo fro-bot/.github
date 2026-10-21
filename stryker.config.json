@@ -8,6 +8,7 @@
     "scripts/check-private-leak.ts",
     "scripts/check-wiki-authority.ts",
     "scripts/check-wiki-private-presence.ts",
+    "scripts/merge-back-data.ts",
     "scripts/mutation-guards-reach.ts",
     "scripts/wiki-context-safety.ts",
     "scripts/wiki-lockfile-gates.ts"
@@ -22,6 +23,7 @@
     "scripts/check-private-leak.test.ts",
     "scripts/check-wiki-authority.test.ts",
     "scripts/check-wiki-private-presence.test.ts",
+    "scripts/merge-back-data.test.ts",
     "scripts/mutation-guards-reach.test.ts",
     "scripts/wiki-context-safety.test.ts",
     "scripts/wiki-lockfile-gates.test.ts"

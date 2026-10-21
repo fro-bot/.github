@@ -121,6 +121,15 @@ function collectWikiFrontmatter(files) {
     }
     return frontmatter;
 }
+/**
+ * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.
+ *
+ * Every attempt is guarded: if any path in the write set (files and deletions) differs on the head read
+ * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
+ * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
+ * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ */
 export async function commitWikiChanges(params) {
     const owner = params.owner ?? DEFAULT_OWNER;
     const repo = params.repo ?? DEFAULT_REPO;
@@ -143,11 +152,30 @@ export async function commitWikiChanges(params) {
     if (shouldBootstrapDataBranch) {
         await bootstrapDataBranch();
     }
+    // The tree the write set was derived from, once resolved (see `CommitWikiChangesParams.baseCommitSha`).
+    let baseTreeSha;
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+        // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
+        // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
+        let updatingRef = false;
         try {
             await assertWritableWikiBranch(octokit, owner, repo, branch);
             const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
             const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: head.data.object.sha });
+            // Resolved on the first attempt and reused: the base must not move while the write retries.
+            baseTreeSha ??=
+                params.baseCommitSha === undefined
+                    ? commit.data.tree.sha
+                    : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha);
+            const guardBaseTreeSha = baseTreeSha;
+            if (commit.data.tree.sha !== guardBaseTreeSha) {
+                await assertWriteSetUnchanged(octokit, owner, repo, {
+                    baseTreeSha: guardBaseTreeSha,
+                    headTreeSha: commit.data.tree.sha,
+                    paths: [...Object.keys(params.files), ...(params.deletedPaths ?? [])],
+                    location: `${owner}/${repo}@${branch}`,
+                });
+            }
             const tree = [];
             for (const [path, content] of Object.entries(params.files)) {
                 const blob = await octokit.rest.git.createBlob({ owner, repo, content, encoding: 'utf-8' });
@@ -175,6 +203,7 @@ export async function commitWikiChanges(params) {
                 tree: createdTree.data.sha,
                 parents: [commit.data.sha],
             });
+            updatingRef = true;
             await octokit.rest.git.updateRef({
                 owner,
                 repo,
@@ -189,11 +218,12 @@ export async function commitWikiChanges(params) {
                 await bootstrapDataBranch();
                 continue;
             }
-            if (isConflictError(error) && attempt < maxRetries) {
+            const refRace = isConflictError(error) || (updatingRef && isApiErrorStatus(error, 422));
+            if (refRace && attempt < maxRetries) {
                 await delayConflictRetry(attempt);
                 continue;
             }
-            if (isConflictError(error)) {
+            if (refRace) {
                 throw new WikiIngestError({
                     code: 'CONFLICT_EXHAUSTED',
                     message: `wiki ingest exhausted ${maxRetries} attempt(s) updating ${owner}/${repo}@${branch}`,
@@ -233,6 +263,47 @@ async function getPresentPathsInTree(octokit, owner, repo, treeSha) {
     if (!Array.isArray(tree))
         return new Set();
     return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])));
+}
+async function readCommitTreeSha(octokit, owner, repo, sha) {
+    const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: sha });
+    return commit.data.tree.sha;
+}
+/**
+ * Fail closed unless every path in the write set has the same tree entry (sha, mode, type; absence
+ * counts) on the new head as in the tree the files were derived from. A replay onto a head where
+ * another writer touched one of them would silently overwrite that writer's change.
+ */
+async function assertWriteSetUnchanged(octokit, owner, repo, params) {
+    const refuse = (reason) => {
+        throw new WikiIngestError({
+            code: 'CONFLICT_EXHAUSTED',
+            message: `wiki ingest did not replay onto ${params.location}: ${reason}`,
+            remediation: 'Another writer updated the data branch concurrently. Retry the workflow so it rebuilds on the new head.',
+        });
+    };
+    const base = await readTreeEntries(octokit, owner, repo, params.baseTreeSha);
+    const head = await readTreeEntries(octokit, owner, repo, params.headTreeSha);
+    if (base === undefined || head === undefined)
+        return refuse('a tree read was truncated, so the write set cannot be verified');
+    if (params.paths.some(path => base.get(path) !== head.get(path))) {
+        return refuse('another writer changed a path in the write set');
+    }
+}
+/** Path to `mode type sha`, for every non-directory entry. `undefined` when the read is truncated. */
+async function readTreeEntries(octokit, owner, repo, treeSha) {
+    const response = await octokit.rest.git.getTree({ owner, repo, tree_sha: treeSha, recursive: 'true' });
+    if (response.data.truncated === true)
+        return undefined;
+    const tree = response.data.tree;
+    const entries = new Map();
+    if (!Array.isArray(tree))
+        return entries;
+    for (const entry of tree) {
+        if (!isRecord(entry) || typeof entry.path !== 'string' || entry.type === 'tree')
+            continue;
+        entries.set(entry.path, `${String(entry.mode)} ${String(entry.type)} ${String(entry.sha)}`);
+    }
+    return entries;
 }
 async function createOctokitFromEnv() {
     const token = process.env.GITHUB_TOKEN;
@@ -794,8 +865,15 @@ function formatTimestamp(value) {
     const minute = `${value.getUTCMinutes()}`.padStart(2, '0');
     return `${year}-${month}-${day} ${hour}:${minute}`;
 }
+/**
+ * Read the existing wiki files from the working tree, and report the data-branch commit they were
+ * synced from: `WIKI_INGEST_DATA_TIP_SHA`, when the workflow exports the tip it synced `knowledge/` from.
+ * Without it there is no recorded base and the commit guards from its own first read.
+ */
 async function loadExistingWikiFiles() {
     const files = {};
+    const recordedTip = process.env.WIKI_INGEST_DATA_TIP_SHA;
+    const baseCommitSha = recordedTip === undefined || recordedTip === '' ? undefined : recordedTip;
     for (const path of [INDEX_PATH, LOG_PATH]) {
         try {
             files[path] = await readFile(path, 'utf8');
@@ -836,7 +914,7 @@ async function loadExistingWikiFiles() {
             }
         }
     }
-    return files;
+    return { files, baseCommitSha };
 }
 async function loadWorkingTreeWikiFiles(paths) {
     const files = {};
@@ -958,7 +1036,7 @@ export async function runWikiIngestCli(dependencies = {}) {
     const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections;
     const commitWikiChangesImpl = dependencies.commitWikiChanges ?? commitWikiChanges;
     const getChangedWikiPathsImpl = dependencies.getChangedWikiPaths ?? getChangedWikiPaths;
-    const existingFiles = await loadExistingWikiFiles();
+    const { files: existingFiles, baseCommitSha } = await loadExistingWikiFiles();
     let correctionRead;
     try {
         correctionRead = await readCorrectionsImpl();
@@ -1063,6 +1141,7 @@ export async function runWikiIngestCli(dependencies = {}) {
         message,
         files: built.files,
         deletedPaths: built.deletedPaths,
+        ...(baseCommitSha === undefined ? {} : { baseCommitSha }),
     });
     const pagesChanged = countWikiPages(committedPagePaths);
     await emitPagesChanged(pagesChanged);
