@@ -7,7 +7,7 @@
     {
       description: 'Disable patch updates except for select dependencies.',
       matchUpdateTypes: ['patch'],
-      matchPackageNames: ['!python', '!typescript'],
+      matchPackageNames: ['!bfra-me/renovate-config', '!python', '!typescript'],
       enabled: false,
     },
     {
