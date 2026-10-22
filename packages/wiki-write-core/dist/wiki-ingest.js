@@ -1,6 +1,7 @@
+import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { appendFile, readdir, readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import process from 'node:process';
 import { promisify } from 'node:util';
 import { parse, stringify } from 'yaml';
@@ -19,6 +20,7 @@ const WIKI_ROOT = 'knowledge/wiki';
 const INDEX_PATH = 'knowledge/index.md';
 const LOG_PATH = 'knowledge/log.md';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 const execFileAsync = promisify(execFile);
 export class WikiIngestError extends Error {
     code;
@@ -93,7 +95,7 @@ export function buildWikiIngestChanges(params) {
     }
     const parsedPages = collectWikiPages(nextFiles);
     const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages);
-    const log = appendLogEntry(nextFiles[LOG_PATH], params);
+    const log = appendLogEntry(appendAgentLogEntries(nextFiles[LOG_PATH], params.agentLogEntries), params);
     files[INDEX_PATH] = index;
     files[LOG_PATH] = log;
     return { files, deletedPaths, findings: correctionFindings };
@@ -532,6 +534,13 @@ function parseIndexEntryLines(index) {
         entries.set(slug.trim(), line);
     }
     return entries;
+}
+/** Appends raw log entries (already in log format) to `existingLog`, keeping its text byte-for-byte. */
+function appendAgentLogEntries(existingLog, entries) {
+    if (entries === undefined || entries.trim() === '')
+        return existingLog;
+    const base = existingLog === undefined || existingLog === '' ? LOG_HEADER : normalizeText(existingLog);
+    return normalizeText(`${base}${entries.startsWith('\n') ? entries : `\n${entries}`}`);
 }
 /**
  * Append one entry to `knowledge/log.md`, keeping the existing text byte-for-byte. The log is
@@ -1031,6 +1040,94 @@ async function emitPagesChanged(n) {
         await appendFile(outputPath, `pages_changed=${n}\n`);
     }
 }
+function envValue(name) {
+    const value = process.env[name];
+    return value === undefined || value === '' ? undefined : value;
+}
+function handoffBaseInvalid(message) {
+    return new WikiIngestError({
+        code: 'HANDOFF_BASE_INVALID',
+        message: `wiki ingest refused: ${message}`,
+        remediation: 'The writer could not tie the handoff to the data commit the agent job synced. Re-run the workflow so the agent job runs again.',
+    });
+}
+/** LF line endings and exactly one final newline; an empty log stays empty. */
+function normalizeLogText(value) {
+    const trimmed = value.replaceAll('\r\n', '\n').trimEnd();
+    return trimmed === '' ? '' : `${trimmed}\n`;
+}
+/**
+ * The log text an agent appended: what its `knowledge/log.md` adds after `knowledge/log.md` at the
+ * commit it started from. `undefined` when the agent changed anything before that point, or the base
+ * log is empty, so there is nothing safe to take. Both inputs are normalized first (LF, one final newline).
+ */
+export function deriveAgentLogEntries(baseLog, handoffLog) {
+    const base = normalizeLogText(baseLog);
+    const handoff = normalizeLogText(handoffLog);
+    if (base === '' || !handoff.startsWith(base))
+        return undefined;
+    return handoff.slice(base.length);
+}
+async function readHandoffManifest(handoffDir) {
+    const parsed = JSON.parse(await readFile(join(handoffDir, 'manifest.json'), 'utf8'));
+    const isStringArray = (value) => Array.isArray(value) && value.every(entry => typeof entry === 'string');
+    if (!isRecord(parsed) || !isStringArray(parsed.changed) || !isStringArray(parsed.deleted)) {
+        throw new WikiIngestError({
+            code: 'INVALID_PAYLOAD',
+            message: 'wiki handoff manifest.json must hold string arrays "changed" and "deleted"',
+            remediation: 'Rebuild the handoff artifact with scripts/wiki-handoff-build.ts.',
+        });
+    }
+    return { changed: parsed.changed, deleted: parsed.deleted };
+}
+/** The text of `path` in the tree of `commitSha`, or `undefined` when the commit has no such file. */
+async function readFileAtCommit(octokit, owner, repo, commitSha, path) {
+    const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: commitSha });
+    const tree = await octokit.rest.git.getTree({ owner, repo, tree_sha: commit.data.tree.sha, recursive: 'true' });
+    if (tree.data.truncated === true)
+        throw new Error('tree listing was truncated');
+    const entry = tree.data.tree.find(candidate => candidate.path === path);
+    if (entry?.sha === undefined || entry.type !== 'blob')
+        return undefined;
+    const blob = await octokit.rest.git.getBlob({ owner, repo, file_sha: entry.sha });
+    return Buffer.from(blob.data.content, 'base64').toString('utf8');
+}
+/**
+ * Reads the handoff the trusted job applied. `undefined` outside a handoff run (neither
+ * `WIKI_HANDOFF_DIR` nor `WIKI_HANDOFF_BASE_SHA` set). Inside one, the agent job's data commit must be a
+ * full commit SHA, and the log entries the agent appended are derived against that commit's `log.md`.
+ */
+async function loadHandoff(dependencies, target) {
+    const handoffDir = envValue('WIKI_HANDOFF_DIR');
+    const agentCommitSha = envValue('WIKI_HANDOFF_BASE_SHA');
+    if (handoffDir === undefined && agentCommitSha === undefined)
+        return undefined;
+    if (handoffDir === undefined || agentCommitSha === undefined || !COMMIT_SHA_PATTERN.test(agentCommitSha)) {
+        throw handoffBaseInvalid('the agent job data commit is missing or is not a commit SHA');
+    }
+    const octokit = dependencies.octokit ?? (await createOctokitFromEnv());
+    const manifest = await readHandoffManifest(handoffDir);
+    if (!manifest.changed.includes(LOG_PATH))
+        return { octokit, agentCommitSha, agentLogEntries: undefined, warnings: [] };
+    const handoffLog = await readFile(join(handoffDir, 'files', LOG_PATH), 'utf8');
+    let baseLog;
+    try {
+        baseLog = await readFileAtCommit(octokit, target.owner ?? DEFAULT_OWNER, target.repo ?? DEFAULT_REPO, agentCommitSha, LOG_PATH);
+    }
+    catch {
+        throw handoffBaseInvalid(`could not read ${LOG_PATH} at the agent job data commit`);
+    }
+    const agentLogEntries = baseLog === undefined ? undefined : deriveAgentLogEntries(baseLog, handoffLog);
+    const warnings = agentLogEntries === undefined
+        ? [
+            {
+                code: 'agent-log-entries-dropped',
+                reason: baseLog === undefined ? 'base-log-missing' : 'not-append-only',
+            },
+        ]
+        : [];
+    return { octokit, agentCommitSha, agentLogEntries, warnings };
+}
 export async function runWikiIngestCli(dependencies = {}) {
     const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT;
     const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections;
@@ -1065,8 +1162,9 @@ export async function runWikiIngestCli(dependencies = {}) {
     try {
         if (payloadPath !== undefined && payloadPath !== '') {
             const payload = parsePayload(await readFile(payloadPath, 'utf8'));
+            const handoff = await loadHandoff(dependencies, payload);
             const tracked = await loadTrackedRepoNodeIds();
-            identityWarnings = tracked.warnings;
+            identityWarnings = [...tracked.warnings, ...(handoff?.warnings ?? [])];
             built = buildWikiIngestChanges({
                 existingFiles,
                 operation: payload.operation,
@@ -1079,6 +1177,7 @@ export async function runWikiIngestCli(dependencies = {}) {
                 fallbackNodeId: payload.node_id,
                 trackedMetadataAvailable: tracked.metadataAvailable,
                 corrections: correctionRead.corrections,
+                agentLogEntries: handoff?.agentLogEntries,
             });
             owner = payload.owner;
             repo = payload.repo;
@@ -1093,11 +1192,15 @@ export async function runWikiIngestCli(dependencies = {}) {
                 process.stdout.write(`${JSON.stringify({ committed: false, attempts: 1, pagesChanged: 0 })}\n`);
                 return;
             }
+            const handoff = await loadHandoff(dependencies, {
+                owner: process.env.WIKI_OWNER,
+                repo: process.env.WIKI_REPO,
+            });
             const pages = await loadWorkingTreeWikiFiles(changedPaths);
             const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event';
             const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown';
             const tracked = await loadTrackedRepoNodeIds();
-            identityWarnings = tracked.warnings;
+            identityWarnings = [...tracked.warnings, ...(handoff?.warnings ?? [])];
             built = buildWikiIngestChanges({
                 existingFiles,
                 operation,
@@ -1110,6 +1213,7 @@ export async function runWikiIngestCli(dependencies = {}) {
                 targetNodeId: process.env.REPO_NODE_ID,
                 trackedMetadataAvailable: tracked.metadataAvailable,
                 corrections: correctionRead.corrections,
+                agentLogEntries: handoff?.agentLogEntries,
             });
             owner = process.env.WIKI_OWNER;
             repo = process.env.WIKI_REPO;

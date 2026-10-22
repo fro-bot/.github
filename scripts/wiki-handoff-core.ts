@@ -15,6 +15,11 @@ import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
  * Baseline scoping (captureWikiBaseline/scopeToBaseline) diffs against a pre-agent
  * snapshot instead of HEAD, because sync-wiki restores `data` over `main` and an unscoped
  * diff would report every main-vs-data difference, not just the agent's edits.
+ *
+ * `knowledge/log.md` and `knowledge/index.md` are validated but never applied: the agent's copies
+ * are stale whole files, and applying them would replace what another writer committed since the
+ * agent synced. The trusted writer keeps its own synced copies and rebuilds both from them, taking
+ * only the log entries the agent appended (see runWikiIngestCli in @fro.bot/wiki-write-core).
  */
 
 /** Wiki path allowlist: exactly knowledge/index.md, exactly knowledge/log.md, or any .md under knowledge/wiki/. */
@@ -22,6 +27,12 @@ export function isAllowedWikiHandoffPath(relativePath: string): boolean {
   const normalized = relativePath.replaceAll('\\', '/')
   if (normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md') return true
   return normalized.startsWith('knowledge/wiki/') && normalized.endsWith('.md')
+}
+
+/** The two wiki files every writer shares; a handoff may carry them, but apply never writes or deletes them. */
+export function isSharedWikiFile(relativePath: string): boolean {
+  const normalized = relativePath.replaceAll('\\', '/')
+  return normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md'
 }
 
 const SOLUTION_CATEGORIES: ReadonlySet<string> = new Set(SOLUTION_SUBDIRS)
@@ -493,6 +504,8 @@ export interface HandoffPolicy {
   isAllowedPath: (normalizedPath: string) => boolean
   /** When false, any non-empty `deleted` list is rejected before anything is written. */
   allowDeletions: boolean
+  /** Paths that are validated like any other but neither written nor deleted on apply. */
+  isUnappliedPath?: (normalizedPath: string) => boolean
   maxTotalBytes: number
 }
 
@@ -503,6 +516,7 @@ export const WIKI_HANDOFF_POLICY: HandoffPolicy = {
   name: 'wiki',
   isAllowedPath: isAllowedWikiHandoffPath,
   allowDeletions: true,
+  isUnappliedPath: isSharedWikiFile,
   maxTotalBytes: WIKI_HANDOFF_MAX_TOTAL_BYTES,
 }
 
@@ -577,6 +591,8 @@ const ALLOWED_TOP_LEVEL_ENTRIES = new Set(['manifest.json', 'files'])
 export interface ApplyWikiHandoffResult {
   applied: string[]
   deleted: string[]
+  /** Entries the policy validates but does not apply, changed or deleted. */
+  skipped: string[]
 }
 
 export interface ApplyHandoffParams extends ApplyWikiHandoffParams {
@@ -658,8 +674,14 @@ export async function validateAndApplyHandoff(params: ApplyHandoffParams): Promi
     }
   }
 
+  const isUnapplied = policy.isUnappliedPath ?? (() => false)
+  const skipped: string[] = []
   const applied: string[] = []
   for (const relativePath of manifest.changed) {
+    if (isUnapplied(relativePath)) {
+      skipped.push(relativePath)
+      continue
+    }
     const sourcePath = path.join(params.handoffDir, 'files', relativePath)
     const destPath = path.join(params.workspaceDir, relativePath)
     const contents = await readFileImpl(sourcePath)
@@ -670,10 +692,14 @@ export async function validateAndApplyHandoff(params: ApplyHandoffParams): Promi
 
   const deleted: string[] = []
   for (const relativePath of manifest.deleted) {
+    if (isUnapplied(relativePath)) {
+      skipped.push(relativePath)
+      continue
+    }
     const destPath = path.join(params.workspaceDir, relativePath)
     await rmImpl(destPath, {force: true})
     deleted.push(relativePath)
   }
 
-  return {applied, deleted}
+  return {applied, deleted, skipped}
 }

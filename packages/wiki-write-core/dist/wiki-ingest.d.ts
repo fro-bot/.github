@@ -31,6 +31,11 @@ export interface BuildWikiIngestChangesParams {
     trackedMetadataAvailable?: boolean;
     /** System-owned correction state used for post-regeneration survival verification. */
     corrections?: CorrectionsFile;
+    /**
+     * Log entries an agent appended to its own `knowledge/log.md`, derived by the caller. Appended to
+     * the existing log, before this ingest's own summary entry.
+     */
+    agentLogEntries?: string;
 }
 export interface BuildWikiIngestChangesResult {
     files: Record<string, string>;
@@ -38,9 +43,9 @@ export interface BuildWikiIngestChangesResult {
     findings: readonly WikiLintFinding[];
 }
 export interface WikiIngestWarning {
-    code: 'duplicate-repo-identity' | 'repos-metadata-unavailable';
+    code: 'duplicate-repo-identity' | 'repos-metadata-unavailable' | 'agent-log-entries-dropped';
     node_ids?: string[];
-    reason?: 'read-failed' | 'parse-failed';
+    reason?: 'read-failed' | 'parse-failed' | 'not-append-only' | 'base-log-missing';
     slugs?: string[];
 }
 export interface TrackedRepoNodeIdsResult {
@@ -82,13 +87,15 @@ export interface RunWikiIngestCliDependencies {
     readonly readCorrections?: typeof readCorrections;
     readonly commitWikiChanges?: typeof commitWikiChanges;
     readonly getChangedWikiPaths?: typeof getChangedWikiPaths;
+    /** Client for reading the agent's base commit; defaults to one built from `GITHUB_TOKEN`. */
+    readonly octokit?: OctokitClient;
 }
 /**
  * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
  * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
  */
 export type OctokitClient = Octokit;
-export type WikiIngestErrorCode = 'INVALID_PAYLOAD' | 'INVALID_PAGE_PATH' | 'INVALID_FRONTMATTER' | 'INVALID_WIKILINK' | 'CORRECTION_ERODED' | 'INVALID_RETRIES' | 'PROTECTED_BRANCH' | 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'CONFLICT_EXHAUSTED';
+export type WikiIngestErrorCode = 'INVALID_PAYLOAD' | 'INVALID_PAGE_PATH' | 'INVALID_FRONTMATTER' | 'INVALID_WIKILINK' | 'CORRECTION_ERODED' | 'INVALID_RETRIES' | 'PROTECTED_BRANCH' | 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'CONFLICT_EXHAUSTED' | 'HANDOFF_BASE_INVALID';
 export declare class WikiIngestError extends Error {
     readonly code: WikiIngestErrorCode;
     readonly remediation: string;
@@ -182,6 +189,12 @@ export declare function parsePorcelainPaths(stdout: string): string[];
  * the four category directories.
  */
 export declare function countWikiPages(paths: string[]): number;
+/**
+ * The log text an agent appended: what its `knowledge/log.md` adds after `knowledge/log.md` at the
+ * commit it started from. `undefined` when the agent changed anything before that point, or the base
+ * log is empty, so there is nothing safe to take. Both inputs are normalized first (LF, one final newline).
+ */
+export declare function deriveAgentLogEntries(baseLog: string, handoffLog: string): string | undefined;
 export declare function runWikiIngestCli(dependencies?: RunWikiIngestCliDependencies): Promise<void>;
 type ReadUtf8File = (path: string, encoding: 'utf8') => Promise<string>;
 export declare function loadTrackedRepoNodeIds(readFileImpl?: ReadUtf8File): Promise<TrackedRepoNodeIdsResult>;

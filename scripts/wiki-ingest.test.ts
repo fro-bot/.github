@@ -5,13 +5,14 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiIngestModulePromise: Promise<{
   buildWikiIngestChanges: typeof import('./wiki-ingest.js').buildWikiIngestChanges
   commitWikiChanges: typeof import('./wiki-ingest.js').commitWikiChanges
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
+  deriveAgentLogEntries: typeof import('./wiki-ingest.js').deriveAgentLogEntries
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
@@ -22,6 +23,7 @@ const {
   buildWikiIngestChanges,
   commitWikiChanges,
   countWikiPages,
+  deriveAgentLogEntries,
   loadTrackedRepoNodeIds,
   parsePorcelainPaths,
   runWikiIngestCli,
@@ -2339,6 +2341,329 @@ describe('runWikiIngestCli (base from the synced data tip)', () => {
       vi.restoreAllMocks()
       restore(dir)
     }
+  })
+})
+
+const LOG_HEADER_TEXT =
+  '# Wiki Log\n\nChronological record of all wiki operations.\n\n---\n\n_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._\n'
+
+function logEntryText(n: number): string {
+  return `\n## [2026-10-20 10:0${n}] ingest | repo:acme/app-${n}\n\nDetail ${n}.\n\nSources: none\n`
+}
+
+const SUMMARY_ENTRY_TEXT =
+  '\n## [2026-10-21 09:00] ingest | repo:acme/target\n\nSurveyed acme/target.\n\nSources: none\n'
+
+describe('deriveAgentLogEntries', () => {
+  const base = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+  it('returns the text the handoff log adds after the base log', () => {
+    expect(deriveAgentLogEntries(base, `${base}${logEntryText(2)}`)).toBe(logEntryText(2))
+  })
+
+  it('returns every appended entry, in order', () => {
+    expect(deriveAgentLogEntries(base, `${base}${logEntryText(2)}${logEntryText(3)}`)).toBe(
+      `${logEntryText(2)}${logEntryText(3)}`,
+    )
+  })
+
+  it('returns an empty string when the handoff log equals the base log', () => {
+    expect(deriveAgentLogEntries(base, base)).toBe('')
+  })
+
+  it('normalizes CRLF line endings and a missing final newline before comparing', () => {
+    const handoff = `${base}${logEntryText(2)}`.replaceAll('\n', '\r\n').trimEnd()
+
+    expect(deriveAgentLogEntries(base, handoff)).toBe(logEntryText(2))
+  })
+
+  it('returns undefined when the agent changed text before the base log ends', () => {
+    const rewritten = base.replace('Detail 1.', 'Detail 1, rewritten.')
+
+    expect(deriveAgentLogEntries(base, `${rewritten}${logEntryText(2)}`)).toBeUndefined()
+  })
+
+  it('returns undefined when the handoff log is shorter than the base log', () => {
+    expect(deriveAgentLogEntries(base, LOG_HEADER_TEXT)).toBeUndefined()
+  })
+
+  it('returns undefined when the base log is empty, since there is no anchor to measure from', () => {
+    expect(deriveAgentLogEntries('', base)).toBeUndefined()
+  })
+})
+
+describe('buildWikiIngestChanges (agent log entries)', () => {
+  const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
+  const params = {
+    operation: 'survey' as const,
+    target: 'repo:acme/target',
+    summary: 'Surveyed acme/target.',
+    timestamp: new Date('2026-10-21T09:00:00Z'),
+    sources: [],
+    pages: [page],
+  }
+
+  it('appends the agent entries to the existing log before the summary entry, keeping existing text', () => {
+    const existingLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+      agentLogEntries: `${logEntryText(2)}${logEntryText(3)}`,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(
+      `${existingLog}${logEntryText(2)}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`,
+    )
+  })
+
+  it.each([undefined, ''])('appends only the summary entry when the agent entries are %j', agentLogEntries => {
+    const existingLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+      agentLogEntries,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${existingLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('starts from the log header when no log exists yet', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {'knowledge/index.md': '# Wiki Index\n'},
+      agentLogEntries: logEntryText(2),
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${LOG_HEADER_TEXT}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+  })
+})
+
+describe('runWikiIngestCli (agent log entries from a handoff)', () => {
+  const originalCwd = process.cwd()
+  const envKeys = [
+    'WIKI_INGEST_DATA_TIP_SHA',
+    'WIKI_HANDOFF_DIR',
+    'WIKI_HANDOFF_BASE_SHA',
+    'WIKI_OPERATION',
+    'WIKI_TARGET',
+    'WIKI_SUMMARY',
+    'WIKI_TIMESTAMP',
+    'WIKI_OWNER',
+    'WIKI_REPO',
+  ]
+  const originalEnv = new Map(envKeys.map(key => [key, process.env[key]]))
+  const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
+  const agentSha = 'a'.repeat(40)
+  const syncedLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+  let dir: string
+  let stderr: string[]
+
+  /** A trusted-job workspace: `log.md` as synced from `data`, the applied page, and the downloaded handoff. */
+  function setUp(params: {handoffLog?: string; manifestChanged?: string[]; baseSha?: string}): string {
+    dir = mkdtempSync(join(tmpdir(), 'wiki-ingest-handoff-'))
+    mkdirSync(join(dir, 'knowledge/wiki/topics'), {recursive: true})
+    writeFileSync(join(dir, page.path), page.content)
+    writeFileSync(join(dir, 'knowledge/log.md'), syncedLog)
+    writeFileSync(join(dir, 'knowledge/index.md'), '# Wiki Index\n')
+    const handoffDir = join(dir, '.handoff')
+    mkdirSync(join(handoffDir, 'files/knowledge'), {recursive: true})
+    const changed = params.manifestChanged ?? [
+      page.path,
+      ...(params.handoffLog === undefined ? [] : ['knowledge/log.md']),
+    ]
+    writeFileSync(join(handoffDir, 'manifest.json'), JSON.stringify({changed, deleted: []}))
+    if (params.handoffLog !== undefined) writeFileSync(join(handoffDir, 'files/knowledge/log.md'), params.handoffLog)
+    process.chdir(dir)
+    process.env.WIKI_HANDOFF_DIR = handoffDir
+    process.env.WIKI_HANDOFF_BASE_SHA = params.baseSha ?? agentSha
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.WIKI_TARGET = 'repo:acme/target'
+    process.env.WIKI_SUMMARY = 'Surveyed acme/target.'
+    process.env.WIKI_TIMESTAMP = '2026-10-21T09:00:00Z'
+    delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    return handoffDir
+  }
+
+  /** Answers the reads of `log.md` at the agent commit: the file's text, no file, or a failing API. */
+  function octokitReading(baseLog: string | undefined | Error): OctokitClient {
+    const entries = baseLog instanceof Error || baseLog === undefined ? [] : [{path: 'knowledge/log.md'}]
+    return {
+      rest: {
+        git: {
+          getCommit: async () => {
+            if (baseLog instanceof Error) throw baseLog
+            return {data: {sha: agentSha, tree: {sha: 'agent-tree'}}}
+          },
+          getTree: async () => ({
+            data: {
+              truncated: false,
+              tree: entries.map(entry => ({...entry, type: 'blob', mode: '100644', sha: 'log-blob'})),
+            },
+          }),
+          getBlob: async () => ({
+            data: {content: Buffer.from(typeof baseLog === 'string' ? baseLog : '', 'utf8').toString('base64')},
+          }),
+        },
+      },
+    } as unknown as OctokitClient
+  }
+
+  async function run(octokit: OctokitClient) {
+    const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => [page.path],
+      commitWikiChanges: commit as never,
+      octokit,
+    })
+    return commit
+  }
+
+  const committedLog = (commit: Awaited<ReturnType<typeof run>>): string =>
+    (commit.mock.calls[0]?.[0].files as Record<string, string>)['knowledge/log.md'] ?? ''
+
+  beforeEach(() => {
+    stderr = []
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk))
+      return true
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    process.chdir(originalCwd)
+    rmSync(dir, {recursive: true, force: true})
+    for (const [key, value] of originalEnv) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  it('commits the synced log, the entry the agent appended, then the summary entry', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+    expect(stderr.join('')).not.toContain('agent-log-entries-dropped')
+  })
+
+  it('keeps every entry the agent appended, in order', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}${logEntryText(3)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('keeps entries that another writer committed after the agent synced', async () => {
+    // #given the synced log already carries entry 2, which the agent never saw
+    const synced = `${syncedLog}${logEntryText(2)}`
+    setUp({handoffLog: `${syncedLog}${logEntryText(3)}`})
+    writeFileSync(join(dir, 'knowledge/log.md'), synced)
+
+    // #when the agent's base log is the older log
+    const commit = await run(octokitReading(syncedLog))
+
+    // #then the synced entry stays, and the agent's entry follows it
+    expect(committedLog(commit)).toBe(`${synced}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('appends only the summary entry when the handoff log equals the base log', async () => {
+    setUp({handoffLog: syncedLog})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('appends only the summary entry when the handoff carries no log', async () => {
+    setUp({})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('keeps the agent entry when the handoff log uses CRLF line endings and has no final newline', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`.replaceAll('\n', '\r\n').trimEnd()})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('drops the agent entries with a warning when the agent rewrote an earlier entry', async () => {
+    setUp({handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+    expect(stderr.join('')).toContain(
+      `wiki-ingest:warning:${JSON.stringify({code: 'agent-log-entries-dropped', reason: 'not-append-only'})}`,
+    )
+  })
+
+  it('drops the agent entries with a warning when the agent commit has no log to measure from', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const commit = await run(octokitReading(undefined))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+    expect(stderr.join('')).toContain(
+      `wiki-ingest:warning:${JSON.stringify({code: 'agent-log-entries-dropped', reason: 'base-log-missing'})}`,
+    )
+  })
+
+  it('refuses without committing when the log at the agent commit cannot be read', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const commit = vi.fn()
+
+    const error = await rejectionOf(
+      runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: async () => [page.path],
+        commitWikiChanges: commit as never,
+        octokit: octokitReading(Object.assign(new Error('boom'), {status: 500})),
+      }),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['empty', ''],
+    ['malformed', 'not-a-sha'],
+    ['abbreviated', 'abc1234'],
+  ])('refuses a %s agent commit before reading anything', async (_name, baseSha) => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, baseSha})
+    const commit = vi.fn()
+
+    const error = await rejectionOf(
+      runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: async () => [page.path],
+        commitWikiChanges: commit as never,
+        octokit: octokitReading(syncedLog),
+      }),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a handoff directory with no agent commit', async () => {
+    setUp({})
+    delete process.env.WIKI_HANDOFF_BASE_SHA
+
+    const error = await rejectionOf(run(octokitReading(syncedLog)))
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
   })
 })
 
