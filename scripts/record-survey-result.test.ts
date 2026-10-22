@@ -55,6 +55,31 @@ describe('buildRecordSurveyResultInput', () => {
   })
 })
 
+describe('buildRecordSurveyResultInput (page conflict)', () => {
+  const env = {
+    REPO_OWNER: 'alice',
+    REPO_NAME: 'project',
+    REPO_PRIVATE: 'false',
+    REPO_NODE_ID: 'R_kgDOPUBLIC',
+    SURVEY_STATUS: 'failure',
+    SURVEY_AT: '2026-10-21T09:30:00Z',
+  }
+
+  it('marks the input as a conflict when SURVEY_CONFLICT is true', () => {
+    expect(buildRecordSurveyResultInput({...env, SURVEY_CONFLICT: 'true'})).toMatchObject({conflict: true})
+  })
+
+  it.each([undefined, '', 'false'])('leaves the conflict flag off when SURVEY_CONFLICT is %j', value => {
+    expect(buildRecordSurveyResultInput({...env, SURVEY_CONFLICT: value})).not.toHaveProperty('conflict')
+  })
+
+  it('rejects a SURVEY_CONFLICT value that is not a boolean', () => {
+    expect(() => buildRecordSurveyResultInput({...env, SURVEY_CONFLICT: 'yes'})).toThrow(
+      "SURVEY_CONFLICT must be 'true' or 'false', got 'yes'",
+    )
+  })
+})
+
 describe('formatSurveyResultTarget', () => {
   it('uses node_id instead of owner/name for private targets', () => {
     const target = formatSurveyResultTarget({

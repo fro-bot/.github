@@ -279,6 +279,16 @@ export function computeNextEligibleAt(input: ComputeNextEligibleAtInput): string
   return new Date(eligibleMs).toISOString().slice(0, 10)
 }
 
+/**
+ * The ISO date (YYYY-MM-DD, UTC) one day after `baseDate`: when a survey that failed on a wiki page
+ * conflict becomes eligible again. A conflict is transient, so the channel interval would be the
+ * wrong penalty.
+ */
+export function computeNextDayEligibleAt(baseDate: Date): string {
+  const baseMs = Date.parse(`${baseDate.toISOString().slice(0, 10)}T00:00:00Z`)
+  return new Date(baseMs + MS_PER_DAY).toISOString().slice(0, 10)
+}
+
 export interface AddRepoEntryInput {
   owner: string
   repo: string
@@ -397,6 +407,11 @@ export interface RecordSurveyResultInput {
   node_id: string
   at: Date
   status: SurveyStatus
+  /**
+   * The survey failed because the wiki commit was refused on a page conflict. A recorded `failure`
+   * then becomes eligible the next day instead of after the channel interval. Ignored for `success`.
+   */
+  conflict?: boolean
 }
 
 /**
@@ -469,12 +484,15 @@ export function applySurveyResult(current: unknown, input: RecordSurveyResultInp
   // come from the stored row, never from the survey input.
   const normalizedMatch =
     input.private === true ? normalizeRepoEntryForStorage(match, {private: true, node_id: input.node_id}) : match
-  const nextEligibleAt = computeNextEligibleAt({
-    owner: normalizedMatch.owner,
-    repo: normalizedMatch.name,
-    channel,
-    baseDate: input.at,
-  })
+  const nextEligibleAt =
+    input.conflict === true && status === 'failure'
+      ? computeNextDayEligibleAt(input.at)
+      : computeNextEligibleAt({
+          owner: normalizedMatch.owner,
+          repo: normalizedMatch.name,
+          channel,
+          baseDate: input.at,
+        })
 
   const updated: RepoEntry = {
     ...normalizedMatch,

@@ -24,6 +24,8 @@ import {
  *   REPO_NODE_ID      — GitHub GraphQL node ID. Required: the row is matched by node ID only,
  *                       so a survey can never rename or re-key a row. Also required when REPO_PRIVATE=true.
  *   SURVEY_STATUS     — "success" | "failure"
+ *   SURVEY_CONFLICT   — optional "true" when the failure was a wiki page conflict; the repo is then
+ *                       eligible again the next day instead of after its channel interval
  *   SURVEY_AT         — ISO 8601 timestamp; defaults to "now" if absent
  *   GITHUB_TOKEN      — fro-bot App installation token, minted in the trusted survey-persist job
  *   GITHUB_REPOSITORY — caller-supplied "owner/name" of the control-plane repo hosting
@@ -135,6 +137,7 @@ export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurv
     node_id: requiredNodeId,
     at: parseAt(env.SURVEY_AT),
     status: parseStatus(requiredEnvFrom(env, 'SURVEY_STATUS')),
+    ...(parseOptionalBoolean('SURVEY_CONFLICT', env.SURVEY_CONFLICT) === true ? {conflict: true} : {}),
   }
 }
 

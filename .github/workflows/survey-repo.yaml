@@ -5,6 +5,7 @@ run-name: Survey Repo
 
 # Manual dispatch contract:
 #   Use:    gh workflow run survey-repo.yaml -f node_id=<repository GraphQL node_id>
+#   Re-runs after a wiki page conflict add `-f attempt=<2|3>`; never set it by hand.
 #   Was:    gh workflow run survey-repo.yaml -f owner=<owner> -f repo=<repo>  # removed
 #
 # Look up node_id with:
@@ -15,6 +16,11 @@ on:
       node_id:
         description: GitHub repository node_id; resolves to owner/repo internally after privacy verification
         required: true
+        type: string
+      attempt:
+        description: Run number for this survey, 1 to 3. Set only by the workflow's own re-dispatch after a page conflict.
+        required: false
+        default: '1'
         type: string
 
 permissions:
@@ -66,6 +72,20 @@ jobs:
       resolve-owner: ${{ steps.resolve.outputs.owner }}
       resolve-repo: ${{ steps.resolve.outputs.repo }}
     steps:
+      # The first step, so a malformed value fails the run before anything is minted or read. The
+      # re-dispatch job (survey-redispatch) is the only writer of this input.
+      - name: Validate attempt input
+        env:
+          ATTEMPT: ${{ inputs.attempt }}
+        run: |
+          case "$ATTEMPT" in
+            1|2|3) ;;
+            *)
+              printf '::error::attempt must be 1, 2 or 3\n' >&2
+              exit 1
+              ;;
+          esac
+
       # The privacy gate's only question is "is this node a public repository?" That
       # is a public read, but it must work for repos in any org the dispatch lands
       # on — including orgs whose policy forbids long-lived fine-grained PATs (e.g.
@@ -531,6 +551,10 @@ jobs:
     if: always()
     permissions:
       contents: read
+    outputs:
+      # `true` when the wiki commit was refused because a page the agent edited changed on `data`
+      # after the agent synced (wiki-ingest.ts exit 3). Gates survey-redispatch.
+      conflict: ${{ steps.wiki-commit.outputs.conflict }}
     steps:
       - name: Checkout trusted code (default branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -712,6 +736,11 @@ jobs:
               grep '^wiki-ingest:finding:' "$warning_file" | sed 's/^wiki-ingest:finding:/- /'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+          # Exit 3 is a page conflict: another writer changed a page this survey edited. The step still
+          # fails; the output lets survey-redispatch start a fresh run.
+          if [ "$status" -eq 3 ]; then
+            echo 'conflict=true' >> "$GITHUB_OUTPUT"
+          fi
           exit "$status"
 
       # Write the survey outcome back to metadata/repos.yaml so the reconcile staleness
@@ -738,6 +767,8 @@ jobs:
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
+          # A conflict failure is eligible again the next day, not after the channel interval.
+          SURVEY_CONFLICT: ${{ steps.wiki-commit.outputs.conflict }}
           SURVEY_STATUS:
             ${{ (needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
             needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
@@ -804,3 +835,49 @@ jobs:
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS: failure
         run: bun scripts/record-survey-result.ts
+
+  # ─── Re-run after a page conflict ────────────────────────────────────────────
+  # Another survey changed a page this one edited, so the commit was refused. Start a fresh
+  # survey (a new agent run from the current `data`) for the same repository, up to 3 runs in
+  # total. The dispatched run waits in this run's `survey-repo-<node_id>` concurrency group
+  # until this run ends. Not a writer: it commits nothing, so it carries no writer script.
+  # Runs only on a conflict; any other failure takes the normal cadence.
+  survey-redispatch:
+    name: Re-run survey after a page conflict
+    needs: [survey-resolve, survey-persist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ always() && !cancelled() && needs.survey-persist.outputs.conflict == 'true' && contains(fromJSON('["1", "2"]'), inputs.attempt) }}
+    permissions: {}
+    steps:
+      # The same reach as the reconcile writer's dispatch of this workflow: this repository,
+      # actions: write.
+      - name: 🔑 Mint App token for the survey re-dispatch
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: write
+
+      - name: Dispatch the next survey attempt
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          NODE_ID: ${{ inputs.node_id }}
+          ATTEMPT: ${{ inputs.attempt }}
+        run: |
+          case "$ATTEMPT" in
+            1) next=2 ;;
+            2) next=3 ;;
+            *)
+              printf '::error::no attempt left to dispatch\n' >&2
+              exit 1
+              ;;
+          esac
+          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
+            printf '::error::dispatch input shape invalid\n' >&2
+            exit 1
+          fi
+          gh workflow run survey-repo.yaml --ref main -f node_id="$NODE_ID" -f attempt="$next"
