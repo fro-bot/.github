@@ -8552,3 +8552,9 @@ Exactly one comment was posted.
 Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-10-22 23:31] manual-edit | knowledge/wiki/repos/fro-bot--agent.md
+
+Manual correction to knowledge/wiki/repos/fro-bot--agent.md
+
+Sources: none

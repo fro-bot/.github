@@ -125,7 +125,7 @@ related:
 
 # fro-bot/agent
 
-GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (oMo)](https://github.com/code-yeongyu/oh-my-openagent) with **persistent session state** across CI runs. This is the core runtime that powers Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repositories.
+GitHub Action harness for [OpenCode](https://opencode.ai/) with **persistent session state** across CI runs. This is the core runtime that powers Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repositories.
 
 **Limited re-check (2026-09-26, 06:08 UTC).** The five most recent `main` workflow runs
 observed through `gh run list` all reference `72f11fa`, including a Renovate run
