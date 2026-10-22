@@ -334,7 +334,7 @@ sequenceDiagram
 
 **Verification:** the new and updated tests pass, and actionlint is clean.
 
-- [ ] **Unit 4: Docs**
+- [x] **Unit 4: Docs**
 
 **Goal:** The docs describe the tracker as it now works.
 

@@ -226,7 +226,8 @@ Fro Bot control plane:
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
-| **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
+| **Gateway Rollout Tracker** | Keep the #3512 gateway rollout tracker current: a preflight hashes tracked issue state, agent and dashboard releases, infra deploy runs and the health contract, and wakes Fro Bot on a change or an unanswered operator mention; Fro Bot verifies claims, rewrites the issue body, updates Project 1, maintains the acceptance list and replies | Daily 06:00 UTC, dispatch (`comment_id` from Rollout Tracker Mention) |
+| **Rollout Tracker Mention** | Dispatch the tracker when `marcusrbrown` comments `@fro-bot` on #3512, because `issue_comment` runs are credential-withheld; the Fro Bot reply job skips those comments | Issue comment on #3512 |
 | **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
 | **Rename Tracked Repo** | Apply a repository rename that Reconcile Repos detected: renames the `metadata/repos.yaml` row and moves the repo's wiki page in one commit on `data` (`gh workflow run rename-tracked-repo.yaml -f node_id=<node_id>`) | Manual dispatch |
