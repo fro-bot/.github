@@ -38,6 +38,16 @@ Fro Bot owns three surfaces for the tracker `fro-bot/.github#3512`: the issue bo
 thread and the Project 1 fields. It writes them directly with `FRO_BOT_PAT`. There is no separate
 state store or writer layer.
 
+### Not a writer layer
+
+When the body and Project drift while the thread stays current, the cause is how runs reach the
+agent, not who is allowed to write. A state file on `data` with a trusted writer that re-verifies
+evidence, and the body and Project as projections, applies the `data`-branch proposer/writer split
+to a surface the agent already owns. It adds process without adding autonomy. The fix is to route
+every operator request to a run that holds the credential, give one prompt ownership of the body,
+the Project and the acceptance list, and widen what wakes the scheduled run. The proposer/writer
+split stays where the repository enforces it: writes to the `data` branch.
+
 ## Guidance
 
 ### Two entrances, one credentialed run
@@ -80,8 +90,11 @@ Project at a time. The dispatch input is `comment_id`, never `prompt`: in a call
 ### Why mentions need a hop
 
 `fro-bot/agent` withholds the `gh` credential from the model on `issue_comment`, `issues` and
-`pull_request` runs. A run started by a comment can read and reply in conversation but cannot edit
-the body or the Project. `schedule` and `workflow_dispatch` runs receive the credential.
+`pull_request` runs. `classifyEvent` (`packages/runtime/src/agent/response-delivery.ts`, v0.125.1)
+classifies those events as affected triggers from the event name alone, and the run log says
+`GitHub CLI credential withheld from child (affected trigger)`. No action input changes it. A run
+started by a comment can read and reply in conversation but cannot edit the body or the Project.
+`schedule` and `workflow_dispatch` runs are autonomous triggers and receive the credential.
 
 `rollout-tracker-mention.yaml` bridges the two. On `issue_comment` `created` it runs one job when
 all of these hold:
@@ -241,9 +254,16 @@ Bad split:
 - tracker runs without a concurrency group
 - daily-digest announce steps running during custom tracker prompts
 - a failed fetch recorded as an empty value in the snapshot
+- a state file or writer layer in front of a surface the agent already owns
+- answered mentions anchored on the marker comment's position in the thread
+- a marker assembled by the model instead of the preflight script
+- a test that matches `-->` with a regular expression (CodeQL reports it as bad HTML filtering);
+  count occurrences with `split('-->')`
 
 ## Related
 
+- `marcusrbrown/infra` `docs/runbooks/operator-surface-acceptance-automated.md` — the operator
+  acceptance runs whose posted results the tracker reads and labels operator-reported.
 - [Agent credential preflights are workflow contracts](agent-credential-preflights-are-workflow-contracts-2026-10-09.md) —
   `issue_comment` runs are credential-withheld; gate on the comment author with a closed set and
   test step shells through the helper.
