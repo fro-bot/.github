@@ -101,6 +101,9 @@ The content job of `fro-bot.yaml` excludes exactly these comments (issue 3512, n
 author `marcusrbrown`), so the operator gets one reply. Mentions from other trusted authors, and
 `marcusrbrown` mentions on other issues, still go to the general reply job.
 
+The content job also skips `issues` events whose sender is `fro-bot`. The tracker edits the #3512
+body as `fro-bot`, and without that clause each edit would start a second, unserialized agent run.
+
 ### The preflight and its wake inputs
 
 The preflight runs `scripts/rollout-tracker-snapshot.ts`, which makes no model call. It hashes:
@@ -119,26 +122,47 @@ empty fetch ends the preflight with a `FATAL` line on stderr, empty stdout and a
 failed read never counts as "no change". The update job requires a successful preflight in both
 modes, so every agent run has a valid hash and snapshot to write into its marker.
 
-A pending operator mention is a separate wake condition, not a hash input. It is true when a
-`marcusrbrown` comment containing `@fro-bot` is newer than the latest marker comment. `decideComment`
-returns `should_comment` when the hash changed or a mention is pending. Answering the mention does
-not change the next hash comparison. A mention that a dropped run, a failed hop or a failed
-preflight leaves unanswered wakes the next daily run.
+Pending operator mentions are a separate wake condition, not a hash input. The preflight reads the
+#3512 comments through the REST API (`gh api --paginate`), which carries numeric comment IDs. A
+mention is pending when its comment is by `marcusrbrown`, contains `@fro-bot`, and has an ID above
+the latest marker's `last_mention_id`. `decideComment` returns `should_comment` when the hash
+changed or any mention is pending. Answering the mentions does not change the next hash comparison.
+
+A mention stays unanswered when the hop fails, the preflight fails, or GitHub displaces the run in a
+concurrency group. A failed preflight in particular leaves the mention for the next scheduled run or
+a manual `workflow_dispatch` of `gateway-rollout-tracker.yaml` (optionally with `comment_id`); that
+run repeats the preflight and answers whatever is pending.
 
 ### The marker
 
-Every tracker reply on #3512 ends with `<!-- gateway-rollout-tracker:{"hash":…,"snapshot":…} -->`,
-built from the preflight outputs. The latest marker comment authored by `fro-bot` or `fro-bot[bot]`
-is the only gate record; the script writes no state. The parser requires a string `hash` and an
-object `snapshot`, so a marker written for an older snapshot shape still parses. Its hash differs
-from the current one, so it wakes the tracker once.
+The marker is `<!-- gateway-rollout-tracker:{"hash":…,"snapshot":…,"last_mention_id":…} -->`. The
+preflight script builds the complete string and outputs it; the prompt embeds it and the agent copies
+it verbatim into every tracker reply and every in-place edit. `<`, `>` and `&` are escaped inside the
+JSON as `\u003c`, `\u003e` and `\u0026`, so Project text containing `-->` cannot close the HTML
+comment early.
 
-### Catch-up
+The latest marker comment authored by `fro-bot` or `fro-bot[bot]` is the only gate record; the
+script writes no state. The parser requires a string `hash`. `last_mention_id` is the highest
+operator `@fro-bot` comment ID the tracker has answered, and an absent or invalid value reads as 0.
+A marker without it therefore treats every operator mention on #3512 as pending. The new value is the
+highest operator mention ID the preflight saw, never below the previous one.
 
-A run handles every operator `@fro-bot` comment newer than the latest marker comment, not only the
-comment named by `comment_id`. GitHub keeps one running and one pending run per concurrency group,
-so a newer queued run replaces an older pending one. Because each reply ends with a marker, the
-anchor always advances and no mention is lost.
+### Mention anchoring
+
+A run answers exactly the comment IDs in `pending_mention_ids` plus the dispatched `comment_id`,
+fetching each by ID. Thread position does not decide what is pending: a mention posted while a run is
+in flight can sit before that run's marker comment and is still pending afterwards, because its ID is
+above the marker's `last_mention_id`.
+
+When nothing needs to change and no comment ID is listed, the agent posts no new comment. It edits
+the latest marker comment in place and replaces its marker, so the stored hash and `last_mention_id`
+stay current and the next scheduled run does not wake again for the same state. With no marker comment
+to edit, it posts a one-line seed comment that ends with the marker.
+
+The anchor moves only when a comment with a valid marker lands. A run that fails before writing one
+leaves the old marker, and its mentions stay pending. A reply whose marker the agent damaged does not
+parse, so the next preflight reads no marker, treats the run as a cold start, and lists every operator
+mention as pending.
 
 ### The prompt
 
@@ -146,8 +170,8 @@ One prompt serves both modes. It tells the agent to verify claims against linked
 request state, releases, the infra deploy runs, the health contract and the acceptance-run results
 the operator posts. It then rewrites every stale section of the body, updates Project 1 and adds
 missing dependencies, and maintains the acceptance list. Each acceptance entry is labelled
-operator-reported or agent-verified, and an unmet gate is never removed silently. In mention mode
-the agent always replies; in scheduled mode it replies only when something changed.
+operator-reported or agent-verified, and an unmet gate is never removed silently. When comment IDs
+are listed the agent replies once to them; with none listed it replies only when something changed.
 
 ### Daily-only work
 

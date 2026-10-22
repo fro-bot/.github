@@ -158,7 +158,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 32 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 33 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -226,7 +226,7 @@ Fro Bot control plane:
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
-| **Gateway Rollout Tracker** | Keep the #3512 gateway rollout tracker current: a preflight hashes tracked issue state, agent and dashboard releases, infra deploy runs and the health contract, and wakes Fro Bot on a change or an unanswered operator mention; Fro Bot verifies claims, rewrites the issue body, updates Project 1, maintains the acceptance list and replies | Daily 06:00 UTC, dispatch (`comment_id` from Rollout Tracker Mention) |
+| **Gateway Rollout Tracker** | Keep the #3512 gateway rollout tracker current: a preflight hashes tracked issue state, agent and dashboard releases, infra deploy runs and the health contract, and wakes Fro Bot on a change or on an operator `@fro-bot` comment above the marker's `last_mention_id`; Fro Bot verifies claims, rewrites the issue body, updates Project 1, maintains the acceptance list and replies, or edits the latest marker comment in place when nothing changed. A mention left unanswered by a failed hop or preflight is answered by the next scheduled run or a manual dispatch | Daily 06:00 UTC, dispatch (`comment_id` from Rollout Tracker Mention) |
 | **Rollout Tracker Mention** | Dispatch the tracker when `marcusrbrown` comments `@fro-bot` on #3512, because `issue_comment` runs are credential-withheld; the Fro Bot reply job skips those comments | Issue comment on #3512 |
 | **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
