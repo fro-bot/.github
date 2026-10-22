@@ -92,7 +92,7 @@ A wiki-commit failure now records `last_survey_status: failure`, and the reconci
 
 The two bugs interact: Fix A without Fix B still loses data silently on any future wiki-commit failure (network error, conflict exhaustion, rate limit). Fix B without Fix A still crashes every dispatch until drift is eliminated. Landing both together closes both holes.
 
-The porcelain deletion filter stays safe: a path missing from the working tree is never treated as a removal. Intended removals reach the commit only through the agent handoff manifest, which the ingest CLI reads directly and checks against the agent's base commit (see [agent handoff snapshots replaced shared wiki files](../integration-issues/agent-handoff-snapshots-replaced-shared-wiki-files-2026-10-22.md)).
+The porcelain deletion filter stays safe: a path missing from the working tree is never treated as a removal. Agent-requested removals reach the commit only through the handoff manifest, which the ingest CLI reads directly and checks against the agent's base commit. Trusted identity-based page migrations add their own deletions (see [agent handoff snapshots replaced shared wiki files](../integration-issues/agent-handoff-snapshots-replaced-shared-wiki-files-2026-10-22.md)).
 
 The compound expression works because GitHub Actions evaluates every `steps.<id>.conclusion` even when the step was skipped (`'skipped'`) or the job was cancelled (`'cancelled'`). Including `|| steps.wiki-commit.conclusion == 'skipped'` preserves the legitimate no-op case (agent ran, decided nothing needed wiki changes, commit step skipped via its own `if:` guard).
 

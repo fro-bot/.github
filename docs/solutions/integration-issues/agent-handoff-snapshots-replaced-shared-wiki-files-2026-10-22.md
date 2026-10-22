@@ -76,7 +76,7 @@ export const WIKI_HANDOFF_POLICY: HandoffPolicy = {
 
 `isSharedWikiFile` in `packages/wiki-write-core/src/wiki-ingest.ts` matches `knowledge/index.md` and `knowledge/log.md`. Ingest rebuilds the index from the writer's own sync.
 
-**The agent's log entries are derived, not shipped.** The writer reads `log.md` at the agent's sync commit and keeps only what the agent appended:
+**The agent's log entries are derived on the trusted side.** The artifact still carries the agent's full `log.md` as input. The writer reads `log.md` at the agent's sync commit and keeps only what the agent appended:
 
 ```ts
 export function deriveAgentLogEntries(baseLog: string, handoffLog: string): string | undefined {
@@ -106,7 +106,7 @@ Agent page deletions are now committed from the manifest. Before this change, th
 
 ## Why This Works
 
-Shared files no longer travel in a handoff. The writer builds `index.md` and `log.md` from its own fresh sync, so one agent's snapshot cannot replace another writer's entries. Page staleness is judged against the commit the content was derived from, not the writer's sync, so a stale page fails loudly instead of silently overwriting. The preflight runs before content validation, so a stale page that links to a since-deleted page surfaces as a conflict and is re-dispatched. Otherwise it would surface as an `INVALID_WIKILINK` failure and never be retried.
+Shared files from a handoff are never applied. The writer builds `index.md` and `log.md` from its own fresh sync, so one agent's snapshot cannot replace another writer's entries. Page staleness is judged against the commit the content was derived from, not the writer's sync, so a stale page fails loudly instead of silently overwriting. The preflight runs before content validation, so a stale page that links to a since-deleted page surfaces as a conflict and is re-dispatched. Otherwise it would surface as an `INVALID_WIKILINK` failure and never be retried.
 
 ## Prevention
 
@@ -119,7 +119,7 @@ Shared files no longer travel in a handoff. The writer builds `index.md` and `lo
 
   Dispatch spacing is not overlap. Check which jobs actually overlap.
 
-- **Handoffs ship deltas only.** A file that is derived from the whole store (an index) or appended to by several writers (a log) must not cross a handoff as a full file. Rebuild it on the trusted side.
+- **Never apply a shared file from a handoff wholesale.** A file that is derived from the whole store (an index) or appended to by several writers (a log) can travel in the artifact as input. The trusted side derives the delta from it, such as the appended log entries, and rebuilds the file from its own sync.
 - **A staleness base is the commit the content was derived from.** For agent handoffs that is the agent job's sync commit, carried as a job output the agent cannot rewrite, never the writer's own sync.
 - **Check staleness before content validation.** If validation runs first, it turns a recoverable conflict into a terminal error class and skips the retry path.
 - **Regression coverage:** `scripts/wiki-handoff-sequence.test.ts` replays both incident sequences on `scripts/git-data-fake.ts`. On the pre-fix code, 12 of its 13 cases failed.
