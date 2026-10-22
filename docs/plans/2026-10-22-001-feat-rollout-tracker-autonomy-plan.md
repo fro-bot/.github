@@ -259,7 +259,7 @@ sequenceDiagram
 
 **Verification:** the tests pass, and `bun scripts/rollout-tracker-snapshot.ts` in fixture mode prints the extended snapshot.
 
-- [ ] **Unit 2: Tracker workflow, mention mode and prompt**
+- [x] **Unit 2: Tracker workflow, mention mode and prompt**
 
 **Goal:** The tracker accepts a `comment_id` dispatch input. It runs the agent for mentions or for gating changes. Its prompt carries the full tracker duties.
 

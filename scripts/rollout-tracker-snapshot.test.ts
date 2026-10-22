@@ -27,6 +27,8 @@ import {
   normaliseRawProjectItem,
   selectLatestMarkerCommentBody,
 } from './rollout-tracker-snapshot.ts'
+import {evaluateExpression} from './workflow-expression-test-helper.ts'
+import {runStepWithStubs} from './workflow-step-test-helper.ts'
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -1393,5 +1395,125 @@ describe('gateway-rollout-tracker.yaml workflow shape', () => {
 
     expect(withPrompt).toContain('needs.preflight.outputs.hash')
     expect(withPrompt).toContain('needs.preflight.outputs.snapshot')
+  })
+})
+
+describe('gateway-rollout-tracker.yaml mention mode', () => {
+  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/gateway-rollout-tracker.yaml')
+  const workflow = parse(readFileSync(workflowPath, 'utf8')) as {
+    on: {workflow_dispatch?: {inputs?: Record<string, {type?: string; required?: boolean; default?: unknown}>}}
+    jobs: Record<string, WorkflowJob>
+  }
+  const update = workflow.jobs['update-rollout-tracker']
+  const prompt = String(update?.with?.prompt ?? '')
+  const updateIf = String(update?.if ?? '')
+  const expr = (expression: string): string => `\${{ ${expression} }}`
+
+  function updateRuns(context: {preflight: string; shouldComment?: string; commentId?: string}): boolean {
+    return evaluateExpression(updateIf, {
+      inputs: {comment_id: context.commentId ?? ''},
+      needs: {preflight: {result: context.preflight, outputs: {should_comment: context.shouldComment ?? 'false'}}},
+    })
+  }
+
+  it('defines a comment_id dispatch input and no prompt input', () => {
+    const inputs = workflow.on.workflow_dispatch?.inputs ?? {}
+
+    expect(Object.keys(inputs)).toEqual(['comment_id'])
+    expect(inputs.comment_id).toMatchObject({type: 'string', required: false, default: ''})
+  })
+
+  it('runs the update job for a mention run, even when the preflight sees no change', () => {
+    expect(updateRuns({preflight: 'success', shouldComment: 'false', commentId: '4301234567'})).toBe(true)
+  })
+
+  it('runs the update job for a gating change without a mention', () => {
+    expect(updateRuns({preflight: 'success', shouldComment: 'true'})).toBe(true)
+  })
+
+  it('skips the update job with neither a mention nor a gating change', () => {
+    expect(updateRuns({preflight: 'success', shouldComment: 'false'})).toBe(false)
+  })
+
+  it.each(['failure', 'cancelled', 'skipped'])(
+    'blocks the update job in both modes when the preflight is %s',
+    result => {
+      expect(updateRuns({preflight: result, shouldComment: 'true'})).toBe(false)
+      expect(updateRuns({preflight: result, commentId: '4301234567'})).toBe(false)
+    },
+  )
+
+  describe('comment ID validation step', () => {
+    const step = workflow.jobs.preflight?.steps?.find(candidate => candidate.name === 'Validate comment ID')
+    const script = String(step?.run ?? '')
+
+    it('is the first preflight step', () => {
+      expect(workflow.jobs.preflight?.steps?.[0]).toBe(step)
+    })
+
+    it.each(['', '4301234567'])('accepts %j', commentId => {
+      expect(runStepWithStubs(script, {env: {COMMENT_ID: commentId}}).status).toBe(0)
+    })
+
+    it.each(['abc', '12 34', '12\n34', '12;echo pwned', '-1', '12\n'])('rejects %j', commentId => {
+      const run = runStepWithStubs(script, {env: {COMMENT_ID: commentId}})
+
+      expect(run.status).not.toBe(0)
+      expect(run.stderr).toContain('comment_id must be numeric')
+    })
+  })
+
+  describe('prompt', () => {
+    it('receives the comment ID and the preflight outputs', () => {
+      expect(prompt).toContain(expr('inputs.comment_id'))
+      expect(prompt).toContain('needs.preflight.outputs.reason')
+      expect(prompt).toContain('needs.preflight.outputs.hash')
+      expect(prompt).toContain('needs.preflight.outputs.snapshot')
+    })
+
+    it('names every evidence source', () => {
+      for (const source of [
+        'linked issues and pull requests',
+        'fro-bot/agent',
+        'fro-bot/dashboard',
+        'marcusrbrown/infra',
+        'Deploy Gateway',
+        'Deploy Dashboard',
+        'deploy.yaml router',
+        'https://dashboard.fro.bot/operator/health',
+        'acceptance-run results',
+      ]) {
+        expect(prompt).toContain(source)
+      }
+    })
+
+    it('covers the body, Project 1 and the labelled acceptance list', () => {
+      expect(prompt).toContain('Rewrite every stale section of the body')
+      expect(prompt).toContain('Update the Project 1 fields')
+      expect(prompt).toContain('add any missing dependency items')
+      expect(prompt).toContain('operator-reported')
+      expect(prompt).toContain('agent-verified')
+    })
+
+    it('catches up on every operator mention newer than the latest marker comment', () => {
+      expect(prompt).toContain('Read every fro-bot/.github#3512 comment by\nmarcusrbrown that contains @fro-bot')
+      expect(prompt).toContain(
+        'newer than the latest\ncomment by fro-bot or fro-bot[bot] that carries a\ngateway-rollout-tracker marker',
+      )
+      expect(prompt).toContain('Handle all of them in this run')
+    })
+
+    it('replies to mentions always and to scheduled runs only on change', () => {
+      expect(prompt).toContain('always reply once')
+      expect(prompt).toContain('reply on\nfro-bot/.github#3512 only if you changed something')
+      expect(prompt).toContain('post nothing')
+    })
+
+    it('ends every reply with the marker built from the preflight hash and snapshot', () => {
+      expect(prompt).toContain('End every tracker comment on fro-bot/.github#3512 with the')
+      expect(prompt).toContain(
+        `<!-- gateway-rollout-tracker:{"hash":"${expr('needs.preflight.outputs.hash')}","snapshot":${expr('needs.preflight.outputs.snapshot')}} -->`,
+      )
+    })
   })
 })

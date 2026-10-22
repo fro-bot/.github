@@ -1,5 +1,6 @@
 /**
- * Test support: run a workflow step's `run:` block under bash with stub `git`, `bun` and `node` on PATH.
+ * Test support: run a workflow step's `run:` block under bash with stub `git`, `bun` and `node` (plus any
+ * `stubTools`) on PATH.
  *
  * The stubs log every invocation to a trace file and never touch the network or the repo, so a
  * contract test can assert what a step would have done for a given `git ls-remote` exit code.
@@ -17,13 +18,17 @@ export interface StepRun {
   status: number
   stdout: string
   stderr: string
-  /** One line per stubbed `git` / `bun` / `node` invocation, as `git <args>` / `bun <args>` / `node <args>`. */
+  /** One line per stubbed invocation, as `git <args>` / `bun <args>` / `node <args>` / `<tool> <args>`. */
   trace: string[]
 }
 
 export interface StepRunOptions {
-  /** Exit code of the stubbed `git ls-remote`. */
-  lsRemoteExit: number
+  /** Exit code of the stubbed `git ls-remote`. Defaults to 0. */
+  lsRemoteExit?: number
+  /** Environment the step sees, as the workflow's `env:` block would set it. */
+  env?: Record<string, string>
+  /** Further tools to stub, such as `gh`. Each logs its invocation to the trace and exits 0. */
+  stubTools?: readonly string[]
   /** A git subcommand that fails (exit 128, with a `fatal:` line on stderr) instead of succeeding. */
   failSubcommand?: string
 }
@@ -46,11 +51,11 @@ const STUB = (tool: string): string =>
     'exit 0',
   ].join('\n')
 
-/** Executes `script` under bash in a temp directory with stubbed `git`, `bun` and `node`. */
+/** Executes `script` under bash in a temp directory with stubbed `git`, `bun`, `node` and any `stubTools`. */
 export function runStepWithStubs(script: string, options: StepRunOptions): StepRun {
   const dir = mkdtempSync(join(tmpdir(), 'workflow-step-'))
   try {
-    for (const tool of ['git', 'bun', 'node']) {
+    for (const tool of ['git', 'bun', 'node', ...(options.stubTools ?? [])]) {
       writeFileSync(join(dir, tool), STUB(tool))
       chmodSync(join(dir, tool), 0o755)
     }
@@ -67,9 +72,10 @@ export function runStepWithStubs(script: string, options: StepRunOptions): StepR
       const stdout = execFileSync('bash', [scriptPath], {
         cwd: dir,
         env: {
+          ...options.env,
           PATH: `${dir}:${process.env.PATH ?? ''}`,
           STUB_TRACE: traceFile,
-          STUB_GIT_LS_REMOTE_EXIT: String(options.lsRemoteExit),
+          STUB_GIT_LS_REMOTE_EXIT: String(options.lsRemoteExit ?? 0),
           STUB_GIT_FAIL_SUBCOMMAND: options.failSubcommand ?? '',
           GITHUB_OUTPUT: outputFile,
           RUNNER_TEMP: dir,

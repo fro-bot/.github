@@ -5,6 +5,12 @@ on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
+    inputs:
+      comment_id:
+        description: ID of the operator comment on fro-bot/.github#3512 that requested this run; empty for scheduled and manual runs
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -15,9 +21,12 @@ concurrency:
 
 jobs:
   # ── Preflight: deterministic snapshot + idempotency gate ──────────────────
-  # Reads the GitHub Project and tracked issue states, builds a stable hash,
-  # and compares it to the hash embedded in the latest @fro-bot tracker comment.
-  # Outputs should_comment=true only when there is a genuine gating transition.
+  # Reads the GitHub Project, tracked issue states, the latest agent and
+  # dashboard releases, the latest successful infra deploy runs and the
+  # dashboard health contract, builds a stable hash, and compares it to the
+  # hash embedded in the latest @fro-bot tracker comment. Outputs
+  # should_comment=true when the hash changed or an operator @fro-bot mention
+  # is newer than the latest tracker marker. A failed read fails the job.
   preflight:
     name: Rollout Tracker Preflight
     runs-on: ubuntu-latest
@@ -30,6 +39,17 @@ jobs:
       hash: ${{ steps.snapshot.outputs.hash }}
       snapshot: ${{ steps.snapshot.outputs.snapshot }}
     steps:
+      # The comment ID is templated into the agent prompt, so it is checked before anything else runs.
+      - name: Validate comment ID
+        env:
+          COMMENT_ID: ${{ inputs.comment_id }}
+        run: |
+          set -euo pipefail
+          if [ -n "$COMMENT_ID" ] && ! [[ "$COMMENT_ID" =~ ^[0-9]+$ ]]; then
+            printf '::error::comment_id must be numeric\n' >&2
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -58,32 +78,69 @@ jobs:
           if [ "$SHOULD_COMMENT" = "false" ]; then
             echo "::notice::rollout-tracker: no gating transition — ${REASON}"
           else
-            echo "::notice::rollout-tracker: gating transition detected — ${REASON}"
+            echo "::notice::rollout-tracker: wake — ${REASON}"
           fi
 
-  # ── Fro Bot agent: only runs when preflight detects a gating transition ───
+  # ── Fro Bot agent: runs after a successful preflight, for an operator mention
+  # (comment_id set) or when the preflight reports a wake ───────────────────
   update-rollout-tracker:
     name: Update Rollout Tracker
     needs: preflight
-    if: needs.preflight.outputs.should_comment == 'true'
+    if: >-
+      needs.preflight.result == 'success' &&
+      (inputs.comment_id != '' || needs.preflight.outputs.should_comment == 'true')
     uses: ./.github/workflows/fro-bot.yaml
     with:
-      prompt: >-
-        Update the Gateway operator control-surface rollout tracker at
-        fro-bot/.github#3512 and the linked GitHub Project at
-        https://github.com/users/fro-bot/projects/1. A gating transition has
-        been detected since the last tracker comment — narrate only the
-        transition that triggered this run.
+      prompt: |-
+        You own the Gateway operator control-surface rollout tracker:
+        the issue fro-bot/.github#3512 (title, body and comments) and the
+        GitHub Project at https://github.com/users/fro-bot/projects/1.
+        Keep both equal to live state.
 
-        Use the preflight snapshot and Project items as the tracked rollout
-        source of truth; do not rely on a hardcoded issue list. For each tracked
-        Project item: check whether it has been closed, whether a deployment has
-        happened, or whether a supporting feature has been released. Update the
-        GitHub Project item state/fields when the evidence changes readiness.
-        Use fro-bot/.github#3512 as the routine status log; comment on tracked
-        issues only when there is issue-specific transition evidence that has
-        not already been acknowledged, and link those comments back to
-        fro-bot/.github#3512.
+        Operator comment ID that requested this run (empty when none):
+        ${{ inputs.comment_id }}
+        Preflight result: ${{ needs.preflight.outputs.reason }}
+
+        Evidence. Verify every claim against what you can read:
+        - state of the linked issues and pull requests;
+        - the latest releases of fro-bot/agent and fro-bot/dashboard;
+        - the latest successful marcusrbrown/infra runs of Deploy Gateway,
+          Deploy Dashboard and the deploy.yaml router;
+        - https://dashboard.fro.bot/operator/health (contractVersion);
+        - the acceptance-run results the operator posts on
+          fro-bot/.github#3512.
+        Use the preflight snapshot and the Project items as the tracked rollout
+        source of truth; do not rely on a hardcoded issue list. Accept a claim
+        when the evidence supports it. Otherwise reject or flag it, state the
+        reason, and leave that item unchanged.
+
+        Work, in every run:
+        1. Rewrite every stale section of the body of fro-bot/.github#3512:
+           current state, open items, the cross-repo dependency matrix and the
+           acceptance list.
+        2. Update the Project 1 fields (status, readiness, gate) to match, and
+           add any missing dependency items.
+        3. Maintain the acceptance list. Add each gate raised in a comment or
+           an acceptance run. Check off a gate when the evidence supports it.
+           Label each entry operator-reported (from the operator's posted
+           acceptance runs) or agent-verified (from your own checks). Never
+           remove an unmet gate without saying so.
+        4. Comment on a tracked issue only when there is issue-specific
+           evidence that has not been acknowledged, and link it back to
+           fro-bot/.github#3512.
+
+        Operator mentions. Read every fro-bot/.github#3512 comment by
+        marcusrbrown that contains @fro-bot and is newer than the latest
+        comment by fro-bot or fro-bot[bot] that carries a
+        gateway-rollout-tracker marker. Handle all of them in this run. When
+        the operator comment ID above is set, or any such comment exists,
+        always reply once on fro-bot/.github#3512 with what you verified, what
+        you accepted, what you rejected or flagged and why, and what you
+        changed in the body and on Project 1.
+
+        Scheduled runs. When there is no operator mention to answer, reply on
+        fro-bot/.github#3512 only if you changed something, and narrate only
+        that change. When nothing needs to change, post nothing.
 
         All status comments must begin with @fro-bot or explicitly mention
         @fro-bot. Post status updates in a concise, structured format.
