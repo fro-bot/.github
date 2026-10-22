@@ -8512,3 +8512,43 @@ Exactly one comment was posted.
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-10-22 10:18] ingest | marcusrbrown/tokentoilet
+
+Reconfirmed public `main` at `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`, unchanged
+from the October 7 survey, using only directory listings, the root and E2E READMEs,
+`package.json`, and all five workflow files. Updated [[marcusrbrown--tokentoilet]]
+and [[web3-defi]] additively, preserving historical findings and contradictions.
+Fro Bot is present at v0.117.3; no missing-workflow follow-up is needed. Recorded
+the unchanged event-specific delivery modes, browser-construction testing boundary,
+PR-only audit scope, and persistent Wagmi/roadmap/license documentation drift.
+Qualified production dependency auditing as classification-based, not proof of
+runtime reachability; dev-only classification is likewise not a supply-chain
+safety guarantee. No target code or commands were executed, and issue/PR/run,
+applied-settings, advisory, and lockfile state were not surveyed. The corrections
+context contained no records. Only the two wiki pages and this append-only log
+were edited; the trusted writer owns index maintenance and delivery.
+
+Sources: https://github.com/marcusrbrown/tokentoilet/tree/2c51ee39e7a83f5ae7e09044471785dda1c6ac64;
+`readme.md`, `e2e/README.md`, `package.json`, and
+`.github/workflows/{ci,fro-bot,renovate,update-repo-settings}.yaml` plus
+`.github/workflows/copilot-setup-steps.yml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/39761904509
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, `bun run test` (112 files; 5,964 passed, 43 skipped, three todo),
+and `git diff --check` passed. Wiki validation scanned 47 pages with zero
+deterministic findings; four pre-existing advisories concern unrelated stale or
+unconnected pages. The required single delivery/check comment is posted on the
+public control-repository commit, pointing here without duplicating the ingest
+summary. No issue run notice is used.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/9893544e9e1f2e6d9d709aff3eb1f60a6b5e6f27#commitcomment-206121895
+The returned body confirmed bot identification and Run Summary delimiters.
+Exactly one comment was posted.
+
+## [2026-10-22 10:22] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
