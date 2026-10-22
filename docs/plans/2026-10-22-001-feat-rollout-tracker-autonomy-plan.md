@@ -170,7 +170,7 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
   The comment ID only triggers the run. The agent fetches each comment it answers by ID (see the mention ID anchor below).
 
 - **The general reply job skips these mentions.** The content job's `if:` excludes `marcusrbrown` `@fro-bot` comments on #3512, so the operator gets one reply, not two.
-- **Mention runs share the tracker queue, and the marker anchors them by comment ID.** The marker carries `last_mention_id`, the highest operator `@fro-bot` comment ID the tracker has answered. A marker without the field reads as 0. The latest marker comment is the newest `fro-bot` or `fro-bot[bot]` comment on #3512 with a parseable tracker marker (the `selectLatestMarkerCommentBody` rule). Thread position never decides what is pending, so a mention that lands while a run is in flight is still pending afterwards.
+- **Mention runs share the tracker queue, and the marker anchors them by comment ID.** The marker carries `last_mention_id`, the highest operator `@fro-bot` comment ID the tracker has answered. A marker without a valid field takes its baseline from position: the highest operator mention that precedes the marker comment, so only later mentions are pending. With no marker at all, every existing operator mention counts as answered, because a cold start seeds the gate and does not answer history. The latest marker comment is the newest `fro-bot` or `fro-bot[bot]` comment on #3512 with a parseable tracker marker (the `selectLatestMarkerCommentBody` rule). Thread position never decides what is pending, so a mention that lands while a run is in flight is still pending afterwards.
 - **Unanswered mentions wake the tracker.** The preflight lists the `marcusrbrown` `@fro-bot` comments on #3512 whose ID is above the marker's `last_mention_id` as `pending_mention_ids`. `decideComment` returns `should_comment` true when the hash changed or that list is non-empty. The pending IDs are not part of the hash, so answering a mention causes no spurious wake. The preflight also outputs the new `last_mention_id` (the highest operator mention ID seen, never below the previous one) inside a complete marker string. The agent answers exactly the pending IDs plus the dispatched `comment_id`, fetching each by ID. A mention stays unanswered when one of these happens:
   - the hop failed;
   - the preflight failed;
@@ -197,7 +197,7 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
 - **Where does the hop live?** In a new workflow. See Key Technical Decisions.
 - **Which infra signal counts?** Deploy runs, not infra tags.
 - **Do mention and scheduled runs share a concurrency group?** Yes. The marker's `last_mention_id` keeps every mention answerable by ID.
-- **Does the marker stay the gate record?** Yes. It carries the wider hash and `last_mention_id`. Only a string `hash` is required to parse, so older markers still parse, wake once for the hash change, and treat every operator mention as pending.
+- **Does the marker stay the gate record?** Yes. It carries the wider hash and `last_mention_id`. Only a string `hash` is required to parse, so older markers still parse and wake for the hash change, and their mention baseline comes from position.
 
 ### Deferred to Implementation
 
@@ -256,7 +256,7 @@ sequenceDiagram
 - Edge case: a changed Project field on its own still leaves the hash unchanged.
 - Edge case: a marker from before this change still parses, and the new hash differs from it, so `decideComment` returns a change.
 - Error path: each new fetch failing, or returning an empty value, ends the run with empty stdout and a non-zero exit.
-- Happy path: a `marcusrbrown` `@fro-bot` comment with an ID above `last_mention_id` sets `should_comment` true with an unchanged hash, even when it precedes the latest marker comment in thread order. A mention at or below `last_mention_id`, a comment without `@fro-bot`, or a comment by another author does not. A marker without `last_mention_id` makes every operator mention pending.
+- Happy path: a `marcusrbrown` `@fro-bot` comment with an ID above `last_mention_id` sets `should_comment` true with an unchanged hash, even when it precedes the latest marker comment in thread order. A mention at or below `last_mention_id`, a comment without `@fro-bot`, or a comment by another author does not. A marker without `last_mention_id` makes only the mentions after its comment pending, and its replacement marker records the highest pre-marker mention ID. A cold start has no pending IDs and records the highest existing mention ID.
 - Edge case: after a reply that carries the new marker, the same comments give no pending IDs, and the hash matches the marker. A marker whose Project text contains `-->` round-trips through `extractPreviousMarker`.
 - Integration: a fixture CLI run with all inputs supplied prints valid JSON and makes no network calls.
 
@@ -368,7 +368,7 @@ Remove the stale content.
 
 - **Interaction graph:** the new workflow dispatches the tracker. The tracker calls `fro-bot.yaml`. The content job in `fro-bot.yaml` stops handling #3512 operator mentions. Status Truth runs the snapshot script and now makes the extra fetches.
 - **Error propagation:** a preflight fetch failure fails the run visibly in either mode. A hop failure fails the hop run visibly. In both cases the next daily preflight wakes the tracker for the unanswered mention.
-- **State lifecycle risks:** the first run after merge wakes because the hash shape changed, and a marker without `last_mention_id` leaves every earlier operator mention pending. Seed `last_mention_id` in the latest marker comment before that run to skip the historical mentions. A mention dropped from a concurrency queue stays pending until the next scheduled run or a manual dispatch.
+- **State lifecycle risks:** the first run after merge wakes because the hash shape changed, and the legacy marker's mention baseline comes from position. A mention dropped from a concurrency queue stays pending until the next scheduled run or a manual dispatch.
 - **Unchanged invariants:** the `FRO_BOT_PAT` wiring, the agent version, and the `fro-bot-daily` concurrency of the called workflow. Other issues' mentions still go to the general reply job.
 
 ## Risks & Dependencies

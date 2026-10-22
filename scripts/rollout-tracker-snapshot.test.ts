@@ -1042,29 +1042,84 @@ describe('external signal reads fail closed', () => {
 
 describe('scanOperatorMentions', () => {
   const mention = (id: number): TrackerComment => comment(id, 'marcusrbrown', `@fro-bot claim ${id}`)
+  const marked = (lastMentionId: number | null): MarkerData => ({
+    hash: 'h',
+    snapshot: {},
+    last_mention_id: lastMentionId,
+  })
+  const markerComment = (id: number, fields: string): TrackerComment =>
+    comment(id, 'fro-bot', `answered\n<!-- ${MARKER_PREFIX}{"hash":"h"${fields}} -->`)
 
   it('marks an operator @fro-bot comment above the last answered ID as pending', () => {
-    expect(scanOperatorMentions([mention(105)], 100)).toEqual({pendingIds: [105], lastMentionId: 105})
+    expect(scanOperatorMentions([mention(105)], marked(100))).toEqual({pendingIds: [105], lastMentionId: 105})
   })
 
   it('does not mark a mention at or below the last answered ID as pending', () => {
-    expect(scanOperatorMentions([mention(99), mention(100)], 100)).toEqual({pendingIds: [], lastMentionId: 100})
+    expect(scanOperatorMentions([mention(99), mention(100)], marked(100))).toEqual({pendingIds: [], lastMentionId: 100})
   })
 
   it('marks a mention pending even when thread order puts it before the latest marker comment', () => {
-    const marker = comment(103, 'fro-bot', `answered\n<!-- ${MARKER_PREFIX}{"hash":"h","last_mention_id":100} -->`)
+    const comments = [mention(101), markerComment(103, ',"last_mention_id":100')]
 
     // The operator comment (101) was posted while the run that wrote comment 103 was in flight.
-    expect(scanOperatorMentions([mention(101), marker], 100).pendingIds).toEqual([101])
+    expect(scanOperatorMentions(comments, marked(100)).pendingIds).toEqual([101])
   })
 
-  it('treats every operator mention as pending when the marker carries no last_mention_id', () => {
-    expect(scanOperatorMentions([mention(7), mention(9)], 0)).toEqual({pendingIds: [7, 9], lastMentionId: 9})
+  it('keeps a mention that precedes a marker with last_mention_id 0 pending', () => {
+    const comments = [mention(101), markerComment(103, ',"last_mention_id":0')]
+
+    expect(scanOperatorMentions(comments, marked(0)).pendingIds).toEqual([101])
+  })
+
+  describe('a marker without last_mention_id', () => {
+    const legacy = (): TrackerComment[] => [
+      mention(7),
+      comment(8, 'fro-bot', 'prose-only follow-up'),
+      mention(9),
+      markerComment(10, ''),
+      mention(11),
+      mention(12),
+    ]
+
+    it('takes the highest mention before the marker comment as the baseline', () => {
+      expect(scanOperatorMentions(legacy(), marked(null))).toEqual({pendingIds: [11, 12], lastMentionId: 12})
+    })
+
+    it('leaves nothing pending when no mention follows the marker comment', () => {
+      expect(scanOperatorMentions(legacy().slice(0, 4), marked(null))).toEqual({pendingIds: [], lastMentionId: 9})
+    })
+
+    it('anchors on the latest marker comment, not an earlier one', () => {
+      const comments = [mention(1), markerComment(2, ''), mention(3), markerComment(4, ''), mention(5)]
+
+      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [5], lastMentionId: 5})
+    })
+
+    it('treats an invalid last_mention_id the same way', () => {
+      const comments = [mention(1), markerComment(2, ',"last_mention_id":"7"'), mention(3)]
+      const previous = extractPreviousMarker(comments[1]?.body ?? '')
+
+      expect(previous?.last_mention_id).toBeNull()
+      expect(scanOperatorMentions(comments, previous)).toEqual({pendingIds: [3], lastMentionId: 3})
+    })
+  })
+
+  describe('a cold start', () => {
+    it('treats every existing operator mention as answered and seeds last_mention_id from the highest', () => {
+      expect(scanOperatorMentions([mention(7), mention(9), mention(8)], null)).toEqual({
+        pendingIds: [],
+        lastMentionId: 9,
+      })
+    })
+
+    it('has nothing to seed from when the thread has no operator mention', () => {
+      expect(scanOperatorMentions([comment(1, 'octocat', 'hello')], null)).toEqual({pendingIds: [], lastMentionId: 0})
+    })
   })
 
   it('lists pending IDs ascending and never lowers last_mention_id', () => {
-    expect(scanOperatorMentions([mention(30), mention(20)], 25)).toEqual({pendingIds: [30], lastMentionId: 30})
-    expect(scanOperatorMentions([], 25)).toEqual({pendingIds: [], lastMentionId: 25})
+    expect(scanOperatorMentions([mention(30), mention(20)], marked(25))).toEqual({pendingIds: [30], lastMentionId: 30})
+    expect(scanOperatorMentions([], marked(25))).toEqual({pendingIds: [], lastMentionId: 25})
   })
 
   it('ignores a comment without @fro-bot, one by another author, and bot replies', () => {
@@ -1075,13 +1130,13 @@ describe('scanOperatorMentions', () => {
           comment(12, 'octocat', '@fro-bot please look'),
           comment(13, 'fro-bot', '@fro-bot prose-only follow-up'),
         ],
-        0,
+        marked(0),
       ),
     ).toEqual({pendingIds: [], lastMentionId: 0})
   })
 
   it('matches the mention case-insensitively, like the hop gate', () => {
-    expect(scanOperatorMentions([comment(5, 'marcusrbrown', 'ping @Fro-Bot')], 0).pendingIds).toEqual([5])
+    expect(scanOperatorMentions([comment(5, 'marcusrbrown', 'ping @Fro-Bot')], marked(0)).pendingIds).toEqual([5])
   })
 })
 
@@ -1111,13 +1166,16 @@ describe('marker round trip', () => {
     expect((parsed?.snapshot as RolloutSnapshot).items[0]?.gate).toBe('blocked --> see <b>&</b>')
   })
 
-  it('reads an absent or invalid last_mention_id as 0', () => {
+  it('reads an absent or invalid last_mention_id as null and keeps a valid 0', () => {
     for (const lastMentionId of ['', '"7"', '-3', '1.5', 'null']) {
       const extra = lastMentionId === '' ? '' : `,"last_mention_id":${lastMentionId}`
       const parsed = extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":"abc"${extra}} -->`)
 
-      expect(parsed?.last_mention_id).toBe(0)
+      expect(parsed?.last_mention_id).toBeNull()
     }
+    expect(extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":"abc","last_mention_id":0} -->`)?.last_mention_id).toBe(
+      0,
+    )
   })
 
   it('gates on the hash alone when the snapshot is not an object', () => {
@@ -1211,22 +1269,55 @@ describe('pending operator mentions through the CLI', () => {
     expect(next.pending_mention_ids).toEqual([101])
   })
 
-  it('treats every operator mention as pending behind a marker without last_mention_id', () => {
+  it('migrates a legacy marker by position: only mentions after it are pending, and the new marker covers the earlier ones', () => {
+    const seeded = runCliFixture({items, issues})
+    const legacyMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
+    const comments = [
+      comment(1, 'marcusrbrown', '@fro-bot old claim'),
+      comment(2, 'marcusrbrown', '@fro-bot older claim'),
+      comment(3, 'fro-bot', legacyMarker),
+      comment(4, 'marcusrbrown', '@fro-bot newer claim'),
+    ]
+
+    const result = runCliFixture({items, issues, comments})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.pending_mention_ids).toEqual([4])
+    expect(result.last_mention_id).toBeGreaterThanOrEqual(2)
+    expect(result.last_mention_id).toBe(4)
+    expect(extractPreviousMarker(result.marker)?.last_mention_id).toBe(4)
+  })
+
+  it('leaves a legacy marker with no later mention quiet and records the pre-marker baseline', () => {
     const seeded = runCliFixture({items, issues})
     const legacyMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
 
     const result = runCliFixture({
       items,
       issues,
+      comments: [comment(1, 'marcusrbrown', '@fro-bot old claim'), comment(2, 'fro-bot', legacyMarker)],
+    })
+
+    expect(result.should_comment).toBe(false)
+    expect(result.pending_mention_ids).toEqual([])
+    expect(result.last_mention_id).toBe(1)
+  })
+
+  it('seeds a cold start without answering history', () => {
+    const result = runCliFixture({
+      items,
+      issues,
       comments: [
         comment(1, 'marcusrbrown', '@fro-bot old claim'),
-        comment(2, 'fro-bot', legacyMarker),
-        comment(3, 'marcusrbrown', '@fro-bot newer claim'),
+        comment(2, 'fro-bot', 'prose-only reply'),
+        comment(3, 'marcusrbrown', '@fro-bot another old claim'),
       ],
     })
 
     expect(result.should_comment).toBe(true)
-    expect(result.pending_mention_ids).toEqual([1, 3])
+    expect(result.reason).toContain('cold start')
+    expect(result.pending_mention_ids).toEqual([])
+    expect(result.last_mention_id).toBe(3)
   })
 
   it('reports no pending mention for a body-only fixture', () => {

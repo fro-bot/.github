@@ -143,9 +143,11 @@ comment early.
 
 The latest marker comment authored by `fro-bot` or `fro-bot[bot]` is the only gate record; the
 script writes no state. The parser requires a string `hash`. `last_mention_id` is the highest
-operator `@fro-bot` comment ID the tracker has answered, and an absent or invalid value reads as 0.
-A marker without it therefore treats every operator mention on #3512 as pending. The new value is the
-highest operator mention ID the preflight saw, never below the previous one.
+operator `@fro-bot` comment ID the tracker has answered. A marker without a valid value takes the
+highest operator mention that precedes its comment as the baseline, so only later mentions are
+pending, and with no marker at all every existing mention counts as answered because a cold start
+seeds the gate and does not answer history. The new value is the highest operator mention ID the
+preflight saw, never below the baseline.
 
 ### Mention anchoring
 
@@ -161,8 +163,9 @@ to edit, it posts a one-line seed comment that ends with the marker.
 
 The anchor moves only when a comment with a valid marker lands. A run that fails before writing one
 leaves the old marker, and its mentions stay pending. A reply whose marker the agent damaged does not
-parse, so the next preflight reads no marker, treats the run as a cold start, and lists every operator
-mention as pending.
+parse, so the preflight keeps reading the earlier marker comment and the mentions that reply answered
+stay pending. Only a thread with no parseable marker is a cold start, which seeds the gate without
+answering the mentions already in the thread.
 
 ### The prompt
 

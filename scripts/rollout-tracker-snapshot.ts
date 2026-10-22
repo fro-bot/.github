@@ -63,14 +63,14 @@ export interface RolloutSnapshot {
 }
 
 /**
- * The data embedded in the HTML marker comment. Only `hash` is required to parse: a marker written
- * before `last_mention_id` existed reads as 0, and the snapshot is informational.
+ * The data embedded in the HTML marker comment. Only `hash` is required to parse; the snapshot is
+ * informational and `last_mention_id` is null when the marker carries no valid value.
  */
 export interface MarkerData {
   hash: string
   snapshot: unknown
-  /** The highest operator `@fro-bot` comment ID the tracker has answered; 0 when absent. */
-  last_mention_id: number
+  /** The highest operator `@fro-bot` comment ID the tracker has answered; null when absent or invalid. */
+  last_mention_id: number | null
 }
 
 /** The decision output from decideComment. */
@@ -336,9 +336,9 @@ export function extractPreviousMarker(body: string): MarkerData | null {
       hash: parsed.hash,
       snapshot: parsed.snapshot,
       last_mention_id:
-        typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId > 0
+        typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
           ? lastMentionId
-          : 0,
+          : null,
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -347,32 +347,57 @@ export function extractPreviousMarker(body: string): MarkerData | null {
   }
 }
 
-export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
-  return (
-    comments.findLast(
-      comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
-    )?.body ?? ''
+function findLatestMarkerCommentIndex(comments: readonly TrackerComment[]): number {
+  return comments.findLastIndex(
+    comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
   )
+}
+
+export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
+  return comments[findLatestMarkerCommentIndex(comments)]?.body ?? ''
 }
 
 /**
  * Find the operator `@fro-bot` comments the tracker has not answered.
  *
- * A mention is pending when its comment ID is above `afterId`, the latest marker's
- * `last_mention_id`. Thread position does not matter: a mention that lands while a tracker run is in
- * flight can precede that run's marker comment and is still pending. `lastMentionId` is the highest
- * operator mention ID seen, never below `afterId`.
+ * The baseline is the latest marker's `last_mention_id`, and a mention is pending when its comment ID
+ * is above it. Thread position does not matter once the marker carries the field: a mention that
+ * lands while a tracker run is in flight can precede that run's marker comment and is still pending.
+ * A marker without a valid `last_mention_id` migrates by position: its baseline is the highest
+ * operator mention that precedes the marker comment, so only later mentions are pending. With no
+ * marker at all (cold start) every existing mention counts as answered, because a cold start seeds
+ * the gate and does not answer history. `lastMentionId` is the highest operator mention ID seen,
+ * never below the baseline.
  */
 export function scanOperatorMentions(
   comments: readonly TrackerComment[],
-  afterId: number,
+  previousMarker: MarkerData | null,
 ): {pendingIds: number[]; lastMentionId: number} {
-  const mentionIds = comments
-    .filter(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
-    .map(comment => comment.id)
+  const mentions = comments
+    .map((comment, index) => ({
+      id: comment.id,
+      index,
+      isMention: comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body),
+    }))
+    .filter(entry => entry.isMention)
+  const highest = (entries: readonly {id: number}[]): number => Math.max(0, ...entries.map(entry => entry.id))
+
+  let baseline: number
+  if (previousMarker === null) {
+    baseline = highest(mentions)
+  } else if (previousMarker.last_mention_id === null) {
+    const markerIndex = findLatestMarkerCommentIndex(comments)
+    baseline = highest(mentions.filter(entry => entry.index < markerIndex))
+  } else {
+    baseline = previousMarker.last_mention_id
+  }
+
   return {
-    pendingIds: mentionIds.filter(id => id > afterId).sort((a, b) => a - b),
-    lastMentionId: Math.max(afterId, ...mentionIds),
+    pendingIds: mentions
+      .map(entry => entry.id)
+      .filter(id => id > baseline)
+      .sort((x, y) => x - y),
+    lastMentionId: Math.max(baseline, highest(mentions)),
   }
 }
 
@@ -768,7 +793,7 @@ async function main(): Promise<void> {
   const snapshot = buildSnapshot(items, issues, external)
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
-  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker?.last_mention_id ?? 0)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker)
   const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
   const result: PreflightResult = {
     ...decision,
