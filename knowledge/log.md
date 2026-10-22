@@ -8459,3 +8459,102 @@ Exactly one comment was posted.
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-10-22 10:17] ingest | marcusrbrown/mothership
+
+Re-surveyed public `main` at `b799c49e2b2ea57878d4f29ef897c6138c8053f1`,
+unchanged from October 7. Read only root/workflow directory listings, README,
+`package.json`, `src-tauri/Cargo.toml`, and all eight workflow files. Updated
+[[marcusrbrown--mothership]] and [[github-actions-ci]] additively with dated
+revalidation and source access records; preserved historical findings and their
+contradiction notes. The corrections context contained no records.
+
+Confirmed the documented 17-tool UI/MCP surface, existing manifest pins, Fro Bot
+v0.117.0 presence and caller delivery gap, seven-job release definition, and
+completed `success`/`skipped`/`neutral` preflight acceptance set. Configuration
+presence does not establish live execution or artifact delivery. No missing-bot
+onboarding draft is warranted. Historical issue, dashboard, alert, release, and
+runtime findings were not remeasured; no target code or workflow prompt was
+executed. Left the catalog to the trusted writer and changes in the working
+tree for caller-owned persistence.
+
+Sources: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1;
+`README.md`, `package.json`, `src-tauri/Cargo.toml`, and
+`.github/workflows/{ci,codeql,dependency-review,fro-bot,release,renovate,scorecard}.yaml`
+plus `.github/workflows/version.yml` at that revision.
+Run: https://github.com/fro-bot/.github/actions/runs/39761711490
+
+<!-- fro-bot-agent -->
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Updated two existing wiki pages and appended this entry; only the three
+  permitted paths changed. The existing log is an exact byte-prefix of the
+  updated log. The trusted caller owns catalog maintenance and persistence.
+- Passed `bun run bootstrap` (no dependency changes), `bun run check-types`,
+  `bun run lint`, `bun run test` (112 files; 5,964 passed, 43 skipped, three
+  todo), and `git diff --check`.
+- Wiki validation scanned 47 pages with zero deterministic findings, including
+  frontmatter, links, and catalog coverage. Four existing advisory findings
+  concern unrelated stale/unconnected pages.
+- The single required delivery/check comment points here from the public
+  control-repository commit; this entry is the canonical ingest summary.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/9893544e9e1f2e6d9d709aff3eb1f60a6b5e6f27#commitcomment-206121842
+The returned body confirmed bot identification and both Run Summary delimiters.
+Exactly one comment was posted.
+
+## [2026-10-22 10:22] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-10-22 10:18] ingest | marcusrbrown/tokentoilet
+
+Reconfirmed public `main` at `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`, unchanged
+from the October 7 survey, using only directory listings, the root and E2E READMEs,
+`package.json`, and all five workflow files. Updated [[marcusrbrown--tokentoilet]]
+and [[web3-defi]] additively, preserving historical findings and contradictions.
+Fro Bot is present at v0.117.3; no missing-workflow follow-up is needed. Recorded
+the unchanged event-specific delivery modes, browser-construction testing boundary,
+PR-only audit scope, and persistent Wagmi/roadmap/license documentation drift.
+Qualified production dependency auditing as classification-based, not proof of
+runtime reachability; dev-only classification is likewise not a supply-chain
+safety guarantee. No target code or commands were executed, and issue/PR/run,
+applied-settings, advisory, and lockfile state were not surveyed. The corrections
+context contained no records. Only the two wiki pages and this append-only log
+were edited; the trusted writer owns index maintenance and delivery.
+
+Sources: https://github.com/marcusrbrown/tokentoilet/tree/2c51ee39e7a83f5ae7e09044471785dda1c6ac64;
+`readme.md`, `e2e/README.md`, `package.json`, and
+`.github/workflows/{ci,fro-bot,renovate,update-repo-settings}.yaml` plus
+`.github/workflows/copilot-setup-steps.yml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/39761904509
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, `bun run test` (112 files; 5,964 passed, 43 skipped, three todo),
+and `git diff --check` passed. Wiki validation scanned 47 pages with zero
+deterministic findings; four pre-existing advisories concern unrelated stale or
+unconnected pages. The required single delivery/check comment is posted on the
+public control-repository commit, pointing here without duplicating the ingest
+summary. No issue run notice is used.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/9893544e9e1f2e6d9d709aff3eb1f60a6b5e6f27#commitcomment-206121895
+The returned body confirmed bot identification and Run Summary delimiters.
+Exactly one comment was posted.
+
+## [2026-10-22 10:22] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-10-22 23:31] manual-edit | knowledge/wiki/repos/fro-bot--agent.md
+
+Manual correction to knowledge/wiki/repos/fro-bot--agent.md
+
+Sources: none

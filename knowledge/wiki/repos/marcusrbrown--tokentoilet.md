@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/tokentoilet
 created: 2026-04-18
-updated: 2026-10-07
+updated: 2026-10-22
 node_id: R_kgDOJ3rINw
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
@@ -41,6 +41,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
     accessed: 2026-10-07
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
+    accessed: 2026-10-22
 tags:
   - next-js
   - react
@@ -74,6 +77,29 @@ related:
 A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v2, and Reown AppKit. Deployed to Vercel.
 
 ## Overview
+
+### Evidence reconfirmed (2026-10-22)
+
+Public `main` still resolves to `2c51ee39e7a83f5ae7e09044471785dda1c6ac64`,
+the October 7 snapshot. The complete directory listing, root and E2E READMEs,
+`package.json`, and all five workflow files were re-read. The October 7 findings
+below remain supported; this is a fresh observation of unchanged source, not
+evidence of new application work or successful automation.
+
+**Fro Bot remains present** at agent v0.117.3, with `branch-pr` selected only for
+schedule/dispatch-autoheal and `working-dir` otherwise. The dated-report rotation
+contract is unchanged. No missing-workflow onboarding proposal is warranted.
+The README and both workflow prompts still describe Wagmi v2 against the manifest's
+`^3.0.0`; the README still claims multi-chain support while leaving that roadmap
+item unchecked, and its `LICENSE` link still has no matching tree entry. These
+contradictions remain unresolved, rather than superseding earlier dated evidence.
+
+The PR-only security audit and separate browser-construction lane are unchanged.
+In particular, the workflow comment equates production dependencies with code
+reachable by users, but `pnpm audit --prod` selects a dependency class, not proven
+runtime reachability. See [[web3-defi]]. Issue/PR state, Actions outcomes, applied
+settings, advisory counts, lockfile resolutions, and on-chain behavior were not
+rechecked. Sources are the same SHA-pinned links in the October 7 section below.
 
 ### Current evidence boundary (2026-10-07)
 
