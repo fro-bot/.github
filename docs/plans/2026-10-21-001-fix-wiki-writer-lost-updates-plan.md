@@ -267,7 +267,7 @@ sequenceDiagram
 
 ## Implementation Units
 
-- [ ] **Unit 1: Carry the agent's sync commit to the trusted writers**
+- [x] **Unit 1: Carry the agent's sync commit to the trusted writers**
 
 **Goal:** Each trusted writer receives the commit its agent job synced, from the sync step rather than the artifact.
 
@@ -304,7 +304,7 @@ sequenceDiagram
 
 - The contract tests pin the three wirings, and actionlint is clean on both workflows.
 
-- [ ] **Unit 2: Skip shared files on apply and derive the agent's log entries**
+- [x] **Unit 2: Skip shared files on apply and derive the agent's log entries**
 
 **Goal:** A handoff's `log.md` and `index.md` never land as files. The agent's appended entries are re-appended onto the writer's own `log.md`.
 
@@ -347,7 +347,7 @@ sequenceDiagram
 
 - The tests pass, and the `dist` check is clean.
 
-- [ ] **Unit 3: Guard handed-off pages against the agent's commit and commit deletions**
+- [x] **Unit 3: Guard handed-off pages against the agent's commit and commit deletions**
 
 **Goal:** The writer refuses when a handed-off page or deletion has changed since the agent's commit, validates that commit, and commits agent deletions.
 
@@ -393,7 +393,7 @@ sequenceDiagram
 
 - The integration test fails on the pre-change code and passes after the change. The `dist` check is clean.
 
-- [ ] **Unit 4: Re-dispatch a conflicting survey and retry it the next day**
+- [x] **Unit 4: Re-dispatch a conflicting survey and retry it the next day**
 
 **Goal:** A page conflict in survey persist triggers a bounded fresh survey run. A final conflict failure is eligible again the next day.
 
@@ -436,7 +436,7 @@ sequenceDiagram
 
 - The workflow contract tests, the `record-survey-result` and `repos-metadata` tests, and the scope guard pass, and actionlint is clean.
 
-- [ ] **Unit 5: Stop asking agents to edit the index**
+- [x] **Unit 5: Stop asking agents to edit the index**
 
 **Goal:** Agent prompts no longer ask for `index.md` edits. The log entry instruction stays.
 
@@ -463,7 +463,7 @@ sequenceDiagram
 
 - The contract tests pin the prompt text.
 
-- [ ] **Unit 6: wiki-repair reloads the head and fails when it aborts**
+- [x] **Unit 6: wiki-repair reloads the head and fails when it aborts**
 
 **Goal:** A concurrent `data` write is retried from the current head, and an aborted repair fails the job after writing its JSON result.
 
