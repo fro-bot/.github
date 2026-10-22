@@ -2150,7 +2150,7 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     script: string,
     env: Record<string, string>,
     shims: Record<string, string> = {},
-  ): {status: number; output: string; calls: string} {
+  ): {status: number; output: string; calls: string; summary: string} {
     const dir = mkdtempSync(join(tmpdir(), 'survey-repo-step-'))
     try {
       const bin = join(dir, 'bin')
@@ -2184,7 +2184,12 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
       } catch {
         // no shim recorded a call
       }
-      return {status, output: readFileSync(outputFile, 'utf8'), calls}
+      return {
+        status,
+        output: readFileSync(outputFile, 'utf8'),
+        calls,
+        summary: readFileSync(join(dir, 'summary'), 'utf8'),
+      }
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -2223,6 +2228,20 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
 
     expect(result.output).toBe(output)
     expect(result.status).toBe(status)
+  })
+
+  it('puts the dropped-agent-log-entries warning in the persist step summary', () => {
+    const warning = '{"code":"agent-log-entries-dropped","reason":"not-append-only"}'
+
+    const result = runStep(
+      ingestStep?.run ?? '',
+      {},
+      {bun: String.raw`printf 'wiki-ingest:warning:%s\n' '${warning}' >&2`},
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toContain('### Wiki ingest warnings')
+    expect(result.summary).toContain(`- ${warning}`)
   })
 
   it('records the conflict for the survey result from the wiki commit step output', () => {
@@ -2291,6 +2310,8 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     ['4', 'R_kgDOExample'],
     ['abc', 'R_kgDOExample'],
     ['1', 'R_kg DO;rm -rf /'],
+    ['1', 'R_kgDOExample\nsecond-line'],
+    ['1', 'second-line\nR_kgDOExample'],
     ['1', ''],
   ])('dispatches nothing for attempt %j and node_id %j', (attempt, nodeId) => {
     const result = runStep(
@@ -2333,6 +2354,7 @@ describe('survey-repo.yaml agent prompt leaves knowledge/index.md to the trusted
     for (const step of agentSteps) {
       const text = String(step.with?.prompt ?? '').replaceAll(/\s+/g, ' ')
       expect(text).not.toContain('the index')
+      expect(text).not.toMatch(/index\.md/)
     }
   })
 })

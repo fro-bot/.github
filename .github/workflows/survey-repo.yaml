@@ -876,7 +876,7 @@ jobs:
               exit 1
               ;;
           esac
-          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
+          if ! [[ "$NODE_ID" =~ ^[A-Za-z0-9_=-]+$ ]]; then
             printf '::error::dispatch input shape invalid\n' >&2
             exit 1
           fi
