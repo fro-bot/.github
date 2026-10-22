@@ -444,6 +444,19 @@ function commentEvent(fixture: {
   }
 }
 
+function issuesEvent(fixture: {action: 'opened' | 'edited'; authorLogin: string; senderLogin: string}): unknown {
+  return {
+    github: {
+      event_name: 'issues',
+      event: {
+        action: fixture.action,
+        issue: {number: 3512, user: {login: fixture.authorLogin}, author_association: 'OWNER'},
+        sender: {login: fixture.senderLogin},
+      },
+    },
+  }
+}
+
 describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
   const contentJob = froBotParsed.jobs['fro-bot']
   const contentIf = String(contentJob?.if ?? '')
@@ -466,6 +479,7 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
           github.event_name == 'issues' &&
           !endsWith(github.event.issue.user.login || '', '[bot]') &&
           (github.event.issue.user.login || '') != 'fro-bot' &&
+          (github.event.sender.login || '') != 'fro-bot' &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association || '')
         ) ||
         (
@@ -546,6 +560,18 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   ])('evaluates the comment predicate against a fixture: %s', (_name, fixture, expected) => {
     expect(evaluateExpression(contentIf, commentEvent(fixture))).toBe(expected)
   })
+
+  it.each([
+    ['an edit made by the fro-bot account to an operator-authored issue', 'edited', 'marcusrbrown', 'fro-bot', false],
+    ['an edit made by the operator to their own issue', 'edited', 'marcusrbrown', 'marcusrbrown', true],
+    ['an issue the operator opens', 'opened', 'marcusrbrown', 'marcusrbrown', true],
+    ['an issue the fro-bot account opens', 'opened', 'fro-bot', 'fro-bot', false],
+  ] as const)(
+    'evaluates the issues predicate against a fixture: %s',
+    (_name, action, authorLogin, senderLogin, expected) => {
+      expect(evaluateExpression(contentIf, issuesEvent({action, authorLogin, senderLogin}))).toBe(expected)
+    },
+  )
 
   it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {
     expect(contentIf).toContain(`!endsWith(github.event.issue.user.login || '', '[bot]')`)
