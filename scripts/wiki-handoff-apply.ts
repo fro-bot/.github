@@ -11,7 +11,9 @@ async function main(): Promise<void> {
   const workspaceDir = process.env.WIKI_HANDOFF_WORKSPACE ?? process.cwd()
 
   const result = await validateAndApplyWikiHandoff({handoffDir, workspaceDir})
-  process.stdout.write(`${JSON.stringify({applied: result.applied.length, deleted: result.deleted.length})}\n`)
+  process.stdout.write(
+    `${JSON.stringify({applied: result.applied.length, deleted: result.deleted.length, skipped: result.skipped.length})}\n`,
+  )
 }
 
 function requiredEnv(name: string): string {

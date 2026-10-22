@@ -6,6 +6,7 @@ import YAML from 'yaml'
 import {
   addRepoEntry,
   applySurveyResult,
+  computeNextDayEligibleAt,
   computeNextEligibleAt,
   DuplicateRepoIdentityError,
   findNameHeldByOtherNode,
@@ -1333,6 +1334,58 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
 
     expect(result.repos[0]?.onboarding_status).toBe('onboarded')
     expect(result.repos[0]?.next_survey_eligible_at).not.toBeNull()
+  })
+})
+
+describe('computeNextDayEligibleAt', () => {
+  it('returns the UTC date after the base date', () => {
+    expect(computeNextDayEligibleAt(new Date('2026-10-21T09:30:00Z'))).toBe('2026-10-22')
+  })
+
+  it('keeps the same answer anywhere inside a UTC day, and rolls over month and year ends', () => {
+    expect(computeNextDayEligibleAt(new Date('2026-10-21T00:00:00Z'))).toBe('2026-10-22')
+    expect(computeNextDayEligibleAt(new Date('2026-10-21T23:59:59.999Z'))).toBe('2026-10-22')
+    expect(computeNextDayEligibleAt(new Date('2026-10-31T12:00:00Z'))).toBe('2026-11-01')
+    expect(computeNextDayEligibleAt(new Date('2026-12-31T12:00:00Z'))).toBe('2027-01-01')
+  })
+})
+
+describe('recordSurveyResult — page conflict failures', () => {
+  const current: ReposFile = {
+    version: 1,
+    repos: [repoEntry({node_id: 'R_kgDO_project', onboarding_status: 'onboarded', discovery_channel: 'owned'})],
+  }
+  const at = new Date('2026-10-21T09:30:00Z')
+  const base = {owner: 'alice', repo: 'project', node_id: 'R_kgDO_project', at}
+
+  it('records failure and becomes eligible the next day when the survey conflicted', () => {
+    const result = recordSurveyResult(current, {...base, status: 'failure', conflict: true})
+
+    expect(result.repos[0]).toMatchObject({
+      last_survey_at: '2026-10-21',
+      last_survey_status: 'failure',
+      next_survey_eligible_at: '2026-10-22',
+    })
+  })
+
+  it('keeps the channel interval for a failure that was not a conflict', () => {
+    const plain = recordSurveyResult(current, {...base, status: 'failure'})
+    const notConflict = recordSurveyResult(current, {...base, status: 'failure', conflict: false})
+
+    expect(plain.repos[0]?.next_survey_eligible_at).toBe(
+      computeNextEligibleAt({owner: 'alice', repo: 'project', channel: 'owned', baseDate: at}),
+    )
+    expect(notConflict).toStrictEqual(plain)
+    expect(plain.repos[0]?.next_survey_eligible_at).not.toBe('2026-10-22')
+  })
+
+  it('ignores the conflict flag on a success', () => {
+    const result = recordSurveyResult(current, {...base, status: 'success', conflict: true})
+
+    expect(result.repos[0]?.next_survey_eligible_at).toBe(
+      computeNextEligibleAt({owner: 'alice', repo: 'project', channel: 'owned', baseDate: at}),
+    )
+    expect(result.repos[0]?.last_survey_status).toBe('success')
   })
 })
 

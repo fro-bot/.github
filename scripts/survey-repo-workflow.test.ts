@@ -1,5 +1,5 @@
 import {execFileSync} from 'node:child_process'
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -19,6 +19,7 @@ interface WorkflowStep {
 }
 
 interface WorkflowJob {
+  name?: string
   steps: WorkflowStep[]
   needs?: string | string[]
   if?: string
@@ -388,6 +389,27 @@ describe('survey-repo correction injection contract', () => {
     expect(ingestStep?.run).toContain('bun scripts/wiki-ingest.ts')
     expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
     expect(ingestStep?.run).not.toContain('data-sha')
+  })
+
+  it('hands the agent job sync commit to the trusted writer through a job output, not the artifact', () => {
+    const agentJob = workflowParsed.jobs['survey-repo']
+    const agentSteps = agentJob?.steps ?? []
+    const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+    const syncIndex = agentSteps.findIndex(step => step.uses === './.github/actions/sync-wiki')
+    const firstAgentIndex = agentSteps.findIndex(step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    const applyStep = persistSteps.find(step => step.name === 'Validate and apply wiki handoff')
+    const ingestStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
+    const expressionStart = '$' + '{{'
+
+    expect(syncIndex).toBeGreaterThanOrEqual(0)
+    expect(agentSteps[syncIndex]?.id).toBe('sync-wiki')
+    expect(firstAgentIndex).toBeGreaterThan(syncIndex)
+    expect(agentJob?.outputs?.['agent-base-sha']).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+    expect(ingestStep?.env?.WIKI_HANDOFF_BASE_SHA).toBe(
+      `${expressionStart} needs.survey-repo.outputs.agent-base-sha }}`,
+    )
+    expect(ingestStep?.env?.WIKI_HANDOFF_DIR).toBe(applyStep?.env?.WIKI_HANDOFF_DIR)
+    expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
   })
 
   it('Sync wiki from data branch precedes Capture wiki baseline (baseline must hash post-sync content)', () => {
@@ -2108,5 +2130,260 @@ describe('survey-repo.yaml: non-empty handoff invariant (a positive detection mu
     expect(condition).toContain("steps.final-attempt.outputs.detect-conclusion == 'success'")
     expect(condition).toContain("steps.final-attempt.outputs.changed == 'true'")
     expect(condition).toContain("steps.wiki-handoff-build.outcome == 'success'")
+  })
+})
+
+describe('survey-repo.yaml re-run after a wiki page conflict', () => {
+  const expressionStart = '$' + '{{'
+  const resolveJob = workflowParsed.jobs['survey-resolve']
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const redispatchJob = workflowParsed.jobs['survey-redispatch']
+  const ingestStep = persistJob?.steps.find(step => step.name === 'Commit wiki ingest to data branch')
+  const validateStep = resolveJob?.steps.find(step => step.name === 'Validate attempt input')
+  const dispatchStep = redispatchJob?.steps.find(step => step.name === 'Dispatch the next survey attempt')
+  const dispatchInputs = (
+    (workflowParsed as {on?: {workflow_dispatch?: {inputs?: Record<string, Record<string, unknown>>}}}).on ?? {}
+  ).workflow_dispatch?.inputs
+
+  /** Runs a step's script under `bash -e` with shims first on PATH; returns exit status and files written. */
+  function runStep(
+    script: string,
+    env: Record<string, string>,
+    shims: Record<string, string> = {},
+  ): {status: number; output: string; calls: string; summary: string} {
+    const dir = mkdtempSync(join(tmpdir(), 'survey-repo-step-'))
+    try {
+      const bin = join(dir, 'bin')
+      mkdirSync(bin)
+      for (const [name, body] of Object.entries(shims)) {
+        writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
+        chmodSync(join(bin, name), 0o755)
+      }
+      const outputFile = join(dir, 'github-output')
+      writeFileSync(outputFile, '')
+      writeFileSync(join(dir, 'summary'), '')
+      let status = 0
+      try {
+        execFileSync('bash', ['-e', '-c', script], {
+          env: {
+            PATH: `${bin}:${process.env.PATH ?? ''}`,
+            RUNNER_TEMP: dir,
+            GITHUB_OUTPUT: outputFile,
+            GITHUB_STEP_SUMMARY: join(dir, 'summary'),
+            CALLS_FILE: join(dir, 'calls'),
+            ...env,
+          },
+          stdio: 'pipe',
+        })
+      } catch (error: unknown) {
+        status = (error as {status?: number}).status ?? 1
+      }
+      let calls = ''
+      try {
+        calls = readFileSync(join(dir, 'calls'), 'utf8')
+      } catch {
+        // no shim recorded a call
+      }
+      return {
+        status,
+        output: readFileSync(outputFile, 'utf8'),
+        calls,
+        summary: readFileSync(join(dir, 'summary'), 'utf8'),
+      }
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  }
+
+  it('declares attempt as an optional string input defaulting to 1', () => {
+    expect(dispatchInputs?.attempt).toMatchObject({required: false, default: '1', type: 'string'})
+  })
+
+  it('validates attempt in the first step of the first job, before any mint', () => {
+    expect(resolveJob?.steps[0]?.name).toBe('Validate attempt input')
+    expect(validateStep?.env?.ATTEMPT).toBe(`${expressionStart} inputs.attempt }}`)
+    expect(validateStep?.run).not.toContain(expressionStart)
+  })
+
+  it.each(['1', '2', '3'])('accepts attempt %j', attempt => {
+    expect(runStep(validateStep?.run ?? '', {ATTEMPT: attempt}).status).toBe(0)
+  })
+
+  it.each(['0', '4', 'abc', '', '01', '1 ', ' 1', '1\n2', '-1', '1.0', '١'])('rejects attempt %j', attempt => {
+    expect(runStep(validateStep?.run ?? '', {ATTEMPT: attempt}).status).not.toBe(0)
+  })
+
+  it('exposes the conflict flag from the wiki commit step as a persist job output', () => {
+    expect(persistJob?.outputs?.conflict).toBe(`${expressionStart} steps.wiki-commit.outputs.conflict }}`)
+    expect(ingestStep).toBeDefined()
+  })
+
+  it.each([
+    [3, 'conflict=true\n', 3],
+    [1, '', 1],
+    [0, '', 0],
+    [2, '', 2],
+  ])('the wiki commit step maps ingest exit %i to output %j and keeps the status', (ingestExit, output, status) => {
+    const result = runStep(ingestStep?.run ?? '', {}, {bun: `exit ${ingestExit}`})
+
+    expect(result.output).toBe(output)
+    expect(result.status).toBe(status)
+  })
+
+  it('puts the dropped-agent-log-entries warning in the persist step summary', () => {
+    const warning = '{"code":"agent-log-entries-dropped","reason":"not-append-only"}'
+
+    const result = runStep(
+      ingestStep?.run ?? '',
+      {},
+      {bun: String.raw`printf 'wiki-ingest:warning:%s\n' '${warning}' >&2`},
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toContain('### Wiki ingest warnings')
+    expect(result.summary).toContain(`- ${warning}`)
+  })
+
+  it('records the conflict for the survey result from the wiki commit step output', () => {
+    const recordStep = persistJob?.steps.find(step => step.id === 'record-result')
+
+    expect(recordStep?.env?.SURVEY_CONFLICT).toBe(`${expressionStart} steps.wiki-commit.outputs.conflict }}`)
+  })
+
+  /** The step's env with each `steps.<id>.outputs.<name>` expression replaced from `outputs`; other values pass through. */
+  function resolvedStepEnv(step: WorkflowStep | undefined, outputs: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(step?.env ?? {}).map(([key, raw]) => {
+        const match = /^\$\{\{ steps\.([\w-]+)\.outputs\.([\w-]+) \}\}$/.exec(String(raw))
+        return [key, match === null ? String(raw) : (outputs[`${match[1]}.${match[2]}`] ?? '')]
+      }),
+    )
+  }
+
+  it.each([
+    ['the primary record step', 'Record survey result'],
+    ['the cancelled/timeout fallback record step', 'Record survey result (cancelled/timeout fallback)'],
+  ])('passes the conflict flag from the wiki commit step to %s', (_label, stepName) => {
+    const recordStep = persistJob?.steps.find(step => step.name === stepName)
+    const record = {bun: String.raw`printf "[%s]\n" "$SURVEY_CONFLICT" >> "$CALLS_FILE"`}
+
+    const conflicted = runStep(
+      recordStep?.run ?? '',
+      resolvedStepEnv(recordStep, {'wiki-commit.conflict': 'true'}),
+      record,
+    )
+    const plain = runStep(recordStep?.run ?? '', resolvedStepEnv(recordStep, {}), record)
+
+    expect(conflicted.status).toBe(0)
+    expect(conflicted.calls.trim()).toBe('[true]')
+    expect(plain.calls.trim()).toBe('[]')
+  })
+
+  it('gates the re-run on persist reporting a conflict and an attempt that still has a re-run left', () => {
+    const condition = String(redispatchJob?.if ?? '')
+
+    expect(redispatchJob?.needs).toStrictEqual(['survey-resolve', 'survey-persist'])
+    expect(condition).toContain('always()')
+    expect(condition).toContain('!cancelled()')
+    expect(condition).toContain("needs.survey-persist.outputs.conflict == 'true'")
+    // Attempt 3 is the last run: it must not be in the list, nor anything the strict parse rejects.
+    const allowed = /contains\(fromJSON\('(\[[^']*\])'\), inputs\.attempt\)/.exec(condition)?.[1]
+    expect(JSON.parse(allowed ?? '[]')).toStrictEqual(['1', '2'])
+  })
+
+  it('has no agent step and runs no writer script (it commits nothing)', () => {
+    const steps = redispatchJob?.steps ?? []
+
+    expect(steps.some(step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBe(false)
+    expect(steps.some(step => /wiki-ingest\.ts|record-survey-result\.ts/.test(step.run ?? ''))).toBe(false)
+    expect(redispatchJob?.permissions).toStrictEqual({})
+  })
+
+  it('mints actions: write for this repository only, in a job without an agent step', () => {
+    const mint = redispatchJob?.steps.find(step => step.id === 'app-token')
+
+    expect(mint?.uses).toContain('actions/create-github-app-token@')
+    expect(mint?.with).toStrictEqual({
+      'client-id': `${expressionStart} secrets.APPLICATION_ID }}`,
+      'private-key': `${expressionStart} secrets.APPLICATION_PRIVATE_KEY }}`,
+      repositories: `${expressionStart} github.event.repository.name }}`,
+      'permission-actions': 'write',
+    })
+  })
+
+  it('passes node_id and attempt to the dispatch through env, never through the script text', () => {
+    expect(dispatchStep?.env?.NODE_ID).toBe(`${expressionStart} inputs.node_id }}`)
+    expect(dispatchStep?.env?.ATTEMPT).toBe(`${expressionStart} inputs.attempt }}`)
+    expect(dispatchStep?.env?.GH_TOKEN).toBe(`${expressionStart} steps.app-token.outputs.token }}`)
+    expect(dispatchStep?.run).not.toContain(expressionStart)
+  })
+
+  it.each([
+    ['1', '2'],
+    ['2', '3'],
+  ])('dispatches survey-repo.yaml on main for the same node with attempt %s -> %s', (attempt, next) => {
+    const result = runStep(
+      dispatchStep?.run ?? '',
+      {ATTEMPT: attempt, NODE_ID: 'R_kgDOExample-1=', GH_TOKEN: 't'},
+      {gh: 'echo "$@" >> "$CALLS_FILE"'},
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.calls.trim()).toBe(
+      `workflow run survey-repo.yaml --ref main -f node_id=R_kgDOExample-1= -f attempt=${next}`,
+    )
+  })
+
+  it.each([
+    ['3', 'R_kgDOExample'],
+    ['4', 'R_kgDOExample'],
+    ['abc', 'R_kgDOExample'],
+    ['1', 'R_kg DO;rm -rf /'],
+    ['1', 'R_kgDOExample\nsecond-line'],
+    ['1', 'second-line\nR_kgDOExample'],
+    ['1', ''],
+  ])('dispatches nothing for attempt %j and node_id %j', (attempt, nodeId) => {
+    const result = runStep(
+      dispatchStep?.run ?? '',
+      {ATTEMPT: attempt, NODE_ID: nodeId, GH_TOKEN: 't'},
+      {gh: 'echo "$@" >> "$CALLS_FILE"'},
+    )
+
+    expect(result.status).not.toBe(0)
+    expect(result.calls).toBe('')
+  })
+})
+
+describe('survey-repo.yaml agent prompt leaves knowledge/index.md to the trusted writer', () => {
+  const env = (workflowParsed as {env?: Record<string, string>}).env ?? {}
+  const prompt = env.INGEST_PROMPT ?? ''
+  const agentSteps = (workflowParsed.jobs['survey-repo']?.steps ?? []).filter(step =>
+    (step.uses ?? '').startsWith('fro-bot/agent@'),
+  )
+
+  it('only mentions the index to forbid editing it', () => {
+    const indexLines = prompt.split('\n').filter(line => line.includes('knowledge/index.md'))
+
+    expect(indexLines).toHaveLength(1)
+    expect(indexLines[0]).toContain('Do not edit')
+    expect(prompt).not.toContain('Update `knowledge/index.md`')
+  })
+
+  it('limits the writable paths to the wiki pages and the log', () => {
+    expect(prompt).toContain('Modify only `knowledge/wiki/**` and `knowledge/log.md` in this repository.')
+  })
+
+  it('still instructs appending a log entry that keeps existing entries', () => {
+    expect(prompt).toContain('Append a log entry to `knowledge/log.md`')
+    expect(prompt).toContain('leave them unchanged')
+  })
+
+  it('does not call the index a required outcome in the retry prompts either', () => {
+    expect(agentSteps).toHaveLength(3)
+    for (const step of agentSteps) {
+      const text = String(step.with?.prompt ?? '').replaceAll(/\s+/g, ' ')
+      expect(text).not.toContain('the index')
+      expect(text).not.toMatch(/index\.md/)
+    }
   })
 })

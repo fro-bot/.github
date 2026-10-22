@@ -32,6 +32,7 @@ interface WorkflowJob {
   steps?: WorkflowStep[]
   needs?: string | string[]
   if?: string
+  outputs?: Record<string, string>
   with?: Record<string, unknown>
 }
 
@@ -1081,7 +1082,8 @@ describe('fro-bot.yaml daily-digest announce isolation (agent post-step credenti
 
   it('fro-bot-observe no longer exposes report-url/repos-tracked/surveys-today/count-status outputs, or the steps that only fed them', () => {
     const outputs = (observeJob as {outputs?: Record<string, string>})?.outputs ?? {}
-    expect(Object.keys(outputs)).toStrictEqual(['wiki-changed'])
+    // agent-base-sha comes from the sync step that runs before the agent (see the write-base contract below).
+    expect(Object.keys(outputs)).toStrictEqual(['wiki-changed', 'agent-base-sha'])
     expect(findStepIndex(observeJob, step => step.name === '🔍 Discover daily report URL')).toBe(-1)
     expect(findStepIndex(observeJob, step => step.name === '📊 Derive daily digest counts')).toBe(-1)
   })
@@ -1334,5 +1336,55 @@ describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts 
     expect(ingestStep?.run).toContain('bun scripts/wiki-ingest.ts')
     expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
     expect(ingestStep?.run).not.toContain('data-sha')
+  })
+
+  it.each([
+    ['fro-bot', 'fro-bot-wiki-ingest'],
+    ['fro-bot-observe', 'fro-bot-observe-wiki-ingest'],
+  ])('%s hands its sync commit to %s through a job output, before any agent step', (agentJobName, ingestJobName) => {
+    const agentJob = froBotParsed.jobs[agentJobName]
+    const ingestJob = froBotParsed.jobs[ingestJobName]
+    const syncIndex = findStepIndex(agentJob, step => step.uses === './.github/actions/sync-wiki')
+    const firstAgentIndex = findStepIndex(agentJob, step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    const applyStep = ingestJob?.steps?.find(step => step.name === 'Validate and apply wiki handoff')
+    const ingestStep = ingestJob?.steps?.find(step => step.name === 'Ingest wiki insight changes')
+
+    expect(syncIndex).toBeGreaterThanOrEqual(0)
+    expect(agentJob?.steps?.[syncIndex]?.id).toBe('sync-wiki')
+    expect(firstAgentIndex).toBeGreaterThan(syncIndex)
+    expect(agentJob?.outputs?.['agent-base-sha']).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+    expect(ingestStep?.env?.WIKI_HANDOFF_BASE_SHA).toBe(
+      `${expressionStart} needs.${agentJobName}.outputs.agent-base-sha }}`,
+    )
+    expect(ingestStep?.env?.WIKI_HANDOFF_DIR).toBe(applyStep?.env?.WIKI_HANDOFF_DIR)
+  })
+})
+
+describe('fro-bot.yaml agent prompts leave knowledge/index.md to the trusted ingest job', () => {
+  const env = froBotParsed.env ?? {}
+  const agentPrompt = (jobName: string): string => {
+    const step = froBotParsed.jobs[jobName]?.steps?.find(candidate =>
+      (candidate.uses ?? '').startsWith('fro-bot/agent@'),
+    )
+    return String(step?.with?.prompt ?? '')
+  }
+  const promptTexts: [string, string][] = [
+    ['the observe intro', String(env.OBSERVE_INTRO ?? '')],
+    ['the fro-bot job prompt', agentPrompt('fro-bot')],
+    ['the fro-bot-observe job prompt', agentPrompt('fro-bot-observe')],
+  ]
+
+  it.each(promptTexts)('%s never permits editing the index, and says the ingest job maintains it', (_name, text) => {
+    const indexLines = text.split('\n').filter(line => line.includes('knowledge/index.md'))
+
+    expect(indexLines.length).toBeGreaterThan(0)
+    for (const line of indexLines) expect(line).toContain('Do not edit')
+    expect(text.replaceAll(/\s+/g, ' ')).toContain('the trusted ingest job')
+    expect(text.replaceAll(/\s+/g, ' ')).not.toMatch(/update only[^.]*knowledge\/index\.md/)
+    expect(text.replaceAll(/\s+/g, ' ')).not.toMatch(/write it directly into[^.]*knowledge\/index\.md/)
+  })
+
+  it.each(promptTexts.slice(1))('%s still permits knowledge/wiki/** and knowledge/log.md edits', (_name, text) => {
+    expect(text.replaceAll(/\s+/g, ' ')).toContain('update only `knowledge/wiki/**` and `knowledge/log.md`')
   })
 })

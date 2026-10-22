@@ -478,7 +478,9 @@ function makeFsMocks(
 describe('validateAndApplyWikiHandoff', () => {
   it('applies a happy-path manifest: writes changed files and removes deleted files', async () => {
     const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
-    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']}))
+    mocks.setManifest(
+      JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/wiki/repos/old.md']}),
+    )
 
     const result = await validateAndApplyWikiHandoff({
       handoffDir: '/handoff',
@@ -491,9 +493,89 @@ describe('validateAndApplyWikiHandoff', () => {
       rmImpl: mocks.rmImpl,
     })
 
-    expect(result).toStrictEqual({applied: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']})
+    expect(result).toStrictEqual({
+      applied: ['knowledge/wiki/repos/foo.md'],
+      deleted: ['knowledge/wiki/repos/old.md'],
+      skipped: [],
+    })
     expect(Object.keys(mocks.written)).toStrictEqual(['/workspace/knowledge/wiki/repos/foo.md'])
-    expect(mocks.removed).toStrictEqual(['/workspace/knowledge/log.md'])
+    expect(mocks.removed).toStrictEqual(['/workspace/knowledge/wiki/repos/old.md'])
+  })
+
+  it('validates but never writes knowledge/log.md or knowledge/index.md, so the workspace copies stay', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/knowledge/wiki/repos/foo.md': {size: 10},
+      '/handoff/files/knowledge/log.md': {size: 10},
+      '/handoff/files/knowledge/index.md': {size: 10},
+    })
+    mocks.setManifest(
+      JSON.stringify({
+        changed: ['knowledge/wiki/repos/foo.md', 'knowledge/log.md', 'knowledge/index.md'],
+        deleted: [],
+      }),
+    )
+
+    const result = await validateAndApplyWikiHandoff({
+      handoffDir: '/handoff',
+      workspaceDir: '/workspace',
+      mkdirImpl: mocks.mkdirImpl,
+      readdirImpl: mocks.readdirImpl,
+      lstatImpl: mocks.lstatImpl,
+      readFileImpl: mocks.readFileImpl,
+      writeFileImpl: mocks.writeFileImpl,
+      rmImpl: mocks.rmImpl,
+    })
+
+    expect(result.applied).toStrictEqual(['knowledge/wiki/repos/foo.md'])
+    expect(result.skipped).toStrictEqual(['knowledge/log.md', 'knowledge/index.md'])
+    expect(Object.keys(mocks.written)).toStrictEqual(['/workspace/knowledge/wiki/repos/foo.md'])
+  })
+
+  it('does not delete knowledge/log.md or knowledge/index.md when the manifest lists them as deleted', async () => {
+    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
+    mocks.setManifest(
+      JSON.stringify({
+        changed: ['knowledge/wiki/repos/foo.md'],
+        deleted: ['knowledge/log.md', 'knowledge/index.md', 'knowledge/wiki/repos/old.md'],
+      }),
+    )
+
+    const result = await validateAndApplyWikiHandoff({
+      handoffDir: '/handoff',
+      workspaceDir: '/workspace',
+      mkdirImpl: mocks.mkdirImpl,
+      readdirImpl: mocks.readdirImpl,
+      lstatImpl: mocks.lstatImpl,
+      readFileImpl: mocks.readFileImpl,
+      writeFileImpl: mocks.writeFileImpl,
+      rmImpl: mocks.rmImpl,
+    })
+
+    expect(mocks.removed).toStrictEqual(['/workspace/knowledge/wiki/repos/old.md'])
+    expect(result.deleted).toStrictEqual(['knowledge/wiki/repos/old.md'])
+    expect(result.skipped).toStrictEqual(['knowledge/log.md', 'knowledge/index.md'])
+  })
+
+  it('still rejects a symlinked knowledge/log.md before applying anything', async () => {
+    const mocks = makeFsMocks({
+      '/handoff/files/knowledge/wiki/repos/foo.md': {size: 10},
+      '/handoff/files/knowledge/log.md': {size: 10, symlink: true},
+    })
+    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md', 'knowledge/log.md'], deleted: []}))
+
+    await expect(
+      validateAndApplyWikiHandoff({
+        handoffDir: '/handoff',
+        workspaceDir: '/workspace',
+        mkdirImpl: mocks.mkdirImpl,
+        readdirImpl: mocks.readdirImpl,
+        lstatImpl: mocks.lstatImpl,
+        readFileImpl: mocks.readFileImpl,
+        writeFileImpl: mocks.writeFileImpl,
+        rmImpl: mocks.rmImpl,
+      }),
+    ).rejects.toThrow(WikiHandoffValidationError)
+    expect(Object.keys(mocks.written)).toStrictEqual([])
   })
 
   it('handles an empty/unchanged manifest as a no-op', async () => {
@@ -511,7 +593,7 @@ describe('validateAndApplyWikiHandoff', () => {
       rmImpl: mocks.rmImpl,
     })
 
-    expect(result).toStrictEqual({applied: [], deleted: []})
+    expect(result).toStrictEqual({applied: [], deleted: [], skipped: []})
   })
 
   it('rejects an artifact containing a resurrected metadata.json', async () => {
@@ -779,7 +861,9 @@ describe('assertSafeHandoffPath', () => {
 describe('validateAndApplyHandoff with the wiki policy', () => {
   it('still applies deletions and uses the wiki size cap', async () => {
     const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
-    mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']}))
+    mocks.setManifest(
+      JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/wiki/repos/old.md']}),
+    )
 
     const result = await validateAndApplyHandoff({
       policy: WIKI_HANDOFF_POLICY,
@@ -793,7 +877,11 @@ describe('validateAndApplyHandoff with the wiki policy', () => {
       rmImpl: mocks.rmImpl,
     })
 
-    expect(result).toStrictEqual({applied: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/log.md']})
+    expect(result).toStrictEqual({
+      applied: ['knowledge/wiki/repos/foo.md'],
+      deleted: ['knowledge/wiki/repos/old.md'],
+      skipped: [],
+    })
     expect(WIKI_HANDOFF_POLICY.maxTotalBytes).toBe(WIKI_HANDOFF_MAX_TOTAL_BYTES)
     expect(WIKI_HANDOFF_POLICY.allowDeletions).toBe(true)
   })
@@ -831,6 +919,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
     expect(result).toStrictEqual({
       applied: ['docs/solutions/best-practices/new-doc.md', 'docs/solutions/workflow-issues/existing-doc.md'],
       deleted: [],
+      skipped: [],
     })
     expect(Object.keys(mocks.written)).toStrictEqual([
       '/workspace/docs/solutions/best-practices/new-doc.md',
@@ -904,6 +993,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
     await expect(applyDrafted(mocks)).resolves.toStrictEqual({
       applied: ['docs/solutions/best-practices/edge.md'],
       deleted: [],
+      skipped: [],
     })
   })
 

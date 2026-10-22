@@ -1,6 +1,7 @@
+import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { appendFile, readdir, readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import process from 'node:process';
 import { promisify } from 'node:util';
 import { parse, stringify } from 'yaml';
@@ -19,6 +20,8 @@ const WIKI_ROOT = 'knowledge/wiki';
 const INDEX_PATH = 'knowledge/index.md';
 const LOG_PATH = 'knowledge/log.md';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
+const HANDOFF_BASE_REMEDIATION = 'The writer could not tie the handoff to the data commit the agent job synced. Re-run the workflow so the agent job runs again.';
 const execFileAsync = promisify(execFile);
 export class WikiIngestError extends Error {
     code;
@@ -32,8 +35,14 @@ export class WikiIngestError extends Error {
         this.findings = params.findings ?? [];
     }
 }
+/** The two wiki files every writer shares. Writers rebuild both from their own sync; a handoff never supplies them. */
+export function isSharedWikiFile(path) {
+    return path === INDEX_PATH || path === LOG_PATH;
+}
 export function buildWikiIngestChanges(params) {
-    if (params.pages.length === 0) {
+    if (params.pages.length === 0 &&
+        (params.handoffDeletedPaths ?? []).length === 0 &&
+        (params.agentLogEntries ?? '').trim() === '') {
         throw new WikiIngestError({
             code: 'INVALID_PAYLOAD',
             message: 'wiki ingest requires at least one page update',
@@ -50,6 +59,10 @@ export function buildWikiIngestChanges(params) {
         const normalized = normalizeText(validateWikiPage(page.path, page.content));
         nextFiles[page.path] = normalized;
         files[page.path] = normalized;
+    }
+    for (const path of params.handoffDeletedPaths ?? []) {
+        if (nextFiles[path] === undefined && !deletedPaths.includes(path))
+            deletedPaths.push(path);
     }
     rewriteInboundWikilinks(nextFiles, migrations);
     for (const [path, content] of Object.entries(nextFiles)) {
@@ -93,7 +106,7 @@ export function buildWikiIngestChanges(params) {
     }
     const parsedPages = collectWikiPages(nextFiles);
     const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages);
-    const log = appendLogEntry(nextFiles[LOG_PATH], params);
+    const log = appendLogEntry(appendAgentLogEntries(nextFiles[LOG_PATH], params.agentLogEntries), params);
     files[INDEX_PATH] = index;
     files[LOG_PATH] = log;
     return { files, deletedPaths, findings: correctionFindings };
@@ -129,6 +142,9 @@ function collectWikiFrontmatter(files) {
  * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
  * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
  * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ *
+ * With `handoff`, the handed-off paths are checked first on every attempt against the agent's data
+ * commit (`HANDOFF_PAGE_CHANGED`), so a page conflict is never reported as a ref race.
  */
 export async function commitWikiChanges(params) {
     const owner = params.owner ?? DEFAULT_OWNER;
@@ -144,6 +160,12 @@ export async function commitWikiChanges(params) {
     }
     const octokit = params.octokit ?? (await createOctokitFromEnv());
     rejectProtectedWikiBranchName(branch);
+    // Resolved outside the retry loop's try, ahead of any bootstrap or write: an unusable agent commit is
+    // terminal, and the loop's 404 handler must not mistake it for a missing data branch.
+    const handoffBaseTreeSha = params.handoff === undefined
+        ? undefined
+        : await resolveHandoffBaseTree(octokit, owner, repo, branch, params.handoff.agentCommitSha);
+    const handoffPaths = (params.handoff?.paths ?? []).filter(path => !isSharedWikiFile(path));
     const shouldBootstrapDataBranch = branch === DEFAULT_BRANCH;
     const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch;
     const bootstrapDataBranch = async () => {
@@ -167,23 +189,37 @@ export async function commitWikiChanges(params) {
                 params.baseCommitSha === undefined
                     ? commit.data.tree.sha
                     : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha);
+            const location = `${owner}/${repo}@${branch}`;
+            // Handed-off pages first, against the commit the agent read, so a page conflict surfaces as such
+            // even when the head also moved under the shared files.
+            if (handoffBaseTreeSha !== undefined && handoffPaths.length > 0 && commit.data.tree.sha !== handoffBaseTreeSha) {
+                await assertWriteSetUnchanged(octokit, owner, repo, {
+                    baseTreeSha: handoffBaseTreeSha,
+                    headTreeSha: commit.data.tree.sha,
+                    paths: handoffPaths,
+                    location,
+                    code: 'HANDOFF_PAGE_CHANGED',
+                });
+            }
             const guardBaseTreeSha = baseTreeSha;
             if (commit.data.tree.sha !== guardBaseTreeSha) {
                 await assertWriteSetUnchanged(octokit, owner, repo, {
                     baseTreeSha: guardBaseTreeSha,
                     headTreeSha: commit.data.tree.sha,
                     paths: [...Object.keys(params.files), ...(params.deletedPaths ?? [])],
-                    location: `${owner}/${repo}@${branch}`,
+                    location,
+                    code: 'CONFLICT_EXHAUSTED',
                 });
             }
             const tree = [];
+            // Read before the first write: a deletion of a path that cannot be confirmed must not be skipped.
+            const presentPaths = params.deletedPaths === undefined || params.deletedPaths.length === 0
+                ? new Set()
+                : await getPresentPathsInTree(octokit, owner, repo, commit.data.tree.sha);
             for (const [path, content] of Object.entries(params.files)) {
                 const blob = await octokit.rest.git.createBlob({ owner, repo, content, encoding: 'utf-8' });
                 tree.push({ path, mode: '100644', type: 'blob', sha: blob.data.sha });
             }
-            const presentPaths = params.deletedPaths === undefined || params.deletedPaths.length === 0
-                ? new Set()
-                : await getPresentPathsInTree(octokit, owner, repo, commit.data.tree.sha);
             for (const path of params.deletedPaths ?? []) {
                 if (params.files[path] !== undefined || !presentPaths.has(path)) {
                     continue;
@@ -256,40 +292,110 @@ async function assertWritableWikiBranch(octokit, owner, repo, branch) {
     });
 }
 async function getPresentPathsInTree(octokit, owner, repo, treeSha) {
-    const response = await octokit.rest.git.getTree({ owner, repo, tree_sha: treeSha, recursive: 'true' });
-    if (response.data.truncated === true)
-        return new Set();
-    const tree = response.data.tree;
-    if (!Array.isArray(tree))
-        return new Set();
-    return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])));
+    const entries = await readTreeEntries(octokit, owner, repo, treeSha);
+    if (entries === undefined)
+        throw truncatedTreeRefusal('a deletion cannot be checked against a truncated tree');
+    return new Set(entries.keys());
+}
+/** A truncated tree listing cannot be trusted either way, so the write fails closed. */
+function truncatedTreeRefusal(reason) {
+    return new WikiIngestError({
+        code: 'CONFLICT_EXHAUSTED',
+        message: `wiki ingest refused: ${reason}`,
+        remediation: 'The data branch tree listing was truncated. Retry the workflow; if it persists, the tree has outgrown the recursive listing.',
+    });
 }
 async function readCommitTreeSha(octokit, owner, repo, sha) {
     const commit = await octokit.rest.git.getCommit({ owner, repo, commit_sha: sha });
     return commit.data.tree.sha;
 }
 /**
- * Fail closed unless every path in the write set has the same tree entry (sha, mode, type; absence
- * counts) on the new head as in the tree the files were derived from. A replay onto a head where
- * another writer touched one of them would silently overwrite that writer's change.
+ * Resolves the agent job's data commit to its tree, after checking it is a full commit SHA and an
+ * ancestor of (or equal to) the branch head. Compare's `behind_by` is 0 and its merge base is the
+ * commit itself exactly when that holds.
+ */
+async function resolveHandoffBaseTree(octokit, owner, repo, branch, agentCommitSha) {
+    if (!COMMIT_SHA_PATTERN.test(agentCommitSha)) {
+        throw handoffBaseInvalid('the agent job data commit is missing or is not a commit SHA');
+    }
+    try {
+        const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+        const comparison = await octokit.rest.repos.compareCommitsWithBasehead({
+            owner,
+            repo,
+            basehead: `${agentCommitSha}...${head.data.object.sha}`,
+        });
+        if (comparison.data.behind_by !== 0 || comparison.data.merge_base_commit.sha !== agentCommitSha) {
+            throw handoffBaseInvalid(`the agent job data commit is not an ancestor of ${owner}/${repo}@${branch}`);
+        }
+        return await readCommitTreeSha(octokit, owner, repo, agentCommitSha);
+    }
+    catch (error) {
+        if (error instanceof WikiIngestError)
+            throw error;
+        if (isApiErrorStatus(error, 404) || isApiErrorStatus(error, 422)) {
+            throw handoffBaseInvalid(`the agent job data commit does not resolve on ${owner}/${repo}@${branch}`);
+        }
+        throw error;
+    }
+}
+/**
+ * Refuses, before any content is validated, a handoff whose pages another writer has changed since the
+ * agent job synced. Validating a stale page against the current wiki can fail for an unrelated reason
+ * (a link to a page the other writer deleted), which would hide the conflict. The commit repeats this
+ * check on every attempt, which still catches a change that lands after this one.
+ */
+async function assertHandoffPagesCurrent(octokit, owner, repo, branch, handoff) {
+    const baseTreeSha = await resolveHandoffBaseTree(octokit, owner, repo, branch, handoff.agentCommitSha);
+    const paths = handoff.paths.filter(path => !isSharedWikiFile(path));
+    if (paths.length === 0)
+        return;
+    const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    const headTreeSha = await readCommitTreeSha(octokit, owner, repo, head.data.object.sha);
+    if (headTreeSha === baseTreeSha)
+        return;
+    await assertWriteSetUnchanged(octokit, owner, repo, {
+        baseTreeSha,
+        headTreeSha,
+        paths,
+        location: `${owner}/${repo}@${branch}`,
+        code: 'HANDOFF_PAGE_CHANGED',
+    });
+}
+/**
+ * Fail closed unless every path has the same tree entry (sha, mode, type; absence counts) on the new
+ * head as in the tree the files were derived from. A replay onto a head where another writer touched
+ * one of them would silently overwrite that writer's change. `code` names the refusal; a truncated
+ * tree read always refuses with `CONFLICT_EXHAUSTED`, because it says nothing about the pages.
  */
 async function assertWriteSetUnchanged(octokit, owner, repo, params) {
-    const refuse = (reason) => {
+    const refuse = (code, reason) => {
         throw new WikiIngestError({
-            code: 'CONFLICT_EXHAUSTED',
-            message: `wiki ingest did not replay onto ${params.location}: ${reason}`,
-            remediation: 'Another writer updated the data branch concurrently. Retry the workflow so it rebuilds on the new head.',
+            code,
+            message: code === 'HANDOFF_PAGE_CHANGED'
+                ? `wiki ingest refused to write to ${params.location}: ${reason}`
+                : `wiki ingest did not replay onto ${params.location}: ${reason}`,
+            remediation: code === 'HANDOFF_PAGE_CHANGED'
+                ? 'Another writer changed a page after the agent job synced. Re-run the agent job so it starts from the current data branch.'
+                : 'Another writer updated the data branch concurrently. Retry the workflow so it rebuilds on the new head.',
         });
     };
     const base = await readTreeEntries(octokit, owner, repo, params.baseTreeSha);
     const head = await readTreeEntries(octokit, owner, repo, params.headTreeSha);
     if (base === undefined || head === undefined)
-        return refuse('a tree read was truncated, so the write set cannot be verified');
-    if (params.paths.some(path => base.get(path) !== head.get(path))) {
-        return refuse('another writer changed a path in the write set');
+        return refuse('CONFLICT_EXHAUSTED', 'a tree read was truncated, so the write set cannot be verified');
+    if (params.paths.some(path => !sameTreeEntry(base.get(path), head.get(path)))) {
+        return refuse(params.code, params.code === 'HANDOFF_PAGE_CHANGED'
+            ? 'a handed-off page changed after the agent job synced'
+            : 'another writer changed a path in the write set');
     }
 }
-/** Path to `mode type sha`, for every non-directory entry. `undefined` when the read is truncated. */
+function sameTreeEntry(left, right) {
+    if (left === undefined || right === undefined)
+        return left === right;
+    return left.mode === right.mode && left.type === right.type && left.sha === right.sha;
+}
+/** Path to its entry, for every non-directory entry. `undefined` when the read is truncated. */
 async function readTreeEntries(octokit, owner, repo, treeSha) {
     const response = await octokit.rest.git.getTree({ owner, repo, tree_sha: treeSha, recursive: 'true' });
     if (response.data.truncated === true)
@@ -301,7 +407,7 @@ async function readTreeEntries(octokit, owner, repo, treeSha) {
     for (const entry of tree) {
         if (!isRecord(entry) || typeof entry.path !== 'string' || entry.type === 'tree')
             continue;
-        entries.set(entry.path, `${String(entry.mode)} ${String(entry.type)} ${String(entry.sha)}`);
+        entries.set(entry.path, { mode: String(entry.mode), type: String(entry.type), sha: String(entry.sha) });
     }
     return entries;
 }
@@ -532,6 +638,13 @@ function parseIndexEntryLines(index) {
         entries.set(slug.trim(), line);
     }
     return entries;
+}
+/** Appends raw log entries (already in log format) to `existingLog`, keeping its text byte-for-byte. */
+function appendAgentLogEntries(existingLog, entries) {
+    if (entries === undefined || entries.trim() === '')
+        return existingLog;
+    const base = existingLog === undefined || existingLog === '' ? LOG_HEADER : normalizeText(existingLog);
+    return normalizeText(`${base}${entries.startsWith('\n') ? entries : `\n${entries}`}`);
 }
 /**
  * Append one entry to `knowledge/log.md`, keeping the existing text byte-for-byte. The log is
@@ -935,7 +1048,7 @@ async function getChangedWikiPaths() {
         `${WIKI_ROOT}/entities`,
         `${WIKI_ROOT}/comparisons`,
     ]);
-    return parsePorcelainPaths(stdout).filter(path => path !== INDEX_PATH && path !== LOG_PATH && path.endsWith('.md'));
+    return parsePorcelainPaths(stdout).filter(path => !isSharedWikiFile(path) && path.endsWith('.md'));
 }
 /**
  * Parse paths from `git status --porcelain=v1` output.
@@ -1031,6 +1144,114 @@ async function emitPagesChanged(n) {
         await appendFile(outputPath, `pages_changed=${n}\n`);
     }
 }
+function envValue(name) {
+    const value = process.env[name];
+    return value === undefined || value === '' ? undefined : value;
+}
+function handoffBaseInvalid(message) {
+    return new WikiIngestError({
+        code: 'HANDOFF_BASE_INVALID',
+        message: `wiki ingest refused: ${message}`,
+        remediation: HANDOFF_BASE_REMEDIATION,
+    });
+}
+/**
+ * LF line endings and exactly one final newline; an empty log stays empty. Unlike `normalizeText`, which
+ * only adds a missing final newline, this also converts CRLF and drops trailing blank lines.
+ */
+function toLfWithSingleFinalNewline(value) {
+    const trimmed = value.replaceAll('\r\n', '\n').trimEnd();
+    return trimmed === '' ? '' : `${trimmed}\n`;
+}
+/**
+ * The log text an agent appended: what its `knowledge/log.md` adds after `knowledge/log.md` at the
+ * commit it started from. `undefined` when the agent changed anything before that point, or the base
+ * log is empty, so there is nothing safe to take. Both inputs are normalized first (LF, one final newline).
+ */
+export function deriveAgentLogEntries(baseLog, handoffLog) {
+    const base = toLfWithSingleFinalNewline(baseLog);
+    const handoff = toLfWithSingleFinalNewline(handoffLog);
+    if (base === '' || !handoff.startsWith(base))
+        return undefined;
+    return handoff.slice(base.length);
+}
+async function readHandoffManifest(handoffDir) {
+    const raw = await readFile(join(handoffDir, 'manifest.json'), 'utf8');
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    }
+    catch {
+        throw new WikiIngestError({
+            code: 'INVALID_PAYLOAD',
+            message: 'wiki handoff manifest.json is not valid JSON',
+            remediation: 'Rebuild the handoff artifact with scripts/wiki-handoff-build.ts.',
+        });
+    }
+    const isStringArray = (value) => Array.isArray(value) && value.every(entry => typeof entry === 'string');
+    if (!isRecord(parsed) || !isStringArray(parsed.changed) || !isStringArray(parsed.deleted)) {
+        throw new WikiIngestError({
+            code: 'INVALID_PAYLOAD',
+            message: 'wiki handoff manifest.json must hold string arrays "changed" and "deleted"',
+            remediation: 'Rebuild the handoff artifact with scripts/wiki-handoff-build.ts.',
+        });
+    }
+    return { changed: parsed.changed, deleted: parsed.deleted };
+}
+/** The text of `path` in the tree of `commitSha`, or `undefined` when the commit has no such file. */
+async function readFileAtCommit(octokit, owner, repo, commitSha, path) {
+    const entries = await readTreeEntries(octokit, owner, repo, await readCommitTreeSha(octokit, owner, repo, commitSha));
+    if (entries === undefined)
+        throw truncatedTreeRefusal(`${path} cannot be read from a truncated tree`);
+    const entry = entries.get(path);
+    if (entry === undefined || entry.type !== 'blob')
+        return undefined;
+    const blob = await octokit.rest.git.getBlob({ owner, repo, file_sha: entry.sha });
+    return Buffer.from(blob.data.content, 'base64').toString('utf8');
+}
+/**
+ * Reads the handoff the trusted job applied. `undefined` outside a handoff run (neither
+ * `WIKI_HANDOFF_DIR` nor `WIKI_HANDOFF_BASE_SHA` set). Inside one, the agent job's data commit must be a
+ * full commit SHA, the handed-off pages must be unchanged on the branch since that commit (checked here,
+ * ahead of any validation of their content), and the log entries the agent appended are derived against that commit's `log.md`.
+ */
+async function loadHandoff(dependencies, target) {
+    const handoffDir = envValue('WIKI_HANDOFF_DIR');
+    const agentCommitSha = envValue('WIKI_HANDOFF_BASE_SHA');
+    if (handoffDir === undefined && agentCommitSha === undefined)
+        return undefined;
+    if (handoffDir === undefined || agentCommitSha === undefined || !COMMIT_SHA_PATTERN.test(agentCommitSha)) {
+        throw handoffBaseInvalid('the agent job data commit is missing or is not a commit SHA');
+    }
+    const octokit = dependencies.octokit ?? (await createOctokitFromEnv());
+    const manifest = await readHandoffManifest(handoffDir);
+    const pagePaths = [...manifest.changed, ...manifest.deleted];
+    const deletedPagePaths = manifest.deleted.filter(path => !isSharedWikiFile(path));
+    await assertHandoffPagesCurrent(octokit, target.owner ?? DEFAULT_OWNER, target.repo ?? DEFAULT_REPO, target.branch ?? DEFAULT_BRANCH, { agentCommitSha, paths: pagePaths });
+    if (!manifest.changed.includes(LOG_PATH)) {
+        return { octokit, agentCommitSha, agentLogEntries: undefined, pagePaths, deletedPagePaths, warnings: [] };
+    }
+    const handoffLog = await readFile(join(handoffDir, 'files', LOG_PATH), 'utf8');
+    let baseLog;
+    try {
+        baseLog = await readFileAtCommit(octokit, target.owner ?? DEFAULT_OWNER, target.repo ?? DEFAULT_REPO, agentCommitSha, LOG_PATH);
+    }
+    catch (error) {
+        // Only a commit or file that does not exist is a bad base; any other failure is not about the base.
+        if (isApiErrorStatus(error, 404))
+            throw handoffBaseInvalid(`the agent job data commit does not resolve`);
+        throw error;
+    }
+    if (baseLog === undefined)
+        throw handoffBaseInvalid(`${LOG_PATH} does not exist at the agent job data commit`);
+    const agentLogEntries = deriveAgentLogEntries(baseLog, handoffLog);
+    const warnings = agentLogEntries === undefined ? [{ code: 'agent-log-entries-dropped', reason: 'not-append-only' }] : [];
+    return { octokit, agentCommitSha, agentLogEntries, pagePaths, deletedPagePaths, warnings };
+}
+function writeWarnings(warnings) {
+    for (const warning of warnings)
+        process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`);
+}
 export async function runWikiIngestCli(dependencies = {}) {
     const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT;
     const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections;
@@ -1062,9 +1283,12 @@ export async function runWikiIngestCli(dependencies = {}) {
     let message;
     let identityWarnings = [];
     let committedPagePaths;
+    let handoff;
     try {
         if (payloadPath !== undefined && payloadPath !== '') {
             const payload = parsePayload(await readFile(payloadPath, 'utf8'));
+            handoff = await loadHandoff(dependencies, payload);
+            writeWarnings(handoff?.warnings ?? []);
             const tracked = await loadTrackedRepoNodeIds();
             identityWarnings = tracked.warnings;
             built = buildWikiIngestChanges({
@@ -1079,6 +1303,8 @@ export async function runWikiIngestCli(dependencies = {}) {
                 fallbackNodeId: payload.node_id,
                 trackedMetadataAvailable: tracked.metadataAvailable,
                 corrections: correctionRead.corrections,
+                agentLogEntries: handoff?.agentLogEntries,
+                handoffDeletedPaths: handoff?.deletedPagePaths,
             });
             owner = payload.owner;
             repo = payload.repo;
@@ -1088,7 +1314,17 @@ export async function runWikiIngestCli(dependencies = {}) {
         }
         else {
             const changedPaths = await getChangedWikiPathsImpl();
-            if (changedPaths.length === 0) {
+            handoff = await loadHandoff(dependencies, {
+                owner: process.env.WIKI_OWNER,
+                repo: process.env.WIKI_REPO,
+                branch: process.env.WIKI_BRANCH,
+            });
+            writeWarnings(handoff?.warnings ?? []);
+            // `git status` drops deletions, so an agent's deleted pages come from the manifest. A handoff
+            // whose only change is appended log entries still commits the log and the rebuilt index.
+            if (changedPaths.length === 0 &&
+                (handoff?.deletedPagePaths ?? []).length === 0 &&
+                (handoff?.agentLogEntries ?? '').trim() === '') {
                 await emitPagesChanged(0);
                 process.stdout.write(`${JSON.stringify({ committed: false, attempts: 1, pagesChanged: 0 })}\n`);
                 return;
@@ -1110,6 +1346,8 @@ export async function runWikiIngestCli(dependencies = {}) {
                 targetNodeId: process.env.REPO_NODE_ID,
                 trackedMetadataAvailable: tracked.metadataAvailable,
                 corrections: correctionRead.corrections,
+                agentLogEntries: handoff?.agentLogEntries,
+                handoffDeletedPaths: handoff?.deletedPagePaths,
             });
             owner = process.env.WIKI_OWNER;
             repo = process.env.WIKI_REPO;
@@ -1128,9 +1366,7 @@ export async function runWikiIngestCli(dependencies = {}) {
         }
         throw error;
     }
-    for (const warning of identityWarnings) {
-        process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`);
-    }
+    writeWarnings(identityWarnings);
     for (const finding of built.findings) {
         process.stderr.write(`wiki-ingest:finding:${JSON.stringify(finding)}\n`);
     }
@@ -1142,6 +1378,9 @@ export async function runWikiIngestCli(dependencies = {}) {
         files: built.files,
         deletedPaths: built.deletedPaths,
         ...(baseCommitSha === undefined ? {} : { baseCommitSha }),
+        ...(handoff === undefined
+            ? {}
+            : { octokit: handoff.octokit, handoff: { agentCommitSha: handoff.agentCommitSha, paths: handoff.pagePaths } }),
     });
     const pagesChanged = countWikiPages(committedPagePaths);
     await emitPagesChanged(pagesChanged);

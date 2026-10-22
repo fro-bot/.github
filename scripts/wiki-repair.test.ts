@@ -1,19 +1,28 @@
+import type {GitDataFake} from './git-data-fake.ts'
 import type {RepoEntry} from './schemas.ts'
-import type {CommitWikiChangesParams} from './wiki-ingest.ts'
+import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
-import {describe, expect, it, vi} from 'vitest'
+import process from 'node:process'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
+import {createGitDataFake} from './git-data-fake.ts'
 import {commitWikiChanges, rebuildWikiIndex} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
 import {
+  createWikiRepairTreeLoader,
+  exitCodeFor,
   gateWikiRepairs,
+  loadWikiRepairTreeAtHead,
   planAndVerifyWikiRepairs,
   planWikiRepairs,
+  recordWikiRepairResult,
+  runAndRecordWikiRepair,
   runWikiRepair,
   verifyWikiRepairs,
   WIKI_REPAIR_COMMIT_MESSAGE,
   WIKI_REPAIR_DATA_BRANCH,
+  type WikiRepairResultCounts,
 } from './wiki-repair.ts'
 
 function buildPage(params: {
@@ -1046,5 +1055,223 @@ describe('runWikiRepair with the real writer (the base is the tip the tree was l
     expect(w.loadTree).toHaveBeenCalledTimes(1)
     expect(w.createCommit).toHaveBeenCalledTimes(1)
     expect(w.createCommit.mock.calls[0]?.[0].parents).toEqual(['tip-2'])
+  })
+})
+
+describe('runWikiRepair against a data branch that moves under it (head reload)', () => {
+  const REPOS_YAML = 'version: 1\nrepos: []\n'
+  const SURVEY_PAGE = 'knowledge/wiki/topics/survey-added.md'
+  let fake: GitDataFake
+
+  const octokit = (): OctokitClient => fake.client as unknown as OctokitClient
+  const writes = (): string[] =>
+    fake.calls.map(call => call.method).filter(method => ['createBlob', 'createCommit', 'updateRef'].includes(method))
+
+  /** The job's restore is the seed commit; every later read has to come from the head. */
+  function seed(): {restoredFiles: Record<string, string>; tipSha: string} {
+    const restoredFiles = driftedFiles()
+    fake = createGitDataFake({branch: 'data', files: {...restoredFiles, 'metadata/repos.yaml': REPOS_YAML}})
+    return {restoredFiles, tipSha: fake.head()}
+  }
+
+  function repairParams(restored: {restoredFiles: Record<string, string>; tipSha: string}) {
+    const grandfatherPages = passingGateInputs(restored.restoredFiles).grandfatherPages
+    const loadFromCheckout = vi.fn(async () => ({
+      tipSha: restored.tipSha,
+      wikiFiles: restored.restoredFiles,
+      publicSlugMap: new Map<string, readonly RepoEntry[]>(),
+      grandfatherPages,
+    }))
+    return {
+      loadTree: createWikiRepairTreeLoader({
+        loadFromCheckout,
+        loadAtHead: async pages =>
+          loadWikiRepairTreeAtHead({octokit: octokit(), owner: 'fro-bot', repo: '.github', grandfatherPages: pages}),
+      }),
+      getCurrentDataTipSha: async () => fake.head(),
+      commitWikiChanges: async (params: CommitWikiChangesParams) =>
+        commitWikiChanges({
+          ...params,
+          owner: 'fro-bot',
+          repo: '.github',
+          octokit: octokit(),
+          bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: fake.head()}),
+        }),
+    }
+  }
+
+  const run = async (restored: {restoredFiles: Record<string, string>; tipSha: string}) =>
+    runWikiRepair(repairParams(restored))
+
+  it('re-reads the head after a survey commit, keeps the survey change and lands on the second attempt (AE10)', async () => {
+    // #given a survey commits a page to data after the repair's restore
+    const restored = seed()
+    const [path, content] = buildPage({
+      path: SURVEY_PAGE,
+      type: 'topic',
+      title: 'Survey Added',
+      bodyLines: ['See [[github-actions-ci]].'],
+    })
+    fake.advance({[path]: content})
+
+    // #when the repair runs
+    const result = await run(restored)
+
+    // #then it retried once from the new head and committed there: the survey page is still on data and
+    // listed in the index the repair rebuilt, and the stale row is gone
+    // the stale row (index-drift) and the survey page missing from the index (orphan-page)
+    expect(result).toMatchObject({repaired: 2, aborted: 0, conflict_retries: 1})
+    const data = fake.files()
+    expect(data[SURVEY_PAGE]).toBe(content)
+    expect(data['knowledge/index.md']).toContain('[[survey-added]]')
+    expect(data['knowledge/index.md']).not.toContain('[[ghost--repo]]')
+    expect(writes().filter(method => method === 'updateRef')).toHaveLength(1)
+  })
+
+  it('lands on the first attempt without reading the head when nothing moved', async () => {
+    const restored = seed()
+
+    const result = await run(restored)
+
+    expect(result).toMatchObject({repaired: 1, aborted: 0, conflict_retries: 0})
+    expect(fake.calls.filter(call => call.method === 'getBlob')).toHaveLength(0)
+  })
+
+  describe('when the head cannot be read', () => {
+    const originalExitCode = process.exitCode
+
+    afterEach(() => {
+      process.exitCode = originalExitCode
+      vi.restoreAllMocks()
+    })
+
+    it('records an aborted result and fails the job when the head tree listing is truncated', async () => {
+      const restored = seed()
+      fake.advance({[SURVEY_PAGE]: 'survey\n'})
+      fake.truncate(true)
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const written: string[] = []
+
+      const result = await runAndRecordWikiRepair({
+        ...repairParams(restored),
+        write: async json => {
+          written.push(json)
+        },
+      })
+
+      expect(result).toMatchObject({aborted: 1, repaired: 0, privacy_blocked: 0})
+      expect(written).toHaveLength(1)
+      expect(JSON.parse(written[0] ?? '{}')).toMatchObject({aborted: 1, repaired: 0})
+      expect(process.exitCode).toBe(1)
+      expect(writes()).toStrictEqual([])
+    })
+
+    it('records an aborted result when the head read fails with a server error', async () => {
+      const restored = seed()
+      fake.advance({[SURVEY_PAGE]: 'survey\n'})
+      fake.failNext('getRef', 503)
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const written: string[] = []
+
+      // Data moved since the restore, so the retry's reload is the first head read, and it fails.
+      const result = await runAndRecordWikiRepair({
+        ...repairParams(restored),
+        write: async json => {
+          written.push(json)
+        },
+      })
+
+      expect(result.aborted).toBe(1)
+      expect(written).toHaveLength(1)
+      expect(process.exitCode).toBe(1)
+    })
+  })
+
+  it('fails closed when the head has no metadata/repos.yaml', async () => {
+    const restored = seed()
+    fake.advance({'metadata/repos.yaml': null})
+
+    await expect(run(restored)).rejects.toThrow('metadata/repos.yaml is missing')
+
+    expect(writes()).toStrictEqual([])
+  })
+})
+
+describe('exitCodeFor', () => {
+  const clean: WikiRepairResultCounts = {
+    repairable_seen: 0,
+    repaired: 0,
+    aborted: 0,
+    out_of_scope: 0,
+    privacy_blocked: 0,
+    path_refused: 0,
+    conflict_retries: 0,
+    noop: 0,
+    dry_run: false,
+  }
+
+  it('is 1 when the run aborted and it was not the privacy gate (AE9)', () => {
+    expect(exitCodeFor({...clean, aborted: 1})).toBe(1)
+  })
+
+  it.each([
+    ['a clean run', {...clean, noop: 1}],
+    ['a repaired run', {...clean, repairable_seen: 2, repaired: 2}],
+    ['a privacy-leak abort', {...clean, aborted: 1, privacy_blocked: 1}],
+    ['a run with only path_refused', {...clean, path_refused: 2}],
+    ['a dry run', {...clean, repaired: 1, dry_run: true}],
+  ])('is 0 for %s', (_name, result) => {
+    expect(exitCodeFor(result)).toBe(0)
+  })
+})
+
+describe('recordWikiRepairResult', () => {
+  const originalExitCode = process.exitCode
+  const result = (overrides: Partial<WikiRepairResultCounts>): WikiRepairResultCounts => ({
+    repairable_seen: 0,
+    repaired: 0,
+    aborted: 0,
+    out_of_scope: 0,
+    privacy_blocked: 0,
+    path_refused: 0,
+    conflict_retries: 0,
+    noop: 0,
+    dry_run: false,
+    ...overrides,
+  })
+
+  afterEach(() => {
+    process.exitCode = originalExitCode
+  })
+
+  it.each([
+    ['an aborted run', result({aborted: 1}), 1],
+    ['a privacy-leak abort', result({aborted: 1, privacy_blocked: 1}), 0],
+    ['a clean run', result({noop: 1}), 0],
+  ])('writes the JSON, then sets the exit code, for %s', async (_name, counts, exitCode) => {
+    process.exitCode = undefined
+    const order: string[] = []
+    const write = vi.fn(async (_json: string) => {
+      order.push(`write(exitCode=${String(process.exitCode)})`)
+    })
+
+    await recordWikiRepairResult(counts, write)
+
+    expect(write).toHaveBeenCalledWith(`${JSON.stringify(counts)}\n`)
+    // The exit code is still unset while the JSON is being written.
+    expect(order).toStrictEqual(['write(exitCode=undefined)'])
+    expect(process.exitCode).toBe(exitCode)
+  })
+
+  it('does not set an exit code when the write fails', async () => {
+    process.exitCode = undefined
+
+    await expect(
+      recordWikiRepairResult(result({aborted: 1}), async () => {
+        throw new Error('disk full')
+      }),
+    ).rejects.toThrow('disk full')
+
+    expect(process.exitCode).toBeUndefined()
   })
 })

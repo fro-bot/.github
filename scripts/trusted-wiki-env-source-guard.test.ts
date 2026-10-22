@@ -116,6 +116,19 @@ function isAllowedExpression(expr: string): boolean {
   return needsMatch !== null && ALLOWED_PRE_AGENT_NEEDS_OUTPUTS.has(needsMatch[1] ?? '')
 }
 
+/**
+ * `WIKI_HANDOFF_BASE_SHA` names the data commit the agent job synced. It may only be a job output of
+ * that agent job, produced by its sync step before the agent ran; never a step, input or event value.
+ */
+function isAgentBaseExpression(expr: string): boolean {
+  return /^needs\.[\w-]+\.outputs\.agent-base-sha$/.test(expr)
+}
+
+/** `WIKI_HANDOFF_DIR` is the directory the handoff artifact was downloaded to. */
+function isHandoffDirExpression(expr: string): boolean {
+  return expr === 'runner.temp'
+}
+
 describe('trusted wiki-ingest env-source guard', () => {
   const trustedJobs = findTrustedJobs()
 
@@ -159,4 +172,47 @@ describe('trusted wiki-ingest env-source guard', () => {
 
     expect(expressionsChecked).toBeGreaterThan(0)
   })
+
+  it.each([
+    // One per ingest step: survey-persist, fro-bot-wiki-ingest, fro-bot-observe-wiki-ingest.
+    ['WIKI_HANDOFF_BASE_SHA', isAgentBaseExpression, 3],
+    // The ingest steps plus their apply steps.
+    ['WIKI_HANDOFF_DIR', isHandoffDirExpression, 6],
+  ] as const)('every trusted job sets %s from its one allowed source', (key, isAllowed, expectedCount) => {
+    let checked = 0
+
+    for (const job of trustedJobs) {
+      for (const step of job.steps) {
+        const rawValue = step.env?.[key]
+        if (rawValue === undefined) continue
+
+        const expressions = extractExpressions(String(rawValue))
+        expect(expressions, `${job.file} > ${job.job} > ${key} must hold an expression`).not.toHaveLength(0)
+        for (const expr of expressions) {
+          expect(isAllowed(expr), `${job.file} > ${job.job} > ${key} expression "${expr}" is not allowed`).toBe(true)
+        }
+        checked += 1
+      }
+    }
+
+    expect(checked).toBe(expectedCount)
+  })
+
+  it.each([
+    'steps.sync-wiki.outputs.data-sha',
+    'inputs.base_sha',
+    'github.sha',
+    'needs.survey-repo.outputs.target-repository',
+    'needs.survey-repo.outputs.agent-base-sha || github.sha',
+    'needs.survey-repo.outputs.agent-base-sha.extra',
+  ])('rejects %s as the source of WIKI_HANDOFF_BASE_SHA', expr => {
+    expect(isAgentBaseExpression(expr)).toBe(false)
+  })
+
+  it.each(['needs.survey-repo.outputs.agent-base-sha', 'needs.fro-bot-observe.outputs.agent-base-sha'])(
+    'accepts %s as the source of WIKI_HANDOFF_BASE_SHA',
+    expr => {
+      expect(isAgentBaseExpression(expr)).toBe(true)
+    },
+  )
 })

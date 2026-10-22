@@ -1,3 +1,4 @@
+import type {GitDataFake} from './git-data-fake.ts'
 import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
@@ -5,16 +6,19 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import {createGitDataFake} from './git-data-fake.ts'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiIngestModulePromise: Promise<{
   buildWikiIngestChanges: typeof import('./wiki-ingest.js').buildWikiIngestChanges
   commitWikiChanges: typeof import('./wiki-ingest.js').commitWikiChanges
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
+  deriveAgentLogEntries: typeof import('./wiki-ingest.js').deriveAgentLogEntries
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
+  runWikiIngestEntry: typeof import('./wiki-ingest.js').runWikiIngestEntry
   validateWikilinks: typeof import('./wiki-ingest.js').validateWikilinks
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
@@ -22,9 +26,11 @@ const {
   buildWikiIngestChanges,
   commitWikiChanges,
   countWikiPages,
+  deriveAgentLogEntries,
   loadTrackedRepoNodeIds,
   parsePorcelainPaths,
   runWikiIngestCli,
+  runWikiIngestEntry,
   validateWikilinks,
   WikiIngestError,
 } = await wikiIngestModulePromise
@@ -796,32 +802,38 @@ describe('buildWikiIngestChanges', () => {
     expect(result.files['knowledge/log.md']).not.toContain('alice--old-name')
   })
 
-  it('fails closed when the fresh base tree is truncated', async () => {
-    const createTree = vi.fn(
-      async (_params: {tree: {path: string; mode: '100644'; type: 'blob'; sha: string | null}[]}) => ({
-        data: {sha: 'tree-after-migration'},
-      }),
-    )
+  it('fails closed with CONFLICT_EXHAUSTED, before any write, when the fresh base tree is truncated', async () => {
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async () => ({data: {sha: 'tree-after-migration'}}))
+    const createCommit = vi.fn(async () => ({data: {sha: 'commit'}}))
+    const updateRef = vi.fn(async () => ({data: {}}))
     const octokit = createOctokitMock({
+      createBlob,
       createTree,
+      createCommit,
+      updateRef,
       getTree: async () => ({
         data: {truncated: true, tree: [{path: 'knowledge/wiki/repos/alice--old-name.md'}]},
       }),
     })
 
-    await commitWikiChanges({
-      octokit,
-      owner: 'fro-bot',
-      repo: '.github',
-      branch: 'data',
-      message: 'feat(knowledge): skip uncertain deletion',
-      files: {'knowledge/wiki/repos/alice--current-name.md': 'current page'},
-      deletedPaths: ['knowledge/wiki/repos/alice--old-name.md'],
-    })
-
-    expect(createTree.mock.calls[0]?.[0].tree).not.toContainEqual(
-      expect.objectContaining({path: 'knowledge/wiki/repos/alice--old-name.md'}),
+    const error = await rejectionOf(
+      commitWikiChanges({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): refuse uncertain deletion',
+        files: {'knowledge/wiki/repos/alice--current-name.md': 'current page'},
+        deletedPaths: ['knowledge/wiki/repos/alice--old-name.md'],
+      }),
     )
+
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
   })
 
   it('builds index and log files when existing wiki files are missing', () => {
@@ -2321,6 +2333,8 @@ describe('runWikiIngestCli (base from the synced data tip)', () => {
     try {
       const commit = await run()
       expect(commit.mock.calls[0]?.[0]).toMatchObject({baseCommitSha: 'synced-tip'})
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('handoff')
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('octokit')
     } finally {
       vi.restoreAllMocks()
       restore(dir)
@@ -2338,6 +2352,821 @@ describe('runWikiIngestCli (base from the synced data tip)', () => {
     } finally {
       vi.restoreAllMocks()
       restore(dir)
+    }
+  })
+})
+
+const LOG_HEADER_TEXT =
+  '# Wiki Log\n\nChronological record of all wiki operations.\n\n---\n\n_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._\n'
+
+function logEntryText(n: number): string {
+  return `\n## [2026-10-20 10:0${n}] ingest | repo:acme/app-${n}\n\nDetail ${n}.\n\nSources: none\n`
+}
+
+const SUMMARY_ENTRY_TEXT =
+  '\n## [2026-10-21 09:00] ingest | repo:acme/target\n\nSurveyed acme/target.\n\nSources: none\n'
+
+describe('deriveAgentLogEntries', () => {
+  const base = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+  it('returns the text the handoff log adds after the base log', () => {
+    expect(deriveAgentLogEntries(base, `${base}${logEntryText(2)}`)).toBe(logEntryText(2))
+  })
+
+  it('returns every appended entry, in order', () => {
+    expect(deriveAgentLogEntries(base, `${base}${logEntryText(2)}${logEntryText(3)}`)).toBe(
+      `${logEntryText(2)}${logEntryText(3)}`,
+    )
+  })
+
+  it('returns an empty string when the handoff log equals the base log', () => {
+    expect(deriveAgentLogEntries(base, base)).toBe('')
+  })
+
+  it('normalizes CRLF line endings and a missing final newline before comparing', () => {
+    const handoff = `${base}${logEntryText(2)}`.replaceAll('\n', '\r\n').trimEnd()
+
+    expect(deriveAgentLogEntries(base, handoff)).toBe(logEntryText(2))
+  })
+
+  it('returns undefined when the agent changed text before the base log ends', () => {
+    const rewritten = base.replace('Detail 1.', 'Detail 1, rewritten.')
+
+    expect(deriveAgentLogEntries(base, `${rewritten}${logEntryText(2)}`)).toBeUndefined()
+  })
+
+  it('returns undefined when the handoff log is shorter than the base log', () => {
+    expect(deriveAgentLogEntries(base, LOG_HEADER_TEXT)).toBeUndefined()
+  })
+
+  it('returns undefined when the base log is empty, since there is no anchor to measure from', () => {
+    expect(deriveAgentLogEntries('', base)).toBeUndefined()
+  })
+})
+
+describe('buildWikiIngestChanges (agent log entries)', () => {
+  const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
+  const params = {
+    operation: 'survey' as const,
+    target: 'repo:acme/target',
+    summary: 'Surveyed acme/target.',
+    timestamp: new Date('2026-10-21T09:00:00Z'),
+    sources: [],
+    pages: [page],
+  }
+
+  it('appends the agent entries to the existing log before the summary entry, keeping existing text', () => {
+    const existingLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+      agentLogEntries: `${logEntryText(2)}${logEntryText(3)}`,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(
+      `${existingLog}${logEntryText(2)}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`,
+    )
+  })
+
+  it.each([undefined, ''])('appends only the summary entry when the agent entries are %j', agentLogEntries => {
+    const existingLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+      agentLogEntries,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${existingLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('starts from the log header when no log exists yet', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {'knowledge/index.md': '# Wiki Index\n'},
+      agentLogEntries: logEntryText(2),
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${LOG_HEADER_TEXT}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+  })
+})
+
+describe('runWikiIngestCli (agent log entries from a handoff)', () => {
+  const originalCwd = process.cwd()
+  const envKeys = [
+    'WIKI_INGEST_DATA_TIP_SHA',
+    'WIKI_HANDOFF_DIR',
+    'WIKI_HANDOFF_BASE_SHA',
+    'WIKI_OPERATION',
+    'WIKI_TARGET',
+    'WIKI_SUMMARY',
+    'WIKI_TIMESTAMP',
+    'WIKI_OWNER',
+    'WIKI_REPO',
+  ]
+  const originalEnv = new Map(envKeys.map(key => [key, process.env[key]]))
+  const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
+  const agentSha = 'a'.repeat(40)
+  const syncedLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+  let dir: string
+  let stderr: string[]
+
+  /** A trusted-job workspace: `log.md` as synced from `data`, the applied page, and the downloaded handoff. */
+  function setUp(params: {
+    handoffLog?: string
+    manifestChanged?: string[]
+    manifestDeleted?: string[]
+    baseSha?: string
+  }): string {
+    dir = mkdtempSync(join(tmpdir(), 'wiki-ingest-handoff-'))
+    mkdirSync(join(dir, 'knowledge/wiki/topics'), {recursive: true})
+    writeFileSync(join(dir, page.path), page.content)
+    writeFileSync(join(dir, 'knowledge/log.md'), syncedLog)
+    writeFileSync(join(dir, 'knowledge/index.md'), '# Wiki Index\n')
+    const handoffDir = join(dir, '.handoff')
+    mkdirSync(join(handoffDir, 'files/knowledge'), {recursive: true})
+    const changed = params.manifestChanged ?? [
+      page.path,
+      ...(params.handoffLog === undefined ? [] : ['knowledge/log.md']),
+    ]
+    writeFileSync(join(handoffDir, 'manifest.json'), JSON.stringify({changed, deleted: params.manifestDeleted ?? []}))
+    if (params.handoffLog !== undefined) writeFileSync(join(handoffDir, 'files/knowledge/log.md'), params.handoffLog)
+    process.chdir(dir)
+    process.env.WIKI_HANDOFF_DIR = handoffDir
+    process.env.WIKI_HANDOFF_BASE_SHA = params.baseSha ?? agentSha
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.WIKI_TARGET = 'repo:acme/target'
+    process.env.WIKI_SUMMARY = 'Surveyed acme/target.'
+    process.env.WIKI_TIMESTAMP = '2026-10-21T09:00:00Z'
+    delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    return handoffDir
+  }
+
+  /** Answers the reads of `log.md` at the agent commit: the file's text, no file, or a failing API. */
+  function octokitReading(baseLog: string | undefined | Error): OctokitClient {
+    const entries = baseLog instanceof Error || baseLog === undefined ? [] : [{path: 'knowledge/log.md'}]
+    return {
+      rest: {
+        repos: {
+          compareCommitsWithBasehead: async () => ({data: {behind_by: 0, merge_base_commit: {sha: agentSha}}}),
+        },
+        git: {
+          getRef: async () => ({data: {object: {sha: agentSha}}}),
+          getCommit: async () => {
+            if (baseLog instanceof Error) throw baseLog
+            return {data: {sha: agentSha, tree: {sha: 'agent-tree'}}}
+          },
+          getTree: async () => ({
+            data: {
+              truncated: false,
+              tree: entries.map(entry => ({...entry, type: 'blob', mode: '100644', sha: 'log-blob'})),
+            },
+          }),
+          getBlob: async () => ({
+            data: {content: Buffer.from(typeof baseLog === 'string' ? baseLog : '', 'utf8').toString('base64')},
+          }),
+        },
+      },
+    } as unknown as OctokitClient
+  }
+
+  async function run(octokit: OctokitClient, changedPaths: string[] = [page.path]) {
+    const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => changedPaths,
+      commitWikiChanges: commit as never,
+      octokit,
+    })
+    return commit
+  }
+
+  const committedLog = (commit: Awaited<ReturnType<typeof run>>): string =>
+    (commit.mock.calls[0]?.[0].files as Record<string, string>)['knowledge/log.md'] ?? ''
+
+  beforeEach(() => {
+    stderr = []
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk))
+      return true
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    process.chdir(originalCwd)
+    rmSync(dir, {recursive: true, force: true})
+    for (const [key, value] of originalEnv) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  it('commits the synced log, the entry the agent appended, then the summary entry', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+    expect(stderr.join('')).not.toContain('agent-log-entries-dropped')
+  })
+
+  it('keeps every entry the agent appended, in order', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}${logEntryText(3)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('keeps entries that another writer committed after the agent synced', async () => {
+    // #given the synced log already carries entry 2, which the agent never saw
+    const synced = `${syncedLog}${logEntryText(2)}`
+    setUp({handoffLog: `${syncedLog}${logEntryText(3)}`})
+    writeFileSync(join(dir, 'knowledge/log.md'), synced)
+
+    // #when the agent's base log is the older log
+    const commit = await run(octokitReading(syncedLog))
+
+    // #then the synced entry stays, and the agent's entry follows it
+    expect(committedLog(commit)).toBe(`${synced}${logEntryText(3)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('appends only the summary entry when the handoff log equals the base log', async () => {
+    setUp({handoffLog: syncedLog})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('appends only the summary entry when the handoff carries no log', async () => {
+    setUp({})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('keeps the agent entry when the handoff log uses CRLF line endings and has no final newline', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`.replaceAll('\n', '\r\n').trimEnd()})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('drops the agent entries with a warning when the agent rewrote an earlier entry', async () => {
+    setUp({handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+    expect(stderr.join('')).toContain(
+      `wiki-ingest:warning:${JSON.stringify({code: 'agent-log-entries-dropped', reason: 'not-append-only'})}`,
+    )
+  })
+
+  const failingRun = (octokit: OctokitClient, changedPaths: string[] = [page.path]) => {
+    const commit = vi.fn()
+    const outcome = rejectionOf(
+      runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: async () => changedPaths,
+        commitWikiChanges: commit as never,
+        octokit,
+      }),
+    )
+    return {commit, outcome}
+  }
+
+  it('refuses with HANDOFF_BASE_INVALID when the agent commit has no knowledge/log.md', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const {commit, outcome} = failingRun(octokitReading(undefined))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses with HANDOFF_BASE_INVALID when the agent commit does not exist (404)', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const {commit, outcome} = failingRun(octokitReading(Object.assign(new Error('Not Found'), {status: 404})))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('lets any other failure reading the base log through unchanged, and commits nothing', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const serverError = Object.assign(new Error('boom'), {status: 500})
+
+    const {commit, outcome} = failingRun(octokitReading(serverError))
+
+    expect(await outcome).toBe(serverError)
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses with CONFLICT_EXHAUSTED, not a bad base, when the agent commit tree listing is truncated', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const octokit = octokitReading(syncedLog)
+    ;(octokit.rest.git as unknown as {getTree: unknown}).getTree = async () => ({data: {truncated: true, tree: []}})
+
+    const {commit, outcome} = failingRun(octokit)
+
+    expect(await outcome).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['empty', ''],
+    ['malformed', 'not-a-sha'],
+    ['abbreviated', 'abc1234'],
+  ])('refuses a %s agent commit before reading anything', async (_name, baseSha) => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, baseSha})
+    const commit = vi.fn()
+
+    const error = await rejectionOf(
+      runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: async () => [page.path],
+        commitWikiChanges: commit as never,
+        octokit: octokitReading(syncedLog),
+      }),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a handoff directory with no agent commit', async () => {
+    setUp({})
+    delete process.env.WIKI_HANDOFF_BASE_SHA
+
+    const error = await rejectionOf(run(octokitReading(syncedLog)))
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+  })
+
+  it('refuses an agent commit with no handoff directory, without committing', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    delete process.env.WIKI_HANDOFF_DIR
+
+    const {commit, outcome} = failingRun(octokitReading(syncedLog))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a manifest that is not valid JSON, with INVALID_PAYLOAD', async () => {
+    const handoffDir = setUp({})
+    writeFileSync(join(handoffDir, 'manifest.json'), '{not json')
+
+    const {commit, outcome} = failingRun(octokitReading(syncedLog))
+
+    const error = await outcome
+    expect(error).toMatchObject({code: 'INVALID_PAYLOAD'})
+    expect((error as {remediation: string}).remediation).not.toBe('')
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('commits the log and the rebuilt index for a handoff whose only change is appended log entries', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).toHaveBeenCalledTimes(1)
+    const files = commit.mock.calls[0]?.[0].files as Record<string, string>
+    expect(Object.keys(files).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+    expect(files['knowledge/log.md']).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+    expect(files['knowledge/index.md']).toContain('[[notes]]')
+    expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([])
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      handoff: {agentCommitSha: agentSha, paths: ['knowledge/log.md']},
+    })
+  })
+
+  it('reports dropped log entries before a no-op return, and commits nothing', async () => {
+    setUp({
+      handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`,
+      manifestChanged: ['knowledge/log.md'],
+    })
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).not.toHaveBeenCalled()
+    expect(stderr.join('')).toContain('"code":"agent-log-entries-dropped"')
+  })
+
+  /** An agent commit whose page differs from the head's: another writer changed it since the agent synced. */
+  function octokitWithStalePage(): OctokitClient {
+    const entry = (sha: string) => ({path: page.path, type: 'blob', mode: '100644', sha})
+    return {
+      rest: {
+        repos: {
+          compareCommitsWithBasehead: async () => ({data: {behind_by: 0, merge_base_commit: {sha: agentSha}}}),
+        },
+        git: {
+          getRef: async () => ({data: {object: {sha: 'head-commit'}}}),
+          getCommit: async (args: {commit_sha: string}) => ({
+            data: {sha: args.commit_sha, tree: {sha: args.commit_sha === agentSha ? 'agent-tree' : 'head-tree'}},
+          }),
+          getTree: async (args: {tree_sha: string}) => ({
+            data: {
+              truncated: false,
+              tree: [
+                entry(args.tree_sha === 'agent-tree' ? 'page-v1' : 'page-v2'),
+                {path: 'knowledge/log.md', type: 'blob', mode: '100644', sha: 'log-blob'},
+              ],
+            },
+          }),
+          getBlob: async () => ({data: {content: Buffer.from(syncedLog, 'utf8').toString('base64')}}),
+        },
+      },
+    } as unknown as OctokitClient
+  }
+
+  it('refuses a stale page with HANDOFF_PAGE_CHANGED before validating its content (working-tree path)', async () => {
+    setUp({})
+    // A dangling link would fail validation, if validation ran first.
+    writeFileSync(join(dir, page.path), page.content.replace('Body.', 'See [[no-such-page]].'))
+
+    const {commit, outcome} = failingRun(octokitWithStalePage())
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a stale page with HANDOFF_PAGE_CHANGED before validating its content (payload path)', async () => {
+    setUp({})
+    const payloadPath = join(dir, 'payload.json')
+    writeFileSync(
+      payloadPath,
+      JSON.stringify({
+        operation: 'survey',
+        target: 'repo:acme/target',
+        summary: 'Surveyed acme/target.',
+        sources: [],
+        pages: [{path: page.path, content: page.content.replace('Body.', 'See [[no-such-page]].')}],
+      }),
+    )
+    process.env.WIKI_INGEST_INPUT = payloadPath
+    try {
+      const {commit, outcome} = failingRun(octokitWithStalePage())
+
+      expect(await outcome).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+      expect(commit).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.WIKI_INGEST_INPUT
+    }
+  })
+
+  it('lets a stale shared file through the preflight: only pages are compared', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+
+    const commit = await run(octokitWithStalePage(), [])
+
+    expect(commit).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies the agent entries and the handoff input on the payload path too', async () => {
+    const handoffDir = setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const payloadPath = join(dir, 'payload.json')
+    writeFileSync(
+      payloadPath,
+      JSON.stringify({
+        operation: 'survey',
+        target: 'repo:acme/target',
+        summary: 'Surveyed acme/target.',
+        timestamp: '2026-10-21T09:00:00Z',
+        sources: [],
+        pages: [{path: page.path, content: page.content}],
+      }),
+    )
+    process.env.WIKI_INGEST_INPUT = payloadPath
+    const octokit = octokitReading(syncedLog)
+    try {
+      const commit = await run(octokit)
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({
+        octokit,
+        handoff: {agentCommitSha: agentSha, paths: [page.path, 'knowledge/log.md']},
+      })
+      expect(handoffDir).toBeDefined()
+    } finally {
+      delete process.env.WIKI_INGEST_INPUT
+    }
+  })
+
+  it('passes the agent commit, the handed-off paths and its client to the commit', async () => {
+    const octokit = octokitReading(syncedLog)
+    setUp({
+      handoffLog: `${syncedLog}${logEntryText(2)}`,
+      manifestDeleted: ['knowledge/wiki/topics/gone.md'],
+    })
+
+    const commit = await run(octokit)
+
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      octokit,
+      handoff: {
+        agentCommitSha: agentSha,
+        paths: [page.path, 'knowledge/log.md', 'knowledge/wiki/topics/gone.md'],
+      },
+    })
+  })
+
+  it('commits a page the agent deleted, and does not list the page in the index', async () => {
+    setUp({manifestDeleted: ['knowledge/wiki/topics/gone.md']})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/gone.md'])
+    expect((commit.mock.calls[0]?.[0].files as Record<string, string>)['knowledge/index.md']).not.toContain('gone')
+  })
+
+  it('commits a handoff that only deletes pages', async () => {
+    setUp({manifestChanged: [], manifestDeleted: ['knowledge/wiki/topics/gone.md']})
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/gone.md'])
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('does not count a deleted log or index as a page deletion', async () => {
+    setUp({manifestDeleted: ['knowledge/log.md', 'knowledge/index.md']})
+
+    const commit = await run(octokitReading(syncedLog))
+
+    expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([])
+    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
+  })
+
+  it('commits nothing when the only change is a deleted log or index', async () => {
+    setUp({manifestChanged: [], manifestDeleted: ['knowledge/log.md', 'knowledge/index.md']})
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).not.toHaveBeenCalled()
+  })
+})
+
+describe('commitWikiChanges (handoff pages against the agent commit)', () => {
+  const PAGE_P = 'knowledge/wiki/topics/p.md'
+  const PAGE_Q = 'knowledge/wiki/topics/q.md'
+  const INDEX = 'knowledge/index.md'
+  const LOG = 'knowledge/log.md'
+  const WRITES = ['createBlob', 'createTree', 'createCommit', 'updateRef']
+  let fake: GitDataFake
+  let agentSha: string
+  let bootstrap: ReturnType<typeof vi.fn>
+
+  function seed(): void {
+    fake = createGitDataFake({
+      branch: 'data',
+      files: {[INDEX]: '# Wiki Index\n', [LOG]: '# Wiki Log\n', [PAGE_P]: 'p1\n', [PAGE_Q]: 'q1\n'},
+    })
+    agentSha = fake.head()
+    bootstrap = vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: fake.head()}))
+  }
+
+  const wrote = (): boolean => fake.calls.some(call => WRITES.includes(call.method))
+
+  async function commit(extra: Partial<Parameters<typeof commitWikiChanges>[0]> = {}) {
+    return commitWikiChanges({
+      octokit: fake.client as unknown as OctokitClient,
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): ingest',
+      files: {[PAGE_P]: 'p2\n', [INDEX]: '# Wiki Index\n', [LOG]: '# Wiki Log\n\nentry\n'},
+      bootstrapDataBranch: bootstrap as never,
+      maxRetries: 3,
+      ...extra,
+    })
+  }
+
+  it('lands the handed-off page and keeps another writer change to a different page', async () => {
+    seed()
+    fake.advance({[PAGE_Q]: 'q2\n'})
+
+    const result = await commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}})
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(fake.files()[PAGE_P]).toBe('p2\n')
+    expect(fake.files()[PAGE_Q]).toBe('q2\n')
+  })
+
+  it('refuses with HANDOFF_PAGE_CHANGED and writes nothing when a handed-off page changed after the agent commit', async () => {
+    seed()
+    fake.advance({[PAGE_P]: 'p-other\n'})
+    const head = fake.head()
+
+    const error = await rejectionOf(commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}))
+
+    expect(error).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+    expect((error as Error).message).not.toContain(PAGE_P)
+    expect(wrote()).toBe(false)
+    expect(fake.head()).toBe(head)
+  })
+
+  it('refuses when another writer deleted a handed-off page', async () => {
+    seed()
+    fake.advance({[PAGE_P]: null})
+
+    const error = await rejectionOf(commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}))
+
+    expect(error).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+    expect(wrote()).toBe(false)
+  })
+
+  it('refuses a handed-off deletion when another writer edited the page', async () => {
+    seed()
+    fake.advance({[PAGE_Q]: 'q-other\n'})
+
+    const error = await rejectionOf(
+      commit({
+        files: {[INDEX]: '# Wiki Index\n', [LOG]: '# Wiki Log\n'},
+        deletedPaths: [PAGE_Q],
+        handoff: {agentCommitSha: agentSha, paths: [PAGE_Q]},
+      }),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+    expect(wrote()).toBe(false)
+  })
+
+  it('removes a handed-off deletion that is unchanged on the head', async () => {
+    seed()
+    fake.advance({[PAGE_P]: 'p-other\n'})
+
+    await commit({
+      files: {[INDEX]: '# Wiki Index\n', [LOG]: '# Wiki Log\n'},
+      deletedPaths: [PAGE_Q],
+      handoff: {agentCommitSha: agentSha, paths: [PAGE_Q]},
+    })
+
+    expect(fake.files()[PAGE_Q]).toBeUndefined()
+    expect(fake.files()[PAGE_P]).toBe('p-other\n')
+  })
+
+  it('reports a page conflict as HANDOFF_PAGE_CHANGED even when the shared files moved under the write base too', async () => {
+    seed()
+    fake.advance({[PAGE_P]: 'p-other\n', [LOG]: '# Wiki Log\n\nother\n'})
+
+    const error = await rejectionOf(
+      commit({baseCommitSha: agentSha, handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+  })
+
+  it('still reports a change to another write-set path as CONFLICT_EXHAUSTED', async () => {
+    seed()
+    fake.advance({[LOG]: '# Wiki Log\n\nother\n'})
+
+    const error = await rejectionOf(
+      commit({baseCommitSha: agentSha, handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}),
+    )
+
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(wrote()).toBe(false)
+  })
+
+  it('does not compare knowledge/log.md or knowledge/index.md against the agent commit', async () => {
+    seed()
+    fake.advance({[LOG]: '# Wiki Log\n\nother\n', [INDEX]: '# Wiki Index\n\nother\n'})
+
+    const result = await commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P, LOG, INDEX]}})
+
+    expect(result).toMatchObject({committed: true})
+  })
+
+  it('fails closed on a truncated tree read, without calling it a page conflict', async () => {
+    seed()
+    fake.advance({[PAGE_Q]: 'q2\n'})
+    fake.truncate(true)
+
+    const error = await rejectionOf(commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}))
+
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(wrote()).toBe(false)
+  })
+
+  it('keeps a ref race that exhausts its retries as CONFLICT_EXHAUSTED', async () => {
+    seed()
+    vi.useFakeTimers()
+    fake.beforeUpdateRef(1, () => fake.advance({'scripts/x.ts': 'x1\n'}))
+    fake.beforeUpdateRef(2, () => fake.advance({'scripts/x.ts': 'x2\n'}))
+    try {
+      const settled = rejectionOf(commit({maxRetries: 2, handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}}))
+      await vi.advanceTimersByTimeAsync(30_000)
+
+      expect(await settled).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['empty', 'malformed', 'abbreviated', 'unknown', 'not an ancestor of the head'])(
+    'refuses %s agent commit with HANDOFF_BASE_INVALID, without bootstrapping or writing',
+    async kind => {
+      seed()
+      let agentCommitSha = ''
+      if (kind === 'malformed') agentCommitSha = 'not-a-sha'
+      if (kind === 'abbreviated') agentCommitSha = agentSha.slice(0, 7)
+      if (kind === 'unknown') agentCommitSha = 'f'.repeat(40)
+      if (kind === 'not an ancestor of the head') {
+        fake.createBranch('side')
+        agentCommitSha = fake.commit('side', {[PAGE_Q]: 'side\n'})
+      }
+
+      const error = await rejectionOf(commit({handoff: {agentCommitSha, paths: [PAGE_P]}}))
+
+      expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+      expect(bootstrap).not.toHaveBeenCalled()
+      expect(wrote()).toBe(false)
+    },
+  )
+
+  it('accepts the head itself as the agent commit', async () => {
+    seed()
+
+    const result = await commit({handoff: {agentCommitSha: agentSha, paths: [PAGE_P]}})
+
+    expect(result).toMatchObject({committed: true})
+  })
+
+  it('does not bootstrap or consult an agent commit when no handoff is given', async () => {
+    seed()
+
+    await commit()
+
+    expect(fake.calls.some(call => call.method === 'compareCommitsWithBasehead')).toBe(false)
+  })
+})
+
+function failing(code: ConstructorParameters<typeof WikiIngestError>[0]['code']) {
+  return async () => {
+    throw new WikiIngestError({code, message: 'wiki ingest refused', remediation: 'Re-run.'})
+  }
+}
+
+describe('runWikiIngestEntry (exit code for a page conflict)', () => {
+  const originalExitCode = process.exitCode
+
+  function restoreExitCode(): void {
+    process.exitCode = originalExitCode
+    vi.restoreAllMocks()
+  }
+
+  it('sets exit code 3 and reports the refusal when a handed-off page changed', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      await runWikiIngestEntry(failing('HANDOFF_PAGE_CHANGED'))
+
+      expect(process.exitCode).toBe(3)
+      expect(String(stderr.mock.calls[0]?.[0])).toContain('wiki ingest refused')
+    } finally {
+      restoreExitCode()
+    }
+  })
+
+  it.each(['CONFLICT_EXHAUSTED', 'HANDOFF_BASE_INVALID', 'INVALID_PAYLOAD'] as const)(
+    'rethrows %s so it keeps failing with exit code 1',
+    async code => {
+      process.exitCode = undefined
+      try {
+        await expect(runWikiIngestEntry(failing(code))).rejects.toMatchObject({code})
+        expect(process.exitCode).toBeUndefined()
+      } finally {
+        restoreExitCode()
+      }
+    },
+  )
+
+  it('rethrows an error that is not a WikiIngestError', async () => {
+    await expect(
+      runWikiIngestEntry(async () => {
+        throw new Error('boom')
+      }),
+    ).rejects.toThrow('boom')
+  })
+
+  it('leaves the exit code alone when the run succeeds', async () => {
+    process.exitCode = undefined
+    try {
+      await runWikiIngestEntry(async () => undefined)
+
+      expect(process.exitCode).toBeUndefined()
+    } finally {
+      restoreExitCode()
     }
   })
 })

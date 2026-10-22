@@ -6,6 +6,7 @@ import type {
 } from '@fro.bot/wiki-write-core'
 import type {PrivateWikiLeak, WikiPageSnapshot} from './check-wiki-private-presence.ts'
 import type {RepoEntry} from './schemas.ts'
+import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
@@ -375,6 +376,7 @@ export function planAndVerifyWikiRepairs(params: PlanAndVerifyWikiRepairsParams)
 export const WIKI_REPAIR_DATA_BRANCH = 'data'
 export const WIKI_REPAIR_COMMIT_MESSAGE = 'chore(knowledge): repair wiki integrity findings'
 const DEFAULT_MAX_RETRIES = 3
+const WIKI_DIRECTORIES = ['repos', 'topics', 'entities', 'comparisons']
 
 export interface WikiRepairTreeSnapshot {
   readonly tipSha: string
@@ -384,6 +386,7 @@ export interface WikiRepairTreeSnapshot {
 }
 
 export interface RunWikiRepairParams {
+  /** Called for the first attempt and again after every tip mismatch or ref race; later calls must read the current head. */
   readonly loadTree: () => Promise<WikiRepairTreeSnapshot>
   readonly getCurrentDataTipSha: () => Promise<string>
   readonly commitWikiChanges: (commitParams: CommitWikiChangesParams) => Promise<CommitWikiChangesResult>
@@ -540,11 +543,142 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
   return {...emptyResultCounts(dryRun), aborted: 1, conflict_retries: conflictRetries}
 }
 
+/**
+ * The process exit code for a repair result: 1 when the run aborted for any reason other than the
+ * privacy gate, so the job fails; 0 otherwise. A privacy-leak abort is the gate working, and stays
+ * a reported count, not a failed job.
+ */
+export function exitCodeFor(result: WikiRepairResultCounts): 0 | 1 {
+  return result.aborted > 0 && result.privacy_blocked === 0 ? 1 : 0
+}
+
+const HEAD_WIKI_PAGE_PATTERN = new RegExp(String.raw`^knowledge/wiki/(?:${WIKI_DIRECTORIES.join('|')})/[^/]+\.md$`, 'u')
+const REPOS_METADATA_PATH = 'metadata/repos.yaml'
+const BLOB_READ_BATCH_SIZE = 10
+
+export interface LoadWikiRepairTreeAtHeadParams {
+  readonly octokit: OctokitClient
+  readonly owner: string
+  readonly repo: string
+  /** Read from the job's restore: they come from the checkout, not from `data`. */
+  readonly grandfatherPages: readonly WikiPageSnapshot[]
+}
+
+/**
+ * Reads the repair's inputs at the current head of `data` through the Git Data API: the index, every
+ * wiki page and `metadata/repos.yaml`. The returned `tipSha` is the head that was read, so a later
+ * write is guarded against exactly this snapshot. Fails closed on a truncated tree listing.
+ */
+export async function loadWikiRepairTreeAtHead(
+  params: LoadWikiRepairTreeAtHeadParams,
+): Promise<WikiRepairTreeSnapshot> {
+  const {octokit, owner, repo} = params
+  const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${WIKI_REPAIR_DATA_BRANCH}`})
+  const tipSha = head.data.object.sha
+  const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: tipSha})
+  const listing = await octokit.rest.git.getTree({owner, repo, tree_sha: commit.data.tree.sha, recursive: 'true'})
+  if (listing.data.truncated) {
+    throw new Error('wiki-repair: the data branch tree listing was truncated, so the head cannot be read in full')
+  }
+
+  const blobShas = new Map<string, string>()
+  for (const entry of listing.data.tree) {
+    if (entry.type !== 'blob' || entry.path === undefined || entry.sha === undefined) continue
+    if (entry.path === INDEX_PATH || entry.path === REPOS_METADATA_PATH || HEAD_WIKI_PAGE_PATTERN.test(entry.path)) {
+      blobShas.set(entry.path, entry.sha)
+    }
+  }
+  for (const required of [INDEX_PATH, REPOS_METADATA_PATH]) {
+    if (!blobShas.has(required)) throw new Error(`wiki-repair: ${required} is missing at the data branch head`)
+  }
+
+  const contents = new Map<string, string>()
+  const blobEntries = [...blobShas]
+  for (let start = 0; start < blobEntries.length; start += BLOB_READ_BATCH_SIZE) {
+    await Promise.all(
+      blobEntries.slice(start, start + BLOB_READ_BATCH_SIZE).map(async ([path, sha]) => {
+        const blob = await octokit.rest.git.getBlob({owner, repo, file_sha: sha})
+        contents.set(path, Buffer.from(blob.data.content, 'base64').toString('utf8'))
+      }),
+    )
+  }
+
+  const reposRaw = contents.get(REPOS_METADATA_PATH)
+  contents.delete(REPOS_METADATA_PATH)
+  const reposParsed: unknown = YAML.parse(reposRaw ?? '')
+  assertReposFile(reposParsed)
+  const wikiFiles = Object.fromEntries(contents)
+
+  return {
+    tipSha,
+    wikiFiles,
+    publicSlugMap: buildPublicSlugMap(reposParsed.repos),
+    grandfatherPages: params.grandfatherPages,
+  }
+}
+
+export interface WikiRepairTreeLoaderParams {
+  /** The first attempt: the job's restored checkout. */
+  readonly loadFromCheckout: () => Promise<WikiRepairTreeSnapshot>
+  /** Every later attempt: the current head of `data`, given the first snapshot's grandfather pages. */
+  readonly loadAtHead: (grandfatherPages: readonly WikiPageSnapshot[]) => Promise<WikiRepairTreeSnapshot>
+}
+
+/**
+ * The `loadTree` the repair loop calls. The checkout is pinned to the commit the job restored, so
+ * re-reading it after a tip mismatch would repeat the mismatch; every call after the first reads the
+ * head instead.
+ */
+export function createWikiRepairTreeLoader(params: WikiRepairTreeLoaderParams): () => Promise<WikiRepairTreeSnapshot> {
+  let grandfatherPages: readonly WikiPageSnapshot[] | undefined
+  return async () => {
+    if (grandfatherPages === undefined) {
+      const first = await params.loadFromCheckout()
+      grandfatherPages = first.grandfatherPages
+      return first
+    }
+    return params.loadAtHead(grandfatherPages)
+  }
+}
+
+/**
+ * Records a finished repair: writes the result JSON through `write`, then sets the exit code from it.
+ * The code is set only after the write, because the lint workflow's summary step reads the JSON even
+ * when this job fails.
+ */
+export async function recordWikiRepairResult(
+  result: WikiRepairResultCounts,
+  write: (json: string) => Promise<void>,
+): Promise<void> {
+  await write(`${JSON.stringify(result)}\n`)
+  process.exitCode = exitCodeFor(result)
+}
+
+export interface RunAndRecordWikiRepairParams extends RunWikiRepairParams {
+  readonly write: (json: string) => Promise<void>
+}
+
+/**
+ * Runs the repair and records its result. An error that escapes the run (a failed head read, a
+ * non-conflict write failure) is an abort too: it is reported on stderr, recorded as `aborted: 1`, and
+ * fails the job, so the summary step always has a result to read.
+ */
+export async function runAndRecordWikiRepair(params: RunAndRecordWikiRepairParams): Promise<WikiRepairResultCounts> {
+  let result: WikiRepairResultCounts
+  try {
+    result = await runWikiRepair(params)
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`::error::wiki-repair aborted: ${detail}\n`)
+    result = {...emptyResultCounts(params.dryRun ?? false), aborted: 1}
+  }
+  await recordWikiRepairResult(result, params.write)
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
-
-const WIKI_DIRECTORIES = ['repos', 'topics', 'entities', 'comparisons']
 
 async function loadWikiFilesFromDisk(rootDir: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {}
@@ -598,10 +732,12 @@ async function main(): Promise<void> {
   const dryRun = process.env.WIKI_REPAIR_DRY_RUN === 'true'
   const resultPath = process.env.WIKI_REPAIR_RESULT_PATH
   const rootDir = process.cwd()
-  const owner = process.env.WIKI_REPAIR_OWNER
-  const repo = process.env.WIKI_REPAIR_REPO
+  const target = {
+    owner: process.env.WIKI_REPAIR_OWNER ?? 'fro-bot',
+    repo: process.env.WIKI_REPAIR_REPO ?? '.github',
+  }
 
-  const loadTree = async (): Promise<WikiRepairTreeSnapshot> => {
+  const loadFromCheckout = async (): Promise<WikiRepairTreeSnapshot> => {
     const tipSha = process.env.WIKI_REPAIR_DATA_TIP_SHA
     if (tipSha === undefined || tipSha === '') {
       throw new Error('wiki-repair: WIKI_REPAIR_DATA_TIP_SHA is required in the environment')
@@ -626,33 +762,35 @@ async function main(): Promise<void> {
     return octokitPromise
   }
 
+  const loadTree = createWikiRepairTreeLoader({
+    loadFromCheckout,
+    loadAtHead: async grandfatherPages =>
+      loadWikiRepairTreeAtHead({octokit: await getOctokit(), ...target, grandfatherPages}),
+  })
+
   const getCurrentDataTipSha = async (): Promise<string> => {
     const octokit = await getOctokit()
-    const ref = await octokit.rest.git.getRef({
-      owner: owner ?? 'fro-bot',
-      repo: repo ?? '.github',
-      ref: `heads/${WIKI_REPAIR_DATA_BRANCH}`,
-    })
+    const ref = await octokit.rest.git.getRef({...target, ref: `heads/${WIKI_REPAIR_DATA_BRANCH}`})
     return ref.data.object.sha
   }
 
   const commitWikiChangesInjected = async (commitParams: CommitWikiChangesParams): Promise<CommitWikiChangesResult> => {
     const octokit = await getOctokit()
-    return commitWikiChanges({...commitParams, owner, repo, octokit})
+    return commitWikiChanges({...commitParams, ...target, octokit})
   }
 
-  const result = await runWikiRepair({
+  await runAndRecordWikiRepair({
     loadTree,
     getCurrentDataTipSha,
     commitWikiChanges: commitWikiChangesInjected,
     dryRun,
+    write: async json => {
+      process.stdout.write(json)
+      if (resultPath !== undefined && resultPath !== '') {
+        await writeFile(resultPath, json, 'utf8')
+      }
+    },
   })
-
-  const json = `${JSON.stringify(result)}\n`
-  process.stdout.write(json)
-  if (resultPath !== undefined && resultPath !== '') {
-    await writeFile(resultPath, json, 'utf8')
-  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
