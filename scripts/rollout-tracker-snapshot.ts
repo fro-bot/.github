@@ -62,11 +62,15 @@ export interface RolloutSnapshot {
   external: ExternalSignals
 }
 
-/** The data embedded in the HTML marker comment. */
+/**
+ * The data embedded in the HTML marker comment. Only `hash` is required to parse: a marker written
+ * before `last_mention_id` existed reads as 0, and the snapshot is informational.
+ */
 export interface MarkerData {
   hash: string
-  /** Markers written before the snapshot grew new fields stay parseable; only `hash` gates. */
   snapshot: unknown
+  /** The highest operator `@fro-bot` comment ID the tracker has answered; 0 when absent. */
+  last_mention_id: number
 }
 
 /** The decision output from decideComment. */
@@ -77,7 +81,19 @@ export interface CommentDecision {
   snapshot: RolloutSnapshot
 }
 
+/** The preflight output: the decision plus the mention state and the marker the agent writes. */
+export interface PreflightResult extends CommentDecision {
+  /** Operator `@fro-bot` comment IDs above the latest marker's `last_mention_id`, ascending. */
+  pending_mention_ids: number[]
+  /** The `last_mention_id` the next marker carries. */
+  last_mention_id: number
+  /** The complete marker string every tracker reply ends with. */
+  marker: string
+}
+
 export interface TrackerComment {
+  /** The REST comment ID. */
+  id: number
   author: {login: string}
   body: string
 }
@@ -92,7 +108,7 @@ const DEPLOY_WORKFLOWS = {
   dashboard: 'deploy-dashboard.yaml',
   router: 'deploy.yaml',
 } as const
-const HEALTH_URL = 'https://dashboard.fro.bot/operator/health'
+const DEFAULT_HEALTH_URL = 'https://dashboard.fro.bot/operator/health'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -311,17 +327,19 @@ export function extractPreviousMarker(body: string): MarkerData | null {
 
   try {
     const parsed: unknown = JSON.parse(jsonStr)
-    if (
-      parsed === null ||
-      typeof parsed !== 'object' ||
-      Array.isArray(parsed) ||
-      typeof (parsed as Record<string, unknown>).hash !== 'string' ||
-      typeof (parsed as Record<string, unknown>).snapshot !== 'object'
-    ) {
+    if (!isRecord(parsed) || typeof parsed.hash !== 'string') {
       process.stderr.write('rollout-tracker-snapshot: marker JSON has unexpected shape\n')
       return null
     }
-    return parsed as MarkerData
+    const lastMentionId = parsed.last_mention_id
+    return {
+      hash: parsed.hash,
+      snapshot: parsed.snapshot,
+      last_mention_id:
+        typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId > 0
+          ? lastMentionId
+          : 0,
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     process.stderr.write(`rollout-tracker-snapshot: failed to parse marker JSON: ${detail}\n`)
@@ -329,42 +347,62 @@ export function extractPreviousMarker(body: string): MarkerData | null {
   }
 }
 
-function findLatestMarkerCommentIndex(comments: TrackerComment[]): number {
-  return comments.findLastIndex(
-    comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
+export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
+  return (
+    comments.findLast(
+      comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
+    )?.body ?? ''
   )
 }
 
-export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
-  return comments[findLatestMarkerCommentIndex(comments)]?.body ?? ''
-}
-
 /**
- * True when the operator mentioned `@fro-bot` after the latest tracker marker
- * comment. Comments arrive oldest first, so "newer" is a later position. With
- * no marker comment, every operator mention is pending.
- */
-export function hasPendingOperatorMention(comments: TrackerComment[]): boolean {
-  return comments
-    .slice(findLatestMarkerCommentIndex(comments) + 1)
-    .some(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
-}
-
-/**
- * Decide whether to post a tracker comment.
+ * Find the operator `@fro-bot` comments the tracker has not answered.
  *
- * - Cold start (previousMarker === null): always comment to seed state.
- * - Different hash: state changed, comment.
- * - Same hash with a pending operator mention: comment to answer it. The
- *   pending flag stays out of the hash, so answering it never changes the next
- *   comparison.
+ * A mention is pending when its comment ID is above `afterId`, the latest marker's
+ * `last_mention_id`. Thread position does not matter: a mention that lands while a tracker run is in
+ * flight can precede that run's marker comment and is still pending. `lastMentionId` is the highest
+ * operator mention ID seen, never below `afterId`.
+ */
+export function scanOperatorMentions(
+  comments: readonly TrackerComment[],
+  afterId: number,
+): {pendingIds: number[]; lastMentionId: number} {
+  const mentionIds = comments
+    .filter(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
+    .map(comment => comment.id)
+  return {
+    pendingIds: mentionIds.filter(id => id > afterId).sort((a, b) => a - b),
+    lastMentionId: Math.max(afterId, ...mentionIds),
+  }
+}
+
+/**
+ * Build the complete marker string. `<`, `>` and `&` are escaped inside the JSON so Project text or
+ * labels containing `-->` can neither close the HTML comment early nor break the parse; JSON.parse
+ * restores them.
+ */
+export function buildMarker(hash: string, snapshot: RolloutSnapshot, lastMentionId: number): string {
+  const json = JSON.stringify({hash, snapshot, last_mention_id: lastMentionId})
+    .replaceAll('<', String.raw`\u003c`)
+    .replaceAll('>', String.raw`\u003e`)
+    .replaceAll('&', String.raw`\u0026`)
+  return `<!-- ${MARKER_PREFIX}${json} -->`
+}
+
+/**
+ * Decide whether to wake the tracker.
+ *
+ * - Cold start (previousMarker === null): always wake to seed state.
+ * - Different hash: state changed, wake.
+ * - Same hash with pending operator mentions: wake to answer them. The pending IDs stay out of the
+ *   hash, so answering them never changes the next comparison.
  * - Same hash, nothing pending: no gating transition, skip.
  */
 export function decideComment(
   snapshot: RolloutSnapshot,
   hash: string,
   previousMarker: MarkerData | null,
-  pendingMention: boolean,
+  pendingMentionIds: readonly number[],
 ): CommentDecision {
   if (previousMarker === null) {
     return {
@@ -375,20 +413,21 @@ export function decideComment(
     }
   }
 
+  const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
+
   if (hash !== previousMarker.hash) {
-    const mention = pendingMention ? '; operator mention pending' : ''
     return {
       should_comment: true,
-      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mention}`,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}`,
       hash,
       snapshot,
     }
   }
 
-  if (pendingMention) {
+  if (pendingMentionIds.length > 0) {
     return {
       should_comment: true,
-      reason: 'operator mention pending — @fro-bot comment newer than the last tracker marker',
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID`,
       hash,
       snapshot,
     }
@@ -461,8 +500,8 @@ function ghApiJson(endpoint: string): unknown {
   return JSON.parse(raw)
 }
 
-async function fetchHealth(): Promise<unknown> {
-  const response = await fetch(HEALTH_URL, {signal: AbortSignal.timeout(30_000)})
+async function fetchHealth(url: string): Promise<unknown> {
+  const response = await fetch(url, {signal: AbortSignal.timeout(30_000)})
   if (!response.ok) throw new Error(`health endpoint returned HTTP ${response.status}`)
   return response.json()
 }
@@ -475,6 +514,7 @@ async function fetchHealth(): Promise<unknown> {
  *   ROLLOUT_TRACKER_RELEASES_JSON — {agent, dashboard}: `releases/latest` responses
  *   ROLLOUT_TRACKER_DEPLOYS_JSON  — {gateway, dashboard, router}: workflow `runs` responses
  *   ROLLOUT_TRACKER_HEALTH_JSON   — the `/operator/health` response
+ *   ROLLOUT_TRACKER_HEALTH_URL    — health endpoint override for the live read; defaults to production
  */
 export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<ExternalSignals> {
   const releasesFixture =
@@ -513,8 +553,46 @@ export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<Exter
     deploy_gateway: deploy('gateway'),
     deploy_dashboard: deploy('dashboard'),
     deploy_router: deploy('router'),
-    contract_version: parseContractVersion(healthFixture === undefined ? await fetchHealth() : healthFixture),
+    contract_version: parseContractVersion(
+      healthFixture === undefined
+        ? await fetchHealth(env.ROLLOUT_TRACKER_HEALTH_URL ?? DEFAULT_HEALTH_URL)
+        : healthFixture,
+    ),
   }
+}
+
+/**
+ * Read every comment on the tracker issue through the REST API, which carries the numeric comment
+ * ID that `gh issue view --json comments` omits. `--jq` emits one compact JSON object per comment,
+ * so a large thread streams through as lines.
+ */
+function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment[] {
+  const raw = execFileSync(
+    'gh',
+    [
+      'api',
+      '--paginate',
+      `repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
+      '--jq',
+      '.[] | {id, login: (.user.login // ""), body: (.body // "")}',
+    ],
+    {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
+  )
+  return raw
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .map((line): TrackerComment => {
+      const parsed: unknown = JSON.parse(line)
+      if (
+        !isRecord(parsed) ||
+        typeof parsed.id !== 'number' ||
+        typeof parsed.login !== 'string' ||
+        typeof parsed.body !== 'string'
+      ) {
+        throw new TypeError('comment has an unexpected shape')
+      }
+      return {id: parsed.id, author: {login: parsed.login}, body: parsed.body}
+    })
 }
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
@@ -522,20 +600,20 @@ export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<Exter
 /**
  * CLI mode: runs the preflight check using `gh` to fetch live data.
  *
- * Outputs JSON to stdout: { should_comment, reason, hash, snapshot }
+ * Outputs JSON to stdout: { should_comment, reason, hash, snapshot, pending_mention_ids, last_mention_id, marker }
  * Exits non-zero if Project #1 access fails (fail loudly, not silently).
  *
  * Accepts optional injected fixtures via environment variables for testing:
  *   ROLLOUT_TRACKER_ITEMS_JSON  — JSON array of ProjectItem[]
  *   ROLLOUT_TRACKER_ISSUES_JSON — JSON array of IssueState[]
  *   ROLLOUT_TRACKER_COMMENT_BODY — raw body of the latest @fro-bot tracker comment
- *   ROLLOUT_TRACKER_COMMENTS_JSON — JSON array of tracker issue comments (oldest first); supplies both
- *                                   the marker body and the pending operator mention, and takes
- *                                   precedence over ROLLOUT_TRACKER_COMMENT_BODY
+ *   ROLLOUT_TRACKER_COMMENTS_JSON — JSON array of {id, author: {login}, body} tracker issue comments;
+ *                                   supplies both the marker body and the pending operator
+ *                                   mentions, and takes precedence over ROLLOUT_TRACKER_COMMENT_BODY
  *   ROLLOUT_TRACKER_RELEASES_JSON / _DEPLOYS_JSON / _HEALTH_JSON — external signal API responses
  *                                   (see loadExternalSignals)
  *
- * A body fixture supplies no comment list, so it reports no pending mention.
+ * A body fixture supplies no comment list, so it reports no pending mentions.
  */
 async function main(): Promise<void> {
   const trackerIssue = process.env.ROLLOUT_TRACKER_ISSUE ?? 'fro-bot/.github#3512'
@@ -543,8 +621,6 @@ async function main(): Promise<void> {
 
   let items: ProjectItem[]
   let issues: IssueState[]
-  let latestCommentBody: string
-  let pendingMention = false
 
   // Allow fixture injection for tests / dry-run
   if (process.env.ROLLOUT_TRACKER_ITEMS_JSON === undefined) {
@@ -565,7 +641,8 @@ async function main(): Promise<void> {
       process.stderr.write(
         'rollout-tracker-snapshot: refusing to treat Project access failure as no-drift; exiting 1\n',
       )
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
 
     try {
@@ -579,7 +656,8 @@ async function main(): Promise<void> {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       process.stderr.write(`rollout-tracker-snapshot: failed to parse project items: ${detail}\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
   } else {
     try {
@@ -587,7 +665,8 @@ async function main(): Promise<void> {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       process.stderr.write(`rollout-tracker-snapshot: failed to parse ROLLOUT_TRACKER_ITEMS_JSON: ${detail}\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
   }
 
@@ -623,7 +702,8 @@ async function main(): Promise<void> {
         process.stderr.write(
           'rollout-tracker-snapshot: FATAL — failed to fetch a tracked issue; refusing to treat access failure as no-drift; exiting 1\n',
         )
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
     }
   } else {
@@ -632,12 +712,14 @@ async function main(): Promise<void> {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       process.stderr.write(`rollout-tracker-snapshot: failed to parse ROLLOUT_TRACKER_ISSUES_JSON: ${detail}\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
   }
 
+  let comments: TrackerComment[] = []
+  let latestCommentBody: string
   if (process.env.ROLLOUT_TRACKER_COMMENTS_JSON !== undefined) {
-    let comments: TrackerComment[]
     try {
       const parsed: unknown = JSON.parse(process.env.ROLLOUT_TRACKER_COMMENTS_JSON)
       if (!Array.isArray(parsed)) throw new TypeError('not an array')
@@ -649,31 +731,24 @@ async function main(): Promise<void> {
       return
     }
     latestCommentBody = selectLatestMarkerCommentBody(comments)
-    pendingMention = hasPendingOperatorMention(comments)
   } else if (process.env.ROLLOUT_TRACKER_COMMENT_BODY === undefined) {
-    // Fetch latest @fro-bot comment from tracker issue
     const [trackerRepo, trackerNumStr] = trackerIssue.split('#')
     if (trackerRepo === undefined || trackerNumStr === undefined) {
       process.stderr.write(`rollout-tracker-snapshot: invalid ROLLOUT_TRACKER_ISSUE format: ${trackerIssue}\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
     try {
-      // `--json comments` alone returns every comment; current gh rejects it combined with `--comments`.
-      const raw = execFileSync('gh', ['issue', 'view', trackerNumStr, '--repo', trackerRepo, '--json', 'comments'], {
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-        timeout: 60_000,
-      })
-      const parsed = JSON.parse(raw) as {comments: TrackerComment[]}
-      latestCommentBody = selectLatestMarkerCommentBody(parsed.comments)
-      pendingMention = hasPendingOperatorMention(parsed.comments)
+      comments = fetchTrackerComments(trackerRepo, trackerNumStr)
+      latestCommentBody = selectLatestMarkerCommentBody(comments)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       process.stderr.write(`rollout-tracker-snapshot: FATAL — failed to fetch tracker comments: ${detail}\n`)
       process.stderr.write(
         'rollout-tracker-snapshot: refusing to treat a comment-fetch failure as a cold start; exiting 1\n',
       )
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
   } else {
     latestCommentBody = process.env.ROLLOUT_TRACKER_COMMENT_BODY
@@ -693,9 +768,16 @@ async function main(): Promise<void> {
   const snapshot = buildSnapshot(items, issues, external)
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
-  const decision = decideComment(snapshot, hash, previousMarker, pendingMention)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker?.last_mention_id ?? 0)
+  const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
+  const result: PreflightResult = {
+    ...decision,
+    pending_mention_ids: pendingIds,
+    last_mention_id: lastMentionId,
+    marker: buildMarker(hash, snapshot, lastMentionId),
+  }
 
-  process.stdout.write(`${JSON.stringify(decision)}\n`)
+  process.stdout.write(`${JSON.stringify(result)}\n`)
   process.exitCode = 0
 }
 

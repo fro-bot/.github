@@ -24,9 +24,11 @@ jobs:
   # Reads the GitHub Project, tracked issue states, the latest agent and
   # dashboard releases, the latest successful infra deploy runs and the
   # dashboard health contract, builds a stable hash, and compares it to the
-  # hash embedded in the latest @fro-bot tracker comment. Outputs
-  # should_comment=true when the hash changed or an operator @fro-bot mention
-  # is newer than the latest tracker marker. A failed read fails the job.
+  # hash embedded in the latest @fro-bot tracker marker. Outputs
+  # should_comment=true when the hash changed or an operator @fro-bot comment
+  # has an ID above the marker's last_mention_id. It also outputs those
+  # pending comment IDs and the complete marker the agent writes. A failed
+  # read fails the job.
   preflight:
     name: Rollout Tracker Preflight
     runs-on: ubuntu-latest
@@ -36,8 +38,8 @@ jobs:
     outputs:
       should_comment: ${{ steps.snapshot.outputs.should_comment }}
       reason: ${{ steps.snapshot.outputs.reason }}
-      hash: ${{ steps.snapshot.outputs.hash }}
-      snapshot: ${{ steps.snapshot.outputs.snapshot }}
+      pending_mention_ids: ${{ steps.snapshot.outputs.pending_mention_ids }}
+      marker: ${{ steps.snapshot.outputs.marker }}
     steps:
       # The comment ID is templated into the agent prompt, so it is checked before anything else runs.
       - name: Validate comment ID
@@ -65,15 +67,15 @@ jobs:
           RESULT="$(bun scripts/rollout-tracker-snapshot.ts)"
           SHOULD_COMMENT="$(echo "$RESULT" | jq -r '.should_comment')"
           REASON="$(echo "$RESULT" | jq -r '.reason')"
-          HASH="$(echo "$RESULT" | jq -r '.hash')"
-          SNAPSHOT="$(echo "$RESULT" | jq -c '.snapshot')"
+          PENDING_MENTION_IDS="$(echo "$RESULT" | jq -c '.pending_mention_ids')"
+          MARKER="$(echo "$RESULT" | jq -r '.marker')"
           {
             echo "should_comment=${SHOULD_COMMENT}"
             echo "reason=${REASON}"
-            echo "hash=${HASH}"
-            echo "snapshot<<SNAPSHOT_JSON"
-            echo "${SNAPSHOT}"
-            echo "SNAPSHOT_JSON"
+            echo "pending_mention_ids=${PENDING_MENTION_IDS}"
+            echo "marker<<MARKER_TEXT"
+            echo "${MARKER}"
+            echo "MARKER_TEXT"
           } >> "$GITHUB_OUTPUT"
           if [ "$SHOULD_COMMENT" = "false" ]; then
             echo "::notice::rollout-tracker: no gating transition — ${REASON}"
@@ -97,8 +99,13 @@ jobs:
         GitHub Project at https://github.com/users/fro-bot/projects/1.
         Keep both equal to live state.
 
-        Operator comment ID that requested this run (empty when none):
-        ${{ inputs.comment_id }}
+        Operator comments to answer. Answer exactly these comments and no
+        others, and fetch each one by ID before acting on it
+        (gh api repos/fro-bot/.github/issues/comments/<id>):
+        - pending mention IDs (JSON array, empty when none):
+          ${{ needs.preflight.outputs.pending_mention_ids }}
+        - the operator comment ID that requested this run (empty when none):
+          ${{ inputs.comment_id }}
         Preflight result: ${{ needs.preflight.outputs.reason }}
 
         Evidence. Verify every claim against what you can read:
@@ -109,10 +116,10 @@ jobs:
         - https://dashboard.fro.bot/operator/health (contractVersion);
         - the acceptance-run results the operator posts on
           fro-bot/.github#3512.
-        Use the preflight snapshot and the Project items as the tracked rollout
-        source of truth; do not rely on a hardcoded issue list. Accept a claim
-        when the evidence supports it. Otherwise reject or flag it, state the
-        reason, and leave that item unchanged.
+        Use the Project items as the tracked rollout source of truth; do not
+        rely on a hardcoded issue list. Accept a claim when the evidence
+        supports it. Otherwise reject or flag it, state the reason, and leave
+        that item unchanged.
 
         Work, in every run:
         1. Rewrite every stale section of the body of fro-bot/.github#3512:
@@ -129,30 +136,27 @@ jobs:
            evidence that has not been acknowledged, and link it back to
            fro-bot/.github#3512.
 
-        Operator mentions. Read every fro-bot/.github#3512 comment by
-        marcusrbrown that contains @fro-bot and is newer than the latest
-        comment by fro-bot or fro-bot[bot] that carries a
-        gateway-rollout-tracker marker. Handle all of them in this run. When
-        the operator comment ID above is set, or any such comment exists,
-        always reply once on fro-bot/.github#3512 with what you verified, what
+        Replies. When any comment ID is listed above, post one reply on
+        fro-bot/.github#3512 that covers all of them: what you verified, what
         you accepted, what you rejected or flagged and why, and what you
-        changed in the body and on Project 1.
-
-        Scheduled runs. When there is no operator mention to answer, reply on
-        fro-bot/.github#3512 only if you changed something, and narrate only
-        that change. When nothing needs to change, post nothing.
+        changed in the body and on Project 1. When no comment ID is listed
+        and you changed something, post a reply that narrates only that
+        change. When no comment ID is listed and nothing needs to change, do
+        not post a new comment: edit the latest comment by fro-bot or
+        fro-bot[bot] on fro-bot/.github#3512 that carries a
+        gateway-rollout-tracker marker in place
+        (gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>),
+        replacing only its marker with the marker below. When no such comment
+        exists, post a one-line seed comment that ends with the marker.
 
         All status comments must begin with @fro-bot or explicitly mention
         @fro-bot. Post status updates in a concise, structured format.
 
-        IMPORTANT: End every tracker comment on fro-bot/.github#3512 with the
-        machine-readable state marker on its own line, replacing any prior
-        marker. Use this preflight hash:
-        ${{ needs.preflight.outputs.hash }}
-        And this preflight snapshot JSON:
-        ${{ needs.preflight.outputs.snapshot }}
-        Format exactly:
-        <!-- gateway-rollout-tracker:{"hash":"${{ needs.preflight.outputs.hash }}","snapshot":${{ needs.preflight.outputs.snapshot }}} -->
+        IMPORTANT: End every tracker comment on fro-bot/.github#3512, and
+        every in-place edit, with this machine-readable state marker on its
+        own line, replacing any prior marker. Copy it exactly, character for
+        character; do not reformat, wrap or unescape it:
+        ${{ needs.preflight.outputs.marker }}
         Never parse prose tables as state — always read and write the marker.
     secrets:
       FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}

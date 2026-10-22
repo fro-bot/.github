@@ -5,7 +5,7 @@ import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
 /** Status Truth resolves claims against the tracked items only; the wake signals are not consumed here. */
-export type RolloutSnapshot = Pick<TrackerSnapshot, 'items'>
+export type StatusTruthSnapshot = Pick<TrackerSnapshot, 'items'>
 
 export type ClaimKind =
   'pr-state' | 'issue-state' | 'release-tag-state' | 'plan-status' | 'rollout-tracker-status' | 'plan-consistency'
@@ -1058,7 +1058,7 @@ export async function resolveClaimLiveState(params: {
   /** Optional file reader for plan-status file-parse resolution. */
   fileReader?: FileReader
   /** Optional rollout snapshot for rollout-tracker-status compound resolution. */
-  snapshot?: RolloutSnapshot | null
+  snapshot?: StatusTruthSnapshot | null
 }): Promise<ResolverResult> {
   const {claim, octokit, owner, repo, fileReader, snapshot} = params
 
@@ -1655,7 +1655,7 @@ const ROLLOUT_TRACKER_CLAIM_FIELD_MAP = {
  */
 export async function resolveRolloutTrackerClaim(params: {
   claim: StatusTruthClaim
-  snapshot: RolloutSnapshot | null
+  snapshot: StatusTruthSnapshot | null
 }): Promise<ResolverResult> {
   const {claim, snapshot} = params
 
@@ -1755,7 +1755,7 @@ export async function resolveFileParseClaims(params: {
  * @param params.snapshot - Optional rollout snapshot for rollout-tracker-status compound resolution.
  *   `undefined` (absent) → rollout-tracker claims stay unavailable (Phase 1 behavior).
  *   `null` → snapshot was attempted but unavailable; rollout-tracker claims stay unavailable.
- *   `RolloutSnapshot` → snapshot available; rollout-tracker claims resolve against it.
+ *   `StatusTruthSnapshot` → snapshot available; rollout-tracker claims resolve against it.
  */
 export async function resolveAllClaims(params: {
   claims: readonly StatusTruthClaim[]
@@ -1763,7 +1763,7 @@ export async function resolveAllClaims(params: {
   owner: string
   repo: string
   fileReader?: FileReader
-  snapshot?: RolloutSnapshot | null
+  snapshot?: StatusTruthSnapshot | null
 }): Promise<{resolverResults: Record<string, ResolverResult>; resolveErrors: number}> {
   const {claims, octokit, owner, repo, fileReader, snapshot} = params
   const resolverResults: Record<string, ResolverResult> = {}
@@ -1850,7 +1850,7 @@ function isValidSnapshotItem(raw: unknown): boolean {
 export async function loadRolloutSnapshot(params: {
   snapshotPath: string | undefined
   fileReader?: FileReader
-}): Promise<RolloutSnapshot | null> {
+}): Promise<StatusTruthSnapshot | null> {
   const {snapshotPath, fileReader} = params
 
   // No path → no snapshot available

@@ -1,30 +1,33 @@
 // Import types from the module under test
 import type {
-  CommentDecision,
   ExternalSignals,
   IssueState,
   MarkerData,
+  PreflightResult,
   ProjectItem,
   RolloutSnapshot,
   TrackerComment,
 } from './rollout-tracker-snapshot.ts'
-import {execFileSync} from 'node:child_process'
+import {execFile, execFileSync} from 'node:child_process'
 import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {createServer} from 'node:http'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
-import {describe, expect, it, vi} from 'vitest'
+import {promisify} from 'node:util'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
 
 import {
+  buildMarker,
   buildSnapshot,
   decideComment,
   extractPreviousMarker,
   hashSnapshot,
-  hasPendingOperatorMention,
   MARKER_PREFIX,
   normaliseIssueState,
   normaliseRawProjectItem,
+  scanOperatorMentions,
   selectLatestMarkerCommentBody,
 } from './rollout-tracker-snapshot.ts'
 import {evaluateExpression} from './workflow-expression-test-helper.ts'
@@ -56,6 +59,10 @@ function makeProjectItem(overrides: Partial<ProjectItem> = {}): ProjectItem {
     gate: null,
     ...overrides,
   }
+}
+
+function comment(id: number, login: string, body: string): TrackerComment {
+  return {id, author: {login}, body}
 }
 
 function successRuns(id: number, headSha: string): {workflow_runs: {id: number; head_sha: string}[]} {
@@ -125,14 +132,14 @@ function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
   }
 }
 
-function runCliFixture(params: FixtureParams): CommentDecision {
+function runCliFixture(params: FixtureParams): PreflightResult {
   const result = runCliRaw(fixtureEnv(params))
   if (result.status !== 0) throw new Error(`fixture run failed (${result.status}): ${result.stderr}`)
-  return JSON.parse(result.stdout) as CommentDecision
+  return JSON.parse(result.stdout) as PreflightResult
 }
 
-function markerFor(decision: CommentDecision): string {
-  return `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: decision.hash, snapshot: decision.snapshot})} -->`
+function markerFor(decision: PreflightResult): string {
+  return decision.marker
 }
 
 // ─── buildSnapshot ────────────────────────────────────────────────────────────
@@ -417,7 +424,7 @@ describe('extractPreviousMarker', () => {
   })
 
   it('extracts marker data from an HTML comment', () => {
-    const markerData: MarkerData = {hash: 'abc123', snapshot: {items: []}}
+    const markerData: MarkerData = {hash: 'abc123', snapshot: {items: []}, last_mention_id: 0}
     const body = `Some text\n<!-- ${MARKER_PREFIX}${JSON.stringify(markerData)} -->\nMore text`
 
     const result = extractPreviousMarker(body)
@@ -425,6 +432,7 @@ describe('extractPreviousMarker', () => {
     expect(result).not.toBeNull()
     expect(result?.hash).toBe('abc123')
     expect(result?.snapshot).toEqual({items: []})
+    expect(result?.last_mention_id).toBe(0)
   })
 
   it('returns null for malformed marker JSON', () => {
@@ -443,8 +451,8 @@ describe('extractPreviousMarker', () => {
   })
 
   it('extracts the LAST marker when multiple are present (latest wins)', () => {
-    const first: MarkerData = {hash: 'first', snapshot: {items: []}}
-    const second: MarkerData = {hash: 'second', snapshot: {items: []}}
+    const first: MarkerData = {hash: 'first', snapshot: {items: []}, last_mention_id: 0}
+    const second: MarkerData = {hash: 'second', snapshot: {items: []}, last_mention_id: 0}
     const body = [
       `<!-- ${MARKER_PREFIX}${JSON.stringify(first)} -->`,
       'Some prose in between',
@@ -464,10 +472,10 @@ describe('selectLatestMarkerCommentBody', () => {
 
     expect(
       selectLatestMarkerCommentBody([
-        {author: {login: 'fro-bot'}, body: first},
-        {author: {login: 'fro-bot'}, body: '@fro-bot prose-only follow-up'},
-        {author: {login: 'marcusrbrown'}, body: second},
-        {author: {login: 'fro-bot'}, body: second},
+        comment(1, 'fro-bot', first),
+        comment(2, 'fro-bot', '@fro-bot prose-only follow-up'),
+        comment(3, 'marcusrbrown', second),
+        comment(4, 'fro-bot', second),
       ]),
     ).toBe(second)
   })
@@ -475,7 +483,7 @@ describe('selectLatestMarkerCommentBody', () => {
   it('selects a marker comment authored by fro-bot[bot] (GitHub App identity)', () => {
     const markerBody = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'bot-hash', snapshot: {items: []}})} -->`
 
-    expect(selectLatestMarkerCommentBody([{author: {login: 'fro-bot[bot]'}, body: markerBody}])).toBe(markerBody)
+    expect(selectLatestMarkerCommentBody([comment(1, 'fro-bot[bot]', markerBody)])).toBe(markerBody)
   })
 
   it('prefers the latest marker across both fro-bot and fro-bot[bot] identities', () => {
@@ -483,18 +491,15 @@ describe('selectLatestMarkerCommentBody', () => {
     const appMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'app', snapshot: {items: []}})} -->`
 
     expect(
-      selectLatestMarkerCommentBody([
-        {author: {login: 'fro-bot'}, body: patMarker},
-        {author: {login: 'fro-bot[bot]'}, body: appMarker},
-      ]),
+      selectLatestMarkerCommentBody([comment(1, 'fro-bot', patMarker), comment(2, 'fro-bot[bot]', appMarker)]),
     ).toBe(appMarker)
   })
 
   it('returns an empty body when no fro-bot marker exists', () => {
     expect(
       selectLatestMarkerCommentBody([
-        {author: {login: 'fro-bot'}, body: '@fro-bot prose-only'},
-        {author: {login: 'marcusrbrown'}, body: `<!-- ${MARKER_PREFIX}{"hash":"x","snapshot":{"items":[]}} -->`},
+        comment(1, 'fro-bot', '@fro-bot prose-only'),
+        comment(2, 'marcusrbrown', `<!-- ${MARKER_PREFIX}{"hash":"x","snapshot":{"items":[]}} -->`),
       ]),
     ).toBe('')
   })
@@ -521,7 +526,7 @@ describe('decideComment', () => {
 
   it('cold start (no prior marker) => should_comment:true to seed state', () => {
     const hash = hashSnapshot(baseSnapshot)
-    const result = decideComment(baseSnapshot, hash, null, false)
+    const result = decideComment(baseSnapshot, hash, null, [])
 
     expect(result.should_comment).toBe(true)
     expect(result.reason).toMatch(/cold start/i)
@@ -531,9 +536,9 @@ describe('decideComment', () => {
 
   it('same hash as previous marker => should_comment:false with no gating transition reason', () => {
     const hash = hashSnapshot(baseSnapshot)
-    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot}
+    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot, last_mention_id: 0}
 
-    const result = decideComment(baseSnapshot, hash, previousMarker, false)
+    const result = decideComment(baseSnapshot, hash, previousMarker, [])
 
     expect(result.should_comment).toBe(false)
     expect(result.reason).toMatch(/no gating transition/i)
@@ -579,9 +584,9 @@ describe('decideComment', () => {
     }
     const oldHash = hashSnapshot(oldSnapshot)
     const newHash = hashSnapshot(newSnapshot)
-    const previousMarker: MarkerData = {hash: oldHash, snapshot: oldSnapshot}
+    const previousMarker: MarkerData = {hash: oldHash, snapshot: oldSnapshot, last_mention_id: 0}
 
-    const result = decideComment(newSnapshot, newHash, previousMarker, false)
+    const result = decideComment(newSnapshot, newHash, previousMarker, [])
 
     expect(result.should_comment).toBe(true)
     expect(result.hash).toBe(newHash)
@@ -590,9 +595,9 @@ describe('decideComment', () => {
 
   it('returns hash and snapshot in result regardless of should_comment value', () => {
     const hash = hashSnapshot(baseSnapshot)
-    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot}
+    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot, last_mention_id: 0}
 
-    const result = decideComment(baseSnapshot, hash, previousMarker, false)
+    const result = decideComment(baseSnapshot, hash, previousMarker, [])
 
     expect(result.hash).toBeDefined()
     expect(result.snapshot).toBeDefined()
@@ -649,36 +654,36 @@ describe('rollout-tracker-snapshot CLI fixture path', () => {
   })
 })
 
-// ─── Live comment fetch through gh ────────────────────────────────────────────────────
+// ─── Live reads through gh ────────────────────────────────────────────────────
 
-// Fake `gh` that enforces the real CLI's rule rejecting `--comments` with `--json`, serves a
-// fixture file for comment reads, and answers `gh api` by endpoint so the live signal reads run
-// for real. An endpoint the preflight is not expected to read fails the call.
+// Fake `gh` that answers `gh api` by endpoint so the live reads run for real: tracker comments come
+// from a fixture file as one JSON object per line (what the script's `--jq` produces), releases and
+// deploy runs from env. An endpoint the preflight is not expected to read fails the call.
 const FAKE_GH = [
   '#!/bin/sh',
-  'if [ "$1" = api ]; then',
-  '  [ -n "$FAKE_GH_API_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
-  '  case "$2" in',
-  '    repos/fro-bot/agent/releases/latest) printf "%s" "$FAKE_GH_AGENT_RELEASE" ;;',
-  '    repos/fro-bot/dashboard/releases/latest) printf "%s" "$FAKE_GH_DASHBOARD_RELEASE" ;;',
-  '    repos/marcusrbrown/infra/actions/workflows/deploy-gateway.yaml/runs*) printf "%s" "$FAKE_GH_GATEWAY_RUNS" ;;',
-  '    repos/marcusrbrown/infra/actions/workflows/deploy-dashboard.yaml/runs*) printf "%s" "$FAKE_GH_DASHBOARD_RUNS" ;;',
-  '    repos/marcusrbrown/infra/actions/workflows/deploy.yaml/runs*) printf "%s" "$FAKE_GH_ROUTER_RUNS" ;;',
-  '    *) echo "unexpected endpoint: $2" >&2; exit 1 ;;',
-  '  esac',
-  '  exit 0',
-  'fi',
-  'case " $* " in *" --comments "*" --json "*|*" --json "*" --comments "*)',
-  '  echo "specify only one of --comments or --json" >&2; exit 1 ;;',
+  'if [ "$1" != api ]; then echo "unexpected gh command: $*" >&2; exit 1; fi',
+  'case "$*" in',
+  '  *--paginate*repos/fro-bot/.github/issues/3512/comments*)',
+  '    [ -n "$FAKE_GH_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
+  '    cat "$FAKE_GH_COMMENTS_FILE"; exit 0 ;;',
   'esac',
-  '[ -n "$FAKE_GH_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
-  'cat "$FAKE_GH_COMMENTS_FILE"',
+  '[ -n "$FAKE_GH_API_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
+  'case "$2" in',
+  '  repos/fro-bot/agent/releases/latest) printf "%s" "$FAKE_GH_AGENT_RELEASE" ;;',
+  '  repos/fro-bot/dashboard/releases/latest) printf "%s" "$FAKE_GH_DASHBOARD_RELEASE" ;;',
+  '  repos/marcusrbrown/infra/actions/workflows/deploy-gateway.yaml/runs*) printf "%s" "$FAKE_GH_GATEWAY_RUNS" ;;',
+  '  repos/marcusrbrown/infra/actions/workflows/deploy-dashboard.yaml/runs*) printf "%s" "$FAKE_GH_DASHBOARD_RUNS" ;;',
+  '  repos/marcusrbrown/infra/actions/workflows/deploy.yaml/runs*) printf "%s" "$FAKE_GH_ROUTER_RUNS" ;;',
+  '  *) echo "unexpected endpoint: $2" >&2; exit 1 ;;',
+  'esac',
 ].join('\n')
 
 interface FakeGhParams {
   items: ProjectItem[]
   issues: IssueState[]
-  commentsJson: string
+  comments?: TrackerComment[]
+  /** Raw comment lines, for a payload the script must reject. */
+  rawCommentLines?: string
   fail?: boolean
   apiFail?: boolean
   agentRelease?: unknown
@@ -690,8 +695,13 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult {
   try {
     writeFileSync(join(dir, 'gh'), FAKE_GH)
     chmodSync(join(dir, 'gh'), 0o755)
-    const commentsFile = join(dir, 'comments.json')
-    writeFileSync(commentsFile, params.commentsJson)
+    const commentsFile = join(dir, 'comments.ndjson')
+    const lines =
+      params.rawCommentLines ??
+      (params.comments ?? [])
+        .map(entry => JSON.stringify({id: entry.id, login: entry.author.login, body: entry.body}))
+        .join('\n')
+    writeFileSync(commentsFile, lines)
     return runCliRaw({
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       FAKE_GH_COMMENTS_FILE: commentsFile,
@@ -714,21 +724,72 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult {
   }
 }
 
+describe('rollout-tracker-snapshot live comment fetch', () => {
+  const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
+  const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
+
+  it('finds the prior marker in a comment payload over 1 MiB and stays quiet with an unchanged hash', () => {
+    const seeded = runCliFixture({items, issues})
+    const padding = comment(1, 'fro-bot', 'x'.repeat(1_200_000))
+    const comments = [padding, comment(2, 'fro-bot', `@fro-bot seeded\n${seeded.marker}`)]
+    expect(JSON.stringify(comments).length).toBeGreaterThan(1024 * 1024)
+
+    const result = runCliWithFakeGh({items, issues, comments})
+
+    expect(result.status).toBe(0)
+    const decision = JSON.parse(result.stdout) as PreflightResult
+    expect(decision.should_comment).toBe(false)
+    expect(decision.reason).toContain('no gating transition')
+    expect(decision.hash).toBe(seeded.hash)
+  })
+
+  it('exits non-zero instead of treating a failed comment fetch as a cold start', () => {
+    const result = runCliWithFakeGh({items, issues, comments: [], fail: true})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('failed to fetch tracker comments')
+  })
+
+  it('exits non-zero when the comment payload has an unexpected shape', () => {
+    const result = runCliWithFakeGh({items, issues, rawCommentLines: '{"id":"IC_node","login":"fro-bot","body":"x"}'})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('failed to fetch tracker comments')
+  })
+
+  it('reads the pending mentions from the live comment fetch', () => {
+    const seeded = runCliFixture({items, issues})
+    const comments = [
+      comment(10, 'fro-bot', seeded.marker),
+      comment(11, 'marcusrbrown', '@fro-bot dashboard 2026.10.68 is live'),
+    ]
+
+    const result = runCliWithFakeGh({items, issues, comments})
+
+    expect(result.status).toBe(0)
+    const decision = JSON.parse(result.stdout) as PreflightResult
+    expect(decision.should_comment).toBe(true)
+    expect(decision.pending_mention_ids).toEqual([11])
+    expect(decision.last_mention_id).toBe(11)
+  })
+})
+
 describe('rollout-tracker-snapshot live external signal reads', () => {
   const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
   const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
-  const commentsJson = '{"comments":[]}'
 
   it('reads releases and deploy runs through gh api and records them in the snapshot', () => {
-    const result = runCliWithFakeGh({items, issues, commentsJson})
+    const result = runCliWithFakeGh({items, issues})
 
     expect(result.status).toBe(0)
-    const decision = JSON.parse(result.stdout) as CommentDecision
+    const decision = JSON.parse(result.stdout) as PreflightResult
     expect(decision.snapshot.external).toEqual(EXTERNAL)
   })
 
   it('exits non-zero with empty stdout when gh api fails', () => {
-    const result = runCliWithFakeGh({items, issues, commentsJson, apiFail: true})
+    const result = runCliWithFakeGh({items, issues, apiFail: true})
 
     expect(result.status).not.toBe(0)
     expect(result.stdout).toBe('')
@@ -737,7 +798,7 @@ describe('rollout-tracker-snapshot live external signal reads', () => {
   })
 
   it('exits non-zero when no successful deploy run exists', () => {
-    const result = runCliWithFakeGh({items, issues, commentsJson, gatewayRuns: {workflow_runs: []}})
+    const result = runCliWithFakeGh({items, issues, gatewayRuns: {workflow_runs: []}})
 
     expect(result.status).not.toBe(0)
     expect(result.stdout).toBe('')
@@ -745,7 +806,7 @@ describe('rollout-tracker-snapshot live external signal reads', () => {
   })
 
   it('exits non-zero when a release has an empty tag', () => {
-    const result = runCliWithFakeGh({items, issues, commentsJson, agentRelease: {tag_name: ''}})
+    const result = runCliWithFakeGh({items, issues, agentRelease: {tag_name: ''}})
 
     expect(result.status).not.toBe(0)
     expect(result.stdout).toBe('')
@@ -791,12 +852,12 @@ describe('external signals in the hash', () => {
   })
 
   it('wakes on a marker written before external signals existed', () => {
-    const legacyMarker: MarkerData = {hash: 'a'.repeat(64), snapshot: {items: []}}
+    const legacyMarker = {hash: 'a'.repeat(64), snapshot: {items: []}}
     const body = `<!-- ${MARKER_PREFIX}${JSON.stringify(legacyMarker)} -->`
     const previous = extractPreviousMarker(body)
     const snapshot = buildSnapshot(items, issues, EXTERNAL)
 
-    const decision = decideComment(snapshot, hashSnapshot(snapshot), previous, false)
+    const decision = decideComment(snapshot, hashSnapshot(snapshot), previous, [])
 
     expect(previous).not.toBeNull()
     expect(decision.should_comment).toBe(true)
@@ -830,12 +891,115 @@ describe('external signals in the hash', () => {
       const result = runCliRaw({...fixtureEnv({items, issues}), PATH: `${dir}:${process.env.PATH ?? ''}`})
 
       expect(result.status).toBe(0)
-      const decision = JSON.parse(result.stdout) as CommentDecision
+      const decision = JSON.parse(result.stdout) as PreflightResult
       expect(decision.snapshot.external).toEqual(EXTERNAL)
       expect(decision.hash).toMatch(/^[0-9a-f]{64}$/)
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
+  })
+})
+
+const execFileAsync = promisify(execFile)
+
+/** Like `runCliRaw`, but async so a server in this process can answer while the CLI runs. */
+async function runCliRawAsync(env: Record<string, string | undefined>): Promise<CliResult> {
+  const scriptPath = resolve(import.meta.dirname, './rollout-tracker-snapshot.ts')
+  try {
+    const {stdout} = await execFileAsync('node', [scriptPath], {
+      encoding: 'utf8',
+      env: {...process.env, ...env},
+      maxBuffer: 16 * 1024 * 1024,
+    })
+    return {status: 0, stdout, stderr: ''}
+  } catch (error) {
+    const failure = error as {code?: number; stdout?: string; stderr?: string}
+    return {status: failure.code ?? 1, stdout: String(failure.stdout ?? ''), stderr: String(failure.stderr ?? '')}
+  }
+}
+
+describe('health endpoint read', () => {
+  const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
+  const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
+  const servers: ReturnType<typeof createServer>[] = []
+
+  afterEach(async () => {
+    await Promise.all(
+      servers.splice(0).map(
+        async server =>
+          new Promise<void>(done => {
+            server.close(() => {
+              done()
+            })
+          }),
+      ),
+    )
+  })
+
+  async function serve(status: number, body: string): Promise<string> {
+    const server = createServer((_request, response) => {
+      response.statusCode = status
+      response.setHeader('content-type', 'application/json')
+      response.end(body)
+    })
+    servers.push(server)
+    await new Promise<void>(ready => {
+      server.listen(0, '127.0.0.1', () => {
+        ready()
+      })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('server has no port')
+    return `http://127.0.0.1:${address.port}/operator/health`
+  }
+
+  function liveHealthEnv(url: string): Record<string, string | undefined> {
+    return {...fixtureEnv({items, issues}), ROLLOUT_TRACKER_HEALTH_JSON: undefined, ROLLOUT_TRACKER_HEALTH_URL: url}
+  }
+
+  it('reads the contract version from the configured endpoint', async () => {
+    const url = await serve(200, JSON.stringify({ok: true, contractVersion: '1.14.0'}))
+
+    const result = await runCliRawAsync(liveHealthEnv(url))
+
+    expect(result.status).toBe(0)
+    expect((JSON.parse(result.stdout) as PreflightResult).snapshot.external.contract_version).toBe('1.14.0')
+  })
+
+  it('fails closed on a 503', async () => {
+    const url = await serve(503, '{"ok":false}')
+
+    const result = await runCliRawAsync(liveHealthEnv(url))
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('FATAL')
+    expect(result.stderr).toContain('HTTP 503')
+  })
+
+  it('fails closed on a 200 with no contract version', async () => {
+    const url = await serve(200, '{"ok":true}')
+
+    const result = await runCliRawAsync(liveHealthEnv(url))
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('health contractVersion is missing or empty')
+  })
+
+  it('fails closed when nothing is listening', async () => {
+    const url = await serve(200, '{}')
+    await new Promise<void>(closed => {
+      servers.pop()?.close(() => {
+        closed()
+      })
+    })
+
+    const result = await runCliRawAsync(liveHealthEnv(url))
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('FATAL')
   })
 })
 
@@ -874,118 +1038,213 @@ describe('external signal reads fail closed', () => {
   })
 })
 
-// ─── Pending operator mention ─────────────────────────────────────────────────
+// ─── Pending operator mentions ────────────────────────────────────────────────
 
-describe('hasPendingOperatorMention', () => {
-  const marker = `reply\n<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'h', snapshot: {items: []}})} -->`
-  const reply: TrackerComment = {author: {login: 'fro-bot'}, body: marker}
-  const mention: TrackerComment = {author: {login: 'marcusrbrown'}, body: '@fro-bot gateway v0.125.2 is deployed'}
+describe('scanOperatorMentions', () => {
+  const mention = (id: number): TrackerComment => comment(id, 'marcusrbrown', `@fro-bot claim ${id}`)
 
-  it('is pending for an operator @fro-bot comment newer than the latest marker comment', () => {
-    expect(hasPendingOperatorMention([reply, mention])).toBe(true)
+  it('marks an operator @fro-bot comment above the last answered ID as pending', () => {
+    expect(scanOperatorMentions([mention(105)], 100)).toEqual({pendingIds: [105], lastMentionId: 105})
   })
 
-  it('is pending when no marker comment exists yet', () => {
-    expect(hasPendingOperatorMention([mention])).toBe(true)
+  it('does not mark a mention at or below the last answered ID as pending', () => {
+    expect(scanOperatorMentions([mention(99), mention(100)], 100)).toEqual({pendingIds: [], lastMentionId: 100})
   })
 
-  it('is not pending for an operator mention older than the marker comment', () => {
-    expect(hasPendingOperatorMention([mention, reply])).toBe(false)
+  it('marks a mention pending even when thread order puts it before the latest marker comment', () => {
+    const marker = comment(103, 'fro-bot', `answered\n<!-- ${MARKER_PREFIX}{"hash":"h","last_mention_id":100} -->`)
+
+    // The operator comment (101) was posted while the run that wrote comment 103 was in flight.
+    expect(scanOperatorMentions([mention(101), marker], 100).pendingIds).toEqual([101])
   })
 
-  it('is not pending for an operator comment without @fro-bot', () => {
-    expect(hasPendingOperatorMention([reply, {author: {login: 'marcusrbrown'}, body: 'acceptance run green'}])).toBe(
-      false,
-    )
+  it('treats every operator mention as pending when the marker carries no last_mention_id', () => {
+    expect(scanOperatorMentions([mention(7), mention(9)], 0)).toEqual({pendingIds: [7, 9], lastMentionId: 9})
   })
 
-  it('is not pending for an @fro-bot comment by another author', () => {
-    expect(hasPendingOperatorMention([reply, {author: {login: 'octocat'}, body: '@fro-bot please look'}])).toBe(false)
+  it('lists pending IDs ascending and never lowers last_mention_id', () => {
+    expect(scanOperatorMentions([mention(30), mention(20)], 25)).toEqual({pendingIds: [30], lastMentionId: 30})
+    expect(scanOperatorMentions([], 25)).toEqual({pendingIds: [], lastMentionId: 25})
   })
 
-  it('is not pending for a fro-bot reply that has no marker', () => {
+  it('ignores a comment without @fro-bot, one by another author, and bot replies', () => {
     expect(
-      hasPendingOperatorMention([reply, {author: {login: 'fro-bot'}, body: '@fro-bot prose-only follow-up'}]),
-    ).toBe(false)
+      scanOperatorMentions(
+        [
+          comment(11, 'marcusrbrown', 'acceptance run green'),
+          comment(12, 'octocat', '@fro-bot please look'),
+          comment(13, 'fro-bot', '@fro-bot prose-only follow-up'),
+        ],
+        0,
+      ),
+    ).toEqual({pendingIds: [], lastMentionId: 0})
   })
 
-  it('anchors on the latest marker comment from either bot identity', () => {
-    const appReply: TrackerComment = {author: {login: 'fro-bot[bot]'}, body: marker}
-    expect(hasPendingOperatorMention([reply, mention, appReply])).toBe(false)
-    expect(hasPendingOperatorMention([reply, mention, appReply, mention])).toBe(true)
+  it('matches the mention case-insensitively, like the hop gate', () => {
+    expect(scanOperatorMentions([comment(5, 'marcusrbrown', 'ping @Fro-Bot')], 0).pendingIds).toEqual([5])
   })
 })
 
-describe('decideComment with a pending operator mention', () => {
+describe('marker round trip', () => {
+  const items = [
+    makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard', gate: 'blocked --> see <b>&</b>'}),
+  ]
+  const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
+  const snapshot = buildSnapshot(items, issues, EXTERNAL)
+  const hash = hashSnapshot(snapshot)
+
+  it('keeps Project text containing --> from closing the HTML comment', () => {
+    const marker = buildMarker(hash, snapshot, 4321)
+
+    const inner = marker.slice('<!-- '.length, -' -->'.length)
+
+    expect(marker.match(/-->/g)).toHaveLength(1)
+    expect(marker.endsWith(' -->')).toBe(true)
+    expect(inner).not.toMatch(/[<>&]/)
+    expect(inner).toContain(String.raw`\u003e`)
+  })
+
+  it('round-trips the hash, snapshot and last_mention_id through extractPreviousMarker', () => {
+    const parsed = extractPreviousMarker(`reply text\n${buildMarker(hash, snapshot, 4321)}`)
+
+    expect(parsed).toEqual({hash, snapshot, last_mention_id: 4321})
+    expect((parsed?.snapshot as RolloutSnapshot).items[0]?.gate).toBe('blocked --> see <b>&</b>')
+  })
+
+  it('reads an absent or invalid last_mention_id as 0', () => {
+    for (const lastMentionId of ['', '"7"', '-3', '1.5', 'null']) {
+      const extra = lastMentionId === '' ? '' : `,"last_mention_id":${lastMentionId}`
+      const parsed = extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":"abc"${extra}} -->`)
+
+      expect(parsed?.last_mention_id).toBe(0)
+    }
+  })
+
+  it('gates on the hash alone when the snapshot is not an object', () => {
+    const stringSnapshot = extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":"${hash}","snapshot":"opaque"} -->`)
+    const noSnapshot = extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":"${hash}"} -->`)
+
+    expect(stringSnapshot?.hash).toBe(hash)
+    expect(noSnapshot?.hash).toBe(hash)
+    expect(decideComment(snapshot, hash, stringSnapshot, []).should_comment).toBe(false)
+    expect(decideComment(snapshot, hash, noSnapshot, []).should_comment).toBe(false)
+  })
+
+  it('still rejects a marker with no string hash', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    expect(extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"snapshot":{"items":[]}} -->`)).toBeNull()
+    expect(extractPreviousMarker(`<!-- ${MARKER_PREFIX}{"hash":7} -->`)).toBeNull()
+    stderrSpy.mockRestore()
+  })
+})
+
+describe('decideComment with pending operator mentions', () => {
   const snapshot = buildSnapshot([makeProjectItem()], [makeIssueState()], EXTERNAL)
   const hash = hashSnapshot(snapshot)
-  const previous: MarkerData = {hash, snapshot}
+  const previous: MarkerData = {hash, snapshot, last_mention_id: 0}
 
   it('wakes with an unchanged hash and says why', () => {
-    const decision = decideComment(snapshot, hash, previous, true)
+    const decision = decideComment(snapshot, hash, previous, [41])
 
     expect(decision.should_comment).toBe(true)
     expect(decision.reason).toContain('operator mention pending')
     expect(decision.hash).toBe(hash)
   })
 
-  it('names the pending mention when the hash also changed', () => {
-    const decision = decideComment(snapshot, hash, {hash: 'b'.repeat(64), snapshot}, true)
+  it('names the pending mentions when the hash also changed', () => {
+    const decision = decideComment(snapshot, hash, {...previous, hash: 'b'.repeat(64)}, [41, 42])
 
     expect(decision.should_comment).toBe(true)
     expect(decision.reason).toContain('hash changed')
-    expect(decision.reason).toContain('operator mention pending')
+    expect(decision.reason).toContain('operator mention pending (2)')
   })
 
   it('stays quiet when nothing changed and nothing is pending', () => {
-    expect(decideComment(snapshot, hash, previous, false).should_comment).toBe(false)
+    expect(decideComment(snapshot, hash, previous, []).should_comment).toBe(false)
   })
 })
 
-describe('pending operator mention through the CLI', () => {
+describe('pending operator mentions through the CLI', () => {
   const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
   const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
-  const mention: TrackerComment = {author: {login: 'marcusrbrown'}, body: '@fro-bot dashboard 2026.10.68 is live'}
 
-  it('wakes on an unanswered mention, then goes quiet once a reply carries a new marker', () => {
+  it('wakes on an unanswered mention, then goes quiet once the marker carries its ID', () => {
     const seeded = runCliFixture({items, issues})
-    const reply: TrackerComment = {author: {login: 'fro-bot'}, body: `@fro-bot seeded\n${markerFor(seeded)}`}
+    const reply = comment(100, 'fro-bot', `@fro-bot seeded\n${seeded.marker}`)
+    const mention = comment(101, 'marcusrbrown', '@fro-bot dashboard 2026.10.68 is live')
 
     const quiet = runCliFixture({items, issues, comments: [reply]})
     expect(quiet.should_comment).toBe(false)
+    expect(quiet.pending_mention_ids).toEqual([])
 
     const pending = runCliFixture({items, issues, comments: [reply, mention]})
     expect(pending.should_comment).toBe(true)
     expect(pending.reason).toContain('operator mention pending')
+    expect(pending.pending_mention_ids).toEqual([101])
+    expect(pending.last_mention_id).toBe(101)
     expect(pending.hash).toBe(seeded.hash)
 
     const answered = runCliFixture({
       items,
       issues,
-      comments: [reply, mention, {author: {login: 'fro-bot'}, body: `answered\n${markerFor(pending)}`}],
+      comments: [reply, mention, comment(102, 'fro-bot', `answered\n${pending.marker}`)],
     })
     expect(answered.should_comment).toBe(false)
+    expect(answered.pending_mention_ids).toEqual([])
+    expect(answered.last_mention_id).toBe(101)
     expect(answered.hash).toBe(seeded.hash)
+  })
+
+  it('keeps a mention that lands during a run pending although it precedes the run marker in the thread', () => {
+    const seeded = runCliFixture({items, issues})
+    const first = comment(100, 'marcusrbrown', '@fro-bot first')
+    const firstRun = runCliFixture({items, issues, comments: [first]})
+    const midRun = comment(101, 'marcusrbrown', '@fro-bot second, posted while the run was in flight')
+    // The run's marker comment (102) is later in the thread than the mid-run mention (101).
+    const runReply = comment(102, 'fro-bot', `answered\n${firstRun.marker}`)
+
+    const next = runCliFixture({items, issues, comments: [first, midRun, runReply]})
+
+    expect(seeded.hash).toBe(firstRun.hash)
+    expect(next.should_comment).toBe(true)
+    expect(next.pending_mention_ids).toEqual([101])
+  })
+
+  it('treats every operator mention as pending behind a marker without last_mention_id', () => {
+    const seeded = runCliFixture({items, issues})
+    const legacyMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
+
+    const result = runCliFixture({
+      items,
+      issues,
+      comments: [
+        comment(1, 'marcusrbrown', '@fro-bot old claim'),
+        comment(2, 'fro-bot', legacyMarker),
+        comment(3, 'marcusrbrown', '@fro-bot newer claim'),
+      ],
+    })
+
+    expect(result.should_comment).toBe(true)
+    expect(result.pending_mention_ids).toEqual([1, 3])
   })
 
   it('reports no pending mention for a body-only fixture', () => {
     const seeded = runCliFixture({items, issues})
 
-    const result = runCliFixture({items, issues, commentBody: `${mention.body}\n${markerFor(seeded)}`})
+    const result = runCliFixture({items, issues, commentBody: `@fro-bot claim\n${seeded.marker}`})
 
     expect(result.should_comment).toBe(false)
+    expect(result.pending_mention_ids).toEqual([])
   })
 
-  it('reads the pending mention from the live comment fetch', () => {
-    const seeded = runCliFixture({items, issues})
-    const comments = [{author: {login: 'fro-bot'}, body: markerFor(seeded)}, mention]
+  it('emits a marker that parses back to the printed hash and last_mention_id', () => {
+    const result = runCliFixture({items, issues, comments: [comment(77, 'marcusrbrown', '@fro-bot hi')]})
 
-    const result = runCliWithFakeGh({items, issues, commentsJson: JSON.stringify({comments})})
+    const parsed = extractPreviousMarker(result.marker)
 
-    expect(result.status).toBe(0)
-    const decision = JSON.parse(result.stdout) as CommentDecision
-    expect(decision.should_comment).toBe(true)
-    expect(decision.reason).toContain('operator mention pending')
+    expect(parsed).toMatchObject({hash: result.hash, last_mention_id: 77})
+    expect((parsed?.snapshot as RolloutSnapshot).external).toEqual(EXTERNAL)
   })
 })
 
@@ -1389,12 +1648,11 @@ describe('gateway-rollout-tracker.yaml workflow shape', () => {
     expect(allText).toContain('https://github.com/users/fro-bot/projects/1')
   })
 
-  it('passes the preflight hash and snapshot into the Fro Bot prompt', () => {
+  it('passes the preflight marker into the Fro Bot prompt', () => {
     const trackerJob = parsed.jobs['update-rollout-tracker']
     const withPrompt = (trackerJob?.with?.prompt as string | undefined) ?? ''
 
-    expect(withPrompt).toContain('needs.preflight.outputs.hash')
-    expect(withPrompt).toContain('needs.preflight.outputs.snapshot')
+    expect(withPrompt).toContain('needs.preflight.outputs.marker')
   })
 })
 
@@ -1464,11 +1722,13 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
   })
 
   describe('prompt', () => {
-    it('receives the comment ID and the preflight outputs', () => {
-      expect(prompt).toContain(expr('inputs.comment_id'))
-      expect(prompt).toContain('needs.preflight.outputs.reason')
-      expect(prompt).toContain('needs.preflight.outputs.hash')
-      expect(prompt).toContain('needs.preflight.outputs.snapshot')
+    // Assertions read the prompt with whitespace collapsed, so YAML line wrapping is not pinned.
+    const flat = prompt.replaceAll(/\s+/g, ' ')
+
+    it('receives the comment ID, the pending mention IDs and the preflight result', () => {
+      expect(flat).toContain(expr('inputs.comment_id'))
+      expect(flat).toContain(expr('needs.preflight.outputs.pending_mention_ids'))
+      expect(flat).toContain(expr('needs.preflight.outputs.reason'))
     })
 
     it('names every evidence source', () => {
@@ -1483,37 +1743,44 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
         'https://dashboard.fro.bot/operator/health',
         'acceptance-run results',
       ]) {
-        expect(prompt).toContain(source)
+        expect(flat).toContain(source)
       }
     })
 
     it('covers the body, Project 1 and the labelled acceptance list', () => {
-      expect(prompt).toContain('Rewrite every stale section of the body')
-      expect(prompt).toContain('Update the Project 1 fields')
-      expect(prompt).toContain('add any missing dependency items')
-      expect(prompt).toContain('operator-reported')
-      expect(prompt).toContain('agent-verified')
+      expect(flat).toContain('Rewrite every stale section of the body')
+      expect(flat).toContain('Update the Project 1 fields')
+      expect(flat).toContain('add any missing dependency items')
+      expect(flat).toContain('operator-reported')
+      expect(flat).toContain('agent-verified')
     })
 
-    it('catches up on every operator mention newer than the latest marker comment', () => {
-      expect(prompt).toContain('Read every fro-bot/.github#3512 comment by\nmarcusrbrown that contains @fro-bot')
-      expect(prompt).toContain(
-        'newer than the latest\ncomment by fro-bot or fro-bot[bot] that carries a\ngateway-rollout-tracker marker',
-      )
-      expect(prompt).toContain('Handle all of them in this run')
+    it('answers exactly the listed comment IDs, fetching each by ID', () => {
+      expect(flat).toContain('Answer exactly these comments and no others')
+      expect(flat).toContain('fetch each one by ID')
+      expect(flat).toContain('gh api repos/fro-bot/.github/issues/comments/<id>')
     })
 
-    it('replies to mentions always and to scheduled runs only on change', () => {
-      expect(prompt).toContain('always reply once')
-      expect(prompt).toContain('reply on\nfro-bot/.github#3512 only if you changed something')
-      expect(prompt).toContain('post nothing')
+    it('does not anchor on thread order', () => {
+      expect(flat).not.toContain('newer than the latest')
     })
 
-    it('ends every reply with the marker built from the preflight hash and snapshot', () => {
-      expect(prompt).toContain('End every tracker comment on fro-bot/.github#3512 with the')
-      expect(prompt).toContain(
-        `<!-- gateway-rollout-tracker:{"hash":"${expr('needs.preflight.outputs.hash')}","snapshot":${expr('needs.preflight.outputs.snapshot')}} -->`,
-      )
+    it('replies once to listed comments and edits the latest marker comment in place when nothing changes', () => {
+      expect(flat).toContain('post one reply on fro-bot/.github#3512 that covers all of them')
+      expect(flat).toContain('narrates only that change')
+      expect(flat).toContain('do not post a new comment')
+      expect(flat).toContain('edit the latest comment by fro-bot or fro-bot[bot]')
+      expect(flat).toContain('in place')
+      expect(flat).toContain('gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>')
+      expect(flat).toContain('replacing only its marker')
+    })
+
+    it('ends every reply and in-place edit with the ready-made marker', () => {
+      expect(flat).toContain('End every tracker comment on fro-bot/.github#3512, and every in-place edit, with this')
+      expect(flat).toContain('Copy it exactly')
+      expect(flat).toContain(expr('needs.preflight.outputs.marker'))
+      expect(flat).not.toContain('needs.preflight.outputs.hash')
+      expect(flat).not.toContain('needs.preflight.outputs.snapshot')
     })
   })
 })
