@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/mothership
 created: 2026-07-06
-updated: 2026-10-07
+updated: 2026-10-22
 node_id: R_kgDOTOX0_A
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
+    accessed: 2026-10-22
   - url: https://github.com/marcusrbrown/mothership
     sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
     accessed: 2026-10-07
@@ -70,8 +73,48 @@ As of the 2026-09-08 survey the `ide_*` surface has doubled from layout control 
 ## Evidence dates
 
 The tables and detailed survey below retain their **2026-09-08 snapshot**.
-The following bounded observation is the newer evidence; historical issue,
+The following bounded observations are the newer evidence; historical issue,
 release, alert, and workflow-run counts were not rechecked.
+
+## 2026-10-22 Observation — unchanged source snapshot
+
+The public default branch `main` again resolves to
+`b799c49e2b2ea57878d4f29ef897c6138c8053f1`, the same revision surveyed on
+October 7. Re-reading the root listing, README, JavaScript and Rust manifests,
+and all eight workflow files confirms the October 7 source-defined observations;
+this is a new access date, not evidence of new implementation or live operation.
+
+- **Product and dependencies:** the README still describes a source-run Tauri 2
+  app over [[fro-bot--space-bus]], with 17 `ide_*` tools sharing the UI's typed
+  executor. Its no-tagged-or-signed-release statement remains a README claim,
+  not a fresh release inventory. Both manifests declare `0.1.0`; space-bus
+  `0.15.0`, MCP SDK `1.29.0`, TypeScript `5.8.3`, Vite `7.3.6`, and Biome
+  `1.9.4` remain exact declarations. No lockfile resolution was inspected.
+- **Fro Bot is present:** `fro-bot.yaml` retains agent v0.117.0 at
+  `e6efc1f13ed05056cc9ba68d6f8fb5e71bed8ca6`, Bun `1.3.14`, daily
+  `15 6 * * *` scheduling, and custom-prompt dispatch. It still ends at the agent
+  step without explicit `output-mode` or caller diff/commit/PR handling.
+  A delivery-contract follow-up remains justified; an onboarding draft for a
+  missing Fro Bot workflow is not. The pinned action's implementation and live
+  run outcomes were outside this survey's read boundary.
+- **Verification boundaries:** release still has seven job definitions and its
+  required-check preflight accepts completed `success`, `skipped`, or `neutral`
+  conclusions. Linux CI still lacks Rust compilation/tests; macOS build lanes
+  belong to the tag/dispatch release workflow. CodeQL still lists only
+  `javascript-typescript` and `actions`. These are configured gates, not proof
+  of execution, signing success, or live environment protection. See
+  [[github-actions-ci]].
+
+No newly observed contradiction supersedes the October 7 qualifications. The
+September issue/dashboard counts, principal-handoff diagnosis, and dropped-fix
+reports retain their historical dates: unchanged source does not remeasure
+server-side state. Transcript text is still documented as verbatim and not
+guaranteed secret-free, despite the adjacent structural allowlist wording.
+
+Sources: [README](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/README.md),
+[package manifest](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/package.json),
+[Rust manifest](https://github.com/marcusrbrown/mothership/blob/b799c49e2b2ea57878d4f29ef897c6138c8053f1/src-tauri/Cargo.toml),
+and [workflow directory](https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows).
 
 ## 2026-10-07 Observation — stable public contract, incomplete delivery wiring
 

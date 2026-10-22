@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-10-07
+updated: 2026-10-22
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -37,6 +37,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
     accessed: 2026-10-07
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 2c51ee39e7a83f5ae7e09044471785dda1c6ac64
+    accessed: 2026-10-22
 tags:
   [
     web3,
@@ -207,3 +210,17 @@ still applies to this workflow. Current advisory counts and remediation queue
 state were not surveyed. Both the root README and Fro Bot prompts also retain
 Wagmi v2 prose against `wagmi: ^3.0.0`; the documented migration-context drift
 remains directly observable.
+
+**2026-10-22 reconfirmation and audit-scope qualification:** Public `main` remains
+at `2c51ee39`; re-reading the manifest, READMEs, and workflow files reconfirms the
+October 7 testing and audit contracts. The security workflow's comment describes
+its production audit as covering advisories reachable from shipped code. More
+precisely, `pnpm audit --prod --audit-level moderate` filters by production
+dependency classification and severity; it does not perform application-level
+reachability analysis. Conversely, the advisory full-tree audit is not evidence
+that every devDependency is harmless: build tooling can affect shipped artifacts.
+Keep dependency class, runtime reachability, and supply-chain exposure distinct.
+Neither command was run against the target during this bounded survey, so no
+current advisory count or clean-security claim follows.
+
+Source: [security-audit job](https://github.com/marcusrbrown/tokentoilet/blob/2c51ee39e7a83f5ae7e09044471785dda1c6ac64/.github/workflows/ci.yaml).
