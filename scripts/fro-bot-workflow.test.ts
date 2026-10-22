@@ -1359,3 +1359,32 @@ describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts 
     expect(ingestStep?.env?.WIKI_HANDOFF_DIR).toBe(applyStep?.env?.WIKI_HANDOFF_DIR)
   })
 })
+
+describe('fro-bot.yaml agent prompts leave knowledge/index.md to the trusted ingest job', () => {
+  const env = froBotParsed.env ?? {}
+  const agentPrompt = (jobName: string): string => {
+    const step = froBotParsed.jobs[jobName]?.steps?.find(candidate =>
+      (candidate.uses ?? '').startsWith('fro-bot/agent@'),
+    )
+    return String(step?.with?.prompt ?? '')
+  }
+  const promptTexts: [string, string][] = [
+    ['the observe intro', String(env.OBSERVE_INTRO ?? '')],
+    ['the fro-bot job prompt', agentPrompt('fro-bot')],
+    ['the fro-bot-observe job prompt', agentPrompt('fro-bot-observe')],
+  ]
+
+  it.each(promptTexts)('%s never permits editing the index, and says the ingest job maintains it', (_name, text) => {
+    const indexLines = text.split('\n').filter(line => line.includes('knowledge/index.md'))
+
+    expect(indexLines.length).toBeGreaterThan(0)
+    for (const line of indexLines) expect(line).toContain('Do not edit')
+    expect(text.replaceAll(/\s+/g, ' ')).toContain('the trusted ingest job')
+    expect(text.replaceAll(/\s+/g, ' ')).not.toMatch(/update only[^.]*knowledge\/index\.md/)
+    expect(text.replaceAll(/\s+/g, ' ')).not.toMatch(/write it directly into[^.]*knowledge\/index\.md/)
+  })
+
+  it.each(promptTexts.slice(1))('%s still permits knowledge/wiki/** and knowledge/log.md edits', (_name, text) => {
+    expect(text.replaceAll(/\s+/g, ' ')).toContain('update only `knowledge/wiki/**` and `knowledge/log.md`')
+  })
+})

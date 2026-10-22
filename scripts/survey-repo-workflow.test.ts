@@ -2303,3 +2303,36 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     expect(result.calls).toBe('')
   })
 })
+
+describe('survey-repo.yaml agent prompt leaves knowledge/index.md to the trusted writer', () => {
+  const env = (workflowParsed as {env?: Record<string, string>}).env ?? {}
+  const prompt = env.INGEST_PROMPT ?? ''
+  const agentSteps = (workflowParsed.jobs['survey-repo']?.steps ?? []).filter(step =>
+    (step.uses ?? '').startsWith('fro-bot/agent@'),
+  )
+
+  it('only mentions the index to forbid editing it', () => {
+    const indexLines = prompt.split('\n').filter(line => line.includes('knowledge/index.md'))
+
+    expect(indexLines).toHaveLength(1)
+    expect(indexLines[0]).toContain('Do not edit')
+    expect(prompt).not.toContain('Update `knowledge/index.md`')
+  })
+
+  it('limits the writable paths to the wiki pages and the log', () => {
+    expect(prompt).toContain('Modify only `knowledge/wiki/**` and `knowledge/log.md` in this repository.')
+  })
+
+  it('still instructs appending a log entry that keeps existing entries', () => {
+    expect(prompt).toContain('Append a log entry to `knowledge/log.md`')
+    expect(prompt).toContain('leave them unchanged')
+  })
+
+  it('does not call the index a required outcome in the retry prompts either', () => {
+    expect(agentSteps).toHaveLength(3)
+    for (const step of agentSteps) {
+      const text = String(step.with?.prompt ?? '').replaceAll(/\s+/g, ' ')
+      expect(text).not.toContain('the index')
+    }
+  })
+})

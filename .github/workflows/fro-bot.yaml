@@ -366,9 +366,10 @@ env:
     branch via commit-metadata.ts.
 
     The one exception is durable knowledge capture: if this pass surfaces
-    knowledge worth persisting, write it directly into knowledge/wiki/**,
-    knowledge/index.md, and knowledge/log.md in the working tree per
-    knowledge/schema.md, and leave that tree dirty when you finish this run.
+    knowledge worth persisting, write it directly into knowledge/wiki/** and
+    knowledge/log.md in the working tree per knowledge/schema.md, and leave that tree dirty
+    when you finish this run. Do not edit knowledge/index.md: the trusted ingest job
+    maintains it from the wiki pages.
     The workflow discovers the payload by running `git status --porcelain` and
     reading whatever it finds changed; a clean tree means nothing is handed off
     and ingestion silently delivers nothing and exits 0. Do not run
@@ -663,9 +664,10 @@ jobs:
             when one applies, follow it and cite its `Path:` in your reasoning. Treat
             entries marked as candidate suggestions as hints to verify, not settled facts.
             If this interaction surfaces durable knowledge worth keeping, update only
-            `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
-            `knowledge/schema.md`. Keep changes additive, preserve contradictions with
-            dates and sources, and leave the wiki untouched when the signal is weak.
+            `knowledge/wiki/**` and `knowledge/log.md` following `knowledge/schema.md`.
+            Do not edit `knowledge/index.md`: the trusted ingest job maintains it from the
+            wiki pages. Keep changes additive, preserve contradictions with dates and
+            sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
 
       - name: Detect wiki insight changes
@@ -1099,9 +1101,10 @@ jobs:
             when one applies, follow it and cite its `Path:` in your reasoning. Treat
             entries marked as candidate suggestions as hints to verify, not settled facts.
             If this interaction surfaces durable knowledge worth keeping, update only
-            `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
-            `knowledge/schema.md`. Keep changes additive, preserve contradictions with
-            dates and sources, and leave the wiki untouched when the signal is weak.
+            `knowledge/wiki/**` and `knowledge/log.md` following `knowledge/schema.md`.
+            Do not edit `knowledge/index.md`: the trusted ingest job maintains it from the
+            wiki pages. Keep changes additive, preserve contradictions with dates and
+            sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
 
       - name: Detect wiki insight changes
