@@ -1,4 +1,4 @@
-import type {RolloutSnapshot, SnapshotItem} from './rollout-tracker-snapshot.ts'
+import type {SnapshotItem} from './rollout-tracker-snapshot.ts'
 import type {
   ClaimKind,
   ClaimVerdict,
@@ -14,6 +14,7 @@ import type {
   StatusTruthClaim,
   StatusTruthFinding,
   StatusTruthJsonReport,
+  StatusTruthSnapshot,
 } from './status-truth-detect.ts'
 
 import process from 'node:process'
@@ -3725,8 +3726,8 @@ function makeSnapshotItem(overrides: Partial<SnapshotItem> = {}): SnapshotItem {
   }
 }
 
-/** Build a minimal RolloutSnapshot for test fixtures. */
-function makeRolloutSnapshot(items: SnapshotItem[] = [makeSnapshotItem()]): RolloutSnapshot {
+/** Build a minimal StatusTruthSnapshot for test fixtures. */
+function makeRolloutSnapshot(items: SnapshotItem[] = [makeSnapshotItem()]): StatusTruthSnapshot {
   return {items}
 }
 
@@ -4256,9 +4257,9 @@ describe('loadRolloutSnapshot: snapshot file loading and validation', () => {
     expect(result).toBeNull()
   })
 
-  it('loadRolloutSnapshot returns a valid RolloutSnapshot from a well-formed JSON file', async () => {
+  it('loadRolloutSnapshot returns a valid StatusTruthSnapshot from a well-formed JSON file', async () => {
     // Inject a file reader that returns valid snapshot JSON
-    const snapshot: RolloutSnapshot = {
+    const snapshot: StatusTruthSnapshot = {
       items: [
         {
           content_number: 3512,

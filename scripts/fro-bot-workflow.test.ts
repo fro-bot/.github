@@ -16,6 +16,8 @@ import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
+import {evaluateExpression} from './workflow-expression-test-helper.ts'
+
 interface WorkflowStep {
   name?: string
   id?: string
@@ -419,132 +421,40 @@ function pullRequestEvent({login, ref, fork = false, fullName = 'fro-bot/.github
   }
 }
 
-/**
- * Minimal GitHub Actions expression evaluator, just enough for the content-trigger `if:`:
- * `||`, `&&`, `!`, `==`, `!=`, parentheses, string literals, dotted property access (missing
- * paths are null), and the endsWith/contains/fromJSON functions. `||`/`&&` return operand
- * values like Actions does; string comparison is case-insensitive.
- */
-const truthy = (value: unknown): boolean => value !== null && value !== undefined && value !== '' && value !== false
-const lower = (value: unknown): unknown => (typeof value === 'string' ? value.toLowerCase() : value)
-
-function callFunction(name: string, args: unknown[]): unknown {
-  const [first, second] = args
-  switch (name) {
-    case 'endsWith':
-      return String(first).toLowerCase().endsWith(String(second).toLowerCase())
-    case 'contains':
-      return Array.isArray(first)
-        ? first.some(item => lower(item) === lower(second))
-        : String(first).toLowerCase().includes(String(second).toLowerCase())
-    case 'fromJSON':
-      return JSON.parse(String(first)) as unknown
-    default:
-      throw new Error(`unsupported function ${name}`)
+function commentEvent(fixture: {
+  eventName?: string
+  issueNumber: number
+  pullRequest?: boolean
+  login: string
+  body?: string
+  association?: string
+}): unknown {
+  return {
+    github: {
+      event_name: fixture.eventName ?? 'issue_comment',
+      event: {
+        issue: {number: fixture.issueNumber, pull_request: fixture.pullRequest === true ? {url: 'pr'} : null},
+        comment: {
+          body: fixture.body ?? '@fro-bot status?',
+          user: {login: fixture.login},
+          author_association: fixture.association ?? 'OWNER',
+        },
+      },
+    },
   }
 }
 
-// Recursive-descent parser; methods (not closures) so the mutually recursive productions satisfy no-use-before-define.
-class ExpressionEvaluator {
-  private readonly tokens: string[]
-  private readonly context: unknown
-  private position = 0
-
-  constructor(source: string, context: unknown) {
-    this.tokens = source.match(/'(?:[^']|'')*'|[a-z_][\w.-]*|\|\||&&|!=|==|[!(),]/gi) ?? []
-    this.context = context
+function issuesEvent(fixture: {action: 'opened' | 'edited'; authorLogin: string; senderLogin: string}): unknown {
+  return {
+    github: {
+      event_name: 'issues',
+      event: {
+        action: fixture.action,
+        issue: {number: 3512, user: {login: fixture.authorLogin}, author_association: 'OWNER'},
+        sender: {login: fixture.senderLogin},
+      },
+    },
   }
-
-  evaluate(): boolean {
-    const result = this.parseOr()
-    if (this.position !== this.tokens.length) throw new Error(`unparsed tokens from ${this.position}`)
-    return truthy(result)
-  }
-
-  private peek(): string | undefined {
-    return this.tokens[this.position]
-  }
-
-  private take(expected?: string): string {
-    const token = this.tokens[this.position++]
-    if (token === undefined || (expected !== undefined && token !== expected)) {
-      throw new Error(`expected ${expected ?? 'token'} at ${this.position}, got ${String(token)}`)
-    }
-    return token
-  }
-
-  private lookup(path: string): unknown {
-    let current: unknown = this.context
-    for (const key of path.split('.')) {
-      if (typeof current !== 'object' || current === null) return null
-      current = (current as Record<string, unknown>)[key] ?? null
-    }
-    return current
-  }
-
-  private parseOr(): unknown {
-    let left = this.parseAnd()
-    while (this.peek() === '||') {
-      this.take()
-      const right = this.parseAnd()
-      left = truthy(left) ? left : right
-    }
-    return left
-  }
-
-  private parseAnd(): unknown {
-    let left = this.parseEquality()
-    while (this.peek() === '&&') {
-      this.take()
-      const right = this.parseEquality()
-      left = truthy(left) ? right : left
-    }
-    return left
-  }
-
-  private parseEquality(): unknown {
-    const left = this.parseUnary()
-    if (this.peek() === '==' || this.peek() === '!=') {
-      const operator = this.take()
-      const equal = lower(left) === lower(this.parseUnary())
-      return operator === '==' ? equal : !equal
-    }
-    return left
-  }
-
-  private parseUnary(): unknown {
-    if (this.peek() === '!') {
-      this.take()
-      return !truthy(this.parseUnary())
-    }
-    return this.parsePrimary()
-  }
-
-  private parsePrimary(): unknown {
-    const token = this.take()
-    if (token === '(') {
-      const value = this.parseOr()
-      this.take(')')
-      return value
-    }
-    if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'")
-    if (token === 'null') return null
-    if (this.peek() === '(') {
-      this.take('(')
-      const args: unknown[] = []
-      while (this.peek() !== ')') {
-        args.push(this.parseOr())
-        if (this.peek() === ',') this.take()
-      }
-      this.take(')')
-      return callFunction(token, args)
-    }
-    return this.lookup(token)
-  }
-}
-
-function evaluateExpression(source: string, context: unknown): boolean {
-  return new ExpressionEvaluator(source, context).evaluate()
 }
 
 describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
@@ -569,6 +479,7 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
           github.event_name == 'issues' &&
           !endsWith(github.event.issue.user.login || '', '[bot]') &&
           (github.event.issue.user.login || '') != 'fro-bot' &&
+          (github.event.sender.login || '') != 'fro-bot' &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association || '')
         ) ||
         (
@@ -582,6 +493,12 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
            github.event_name == 'discussion_comment') &&
           contains(github.event.comment.body || '', '@fro-bot') &&
           (github.event.comment.user.login || '') != 'fro-bot' &&
+          !(
+            github.event_name == 'issue_comment' &&
+            github.event.issue.number == 3512 &&
+            github.event.issue.pull_request == null &&
+            github.event.comment.user.login == 'marcusrbrown'
+          ) &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
         )
       )
@@ -606,6 +523,55 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   ])('evaluates the content-trigger predicate against a fixture: %s', (_name, event, expected) => {
     expect(evaluateExpression(contentIf, event)).toBe(expected)
   })
+
+  it.each([
+    [
+      'a marcusrbrown mention on #3512 (the tracker mention workflow answers it)',
+      {issueNumber: 3512, login: 'marcusrbrown'},
+      false,
+    ],
+    [
+      'a MarcusRBrown mention on #3512 (logins compare case-insensitively)',
+      {issueNumber: 3512, login: 'MarcusRBrown'},
+      false,
+    ],
+    ['a marcusrbrown mention on another issue', {issueNumber: 3511, login: 'marcusrbrown'}, true],
+    [
+      'a marcusrbrown mention on pull request 3512',
+      {issueNumber: 3512, pullRequest: true, login: 'marcusrbrown'},
+      true,
+    ],
+    [
+      'another trusted author mentioning on #3512',
+      {issueNumber: 3512, login: 'octocat', association: 'COLLABORATOR'},
+      true,
+    ],
+    [
+      'a marcusrbrown comment on #3512 without a mention',
+      {issueNumber: 3512, login: 'marcusrbrown', body: 'ack'},
+      false,
+    ],
+    ['an untrusted author mentioning on #3512', {issueNumber: 3512, login: 'octocat', association: 'NONE'}, false],
+    [
+      'a marcusrbrown review comment on pull request 3512',
+      {eventName: 'pull_request_review_comment', issueNumber: 3512, login: 'marcusrbrown'},
+      true,
+    ],
+  ])('evaluates the comment predicate against a fixture: %s', (_name, fixture, expected) => {
+    expect(evaluateExpression(contentIf, commentEvent(fixture))).toBe(expected)
+  })
+
+  it.each([
+    ['an edit made by the fro-bot account to an operator-authored issue', 'edited', 'marcusrbrown', 'fro-bot', false],
+    ['an edit made by the operator to their own issue', 'edited', 'marcusrbrown', 'marcusrbrown', true],
+    ['an issue the operator opens', 'opened', 'marcusrbrown', 'marcusrbrown', true],
+    ['an issue the fro-bot account opens', 'opened', 'fro-bot', 'fro-bot', false],
+  ] as const)(
+    'evaluates the issues predicate against a fixture: %s',
+    (_name, action, authorLogin, senderLogin, expected) => {
+      expect(evaluateExpression(contentIf, issuesEvent({action, authorLogin, senderLogin}))).toBe(expected)
+    },
+  )
 
   it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {
     expect(contentIf).toContain(`!endsWith(github.event.issue.user.login || '', '[bot]')`)
