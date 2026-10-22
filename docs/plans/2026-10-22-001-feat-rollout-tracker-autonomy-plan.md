@@ -299,7 +299,7 @@ sequenceDiagram
 
 **Verification:** the workflow tests pass, and actionlint is clean.
 
-- [ ] **Unit 3: Mention hop and reply-job exclusion**
+- [x] **Unit 3: Mention hop and reply-job exclusion**
 
 **Goal:** A `marcusrbrown` `@fro-bot` comment on #3512 dispatches the tracker. The credential-withheld reply job ignores that comment.
 

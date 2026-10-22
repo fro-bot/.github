@@ -1,0 +1,42 @@
+---
+name: Rollout Tracker Mention
+
+# An `issue_comment` run is credential-withheld for the agent, so it can read
+# but not write. This workflow only decides whether to dispatch: an `@fro-bot`
+# comment by marcusrbrown on fro-bot/.github#3512 starts a
+# gateway-rollout-tracker.yaml run, which holds the credential. The dispatch
+# carries the comment ID as plain data; the tracker run reads the operator
+# comments itself. The Fro Bot content job skips these same comments, so the
+# operator gets one reply.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  dispatch-tracker:
+    name: Dispatch the rollout tracker
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event.issue.number == 3512 &&
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.login == 'marcusrbrown' &&
+      contains(github.event.comment.body || '', '@fro-bot')
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the tracker run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$COMMENT_ID" =~ ^[0-9]+$ ]]; then
+            printf '::error::comment id shape invalid\n' >&2
+            exit 1
+          fi
+          gh workflow run gateway-rollout-tracker.yaml --ref main -f comment_id="$COMMENT_ID"

@@ -421,6 +421,29 @@ function pullRequestEvent({login, ref, fork = false, fullName = 'fro-bot/.github
   }
 }
 
+function commentEvent(fixture: {
+  eventName?: string
+  issueNumber: number
+  pullRequest?: boolean
+  login: string
+  body?: string
+  association?: string
+}): unknown {
+  return {
+    github: {
+      event_name: fixture.eventName ?? 'issue_comment',
+      event: {
+        issue: {number: fixture.issueNumber, pull_request: fixture.pullRequest === true ? {url: 'pr'} : null},
+        comment: {
+          body: fixture.body ?? '@fro-bot status?',
+          user: {login: fixture.login},
+          author_association: fixture.association ?? 'OWNER',
+        },
+      },
+    },
+  }
+}
+
 describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
   const contentJob = froBotParsed.jobs['fro-bot']
   const contentIf = String(contentJob?.if ?? '')
@@ -456,6 +479,12 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
            github.event_name == 'discussion_comment') &&
           contains(github.event.comment.body || '', '@fro-bot') &&
           (github.event.comment.user.login || '') != 'fro-bot' &&
+          !(
+            github.event_name == 'issue_comment' &&
+            github.event.issue.number == 3512 &&
+            github.event.issue.pull_request == null &&
+            github.event.comment.user.login == 'marcusrbrown'
+          ) &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
         )
       )
@@ -479,6 +508,43 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     ['a human PR', pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x'}), true],
   ])('evaluates the content-trigger predicate against a fixture: %s', (_name, event, expected) => {
     expect(evaluateExpression(contentIf, event)).toBe(expected)
+  })
+
+  it.each([
+    [
+      'a marcusrbrown mention on #3512 (the tracker mention workflow answers it)',
+      {issueNumber: 3512, login: 'marcusrbrown'},
+      false,
+    ],
+    [
+      'a MarcusRBrown mention on #3512 (logins compare case-insensitively)',
+      {issueNumber: 3512, login: 'MarcusRBrown'},
+      false,
+    ],
+    ['a marcusrbrown mention on another issue', {issueNumber: 3511, login: 'marcusrbrown'}, true],
+    [
+      'a marcusrbrown mention on pull request 3512',
+      {issueNumber: 3512, pullRequest: true, login: 'marcusrbrown'},
+      true,
+    ],
+    [
+      'another trusted author mentioning on #3512',
+      {issueNumber: 3512, login: 'octocat', association: 'COLLABORATOR'},
+      true,
+    ],
+    [
+      'a marcusrbrown comment on #3512 without a mention',
+      {issueNumber: 3512, login: 'marcusrbrown', body: 'ack'},
+      false,
+    ],
+    ['an untrusted author mentioning on #3512', {issueNumber: 3512, login: 'octocat', association: 'NONE'}, false],
+    [
+      'a marcusrbrown review comment on pull request 3512',
+      {eventName: 'pull_request_review_comment', issueNumber: 3512, login: 'marcusrbrown'},
+      true,
+    ],
+  ])('evaluates the comment predicate against a fixture: %s', (_name, fixture, expected) => {
+    expect(evaluateExpression(contentIf, commentEvent(fixture))).toBe(expected)
   })
 
   it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {
