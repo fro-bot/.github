@@ -27,7 +27,7 @@ The guard added in #4032 does not catch this. It compares against the writer's o
 Two smaller problems sit in the same writers:
 
 - **Deletions are lost.** Ingest takes its write set from `git status` and filters out deletions, so a page an agent deletes in a handoff is never removed from `data`.
-- **wiki-repair exits 0 when it aborts.** After a concurrent write it gives up, and the job still looks green.
+- **wiki-repair cannot survive a concurrent write.** It pins the tip it restored, aborts when `data` moves, and exits 0, so the job still looks green.
 
 ---
 
@@ -65,6 +65,7 @@ Two smaller problems sit in the same writers:
 **wiki-repair**
 
 - R12. wiki-repair fails the job when it aborts.
+- R13. wiki-repair reads the current head of `data` on each attempt, so a concurrent write is retried rather than aborting.
 
 ---
 
@@ -79,13 +80,14 @@ Two smaller problems sit in the same writers:
 - AE7. **Covers R10.** A survey conflicts on its last attempt. The run fails loudly, and the next reconcile re-dispatches it.
 - AE8. **Covers R11.** An event ingest is refused. The run fails loudly and is not re-run.
 - AE9. **Covers R12.** wiki-repair aborts, and the job fails.
+- AE10. **Covers R13.** A survey commits to `data` while wiki-repair runs. The repair re-reads the head and lands on its retry.
 
 ---
 
 ## Success Criteria
 
 - After a live daily survey batch, every survey's log entry, index rows and page edits are on `data`. Each survey lands either first time or after a re-run.
-- AE1 through AE9 each have a test that fails without the change. AE1 reproduces the 2026-10-21 sequence.
+- AE1 through AE10 each have a test that fails without the change. AE1 reproduces the 2026-10-20 sequence, and AE2 reproduces 2026-10-21.
 - Planning can tell, without inventing behavior, what a handoff carries, which writers refuse, which survey re-runs, and what each leaves on `data`.
 
 ---

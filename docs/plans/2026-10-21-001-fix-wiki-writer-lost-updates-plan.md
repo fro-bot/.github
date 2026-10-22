@@ -16,11 +16,11 @@ Trusted wiki writers (survey persist and the two fro-bot ingest jobs) apply the 
 - Every handed-off page and deletion is checked against the commit the agent job synced.
 - Agent deletions are committed.
 - A survey that hits a page conflict is re-dispatched.
-- wiki-repair fails the job when it aborts.
+- wiki-repair re-reads the head on each attempt and fails the job when it aborts.
 
 ## Problem Frame
 
-Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minutes and overlap. Persist jobs take 30–37 s and run one after another. The second agent syncs before the first survey persists. Its handoff carries `log.md`, `index.md` and the topic pages as full files, because the survey prompt tells the agent to edit them and the allowlist in `scripts/wiki-handoff-core.ts` admits them. Persist applies those files over its own fresh sync and commits. On 2026-10-20 and 2026-10-21 this dropped two log entries, two index rows and one topic-page edit from the earlier survey. The #4032 guard does not fire, because its base is persist's own sync (see origin: `docs/brainstorms/2026-10-21-wiki-writer-lost-updates-requirements.md`).
+Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minutes and overlap. Persist jobs take 30–37 s and run one after another. The second agent syncs before the first survey persists. Its handoff carries `log.md`, `index.md` and the topic pages as full files, because the survey prompt tells the agent to edit them and the allowlist in `scripts/wiki-handoff-core.ts` admits them. Persist applies those files over its own fresh sync and commits. On 2026-10-20 this dropped two log entries and two index rows from the earlier survey. On 2026-10-21 it also dropped one topic-page edit. The #4032 guard does not fire, because its base is persist's own sync (see origin: `docs/brainstorms/2026-10-21-wiki-writer-lost-updates-requirements.md`).
 
 ## Requirements Trace
 
@@ -36,12 +36,14 @@ Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minut
 - R10. A survey that is still conflicting after its last attempt fails loudly and is eligible again the next day.
 - R11. Observe and event ingests fail loudly on a page conflict and are not re-run.
 - R12. wiki-repair fails the job when it aborts.
+- R13. wiki-repair reads the current head on each attempt.
 
 ## Scope Boundaries
 
-- No writer queue or concurrency-group change. The window of about 30 s between a writer's sync and its commit stays covered by the #4032 guard.
+- No writer queue or concurrency-group change. The window of about 30 s between a writer's sync and its commit stays covered by the #4032 guard. A refusal there is an ordinary failure with the normal survey cadence; no redispatch.
 - Ingest's write set is not narrowed. Pages that differ from `main` are still rewritten from the writer's own sync, as they are today.
 - No commit-layer rebuild-per-attempt machinery, and no page merging.
+- No scope rule on agent deletions beyond the page guard, and no validation of the agent's log text beyond the append check.
 - No change to the rename writer, merge-back, or the drafted-solutions handoff.
 - No recovery of the content lost on 2026-10-20 and 2026-10-21.
 
@@ -66,8 +68,10 @@ Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minut
 - `.github/workflows/fro-bot.yaml`: the event and observe agent jobs' `sync-wiki` steps, `fro-bot-wiki-ingest` and `fro-bot-observe-wiki-ingest`, and the prompts that permit `index.md` edits.
 - `.github/workflows/reconcile-repos.yaml` shows the App-token mint shape for dispatching `survey-repo.yaml`.
 - `scripts/record-survey-result.ts` and `scripts/repos-metadata.ts` (`computeNextEligibleAt`, `CHANNEL_INTERVAL_DAYS`) hold the survey cadence.
-- `scripts/wiki-repair.ts` `main` writes the JSON result and exits 0. The `wiki-lint.yaml` summary step (`if: always()`) reads that JSON.
-- `scripts/git-data-fake.ts` is the multi-branch Git Data fake (`advance`, `beforeUpdateRef`, `truncate`) used by the rename and merge-back tests.
+- `scripts/wiki-repair.ts`: `runWikiRepair` compares the live tip with `tree.tipSha` and reloads through `loadTree`, which re-reads the pinned `WIKI_REPAIR_DATA_TIP_SHA` and the disk checkout, so every retry aborts. A privacy-leak abort sets `aborted` and `privacy_blocked` together. `main` writes the JSON result and exits 0, and the `wiki-lint.yaml` summary step (`if: always()`) reads it.
+- `scripts/wiki-ingest.ts` is the workflow entry. It calls `runWikiIngestCli` with no catch, so every error exits 1.
+- Survey agent retries (`survey-agent-retry-1`/`-2`) reuse the first-sync workspace, so the first sync is the correct agent base for every attempt.
+- `scripts/git-data-fake.ts` is the multi-branch Git Data fake (`advance`, `beforeUpdateRef`, `truncate`) used by the rename and merge-back tests. Its compare response has `ahead_by`, `behind_by` and `merge_base_commit.sha` but no `status`, and it has no `repos.getContent`.
 - `scripts/rename-tracked-repo.ts` is the precedent for rebuilding the log and index from the head and for `appendLogEntry` reuse.
 
 ### Institutional Learnings
@@ -112,8 +116,8 @@ Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minut
     },
     {
       "path_or_symbol": "scripts/rename-tracked-repo.ts :: renameTrackedRepo, writeCommit, assertTipIntegrity",
-      "description": "Rebuild-from-head writer: each attempt re-reads the snapshot (readSnapshot), checks tip integrity, builds createTree on the snapshot tree with parents=[headSha], non-force updateRef; 409/422 rebuilds up to 3 attempts. Extend: it already rebuilds log/index from head each attempt, but has no handoff and no page guard; generalize the pattern, not the repos.yaml planner.",
-      "disposition": "extend"
+      "description": "Rebuild-from-head writer: each attempt re-reads the snapshot, rebuilds log/index from the head and does a non-force updateRef with bounded 409/422 retries. Reuse as precedent only; the rename writer itself is unchanged by this plan.",
+      "disposition": "reuse"
     },
     {
       "path_or_symbol": "scripts/wiki-repair.ts :: repair attempt loop (tree reload on CONFLICT_EXHAUSTED)",
@@ -214,14 +218,15 @@ Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minut
 
 ## Key Technical Decisions
 
-- **Derive the agent's log entries on the trusted side.** The ingest CLI reads `log.md` from the handoff's `files/` directory and `log.md` at the agent's commit through the Git Data API. If the handoff copy starts with the base copy byte for byte, the remainder is the agent's entries. Otherwise the CLI emits a warning naming no page, and only the summary entry is used. This needs no prompt or artifact change, and handoffs built before the deploy keep working.
-- **Apply skips `log.md` and `index.md`; it does not reject them.** `validateAndApplyWikiHandoff` leaves both files out of the workspace, so the writer's synced copies stay in place, and ingest rebuilds the index from the pages as it does today. Rejecting them would fail every artifact built before the deploy.
-- **The page guard lives in `commitWikiChanges` as a second, per-path base.** A new optional handoff input carries the agent commit and the handed-off changed and deleted paths. Each attempt runs the existing `assertWriteSetUnchanged` for those paths against the agent commit, and the #4032 base check still covers the rest of the write set. A failure raises a new code, `HANDOFF_PAGE_CHANGED`, distinct from `CONFLICT_EXHAUSTED`.
-- **The ancestry check uses the compare API.** The agent commit must be identical to the head, or the head must be ahead of it. Otherwise, or on a 404, the CLI raises `HANDOFF_BASE_INVALID` before any write, and a missing or empty value refuses the write the same way. A 404 here must never reach the bootstrap-on-404 path.
-- **The CLI exits with a distinct code for a page conflict.** `HANDOFF_PAGE_CHANGED` exits with code 3. The persist step maps that code to a `conflict=true` output and still fails the step. Every other failure keeps its current exit code.
-- **The re-run is a fresh dispatch from a new job.** A `survey-redispatch` job runs after `survey-persist` when `conflict == 'true'` and the attempt count is below 3. It mints an App token with `permission-actions: write` and `repositories: .github`, then dispatches `survey-repo.yaml` with `node_id` and `attempt + 1`. The new `attempt` input is a string that is strictly parsed as an integer from 1 to 3. The dispatched run queues behind the current run's `survey-repo-${node_id}` group.
-- **A conflict failure is eligible again the next day.** `record-survey-result` takes a conflict flag. When it is set, the result still records `failure`, but `next_survey_eligible_at` becomes the next day instead of the channel interval.
+- **Derive the agent's log entries on the trusted side.** The ingest CLI reads `log.md` from the handoff's `files/` directory, and `log.md` at the agent's commit through `getCommit`/`getTree`/`getBlob`. Both are normalized to LF line endings with one final newline. If the handoff copy then starts with the base copy, the remainder is the agent's entries. A non-append edit drops them with a fixed warning, and only the summary entry is used. A failed read of the base log refuses the write instead of degrading. No prompt or artifact change is needed.
+- **Apply skips `log.md` and `index.md`, including their deletions; it does not reject them.** `validateAndApplyWikiHandoff` neither writes nor removes either file in the workspace, so the writer's synced copies stay in place, and ingest rebuilds the index from the pages as it does today. Skipping deletions matters: a manifest that deletes `log.md` would otherwise empty the workspace log, and ingest would commit a one-entry log.
+- **The page guard lives in `commitWikiChanges` as a second, per-path base.** A new optional handoff input carries the agent commit and the handed-off changed and deleted paths, with `knowledge/log.md` and `knowledge/index.md` filtered out. On every attempt the handoff check runs first, so a page conflict always surfaces as `HANDOFF_PAGE_CHANGED`. The #4032 base check then covers the rest of the write set and keeps raising `CONFLICT_EXHAUSTED`. `assertWriteSetUnchanged` takes the refusal code as a parameter.
+- **The agent commit is resolved before the retry loop.** The CLI checks it is present and a SHA, and then the commit layer checks it resolves and is an ancestor of the head, all outside the try block whose 404 handler bootstraps `data`. Ancestry means compare `behind_by === 0` and `merge_base_commit.sha` equal to the agent commit, which the fake supports. Any failure raises `HANDOFF_BASE_INVALID` before any write.
+- **Exit 3 comes from the entry script.** `scripts/wiki-ingest.ts` catches a `WikiIngestError` with code `HANDOFF_PAGE_CHANGED` and sets exit code 3; every other error keeps its current path. The survey ingest step writes `conflict=true` to `$GITHUB_OUTPUT` when the status is 3, then exits with that status. `survey-persist` declares `outputs.conflict` from that step.
+- **The re-run is a fresh dispatch from a new job.** `survey-redispatch` has `needs: survey-persist` and `if: always() && !cancelled() && needs.survey-persist.outputs.conflict == 'true'`, plus an attempt check below 3. It mints an App token with `permission-actions: write` and `repositories: ${{ github.event.repository.name }}`, the same reach the reconcile writer holds. It then dispatches `survey-repo.yaml` on `main` with `node_id` and `attempt + 1`, passing both through `env`. The new `attempt` input is a string parsed strictly as an integer from 1 to 3. The dispatched run queues behind the current run's `survey-repo-${node_id}` group.
+- **A conflict failure is eligible again the next day.** The record step passes `SURVEY_CONFLICT=true` when `conflict` is set. `record-survey-result` still records `failure`, but `next_survey_eligible_at` becomes the next day instead of the channel interval.
 - **Observe and event ingests keep their current failure behavior.** The new exit code fails the job loudly, and nothing re-dispatches it.
+- **wiki-repair reloads from the head.** On a tip mismatch, `loadTree` reads the wiki pages and `metadata/repos.yaml` at the current head through the Git Data API, failing closed on a truncated tree, and the repair re-derives its plan. The grandfather pages stay from the job's restore. `main` sets `process.exitCode` from an `exitCodeFor(result)` helper: 1 when `aborted > 0` and the abort is not a privacy leak.
 
 ## Open Questions
 
@@ -234,7 +239,6 @@ Reconcile dispatches surveys about 1.5 minutes apart. Agent jobs run 6–8 minut
 ### Deferred to Implementation
 
 - The exact shape of the new `commitWikiChanges` handoff input and its interaction with the existing `baseCommitSha` parameter, settled while writing the guard tests.
-- Whether the derivation of the agent's entries lives inside `runWikiIngestCli` or in a small helper module. This only affects where the Stryker `mutate` entry points.
 
 ## High-Level Technical Design
 
@@ -283,8 +287,8 @@ sequenceDiagram
 
 - Give each agent job's `sync-wiki` step an id. These are the survey agent job and the fro-bot event and observe agent jobs.
 - Expose `agent-base-sha` from that step's `data-sha` as a job output.
-- In each of the three ingest steps, set `WIKI_HANDOFF_BASE_SHA` from `needs.<agent-job>.outputs.agent-base-sha`. Keep `WIKI_INGEST_DATA_TIP_SHA` as the writer's own sync.
-- Add the new variable to the trusted-env allowlist.
+- In each of the three ingest steps, set `WIKI_HANDOFF_BASE_SHA` from `needs.<agent-job>.outputs.agent-base-sha`, and `WIKI_HANDOFF_DIR` to the same directory the apply step uses. Keep `WIKI_INGEST_DATA_TIP_SHA` as the writer's own sync.
+- Add both variables to the trusted-env allowlist.
 
 **Patterns to follow:**
 
@@ -292,8 +296,8 @@ sequenceDiagram
 
 **Test scenarios:**
 
-- Happy path: each ingest step's `WIKI_HANDOFF_BASE_SHA` reads exactly `needs.<agent-job>.outputs.agent-base-sha`, and that job output reads the sync step's `data-sha`.
-- Edge case: the agent job's sync step has the id the output references, and the agent job has no step before the sync step.
+- Happy path: each ingest step's `WIKI_HANDOFF_BASE_SHA` reads exactly `needs.<agent-job>.outputs.agent-base-sha`, that job output reads the sync step's `data-sha`, and `WIKI_HANDOFF_DIR` matches the apply step's value.
+- Edge case: the agent job's sync step has the id the output references, and no agent step runs before it.
 - Error path: the trusted-env guard rejects a `WIKI_HANDOFF_BASE_SHA` sourced from anywhere other than a job output.
 
 **Verification:**
@@ -312,19 +316,15 @@ sequenceDiagram
 
 - Modify: `scripts/wiki-handoff-core.ts`
 - Modify: `packages/wiki-write-core/src/wiki-ingest.ts`
-- Create (if extracted): `packages/wiki-write-core/src/handoff-log.ts`
 - Modify: `packages/wiki-write-core/dist/**`
-- Modify: `stryker.config.json`
-- Modify: `mutation-guards.json`
 - Test: `scripts/wiki-handoff-core.test.ts`
 - Test: `scripts/wiki-ingest.test.ts`
-- Test: `packages/wiki-write-core/src/handoff-log.test.ts` (if extracted)
 
 **Approach:**
 
-- `validateAndApplyWikiHandoff` still validates `knowledge/log.md` and `knowledge/index.md` but does not write them. The allowlist stays as it is, so artifacts built before this change still validate.
-- The ingest CLI reads the handoff `log.md` from the handoff `files/` directory and `log.md` at `WIKI_HANDOFF_BASE_SHA`. It passes the derived suffix to the builder, which appends it to the workspace (synced) `log.md` before its own summary entry.
-- When the handoff has no `log.md`, or the derivation fails, the CLI appends only the summary entry and emits a fixed warning line.
+- `validateAndApplyWikiHandoff` still validates `knowledge/log.md` and `knowledge/index.md` but neither writes nor deletes them. The allowlist stays as it is.
+- The ingest CLI reads the handoff `log.md` and `log.md` at `WIKI_HANDOFF_BASE_SHA`, normalizes both, and passes the suffix to the builder, which appends it to the workspace (synced) `log.md` before its own summary entry.
+- When the handoff has no `log.md`, the CLI appends only the summary entry. A non-append edit does the same with a fixed warning. A failed base read refuses the write.
 
 **Patterns to follow:**
 
@@ -337,12 +337,15 @@ sequenceDiagram
 - Happy path: the handoff carries `index.md` with extra rows. The applied workspace `index.md` is the synced copy, and the built index covers the synced pages plus the handed-off pages.
 - Edge case: the handoff `log.md` is identical to the base, so only the summary entry is appended.
 - Edge case: the handoff has no `log.md`, so only the summary entry is appended.
+- Edge case: the handoff `log.md` uses CRLF line endings, or lacks a final newline, and otherwise appends one entry. The entry is kept.
+- Edge case: the agent appended two entries. Both are kept, in order.
 - Error path: the handoff `log.md` rewrites an earlier entry and appends one. The agent entries are dropped, a warning is emitted, only the summary is appended, and all synced entries survive (AE6).
-- Integration: an artifact built before the change, containing `log.md` and `index.md`, applies without error (R4).
+- Error path: the manifest deletes `knowledge/log.md` or `knowledge/index.md`. Apply leaves both workspace files in place, and the committed log keeps every synced entry.
+- Error path: reading `log.md` at the agent commit fails. The write is refused and nothing is committed.
 
 **Verification:**
 
-- The tests pass. The `dist` check is clean. Mutation guards are clean, with the derivation module (wherever it lands) listed in `mutate` with no survivors.
+- The tests pass, and the `dist` check is clean.
 
 - [ ] **Unit 3: Guard handed-off pages against the agent's commit and commit deletions**
 
@@ -356,19 +359,18 @@ sequenceDiagram
 
 - Modify: `packages/wiki-write-core/src/wiki-ingest.ts`
 - Modify: `packages/wiki-write-core/dist/**`
-- Modify: `scripts/wiki-handoff-apply.ts` (only if the manifest path has to be surfaced)
+- Modify: `scripts/wiki-ingest.ts`
 - Test: `scripts/wiki-ingest.test.ts`
 - Test: `scripts/wiki-handoff-sequence.test.ts` (new integration test)
 
 **Approach:**
 
 - The CLI reads `manifest.json` (`changed`, `deleted`) from the handoff directory after apply.
-- It validates `WIKI_HANDOFF_BASE_SHA` before any write: it must be present, be a SHA, resolve, and be an ancestor of or identical to the head. A failure raises `HANDOFF_BASE_INVALID`.
-- It passes the handoff paths and the agent commit to `commitWikiChanges`, which checks them on every attempt and raises `HANDOFF_PAGE_CHANGED`.
-- Manifest deletions are added to `deletedPaths`, because the porcelain filter still drops them.
-- `HANDOFF_PAGE_CHANGED` exits 3. Error messages name no pages.
+- It passes the handoff paths (without `log.md` and `index.md`) and the agent commit to `commitWikiChanges`. The commit layer resolves the agent commit and checks ancestry before its retry loop, raising `HANDOFF_BASE_INVALID`, then checks the handoff paths first on every attempt and raises `HANDOFF_PAGE_CHANGED`.
+- Manifest page deletions are added to `deletedPaths`, because the porcelain filter still drops them.
+- `scripts/wiki-ingest.ts` maps `HANDOFF_PAGE_CHANGED` to exit 3. The new error messages name no pages.
 
-**Execution note:** Start with the integration test that replays the 2026-10-21 sequence and fails on the current code.
+**Execution note:** Start with the integration tests that replay the 2026-10-20 and 2026-10-21 sequences and fail on the current code.
 
 **Patterns to follow:**
 
@@ -377,12 +379,14 @@ sequenceDiagram
 
 **Test scenarios:**
 
-- Integration (AE1): two agents sync at S0. A persists, which moves the head. B's handoff carries a stale `log.md`, `index.md` and a page that only B edited. B lands, and `data` keeps A's log entries, A's index rows and A's pages, plus B's page and entry.
-- Integration (AE2, first half): A and B both edit `topics/github-actions-ci.md`. B is refused with `HANDOFF_PAGE_CHANGED`, nothing is committed, and the CLI exits 3.
+- Integration (AE1, the 2026-10-20 sequence): two agents sync at S0. A persists, which moves the head. B's handoff carries a stale `log.md`, `index.md` and a page that only B edited. B lands, and `data` keeps A's log entries, A's index rows and A's pages, plus B's page and entry.
+- Integration (AE2 first half, the 2026-10-21 sequence): A and B both edit `topics/github-actions-ci.md`. B is refused with `HANDOFF_PAGE_CHANGED`, nothing is committed, and the CLI exits 3.
+- Integration (AE2 second half): B re-runs from a fresh sync at the new head, edits the same page, and lands. The page holds both contributions.
+- Edge case: B's handed-off page changed after S0 and its log moved after its own sync. The refusal is `HANDOFF_PAGE_CHANGED` and exit 3, not `CONFLICT_EXHAUSTED`.
 - Happy path (AE3): another writer changed only page Q after S1. Page P lands and Q's change stays.
 - Edge case (AE4): B deletes page X after A edited it, so B is refused. In the reverse order, A deleted X and B edited it, and B is refused.
 - Happy path: an agent deletion of an unchanged page is removed from `data`.
-- Error path (AE5): an empty, malformed or unknown (404) SHA, or one that is not an ancestor, refuses with `HANDOFF_BASE_INVALID`. No bootstrap call happens and nothing is written.
+- Error path (AE5): an empty, malformed or unknown (404) SHA, or one that is not an ancestor, refuses with `HANDOFF_BASE_INVALID`. `bootstrapDataBranch` is not called and nothing is written.
 - Error path: a ref race that exhausts retries still raises `CONFLICT_EXHAUSTED` and does not exit 3.
 
 **Verification:**
@@ -410,8 +414,8 @@ sequenceDiagram
 **Approach:**
 
 - Add an `attempt` string input to `survey-repo.yaml` (default `'1'`), parsed strictly.
-- The ingest step maps exit 3 to `conflict=true` and still fails. `record-survey-result` receives the conflict flag.
-- Add a `survey-redispatch` job: `needs: survey-persist`, guarded on `conflict == 'true'` and `attempt < 3`. It mints an App token with `permission-actions: write` and `repositories: .github`, then dispatches `survey-repo.yaml` with `node_id` and the incremented attempt.
+- The ingest step writes `conflict=true` on exit 3 and still fails. `survey-persist` declares `outputs.conflict`. The record step passes `SURVEY_CONFLICT`.
+- Add `survey-redispatch` as described in Key Technical Decisions: `always() && !cancelled()` gating, the repo-expression mint and an `env`-passed dispatch on `main`.
 - Leave the fro-bot ingest jobs unchanged. Their exit code already fails the run (R11).
 
 **Patterns to follow:**
@@ -421,12 +425,12 @@ sequenceDiagram
 
 **Test scenarios:**
 
-- Happy path: with `conflict=true` and attempt `1`, the redispatch job runs and dispatches attempt `2` for the same `node_id`.
+- Happy path: with `survey-persist` failed, `conflict=true` and attempt `1`, the redispatch job runs and dispatches attempt `2` for the same `node_id`.
+- Edge case: `survey-persist` failed without a conflict, so the redispatch job is skipped.
 - Edge case (AE7): with attempt `3`, the redispatch job is skipped and the run fails.
 - Error path: `attempt` values such as `0`, `4`, `abc` or `''` are rejected before any work runs.
 - Happy path: a conflict result records `failure` with `next_survey_eligible_at` set to the next day. A non-conflict failure keeps the channel interval.
 - Integration: the scope guard has a row for the new mint, with an exact permission and reach.
-- Edge case (AE8): the fro-bot event and observe ingest steps let exit 3 fail the job, and no fro-bot job dispatches a re-run.
 
 **Verification:**
 
@@ -449,21 +453,21 @@ sequenceDiagram
 
 **Approach:**
 
-- Drop the index update step from the survey prompt, and drop the `index.md` permission from the fro-bot prompts. The prompts state that the writer maintains the index.
+- Drop the index update step and `knowledge/index.md` from the "Modify only" line in the survey prompt, and drop `index.md` from the fro-bot prompts' permission lists. The prompts state that the writer maintains the index.
 
 **Test scenarios:**
 
-- Happy path: no agent prompt instructs edits to `knowledge/index.md`, and the survey prompt still instructs appending a log entry.
+- Happy path: no agent prompt permits or instructs edits to `knowledge/index.md`, and the survey prompt still instructs appending a log entry.
 
 **Verification:**
 
 - The contract tests pin the prompt text.
 
-- [ ] **Unit 6: Fail wiki-repair when it aborts**
+- [ ] **Unit 6: wiki-repair reloads the head and fails when it aborts**
 
-**Goal:** An aborted repair fails the job after writing its JSON result.
+**Goal:** A concurrent `data` write is retried from the current head, and an aborted repair fails the job after writing its JSON result.
 
-**Requirements:** R12
+**Requirements:** R12, R13
 
 **Dependencies:** None
 
@@ -474,12 +478,19 @@ sequenceDiagram
 
 **Approach:**
 
-- After the JSON is written, set `process.exitCode = 1` when `aborted > 0`. Do not call `process.exit` on the success path. Privacy and path refusals keep their current behavior.
+- On a tip mismatch, `loadTree` reads the wiki pages and `metadata/repos.yaml` at the current head through the Git Data API, failing closed on a truncated tree, and returns that head as `tipSha`. The first attempt keeps reading the restored checkout.
+- Add `exitCodeFor(result)`, returning 1 when `aborted > 0` and `privacy_blocked` is 0. `main` sets `process.exitCode` from it after writing the JSON, and never calls `process.exit` on the success path.
+
+**Patterns to follow:**
+
+- `scripts/rename-tracked-repo.ts` `readSnapshot` for reading a head tree and blobs, with the truncation check.
 
 **Test scenarios:**
 
-- Error path (AE9): when `aborted` is 1, the exit code is 1 and the JSON is still written.
-- Happy path: a clean run, or one where only `privacy_blocked` or `path_refused` are non-zero, exits 0.
+- Integration (AE10): with the Git Data fake, a survey commit advances `data` after the restore. The repair reloads from the new head, keeps the survey's change, and lands on its second attempt.
+- Error path: a truncated head tree aborts without a write.
+- Error path (AE9): an aborted, non-privacy result gives `exitCodeFor` 1, and the JSON is still written.
+- Happy path: a clean run, a privacy-leak abort, or a run with only `path_refused` gives 0.
 
 **Verification:**
 
@@ -502,15 +513,16 @@ sequenceDiagram
 
 | Risk | Mitigation |
 | --- | --- |
-| A deploy during a run in flight: the persist job uses new scripts but the old workflow, so there is no `WIKI_HANDOFF_BASE_SHA`, the write is refused, and the survey takes the normal failure cadence | Merge outside the ~10:00Z survey batch and the 04:00Z fro-bot schedule. Check `gh run list` for in-progress survey and fro-bot runs first |
-| A hot shared page that more than 3 surveys edit in one batch exhausts its re-runs | Accept this. Daily batches are about 2 surveys, and the last attempt becomes eligible again the next day |
+| A deploy during a run in flight: the persist job uses new scripts but the old workflow, so there is no `WIKI_HANDOFF_BASE_SHA`, the write is refused, and the survey takes the normal failure cadence | Merge only when `gh run list` shows no in-progress survey or fro-bot runs. The schedules drift: reconcile's 05:17 cron has fired at about 10:07–10:48Z, and fro-bot's 00:00 cron at about 04:00Z |
+| A hot shared page that more than 3 surveys in one batch edit exhausts its re-runs | Accept this. Reconcile dispatches at most 12 surveys per run, and the last attempt becomes eligible again the next day |
+| A commit by another writer lands in the roughly 30 s between a writer's sync and its commit | Accept this. The #4032 guard refuses it as an ordinary failure with the normal cadence |
 | The agent rewrites history in `log.md` | Its entries are dropped and the summary entry still lands, so no existing entry is lost |
 | A runner-level tamper with the agent job's outputs | Out of scope. R5 is a guard against stale data, not a security boundary |
-| The new dispatch mint broadens credentials | The mint has `actions: write` on this repo only, a scope-guard row, and is gated on `conflict` and `attempt < 3` |
+| The new dispatch mint holds `actions: write` | The reconcile writer already holds the same reach. The mint has a scope-guard row and is gated on `conflict` and `attempt < 3` |
 
 ## Documentation / Operational Notes
 
-- Update the handoff description in the `scripts/wiki-handoff-core.ts` header, and any `metadata/README.md` text that says agents maintain the index.
+- Update the handoff description in the `scripts/wiki-handoff-core.ts` header so it says `log.md` and `index.md` are validated but never applied.
 - After merge:
   - The `fix:` title publishes a patch release of `@fro.bot/wiki-write-core`.
   - Read back the first daily survey batch. Every survey's log entry and index rows should be on `data`.
