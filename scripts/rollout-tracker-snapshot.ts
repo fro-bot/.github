@@ -89,6 +89,8 @@ export interface PreflightResult extends CommentDecision {
   last_mention_id: number
   /** The complete marker string every tracker reply ends with. */
   marker: string
+  /** The REST ID of the latest comment carrying a parseable marker; null when none exists. */
+  marker_comment_id: number | null
 }
 
 export interface TrackerComment {
@@ -347,25 +349,38 @@ export function extractPreviousMarker(body: string): MarkerData | null {
   }
 }
 
-function findLatestMarkerCommentIndex(comments: readonly TrackerComment[]): number {
-  return comments.findLastIndex(
-    comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
-  )
+/** Every fro-bot or fro-bot[bot] comment that carries a parseable tracker marker, oldest first. */
+function listMarkerComments(
+  comments: readonly TrackerComment[],
+): {index: number; comment: TrackerComment; marker: MarkerData}[] {
+  const found: {index: number; comment: TrackerComment; marker: MarkerData}[] = []
+  for (const [index, comment] of comments.entries()) {
+    if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) continue
+    const marker = extractPreviousMarker(comment.body)
+    if (marker !== null) found.push({index, comment, marker})
+  }
+  return found
+}
+
+/** The latest marker comment in the thread, or undefined when none parses. */
+export function findLatestMarkerComment(comments: readonly TrackerComment[]): TrackerComment | undefined {
+  return listMarkerComments(comments).at(-1)?.comment
 }
 
 export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
-  return comments[findLatestMarkerCommentIndex(comments)]?.body ?? ''
+  return findLatestMarkerComment(comments)?.body ?? ''
 }
 
 /**
  * Find the operator `@fro-bot` comments the tracker has not answered.
  *
- * The baseline is the latest marker's `last_mention_id`, and a mention is pending when its comment ID
- * is above it. Thread position does not matter once the marker carries the field: a mention that
- * lands while a tracker run is in flight can precede that run's marker comment and is still pending.
- * A marker without a valid `last_mention_id` migrates by position: its baseline is the highest
- * operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind, marker or
- * not, because a reply without a marker still answered the mentions before it. With no
+ * The baseline is the highest valid `last_mention_id` across every parseable marker comment, so a
+ * damaged latest marker cannot lower it. A mention is pending when its comment ID is above the
+ * baseline. Thread position does not matter once a marker carries the field: a mention that lands
+ * while a tracker run is in flight can precede that run's marker comment and is still pending.
+ * When no parseable marker carries a valid `last_mention_id`, the baseline migrates by position: the
+ * highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind,
+ * marker or not, because a reply without a marker still answered the mentions before it. With no
  * marker at all (cold start) every existing mention counts as answered, because a cold start seeds
  * the gate and does not answer history. `lastMentionId` is the highest operator mention ID seen,
  * never below the baseline.
@@ -383,14 +398,18 @@ export function scanOperatorMentions(
     .filter(entry => entry.isMention)
   const highest = (entries: readonly {id: number}[]): number => Math.max(0, ...entries.map(entry => entry.id))
 
+  const recordedIds = [...listMarkerComments(comments).map(entry => entry.marker), previousMarker].flatMap(marker =>
+    marker?.last_mention_id == null ? [] : [marker.last_mention_id],
+  )
+
   let baseline: number
   if (previousMarker === null) {
     baseline = highest(mentions)
-  } else if (previousMarker.last_mention_id === null) {
+  } else if (recordedIds.length === 0) {
     const lastBotIndex = comments.findLastIndex(comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login))
     baseline = highest(mentions.filter(entry => entry.index < lastBotIndex))
   } else {
-    baseline = previousMarker.last_mention_id
+    baseline = Math.max(...recordedIds)
   }
 
   return {
@@ -626,7 +645,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
 /**
  * CLI mode: runs the preflight check using `gh` to fetch live data.
  *
- * Outputs JSON to stdout: { should_comment, reason, hash, snapshot, pending_mention_ids, last_mention_id, marker }
+ * Outputs JSON to stdout: { should_comment, reason, hash, snapshot, pending_mention_ids, last_mention_id, marker, marker_comment_id }
  * Exits non-zero if Project #1 access fails (fail loudly, not silently).
  *
  * Accepts optional injected fixtures via environment variables for testing:
@@ -801,6 +820,7 @@ async function main(): Promise<void> {
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
     marker: buildMarker(hash, snapshot, lastMentionId),
+    marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
   }
 
   process.stdout.write(`${JSON.stringify(result)}\n`)

@@ -1071,6 +1071,44 @@ describe('scanOperatorMentions', () => {
     expect(scanOperatorMentions(comments, marked(0)).pendingIds).toEqual([101])
   })
 
+  describe('a damaged latest marker', () => {
+    it('keeps the highest valid last_mention_id from an earlier marker comment', () => {
+      const comments = [
+        markerComment(1, ',"last_mention_id":3000'),
+        mention(3010),
+        markerComment(3020, ',"last_mention_id":"3010"'),
+      ]
+      const latest = extractPreviousMarker(comments[2]?.body ?? '')
+
+      expect(latest?.last_mention_id).toBeNull()
+      expect(scanOperatorMentions(comments, latest)).toEqual({pendingIds: [3010], lastMentionId: 3010})
+    })
+
+    it('does the same when the latest marker has no last_mention_id at all', () => {
+      const comments = [markerComment(1, ',"last_mention_id":3000'), mention(3010), markerComment(3020, '')]
+
+      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[2]?.body ?? '')).pendingIds).toEqual([3010])
+    })
+
+    it('uses the highest valid value when several markers carry one', () => {
+      const comments = [
+        markerComment(1, ',"last_mention_id":3000'),
+        markerComment(2, ',"last_mention_id":3500'),
+        mention(3400),
+        mention(3600),
+        markerComment(3, ',"last_mention_id":"x"'),
+      ]
+
+      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[4]?.body ?? '')).pendingIds).toEqual([3600])
+    })
+
+    it('falls back to the position rule only when no marker carries a valid value', () => {
+      const comments = [mention(1), markerComment(2, ',"last_mention_id":"x"'), mention(3)]
+
+      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[1]?.body ?? '')).pendingIds).toEqual([3])
+    })
+  })
+
   describe('a marker without last_mention_id', () => {
     const legacy = (): TrackerComment[] => [
       mention(7),
@@ -1362,6 +1400,44 @@ describe('pending operator mentions through the CLI', () => {
     expect(result.reason).toContain('cold start')
     expect(result.pending_mention_ids).toEqual([])
     expect(result.last_mention_id).toBe(3)
+  })
+
+  it('reports the ID of the latest marker comment, and null without one', () => {
+    const seeded = runCliFixture({items, issues})
+
+    const withMarker = runCliFixture({
+      items,
+      issues,
+      comments: [
+        comment(10, 'fro-bot', seeded.marker),
+        comment(11, 'marcusrbrown', 'a note'),
+        comment(12, 'fro-bot', seeded.marker),
+        comment(13, 'fro-bot', 'prose-only reply'),
+      ],
+    })
+    const withoutMarker = runCliFixture({items, issues, comments: [comment(1, 'marcusrbrown', 'a note')]})
+
+    expect(withMarker.marker_comment_id).toBe(12)
+    expect(withoutMarker.marker_comment_id).toBeNull()
+  })
+
+  it('anchors on an earlier marker when the latest one is damaged', () => {
+    const seeded = runCliFixture({items, issues})
+    const earlier = buildMarker(seeded.hash, seeded.snapshot, 3000)
+    const damaged = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, last_mention_id: '3010'})} -->`
+
+    const result = runCliFixture({
+      items,
+      issues,
+      comments: [
+        comment(1, 'fro-bot', earlier),
+        comment(3010, 'marcusrbrown', '@fro-bot posted before the damaged marker'),
+        comment(3020, 'fro-bot', damaged),
+      ],
+    })
+
+    expect(result.pending_mention_ids).toEqual([3010])
+    expect(result.marker_comment_id).toBe(3020)
   })
 
   it('reports no pending mention for a body-only fixture', () => {
@@ -1836,6 +1912,21 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     },
   )
 
+  it('wires the pending IDs, the marker and the marker comment ID from the preflight step to the prompt', () => {
+    const preflight = workflow.jobs.preflight as {
+      outputs?: Record<string, string>
+      steps?: {id?: string; run?: string}[]
+    }
+    const run = String(preflight.steps?.find(step => step.id === 'snapshot')?.run ?? '')
+
+    for (const name of ['pending_mention_ids', 'marker', 'marker_comment_id']) {
+      expect(preflight.outputs?.[name]).toBe(expr(`steps.snapshot.outputs.${name}`))
+      expect(run).toContain(`${name}`)
+      expect(prompt).toContain(expr(`needs.preflight.outputs.${name}`))
+    }
+    expect(run).toContain(`.marker_comment_id // ""`)
+  })
+
   describe('comment ID validation step', () => {
     const step = workflow.jobs.preflight?.steps?.find(candidate => candidate.name === 'Validate comment ID')
     const script = String(step?.run ?? '')
@@ -1904,10 +1995,12 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('post one reply on fro-bot/.github#3512 that covers all of them')
       expect(flat).toContain('narrates only that change')
       expect(flat).toContain('do not post a new comment')
-      expect(flat).toContain('edit the latest comment by fro-bot or fro-bot[bot]')
-      expect(flat).toContain('in place')
+      expect(flat).toContain('edit the marker comment in place')
       expect(flat).toContain('gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>')
-      expect(flat).toContain('replacing only its marker')
+      expect(flat).toContain('where <id> is exactly this marker comment ID')
+      expect(flat).toContain(expr('needs.preflight.outputs.marker_comment_id'))
+      expect(flat).toContain('Replace only the marker in its body')
+      expect(flat).toContain('Post a one-line seed comment that ends with the marker only when that ID is empty')
     })
 
     it('ends every reply and in-place edit with the ready-made marker', () => {

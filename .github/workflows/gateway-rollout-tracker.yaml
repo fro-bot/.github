@@ -27,8 +27,9 @@ jobs:
   # hash embedded in the latest @fro-bot tracker marker. Outputs
   # should_comment=true when the hash changed or an operator @fro-bot comment
   # has an ID above the marker's last_mention_id. It also outputs those
-  # pending comment IDs and the complete marker the agent writes. A failed
-  # read fails the job.
+  # pending comment IDs, the complete marker the agent writes and the ID of
+  # the latest marker comment (the in-place edit target). A failed read fails
+  # the job.
   preflight:
     name: Rollout Tracker Preflight
     runs-on: ubuntu-latest
@@ -40,6 +41,7 @@ jobs:
       reason: ${{ steps.snapshot.outputs.reason }}
       pending_mention_ids: ${{ steps.snapshot.outputs.pending_mention_ids }}
       marker: ${{ steps.snapshot.outputs.marker }}
+      marker_comment_id: ${{ steps.snapshot.outputs.marker_comment_id }}
     steps:
       # The comment ID is templated into the agent prompt, so it is checked before anything else runs.
       - name: Validate comment ID
@@ -69,10 +71,12 @@ jobs:
           REASON="$(echo "$RESULT" | jq -r '.reason')"
           PENDING_MENTION_IDS="$(echo "$RESULT" | jq -c '.pending_mention_ids')"
           MARKER="$(echo "$RESULT" | jq -r '.marker')"
+          MARKER_COMMENT_ID="$(echo "$RESULT" | jq -r '.marker_comment_id // ""')"
           {
             echo "should_comment=${SHOULD_COMMENT}"
             echo "reason=${REASON}"
             echo "pending_mention_ids=${PENDING_MENTION_IDS}"
+            echo "marker_comment_id=${MARKER_COMMENT_ID}"
             echo "marker<<MARKER_TEXT"
             echo "${MARKER}"
             echo "MARKER_TEXT"
@@ -142,12 +146,13 @@ jobs:
         changed in the body and on Project 1. When no comment ID is listed
         and you changed something, post a reply that narrates only that
         change. When no comment ID is listed and nothing needs to change, do
-        not post a new comment: edit the latest comment by fro-bot or
-        fro-bot[bot] on fro-bot/.github#3512 that carries a
-        gateway-rollout-tracker marker in place
-        (gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>),
-        replacing only its marker with the marker below. When no such comment
-        exists, post a one-line seed comment that ends with the marker.
+        not post a new comment: edit the marker comment in place with
+        gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>, where <id>
+        is exactly this marker comment ID (empty when none exists):
+        ${{ needs.preflight.outputs.marker_comment_id }}
+        Replace only the marker in its body with the marker below. Post a
+        one-line seed comment that ends with the marker only when that ID is
+        empty.
 
         All status comments must begin with @fro-bot or explicitly mention
         @fro-bot. Post status updates in a concise, structured format.

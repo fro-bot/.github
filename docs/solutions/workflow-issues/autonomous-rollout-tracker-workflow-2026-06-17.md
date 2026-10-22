@@ -125,7 +125,7 @@ modes, so every agent run has a valid hash and snapshot to write into its marker
 Pending operator mentions are a separate wake condition, not a hash input. The preflight reads the
 #3512 comments through the REST API (`gh api --paginate`), which carries numeric comment IDs. A
 mention is pending when its comment is by `marcusrbrown`, contains `@fro-bot`, and has an ID above
-the latest marker's `last_mention_id`. `decideComment` returns `should_comment` when the hash
+the baseline `last_mention_id` (see the marker section). `decideComment` returns `should_comment` when the hash
 changed or any mention is pending. Answering the mentions does not change the next hash comparison.
 
 A mention stays unanswered when the hop fails, the preflight fails, or GitHub displaces the run in a
@@ -141,30 +141,34 @@ it verbatim into every tracker reply and every in-place edit. `<`, `>` and `&` a
 JSON as `\u003c`, `\u003e` and `\u0026`, so Project text containing `-->` cannot close the HTML
 comment early.
 
-The latest marker comment authored by `fro-bot` or `fro-bot[bot]` is the only gate record; the
-script writes no state. The parser requires a string `hash`. `last_mention_id` is the highest
-operator `@fro-bot` comment ID the tracker has answered. A marker without a valid value takes the
-highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind as
-the baseline, so only later mentions are pending (a reply without a marker still answered the
-mentions before it), and with no marker at all every existing mention counts as answered because a cold start
-seeds the gate and does not answer history. The new value is the highest operator mention ID the
-preflight saw, never below the baseline.
+The marker comments authored by `fro-bot` or `fro-bot[bot]` are the only gate record; the script
+writes no state. The parser requires a string `hash`. `last_mention_id` is the highest operator
+`@fro-bot` comment ID the tracker has answered, and the baseline is the highest valid value across
+every parseable marker comment in the thread, so a damaged latest marker cannot lower it. When no
+marker carries a valid value, the baseline is the highest operator mention that precedes the latest
+`fro-bot` or `fro-bot[bot]` comment of any kind, because a reply without a marker still answered the
+mentions before it. With no marker at all every existing mention counts as answered, because a cold
+start seeds the gate and does not answer history. The new value is the highest operator mention ID
+the preflight saw, never below the baseline.
 
 ### Mention anchoring
 
 A run answers exactly the comment IDs in `pending_mention_ids` plus the dispatched `comment_id`,
 fetching each by ID. Thread position does not decide what is pending: a mention posted while a run is
 in flight can sit before that run's marker comment and is still pending afterwards, because its ID is
-above the marker's `last_mention_id`.
+above the baseline.
 
-When nothing needs to change and no comment ID is listed, the agent posts no new comment. It edits
-the latest marker comment in place and replaces its marker, so the stored hash and `last_mention_id`
-stay current and the next scheduled run does not wake again for the same state. With no marker comment
-to edit, it posts a one-line seed comment that ends with the marker.
+When nothing needs to change and no comment ID is listed, the agent posts no new comment. The
+preflight outputs `marker_comment_id`, the REST ID of the latest parseable marker comment (empty when
+none exists). The prompt tells the agent to PATCH exactly that comment
+(`gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>`) and replace only its marker, so the
+stored hash and `last_mention_id` stay current and the next scheduled run does not wake again for the
+same state. The agent posts a one-line seed comment that ends with the marker only when the ID is
+empty.
 
 The anchor moves only when a comment with a valid marker lands. A run that fails before writing one
 leaves the old marker, and its mentions stay pending. A reply whose marker the agent damaged does not
-parse, so the preflight keeps reading the earlier marker comment and the mentions that reply answered
+parse, so the preflight keeps reading the earlier marker comments and the mentions that reply answered
 stay pending. Only a thread with no parseable marker is a cold start, which seeds the gate without
 answering the mentions already in the thread.
 
