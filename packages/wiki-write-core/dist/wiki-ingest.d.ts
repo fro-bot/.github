@@ -50,7 +50,7 @@ export interface BuildWikiIngestChangesResult {
 export interface WikiIngestWarning {
     code: 'duplicate-repo-identity' | 'repos-metadata-unavailable' | 'agent-log-entries-dropped';
     node_ids?: string[];
-    reason?: 'read-failed' | 'parse-failed' | 'not-append-only' | 'base-log-missing';
+    reason?: 'read-failed' | 'parse-failed' | 'not-append-only';
     slugs?: string[];
 }
 export interface TrackedRepoNodeIdsResult {
@@ -127,6 +127,8 @@ export declare class WikiIngestError extends Error {
         findings?: readonly WikiLintFinding[];
     });
 }
+/** The two wiki files every writer shares. Writers rebuild both from their own sync; a handoff never supplies them. */
+export declare function isSharedWikiFile(path: string): boolean;
 export declare function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): BuildWikiIngestChangesResult;
 /**
  * Commits `params.files` (and removes `params.deletedPaths`) as one commit on the data branch.

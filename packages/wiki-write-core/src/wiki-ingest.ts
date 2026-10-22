@@ -90,7 +90,7 @@ export interface BuildWikiIngestChangesResult {
 export interface WikiIngestWarning {
   code: 'duplicate-repo-identity' | 'repos-metadata-unavailable' | 'agent-log-entries-dropped'
   node_ids?: string[]
-  reason?: 'read-failed' | 'parse-failed' | 'not-append-only' | 'base-log-missing'
+  reason?: 'read-failed' | 'parse-failed' | 'not-append-only'
   slugs?: string[]
 }
 
@@ -225,8 +225,17 @@ interface WikiIngestPayload {
   branch?: string
 }
 
+/** The two wiki files every writer shares. Writers rebuild both from their own sync; a handoff never supplies them. */
+export function isSharedWikiFile(path: string): boolean {
+  return path === INDEX_PATH || path === LOG_PATH
+}
+
 export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): BuildWikiIngestChangesResult {
-  if (params.pages.length === 0 && (params.handoffDeletedPaths ?? []).length === 0) {
+  if (
+    params.pages.length === 0 &&
+    (params.handoffDeletedPaths ?? []).length === 0 &&
+    (params.agentLogEntries ?? '').trim() === ''
+  ) {
     throw new WikiIngestError({
       code: 'INVALID_PAYLOAD',
       message: 'wiki ingest requires at least one page update',
@@ -380,7 +389,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
     params.handoff === undefined
       ? undefined
       : await resolveHandoffBaseTree(octokit, owner, repo, branch, params.handoff.agentCommitSha)
-  const handoffPaths = (params.handoff?.paths ?? []).filter(path => path !== INDEX_PATH && path !== LOG_PATH)
+  const handoffPaths = (params.handoff?.paths ?? []).filter(path => !isSharedWikiFile(path))
 
   const shouldBootstrapDataBranch = branch === DEFAULT_BRANCH
   const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
@@ -438,14 +447,15 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         type: 'blob'
         sha: string | null
       }[] = []
-      for (const [path, content] of Object.entries(params.files)) {
-        const blob = await octokit.rest.git.createBlob({owner, repo, content, encoding: 'utf-8'})
-        tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha})
-      }
+      // Read before the first write: a deletion of a path that cannot be confirmed must not be skipped.
       const presentPaths =
         params.deletedPaths === undefined || params.deletedPaths.length === 0
           ? new Set<string>()
           : await getPresentPathsInTree(octokit, owner, repo, commit.data.tree.sha)
+      for (const [path, content] of Object.entries(params.files)) {
+        const blob = await octokit.rest.git.createBlob({owner, repo, content, encoding: 'utf-8'})
+        tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha})
+      }
       for (const path of params.deletedPaths ?? []) {
         if (params.files[path] !== undefined || !presentPaths.has(path)) {
           continue
@@ -540,11 +550,19 @@ async function getPresentPathsInTree(
   repo: string,
   treeSha: string,
 ): Promise<Set<string>> {
-  const response = await octokit.rest.git.getTree({owner, repo, tree_sha: treeSha, recursive: 'true'})
-  if (response.data.truncated === true) return new Set()
-  const tree: unknown = response.data.tree
-  if (!Array.isArray(tree)) return new Set()
-  return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])))
+  const entries = await readTreeEntries(octokit, owner, repo, treeSha)
+  if (entries === undefined) throw truncatedTreeRefusal('a deletion cannot be checked against a truncated tree')
+  return new Set(entries.keys())
+}
+
+/** A truncated tree listing cannot be trusted either way, so the write fails closed. */
+function truncatedTreeRefusal(reason: string): WikiIngestError {
+  return new WikiIngestError({
+    code: 'CONFLICT_EXHAUSTED',
+    message: `wiki ingest refused: ${reason}`,
+    remediation:
+      'The data branch tree listing was truncated. Retry the workflow; if it persists, the tree has outgrown the recursive listing.',
+  })
 }
 
 async function readCommitTreeSha(octokit: OctokitClient, owner: string, repo: string, sha: string): Promise<string> {
@@ -564,14 +582,8 @@ async function resolveHandoffBaseTree(
   branch: string,
   agentCommitSha: string,
 ): Promise<string> {
-  const invalid = (reason: string): WikiIngestError =>
-    new WikiIngestError({
-      code: 'HANDOFF_BASE_INVALID',
-      message: `wiki ingest refused: ${reason}`,
-      remediation: HANDOFF_BASE_REMEDIATION,
-    })
   if (!COMMIT_SHA_PATTERN.test(agentCommitSha)) {
-    throw invalid('the agent job data commit is missing or is not a commit SHA')
+    throw handoffBaseInvalid('the agent job data commit is missing or is not a commit SHA')
   }
 
   try {
@@ -582,13 +594,13 @@ async function resolveHandoffBaseTree(
       basehead: `${agentCommitSha}...${head.data.object.sha}`,
     })
     if (comparison.data.behind_by !== 0 || comparison.data.merge_base_commit.sha !== agentCommitSha) {
-      throw invalid(`the agent job data commit is not an ancestor of ${owner}/${repo}@${branch}`)
+      throw handoffBaseInvalid(`the agent job data commit is not an ancestor of ${owner}/${repo}@${branch}`)
     }
     return await readCommitTreeSha(octokit, owner, repo, agentCommitSha)
   } catch (error: unknown) {
     if (error instanceof WikiIngestError) throw error
     if (isApiErrorStatus(error, 404) || isApiErrorStatus(error, 422)) {
-      throw invalid(`the agent job data commit does not resolve on ${owner}/${repo}@${branch}`)
+      throw handoffBaseInvalid(`the agent job data commit does not resolve on ${owner}/${repo}@${branch}`)
     }
     throw error
   }
@@ -629,7 +641,7 @@ async function assertWriteSetUnchanged(
   const head = await readTreeEntries(octokit, owner, repo, params.headTreeSha)
   if (base === undefined || head === undefined)
     return refuse('CONFLICT_EXHAUSTED', 'a tree read was truncated, so the write set cannot be verified')
-  if (params.paths.some(path => base.get(path) !== head.get(path))) {
+  if (params.paths.some(path => !sameTreeEntry(base.get(path), head.get(path)))) {
     return refuse(
       params.code,
       params.code === 'HANDOFF_PAGE_CHANGED'
@@ -639,21 +651,32 @@ async function assertWriteSetUnchanged(
   }
 }
 
-/** Path to `mode type sha`, for every non-directory entry. `undefined` when the read is truncated. */
+interface TreeEntryInfo {
+  readonly mode: string
+  readonly type: string
+  readonly sha: string
+}
+
+function sameTreeEntry(left: TreeEntryInfo | undefined, right: TreeEntryInfo | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return left.mode === right.mode && left.type === right.type && left.sha === right.sha
+}
+
+/** Path to its entry, for every non-directory entry. `undefined` when the read is truncated. */
 async function readTreeEntries(
   octokit: OctokitClient,
   owner: string,
   repo: string,
   treeSha: string,
-): Promise<Map<string, string> | undefined> {
+): Promise<Map<string, TreeEntryInfo> | undefined> {
   const response = await octokit.rest.git.getTree({owner, repo, tree_sha: treeSha, recursive: 'true'})
   if (response.data.truncated === true) return undefined
   const tree: unknown = response.data.tree
-  const entries = new Map<string, string>()
+  const entries = new Map<string, TreeEntryInfo>()
   if (!Array.isArray(tree)) return entries
   for (const entry of tree) {
     if (!isRecord(entry) || typeof entry.path !== 'string' || entry.type === 'tree') continue
-    entries.set(entry.path, `${String(entry.mode)} ${String(entry.type)} ${String(entry.sha)}`)
+    entries.set(entry.path, {mode: String(entry.mode), type: String(entry.type), sha: String(entry.sha)})
   }
   return entries
 }
@@ -1399,7 +1422,7 @@ async function getChangedWikiPaths(): Promise<string[]> {
     `${WIKI_ROOT}/comparisons`,
   ])
 
-  return parsePorcelainPaths(stdout).filter(path => path !== INDEX_PATH && path !== LOG_PATH && path.endsWith('.md'))
+  return parsePorcelainPaths(stdout).filter(path => !isSharedWikiFile(path) && path.endsWith('.md'))
 }
 
 /**
@@ -1540,8 +1563,11 @@ function handoffBaseInvalid(message: string): WikiIngestError {
   })
 }
 
-/** LF line endings and exactly one final newline; an empty log stays empty. */
-function normalizeLogText(value: string): string {
+/**
+ * LF line endings and exactly one final newline; an empty log stays empty. Unlike `normalizeText`, which
+ * only adds a missing final newline, this also converts CRLF and drops trailing blank lines.
+ */
+function toLfWithSingleFinalNewline(value: string): string {
   const trimmed = value.replaceAll('\r\n', '\n').trimEnd()
   return trimmed === '' ? '' : `${trimmed}\n`
 }
@@ -1552,14 +1578,24 @@ function normalizeLogText(value: string): string {
  * log is empty, so there is nothing safe to take. Both inputs are normalized first (LF, one final newline).
  */
 export function deriveAgentLogEntries(baseLog: string, handoffLog: string): string | undefined {
-  const base = normalizeLogText(baseLog)
-  const handoff = normalizeLogText(handoffLog)
+  const base = toLfWithSingleFinalNewline(baseLog)
+  const handoff = toLfWithSingleFinalNewline(handoffLog)
   if (base === '' || !handoff.startsWith(base)) return undefined
   return handoff.slice(base.length)
 }
 
 async function readHandoffManifest(handoffDir: string): Promise<HandoffManifest> {
-  const parsed: unknown = JSON.parse(await readFile(join(handoffDir, 'manifest.json'), 'utf8'))
+  const raw = await readFile(join(handoffDir, 'manifest.json'), 'utf8')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new WikiIngestError({
+      code: 'INVALID_PAYLOAD',
+      message: 'wiki handoff manifest.json is not valid JSON',
+      remediation: 'Rebuild the handoff artifact with scripts/wiki-handoff-build.ts.',
+    })
+  }
   const isStringArray = (value: unknown): value is string[] =>
     Array.isArray(value) && value.every(entry => typeof entry === 'string')
   if (!isRecord(parsed) || !isStringArray(parsed.changed) || !isStringArray(parsed.deleted)) {
@@ -1580,11 +1616,10 @@ async function readFileAtCommit(
   commitSha: string,
   path: string,
 ): Promise<string | undefined> {
-  const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: commitSha})
-  const tree = await octokit.rest.git.getTree({owner, repo, tree_sha: commit.data.tree.sha, recursive: 'true'})
-  if (tree.data.truncated === true) throw new Error('tree listing was truncated')
-  const entry = tree.data.tree.find(candidate => candidate.path === path)
-  if (entry?.sha === undefined || entry.type !== 'blob') return undefined
+  const entries = await readTreeEntries(octokit, owner, repo, await readCommitTreeSha(octokit, owner, repo, commitSha))
+  if (entries === undefined) throw truncatedTreeRefusal(`${path} cannot be read from a truncated tree`)
+  const entry = entries.get(path)
+  if (entry === undefined || entry.type !== 'blob') return undefined
   const blob = await octokit.rest.git.getBlob({owner, repo, file_sha: entry.sha})
   return Buffer.from(blob.data.content, 'base64').toString('utf8')
 }
@@ -1608,7 +1643,7 @@ async function loadHandoff(
   const octokit = dependencies.octokit ?? (await createOctokitFromEnv())
   const manifest = await readHandoffManifest(handoffDir)
   const pagePaths = [...manifest.changed, ...manifest.deleted]
-  const deletedPagePaths = manifest.deleted.filter(path => path !== LOG_PATH && path !== INDEX_PATH)
+  const deletedPagePaths = manifest.deleted.filter(path => !isSharedWikiFile(path))
   if (!manifest.changed.includes(LOG_PATH)) {
     return {octokit, agentCommitSha, agentLogEntries: undefined, pagePaths, deletedPagePaths, warnings: []}
   }
@@ -1623,21 +1658,21 @@ async function loadHandoff(
       agentCommitSha,
       LOG_PATH,
     )
-  } catch {
-    throw handoffBaseInvalid(`could not read ${LOG_PATH} at the agent job data commit`)
+  } catch (error: unknown) {
+    // Only a commit or file that does not exist is a bad base; any other failure is not about the base.
+    if (isApiErrorStatus(error, 404)) throw handoffBaseInvalid(`the agent job data commit does not resolve`)
+    throw error
   }
+  if (baseLog === undefined) throw handoffBaseInvalid(`${LOG_PATH} does not exist at the agent job data commit`)
 
-  const agentLogEntries = baseLog === undefined ? undefined : deriveAgentLogEntries(baseLog, handoffLog)
+  const agentLogEntries = deriveAgentLogEntries(baseLog, handoffLog)
   const warnings: WikiIngestWarning[] =
-    agentLogEntries === undefined
-      ? [
-          {
-            code: 'agent-log-entries-dropped',
-            reason: baseLog === undefined ? 'base-log-missing' : 'not-append-only',
-          },
-        ]
-      : []
+    agentLogEntries === undefined ? [{code: 'agent-log-entries-dropped', reason: 'not-append-only'}] : []
   return {octokit, agentCommitSha, agentLogEntries, pagePaths, deletedPagePaths, warnings}
+}
+
+function writeWarnings(warnings: readonly WikiIngestWarning[]): void {
+  for (const warning of warnings) process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`)
 }
 
 export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencies = {}): Promise<void> {
@@ -1680,8 +1715,9 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
     if (payloadPath !== undefined && payloadPath !== '') {
       const payload = parsePayload(await readFile(payloadPath, 'utf8'))
       handoff = await loadHandoff(dependencies, payload)
+      writeWarnings(handoff?.warnings ?? [])
       const tracked = await loadTrackedRepoNodeIds()
-      identityWarnings = [...tracked.warnings, ...(handoff?.warnings ?? [])]
+      identityWarnings = tracked.warnings
       built = buildWikiIngestChanges({
         existingFiles,
         operation: payload.operation,
@@ -1705,8 +1741,14 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
     } else {
       const changedPaths = await getChangedWikiPathsImpl()
       handoff = await loadHandoff(dependencies, {owner: process.env.WIKI_OWNER, repo: process.env.WIKI_REPO})
-      // `git status` drops deletions, so an agent's deleted pages come from the manifest.
-      if (changedPaths.length === 0 && (handoff?.deletedPagePaths ?? []).length === 0) {
+      writeWarnings(handoff?.warnings ?? [])
+      // `git status` drops deletions, so an agent's deleted pages come from the manifest. A handoff
+      // whose only change is appended log entries still commits the log and the rebuilt index.
+      if (
+        changedPaths.length === 0 &&
+        (handoff?.deletedPagePaths ?? []).length === 0 &&
+        (handoff?.agentLogEntries ?? '').trim() === ''
+      ) {
         await emitPagesChanged(0)
         process.stdout.write(`${JSON.stringify({committed: false, attempts: 1, pagesChanged: 0})}\n`)
         return
@@ -1716,7 +1758,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
       const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
       const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
       const tracked = await loadTrackedRepoNodeIds()
-      identityWarnings = [...tracked.warnings, ...(handoff?.warnings ?? [])]
+      identityWarnings = tracked.warnings
       built = buildWikiIngestChanges({
         existingFiles,
         operation,
@@ -1749,9 +1791,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
     throw error
   }
 
-  for (const warning of identityWarnings) {
-    process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`)
-  }
+  writeWarnings(identityWarnings)
   for (const finding of built.findings) {
     process.stderr.write(`wiki-ingest:finding:${JSON.stringify(finding)}\n`)
   }

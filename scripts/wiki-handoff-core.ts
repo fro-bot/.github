@@ -6,6 +6,7 @@ import {promises as fs} from 'node:fs'
 import path from 'node:path'
 import {promisify} from 'node:util'
 
+import {isSharedWikiFile} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 /**
@@ -25,14 +26,8 @@ import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 /** Wiki path allowlist: exactly knowledge/index.md, exactly knowledge/log.md, or any .md under knowledge/wiki/. */
 export function isAllowedWikiHandoffPath(relativePath: string): boolean {
   const normalized = relativePath.replaceAll('\\', '/')
-  if (normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md') return true
+  if (isSharedWikiFile(normalized)) return true
   return normalized.startsWith('knowledge/wiki/') && normalized.endsWith('.md')
-}
-
-/** The two wiki files every writer shares; a handoff may carry them, but apply never writes or deletes them. */
-export function isSharedWikiFile(relativePath: string): boolean {
-  const normalized = relativePath.replaceAll('\\', '/')
-  return normalized === 'knowledge/index.md' || normalized === 'knowledge/log.md'
 }
 
 const SOLUTION_CATEGORIES: ReadonlySet<string> = new Set(SOLUTION_SUBDIRS)

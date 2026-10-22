@@ -1,5 +1,5 @@
 /**
- * Replays the 2026-10-20 and 2026-10-21 lost-update sequences end to end: a handoff built from the
+ * Replays the lost-update sequences end to end: a handoff built from the
  * agent's checkout, the trusted apply, and the ingest CLI committing through the Git Data fake.
  * Two agents sync before either writer persists, so the second writer's handoff is stale.
  */
@@ -191,7 +191,7 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     })
   }
 
-  it('keeps both surveys log entries, index rows and pages when the second handoff is stale (2026-10-20)', async () => {
+  it('keeps both surveys log entries, index rows and pages when the second handoff is stale', async () => {
     // #given two agents sync at the same commit and each adds a page, an index row and a log entry
     const agentA = syncAgent(fake)
     const agentB = syncAgent(fake)
@@ -222,7 +222,7 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     expect(data[SYSTEMATIC_PAGE]).toContain('Systematic notes.')
   })
 
-  it('refuses the second writer when both surveys edited the same page, then lands the re-run (2026-10-21)', async () => {
+  it('refuses the second writer when both surveys edited the same page, then lands the re-run', async () => {
     // #given both agents sync at the same commit and both edit the CI topic page
     const agentA = syncAgent(fake)
     const agentB = syncAgent(fake)
@@ -364,7 +364,24 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     expect(data[INDEX]).toContain('[[old-notes]]')
   })
 
-  it('refuses when reading the log at the agent commit fails', async () => {
+  it('refuses with HANDOFF_BASE_INVALID, without bootstrapping, when the log at the agent commit is a 404', async () => {
+    const agent = syncAgent(fake)
+    agent.files[LOG] = logEntry(agent.files[LOG] ?? '', 'repo:alice/infra', 'Agent detail.', 10)
+    agent.files[HA_PAGE] = topic('HA Config Notes', 'Home Assistant config notes.')
+    const handoff = buildHandoff(agent, root)
+    const head = fake.head()
+    fake.failNext('getBlob', 404)
+
+    const error = await rejection(
+      persist(handoff, {base: agent.base, target: 'repo:alice/infra', summary: 'Summary.', hour: 10}),
+    )
+
+    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(bootstrap).not.toHaveBeenCalled()
+    expect(fake.head()).toBe(head)
+  })
+
+  it('lets a server error reading the log through unchanged, and writes nothing', async () => {
     const agent = syncAgent(fake)
     agent.files[LOG] = logEntry(agent.files[LOG] ?? '', 'repo:alice/infra', 'Agent detail.', 10)
     agent.files[HA_PAGE] = topic('HA Config Notes', 'Home Assistant config notes.')
@@ -372,9 +389,34 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     const head = fake.head()
     fake.failNext('getBlob', 500)
 
-    await rejection(persist(handoff, {base: agent.base, target: 'repo:alice/infra', summary: 'Summary.', hour: 10}))
+    const error = await rejection(
+      persist(handoff, {base: agent.base, target: 'repo:alice/infra', summary: 'Summary.', hour: 10}),
+    )
 
+    expect(error).toMatchObject({status: 500})
+    expect(error).not.toHaveProperty('code')
+    expect(bootstrap).not.toHaveBeenCalled()
     expect(fake.head()).toBe(head)
+  })
+
+  it('commits the agent log entries of a handoff that changed no page', async () => {
+    // #given an agent that only appended a log entry, and another writer that moved data meanwhile
+    const agent = syncAgent(fake)
+    agent.files[LOG] = logEntry(agent.files[LOG] ?? '', 'repo:alice/infra', 'Agent detail.', 10)
+    const handoff = buildHandoff(agent, root)
+    fake.advance({[HA_PAGE]: topic('HA Config Notes', 'Home Assistant config notes.')})
+
+    // #when the writer persists
+    await persist(handoff, {base: agent.base, target: 'repo:alice/infra', summary: 'Summary.', hour: 10})
+
+    // #then the log carries the synced entry, the agent entry and the summary, in that order, and the
+    // rebuilt index lists the page the other writer added
+    const data = fake.files()
+    const log = data[LOG] ?? ''
+    const order = ['Seed entry.', 'Agent detail.', 'Summary.'].map(text => log.indexOf(text))
+    expect(order.every(position => position >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((left, right) => left - right))
+    expect(data[INDEX]).toContain('[[ha-config-notes]]')
   })
 
   describe('an unusable agent commit', () => {

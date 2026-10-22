@@ -802,32 +802,38 @@ describe('buildWikiIngestChanges', () => {
     expect(result.files['knowledge/log.md']).not.toContain('alice--old-name')
   })
 
-  it('fails closed when the fresh base tree is truncated', async () => {
-    const createTree = vi.fn(
-      async (_params: {tree: {path: string; mode: '100644'; type: 'blob'; sha: string | null}[]}) => ({
-        data: {sha: 'tree-after-migration'},
-      }),
-    )
+  it('fails closed with CONFLICT_EXHAUSTED, before any write, when the fresh base tree is truncated', async () => {
+    const createBlob = vi.fn(async () => ({data: {sha: 'blob'}}))
+    const createTree = vi.fn(async () => ({data: {sha: 'tree-after-migration'}}))
+    const createCommit = vi.fn(async () => ({data: {sha: 'commit'}}))
+    const updateRef = vi.fn(async () => ({data: {}}))
     const octokit = createOctokitMock({
+      createBlob,
       createTree,
+      createCommit,
+      updateRef,
       getTree: async () => ({
         data: {truncated: true, tree: [{path: 'knowledge/wiki/repos/alice--old-name.md'}]},
       }),
     })
 
-    await commitWikiChanges({
-      octokit,
-      owner: 'fro-bot',
-      repo: '.github',
-      branch: 'data',
-      message: 'feat(knowledge): skip uncertain deletion',
-      files: {'knowledge/wiki/repos/alice--current-name.md': 'current page'},
-      deletedPaths: ['knowledge/wiki/repos/alice--old-name.md'],
-    })
-
-    expect(createTree.mock.calls[0]?.[0].tree).not.toContainEqual(
-      expect.objectContaining({path: 'knowledge/wiki/repos/alice--old-name.md'}),
+    const error = await rejectionOf(
+      commitWikiChanges({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): refuse uncertain deletion',
+        files: {'knowledge/wiki/repos/alice--current-name.md': 'current page'},
+        deletedPaths: ['knowledge/wiki/repos/alice--old-name.md'],
+      }),
     )
+
+    expect(error).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
   })
 
   it('builds index and log files when existing wiki files are missing', () => {
@@ -2619,31 +2625,55 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     )
   })
 
-  it('drops the agent entries with a warning when the agent commit has no log to measure from', async () => {
-    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
-
-    const commit = await run(octokitReading(undefined))
-
-    expect(committedLog(commit)).toBe(`${syncedLog}${SUMMARY_ENTRY_TEXT}`)
-    expect(stderr.join('')).toContain(
-      `wiki-ingest:warning:${JSON.stringify({code: 'agent-log-entries-dropped', reason: 'base-log-missing'})}`,
-    )
-  })
-
-  it('refuses without committing when the log at the agent commit cannot be read', async () => {
-    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+  const failingRun = (octokit: OctokitClient, changedPaths: string[] = [page.path]) => {
     const commit = vi.fn()
-
-    const error = await rejectionOf(
+    const outcome = rejectionOf(
       runWikiIngestCli({
         readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
-        getChangedWikiPaths: async () => [page.path],
+        getChangedWikiPaths: async () => changedPaths,
         commitWikiChanges: commit as never,
-        octokit: octokitReading(Object.assign(new Error('boom'), {status: 500})),
+        octokit,
       }),
     )
+    return {commit, outcome}
+  }
 
-    expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+  it('refuses with HANDOFF_BASE_INVALID when the agent commit has no knowledge/log.md', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const {commit, outcome} = failingRun(octokitReading(undefined))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses with HANDOFF_BASE_INVALID when the agent commit does not exist (404)', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+    const {commit, outcome} = failingRun(octokitReading(Object.assign(new Error('Not Found'), {status: 404})))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('lets any other failure reading the base log through unchanged, and commits nothing', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const serverError = Object.assign(new Error('boom'), {status: 500})
+
+    const {commit, outcome} = failingRun(octokitReading(serverError))
+
+    expect(await outcome).toBe(serverError)
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses with CONFLICT_EXHAUSTED, not a bad base, when the agent commit tree listing is truncated', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const octokit = octokitReading(syncedLog)
+    ;(octokit.rest.git as unknown as {getTree: unknown}).getTree = async () => ({data: {truncated: true, tree: []}})
+
+    const {commit, outcome} = failingRun(octokit)
+
+    expect(await outcome).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
     expect(commit).not.toHaveBeenCalled()
   })
 
@@ -2675,6 +2705,86 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     const error = await rejectionOf(run(octokitReading(syncedLog)))
 
     expect(error).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+  })
+
+  it('refuses an agent commit with no handoff directory, without committing', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    delete process.env.WIKI_HANDOFF_DIR
+
+    const {commit, outcome} = failingRun(octokitReading(syncedLog))
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_BASE_INVALID'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a manifest that is not valid JSON, with INVALID_PAYLOAD', async () => {
+    const handoffDir = setUp({})
+    writeFileSync(join(handoffDir, 'manifest.json'), '{not json')
+
+    const {commit, outcome} = failingRun(octokitReading(syncedLog))
+
+    const error = await outcome
+    expect(error).toMatchObject({code: 'INVALID_PAYLOAD'})
+    expect((error as {remediation: string}).remediation).not.toBe('')
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('commits the log and the rebuilt index for a handoff whose only change is appended log entries', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).toHaveBeenCalledTimes(1)
+    const files = commit.mock.calls[0]?.[0].files as Record<string, string>
+    expect(Object.keys(files).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+    expect(files['knowledge/log.md']).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+    expect(files['knowledge/index.md']).toContain('[[notes]]')
+    expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([])
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      handoff: {agentCommitSha: agentSha, paths: ['knowledge/log.md']},
+    })
+  })
+
+  it('reports dropped log entries before a no-op return, and commits nothing', async () => {
+    setUp({
+      handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`,
+      manifestChanged: ['knowledge/log.md'],
+    })
+
+    const commit = await run(octokitReading(syncedLog), [])
+
+    expect(commit).not.toHaveBeenCalled()
+    expect(stderr.join('')).toContain('"code":"agent-log-entries-dropped"')
+  })
+
+  it('applies the agent entries and the handoff input on the payload path too', async () => {
+    const handoffDir = setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+    const payloadPath = join(dir, 'payload.json')
+    writeFileSync(
+      payloadPath,
+      JSON.stringify({
+        operation: 'survey',
+        target: 'repo:acme/target',
+        summary: 'Surveyed acme/target.',
+        timestamp: '2026-10-21T09:00:00Z',
+        sources: [],
+        pages: [{path: page.path, content: page.content}],
+      }),
+    )
+    process.env.WIKI_INGEST_INPUT = payloadPath
+    const octokit = octokitReading(syncedLog)
+    try {
+      const commit = await run(octokit)
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({
+        octokit,
+        handoff: {agentCommitSha: agentSha, paths: [page.path, 'knowledge/log.md']},
+      })
+      expect(handoffDir).toBeDefined()
+    } finally {
+      delete process.env.WIKI_INGEST_INPUT
+    }
   })
 
   it('passes the agent commit, the handed-off paths and its client to the commit', async () => {
