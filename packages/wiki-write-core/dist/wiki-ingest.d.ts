@@ -36,6 +36,11 @@ export interface BuildWikiIngestChangesParams {
      * the existing log, before this ingest's own summary entry.
      */
     agentLogEntries?: string;
+    /**
+     * Pages an agent deleted in a handoff, already removed from `existingFiles`. They join the result's
+     * `deletedPaths`, and a call with only deletions needs no page updates.
+     */
+    handoffDeletedPaths?: readonly string[];
 }
 export interface BuildWikiIngestChangesResult {
     files: Record<string, string>;
@@ -70,6 +75,21 @@ export interface CommitWikiChangesParams {
      *   after that read are caught.
      */
     baseCommitSha?: string;
+    /**
+     * A second, per-path base for a write whose pages were edited by an agent job in an earlier job.
+     * `agentCommitSha` is the data commit that job synced; `paths` are the pages it changed or deleted
+     * (`knowledge/log.md` and `knowledge/index.md` are ignored here: the writer rebuilds both itself).
+     *
+     * Before any write, the commit must resolve and be an ancestor of the branch head, or the call fails
+     * with `HANDOFF_BASE_INVALID`. Every attempt then compares each path on the head it reads with the
+     * same path in that commit's tree, ahead of the `baseCommitSha` check, and fails with
+     * `HANDOFF_PAGE_CHANGED` if any differs: another writer edited or deleted the page since the agent
+     * read it.
+     */
+    handoff?: {
+        agentCommitSha: string;
+        paths: readonly string[];
+    };
     octokit?: OctokitClient;
     maxRetries?: number;
     /**
@@ -95,7 +115,7 @@ export interface RunWikiIngestCliDependencies {
  * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
  */
 export type OctokitClient = Octokit;
-export type WikiIngestErrorCode = 'INVALID_PAYLOAD' | 'INVALID_PAGE_PATH' | 'INVALID_FRONTMATTER' | 'INVALID_WIKILINK' | 'CORRECTION_ERODED' | 'INVALID_RETRIES' | 'PROTECTED_BRANCH' | 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'CONFLICT_EXHAUSTED' | 'HANDOFF_BASE_INVALID';
+export type WikiIngestErrorCode = 'INVALID_PAYLOAD' | 'INVALID_PAGE_PATH' | 'INVALID_FRONTMATTER' | 'INVALID_WIKILINK' | 'CORRECTION_ERODED' | 'INVALID_RETRIES' | 'PROTECTED_BRANCH' | 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'CONFLICT_EXHAUSTED' | 'HANDOFF_BASE_INVALID' | 'HANDOFF_PAGE_CHANGED';
 export declare class WikiIngestError extends Error {
     readonly code: WikiIngestErrorCode;
     readonly remediation: string;
@@ -116,6 +136,9 @@ export declare function buildWikiIngestChanges(params: BuildWikiIngestChangesPar
  * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
  * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
  * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ *
+ * With `handoff`, the handed-off paths are checked first on every attempt against the agent's data
+ * commit (`HANDOFF_PAGE_CHANGED`), so a page conflict is never reported as a ref race.
  */
 export declare function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult>;
 export declare function validateWikilinks(files: Record<string, string>): void;
