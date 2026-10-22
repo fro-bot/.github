@@ -19,6 +19,8 @@ import {
 } from '../packages/wiki-write-core/src/wiki-ingest.ts'
 import {createGitDataFake} from './git-data-fake.ts'
 import {validateAndApplyWikiHandoff} from './wiki-handoff-core.ts'
+// The built package behind the entry script: the one path that maps a page conflict to exit code 3.
+import * as shipped from './wiki-ingest.ts'
 
 const LOG = 'knowledge/log.md'
 const INDEX = 'knowledge/index.md'
@@ -163,7 +165,7 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
   /** One trusted writer job: sync `data`, apply the handoff, run the ingest CLI, commit. */
   async function persist(
     handoffDir: string,
-    options: {base: string; target: string; summary: string; hour: number},
+    options: {base: string; target: string; summary: string; hour: number; viaEntry?: boolean},
   ): Promise<void> {
     const workspace = mkdtempSync(join(root, 'workspace-'))
     writeTree(workspace, fake.files())
@@ -181,6 +183,18 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     process.env.WIKI_COMMIT_MESSAGE = `feat(knowledge): ${options.target}`
 
     const applied = await validateAndApplyWikiHandoff({handoffDir, workspaceDir: workspace})
+    if (options.viaEntry === true) {
+      await shipped.runWikiIngestEntry(async () =>
+        shipped.runWikiIngestCli({
+          readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+          getChangedWikiPaths: async () => applied.applied.filter(path => path.startsWith('knowledge/wiki/')),
+          commitWikiChanges: async params =>
+            shipped.commitWikiChanges({...params, octokit: asOctokit(fake), bootstrapDataBranch: bootstrap}),
+          octokit: asOctokit(fake),
+        }),
+      )
+      return
+    }
     await runWikiIngestCli({
       readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
       // Stands in for `git status` against `main`: the pages the handoff just wrote.
@@ -264,6 +278,44 @@ describe('wiki handoff replay (lost updates between overlapping surveys)', () =>
     expect(data[CI_PAGE]).toContain('Marcus survey: reusable workflows.')
     for (const text of ['Seed entry.', 'Agent A detail.', 'Summary A.', 'Agent B detail.', 'Summary B.']) {
       expect(data[LOG]).toContain(text)
+    }
+  })
+
+  it('refuses a stale page with HANDOFF_PAGE_CHANGED (exit 3) before its links are validated', async () => {
+    // #given a page A that links to B, both on data when the agent syncs
+    const pageA = 'knowledge/wiki/topics/page-a.md'
+    const pageB = 'knowledge/wiki/topics/page-b.md'
+    fake.advance({
+      [pageA]: topic('Page A', 'See [[page-b]].'),
+      [pageB]: topic('Page B', 'B notes.'),
+    })
+    const agent = syncAgent(fake)
+    agent.files[pageA] = topic('Page A', 'See [[page-b]].\n\nAgent addition.')
+    const handoff = buildHandoff(agent, root)
+
+    // #and a concurrent writer removes the link from A and deletes B
+    fake.advance({[pageA]: topic('Page A', 'No links now.'), [pageB]: null})
+    const head = fake.head()
+    process.exitCode = undefined
+
+    // #when the stale handoff of A is persisted through the entry wrapper
+    try {
+      await persist(handoff, {
+        base: agent.base,
+        target: 'repo:alice/infra',
+        summary: 'Summary.',
+        hour: 10,
+        viaEntry: true,
+      })
+
+      // #then it is a page conflict (exit 3), not a wikilink failure, and nothing was committed
+      expect(stderr.join('')).not.toContain('INVALID_WIKILINK')
+      expect(stderr.join('')).toContain('wiki-ingest')
+      expect(process.exitCode).toBe(3)
+      expect(fake.head()).toBe(head)
+      expect(fake.calls.some(call => call.method === 'createBlob' || call.method === 'updateRef')).toBe(false)
+    } finally {
+      process.exitCode = undefined
     }
   })
 

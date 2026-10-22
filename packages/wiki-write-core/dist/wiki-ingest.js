@@ -340,6 +340,29 @@ async function resolveHandoffBaseTree(octokit, owner, repo, branch, agentCommitS
     }
 }
 /**
+ * Refuses, before any content is validated, a handoff whose pages another writer has changed since the
+ * agent job synced. Validating a stale page against the current wiki can fail for an unrelated reason
+ * (a link to a page the other writer deleted), which would hide the conflict. The commit repeats this
+ * check on every attempt, which still catches a change that lands after this one.
+ */
+async function assertHandoffPagesCurrent(octokit, owner, repo, branch, handoff) {
+    const baseTreeSha = await resolveHandoffBaseTree(octokit, owner, repo, branch, handoff.agentCommitSha);
+    const paths = handoff.paths.filter(path => !isSharedWikiFile(path));
+    if (paths.length === 0)
+        return;
+    const head = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    const headTreeSha = await readCommitTreeSha(octokit, owner, repo, head.data.object.sha);
+    if (headTreeSha === baseTreeSha)
+        return;
+    await assertWriteSetUnchanged(octokit, owner, repo, {
+        baseTreeSha,
+        headTreeSha,
+        paths,
+        location: `${owner}/${repo}@${branch}`,
+        code: 'HANDOFF_PAGE_CHANGED',
+    });
+}
+/**
  * Fail closed unless every path has the same tree entry (sha, mode, type; absence counts) on the new
  * head as in the tree the files were derived from. A replay onto a head where another writer touched
  * one of them would silently overwrite that writer's change. `code` names the refusal; a truncated
@@ -1189,7 +1212,8 @@ async function readFileAtCommit(octokit, owner, repo, commitSha, path) {
 /**
  * Reads the handoff the trusted job applied. `undefined` outside a handoff run (neither
  * `WIKI_HANDOFF_DIR` nor `WIKI_HANDOFF_BASE_SHA` set). Inside one, the agent job's data commit must be a
- * full commit SHA, and the log entries the agent appended are derived against that commit's `log.md`.
+ * full commit SHA, the handed-off pages must be unchanged on the branch since that commit (checked here,
+ * ahead of any validation of their content), and the log entries the agent appended are derived against that commit's `log.md`.
  */
 async function loadHandoff(dependencies, target) {
     const handoffDir = envValue('WIKI_HANDOFF_DIR');
@@ -1203,6 +1227,7 @@ async function loadHandoff(dependencies, target) {
     const manifest = await readHandoffManifest(handoffDir);
     const pagePaths = [...manifest.changed, ...manifest.deleted];
     const deletedPagePaths = manifest.deleted.filter(path => !isSharedWikiFile(path));
+    await assertHandoffPagesCurrent(octokit, target.owner ?? DEFAULT_OWNER, target.repo ?? DEFAULT_REPO, target.branch ?? DEFAULT_BRANCH, { agentCommitSha, paths: pagePaths });
     if (!manifest.changed.includes(LOG_PATH)) {
         return { octokit, agentCommitSha, agentLogEntries: undefined, pagePaths, deletedPagePaths, warnings: [] };
     }
@@ -1289,7 +1314,11 @@ export async function runWikiIngestCli(dependencies = {}) {
         }
         else {
             const changedPaths = await getChangedWikiPathsImpl();
-            handoff = await loadHandoff(dependencies, { owner: process.env.WIKI_OWNER, repo: process.env.WIKI_REPO });
+            handoff = await loadHandoff(dependencies, {
+                owner: process.env.WIKI_OWNER,
+                repo: process.env.WIKI_REPO,
+                branch: process.env.WIKI_BRANCH,
+            });
             writeWarnings(handoff?.warnings ?? []);
             // `git status` drops deletions, so an agent's deleted pages come from the manifest. A handoff
             // whose only change is appended log entries still commits the log and the rebuilt index.

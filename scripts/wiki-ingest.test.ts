@@ -2508,7 +2508,11 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     const entries = baseLog instanceof Error || baseLog === undefined ? [] : [{path: 'knowledge/log.md'}]
     return {
       rest: {
+        repos: {
+          compareCommitsWithBasehead: async () => ({data: {behind_by: 0, merge_base_commit: {sha: agentSha}}}),
+        },
         git: {
+          getRef: async () => ({data: {object: {sha: agentSha}}}),
           getCommit: async () => {
             if (baseLog instanceof Error) throw baseLog
             return {data: {sha: agentSha, tree: {sha: 'agent-tree'}}}
@@ -2755,6 +2759,77 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
 
     expect(commit).not.toHaveBeenCalled()
     expect(stderr.join('')).toContain('"code":"agent-log-entries-dropped"')
+  })
+
+  /** An agent commit whose page differs from the head's: another writer changed it since the agent synced. */
+  function octokitWithStalePage(): OctokitClient {
+    const entry = (sha: string) => ({path: page.path, type: 'blob', mode: '100644', sha})
+    return {
+      rest: {
+        repos: {
+          compareCommitsWithBasehead: async () => ({data: {behind_by: 0, merge_base_commit: {sha: agentSha}}}),
+        },
+        git: {
+          getRef: async () => ({data: {object: {sha: 'head-commit'}}}),
+          getCommit: async (args: {commit_sha: string}) => ({
+            data: {sha: args.commit_sha, tree: {sha: args.commit_sha === agentSha ? 'agent-tree' : 'head-tree'}},
+          }),
+          getTree: async (args: {tree_sha: string}) => ({
+            data: {
+              truncated: false,
+              tree: [
+                entry(args.tree_sha === 'agent-tree' ? 'page-v1' : 'page-v2'),
+                {path: 'knowledge/log.md', type: 'blob', mode: '100644', sha: 'log-blob'},
+              ],
+            },
+          }),
+          getBlob: async () => ({data: {content: Buffer.from(syncedLog, 'utf8').toString('base64')}}),
+        },
+      },
+    } as unknown as OctokitClient
+  }
+
+  it('refuses a stale page with HANDOFF_PAGE_CHANGED before validating its content (working-tree path)', async () => {
+    setUp({})
+    // A dangling link would fail validation, if validation ran first.
+    writeFileSync(join(dir, page.path), page.content.replace('Body.', 'See [[no-such-page]].'))
+
+    const {commit, outcome} = failingRun(octokitWithStalePage())
+
+    expect(await outcome).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a stale page with HANDOFF_PAGE_CHANGED before validating its content (payload path)', async () => {
+    setUp({})
+    const payloadPath = join(dir, 'payload.json')
+    writeFileSync(
+      payloadPath,
+      JSON.stringify({
+        operation: 'survey',
+        target: 'repo:acme/target',
+        summary: 'Surveyed acme/target.',
+        sources: [],
+        pages: [{path: page.path, content: page.content.replace('Body.', 'See [[no-such-page]].')}],
+      }),
+    )
+    process.env.WIKI_INGEST_INPUT = payloadPath
+    try {
+      const {commit, outcome} = failingRun(octokitWithStalePage())
+
+      expect(await outcome).toMatchObject({code: 'HANDOFF_PAGE_CHANGED'})
+      expect(commit).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.WIKI_INGEST_INPUT
+    }
+  })
+
+  it('lets a stale shared file through the preflight: only pages are compared', async () => {
+    setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+
+    const commit = await run(octokitWithStalePage(), [])
+
+    expect(commit).toHaveBeenCalledTimes(1)
   })
 
   it('applies the agent entries and the handoff input on the payload path too', async () => {
