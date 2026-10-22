@@ -486,6 +486,9 @@ jobs:
     timeout-minutes: 60
     outputs:
       wiki-changed: ${{ steps.wiki-changes.outputs.changed }}
+      # The data commit this job synced before the agent ran; the trusted writer checks the
+      # handed-off pages against it.
+      agent-base-sha: ${{ steps.sync-wiki.outputs.data-sha }}
     if: >-
       (
         github.event.pull_request == null ||
@@ -527,6 +530,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         uses: ./.github/actions/sync-wiki
 
       - name: Capture wiki baseline
@@ -761,6 +765,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
+          WIKI_HANDOFF_BASE_SHA: ${{ needs.fro-bot.outputs.agent-base-sha }}
           WIKI_OPERATION: event
           WIKI_TARGET: 'repo:${{ github.repository }}'
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
@@ -939,6 +945,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       wiki-changed: ${{ steps.wiki-changes.outputs.changed }}
+      agent-base-sha: ${{ steps.sync-wiki.outputs.data-sha }}
     if: >-
       !cancelled() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
@@ -954,6 +961,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         uses: ./.github/actions/sync-wiki
 
       - name: Capture wiki baseline
@@ -1363,6 +1371,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
+          WIKI_HANDOFF_BASE_SHA: ${{ needs.fro-bot-observe.outputs.agent-base-sha }}
           WIKI_OPERATION: event
           WIKI_TARGET: 'repo:${{ github.repository }}'
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.

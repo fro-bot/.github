@@ -142,6 +142,9 @@ jobs:
       onboarded: ${{ steps.onboarded.outputs.onboarded }}
       target-repository: ${{ steps.ingest-prompt.outputs.target-repository }}
       target-slug: ${{ steps.ingest-prompt.outputs.target-slug }}
+      # The data commit this job synced before any agent step ran. The trusted writer checks the
+      # handed-off pages against it (R5).
+      agent-base-sha: ${{ steps.sync-wiki.outputs.data-sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -152,6 +155,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Sync wiki from data branch
+        id: sync-wiki
         uses: ./.github/actions/sync-wiki
 
       # Gate: only repos already tracked in metadata/repos.yaml may have a wiki page
@@ -680,6 +684,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_INGEST_DATA_TIP_SHA: ${{ steps.sync-wiki.outputs.data-sha }}
+          WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
+          WIKI_HANDOFF_BASE_SHA: ${{ needs.survey-repo.outputs.agent-base-sha }}
           WIKI_OPERATION: survey
           WIKI_TARGET: 'repo:${{ needs.survey-repo.outputs.target-repository }}'
           REPO_NODE_ID: ${{ inputs.node_id }}

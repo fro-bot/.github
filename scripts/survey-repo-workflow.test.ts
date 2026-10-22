@@ -390,6 +390,27 @@ describe('survey-repo correction injection contract', () => {
     expect(ingestStep?.run).not.toContain('data-sha')
   })
 
+  it('hands the agent job sync commit to the trusted writer through a job output, not the artifact', () => {
+    const agentJob = workflowParsed.jobs['survey-repo']
+    const agentSteps = agentJob?.steps ?? []
+    const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+    const syncIndex = agentSteps.findIndex(step => step.uses === './.github/actions/sync-wiki')
+    const firstAgentIndex = agentSteps.findIndex(step => (step.uses ?? '').startsWith('fro-bot/agent@'))
+    const applyStep = persistSteps.find(step => step.name === 'Validate and apply wiki handoff')
+    const ingestStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
+    const expressionStart = '$' + '{{'
+
+    expect(syncIndex).toBeGreaterThanOrEqual(0)
+    expect(agentSteps[syncIndex]?.id).toBe('sync-wiki')
+    expect(firstAgentIndex).toBeGreaterThan(syncIndex)
+    expect(agentJob?.outputs?.['agent-base-sha']).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+    expect(ingestStep?.env?.WIKI_HANDOFF_BASE_SHA).toBe(
+      `${expressionStart} needs.survey-repo.outputs.agent-base-sha }}`,
+    )
+    expect(ingestStep?.env?.WIKI_HANDOFF_DIR).toBe(applyStep?.env?.WIKI_HANDOFF_DIR)
+    expect(ingestStep?.env?.WIKI_INGEST_DATA_TIP_SHA).toBe(`${expressionStart} steps.sync-wiki.outputs.data-sha }}`)
+  })
+
   it('Sync wiki from data branch precedes Capture wiki baseline (baseline must hash post-sync content)', () => {
     const names = steps.map(step => step.name ?? '')
     const syncIndex = names.indexOf('Sync wiki from data branch')
