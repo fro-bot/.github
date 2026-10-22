@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-21
+updated: 2026-10-22
 sources:
+  - url: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows
+    sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
+    accessed: 2026-10-22
   - url: https://github.com/marcusrbrown/marcusrbrown/blob/a2c762b8f355597c551226258e349a2bf99d0543/pnpm-workspace.yaml
     sha: a2c762b8f355597c551226258e349a2bf99d0543
     accessed: 2026-10-21
@@ -731,6 +734,16 @@ dropped-fix reports remain dated evidence. Distinguish workflow presence,
 delivery configuration, and measured artifact delivery.
 
 Source: [workflow files at the surveyed commit](https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows).
+
+**2026-10-22 revalidation:** the public default branch still resolves to the
+same `b799c49e2b2ea57878d4f29ef897c6138c8053f1` revision. Re-reading all eight
+workflow files confirms the seven release job definitions, the
+`success`/`skipped`/`neutral` acceptance set, and the agent-last caller with no
+explicit delivery mode or downstream delivery step. This refreshes source
+evidence only: an unchanged commit does not refresh check-run conclusions,
+environment reviewer settings, or actual delivery outcomes. Keep those live
+claims dated until measured independently; workflow presence alone needs no
+onboarding draft. Source: the pinned workflow directory linked above.
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 
