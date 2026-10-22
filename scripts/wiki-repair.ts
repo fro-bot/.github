@@ -376,6 +376,7 @@ export function planAndVerifyWikiRepairs(params: PlanAndVerifyWikiRepairsParams)
 export const WIKI_REPAIR_DATA_BRANCH = 'data'
 export const WIKI_REPAIR_COMMIT_MESSAGE = 'chore(knowledge): repair wiki integrity findings'
 const DEFAULT_MAX_RETRIES = 3
+const WIKI_DIRECTORIES = ['repos', 'topics', 'entities', 'comparisons']
 
 export interface WikiRepairTreeSnapshot {
   readonly tipSha: string
@@ -551,7 +552,7 @@ export function exitCodeFor(result: WikiRepairResultCounts): 0 | 1 {
   return result.aborted > 0 && result.privacy_blocked === 0 ? 1 : 0
 }
 
-const HEAD_WIKI_PAGE_PATTERN = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[^/]+\.md$/u
+const HEAD_WIKI_PAGE_PATTERN = new RegExp(String.raw`^knowledge/wiki/(?:${WIKI_DIRECTORIES.join('|')})/[^/]+\.md$`, 'u')
 const REPOS_METADATA_PATH = 'metadata/repos.yaml'
 const BLOB_READ_BATCH_SIZE = 10
 
@@ -592,22 +593,21 @@ export async function loadWikiRepairTreeAtHead(
   }
 
   const contents = new Map<string, string>()
-  const paths = [...blobShas.keys()]
-  for (let start = 0; start < paths.length; start += BLOB_READ_BATCH_SIZE) {
+  const blobEntries = [...blobShas]
+  for (let start = 0; start < blobEntries.length; start += BLOB_READ_BATCH_SIZE) {
     await Promise.all(
-      paths.slice(start, start + BLOB_READ_BATCH_SIZE).map(async path => {
-        const blob = await octokit.rest.git.getBlob({owner, repo, file_sha: blobShas.get(path) ?? ''})
+      blobEntries.slice(start, start + BLOB_READ_BATCH_SIZE).map(async ([path, sha]) => {
+        const blob = await octokit.rest.git.getBlob({owner, repo, file_sha: sha})
         contents.set(path, Buffer.from(blob.data.content, 'base64').toString('utf8'))
       }),
     )
   }
 
-  const wikiFiles: Record<string, string> = {}
-  for (const path of paths) {
-    if (path !== REPOS_METADATA_PATH) wikiFiles[path] = contents.get(path) ?? ''
-  }
-  const reposParsed: unknown = YAML.parse(contents.get(REPOS_METADATA_PATH) ?? '')
+  const reposRaw = contents.get(REPOS_METADATA_PATH)
+  contents.delete(REPOS_METADATA_PATH)
+  const reposParsed: unknown = YAML.parse(reposRaw ?? '')
   assertReposFile(reposParsed)
+  const wikiFiles = Object.fromEntries(contents)
 
   return {
     tipSha,
@@ -641,11 +641,44 @@ export function createWikiRepairTreeLoader(params: WikiRepairTreeLoaderParams): 
   }
 }
 
+/**
+ * Records a finished repair: writes the result JSON through `write`, then sets the exit code from it.
+ * The code is set only after the write, because the lint workflow's summary step reads the JSON even
+ * when this job fails.
+ */
+export async function recordWikiRepairResult(
+  result: WikiRepairResultCounts,
+  write: (json: string) => Promise<void>,
+): Promise<void> {
+  await write(`${JSON.stringify(result)}\n`)
+  process.exitCode = exitCodeFor(result)
+}
+
+export interface RunAndRecordWikiRepairParams extends RunWikiRepairParams {
+  readonly write: (json: string) => Promise<void>
+}
+
+/**
+ * Runs the repair and records its result. An error that escapes the run (a failed head read, a
+ * non-conflict write failure) is an abort too: it is reported on stderr, recorded as `aborted: 1`, and
+ * fails the job, so the summary step always has a result to read.
+ */
+export async function runAndRecordWikiRepair(params: RunAndRecordWikiRepairParams): Promise<WikiRepairResultCounts> {
+  let result: WikiRepairResultCounts
+  try {
+    result = await runWikiRepair(params)
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`::error::wiki-repair aborted: ${detail}\n`)
+    result = {...emptyResultCounts(params.dryRun ?? false), aborted: 1}
+  }
+  await recordWikiRepairResult(result, params.write)
+  return result
+}
+
 // ---------------------------------------------------------------------------
 // CLI entry point
 // ---------------------------------------------------------------------------
-
-const WIKI_DIRECTORIES = ['repos', 'topics', 'entities', 'comparisons']
 
 async function loadWikiFilesFromDisk(rootDir: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {}
@@ -699,8 +732,10 @@ async function main(): Promise<void> {
   const dryRun = process.env.WIKI_REPAIR_DRY_RUN === 'true'
   const resultPath = process.env.WIKI_REPAIR_RESULT_PATH
   const rootDir = process.cwd()
-  const owner = process.env.WIKI_REPAIR_OWNER
-  const repo = process.env.WIKI_REPAIR_REPO
+  const target = {
+    owner: process.env.WIKI_REPAIR_OWNER ?? 'fro-bot',
+    repo: process.env.WIKI_REPAIR_REPO ?? '.github',
+  }
 
   const loadFromCheckout = async (): Promise<WikiRepairTreeSnapshot> => {
     const tipSha = process.env.WIKI_REPAIR_DATA_TIP_SHA
@@ -730,43 +765,32 @@ async function main(): Promise<void> {
   const loadTree = createWikiRepairTreeLoader({
     loadFromCheckout,
     loadAtHead: async grandfatherPages =>
-      loadWikiRepairTreeAtHead({
-        octokit: await getOctokit(),
-        owner: owner ?? 'fro-bot',
-        repo: repo ?? '.github',
-        grandfatherPages,
-      }),
+      loadWikiRepairTreeAtHead({octokit: await getOctokit(), ...target, grandfatherPages}),
   })
 
   const getCurrentDataTipSha = async (): Promise<string> => {
     const octokit = await getOctokit()
-    const ref = await octokit.rest.git.getRef({
-      owner: owner ?? 'fro-bot',
-      repo: repo ?? '.github',
-      ref: `heads/${WIKI_REPAIR_DATA_BRANCH}`,
-    })
+    const ref = await octokit.rest.git.getRef({...target, ref: `heads/${WIKI_REPAIR_DATA_BRANCH}`})
     return ref.data.object.sha
   }
 
   const commitWikiChangesInjected = async (commitParams: CommitWikiChangesParams): Promise<CommitWikiChangesResult> => {
     const octokit = await getOctokit()
-    return commitWikiChanges({...commitParams, owner, repo, octokit})
+    return commitWikiChanges({...commitParams, ...target, octokit})
   }
 
-  const result = await runWikiRepair({
+  await runAndRecordWikiRepair({
     loadTree,
     getCurrentDataTipSha,
     commitWikiChanges: commitWikiChangesInjected,
     dryRun,
+    write: async json => {
+      process.stdout.write(json)
+      if (resultPath !== undefined && resultPath !== '') {
+        await writeFile(resultPath, json, 'utf8')
+      }
+    },
   })
-
-  const json = `${JSON.stringify(result)}\n`
-  process.stdout.write(json)
-  if (resultPath !== undefined && resultPath !== '') {
-    await writeFile(resultPath, json, 'utf8')
-  }
-  // After the result is written: the lint workflow's summary step reads it even when this job fails.
-  process.exitCode = exitCodeFor(result)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -2,7 +2,8 @@ import type {GitDataFake} from './git-data-fake.ts'
 import type {RepoEntry} from './schemas.ts'
 import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
-import {describe, expect, it, vi} from 'vitest'
+import process from 'node:process'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
 import {createGitDataFake} from './git-data-fake.ts'
@@ -15,6 +16,8 @@ import {
   loadWikiRepairTreeAtHead,
   planAndVerifyWikiRepairs,
   planWikiRepairs,
+  recordWikiRepairResult,
+  runAndRecordWikiRepair,
   runWikiRepair,
   verifyWikiRepairs,
   WIKI_REPAIR_COMMIT_MESSAGE,
@@ -1071,7 +1074,7 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
     return {restoredFiles, tipSha: fake.head()}
   }
 
-  async function run(restored: {restoredFiles: Record<string, string>; tipSha: string}) {
+  function repairParams(restored: {restoredFiles: Record<string, string>; tipSha: string}) {
     const grandfatherPages = passingGateInputs(restored.restoredFiles).grandfatherPages
     const loadFromCheckout = vi.fn(async () => ({
       tipSha: restored.tipSha,
@@ -1079,14 +1082,14 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
       publicSlugMap: new Map<string, readonly RepoEntry[]>(),
       grandfatherPages,
     }))
-    return runWikiRepair({
+    return {
       loadTree: createWikiRepairTreeLoader({
         loadFromCheckout,
         loadAtHead: async pages =>
           loadWikiRepairTreeAtHead({octokit: octokit(), owner: 'fro-bot', repo: '.github', grandfatherPages: pages}),
       }),
       getCurrentDataTipSha: async () => fake.head(),
-      commitWikiChanges: async params =>
+      commitWikiChanges: async (params: CommitWikiChangesParams) =>
         commitWikiChanges({
           ...params,
           owner: 'fro-bot',
@@ -1094,8 +1097,11 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
           octokit: octokit(),
           bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: fake.head()}),
         }),
-    })
+    }
   }
+
+  const run = async (restored: {restoredFiles: Record<string, string>; tipSha: string}) =>
+    runWikiRepair(repairParams(restored))
 
   it('re-reads the head after a survey commit, keeps the survey change and lands on the second attempt (AE10)', async () => {
     // #given a survey commits a page to data after the repair's restore
@@ -1131,14 +1137,54 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
     expect(fake.calls.filter(call => call.method === 'getBlob')).toHaveLength(0)
   })
 
-  it('aborts without a write when the head tree listing is truncated', async () => {
-    const restored = seed()
-    fake.advance({SURVEY_PAGE: null})
-    fake.truncate(true)
+  describe('when the head cannot be read', () => {
+    const originalExitCode = process.exitCode
 
-    await expect(run(restored)).rejects.toThrow('truncated')
+    afterEach(() => {
+      process.exitCode = originalExitCode
+      vi.restoreAllMocks()
+    })
 
-    expect(writes()).toStrictEqual([])
+    it('records an aborted result and fails the job when the head tree listing is truncated', async () => {
+      const restored = seed()
+      fake.advance({[SURVEY_PAGE]: 'survey\n'})
+      fake.truncate(true)
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const written: string[] = []
+
+      const result = await runAndRecordWikiRepair({
+        ...repairParams(restored),
+        write: async json => {
+          written.push(json)
+        },
+      })
+
+      expect(result).toMatchObject({aborted: 1, repaired: 0, privacy_blocked: 0})
+      expect(written).toHaveLength(1)
+      expect(JSON.parse(written[0] ?? '{}')).toMatchObject({aborted: 1, repaired: 0})
+      expect(process.exitCode).toBe(1)
+      expect(writes()).toStrictEqual([])
+    })
+
+    it('records an aborted result when the head read fails with a server error', async () => {
+      const restored = seed()
+      fake.advance({[SURVEY_PAGE]: 'survey\n'})
+      fake.failNext('getRef', 503)
+      vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const written: string[] = []
+
+      // Data moved since the restore, so the retry's reload is the first head read, and it fails.
+      const result = await runAndRecordWikiRepair({
+        ...repairParams(restored),
+        write: async json => {
+          written.push(json)
+        },
+      })
+
+      expect(result.aborted).toBe(1)
+      expect(written).toHaveLength(1)
+      expect(process.exitCode).toBe(1)
+    })
   })
 
   it('fails closed when the head has no metadata/repos.yaml', async () => {
@@ -1176,5 +1222,56 @@ describe('exitCodeFor', () => {
     ['a dry run', {...clean, repaired: 1, dry_run: true}],
   ])('is 0 for %s', (_name, result) => {
     expect(exitCodeFor(result)).toBe(0)
+  })
+})
+
+describe('recordWikiRepairResult', () => {
+  const originalExitCode = process.exitCode
+  const result = (overrides: Partial<WikiRepairResultCounts>): WikiRepairResultCounts => ({
+    repairable_seen: 0,
+    repaired: 0,
+    aborted: 0,
+    out_of_scope: 0,
+    privacy_blocked: 0,
+    path_refused: 0,
+    conflict_retries: 0,
+    noop: 0,
+    dry_run: false,
+    ...overrides,
+  })
+
+  afterEach(() => {
+    process.exitCode = originalExitCode
+  })
+
+  it.each([
+    ['an aborted run', result({aborted: 1}), 1],
+    ['a privacy-leak abort', result({aborted: 1, privacy_blocked: 1}), 0],
+    ['a clean run', result({noop: 1}), 0],
+  ])('writes the JSON, then sets the exit code, for %s', async (_name, counts, exitCode) => {
+    process.exitCode = undefined
+    const order: string[] = []
+    const write = vi.fn(async (_json: string) => {
+      order.push(`write(exitCode=${String(process.exitCode)})`)
+    })
+
+    await recordWikiRepairResult(counts, write)
+
+    expect(write).toHaveBeenCalledWith(`${JSON.stringify(counts)}\n`)
+    // The exit code is still unset while the JSON is being written.
+    expect(order).toStrictEqual(['write(exitCode=undefined)'])
+    expect(process.exitCode).toBe(exitCode)
+  })
+
+  it('does not set an exit code when the write fails', async () => {
+    process.exitCode = undefined
+
+    await expect(
+      recordWikiRepairResult(result({aborted: 1}), async () => {
+        throw new Error('disk full')
+      }),
+    ).rejects.toThrow('disk full')
+
+    expect(process.exitCode).toBeUndefined()
   })
 })
