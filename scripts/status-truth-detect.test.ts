@@ -1,4 +1,4 @@
-import type {RolloutSnapshot, SnapshotItem} from './rollout-tracker-snapshot.ts'
+import type {SnapshotItem} from './rollout-tracker-snapshot.ts'
 import type {
   ClaimKind,
   ClaimVerdict,
@@ -11,6 +11,7 @@ import type {
   PublicStatusTruthFinding,
   ResolverResult,
   ResolverType,
+  RolloutSnapshot,
   StatusTruthClaim,
   StatusTruthFinding,
   StatusTruthJsonReport,

@@ -1,8 +1,11 @@
-import type {RolloutSnapshot, SnapshotItem} from './rollout-tracker-snapshot.ts'
+import type {SnapshotItem, RolloutSnapshot as TrackerSnapshot} from './rollout-tracker-snapshot.ts'
 
 import {createHash} from 'node:crypto'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+
+/** Status Truth resolves claims against the tracked items only; the wake signals are not consumed here. */
+export type RolloutSnapshot = Pick<TrackerSnapshot, 'items'>
 
 export type ClaimKind =
   'pr-state' | 'issue-state' | 'release-tag-state' | 'plan-status' | 'rollout-tracker-status' | 'plan-consistency'

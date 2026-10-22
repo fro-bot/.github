@@ -225,7 +225,7 @@ sequenceDiagram
 
 ## Implementation Units
 
-- [ ] **Unit 1: Widen the preflight wake check**
+- [x] **Unit 1: Widen the preflight wake check**
 
 **Goal:** The preflight hash changes on new agent or dashboard releases, new successful infra deploy runs, and changes to the health `contractVersion`, as well as on issue state.
 
