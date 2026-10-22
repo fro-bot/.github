@@ -26,7 +26,8 @@ jobs:
   # dashboard health contract, builds a stable hash, and compares it to the
   # hash embedded in the latest @fro-bot tracker marker. Outputs
   # should_comment=true when the hash changed or an operator @fro-bot comment
-  # has an ID above the marker's last_mention_id. It also outputs those
+  # has an ID above the mention baseline; the comment that dispatched the run
+  # counts too when it is above the baseline. It also outputs those
   # pending comment IDs, the complete marker the agent writes and the ID of
   # the latest marker comment (the in-place edit target). A failed read fails
   # the job.
@@ -64,6 +65,7 @@ jobs:
         id: snapshot
         env:
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          ROLLOUT_TRACKER_COMMENT_ID: ${{ inputs.comment_id }}
         run: |
           set -euo pipefail
           RESULT="$(bun scripts/rollout-tracker-snapshot.ts)"
@@ -87,14 +89,14 @@ jobs:
             echo "::notice::rollout-tracker: wake — ${REASON}"
           fi
 
-  # ── Fro Bot agent: runs after a successful preflight, for an operator mention
-  # (comment_id set) or when the preflight reports a wake ───────────────────
+  # ── Fro Bot agent: runs after a successful preflight that reports a wake
+  # (a changed hash or a pending operator mention) ──────────────────────────
   update-rollout-tracker:
     name: Update Rollout Tracker
     needs: preflight
     if: >-
       needs.preflight.result == 'success' &&
-      (inputs.comment_id != '' || needs.preflight.outputs.should_comment == 'true')
+      needs.preflight.outputs.should_comment == 'true'
     uses: ./.github/workflows/fro-bot.yaml
     with:
       prompt: |-
@@ -103,13 +105,13 @@ jobs:
         GitHub Project at https://github.com/users/fro-bot/projects/1.
         Keep both equal to live state.
 
-        Operator comments to answer. Answer exactly these comments and no
-        others, and fetch each one by ID before acting on it
+        Operator comments to answer. Answer exactly the pending mention IDs
+        and no others, and fetch each one by ID before acting on it
         (gh api repos/fro-bot/.github/issues/comments/<id>):
         - pending mention IDs (JSON array, empty when none):
           ${{ needs.preflight.outputs.pending_mention_ids }}
-        - the operator comment ID that requested this run (empty when none):
-          ${{ inputs.comment_id }}
+        - the operator comment ID that dispatched this run, for context only
+          (empty when none): ${{ inputs.comment_id }}
         Preflight result: ${{ needs.preflight.outputs.reason }}
 
         Evidence. Verify every claim against what you can read:
@@ -140,12 +142,12 @@ jobs:
            evidence that has not been acknowledged, and link it back to
            fro-bot/.github#3512.
 
-        Replies. When any comment ID is listed above, post one reply on
+        Replies. When any pending mention ID is listed above, post one reply on
         fro-bot/.github#3512 that covers all of them: what you verified, what
         you accepted, what you rejected or flagged and why, and what you
-        changed in the body and on Project 1. When no comment ID is listed
-        and you changed something, post a reply that narrates only that
-        change. When no comment ID is listed and nothing needs to change, do
+        changed in the body and on Project 1. When no pending mention ID is
+        listed and you changed something, post a reply that narrates only that
+        change. When no pending mention ID is listed and nothing needs to change, do
         not post a new comment: edit the marker comment in place with
         gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>, where <id>
         is exactly this marker comment ID (empty when none exists):

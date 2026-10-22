@@ -170,8 +170,8 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
   The comment ID only triggers the run. The agent fetches each comment it answers by ID (see the mention ID anchor below).
 
 - **The general reply job skips these mentions.** The content job's `if:` excludes `marcusrbrown` `@fro-bot` comments on #3512, so the operator gets one reply, not two.
-- **Mention runs share the tracker queue, and the marker anchors them by comment ID.** The marker carries `last_mention_id`, the highest operator `@fro-bot` comment ID the tracker has answered. The baseline is the highest valid value across every parseable marker comment, so a damaged latest marker cannot lower it. When no marker carries a valid value, the baseline comes from position: the highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind, so only later mentions are pending. With no marker at all, every existing operator mention counts as answered, because a cold start seeds the gate and does not answer history. The latest marker comment is the newest `fro-bot` or `fro-bot[bot]` comment on #3512 with a parseable tracker marker (the `selectLatestMarkerCommentBody` rule). Once the marker carries the field, thread position never decides what is pending, so a mention that lands while a run is in flight is still pending afterwards.
-- **Unanswered mentions wake the tracker.** The preflight lists the `marcusrbrown` `@fro-bot` comments on #3512 whose ID is above the marker's `last_mention_id` as `pending_mention_ids`. `decideComment` returns `should_comment` true when the hash changed or that list is non-empty. The pending IDs are not part of the hash, so answering a mention causes no spurious wake. The preflight also outputs the new `last_mention_id` (the highest operator mention ID seen, never below the previous one) inside a complete marker string. The agent answers exactly the pending IDs plus the dispatched `comment_id`, fetching each by ID. A mention stays unanswered when one of these happens:
+- **Mention runs share the tracker queue, and the marker anchors them by comment ID.** The marker carries `last_mention_id`, the highest operator `@fro-bot` comment ID the tracker has answered. The baseline is the highest valid value across every parseable marker comment, so a damaged latest marker cannot lower it. When no marker carries a valid value, including a thread with no marker at all, the baseline comes from position: the highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind, so only later mentions are pending. With no `fro-bot` comment at all, every operator mention is pending. The new `last_mention_id` is the highest pending ID, or the baseline when nothing is pending. The latest marker comment is the newest `fro-bot` or `fro-bot[bot]` comment on #3512 with a parseable tracker marker (the `selectLatestMarkerCommentBody` rule). Once the marker carries the field, thread position never decides what is pending, so a mention that lands while a run is in flight is still pending afterwards.
+- **Unanswered mentions wake the tracker.** The preflight lists the `marcusrbrown` `@fro-bot` comments on #3512 whose ID is above the marker's `last_mention_id` as `pending_mention_ids`. `decideComment` returns `should_comment` true when the hash changed or that list is non-empty. The pending IDs are not part of the hash, so answering a mention causes no spurious wake. The preflight also outputs the new `last_mention_id` (the highest operator mention ID seen, never below the previous one) inside a complete marker string. The dispatched `comment_id` reaches the preflight as `ROLLOUT_TRACKER_COMMENT_ID`: it is pending when above the baseline (which also covers a lagging comment read) and ignored when at or below it, so a queued dispatch for an already-answered comment does not wake. The agent answers exactly the pending IDs, fetching each by ID. A mention stays unanswered when one of these happens:
   - the hop failed;
   - the preflight failed;
   - the run was displaced in a concurrency group.
@@ -180,7 +180,7 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
 - **The preflight script builds the marker.** `<`, `>` and `&` are escaped inside the marker JSON (`\u003c`, `\u003e`, `\u0026`), so Project text containing `-->` cannot close the HTML comment early. The prompt embeds the finished marker, and the agent copies it verbatim into every reply and in-place edit.
 - **The deploy signal is the latest successful infra deploy run.** The hash covers the run ID and head SHA of the latest successful run of `deploy-gateway.yaml`, `deploy-dashboard.yaml` and `deploy.yaml`. It also covers the agent and dashboard `releases/latest` tags and the health `contractVersion`. infra's own release tags are excluded because they don't identify what is deployed. A router run that deploys nothing can wake the agent with no work to do. That run posts nothing.
 - **A failed or empty fetch is fatal.** Every new input fails the preflight the same way the existing reads do. A fetch failure must never read as "no change".
-- **The preflight always runs and gates both modes.** The update job runs only after a successful preflight, and only when a mention supplied a comment ID or `should_comment` is true. A failed preflight fails the run visibly and leaves the mention for the next scheduled run or a manual dispatch. Every agent run therefore has a valid marker to write.
+- **The preflight always runs and gates both modes.** The update job runs only after a successful preflight that reports `should_comment` true. A failed preflight fails the run visibly and leaves the mention for the next scheduled run or a manual dispatch. Every agent run therefore has a valid marker to write.
 - **One prompt serves both modes.** Its duties:
   - verify claims against issue and PR state, releases, the infra deploy runs, health, and the operator's posted acceptance-run results;
   - rewrite every stale section of the body;
@@ -188,7 +188,7 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
   - maintain the acceptance list with operator-reported and agent-verified labels;
   - reply once to the pending and dispatched comments.
 
-  When comment IDs are listed it always replies. With none listed it replies only when something changed. When nothing changed it posts no new comment and edits the marker comment named by the preflight's `marker_comment_id` in place, replacing its marker (a seed comment only when that ID is empty), so the hash and `last_mention_id` stay current and the next scheduled run does not wake again for the same state.
+  When pending mention IDs are listed it always replies. With none listed it replies only when something changed. When nothing changed it posts no new comment and edits the marker comment named by the preflight's `marker_comment_id` in place, replacing its marker (a seed comment only when that ID is empty), so the hash and `last_mention_id` stay current and the next scheduled run does not wake again for the same state.
 
 ## Open Questions
 
@@ -256,7 +256,7 @@ sequenceDiagram
 - Edge case: a changed Project field on its own still leaves the hash unchanged.
 - Edge case: a marker from before this change still parses, and the new hash differs from it, so `decideComment` returns a change.
 - Error path: each new fetch failing, or returning an empty value, ends the run with empty stdout and a non-zero exit.
-- Happy path: a `marcusrbrown` `@fro-bot` comment with an ID above `last_mention_id` sets `should_comment` true with an unchanged hash, even when it precedes the latest marker comment in thread order. A mention at or below `last_mention_id`, a comment without `@fro-bot`, or a comment by another author does not. A marker without `last_mention_id` makes only the mentions after the latest `fro-bot` or `fro-bot[bot]` comment pending (a reply without a marker still answered the mentions before it), and its replacement marker records the highest mention ID before that comment. A cold start has no pending IDs and records the highest existing mention ID.
+- Happy path: a `marcusrbrown` `@fro-bot` comment with an ID above `last_mention_id` sets `should_comment` true with an unchanged hash, even when it precedes the latest marker comment in thread order. A mention at or below `last_mention_id`, a comment without `@fro-bot`, or a comment by another author does not. A marker without `last_mention_id` makes only the mentions after the latest `fro-bot` or `fro-bot[bot]` comment pending (a reply without a marker still answered the mentions before it), and its replacement marker records the highest mention ID before that comment. A thread with no marker uses the same position rule, and with no `fro-bot` comment at all every operator mention is pending. A `comment_id` above the baseline is pending even when the comment list lacks it, one at or below the baseline is ignored, and `last_mention_id` never advances over a mention outside the pending set.
 - Edge case: after a reply that carries the new marker, the same comments give no pending IDs, and the hash matches the marker. A marker whose Project text contains `-->` round-trips through `extractPreviousMarker`.
 - Integration: a fixture CLI run with all inputs supplied prints valid JSON and makes no network calls.
 
@@ -278,7 +278,7 @@ sequenceDiagram
 **Approach:**
 
 - Add a `comment_id` input to `workflow_dispatch`. Do not add an input named `prompt`.
-- The update job needs a successful preflight. It runs when a numeric `comment_id` is present or preflight reports `should_comment == 'true'`.
+- The update job needs a successful preflight and runs when it reports `should_comment == 'true'`. The preflight receives `comment_id` as `ROLLOUT_TRACKER_COMMENT_ID`.
 - Template `${{ inputs.comment_id }}` into the prompt. It is empty for scheduled runs.
 - Rewrite the prompt.
   - In both modes:
@@ -286,8 +286,8 @@ sequenceDiagram
     - rewrite stale body sections;
     - update Project 1 fields and add missing dependencies;
     - maintain the acceptance list with operator-reported and agent-verified labels.
-  - Answer exactly the pending comment IDs plus `comment_id` when set, fetching each by ID, and always reply once.
-  - With no comment ID listed, reply only when something changed. When nothing changed, PATCH exactly the `marker_comment_id` comment and replace its marker; post a seed comment only when the ID is empty.
+  - Answer exactly the pending mention IDs, fetching each by ID, and always reply once.
+  - With no pending mention ID listed, reply only when something changed. When nothing changed, PATCH exactly the `marker_comment_id` comment and replace its marker; post a seed comment only when the ID is empty.
 - The marker contract stays. Every tracker reply and in-place edit ends with the finished marker the preflight outputs.
 
 **Patterns to follow:** the current prompt's marker block; `fro-bot-workflow.test.ts`, which pins the tracker calling `fro-bot.yaml` with no `output-mode`.
@@ -295,9 +295,9 @@ sequenceDiagram
 **Test scenarios:**
 
 - Happy path: the workflow defines a `comment_id` dispatch input and no `prompt` input.
-- Happy path: the update job's `if:` admits a mention run, admits a gating-change run, and rejects a run with neither.
+- Happy path: the update job's `if:` admits a run whose preflight reports a wake (a pending mention or a gating change) and rejects a run whose preflight reports none, even with a `comment_id`.
 - Edge case: a failed preflight blocks the update job in both modes.
-- Integration: the prompt receives `comment_id`, tells the agent to answer exactly the pending IDs plus `comment_id`, and requires every reply and in-place edit to end with the marker.
+- Integration: the prompt receives `comment_id`, tells the agent to answer exactly the pending IDs, and requires every reply and in-place edit to end with the marker.
 - Integration: the prompt names every evidence source, both acceptance labels, the pending-ID rule, the in-place edit rule and the mode-specific reply rule.
 
 **Verification:** the workflow tests pass, and actionlint is clean.

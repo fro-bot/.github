@@ -378,47 +378,51 @@ export function selectLatestMarkerCommentBody(comments: TrackerComment[]): strin
  * damaged latest marker cannot lower it. A mention is pending when its comment ID is above the
  * baseline. Thread position does not matter once a marker carries the field: a mention that lands
  * while a tracker run is in flight can precede that run's marker comment and is still pending.
- * When no parseable marker carries a valid `last_mention_id`, the baseline migrates by position: the
- * highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind,
- * marker or not, because a reply without a marker still answered the mentions before it. With no
- * marker at all (cold start) every existing mention counts as answered, because a cold start seeds
- * the gate and does not answer history. `lastMentionId` is the highest operator mention ID seen,
- * never below the baseline.
+ *
+ * When no parseable marker carries a valid `last_mention_id` (including a thread with no marker),
+ * the baseline is the highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]`
+ * comment of any kind, because a reply without a marker still answered the mentions before it. With
+ * no such comment, every operator mention is pending.
+ *
+ * `triggerId` is the comment that dispatched the run. It is pending when it is above the baseline,
+ * even if the comment list does not contain it yet; a trigger at or below the baseline is already
+ * acknowledged and is ignored. `lastMentionId` advances only to the highest pending ID and otherwise
+ * stays at the baseline, so it never moves over a mention that is outside the answer set.
  */
 export function scanOperatorMentions(
   comments: readonly TrackerComment[],
   previousMarker: MarkerData | null,
+  triggerId: number | null = null,
 ): {pendingIds: number[]; lastMentionId: number} {
-  const mentions = comments
-    .map((comment, index) => ({
-      id: comment.id,
-      index,
-      isMention: comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body),
-    }))
-    .filter(entry => entry.isMention)
-  const highest = (entries: readonly {id: number}[]): number => Math.max(0, ...entries.map(entry => entry.id))
+  const mentionIds = comments
+    .filter(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
+    .map(comment => comment.id)
 
   const recordedIds = [...listMarkerComments(comments).map(entry => entry.marker), previousMarker].flatMap(marker =>
     marker?.last_mention_id == null ? [] : [marker.last_mention_id],
   )
 
   let baseline: number
-  if (previousMarker === null) {
-    baseline = highest(mentions)
-  } else if (recordedIds.length === 0) {
-    const lastBotIndex = comments.findLastIndex(comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login))
-    baseline = highest(mentions.filter(entry => entry.index < lastBotIndex))
-  } else {
+  if (recordedIds.length > 0) {
     baseline = Math.max(...recordedIds)
+  } else {
+    const lastBotIndex = comments.findLastIndex(comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login))
+    baseline = Math.max(
+      0,
+      ...comments
+        .filter(
+          (comment, index) =>
+            index < lastBotIndex && comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body),
+        )
+        .map(comment => comment.id),
+    )
   }
 
-  return {
-    pendingIds: mentions
-      .map(entry => entry.id)
-      .filter(id => id > baseline)
-      .sort((x, y) => x - y),
-    lastMentionId: Math.max(baseline, highest(mentions)),
-  }
+  const pending = new Set(mentionIds.filter(id => id > baseline))
+  if (triggerId !== null && triggerId > baseline) pending.add(triggerId)
+  const pendingIds = [...pending].sort((x, y) => x - y)
+
+  return {pendingIds, lastMentionId: Math.max(baseline, ...pendingIds)}
 }
 
 /**
@@ -437,7 +441,7 @@ export function buildMarker(hash: string, snapshot: RolloutSnapshot, lastMention
 /**
  * Decide whether to wake the tracker.
  *
- * - Cold start (previousMarker === null): always wake to seed state.
+ * - No marker (previousMarker === null): wake to write the first marker.
  * - Different hash: state changed, wake.
  * - Same hash with pending operator mentions: wake to answer them. The pending IDs stay out of the
  *   hash, so answering them never changes the next comparison.
@@ -657,12 +661,22 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
  *                                   mentions, and takes precedence over ROLLOUT_TRACKER_COMMENT_BODY
  *   ROLLOUT_TRACKER_RELEASES_JSON / _DEPLOYS_JSON / _HEALTH_JSON — external signal API responses
  *                                   (see loadExternalSignals)
+ *   ROLLOUT_TRACKER_COMMENT_ID  — numeric ID of the comment that dispatched the run, or empty; it is
+ *                                   pending when above the mention baseline and ignored otherwise
  *
  * A body fixture supplies no comment list, so it reports no pending mentions.
  */
 async function main(): Promise<void> {
   const trackerIssue = process.env.ROLLOUT_TRACKER_ISSUE ?? 'fro-bot/.github#3512'
   const projectUrl = process.env.ROLLOUT_TRACKER_PROJECT ?? 'https://github.com/users/fro-bot/projects/1'
+
+  const rawTriggerId = process.env.ROLLOUT_TRACKER_COMMENT_ID ?? ''
+  if (!/^\d*$/.test(rawTriggerId)) {
+    process.stderr.write('rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_COMMENT_ID must be numeric or empty\n')
+    process.exitCode = 1
+    return
+  }
+  const triggerId = rawTriggerId === '' ? null : Number(rawTriggerId)
 
   let items: ProjectItem[]
   let issues: IssueState[]
@@ -813,7 +827,7 @@ async function main(): Promise<void> {
   const snapshot = buildSnapshot(items, issues, external)
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
-  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, triggerId)
   const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
   const result: PreflightResult = {
     ...decision,

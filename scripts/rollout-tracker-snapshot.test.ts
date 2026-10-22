@@ -117,12 +117,15 @@ interface FixtureParams {
   commentBody?: string
   comments?: TrackerComment[]
   signals?: Partial<typeof SIGNAL_FIXTURES>
+  /** The dispatching comment ID, as the workflow passes `inputs.comment_id`. */
+  triggerCommentId?: string
 }
 
 function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
   const signals = {...SIGNAL_FIXTURES, ...params.signals}
   return {
     ROLLOUT_TRACKER_COMMENT_BODY: params.commentBody ?? '',
+    ROLLOUT_TRACKER_COMMENT_ID: params.triggerCommentId,
     ROLLOUT_TRACKER_COMMENTS_JSON: params.comments === undefined ? undefined : JSON.stringify(params.comments),
     ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(params.issues),
     ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
@@ -1167,16 +1170,47 @@ describe('scanOperatorMentions', () => {
     })
   })
 
-  describe('a cold start', () => {
-    it('treats every existing operator mention as answered and seeds last_mention_id from the highest', () => {
+  describe('a thread with no marker', () => {
+    it('leaves a mention after the last fro-bot comment pending', () => {
+      const comments = [mention(7), comment(8, 'fro-bot', 'prose-only reply'), mention(9)]
+
+      expect(scanOperatorMentions(comments, null)).toEqual({pendingIds: [9], lastMentionId: 9})
+    })
+
+    it('counts a mention before the last fro-bot comment as answered and stays at the baseline', () => {
+      const comments = [mention(7), mention(9), comment(10, 'fro-bot[bot]', 'prose-only reply')]
+
+      expect(scanOperatorMentions(comments, null)).toEqual({pendingIds: [], lastMentionId: 9})
+    })
+
+    it('leaves every operator mention pending when fro-bot never commented', () => {
       expect(scanOperatorMentions([mention(7), mention(9), mention(8)], null)).toEqual({
-        pendingIds: [],
+        pendingIds: [7, 8, 9],
         lastMentionId: 9,
       })
     })
 
-    it('has nothing to seed from when the thread has no operator mention', () => {
+    it('has nothing pending and a zero baseline when the thread has no operator mention', () => {
       expect(scanOperatorMentions([comment(1, 'octocat', 'hello')], null)).toEqual({pendingIds: [], lastMentionId: 0})
+    })
+  })
+
+  describe('the dispatching comment', () => {
+    it('is pending when above the baseline although the comment list lacks it', () => {
+      expect(scanOperatorMentions([mention(100)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
+    })
+
+    it('is listed once when the comment list already carries it', () => {
+      expect(scanOperatorMentions([mention(105)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
+    })
+
+    it('is ignored when at or below the baseline, because it is already acknowledged', () => {
+      expect(scanOperatorMentions([mention(100)], marked(100), 100)).toEqual({pendingIds: [], lastMentionId: 100})
+      expect(scanOperatorMentions([mention(100)], marked(100), 90)).toEqual({pendingIds: [], lastMentionId: 100})
+    })
+
+    it('joins the pending mentions in ascending order', () => {
+      expect(scanOperatorMentions([mention(103), mention(101)], marked(100), 102).pendingIds).toEqual([101, 102, 103])
     })
   })
 
@@ -1216,7 +1250,7 @@ describe('marker round trip', () => {
 
     const inner = marker.slice('<!-- '.length, -' -->'.length)
 
-    expect(marker.match(/-->/g)).toHaveLength(1)
+    expect(marker.split('-->').length - 1).toBe(1)
     expect(marker.endsWith(' -->')).toBe(true)
     expect(inner).not.toMatch(/[<>&]/)
     expect(inner).toContain(String.raw`\u003e`)
@@ -1385,21 +1419,76 @@ describe('pending operator mentions through the CLI', () => {
     expect(result.last_mention_id).toBe(1)
   })
 
-  it('seeds a cold start without answering history', () => {
+  it('leaves a request after the last fro-bot comment pending when no marker exists', () => {
     const result = runCliFixture({
       items,
       issues,
       comments: [
         comment(1, 'marcusrbrown', '@fro-bot old claim'),
         comment(2, 'fro-bot', 'prose-only reply'),
-        comment(3, 'marcusrbrown', '@fro-bot another old claim'),
+        comment(3, 'marcusrbrown', '@fro-bot unanswered claim'),
       ],
     })
 
     expect(result.should_comment).toBe(true)
-    expect(result.reason).toContain('cold start')
-    expect(result.pending_mention_ids).toEqual([])
+    expect(result.pending_mention_ids).toEqual([3])
     expect(result.last_mention_id).toBe(3)
+  })
+
+  it('leaves every request pending when fro-bot never commented', () => {
+    const result = runCliFixture({
+      items,
+      issues,
+      comments: [comment(1, 'marcusrbrown', '@fro-bot first'), comment(2, 'marcusrbrown', '@fro-bot second')],
+    })
+
+    expect(result.pending_mention_ids).toEqual([1, 2])
+    expect(result.last_mention_id).toBe(2)
+  })
+
+  describe('queued dispatches', () => {
+    const quiet = runCliFixture({items, issues})
+    const reply = comment(100, 'fro-bot', quiet.marker)
+    const a = comment(101, 'marcusrbrown', '@fro-bot claim A')
+    const b = comment(102, 'marcusrbrown', '@fro-bot claim B')
+
+    it('answers both A and B in the run dispatched for A when both exist before its preflight', () => {
+      const runA = runCliFixture({items, issues, comments: [reply, a, b], triggerCommentId: '101'})
+
+      expect(runA.should_comment).toBe(true)
+      expect(runA.pending_mention_ids).toEqual([101, 102])
+      expect(runA.last_mention_id).toBe(102)
+    })
+
+    it('finds nothing pending in the run dispatched for B once A answered both', () => {
+      const answeredByA = comment(103, 'fro-bot', runCliFixture({items, issues, comments: [reply, a, b]}).marker)
+
+      const runB = runCliFixture({items, issues, comments: [reply, a, b, answeredByA], triggerCommentId: '102'})
+
+      expect(runB.should_comment).toBe(false)
+      expect(runB.pending_mention_ids).toEqual([])
+      expect(runB.last_mention_id).toBe(102)
+    })
+
+    it('treats a dispatching comment above the baseline as pending even when the comment list lacks it', () => {
+      const lagging = runCliFixture({items, issues, comments: [reply], triggerCommentId: '500'})
+
+      expect(lagging.should_comment).toBe(true)
+      expect(lagging.pending_mention_ids).toEqual([500])
+      expect(lagging.last_mention_id).toBe(500)
+    })
+
+    it('does not wake for an empty comment ID with nothing else pending', () => {
+      expect(runCliFixture({items, issues, comments: [reply], triggerCommentId: ''}).should_comment).toBe(false)
+    })
+
+    it('fails closed on a non-numeric dispatching comment ID', () => {
+      const result = runCliRaw({...fixtureEnv({items, issues, comments: [reply]}), ROLLOUT_TRACKER_COMMENT_ID: '12;ls'})
+
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('ROLLOUT_TRACKER_COMMENT_ID must be numeric')
+    })
   })
 
   it('reports the ID of the latest marker comment, and null without one', () => {
@@ -1892,8 +1981,12 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     expect(inputs.comment_id).toMatchObject({type: 'string', required: false, default: ''})
   })
 
-  it('runs the update job for a mention run, even when the preflight sees no change', () => {
-    expect(updateRuns({preflight: 'success', shouldComment: 'false', commentId: '4301234567'})).toBe(true)
+  it('runs the update job for a mention run whose preflight found it pending', () => {
+    expect(updateRuns({preflight: 'success', shouldComment: 'true', commentId: '4301234567'})).toBe(true)
+  })
+
+  it('skips the update job for a mention run whose comment is already acknowledged', () => {
+    expect(updateRuns({preflight: 'success', shouldComment: 'false', commentId: '4301234567'})).toBe(false)
   })
 
   it('runs the update job for a gating change without a mention', () => {
@@ -1911,6 +2004,13 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(updateRuns({preflight: result, commentId: '4301234567'})).toBe(false)
     },
   )
+
+  it('passes the dispatching comment ID to the preflight step', () => {
+    const preflight = workflow.jobs.preflight as {steps?: {id?: string; env?: Record<string, string>}[]}
+    const env = preflight.steps?.find(step => step.id === 'snapshot')?.env
+
+    expect(env?.ROLLOUT_TRACKER_COMMENT_ID).toBe(expr('inputs.comment_id'))
+  })
 
   it('wires the pending IDs, the marker and the marker comment ID from the preflight step to the prompt', () => {
     const preflight = workflow.jobs.preflight as {
@@ -1981,9 +2081,11 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('agent-verified')
     })
 
-    it('answers exactly the listed comment IDs, fetching each by ID', () => {
-      expect(flat).toContain('Answer exactly these comments and no others')
+    it('answers exactly the pending mention IDs, fetching each by ID', () => {
+      expect(flat).toContain('Answer exactly the pending mention IDs and no others')
       expect(flat).toContain('fetch each one by ID')
+      expect(flat).toContain('for context only')
+      expect(flat).not.toContain('plus the')
       expect(flat).toContain('gh api repos/fro-bot/.github/issues/comments/<id>')
     })
 

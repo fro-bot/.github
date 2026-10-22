@@ -68,7 +68,7 @@ jobs:
     needs: preflight
     if: >-
       needs.preflight.result == 'success' &&
-      (inputs.comment_id != '' || needs.preflight.outputs.should_comment == 'true')
+      needs.preflight.outputs.should_comment == 'true'
     uses: ./.github/workflows/fro-bot.yaml
 ```
 
@@ -119,14 +119,19 @@ that deploys nothing wakes the agent once, and that run posts nothing.
 
 Project field values, labels and prose stay out of the hash. Every read fails closed: a failed or
 empty fetch ends the preflight with a `FATAL` line on stderr, empty stdout and a non-zero exit. A
-failed read never counts as "no change". The update job requires a successful preflight in both
-modes, so every agent run has a valid hash and snapshot to write into its marker.
+failed read never counts as "no change". The update job requires a successful preflight and
+`should_comment == 'true'`, so every agent run has a valid marker to write.
 
 Pending operator mentions are a separate wake condition, not a hash input. The preflight reads the
 #3512 comments through the REST API (`gh api --paginate`), which carries numeric comment IDs. A
 mention is pending when its comment is by `marcusrbrown`, contains `@fro-bot`, and has an ID above
-the baseline `last_mention_id` (see the marker section). `decideComment` returns `should_comment` when the hash
-changed or any mention is pending. Answering the mentions does not change the next hash comparison.
+the baseline `last_mention_id` (see the marker section). The comment that dispatched the run reaches
+the preflight as `ROLLOUT_TRACKER_COMMENT_ID` (numeric or empty). It is pending when it is above the
+baseline, even if the comment read lags and does not list it yet, and it is ignored when at or below
+the baseline because it is already acknowledged. A queued dispatch for a comment that an earlier run
+already answered therefore finds nothing pending and does not wake. `decideComment` returns
+`should_comment` when the hash changed or any mention is pending. Answering the mentions does not
+change the next hash comparison.
 
 A mention stays unanswered when the hop fails, the preflight fails, or GitHub displaces the run in a
 concurrency group. A failed preflight in particular leaves the mention for the next scheduled run or
@@ -145,20 +150,20 @@ The marker comments authored by `fro-bot` or `fro-bot[bot]` are the only gate re
 writes no state. The parser requires a string `hash`. `last_mention_id` is the highest operator
 `@fro-bot` comment ID the tracker has answered, and the baseline is the highest valid value across
 every parseable marker comment in the thread, so a damaged latest marker cannot lower it. When no
-marker carries a valid value, the baseline is the highest operator mention that precedes the latest
-`fro-bot` or `fro-bot[bot]` comment of any kind, because a reply without a marker still answered the
-mentions before it. With no marker at all every existing mention counts as answered, because a cold
-start seeds the gate and does not answer history. The new value is the highest operator mention ID
-the preflight saw, never below the baseline.
+marker carries a valid value, including a thread with no marker at all, the baseline is the highest
+operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind, because a
+reply without a marker still answered the mentions before it. With no `fro-bot` comment at all, every
+operator mention is pending. The new value is the highest pending ID, or the baseline when nothing is
+pending, so it never moves over a mention outside the answer set.
 
 ### Mention anchoring
 
-A run answers exactly the comment IDs in `pending_mention_ids` plus the dispatched `comment_id`,
-fetching each by ID. Thread position does not decide what is pending: a mention posted while a run is
+A run answers exactly the comment IDs in `pending_mention_ids`, fetching each by ID; the dispatched
+`comment_id` is context only. Thread position does not decide what is pending: a mention posted while a run is
 in flight can sit before that run's marker comment and is still pending afterwards, because its ID is
 above the baseline.
 
-When nothing needs to change and no comment ID is listed, the agent posts no new comment. The
+When nothing needs to change and no pending mention ID is listed, the agent posts no new comment. The
 preflight outputs `marker_comment_id`, the REST ID of the latest parseable marker comment (empty when
 none exists). The prompt tells the agent to PATCH exactly that comment
 (`gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>`) and replace only its marker, so the
@@ -169,8 +174,8 @@ empty.
 The anchor moves only when a comment with a valid marker lands. A run that fails before writing one
 leaves the old marker, and its mentions stay pending. A reply whose marker the agent damaged does not
 parse, so the preflight keeps reading the earlier marker comments and the mentions that reply answered
-stay pending. Only a thread with no parseable marker is a cold start, which seeds the gate without
-answering the mentions already in the thread.
+stay pending. A thread with no parseable marker writes its first marker on the next wake, and the baseline falls
+back to the position rule above.
 
 ### The prompt
 
