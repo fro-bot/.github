@@ -364,7 +364,8 @@ export function selectLatestMarkerCommentBody(comments: TrackerComment[]): strin
  * is above it. Thread position does not matter once the marker carries the field: a mention that
  * lands while a tracker run is in flight can precede that run's marker comment and is still pending.
  * A marker without a valid `last_mention_id` migrates by position: its baseline is the highest
- * operator mention that precedes the marker comment, so only later mentions are pending. With no
+ * operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind, marker or
+ * not, because a reply without a marker still answered the mentions before it. With no
  * marker at all (cold start) every existing mention counts as answered, because a cold start seeds
  * the gate and does not answer history. `lastMentionId` is the highest operator mention ID seen,
  * never below the baseline.
@@ -386,8 +387,8 @@ export function scanOperatorMentions(
   if (previousMarker === null) {
     baseline = highest(mentions)
   } else if (previousMarker.last_mention_id === null) {
-    const markerIndex = findLatestMarkerCommentIndex(comments)
-    baseline = highest(mentions.filter(entry => entry.index < markerIndex))
+    const lastBotIndex = comments.findLastIndex(comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login))
+    baseline = highest(mentions.filter(entry => entry.index < lastBotIndex))
   } else {
     baseline = previousMarker.last_mention_id
   }

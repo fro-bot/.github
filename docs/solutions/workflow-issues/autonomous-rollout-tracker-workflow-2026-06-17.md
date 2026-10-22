@@ -144,8 +144,9 @@ comment early.
 The latest marker comment authored by `fro-bot` or `fro-bot[bot]` is the only gate record; the
 script writes no state. The parser requires a string `hash`. `last_mention_id` is the highest
 operator `@fro-bot` comment ID the tracker has answered. A marker without a valid value takes the
-highest operator mention that precedes its comment as the baseline, so only later mentions are
-pending, and with no marker at all every existing mention counts as answered because a cold start
+highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]` comment of any kind as
+the baseline, so only later mentions are pending (a reply without a marker still answered the
+mentions before it), and with no marker at all every existing mention counts as answered because a cold start
 seeds the gate and does not answer history. The new value is the highest operator mention ID the
 preflight saw, never below the baseline.
 

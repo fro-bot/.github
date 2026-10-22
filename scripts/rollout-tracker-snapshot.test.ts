@@ -1081,12 +1081,37 @@ describe('scanOperatorMentions', () => {
       mention(12),
     ]
 
-    it('takes the highest mention before the marker comment as the baseline', () => {
+    it('takes the highest mention before the latest fro-bot comment as the baseline', () => {
       expect(scanOperatorMentions(legacy(), marked(null))).toEqual({pendingIds: [11, 12], lastMentionId: 12})
     })
 
-    it('leaves nothing pending when no mention follows the marker comment', () => {
+    it('leaves nothing pending when no mention follows the latest fro-bot comment', () => {
       expect(scanOperatorMentions(legacy().slice(0, 4), marked(null))).toEqual({pendingIds: [], lastMentionId: 9})
+    })
+
+    it('counts a fro-bot reply without a marker as answering the mentions before it', () => {
+      const comments = [
+        mention(7),
+        markerComment(8, ''),
+        mention(9),
+        mention(10),
+        comment(11, 'fro-bot', '@marcusrbrown answered without a marker'),
+        mention(12),
+      ]
+
+      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [12], lastMentionId: 12})
+    })
+
+    it('counts a fro-bot[bot] comment of any kind the same way', () => {
+      const comments = [markerComment(1, ''), mention(2), comment(3, 'fro-bot[bot]', 'plain reply'), mention(4)]
+
+      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [4], lastMentionId: 4})
+    })
+
+    it('keeps a mention pending when only other authors comment after it', () => {
+      const comments = [markerComment(1, ''), mention(2), comment(3, 'octocat', 'unrelated')]
+
+      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [2], lastMentionId: 2})
     })
 
     it('anchors on the latest marker comment, not an earlier one', () => {
@@ -1269,7 +1294,7 @@ describe('pending operator mentions through the CLI', () => {
     expect(next.pending_mention_ids).toEqual([101])
   })
 
-  it('migrates a legacy marker by position: only mentions after it are pending, and the new marker covers the earlier ones', () => {
+  it('migrates a legacy marker by position: only mentions after the latest fro-bot comment are pending, and the new marker covers the earlier ones', () => {
     const seeded = runCliFixture({items, issues})
     const legacyMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
     const comments = [
@@ -1286,6 +1311,25 @@ describe('pending operator mentions through the CLI', () => {
     expect(result.last_mention_id).toBeGreaterThanOrEqual(2)
     expect(result.last_mention_id).toBe(4)
     expect(extractPreviousMarker(result.marker)?.last_mention_id).toBe(4)
+  })
+
+  it('counts a markerless fro-bot reply after a legacy marker as answering the mentions before it', () => {
+    const seeded = runCliFixture({items, issues})
+    const legacyMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, snapshot: seeded.snapshot})} -->`
+
+    const result = runCliFixture({
+      items,
+      issues,
+      comments: [
+        comment(1, 'fro-bot', legacyMarker),
+        comment(2, 'marcusrbrown', '@fro-bot answered by the general reply job'),
+        comment(3, 'fro-bot', 'general reply with no marker'),
+        comment(4, 'marcusrbrown', '@fro-bot genuinely new'),
+      ],
+    })
+
+    expect(result.pending_mention_ids).toEqual([4])
+    expect(result.last_mention_id).toBe(4)
   })
 
   it('leaves a legacy marker with no later mention quiet and records the pre-marker baseline', () => {
