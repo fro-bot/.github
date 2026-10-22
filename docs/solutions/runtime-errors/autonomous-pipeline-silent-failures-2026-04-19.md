@@ -7,7 +7,7 @@ root_cause: wrong_contract
 resolution_type: code_fix
 severity: high
 date: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-10-22
 module: scripts/wiki-ingest.ts
 tags: [workflow, github-actions, wiki-ingest, porcelain, silent-failure, status-classification, additive-pipeline, autonomous, reconcile]
 verified: 2026-04-19
@@ -92,7 +92,7 @@ A wiki-commit failure now records `last_survey_status: failure`, and the reconci
 
 The two bugs interact: Fix A without Fix B still loses data silently on any future wiki-commit failure (network error, conflict exhaustion, rate limit). Fix B without Fix A still crashes every dispatch until drift is eliminated. Landing both together closes both holes.
 
-The deletion filter is safe because the wiki commit path's contract is additive-only. Anything that has disappeared from the working tree since the last `data`-branch snapshot is by definition out of scope — the workflow would never intentionally commit a removal.
+The porcelain deletion filter stays safe: a path missing from the working tree is never treated as a removal. Intended removals reach the commit only through the agent handoff manifest, which the ingest CLI reads directly and checks against the agent's base commit (see [agent handoff snapshots replaced shared wiki files](../integration-issues/agent-handoff-snapshots-replaced-shared-wiki-files-2026-10-22.md)).
 
 The compound expression works because GitHub Actions evaluates every `steps.<id>.conclusion` even when the step was skipped (`'skipped'`) or the job was cancelled (`'cancelled'`). Including `|| steps.wiki-commit.conclusion == 'skipped'` preserves the legitimate no-op case (agent ran, decided nothing needed wiki changes, commit step skipped via its own `if:` guard).
 
