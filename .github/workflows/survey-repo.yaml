@@ -833,6 +833,8 @@ jobs:
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_NODE_ID: ${{ inputs.node_id }}
           REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
+          # Same as the primary record step: a conflict failure is eligible again the next day.
+          SURVEY_CONFLICT: ${{ steps.wiki-commit.outputs.conflict }}
           SURVEY_STATUS: failure
         run: bun scripts/record-survey-result.ts
 

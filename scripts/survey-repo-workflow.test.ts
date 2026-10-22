@@ -2250,6 +2250,35 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     expect(recordStep?.env?.SURVEY_CONFLICT).toBe(`${expressionStart} steps.wiki-commit.outputs.conflict }}`)
   })
 
+  /** The step's env with each `steps.<id>.outputs.<name>` expression replaced from `outputs`; other values pass through. */
+  function resolvedStepEnv(step: WorkflowStep | undefined, outputs: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(step?.env ?? {}).map(([key, raw]) => {
+        const match = /^\$\{\{ steps\.([\w-]+)\.outputs\.([\w-]+) \}\}$/.exec(String(raw))
+        return [key, match === null ? String(raw) : (outputs[`${match[1]}.${match[2]}`] ?? '')]
+      }),
+    )
+  }
+
+  it.each([
+    ['the primary record step', 'Record survey result'],
+    ['the cancelled/timeout fallback record step', 'Record survey result (cancelled/timeout fallback)'],
+  ])('passes the conflict flag from the wiki commit step to %s', (_label, stepName) => {
+    const recordStep = persistJob?.steps.find(step => step.name === stepName)
+    const record = {bun: String.raw`printf "[%s]\n" "$SURVEY_CONFLICT" >> "$CALLS_FILE"`}
+
+    const conflicted = runStep(
+      recordStep?.run ?? '',
+      resolvedStepEnv(recordStep, {'wiki-commit.conflict': 'true'}),
+      record,
+    )
+    const plain = runStep(recordStep?.run ?? '', resolvedStepEnv(recordStep, {}), record)
+
+    expect(conflicted.status).toBe(0)
+    expect(conflicted.calls.trim()).toBe('[true]')
+    expect(plain.calls.trim()).toBe('[]')
+  })
+
   it('gates the re-run on persist reporting a conflict and an attempt that still has a re-run left', () => {
     const condition = String(redispatchJob?.if ?? '')
 
