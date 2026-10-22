@@ -50,7 +50,7 @@ The daily report flags the drift every day. Nothing fixes it.
 
 - R6. The scheduled tracker wakes when any of these change:
   - a linked issue or PR's state;
-  - the latest release of agent, dashboard or infra;
+  - the latest release of agent or dashboard;
   - the latest successful infra Deploy Gateway or Deploy Dashboard run;
   - the health `contractVersion`.
 
