@@ -4,7 +4,8 @@
  * paths are null), and the endsWith/contains/fromJSON functions. `||`/`&&` return operand
  * values like Actions does; string comparison is case-insensitive.
  */
-const truthy = (value: unknown): boolean => value !== null && value !== undefined && value !== '' && value !== false
+const truthy = (value: unknown): boolean =>
+  value !== null && value !== undefined && value !== '' && value !== false && value !== 0
 const lower = (value: unknown): unknown => (typeof value === 'string' ? value.toLowerCase() : value)
 
 function callFunction(name: string, args: unknown[]): unknown {
@@ -23,6 +24,26 @@ function callFunction(name: string, args: unknown[]): unknown {
   }
 }
 
+const TOKEN = /\s*('(?:[^']|'')*'|\d+|[a-z_][\w.-]*|\|\||&&|!=|==|[!(),])/iy
+
+/** Split an expression into tokens; any character that starts no token is an error, never skipped. */
+function tokenize(source: string): string[] {
+  const tokens: string[] = []
+  let position = 0
+  for (;;) {
+    TOKEN.lastIndex = position
+    const match = TOKEN.exec(source)
+    if (match === null) {
+      const rest = source.slice(position)
+      if (rest.trim() !== '')
+        throw new Error(`unexpected character at ${position + rest.length - rest.trimStart().length}`)
+      return tokens
+    }
+    tokens.push(match[1] ?? '')
+    position = TOKEN.lastIndex
+  }
+}
+
 // Recursive-descent parser; methods (not closures) so the mutually recursive productions satisfy no-use-before-define.
 class ExpressionEvaluator {
   private readonly tokens: string[]
@@ -30,7 +51,7 @@ class ExpressionEvaluator {
   private position = 0
 
   constructor(source: string, context: unknown) {
-    this.tokens = source.match(/'(?:[^']|'')*'|\d+|[a-z_][\w.-]*|\|\||&&|!=|==|[!(),]/gi) ?? []
+    this.tokens = tokenize(source)
     this.context = context
   }
 
