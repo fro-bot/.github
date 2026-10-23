@@ -1,7 +1,7 @@
 ---
 title: 'fix: Unblock wiki promotion after a repository rename'
 type: fix
-status: active
+status: complete
 date: 2026-09-26
 ---
 
@@ -32,6 +32,11 @@ After the live repair, make a separate, focused code change in `scripts/reconcil
 Preserve restrictive private/unknown visibility updates rather than restoring stale public status. Recheck on metadata retries; only verified absence of the old page permits the rename, while unreadable or ambiguous state blocks it. No persistent alias registry or cross-writer transaction coordinator. The existing privacy gate remains the backstop for the small residual race between metadata and wiki writes. Add a stale-ingest guard only if that race recurs; it is **not** a prerequisite for this repair.
 
 Test the guard through reconcile, asserting persisted rows: single-row rename, duplicate-row merge, same-slug rename, slug collision, ID-less downgrade, and retry. Run the repository's `pnpm bootstrap`, `pnpm check-types`, `pnpm lint`, and `pnpm test` gates for code changes; run mutation guards if the changed module or test is listed in `stryker.config.json`.
+
+## Outcome
+
+- The one-time repair removed the orphaned `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` (the page for the renamed `marcusrbrown/mrbro.dev`) on `data`, and promotion #3937 carried the deletion to `main` with the private-leak scan and wiki-authority check passing. Every later promotion has merged.
+- The recurrence guard shipped in #3965.
 
 ## Boundaries and next action
 
