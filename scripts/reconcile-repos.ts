@@ -2063,26 +2063,26 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
   let committed = false
 
-  if (hasChanges) {
-    // 7. Pre-commit integrity check — fail closed on unexpected authors. Skipped entirely
-    //    when `data` was just bootstrapped this run: its tip commit is inherited from
-    //    `main` and is by definition authored by whoever merged the most recent PR, not
-    //    `fro-bot[bot]`. The check activates on the next run after fro-bot commits.
-    if (justBootstrapped) {
-      integrityCheck = 'skipped-just-bootstrapped'
-    } else {
-      const integrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
-      if (!integrity.ok) {
-        await fileIntegrityAlert({writerOctokit, owner, repo, failure: integrity, logger})
-        throw new ReconcileError({
-          code: 'DATA_BRANCH_TAMPER',
-          message: describeIntegrityFailure(integrity),
-          remediation: INTEGRITY_REMEDIATION,
-        })
-      }
-      integrityCheck = integrity.status
+  // 7. Integrity check on every run, before any commit: the tip author and the `data` rules
+  //    fail closed. Skipped entirely when `data` was just bootstrapped this run: its tip commit
+  //    is inherited from `main` and is by definition authored by whoever merged the most recent
+  //    PR, not `fro-bot[bot]`. The check activates on the next run after fro-bot commits.
+  if (justBootstrapped) {
+    integrityCheck = 'skipped-just-bootstrapped'
+  } else {
+    const integrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
+    if (!integrity.ok) {
+      await fileIntegrityAlert({writerOctokit, owner, repo, failure: integrity, logger})
+      throw new ReconcileError({
+        code: 'DATA_BRANCH_TAMPER',
+        message: describeIntegrityFailure(integrity),
+        remediation: INTEGRITY_REMEDIATION,
+      })
     }
+    integrityCheck = integrity.status
+  }
 
+  if (hasChanges) {
     // 8. Commit via mutator closure. Mutator re-runs reconcileRepos on each invocation,
     //    so 409-retry in commitMetadata absorbs concurrent writes correctly.
     const commitResult = await commitMetadataImpl({

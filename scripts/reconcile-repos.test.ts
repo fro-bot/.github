@@ -3220,13 +3220,15 @@ function baseParams(overrides: BaseParamsOverrides = {}): HandleReconcileParams 
   }
 }
 
-// Runs handleReconcile with one repo to plan, so the data branch integrity check is reached.
-function integrityRun(overrides: OctokitMockOverrides) {
+// Runs handleReconcile against the data branch integrity check. By default one repo is planned, so
+// there is a commit to make; `planned: false` runs with no repos and no changes (steady state).
+function integrityRun(overrides: OctokitMockOverrides, options: {planned?: boolean} = {}) {
+  const planned = options.planned ?? true
   const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
   const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
   const userOctokit = mockOctokit({
     listForAuthenticatedUser: async () => ({
-      data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+      data: planned ? [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}] : [],
     }),
   })
   const run = async () =>
@@ -3234,7 +3236,7 @@ function integrityRun(overrides: OctokitMockOverrides) {
       baseParams({
         userOctokit,
         appOctokit: mockOctokit({issuesCreate, ...overrides}),
-        readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+        readMetadata: makeReadMetadata({allowlist: makeAllowlist(planned ? ['t'] : [])}),
         commitMetadata,
       }),
     )
@@ -4600,6 +4602,82 @@ describe('handleReconcile (I/O shell)', () => {
 
       expect(result.integrityCheck).toBe('skipped-no-data-branch')
       expect(getBranchRules).not.toHaveBeenCalled()
+    })
+
+    it('fails closed, not as a missing data branch, when the rules endpoint returns 404', async () => {
+      const getBranchRules = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules})
+
+      await expect(run()).rejects.toMatchObject({
+        code: 'DATA_BRANCH_TAMPER',
+        message: expect.stringContaining('Could not read the effective rules') as string,
+      })
+
+      expect(firstCallArg<{title: string}>(issuesCreate)?.title).toContain('rules unreadable')
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    describe('when the plan has no changes (steady state)', () => {
+      it('reads the rules once and reports ok', async () => {
+        const getBranchRules = vi.fn(async () => dataBranchRules())
+        const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules}, {planned: false})
+
+        const result = await run()
+
+        expect(result.integrityCheck).toBe('ok')
+        expect(getBranchRules).toHaveBeenCalledOnce()
+        expect(issuesCreate).not.toHaveBeenCalled()
+        expect(commitMetadata).not.toHaveBeenCalled()
+      })
+
+      it('aborts with DATA_BRANCH_TAMPER and files the alert when no rules are in effect', async () => {
+        const getBranchRules = vi.fn(async () => dataBranchRules([]))
+        const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules}, {planned: false})
+
+        await expect(run()).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+        const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+        expect(params?.labels).toContain('reconcile:integrity-alert')
+        for (const type of DATA_BRANCH_RULE_TYPES) expect(params?.body).toContain(type)
+        expect(commitMetadata).not.toHaveBeenCalled()
+      })
+
+      it('aborts with DATA_BRANCH_TAMPER and files the alert when the rules call throws', async () => {
+        const getBranchRules = vi.fn(async () => {
+          throw apiError(500, 'rules unavailable')
+        })
+        const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules}, {planned: false})
+
+        await expect(run()).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+        const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+        expect(params?.labels).toContain('reconcile:integrity-alert')
+        expect(params?.body).toContain('rules unavailable')
+        expect(commitMetadata).not.toHaveBeenCalled()
+      })
+
+      it('aborts with DATA_BRANCH_TAMPER when the data tip is not authored by the App', async () => {
+        const getBranch = vi.fn(async () => ({
+          data: {name: 'data', commit: {sha: 'user-sha', author: {login: 'fro-bot'}}},
+        }))
+        const {run, issuesCreate} = integrityRun({getBranch}, {planned: false})
+
+        await expect(run()).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+        expect(issuesCreate).toHaveBeenCalledOnce()
+      })
+
+      it('skips when the data branch is missing', async () => {
+        const getBranchRules = vi.fn(async () => dataBranchRules([]))
+        const {run} = integrityRun({getBranch: notFoundGetBranch(), getBranchRules}, {planned: false})
+
+        const result = await run()
+
+        expect(result.integrityCheck).toBe('skipped-no-data-branch')
+        expect(getBranchRules).not.toHaveBeenCalled()
+      })
     })
 
     it('aborts with DATA_BRANCH_TAMPER and files an integrity-alert issue for unexpected author', async () => {
