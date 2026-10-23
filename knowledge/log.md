@@ -8564,3 +8564,36 @@ Sources: none
 Manual correction to knowledge/wiki/repos/fro-bot--agent.md
 
 Sources: none
+
+## [2026-10-23 10:10] ingest | fro-bot/fro-bot.github.io
+
+Confirmed public `main` and its complete root tree at
+`3e44653c4d185b239b44b3af12255d18c86463ab`: still only the eight-byte `CNAME`
+blob, with no README, manifest, `.github` directory, or workflows. Updated
+[[fro-bot--fro-bot-github-io]] and [[github-pages]] additively with dated source
+confirmation and the source/runtime evidence boundary. Fro Bot automation remains
+absent; a separate draft PR for minimal triage or monitoring can be proposed.
+Preserved prior findings and contradictions. Historical TLS expiry, renewal
+forecast, DNS gaps, redirects, Pages settings, issue state, and sibling deployment
+claims were not revalidated; an unchanged source tree establishes none of them.
+Only repository identity and directory listings were read from the target; no
+`CNAME` content, runtime endpoints, or target commands were accessed. Corrections
+context contained no records. Index maintenance and delivery belong to the
+trusted caller; existing log entries remain unchanged.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab
+Run: https://github.com/fro-bot/.github/actions/runs/39936967193
+
+Verification: `bun run bootstrap`, `bun run check-types`, `bun run lint`, and
+`bun run test` passed (114 files; 6,126 passed, 43 skipped, three todo).
+Wiki validation found zero deterministic errors across 47 pages; four existing
+advisories concern unrelated pages. `git diff --check` passed. The pre-existing
+`metadata/README.md` working-tree edit was left untouched. The required single
+delivery/check notice uses a control-repository commit comment referring to this
+canonical entry, without duplicating the ingest summary or creating an issue.
+
+## [2026-10-23 10:14] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io

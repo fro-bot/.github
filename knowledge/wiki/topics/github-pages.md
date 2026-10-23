@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-19
+updated: 2026-10-23
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-10-23
   - url: https://github.com/marcusrbrown/gpt
     sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
     accessed: 2026-10-19
@@ -79,6 +82,22 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Source-only confirmation cannot refresh domain health (2026-10-23)
+
+The complete root listing for [[fro-bot--fro-bot-github-io]] remains a single
+`CNAME` blob at `3e44653c4d185b239b44b3af12255d18c86463ab`, with no README,
+manifest, or workflows. This establishes the continued absence of repo-local
+Fro Bot automation, not the current state of its custom domain.
+
+The September TLS observations and October 7 renewal forecast below are dated
+evidence, not a current expiry alarm. An unchanged Git tree cannot confirm or
+refute certificate renewal, DNS remediation, or redirect changes. The earlier
+advice to measure the live artifact remains useful when runtime reads are
+authorized; it does not expand a source-only survey's permissions. Record an
+unmeasured state rather than extrapolating health or failure past a forecast.
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## GPT: compilation is conditional on cache admission (2026-10-19)
 
