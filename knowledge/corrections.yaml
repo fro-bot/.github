@@ -1,0 +1,12 @@
+version: 1
+corrections:
+  - id: 5ed43dce-b233-4f7d-987e-13dcc571504f
+    page_node_id: R_kgDOQyTMEw
+    span:
+      text: " and gateway"
+      start: 151
+      end: 163
+    attribution:
+      actor: marcusrbrown
+      recorded_at: 2026-10-23T01:33:52.274Z
+    state: active
