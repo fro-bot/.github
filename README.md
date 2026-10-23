@@ -434,7 +434,7 @@ Fro Bot coordinates a single goal across multiple owner repos (`fro-bot/*`, `mar
 4. **Dispatch.** Each approved item runs as a worker agent in its target repo. Targets are restricted to owner repos already onboarded to Fro Bot's automation.
 5. **Track to completion.** A periodic tracker snapshots each item's run outcome to the issue. The issue closes automatically once every item reaches a terminal state (completed, failed, or blocked).
 
-If you need to re-approve after reopening a closed goal issue, reopening automatically clears the prior approval — reapply the `dispatch-approved` label to fire a fresh dispatch.
+If you need to re-approve after reopening a closed goal issue, reopening automatically clears the prior approval — reapply the `dispatch-approved` label to fire a fresh dispatch. Re-approval dispatches only `pending` items; `needs-attention` items are not re-dispatched. To re-run a goal, close it and open a fresh goal issue, which gets a new decomposition and marker. A late receipt still moves a `needs-attention` item to its terminal status.
 
 Each dispatch carries only the universal `prompt` input — no `correlation_id` or other custom input, since target repos are autonomous and only guarantee `prompt`. The correlation id and a per-item nonce ride inside the prompt itself; the worker reports completion by posting a receipt comment on the coordination issue, which a periodic tracker verifies (author, correlation id, and `hash(nonce)`) before resolving the item.
 

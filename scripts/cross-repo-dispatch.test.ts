@@ -745,6 +745,45 @@ describe('planDispatch', () => {
     expect(result.blockedCount).toBe(1)
     expect(result.toDispatch).toHaveLength(0)
   })
+
+  it('leaves needs-attention items out of toDispatch and deferred', () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const state = makeState({
+      items: [
+        makeItem({id: 'a', target, status: 'needs-attention', needsAttentionReason: 'no-receipt'}),
+        makeItem({id: 'b', target, status: 'pending'}),
+      ],
+    })
+    const otherGoal = makeState({goal: 'other', items: [makeItem({id: 'x', target, status: 'dispatched'})]})
+
+    const free = planDispatch({state, fingerprint: 'fp', otherOpenGoalMarkers: []})
+    expect(free.toDispatch.map(i => i.id)).toEqual(['b'])
+    expect(free.toDispatchCount).toBe(1)
+    expect(free.deferredCount).toBe(0)
+
+    const contended = planDispatch({state, fingerprint: 'fp', otherOpenGoalMarkers: [otherGoal]})
+    expect(contended.toDispatchCount).toBe(0)
+    expect(contended.deferred.map(i => i.id)).toEqual(['b'])
+    expect(contended.deferredCount).toBe(1)
+  })
+
+  it('reports zero dispatch, defer, and block counts when every item is needs-attention or completed', () => {
+    const state = makeState({
+      items: [
+        makeItem({id: '1', status: 'needs-attention', needsAttentionReason: 'no-receipt'}),
+        makeItem({id: '2', status: 'needs-attention', needsAttentionReason: 'no-receipt'}),
+        makeItem({id: '3', status: 'needs-attention', needsAttentionReason: 'no-receipt'}),
+        makeItem({id: '4', status: 'completed'}),
+        makeItem({id: '5', status: 'completed'}),
+      ],
+    })
+    const result = planDispatch({state, fingerprint: 'fp', otherOpenGoalMarkers: []})
+    expect(result.toDispatchCount).toBe(0)
+    expect(result.deferredCount).toBe(0)
+    expect(result.blockedCount).toBe(0)
+    expect(result.toDispatch).toHaveLength(0)
+    expect(result.deferred).toHaveLength(0)
+  })
 })
 
 describe('planSnapshot', () => {

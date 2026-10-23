@@ -928,8 +928,8 @@ export function classifyReceiptCapability(entry: GateEntry | undefined): Receipt
 // ─── Planner: dispatch plan ──────────────────────────────────────────────────
 
 /**
- * Which items to dispatch now. Skips items already intent/dispatched/terminal.
- * Defers items whose target has an in-flight (intent/dispatched) item in any
+ * Which items to dispatch now. Only `pending` items are planned; `blocked`
+ * items are reported separately. Defers items whose target has an in-flight (intent/dispatched) item in any
  * OTHER open goal marker — same-target serialization.
  */
 export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
@@ -951,7 +951,8 @@ export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
       blocked.push(item)
       continue
     }
-    if (IN_FLIGHT_STATUSES.has(item.status) || TERMINAL_STATUSES.has(item.status)) continue
+    // Only `pending` is dispatchable, matching the executor's re-check.
+    if (item.status !== 'pending') continue
 
     const targetKey = `${item.target.owner}/${item.target.name}`
     if (inFlightTargets.has(targetKey)) {
