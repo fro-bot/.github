@@ -63,16 +63,3 @@ jobs:
             '{count: $count, repos: $repos}')"
           export EVENT_CONTEXT_JSON
           bun scripts/gateway-announce.ts
-
-      # Bluesky posting is disabled pending re-evaluation of social channels.
-      # The script (scripts/bluesky-post.ts) is intentionally retained for future
-      # reactivation; only the step invocation here is gated off via `if: false`.
-      - name: 🦋 Post to Bluesky
-        if: false && steps.poll.outputs.public_invitations_accepted > 0
-        env:
-          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
-          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
-        run: |
-          bun scripts/bluesky-post.ts \
-            "🌐 Just accepted ${INVITATIONS_ACCEPTED} collaboration invitation(s) on GitHub. The network grows ✨ #GitHub #OpenSource"

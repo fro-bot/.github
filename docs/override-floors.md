@@ -1,6 +1,6 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins 13 floors. This file records the rationale for the three that have one: brace-expansion, source-map-js and undici.
+The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the four that have one: brace-expansion, source-map-js, undici and zod.
 
 ## `brace-expansion`
 
@@ -19,3 +19,9 @@ Remove when upstream consumers require source-map-js >=1.2.2.
 GHSA-w293-vg96-wgc3, GHSA-vp8m-p9jh-q5pm, and GHSA-rfgv-xxqx-mfg5 affect <8.10.2.
 
 Remove this floor only when all parent ranges exclude the affected versions.
+
+## `zod@4`
+
+GHSA-mrhx-c7xc-m3w5 (high) affects zod <4.6.6; 4.6.6 is the only patched release. The installed copy is a transitive of Stryker: `@stryker-mutator/core` depends on `mutation-server-protocol`, which requires `zod ^4.1.12`.
+
+The key is `zod@4` so the floor can never apply to a zod 3 copy (no patched 3.x exists). Remove this floor when the Stryker/`mutation-server-protocol` release in use pins `zod >=4.6.6`.
