@@ -1,7 +1,7 @@
 ---
 title: "feat: Make the data branch writable only by the Fro Bot App"
 type: feat
-status: active
+status: complete
 date: 2026-09-26
 ---
 
@@ -12,9 +12,9 @@ date: 2026-09-26
 `data` is where autonomous state is recorded, and it's the trust boundary the wiki privacy and tamper controls depend on. PR #3926 moved every `data` writer to a GitHub App installation token. This plan turns that convention into an enforced rule and tightens how violations are detected:
 
 - **Prevention.** A repository ruleset on `refs/heads/data` allows only the Fro Bot App to update or create the branch, and blocks force pushes.
-- **Detection.** Reconcile's tamper check requires every commit since the last reseed to be App-authored. Today it only checks the tip commit, and it also accepts the `fro-bot` user.
+- **Detection.** Reconcile's tamper check requires the tip commit to be App-authored and verifies that the `data` rules are in effect. Before, it accepted the `fro-bot` user and did not check the rules.
 
-The two changes ship as two PRs. The detection change is gated on the next promotion reseeding `data`.
+The two changes ship as two PRs.
 
 ## Problem Frame
 
@@ -30,13 +30,13 @@ The two changes ship as two PRs. The detection change is gated on the next promo
 - R1. Only the Fro Bot App can update `data` (`update` rule).
 - R2. Only the Fro Bot App can create `data` (`creation` rule), so a deleted `data` can't be recreated with injected content.
 - R3. Force pushes to `data` are blocked (`non_fast_forward`).
-- R4. Deleting `data` stays possible, so auto-delete on merge and the App reseed keep working.
+- R4. Superseded by #4032: `data` is persistent and the `deletion` rule now blocks deleting it (ruleset 25556841).
 - R5. The App is the only bypass actor. There is no owner, admin, or role bypass.
 - R6. The ruleset is declared as code in `.github/settings.yml`, and each settings run corrects any drift.
-- R7. The tamper check requires every commit in `merge-base(main, data)..data` to have author login `fro-bot[bot]`. A null login fails closed. A mismatch keeps the existing `DATA_BRANCH_TAMPER` behavior and the `reconcile:integrity-alert` issue.
+- R7. The tamper check requires the `data` tip commit to have author login `fro-bot[bot]`. A null login fails closed. A mismatch keeps the existing `DATA_BRANCH_TAMPER` behavior and the `reconcile:integrity-alert` issue.
 - R8. The tightened check merges only after `data` has been reseeded and the range contains zero non-App commits.
 - R9. Docs that describe `fro-bot` (the user) as an allowed `data` writer are corrected.
-- R10. Every reconcile run checks that the effective rules on `data` still match the declared ruleset. A missing or weakened ruleset fails as tamper.
+- R10. Every reconcile run checks that the effective rules on `data` (`update`, `non_fast_forward`, `creation`, `deletion`) are all present. A missing rule, or a failure to read the rules, fails as tamper.
 
 ## Scope Boundaries
 
@@ -160,8 +160,7 @@ The two changes ship as two PRs. The detection change is gated on the next promo
 
 - **The numeric App ID.** It's the value of the `APPLICATION_ID` secret, which the operator supplies, or it can be read from `GET /repos/fro-bot/.github/installation` (`app_id`) using an App JWT.
 - **Which token the settings workflow uses, and whether it has `administration: write`.** It already manages `main` branch protection, so it very likely does. The reusable workflow mints the token either via `client-id` or via `app-id`, depending on `vars.APPLICATION_CLIENT_ID`. Confirm which from the first settings run.
-- **Whether reconcile's App token can read `bypass_actors`.** `GET /repos/{o}/{r}/rules/branches/data` returns each active rule with its `ruleset_id`. `bypass_actors` may only come back from `GET /repos/{o}/{r}/rulesets/{id}` for callers with administration access. If the token can't read them, R10 checks the three rules only and says so in the alert text.
-- **Compare API pagination mechanics in the Octokit version pinned here** (`paginate` over `compareCommitsWithBasehead`, or page by page).
+- **Whether reconcile's App token can read `bypass_actors`.** It can't: `GET /repos/{o}/{r}/rules/branches/data` returns each active rule with its `ruleset_id`, but `bypass_actors` only come back from `GET /repos/{o}/{r}/rulesets/{id}` for callers with administration access. R10 checks the four rule types only.
 
 ## High-Level Technical Design
 
@@ -181,7 +180,7 @@ sequenceDiagram
   R-->>W: allowed (Integration bypass)
   O-xR: push / update / recreate data
   R--xO: rejected (update/creation rule)
-  Note over W,G: reconcile: every commit in merge-base(main,data)..data authored by fro-bot[bot]
+  Note over W,G: reconcile: data tip authored by fro-bot[bot], data rules present
 ```
 
 ## Implementation Units
@@ -255,15 +254,13 @@ sequenceDiagram
 
 ### PR A2b: tamper range check (gated)
 
-- [ ] **Unit 3: App-only range tamper check**
+- [x] **Unit 3: App-only tip check and rules check**
 
-**Goal:** `verifyDataBranchIntegrity` verifies every commit since the last reseed and accepts only `fro-bot[bot]`. It also verifies that the effective rules on `data` still match the declared ruleset.
+**Goal:** `verifyDataBranchIntegrity` accepts only `fro-bot[bot]` as the `data` tip author and verifies that the effective rules on `data` (`update`, `non_fast_forward`, `creation`, `deletion`) are all present. The range walk was dropped: `data` is persistent and never reseeded, so the range grows without bound, and the server-side rules prevent non-App writes.
 
-**Requirements:** R7, R8, R10
+**Requirements:** R7, R10
 
-**Dependencies:** PR A2a merged. A promotion has reseeded `data`. A live check shows zero non-App commits in `merge-base(main, data)..data`.
-
-**Re-scope before executing:** the "promotion has reseeded `data`" precondition no longer holds. `data` is persistent after #4032 (plan 2026-10-20-001), so promotion does not recreate it.
+**Dependencies:** PR A2a merged. `data` is persistent after #4032 (plan 2026-10-20-001), and its effective rules are `update`, `non_fast_forward` and `creation` (ruleset 24047633) plus `deletion` (ruleset 25556841).
 
 **Files:**
 
@@ -273,35 +270,27 @@ sequenceDiagram
 
 **Approach:**
 
-- Replace `EXPECTED_AUTHORS` with a single App login.
-- Resolve the merge base, then page through the range's commits. On the first commit whose author login isn't exactly `fro-bot[bot]` (including null), file the existing alert and throw `DATA_BRANCH_TAMPER`. The alert names the offending SHA and login.
-- Keep the existing behavior for a missing `data` and for skipping on a fresh bootstrap.
-- Treat API errors fetching the range as failures. Never treat them as "verified".
-- Before checking the range, read the effective rules on `data`. `update`, `non_fast_forward`, and `creation` must all be active. If `bypass_actors` are readable, the App must be the only one. A missing rule or an extra bypass actor files the alert and throws `DATA_BRANCH_TAMPER`, naming what differs.
-- The A2b PR body includes the live range-check output taken just before the merge request: zero non-App commits. That's the evidence for the gate.
+- Replace `EXPECTED_AUTHORS` with the single App login `fro-bot[bot]`. Every `data` writer authors as `fro-bot[bot]`. Contents API writes show committer `web-flow`, so only the author login is checked.
+- Keep the tip check: a missing `data` is skipped, a null login fails closed, and a mismatch files the existing `reconcile:integrity-alert` issue and throws `DATA_BRANCH_TAMPER`.
+- After the tip check, read the effective rules for `data` (`repos.getBranchRules` on the writer client, which needs only repository metadata read). All four rule types must be present. A missing rule type, or an API error reading the rules, files the alert and throws `DATA_BRANCH_TAMPER`, naming the missing rule types or the error. An unreadable answer is never "verified".
+- Bypass actors are not checked: the token can't read them.
+- A fresh bootstrap still skips the check.
 
-**Execution note:** Test-first for the range semantics.
+**Execution note:** Test-first.
 
 **Patterns to follow:** The existing `verifyDataBranchIntegrity` tests, and the mocks in `scripts/reconcile-repos.test.ts`.
 
 **Test scenarios:**
 
-- Happy path: every commit in the range is `fro-bot[bot]` → passes.
-- Happy path: the range is only the bootstrap commit, right after a reseed → passes.
-- Error path: the tip is `fro-bot[bot]`, but a commit below it is `fro-bot` → `DATA_BRANCH_TAMPER`, and the alert names that commit.
-- Error path: the tip author is `fro-bot` (the user) → tamper.
-- Error path: an author login in the range is null → tamper.
-- Error path: a human login anywhere in the range → tamper.
-- Edge case: the range has more than 250 commits and a non-App commit on a later page → detected.
-- Edge case: `data` is missing → skipped, as today.
-- Happy path: the effective rules include all three types → the ruleset check passes.
-- Error path: a rule type is missing, or the ruleset is gone entirely → tamper, and the alert names the missing rule.
-- Error path: an extra bypass actor is present (when readable) → tamper.
-- Error path: the rules API fails → fails closed.
-- Error path: the compare API or merge-base lookup fails → fails closed, not "verified".
+- Happy path: the tip is `fro-bot[bot]` and all four rules are present → passes.
+- Error path: the tip author is `fro-bot` (the user) → `DATA_BRANCH_TAMPER`.
+- Error path: the tip author login is null → tamper.
+- Error path: each of the four rule types missing in turn → tamper, and the alert names the missing rule.
+- Error path: the rules API fails → tamper, not "verified".
+- Edge case: `data` is missing → skipped, as today, without reading the rules.
 - Integration: the reconcile run aborts before writing metadata when tampering is found (existing ordering preserved).
 
-**Verification:** The tests pass. Temporarily reverting to a tip-only check makes the "non-App below the tip" test fail. Adding `fro-bot` back to the accepted set makes the user-author test fail.
+**Verification:** The tests pass. Adding `fro-bot` back to the accepted set makes the user-author test fail, and removing the rules check makes the missing-rule tests fail.
 
 ## System-Wide Impact
 

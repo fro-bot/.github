@@ -120,11 +120,11 @@ After the fix lands, entries already contaminated with `last_survey_status: succ
 
 4. **Eliminate drift sources when they cause silent failures.** The deeper cause of today's deletions was `main` and `data` diverging on wiki content. Legacy wiki PRs had landed directly on `main` before the `output-mode: working-dir` agent contract; `data`'s wiki/ was stale. Filtering deletions in the parser is defensive, but eliminating the drift (merging `main`'s wiki into `data`) prevents the deletions from appearing at all.
 
-5. **Match credential identity to integrity check expectations.** When a workflow writes to a branch protected by an integrity check (like `reconcile-repos.ts`'s `fro-bot[bot]`-or-operator-login check), choose the credential that matches:
-   - App installation token → commits authored by `fro-bot[bot]` (passes by default)
-   - User PAT → commits authored by the user login (must be in `RECONCILE_OPERATOR_LOGINS`)
+5. **Match credential identity to integrity check expectations.** When a workflow writes to a branch protected by an integrity check (like `reconcile-repos.ts`'s check that the `data` tip is authored by `fro-bot[bot]`), choose the credential that matches:
+   - App installation token → commits authored by `fro-bot[bot]` (passes)
+   - User PAT → commits authored by the user login (tamper-alerts; the `fro-bot` user is not an accepted `data` author)
 
-   The `record-survey-result` step uses `FRO_BOT_PAT` → `fro-bot` user commits; `RECONCILE_OPERATOR_LOGINS` must list `fro-bot` or every reconcile run tamper-alerts after the first survey write-back.
+   Data writers use the App token. The check also requires the `data` rules (`update`, `non_fast_forward`, `creation`, `deletion`) to be in effect.
 
 ## References
 
