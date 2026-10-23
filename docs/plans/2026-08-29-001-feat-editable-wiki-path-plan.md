@@ -1,7 +1,7 @@
 ---
 title: Editable Wiki Path — Dashboard-Backed Operator Edits
 type: feat
-status: active
+status: complete
 date: 2026-08-29
 origin: docs/brainstorms/2026-08-29-editable-wiki-path-requirements.md
 deepened: 2026-08-29
@@ -296,7 +296,7 @@ The write seam is load-bearing and has exactly one correct position: inside `mai
 
 **Verification:** a `promote-data` repository dispatch produces a promotion PR/merge through the existing gate path within the interactive horizon.
 
-- [ ] **Unit 6: Wiki Edit affordance**
+- [x] **Unit 6: Wiki Edit affordance**
 
 **Goal:** Every editable wiki page renders an Edit link carrying page identity and return URL into the dashboard editor; system pages and unauthenticated UX unchanged.
 
@@ -314,7 +314,9 @@ The write seam is load-bearing and has exactly one correct position: inside `mai
 
 **Verification:** local Quartz build renders the link on repo/topic pages, absent on index/log; link target matches Unit 7a's contract.
 
-- [ ] **Unit 7a (cross-repo contract — `fro-bot/dashboard`): Editor UI and save API**
+**Return link:** There is no return link: the dashboard rejects a `return` parameter and returns the operator to the page through its login cookie. The link is `https://dashboard.fro.bot/wiki/<dir>.<name>` with no query string.
+
+- [x] **Unit 7a (cross-repo contract — `fro-bot/dashboard`): Editor UI and save API**
 
 **Goal:** The dashboard owns the editor UI and public save API: `/operator/wiki/edit` and `/operator/wiki/pages/:nodeId` GET/POST with authenticated, draft-preserving saves.
 
@@ -328,7 +330,9 @@ The write seam is load-bearing and has exactly one correct position: inside `mai
 
 **Verification:** dashboard tests cover the route/error contract and full mutation posture; the save API reaches the private writer without GitHub credentials in the dashboard process; drafts survive every specified failure state.
 
-- [ ] **Unit 7b (cross-repo contract — `fro-bot/dashboard`): Private wiki-writer service**
+**Status:** Shipped in `fro-bot/dashboard` under its plan `2026-10-20-001-feat-wiki-editor-in-dashboard` (fro-bot/dashboard#705, #708, #711, #714). The editor and save API live in the dashboard server.
+
+- [x] **Unit 7b (cross-repo contract — `fro-bot/dashboard`): Private wiki-writer service**
 
 **Goal:** The private `wiki-writer` process/container owns the commit path and existing Fro Bot App credential, executes gates through the pinned `@fro-bot/wiki-write-core`, and enforces the complete privilege boundary independently.
 
@@ -342,13 +346,17 @@ The write seam is load-bearing and has exactly one correct position: inside `mai
 
 **Verification:** writer tests cover independent enforcement and reconciliation; a disposable-branch canary reports `fro-bot[bot]`; real Node 24 consumption of all 13 pinned package exports passes; no writer endpoint is public or routed through Caddy.
 
-- [ ] **Unit 8 (cross-repo contract — `marcusrbrown/infra`): Deployment wiring**
+**Status:** Shipped in `fro-bot/dashboard` under its plan `2026-10-20-001-feat-wiki-editor-in-dashboard` (fro-bot/dashboard#705, #708, #711, #714). The separate private writer was folded into the dashboard server, which holds a contents-write Fro Bot token scoped to `fro-bot/.github`.
+
+- [x] **Unit 8 (cross-repo contract — `marcusrbrown/infra`): Deployment wiring**
 
 **Goal:** Define and deploy the private writer service alongside the existing dashboard deployment: service definition, private network, credential mount, image/deploy updates, and post-deploy save-path probe.
 
 **Dependencies:** Units 7a and 7b
 
 **Planning note:** `marcusrbrown/infra` adds the writer service to `apps/dashboard/docker-compose.yaml`, which currently runs `caddy` and `dashboard` pulling `ghcr.io/fro-bot/dashboard`. The writer remains on the dedicated private network, has no public port or Caddy route, mounts the separately managed Fro Bot App key only into the writer, and receives the dashboard image/deploy updates. No new droplet and no new public origin. `marcusrbrown/infra` owns operational rotation and revocation of the writer key and maintains an inventory recording which key is deployed where. Rotation and revocation are a two-party operation with `fro-bot/dashboard`: dashboard owns the writer image/config changes and infra owns the deployed secret plus GitHub App revocation. **Routine rotation** is create the new key, deploy consumers, verify minting works, then revoke the old key; GitHub permits up to 25 private keys per App and keys do not expire, so overlapping keys are the supported path and avoid an unnecessary minting outage. **Leak response** is different: revoke the compromised key immediately and suspend the App installation, which is the preferred containment step over uninstall. A suspended installation's tokens fail immediately, and suspension is reversible without re-consenting permissions or re-establishing the installation ID that `secrets.APPLICATION_PRIVATE_KEY` consumers depend on; uninstall achieves the same containment with a much worse restore path. `DELETE /installation/token` only revokes the token presented in that request's own `Authorization` header, so it is routine-rotation hygiene, not leak containment. The private key signs the JWT used to mint tokens; revoking or deleting it stops new minting but does not invalidate already-issued bearer installation tokens, which remain valid for up to one hour from issue. Remove the old key from the infra secret mount and writer deployment, deploy the replacement, unsuspend the installation, and keep operator saves disabled until the canary and tip-identity checks pass — the canary authenticates with an installation token, so it cannot run before the unsuspend. Pulling the writer key during routine rotation does not interrupt autonomous survey writes: those 16 workflows authenticate with `secrets.APPLICATION_PRIVATE_KEY`, a distinct key object on the same App, so revoking the writer's key pauses only operator wiki writes until replacement validation completes. That routine-path reassurance does not apply to a leak response. A leaked writer key forces a choice between a one-hour uncontained window and a control-plane outage: installation suspension takes the entire control plane dark — survey, promotion, reconcile, and every other autonomous loop — while revoking the key alone does not invalidate already-issued bearer installation tokens. That containment holds at the installation tier, not the key tier. The runbook must name installation suspension as this escalation tier and state that it takes the entire control plane dark. Verify the save path after deployment, including the Fro Bot tip-identity check.
+
+**Status:** Shipped in `marcusrbrown/infra` (`apps/dashboard/src/deploy.ts` wires `DASHBOARD_FRO_BOT_APP_KEY_FILE` and `DASHBOARD_OPERATOR_ID`).
 
 ## System-Wide Impact
 

@@ -1,5 +1,6 @@
 import { h } from "preact"
 import { isSafeHttpUrl } from "../url-safety.js"
+import { wikiEditUrl } from "../wiki-edit-link.js"
 
 const Sources = () => { 
   const Component = ({ fileData }) => {
@@ -76,7 +77,8 @@ const GitHubSource = () => {
 
   Component.css = `
   .github-source-section {
-    margin-top: 1.5rem;
+    display: inline-block;
+    margin: 1.5rem 0 0 1rem;
     font-size: 0.9rem;
   }
   .github-source-section a {
@@ -87,9 +89,56 @@ const GitHubSource = () => {
     text-decoration: underline;
     color: var(--secondary);
   }
+  .github-source-section a:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 0.15em;
+  }
   `
 
   return Component
 }
 
-export { Sources, GitHubSource }
+const WikiEditLink = () => {
+  const Component = ({ fileData }) => {
+    const { filePath, relativePath } = fileData
+    // Quartz fabricates a relativePath for virtual pages (folder and tag listings); only a real
+    // source file carries filePath, so a generated `wiki/repos/index.md` never gets a link.
+    if (!filePath || !relativePath) {
+      return null
+    }
+    // The content root is `knowledge/`, so the source file is `knowledge/<relativePath>`.
+    const editUrl = wikiEditUrl(`knowledge/${relativePath}`)
+    if (editUrl === null) {
+      return null
+    }
+
+    return h("div", { class: "wiki-edit-link" },
+      h("a", { href: editUrl, rel: "nofollow noopener" }, "Edit in dashboard")
+    )
+  }
+
+  Component.css = `
+  .wiki-edit-link {
+    display: inline-block;
+    margin-top: 1.5rem;
+    margin-right: 1rem;
+    font-size: 0.9rem;
+  }
+  .wiki-edit-link a {
+    color: var(--tertiary);
+    text-decoration: none;
+  }
+  .wiki-edit-link a:hover {
+    text-decoration: underline;
+    color: var(--secondary);
+  }
+  .wiki-edit-link a:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 0.15em;
+  }
+  `
+
+  return Component
+}
+
+export { Sources, GitHubSource, WikiEditLink }

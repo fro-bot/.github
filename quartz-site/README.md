@@ -48,6 +48,7 @@ If you need to bump a single plugin, edit that plugin's `commit` in `quartz.lock
 - `dist/` is committed, plain JS, with no build step. Quartz v5 symlinks local plugins rather than compiling them, so there's nothing to transpile at build time — what's committed is what runs.
 - `package.json` declares a `quartz` manifest block so Quartz's plugin loader recognizes it, and requires `quartzVersion": ">=5.0.0"`.
 - `preact` isn't vendored — the workflow installs it into `local-plugin/node_modules` at build time, pinned to whatever version the pinned Quartz checkout itself depends on (read from `quartz-build/package.json`, not hardcoded), so the local plugin's Preact always matches Quartz's own.
+- `WikiEditLink` renders an "Edit in dashboard" link on pages under `knowledge/wiki/{repos,topics,entities,comparisons}/` and nothing on any other page. The target is `https://dashboard.fro.bot/wiki/<dir>.<name>`, a contract owned by `fro-bot/dashboard` (`docs/runbooks/wiki-editor.md`); the ID rule is in `local-plugin/dist/wiki-edit-link.js` and is tested in `scripts/wiki-edit-link.test.ts`. The link carries no query string, and the dashboard returns the operator to the page through its own login cookie.
 - The http(s)-only URL guard for the sources/edit-link renderer lives in `local-plugin/dist/url-safety.js`. Tested in `scripts/wiki-sources-url-safety.test.ts`.
 
 ## Content Root Decision

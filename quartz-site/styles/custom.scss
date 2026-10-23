@@ -82,18 +82,9 @@ a:hover {
   text-shadow: var(--shadow-glow);
 }
 
-/* GitHubSource & Sources section from Unit 2 */
+/* Sources section from Unit 2 */
 .github-source-section {
-  border-left: 3px solid var(--frobot-magenta);
-  padding-left: 1rem;
-  margin: 1.5rem 0;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: var(--highlight);
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
-}
-.github-source-section a:hover {
-  text-shadow: var(--shadow-glow-magenta);
+  display: inline-block;
 }
 
 /* UI Cards (Search, Explorer, Popover) */
