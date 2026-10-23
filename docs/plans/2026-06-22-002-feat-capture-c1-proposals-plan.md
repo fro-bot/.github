@@ -114,7 +114,7 @@ Phase 1 retrieval, and no `docs/solutions/` write means no data-branch authority
 - **C1 definition = count of `CHANGES_REQUESTED` reviews per merged PR, threshold ≥2.**
   `pulls.list({ state: 'closed' })` paginated, filtered to `merged_at !== null`, then
   `pulls.listReviews` counting `state === 'CHANGES_REQUESTED'`. The threshold is a named
-  constant. `COMMENTED` reviews do not count as a round.
+  constant. `COMMENTED` reviews do not count as a round. The shipped predicate counts `DISMISSED | CHANGES_REQUESTED` from Fro Bot instead (`scripts/capture-learnings-harvest.ts`).
 - **Immutable dedup key = `merge_commit_sha`.** Durable on `main` regardless of later PR edits.
 - **Script harvests + builds an opaque digest; agent only judges + opens issues.** The digest
   identifies candidates **by merge SHA only** — the script does not pass `owner/repo/number`

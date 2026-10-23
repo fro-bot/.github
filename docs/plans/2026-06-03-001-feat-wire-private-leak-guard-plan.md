@@ -11,6 +11,8 @@ deepened: 2026-06-03
 
 ## Overview
 
+Implements R16 (CI guard against private-name introduction) of `docs/brainstorms/2026-05-05-private-repo-handling-requirements.md`.
+
 `scripts/check-private-leak.ts` carries a tested pure core — `checkPrivateLeak(privateNames, diff, override)`
 (33 tests) — that scans a unified diff for case-insensitive matches of private-repo tokens (`owner/name`
 canonical + `owner--slug` wiki form) across added lines, new-file paths, and rename/copy destinations,

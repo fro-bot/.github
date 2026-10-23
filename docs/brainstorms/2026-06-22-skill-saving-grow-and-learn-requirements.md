@@ -2,7 +2,6 @@
 title: 'A1 — Skill saving / grow-and-learn (autonomous compounding loop)'
 type: feat
 date: 2026-06-22
-status: requirements
 epic: docs/brainstorms/2026-06-15-fro-bot-personal-agent-north-star-requirements.md
 ---
 

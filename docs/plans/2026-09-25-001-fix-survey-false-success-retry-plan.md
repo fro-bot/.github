@@ -1,7 +1,7 @@
 ---
 title: "fix: Record survey success only when the agent changed the wiki, with bounded retries"
 type: fix
-status: completed
+status: complete
 date: 2026-09-25
 ---
 

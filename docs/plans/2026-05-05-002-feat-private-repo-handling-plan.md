@@ -577,6 +577,8 @@ persona/
 
 - [x] **Unit 7: `social-broadcast` privacy-aware with fail-safe default**
 
+Superseded: `social-broadcast.yaml` was deleted in #3439 (74043b7). Announcements go through the gateway announce path.
+
 **Goal:** `social-broadcast.yaml` accepts a `private: boolean` input with default `true` (NOT required). Discord and Bluesky steps skip when `private: true`; journal step always runs.
 
 **Requirements:** R9

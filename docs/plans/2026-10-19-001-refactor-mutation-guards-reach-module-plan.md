@@ -1,7 +1,7 @@
 ---
 title: 'refactor: Move the source-reach guard into a mutated module'
 type: refactor
-status: active
+status: complete
 date: 2026-10-19
 ---
 
@@ -137,7 +137,7 @@ Issue #3835, refined by Fro Bot's acceptance criteria in its first comment there
 
 ## Implementation Units
 
-- [ ] **U1: Reach module and its test**
+- [x] **U1: Reach module and its test**
 
 **Goal:** Put the guard logic in a mutated module, with a test that kills every mutant.
 
@@ -189,7 +189,7 @@ Issue #3835, refined by Fro Bot's acceptance criteria in its first comment there
 - The new test passes under `pnpm test`.
 - The closure walk from `scripts/mutation-guards-reach.test.ts` contains exactly the reach module and its intended imports, with no phantom fixture targets.
 
-- [ ] **U2: Trim the config test and extend the convention**
+- [x] **U2: Trim the config test and extend the convention**
 
 **Goal:** Remove the moved code from the enumeration guard and enumerate the new module by name.
 
@@ -217,7 +217,7 @@ Issue #3835, refined by Fro Bot's acceptance criteria in its first comment there
 - `pnpm test` passes.
 - Nothing writes under `scripts/` during the run.
 
-- [ ] **U3: Delete the twin dead line**
+- [x] **U3: Delete the twin dead line**
 
 **Goal:** Remove the same dead `existsSync` check from `reachedModulesTransitive`.
 
@@ -238,7 +238,7 @@ Issue #3835, refined by Fro Bot's acceptance criteria in its first comment there
 **Verification:**
 - `scripts/check-mutation-guards.test.ts` passes unchanged.
 
-- [ ] **U4: Repoint the solutions doc**
+- [x] **U4: Repoint the solutions doc**
 
 **Goal:** Keep `check:solutions-examples` green and make the doc's example match the live table.
 

@@ -45,7 +45,7 @@ cron heartbeat (see origin: `docs/brainstorms/2026-06-04-daily-digest-presence-e
   Discord **as the Fro Bot user**, carrying real cheap counts and a working link to that day's
   oversight report issue. (origin SC1)
 - **R2** — On a quiet day (no surveys), no `daily_digest` post is made; the oversight issue is
-  still created. (origin SC2)
+  still created. (origin SC2) Reversed by #3477 (plan 2026-06-09-001 R3): quiet days post.
 - **R3** — A gateway failure (or the skipped dormant step) never fails the scheduled oversight run —
   same fail-soft contract as the other announce steps. (origin SC4)
 - **R4** — The new event flows through the existing signer contract: `v: 1`, `fired_at`/timestamp

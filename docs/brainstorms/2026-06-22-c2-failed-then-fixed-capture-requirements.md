@@ -1,7 +1,6 @@
 ---
 title: 'C2 — Failed-then-fixed capture trigger'
 date: 2026-06-22
-status: ready
 scope: standard
 kind: requirements
 parent: docs/brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md

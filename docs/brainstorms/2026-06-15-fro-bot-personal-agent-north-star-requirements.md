@@ -1,7 +1,6 @@
 ---
 title: Fro Bot as Personal Agent — North-Star Architecture
 date: 2026-06-15
-status: ready
 scope: deep
 kind: north-star
 ---
@@ -338,9 +337,9 @@ Rationale:
    A1 shipped 2026-06-22 and A2's first two surfaces (status-truth loop, wiki authority
    repair) shipped 2026-07-03, all independent of the spine. A2's bounded-PR graduation is
    still open, pending accepted-outcome signal.
-4. **The surfaces need one ownership model.** Discord is the proven command surface today.
-   The web dashboard must be defined as either canonical or an augment to Discord — not a
-   second, divergent control plane. Resolve this before Phase 3 (see Open decisions).
+4. **The surfaces share one ownership model.** The gateway is the authority; Discord and the
+   web operator API are peer write transports over shared primitives, not separate control
+   planes (see D2).
 
 Override signal: if reducing manual operator toil through agent autonomy is more urgent than
 seeing the system, pull A1 forward to overlap Phase 1 (it's control-plane-native and
@@ -360,10 +359,13 @@ acute near-term pain, per the stated motivation.
 - **D1 — Visibility-slice scope (Phase 1): RESOLVED BY EVENTS (2026-08-29):** The visibility
   slice shipped as the read-only dashboard PWA, live at dashboard.fro.bot, per the 2026-07-10
   reconciliation. The scope question is closed.
-- **D2 — Surface ownership model (before Phase 3):** Is Discord the canonical command
-  surface with the dashboard as an augment/read layer, or are both first-class command
-  surfaces? Undefined risks a second control plane diverging from Discord's proven model.
-  (Raised by design review.)
+- **D2 — Surface ownership model: RESOLVED (2026-10-22):** The gateway is the authority.
+  Discord and the web operator API are peer write transports over shared primitives: the
+  `launchWork`/`runMention` run engine, `registry.handleDecision` (the sole approval gate),
+  and `QuestionRegistry`. Neither surface adds its own policy. Binding and repo housekeeping
+  (add-project, clear-queue, locks, checkout recovery) are Discord-only by design. Open
+  parity gaps: cancel is web-only, so `/fro-bot cancel` is a follow-up; push notifications
+  carry no actions, while R2 wants inline actions. (Raised by design review.)
 - **D3 — Spine trust boundary (Phase 2):** S1's inbound control surface widens the trust
   boundary the current outbound-only announce model avoids. Web-launched missions MUST route
   through the same fail-closed approval gate as Discord-triggered work, and operator wiki

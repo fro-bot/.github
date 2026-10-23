@@ -26,18 +26,18 @@ This plan turns the repo into a control plane where Fro Bot is a character first
 - R5: Collaboration invite handling — verify inviter, accept, star, survey, and optionally propose workflow installation (Units 2, 7, 8)
 - R6-R7: Issue/PR event handling + scheduled oversight across collaborator repos, now augmented with persona and wiki query context (Units 9, 10)
 - R8: Renovate metadata tracking with smart dispatch and deduplication; **R17 revised** so dispatching an existing Renovate workflow is autonomous rather than approval-gated (Units 2, 15, 16)
-- R9: GitHub-native persistent state — metadata YAML, journal issues, and `data` branch persistence; GitHub Discussions for reflection are **deferred to a post-V1 follow-up** after journal patterns are proven (Units 2, 5, 13)
+- R9: GitHub-native persistent state — metadata YAML, journal issues (removed in the sunset, #3368), and `data` branch persistence; GitHub Discussions for reflection are **deferred to a post-V1 follow-up** after journal patterns are proven (Units 2, 5, 13)
 - R10-R11: Karpathy three-layer knowledge system — schema, wiki, and ingest/query/lint operations; **R11 incremental growth is implemented by Unit 10 event ingest in addition to Unit 8 survey ingest** (Units 6, 8, 10, 17)
-- R12-R15: Self-improvement metrics and prompt evolution are **deferred to a separate follow-up plan** once Phases 1-4 have real operating data
+- R12-R15: Self-improvement metrics and prompt evolution are **deferred to a separate follow-up plan** once Phases 1-4 have real operating data; superseded by A1, C4 and O8 (see the origin's R12–R15 note)
 - R16-R19: Tiered autonomy — autonomous actions, approval-required draft PR proposals, and human-only merge/push boundaries are enforced through credential scope, workflow structure, branch protection, and draft PR mechanisms (Units 4, 5, 7, 8, 15)
 - R20-R23: Cross-platform social output — Discord + BlueSky broadcasting with **hybrid curation**: deterministic eligibility gates decide whether to post, then the agent generates in-character, platform-specific content (Units 11, 12, 14)
-- R24-R26: Changeset releases remain **deferred to a separate operational plan**
+- R24-R26: Changeset releases are dropped as obsolete; the only versioned artifact is `@fro.bot/wiki-write-core`, which has its own semantic-release pipeline (plan 2026-10-18-001)
 
 ## Scope Boundaries
 
 - **In scope**: Phases 1-4 only — persona, trust boundaries, `data` branch lifecycle, wiki architecture, invitation handling, event handling, journal, social broadcast, Renovate dispatch, metadata maintenance, and wiki lint
 - **Not in scope**: Bidirectional Discord/BlueSky, multi-user support, custom GitHub App migration, web dashboard, monetization, self-improvement workflows, release automation, and prompt evolution loops
-- **Explicitly deferred**: GitHub App credential migration (V2 evaluation based on privilege-splitting needs), self-improvement (R12-R15), releases (R24-R26), and GitHub Discussions for reflection under R9
+- **Explicitly deferred**: GitHub App credential migration (V2 evaluation based on privilege-splitting needs), self-improvement (R12-R15), releases (R24-R26, since dropped), and GitHub Discussions for reflection under R9
 - **SC3 deferral note**: This plan does **not** satisfy origin Success Criterion SC3 (prompt improvement within the first month). SC3 shifts to the deferred self-improvement follow-up plan once enough operational data exists to justify prompt changes
 - **R20 V1 interpretation**: This plan satisfies curated social output with deterministic eligibility gates plus agent-authored content. It does **not** implement fully autonomous “AI decides everything” broadcast selection beyond those configured gates
 
@@ -220,7 +220,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 ### Deferred to Separate Plans
 
 - **Self-Improvement** (R12-R15) — deferred until Phases 1-4 produce stable behavioral data
-- **Releases & Versioning** (R24-R26) — deferred as operational infrastructure separate from the control-plane behavior work
+- **Releases & Versioning** (R24-R26) — dropped as obsolete (see Requirements Trace)
 
 ## Implementation Units
 

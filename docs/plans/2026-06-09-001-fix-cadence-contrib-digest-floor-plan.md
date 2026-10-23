@@ -4,6 +4,7 @@ type: fix
 status: complete
 date: 2026-06-09
 completed: 2026-06-09
+origin: docs/brainstorms/2026-05-04-survey-cadence-and-multi-channel-discovery-requirements.md
 ---
 
 # fix: Contrib channel tracking, daily digest truthfulness, and floor retry loops
@@ -181,4 +182,5 @@ The survey cadence floor is working (reconcile dispatches 2/day), but three laye
 ## Sources & References
 
 - Origin: Oracle cadence/contrib/timing diagnostic (this session), root causes verified directly against `scripts/reconcile-repos.ts`, `metadata/allowlist.yaml`, and `origin/data` metadata.
+- Origin brainstorms: `docs/brainstorms/2026-05-04-survey-cadence-and-multi-channel-discovery-requirements.md` (cadence and contrib channels) and `docs/brainstorms/2026-06-04-daily-digest-presence-event-requirements.md` (daily digest).
 - Related code: `scripts/reconcile-repos.ts`, `scripts/repos-metadata.ts`, `scripts/daily-digest-counts.ts`, `.github/workflows/survey-repo.yaml`, `.github/workflows/fro-bot.yaml`

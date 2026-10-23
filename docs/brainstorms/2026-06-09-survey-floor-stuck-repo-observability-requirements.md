@@ -1,7 +1,6 @@
 ---
 title: Survey floor stuck-repo observability
 date: 2026-06-09
-status: requirements
 type: requirements
 ---
 

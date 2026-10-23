@@ -37,6 +37,8 @@ See origin: docs/brainstorms/2026-07-04-cross-repo-dispatch-tracking-push-model-
 
 ## Requirements Trace
 
+ID mapping to the origin: R1–R9 match; R10 = origin R6a/R9a, R11 = origin R10, R12 = origin R11; R6c and R13 have no origin ID.
+
 - R1. Dispatch passes only the `prompt` input — no `correlation_id` or other input (origin R1).
 - R2. The prompt embeds the correlation id, the raw per-item nonce, a STRUCTURED coordination-issue
   reference (owner, repo, number, canonical URL as distinct fields), a literal example receipt

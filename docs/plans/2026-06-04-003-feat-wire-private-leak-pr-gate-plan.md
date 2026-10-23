@@ -11,6 +11,8 @@ origin: 'GitHub issue #3407'
 
 ## Overview
 
+Implements R16 (CI guard against private-name introduction) of `docs/brainstorms/2026-05-05-private-repo-handling-requirements.md`.
+
 `scripts/check-private-leak.ts` carries a tested pure core that scans a PR's added lines, new-file
 paths, and rename/copy destinations for a private repo's canonical `owner/name` (and `owner--slug`
 wiki form), returning matched FILE paths only — never the resolved name. The names are resolved from

@@ -1,7 +1,7 @@
 ---
 title: "fix: Stop wiki handoffs from overwriting other writers"
 type: fix
-status: active
+status: complete
 date: 2026-10-21
 origin: docs/brainstorms/2026-10-21-wiki-writer-lost-updates-requirements.md
 ---

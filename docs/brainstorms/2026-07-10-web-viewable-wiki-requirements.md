@@ -83,7 +83,7 @@ But no human can browse it as one. On GitHub, wikilinks are inert text, the grap
 
 **Publish-time safety**
 - R12. Before publishing, run a private-presence scan across the entire published surface — repo, topic, entity, and comparison page bodies, `index.md`/`schema.md`, and the derived search index and graph payload — not only `wiki/repos/`. A scan failure blocks the deploy (fail-closed). This extends the existing `wiki/repos/`-only scan, which does not cover non-repo pages or derived artifacts.
-- R13. As part of the publish scan, check `sources[].url` values and block publish if any source URL resolves to a private or internal location.
+- R13. As part of the publish scan, check `sources[].url` values and block publish if any source URL resolves to a private or internal location. The plan does not add a publish-time scan; the promotion diff scan blocks a private `owner/name` in `sources[].url` for tracked repos (plan 2026-07-10-001), with untracked private repos, renamed private repos and the absence of a `publish-wiki.yaml` privacy step as accepted residuals.
 - R14. Provide a per-page link to the page's source on GitHub, giving a reader who spots an error a route to the existing `data`-branch correction path without a web-edit feature.
 - R15. Provide an emergency unpublish path: the operator can take the public site (or a page) down quickly, independent of the weekly promotion cadence, for content published in error.
 

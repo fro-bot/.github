@@ -1,7 +1,7 @@
 ---
 title: "feat: Fro Bot keeps the #3512 rollout tracker current"
 type: feat
-status: active
+status: complete
 date: 2026-10-22
 origin: docs/brainstorms/2026-10-22-rollout-tracker-autonomy-requirements.md
 ---
@@ -26,7 +26,7 @@ The comment thread on #3512 stays current, but the body and Project 1 drift. Men
 
 - R1. An operator mention on #3512 starts a credentialed tracker run that receives the comment. Covered by Units 2 and 3.
 - R2–R5. The run verifies each claim against the evidence it can reach, updates the body and Project 1, and replies once. Covered by Unit 2.
-- R6. The scheduled tracker wakes on new agent or dashboard releases, successful infra deploy runs, health `contractVersion` changes, and issue or PR state changes. Covered by Units 1 and 2. The origin listed infra releases. Infra deploy runs replace them, because infra's release tags don't identify what is deployed.
+- R6. The scheduled tracker wakes on new agent or dashboard releases, successful infra deploy runs, health `contractVersion` changes, and issue or PR state changes. Covered by Units 1 and 2. The origin also lists infra deploy runs rather than infra releases, because infra's release tags don't identify what is deployed.
 - R7. A scheduled run with nothing to change posts nothing. Covered by Unit 2.
 - R8–R9. Fro Bot maintains the acceptance list and labels each entry operator-reported or agent-verified. Covered by Unit 2.
 - Success criteria: within a day of any change, and right after any operator mention, the body and Project 1 match live state without hand edits. The daily report stops flagging #3512 drift. Covered by all units plus the post-merge checks.

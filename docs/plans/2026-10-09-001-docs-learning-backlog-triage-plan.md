@@ -1,7 +1,7 @@
 ---
 title: 'docs: Clear the learning-proposal backlog into docs/solutions'
 type: docs
-status: active
+status: complete
 date: 2026-10-09
 origin: docs/brainstorms/2026-10-09-learning-backlog-triage-requirements.md
 ---
@@ -80,7 +80,7 @@ Prior-art survey: exempt — documentation-only work with no behavior change.
 
 ## Implementation Units
 
-- [ ] **Unit 1: Research and verify each target**
+- [x] **Unit 1: Research and verify each target**
 
 **Goal:** Produce, per target, a verified claim set and `ce:compound` Phase 1 output.
 
@@ -100,7 +100,7 @@ Prior-art survey: exempt — documentation-only work with no behavior change.
 **Verification:**
 - Every proposal maps to exactly one outcome: new doc, extension, covered, or unverified.
 
-- [ ] **Unit 1b: Reconcile lane outputs**
+- [x] **Unit 1b: Reconcile lane outputs**
 
 **Goal:** Resolve cross-lane conflicts before anything is written.
 
@@ -120,7 +120,7 @@ Prior-art survey: exempt — documentation-only work with no behavior change.
 **Verification:**
 - Final target list has unique stems, one owner per existing doc, and no private-repo references.
 
-- [ ] **Unit 2: Write the new docs**
+- [x] **Unit 2: Write the new docs**
 
 **Goal:** Author the new solution docs from Unit 1's verified output.
 
@@ -141,7 +141,7 @@ Prior-art survey: exempt — documentation-only work with no behavior change.
 **Verification:**
 - Each doc's claims match Unit 1's kept set; no dropped claim reappears.
 
-- [ ] **Unit 3: Extend the existing docs**
+- [x] **Unit 3: Extend the existing docs**
 
 **Goal:** Add the extension sections on Unit 1b's final target list.
 
@@ -165,7 +165,7 @@ Prior-art survey: exempt — documentation-only work with no behavior change.
 **Verification:**
 - Each extension adds only its lesson; surrounding content is unchanged.
 
-- [ ] **Unit 4: Assemble and gate the PR**
+- [x] **Unit 4: Assemble and gate the PR**
 
 **Goal:** Land everything in one PR with the evidence table and per-issue closures.
 

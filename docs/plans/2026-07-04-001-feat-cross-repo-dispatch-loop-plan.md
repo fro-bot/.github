@@ -110,6 +110,7 @@ trust + same-target serialization).
 
 ## Key Technical Decisions
 
+- **Superseded by plan 2026-07-04-002:** targets reject an undeclared `correlation_id` input, so the id travels in the `prompt` and completion is tracked by push receipts.
 - **Run correlation by unique token, not epoch-alone.** Epoch+actor+workflow filtering
   false-matches a coincidental non-A3 `fro-bot.yaml` run in the target repo. Instead the control
   loop passes a unique `correlation-id` (goal+item+nonce) as a `workflow_dispatch` input; the
