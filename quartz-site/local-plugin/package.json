@@ -28,6 +28,11 @@
         "displayName": "GitHub Source",
         "defaultPosition": "afterBody",
         "defaultPriority": 110
+      },
+      "WikiEditLink": {
+        "displayName": "Wiki Edit Link",
+        "defaultPosition": "afterBody",
+        "defaultPriority": 120
       }
     }
   }

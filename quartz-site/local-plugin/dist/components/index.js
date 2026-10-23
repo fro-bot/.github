@@ -1,5 +1,6 @@
 import { h } from "preact"
 import { isSafeHttpUrl } from "../url-safety.js"
+import { wikiEditUrl } from "../wiki-edit-link.js"
 
 const Sources = () => { 
   const Component = ({ fileData }) => {
@@ -92,4 +93,41 @@ const GitHubSource = () => {
   return Component
 }
 
-export { Sources, GitHubSource }
+const WikiEditLink = () => {
+  const Component = ({ fileData }) => {
+    const { filePath, relativePath } = fileData
+    // Quartz fabricates a relativePath for virtual pages (folder and tag listings); only a real
+    // source file carries filePath, so a generated `wiki/repos/index.md` never gets a link.
+    if (!filePath || !relativePath) {
+      return null
+    }
+    // The content root is `knowledge/`, so the source file is `knowledge/<relativePath>`.
+    const editUrl = wikiEditUrl(`knowledge/${relativePath}`)
+    if (editUrl === null) {
+      return null
+    }
+
+    return h("div", { class: "wiki-edit-link" },
+      h("a", { href: editUrl, rel: "nofollow noopener" }, "Edit in dashboard")
+    )
+  }
+
+  Component.css = `
+  .wiki-edit-link {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .wiki-edit-link a {
+    color: var(--tertiary);
+    text-decoration: none;
+  }
+  .wiki-edit-link a:hover {
+    text-decoration: underline;
+    color: var(--secondary);
+  }
+  `
+
+  return Component
+}
+
+export { Sources, GitHubSource, WikiEditLink }
