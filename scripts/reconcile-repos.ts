@@ -1812,11 +1812,13 @@ export const RENAME_PENDING_LABELS = [
     description: 'Tracked repo was renamed on GitHub; dispatch rename-tracked-repo to apply',
   },
 ] as const
-// Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
-// (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
-// Both have identical access to this repo and represent the same autonomous operator,
-// so the integrity check accepts either as legitimate.
-const EXPECTED_AUTHORS = new Set<string>(['fro-bot', 'fro-bot[bot]'])
+// `data` is written only by the Fro Bot App, so the tip commit must be authored by `fro-bot[bot]`.
+const EXPECTED_AUTHORS = new Set<string>(['fro-bot[bot]'])
+// Rule types that must be effective on `data`: the App-only write lock (`update`, `non_fast_forward`,
+// `creation`) and the delete block (`deletion`). Bypass actors are not checked; the writer token cannot read them.
+const REQUIRED_DATA_BRANCH_RULES = ['update', 'non_fast_forward', 'creation', 'deletion'] as const
+const INTEGRITY_REMEDIATION =
+  'Only the Fro Bot App (`fro-bot[bot]`) may write to `data`, and the `data` rules (update, non_fast_forward, creation, deletion) must be active. Check the repository rulesets and who has contents:write on this repo.'
 
 // Built from the schema's node-ID pattern (minus its anchors) so the marker, the producer filter and the
 // row schema accept exactly the same IDs, including legacy base64 IDs with `=` padding.
@@ -2071,19 +2073,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     } else {
       const integrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
       if (!integrity.ok) {
-        await fileIntegrityAlert({
-          writerOctokit,
-          owner,
-          repo,
-          authorLogin: integrity.authorLogin,
-          sha: integrity.sha,
-          logger,
-        })
+        await fileIntegrityAlert({writerOctokit, owner, repo, failure: integrity, logger})
         throw new ReconcileError({
           code: 'DATA_BRANCH_TAMPER',
-          message: `Unexpected author on data branch tip commit: ${integrity.authorLogin ?? 'unknown'} (sha: ${integrity.sha})`,
-          remediation:
-            'Only `fro-bot` (PAT) and `fro-bot[bot]` (App) are allowed to write to `data`. Investigate who else has contents:write on this repo.',
+          message: describeIntegrityFailure(integrity),
+          remediation: INTEGRITY_REMEDIATION,
         })
       }
       integrityCheck = integrity.status
@@ -2108,19 +2102,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         if (!justBootstrapped) {
           const retryIntegrity = await verifyDataBranchIntegrity({writerOctokit, owner, repo})
           if (!retryIntegrity.ok) {
-            await fileIntegrityAlert({
-              writerOctokit,
-              owner,
-              repo,
-              authorLogin: retryIntegrity.authorLogin,
-              sha: retryIntegrity.sha,
-              logger,
-            })
+            await fileIntegrityAlert({writerOctokit, owner, repo, failure: retryIntegrity, logger})
             throw new ReconcileError({
               code: 'DATA_BRANCH_TAMPER',
-              message: `Unexpected author on data branch tip commit during commit retry: ${retryIntegrity.authorLogin ?? 'unknown'} (sha: ${retryIntegrity.sha})`,
-              remediation:
-                'Only `fro-bot` (PAT) and `fro-bot[bot]` (App) are allowed to write to `data`. Investigate who else has contents:write on this repo.',
+              message: `${describeIntegrityFailure(retryIntegrity)} (during commit retry)`,
+              remediation: INTEGRITY_REMEDIATION,
             })
           }
         }
@@ -3165,10 +3151,20 @@ interface IntegrityCheckOkResult {
   ok: true
   status: 'ok' | 'skipped-no-data-branch'
 }
-interface IntegrityCheckFailResult {
-  ok: false
-  authorLogin: string | null
-  sha: string
+type IntegrityCheckFailResult =
+  | {ok: false; kind: 'author'; authorLogin: string | null; sha: string}
+  | {ok: false; kind: 'rules-missing'; missingRules: string[]; sha: string}
+  | {ok: false; kind: 'rules-unreadable'; error: string; sha: string}
+
+function describeIntegrityFailure(failure: IntegrityCheckFailResult): string {
+  switch (failure.kind) {
+    case 'author':
+      return `Unexpected author on data branch tip commit: ${failure.authorLogin ?? 'unknown'} (sha: ${failure.sha})`
+    case 'rules-missing':
+      return `Required rules missing on data branch: ${failure.missingRules.join(', ')} (tip sha: ${failure.sha})`
+    case 'rules-unreadable':
+      return `Could not read the effective rules for the data branch: ${failure.error} (tip sha: ${failure.sha})`
+  }
 }
 
 async function verifyDataBranchIntegrity(params: {
@@ -3184,10 +3180,10 @@ async function verifyDataBranchIntegrity(params: {
     })
     const commit = response.data.commit as {sha: string; author?: {login?: string} | null}
     const authorLogin = typeof commit.author?.login === 'string' ? commit.author.login : null
-    if (authorLogin !== null && EXPECTED_AUTHORS.has(authorLogin)) {
-      return {ok: true, status: 'ok'}
+    if (authorLogin === null || !EXPECTED_AUTHORS.has(authorLogin)) {
+      return {ok: false, kind: 'author', authorLogin, sha: commit.sha}
     }
-    return {ok: false, authorLogin, sha: commit.sha}
+    return await verifyDataBranchRules({...params, sha: commit.sha})
   } catch (error: unknown) {
     if (isApiStatus(error, 404)) {
       return {ok: true, status: 'skipped-no-data-branch'}
@@ -3196,30 +3192,105 @@ async function verifyDataBranchIntegrity(params: {
   }
 }
 
+/**
+ * Reads the effective rules for `data` and requires every type in REQUIRED_DATA_BRANCH_RULES.
+ * Fails closed: an unreadable answer is a failure, never "verified". Errors are caught here so a
+ * 404 from the rules endpoint cannot be mistaken for the missing-branch skip in the caller.
+ */
+async function verifyDataBranchRules(params: {
+  writerOctokit: OctokitClient
+  owner: string
+  repo: string
+  sha: string
+}): Promise<IntegrityCheckOkResult | IntegrityCheckFailResult> {
+  let rules: {type: string}[]
+  try {
+    const response = await params.writerOctokit.rest.repos.getBranchRules({
+      owner: params.owner,
+      repo: params.repo,
+      branch: 'data',
+    })
+    rules = response.data
+  } catch (error: unknown) {
+    const status = isRecord(error) && typeof error.status === 'number' ? `status ${error.status}` : null
+    const detail = error instanceof Error ? error.message : 'unknown error'
+    return {
+      ok: false,
+      kind: 'rules-unreadable',
+      error: status === null ? detail : `${detail} (${status})`,
+      sha: params.sha,
+    }
+  }
+  const present = new Set(rules.map(rule => rule.type))
+  const missingRules = REQUIRED_DATA_BRANCH_RULES.filter(type => !present.has(type))
+  if (missingRules.length > 0) {
+    return {ok: false, kind: 'rules-missing', missingRules, sha: params.sha}
+  }
+  return {ok: true, status: 'ok'}
+}
+
+function integrityAlertContent(failure: IntegrityCheckFailResult): {title: string; lines: string[]} {
+  switch (failure.kind) {
+    case 'author':
+      return {
+        title: 'Reconcile integrity alert: unexpected author on data branch',
+        lines: [
+          'Unexpected author on `data` branch tip commit. Reconcile refuses to commit on top of tampered-looking state.',
+          '',
+          `- Tip SHA: \`${failure.sha}\``,
+          `- Author login: \`${failure.authorLogin ?? 'unknown'}\``,
+          '- Expected: `fro-bot[bot]` (the Fro Bot App is the only writer of `data`).',
+          '',
+          'Next steps:',
+          '- Investigate who else has `contents:write` on this repository.',
+          '- If the commit is a legitimate one-off operator action, rewrite the branch tip as `fro-bot[bot]` before rerunning.',
+        ],
+      }
+    case 'rules-missing':
+      return {
+        title: 'Reconcile integrity alert: data branch rules missing',
+        lines: [
+          'Required rules are not in effect on the `data` branch. Reconcile refuses to commit while the App-only write lock is unverified.',
+          '',
+          `- Tip SHA: \`${failure.sha}\``,
+          `- Missing rule types: ${failure.missingRules.map(rule => `\`${rule}\``).join(', ')}`,
+          `- Required: ${REQUIRED_DATA_BRANCH_RULES.map(rule => `\`${rule}\``).join(', ')}`,
+          '',
+          'Next steps:',
+          '- Check the repository rulesets that target `data` (`GET /repos/{owner}/{repo}/rules/branches/data`).',
+          '- Restore the missing rules, then rerun reconcile.',
+        ],
+      }
+    case 'rules-unreadable':
+      return {
+        title: 'Reconcile integrity alert: data branch rules unreadable',
+        lines: [
+          'The effective rules for the `data` branch could not be read. Reconcile fails closed and refuses to commit.',
+          '',
+          `- Tip SHA: \`${failure.sha}\``,
+          `- Error: ${failure.error}`,
+          '',
+          'Next steps:',
+          '- Check the rules endpoint (`GET /repos/{owner}/{repo}/rules/branches/data`) and the writer token, then rerun reconcile.',
+        ],
+      }
+  }
+}
+
 async function fileIntegrityAlert(params: {
   writerOctokit: OctokitClient
   owner: string
   repo: string
-  authorLogin: string | null
-  sha: string
+  failure: IntegrityCheckFailResult
   logger: ReconcileLogger
 }): Promise<void> {
+  const {title, lines} = integrityAlertContent(params.failure)
   try {
     await callIssuesCreate(params.writerOctokit, {
       owner: params.owner,
       repo: params.repo,
-      title: `Reconcile integrity alert: unexpected author on data branch`,
-      body: [
-        'Unexpected author on `data` branch tip commit. Reconcile refuses to commit on top of tampered-looking state.',
-        '',
-        `- Tip SHA: \`${params.sha}\``,
-        `- Author login: \`${params.authorLogin ?? 'unknown'}\``,
-        '- Expected: `fro-bot` (PAT writes) or `fro-bot[bot]` (App writes). Both belong to the Fro Bot account.',
-        '',
-        'Next steps:',
-        '- Investigate who else has `contents:write` on this repository.',
-        '- If the commit is a legitimate one-off operator action, rewrite the branch tip as `fro-bot`/`fro-bot[bot]` before rerunning.',
-      ].join('\n'),
+      title,
+      body: lines.join('\n'),
       labels: [INTEGRITY_ALERT_LABEL],
     })
   } catch (error: unknown) {

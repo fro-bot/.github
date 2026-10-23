@@ -2992,6 +2992,7 @@ interface OctokitMockOverrides {
   listForAuthenticatedUser?: (opts: unknown) => Promise<{data: AccessListApiEntry[]}>
   reposGet?: (params: {owner: string; repo: string}) => Promise<{data: RepoGetResponse}>
   getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<{data: BranchResponse}>
+  getBranchRules?: (params: {owner: string; repo: string; branch: string}) => Promise<{data: {type: string}[]}>
   getContent?: (params: {owner: string; repo: string; path: string}) => Promise<unknown>
   createOrUpdateFileContents?: (params: unknown) => Promise<unknown>
   createRef?: (params: unknown) => Promise<unknown>
@@ -3032,6 +3033,12 @@ interface BranchResponse {
     author: {login: string} | null
     committer?: {login: string} | null
   }
+}
+
+const DATA_BRANCH_RULE_TYPES = ['update', 'non_fast_forward', 'creation', 'deletion'] as const
+
+function dataBranchRules(types: readonly string[] = DATA_BRANCH_RULE_TYPES): {data: {type: string}[]} {
+  return {data: types.map(type => ({type}))}
 }
 
 interface IssueListEntry {
@@ -3118,6 +3125,7 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
               },
             } satisfies BranchResponse,
           })),
+        getBranchRules: overrides.getBranchRules ?? (async () => dataBranchRules()),
         getContent:
           overrides.getContent ??
           (async () => {
@@ -3210,6 +3218,27 @@ function baseParams(overrides: BaseParamsOverrides = {}): HandleReconcileParams 
     workflowFile: overrides.workflowFile ?? 'survey-repo.yaml',
     workflowRef: overrides.workflowRef ?? 'main',
   }
+}
+
+// Runs handleReconcile with one repo to plan, so the data branch integrity check is reached.
+function integrityRun(overrides: OctokitMockOverrides) {
+  const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+  const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+  const userOctokit = mockOctokit({
+    listForAuthenticatedUser: async () => ({
+      data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+    }),
+  })
+  const run = async () =>
+    handleReconcile(
+      baseParams({
+        userOctokit,
+        appOctokit: mockOctokit({issuesCreate, ...overrides}),
+        readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+        commitMetadata,
+      }),
+    )
+  return {run, issuesCreate, commitMetadata}
 }
 
 describe('handleReconcile (I/O shell)', () => {
@@ -4486,32 +4515,91 @@ describe('handleReconcile (I/O shell)', () => {
       expect(alertCalls).toHaveLength(0)
     })
 
-    it('passes when data branch tip is authored by fro-bot user (PAT writes)', async () => {
-      // Fro Bot writes that go through FRO_BOT_PAT (survey-repo record-survey-result,
-      // fro-bot agent wiki-ingest) are attributed to the `fro-bot` user account. The
-      // integrity check accepts it alongside `fro-bot[bot]` because both identities
-      // belong to the same autonomous operator.
+    it('aborts with DATA_BRANCH_TAMPER when the data branch tip is authored by the fro-bot user', async () => {
+      // Data is written only by the Fro Bot App; the `fro-bot` user is not an accepted author.
       const getBranch = vi.fn(async () => ({
-        data: {name: 'data', commit: {sha: 'pat-sha', author: {login: 'fro-bot'}}},
+        data: {name: 'data', commit: {sha: 'user-sha', author: {login: 'fro-bot'}}},
       }))
-      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
-      const userOctokit = mockOctokit({
-        listForAuthenticatedUser: async () => ({
-          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
-        }),
-      })
+      const {run, issuesCreate, commitMetadata} = integrityRun({getBranch})
 
-      const result = await handleReconcile(
-        baseParams({
-          userOctokit,
-          appOctokit: mockOctokit({getBranch}),
-          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata,
-        }),
-      )
+      await expect(run()).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+      const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+      expect(params?.labels).toContain('reconcile:integrity-alert')
+      expect(params?.body).toContain('user-sha')
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    it('aborts with DATA_BRANCH_TAMPER when the data branch tip has no author login', async () => {
+      const getBranch = vi.fn(async () => ({
+        data: {name: 'data', commit: {sha: 'anon-sha', author: null}},
+      }))
+      const {run, issuesCreate, commitMetadata} = integrityRun({getBranch})
+
+      await expect(run()).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+      expect(firstCallArg<{labels: string[]}>(issuesCreate)?.labels).toContain('reconcile:integrity-alert')
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    it('reads the effective rules for the data branch and passes when all four rule types are present', async () => {
+      const getBranchRules = vi.fn(async () => dataBranchRules())
+      const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules})
+
+      const result = await run()
 
       expect(result.integrityCheck).toBe('ok')
+      expect(getBranchRules).toHaveBeenCalledWith(expect.objectContaining({branch: 'data'}))
+      expect(issuesCreate).not.toHaveBeenCalled()
       expect(commitMetadata).toHaveBeenCalledOnce()
+    })
+
+    it.each(DATA_BRANCH_RULE_TYPES)(
+      'aborts with DATA_BRANCH_TAMPER and names the rule when %s is missing',
+      async missing => {
+        const getBranchRules = vi.fn(async () =>
+          dataBranchRules(DATA_BRANCH_RULE_TYPES.filter(type => type !== missing)),
+        )
+        const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules})
+
+        await expect(run()).rejects.toMatchObject({
+          code: 'DATA_BRANCH_TAMPER',
+          message: expect.stringContaining(missing) as string,
+        })
+
+        expect(issuesCreate).toHaveBeenCalledOnce()
+        const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+        expect(params?.labels).toContain('reconcile:integrity-alert')
+        expect(params?.body).toContain(missing)
+        expect(commitMetadata).not.toHaveBeenCalled()
+      },
+    )
+
+    it('fails closed with DATA_BRANCH_TAMPER when the rules cannot be read', async () => {
+      const getBranchRules = vi.fn(async () => {
+        throw apiError(500, 'rules unavailable')
+      })
+      const {run, issuesCreate, commitMetadata} = integrityRun({getBranchRules})
+
+      await expect(run()).rejects.toMatchObject({
+        code: 'DATA_BRANCH_TAMPER',
+        message: expect.stringContaining('rules unavailable') as string,
+      })
+
+      const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+      expect(params?.labels).toContain('reconcile:integrity-alert')
+      expect(params?.body).toContain('rules unavailable')
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    it('does not read the rules when the data branch does not exist', async () => {
+      const getBranchRules = vi.fn(async () => dataBranchRules([]))
+      const {run} = integrityRun({getBranch: notFoundGetBranch(), getBranchRules})
+
+      const result = await run()
+
+      expect(result.integrityCheck).toBe('skipped-no-data-branch')
+      expect(getBranchRules).not.toHaveBeenCalled()
     })
 
     it('aborts with DATA_BRANCH_TAMPER and files an integrity-alert issue for unexpected author', async () => {
@@ -8765,6 +8853,7 @@ function makeRoutingHarness(
           }
         },
         getBranch: discoveryForbidden('repos.getBranch'),
+        getBranchRules: discoveryForbidden('repos.getBranchRules'),
         createOrUpdateFileContents: discoveryForbidden('repos.createOrUpdateFileContents'),
       },
       git: {createRef: discoveryForbidden('git.createRef'), getRef: discoveryForbidden('git.getRef')},
@@ -8821,6 +8910,10 @@ function makeRoutingHarness(
           return {
             data: {name: 'data', commit: {sha: 'data-tip', author: {login: 'fro-bot[bot]'}, message: BODY_MARKER}},
           }
+        },
+        getBranchRules: async (args: {owner: string; repo: string}) => {
+          writerOnlyThisRepo('repos.getBranchRules', args)
+          return dataBranchRules()
         },
         createOrUpdateFileContents: async (args: {owner: string; repo: string}) => {
           writerOnlyThisRepo('repos.createOrUpdateFileContents', args)
@@ -9029,6 +9122,7 @@ describe('handleReconcile — discovery/writer client routing', () => {
     const writerMethods = new Set(harness.calls.filter(c => c.client === 'writer').map(c => c.method))
     expect(writerMethods).toContain('issues.create')
     expect(writerMethods).toContain('repos.getBranch')
+    expect(writerMethods).toContain('repos.getBranchRules')
     expect(writerMethods).toContain('issues.listForRepo')
   })
 

@@ -179,6 +179,9 @@ function createFakeBranch(options: FakeBranchOptions): FakeBranch {
             commit: {sha: 'data-tip', author: {login: 'fro-bot[bot]'}},
           },
         }),
+        getBranchRules: async () => ({
+          data: ['update', 'non_fast_forward', 'creation', 'deletion'].map(type => ({type})),
+        }),
         getContent,
         createOrUpdateFileContents,
       },
