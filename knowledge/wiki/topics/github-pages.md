@@ -4,6 +4,9 @@ title: GitHub Pages
 created: 2026-04-18
 updated: 2026-10-23
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-10-23
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-10-23
@@ -82,6 +85,28 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Portfolio browser fixtures and deployed content are separate evidence (2026-10-23)
+
+At `8a1567df`, [[marcusrbrown--marcusrbrown-github-io]] builds its browser-test
+artifact with `BLOG_SNAPSHOT=tests/fixtures/blog-snapshot.json`, whereas Deploy
+does not set that override. Its manifest then prerenders blog content during
+build. Browser-suite evidence can therefore cover deterministic fixture content
+without establishing the shape or freshness of the production snapshot.
+The October 12 deployment-gate observation remains accurate: Deploy runs lint,
+ordinary unit tests, and the full build, not the browser suites or coverage.
+
+The visual-evidence contradiction also persists at this same revision: the root
+README and workflow success summary describe screenshot matching, while the
+visual-suite README explicitly documents manual screenshot artifacts without
+automated diff comparison. Treat suite selection, fixture selection, and the
+assertion actually documented as distinct evidence boundaries. Source-only
+reads establish neither live routing correctness nor current deployed content.
+
+Sources: [browser workflow](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/e2e-tests.yaml),
+[Deploy](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/package.json),
+[visual README](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/tests/visual/README.md).
 
 ## Source-only confirmation cannot refresh domain health (2026-10-23)
 

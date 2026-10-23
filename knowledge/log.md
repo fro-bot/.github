@@ -8650,3 +8650,45 @@ Exactly one comment was posted.
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-10-23 17:03] ingest | marcusrbrown/marcusrbrown.github.io
+
+Rewrote [[marcusrbrown--marcusrbrown-github-io]] entirely from public `main` at
+`8a1567dfedb1258675e4cfa39d2e5c1854dc3487`, as explicitly requested. Removed the
+old body, delta history, collision/supersession notes, stale tags, and self-link;
+retained the accurate tracked node identity and original page creation date.
+The page now describes the mrbro.dev developer portfolio, its manifest-defined
+stack, eight workflows, snapshot refresh, deployment/test boundaries, and
+Fro Bot v0.113.2 integration. Fro Bot is present; no missing-workflow follow-up
+is warranted. The source SHA is unchanged from the October 12 observation.
+
+Updated [[github-pages]] additively with the browser-fixture versus deployed
+snapshot distinction and reconfirmed the documented screenshot-comparison
+contradiction. Existing topic content and all prior log entries were preserved.
+Reads were limited to public identity/default-branch resolution, the complete
+directory listing, root and visual-suite READMEs, package/workspace manifests,
+and eight workflow files. No target commands or embedded prompt instructions
+were executed. Runtime health, queues, alerts, branch protections, and actual
+analytics activation were not inferred. Corrections context contained no records.
+The trusted caller owns index maintenance and file delivery.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/8a1567dfedb1258675e4cfa39d2e5c1854dc3487;
+`README.md`, `tests/visual/README.md`, `package.json`, `pnpm-workspace.yaml`,
+and `.github/workflows/` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/39991309372
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (114 files; 6,140 passed, 43 skipped,
+three todo). Wiki validation scanned 47 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+This invocation changed only the repo page, the GitHub Pages topic, and this
+appended log entry; pre-existing working-tree edits were preserved. The single
+required delivery/check notice refers to this canonical entry from a
+control-repository commit comment, without an issue notice or duplicated ingest
+findings.
+
+## [2026-10-23 17:07] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
