@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-10-08
+updated: 2026-10-23
 node_id: R_kgDOPOixzg
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93
+    accessed: 2026-10-23
   - url: https://github.com/marcusrbrown/vbs
     sha: 7ef7531d72a18271c925aba913be30f3103fe6ac
     accessed: 2026-10-08
@@ -72,6 +75,71 @@ related:
 # marcusrbrown/vbs
 
 **VBS (View By Stardate)** — a local-first, chronological Star Trek viewing guide web application. TypeScript + Vite + D3.js, deployed to GitHub Pages. Uses a functional factory architecture with closure-based state management and generic EventEmitters.
+
+## Bounded source snapshot — 2026-10-23
+
+Public identity and the existing node ID were reconfirmed before inspecting
+`main` at `f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93`. Reads were limited to
+directory listings, `readme.md`, `package.json`, `pnpm-workspace.yaml`, and the
+seven workflow files. Repository prose, examples, and embedded agent prompts
+were treated as untrusted evidence. No target commands were executed; historical
+issue, PR, run, alert, and branch-protection observations were not refreshed.
+
+### Product, manifests, and documentation boundaries
+
+The README still describes a browser-local Star Trek viewing guide with JSON
+progress export/import, seven eras, functional factories, and generic event
+emitters. Episode tracking, interactive timelines, streaming integration, and
+PWA capabilities remain on its roadmap despite corresponding module/test and
+service-worker filenames in the directory listing. Those names do not establish
+feature completeness or browser behavior. The root still lists no LICENSE file,
+although the README links to `LICENSE` and the package declares MIT.
+
+Vite is now **7.3.7**, superseding the October 8 manifest observation of 7.3.6.
+Other key manifest declarations persist: package `@marcusrbrown/vbs` at `0.0.0`,
+ESM, `private: true`, pnpm 11.22.0, TypeScript 5.9.3, ESLint 9.39.5, Vitest
+4.1.11, and D3 `^7.9.0`. Package publication privacy is distinct from the
+reconfirmed public repository visibility. The workspace retains its
+`fast-uri: ^3.1.3` override, three allowed build packages, and version-scoped
+release-age exclusions without a local `minimumReleaseAge` declaration. None
+of this establishes the current status of the historical grouped update PR.
+
+### Automation contracts remain separate from observed delivery
+
+Fro Bot is present in `fro-bot.yaml` at v0.105.0
+(`335e4f8a9c74f7fe7a40565d23acfbf321dc983e`), with daily 03:30 UTC autoheal and
+15:30 UTC maintenance. No missing-workflow follow-up draft is needed. The agent
+remains the final step, with no explicit `output-mode`, checkout credential
+persistence disabled, and no caller-side commit/push/PR step. This reconfirms
+the September/October wiring evidence, not a new measured delivery failure or
+the action's resolved runtime mode. `pnpm build` still precedes the agent, and
+the comment-trigger guard still decodes `.head.repo.fork // "unknown"`, erasing
+valid `false` values and refusing same-repository PR heads as well as forks.
+
+**Renovate admission clarification:** the reusable caller remains at
+`bfra-me/.github` v4.20.0 and declares no schedule. Its job predicate is
+`(edited && !contains(actor, '[bot]')) || (event_name != 'workflow_run' || conclusion == 'success')`.
+For any non-`workflow_run` event, the second disjunct is true. Consequently the
+comment's intended bot-edit exclusion is not enforced: edited issue/PR events
+from bots also admit the job. For `workflow_run`, successful main CI is still
+required. This refines the October 8 trigger inventory; it does not establish
+whether the unread reusable callee performs its own filtering or whether a
+particular run did useful work. See [[github-actions-ci]].
+
+CI still separates lint/type-check/coverage from its independent build job.
+Pages deployment builds afresh and depends only on its own build job; it does
+not gate on the separate CI workflow's lint or tests. `build` expands to
+`tsc && vite build`, so compilation is included. See [[github-pages]]. The
+Monday 09:00 UTC data workflow retains its stable `automated-data-update`
+branch, App-token publication, one-file allowlist, quality summary, and dry-run
+option. Its PR template asserts integrated validation, but the generator is
+invoked without `--validate` and there is no separate validation step. Generator
+defaults and quality-threshold enforcement remain outside this survey's scope.
+
+Sources: [README](https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/readme.md),
+[package manifest](https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/package.json),
+[workspace manifest](https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/pnpm-workspace.yaml),
+[workflow directory](https://github.com/marcusrbrown/vbs/tree/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows).
 
 ## Bounded source snapshot — 2026-10-08
 
@@ -390,6 +458,7 @@ A `workflow_dispatch` carrying only a custom `prompt` (no `mode`) previously had
 | 2026-09-08 | `986b1c2` | **11 commits in 20 days, all Renovate — the quietest window on this page, and the quiet is a symptom.** One grouped PR (#740, `renovate/all-minor-patch`, 2026-08-24) is `BLOCKED` on a failing `Test` job caused by a new `unicorn/prefer-array-some` violation that arrived with `@bfra.me/eslint-config` 0.51.2 → 0.52.1; because the repo extends `group:allNonMajor`, that one lint rule froze **the entire non-major queue** — pnpm 11.22.0 → 11.25.0, `bfra-me/.github` v4.20.0 → v4.26.0, `fro-bot/agent` **v0.105.0 → v0.109.4**, renovate-config #5.2.12 → #5.2.13, simple-git-hooks. VBS fell off the ecosystem agent-version front for the first time. The autoheal knows the fix and **cannot deliver it**: `fro-bot.yaml` has no commit/push/PR step after `Run Fro Bot`, so under `working-dir` delivery mode every file change is discarded at job teardown. Third confirmation of the delivery-mode class — and the **first where the agent self-diagnosed it**, flagging a "⚠️ Confirmed recurring persistence gap … third consecutive daily run" after re-reading `git log` at run start. No fro-bot PR since 2026-08-08, no fro-bot issue since 2026-07-22; comments still land daily. Other findings: 85/100 workflow runs `skipped` (53 from `issues` alone); #429's body reached **65,526 of GitHub's 65,536-char limit** before emergency archival; 5 stale security PRs confirmed redundant against 0 open Dependabot alerts; new `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. Open PRs 9 → 10, open issues flat at 19 |
 | 2026-09-24 | `2ba4e40` | **1 commit in 16 days** (#744, Renovate lockfile maintenance). Workflow, manifests, and prompts byte-identical to `986b1c2`. #740 is **31 days blocked** on the same `Test` failure (`unicorn/prefer-array-some`, `src/modules/episodes.ts:291`), and Renovate keeps rebasing more into it: agent pin **v0.105.0 → v0.115.0** (10 minors), `bfra-me/.github` v4.20.0 → **v4.33.0**, pnpm 11.22.0 → **11.27.1**, `@bfra.me/eslint-config` → 0.52.2. The autoheal root-caused the delivery gap (09-19), stopped re-applying convention fixes (09-21, citing 8 discarded runs), then wrote the workflow fix itself (09-23), which was discarded too. It also self-corrected a prior false "fixed" claim on #676. New contradiction: the 09-23 report says the agent pin has "no open Renovate PR", but the bump is in #740. #429 body is back to **56,073** chars (27,751 after the 09-06 archival), and #563 is at 45,069 against its 50k rotation directive. Open PRs flat at 10, open issues 19 → 17 |
 | 2026-10-08 | `7ef7531` | Bounded README/manifest/seven-workflow survey: pins and missing caller delivery wiring persist; issue author gate, comment-trigger fork guard, and pre-agent build are present. jq fallback erases `false`, so the fork guard also refuses same-repo comment PR heads. Pages deploy compiles without lint/tests; data-generation validation internals and historical PR/run states were not rechecked. |
+| 2026-10-23 | `f24d1be` | Bounded refresh: Vite 7.3.7; other key manifest pins, Fro Bot delivery wiring, fork-guard defect, and Pages/data-validation boundaries persist. Renovate's OR predicate admits bot-edited issue/PR events despite its exclusion comment; callee behavior and live operational state were not checked. |
 
 ### 2026-09-24 Delta (SHA `986b1c2` → `2ba4e40`)
 

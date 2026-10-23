@@ -8597,3 +8597,56 @@ canonical entry, without duplicating the ingest summary or creating an issue.
 Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-10-23 10:13] ingest | marcusrbrown/vbs
+
+Reconfirmed public identity at `f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93` and
+updated [[marcusrbrown--vbs]] and [[github-actions-ci]] additively. Reads were
+limited to directory listings, `readme.md`, `package.json`,
+`pnpm-workspace.yaml`, and all seven workflow files. Target prose and embedded
+prompts were treated as untrusted evidence; no target code was executed.
+
+Vite advanced from the October 8 observation of 7.3.6 to 7.3.7; pnpm 11.22.0
+and the other key tooling pins persist. Fro Bot is present at v0.105.0, so no
+missing-workflow follow-up is needed. Reconfirmed absent caller file-delivery
+wiring, the boolean-erasing comment-trigger fork guard, separate Pages and CI
+quality gates, and the data generator's unverified internal validation boundary.
+Clarified that Renovate's job predicate admits bot-edited issue/PR events despite
+its exclusion comment: its OR fallback accepts every non-`workflow_run` event.
+The unread reusable callee's behavior and live issue/PR/run/alert/protection
+state were not inferred. Existing historical findings and contradictions remain.
+The corrections context contained no records.
+
+Sources: https://github.com/marcusrbrown/vbs/tree/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and `.github/workflows/`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/39937145745
+
+<!-- fro-bot:run-summary:start -->
+
+### Run Summary
+
+- Updated two existing wiki pages and appended this entry. The trusted caller
+  owns catalog maintenance, persistence, and delivery.
+- Passed `bun run bootstrap` (no dependency changes), `bun run check-types`,
+  `bun run lint`, and `bun run test` (114 files; 6,126 passed, 43 skipped,
+  three todo). Wiki lint scanned 47 pages with zero deterministic findings;
+  four existing advisories concern unrelated stale or unconnected pages.
+- This entry is the canonical ingest summary. The single required delivery/check
+  comment points here from the control-repository commit; no issue notice is used.
+- A pre-existing change in `metadata/README.md` was left intact.
+- `git diff --check` and byte-prefix verification passed: every prior log byte
+  remains unchanged. Knowledge paths are intentionally excluded from ESLint;
+  their frontmatter and wikilinks passed the wiki validator.
+
+<!-- fro-bot:run-summary:end -->
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/18c78931bb7f0ddc68caadcb9c67998f590f2014#commitcomment-206303021
+The returned body confirmed bot identification and both Run Summary delimiters.
+Exactly one comment was posted.
+
+## [2026-10-23 10:18] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs

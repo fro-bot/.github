@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-22
+updated: 2026-10-23
 sources:
+  - url: https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows/renovate.yaml
+    sha: f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93
+    accessed: 2026-10-23
   - url: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows
     sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
     accessed: 2026-10-22
@@ -339,6 +342,30 @@ related:
 ---
 
 # GitHub Actions CI
+
+## An OR fallback can erase an event-specific author gate (2026-10-23)
+
+At `f24d1be`, [[marcusrbrown--vbs]]'s Renovate caller describes excluding bot
+edits but uses this admission predicate:
+
+```text
+(action == 'edited' && !contains(actor, '[bot]')) ||
+(event_name != 'workflow_run' || workflow_run.conclusion == 'success')
+```
+
+The second branch is true for every non-`workflow_run` event, including bot-edited
+issues and PRs. The first branch therefore cannot exclude those events. Only the
+`workflow_run` path remains success-gated. The workflow declares no schedule;
+settings-sync's separate twelve-hour cron is not evidence of Renovate cadence.
+This clarifies the October 8 VBS trigger inventory without claiming observed
+run volume or filtering inside the unread reusable callee.
+
+When reviewing multi-event predicates, evaluate each event/author combination
+against the entire expression. A restriction in one OR branch does not constrain
+another branch that already accepts the same event. Workflow comments express
+intent; the full boolean expression defines admission.
+
+Sources: [Renovate caller](https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows/renovate.yaml).
 
 ## A parent-scoped override needs an actual lower bound (2026-10-21)
 
