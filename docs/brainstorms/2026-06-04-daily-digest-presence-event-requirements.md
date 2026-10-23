@@ -1,7 +1,6 @@
 ---
 title: Daily digest presence event — migrate the scheduled report off the webhook
 date: 2026-06-04
-status: requirements
 scope: standard
 ---
 
@@ -50,7 +49,7 @@ not a cron heartbeat.
 | --- | --- |
 | Framing | Character moment, not a heartbeat |
 | Content | Hybrid — cheap counts + link to the report issue |
-| Cadence | Suppress on quiet days (post only when the day had activity) |
+| Cadence | Suppress on quiet days (post only when the day had activity). Reversed: the digest posts every day (see the gate section) |
 | Ownership | Two-sided, **gateway-first** (see Constraint) |
 | Composer | Gateway-side template; control plane sends `rendered_text: null` |
 
@@ -93,6 +92,8 @@ A new gateway event — working name `daily_digest` — carrying:
 
 ### Suppress-on-quiet-day gate
 
+Reversed by #3477 (plan 2026-06-09-001 R3): the digest posts every day, and `should_post` is false only on a read error (`scripts/daily-digest-counts.ts:109`).
+
 Post only when the day had noteworthy activity. v1 signal (cheap):
 `surveys_today > 0` OR `invitations_accepted_today > 0`. If `invitations_accepted_today`
 is not cheaply derivable in the scheduled run, v1 gates on `surveys_today > 0`
@@ -105,7 +106,7 @@ alone. On a genuinely quiet day, skip the Discord post entirely. The oversight
   daily-digest message to Discord **as the Fro Bot user**, carrying real cheap
   counts and a working link to that day's oversight report issue.
 - **SC2** — On a quiet day (no surveys, no invitations), no daily-digest Discord
-  post is made; the oversight issue is still created.
+  post is made; the oversight issue is still created. Reversed by #3477 (plan 2026-06-09-001 R3): quiet days post.
 - **SC3** — The legacy `📣 Notify Discord — daily oversight` webhook step and its
   `discord-notify.ts` invocation are removed from `fro-bot.yaml`; no
   `discord-notify.ts` callers remain anywhere. **Sequencing:** this removal must

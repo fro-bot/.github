@@ -263,6 +263,8 @@ sequenceDiagram
 
 **Dependencies:** PR A2a merged. A promotion has reseeded `data`. A live check shows zero non-App commits in `merge-base(main, data)..data`.
 
+**Re-scope before executing:** the "promotion has reseeded `data`" precondition no longer holds. `data` is persistent after #4032 (plan 2026-10-20-001), so promotion does not recreate it.
+
 **Files:**
 
 - Modify: `scripts/reconcile-repos.ts`

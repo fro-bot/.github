@@ -1,7 +1,6 @@
 # Make `data` the Sole Writer of `metadata/repos.yaml`
 
 **Date:** 2026-06-01
-**Status:** Requirements
 **Scope:** Standard (architectural — state ownership + privacy-gate robustness)
 
 ## Problem

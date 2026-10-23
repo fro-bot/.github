@@ -3,6 +3,7 @@ title: "feat: migrate wiki site from Quartz v4.5.2 to v5"
 type: feat
 status: complete
 date: 2026-07-10
+origin: docs/brainstorms/2026-07-10-web-viewable-wiki-requirements.md
 ---
 
 # feat: migrate wiki site from Quartz v4.5.2 to v5
@@ -12,6 +13,8 @@ date: 2026-07-10
 Migrate the live knowledge-wiki site (`https://fro.bot/.github/`) from Quartz v4.5.2 to Quartz v5. This is a re-architecture, not a version re-pin: v5 replaces the single-repo TypeScript-config model with a YAML-config, git-based community-plugin model. The migration must preserve every capability the v4 site has today — wikilinks, backlinks, search, graph, the two custom components (sources renderer, GitHub source link), the Fro Bot brand theme, the LFS favicon — while keeping the hardened publish pipeline (split build/deploy, SHA-pinned, fail-closed) and the immutable-supply-chain posture intact across the now-multi-repo plugin surface.
 
 **Honest cost/benefit framing (operator already chose to proceed).** v5 delivers no functionality this site uses today — it is capability parity at higher operational complexity: a multi-repo build-time supply chain (~40 community plugins), more moving parts, a larger rollback surface, and a new build-time trust boundary. This is a deliberate risk-acceptance trade (staying current with upstream, off a legacy branch), not a neutral upgrade. The plan is scoped to make that trade as safe and reversible as possible, not to pretend it is routine.
+
+Scope note: this plan serves the site at `fro.bot/.github`; the origin brainstorm deferred a branded domain.
 
 ## Problem Frame
 

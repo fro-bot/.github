@@ -1,7 +1,6 @@
 # Fro Bot Discord Presence via Control-Plane Events
 
 **Date:** 2026-05-23 (reconciled against shipped gateway 2026-06-04)
-**Status:** Requirements — gateway side SHIPPED; ready for `ce:plan`
 **Scope:** Standard
 **This document:** control-plane side only. The gateway-side feature shipped in [fro-bot/agent#671](https://github.com/fro-bot/agent/issues/671) via agent PR #697 (2026-05-30) and is deployed to Fronomenal through `marcusrbrown/infra`. The contract below has been reconciled against the shipped implementation (`packages/gateway/src/http/{announce-schema,announce-handler,hmac}.ts`); see the **Shipped-Gateway Reconciliation** section.
 
@@ -37,7 +36,7 @@ The Fro Bot character has presence in Fronomenal Discord via `gateway.fro.bot` b
 
 - LLM composition of message text — deferred to v2; v1 uses gateway-side templates
 - High-risk privacy events (visibility transition, integrity alerts) — those stay on GitHub-issue surfaces
-- Daily reconcile summary event and wiki-lint findings event — added as fast-followers once the architecture proves out with the two narrowed event types
+- Daily reconcile summary event and wiki-lint findings event — added as fast-followers once the architecture proves out with the two narrowed event types. Dropped: the daily digest and the daily report cover them.
 - Two-way conversation in Discord (gateway already handles `@fro-bot` mentions; not extending here)
 - `self_improvement_observed` event type — no current trigger; add when the trigger exists, not as reserved contract surface
 - Multi-channel routing — single Fronomenal channel for all v1 drops
@@ -139,6 +138,8 @@ The shipped gateway signs over the **exact raw request body bytes it receives** 
 Both event types include enough context for the gateway to render a template that names the specific repo or count, without needing to look anything up.
 
 ### Fast-Follower Events (not in v1)
+
+`reconcile_notable` and `wiki_lint_findings` are dropped: the daily digest and the daily report cover them.
 
 These ship after v1 proves out the contract. Listed here so the gateway issue can stub embed colors / template slots:
 

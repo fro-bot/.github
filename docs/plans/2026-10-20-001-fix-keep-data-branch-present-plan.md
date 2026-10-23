@@ -1,7 +1,7 @@
 ---
 title: 'fix: Keep the data branch present through promotion'
 type: fix
-status: active
+status: complete
 date: 2026-10-20
 origin: docs/brainstorms/2026-10-20-keep-data-branch-present-requirements.md
 ---

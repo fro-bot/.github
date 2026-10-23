@@ -1,7 +1,7 @@
 ---
 title: 'feat: Draft solution docs from learning proposals'
 type: feat
-status: active
+status: complete
 date: 2026-10-09
 origin: docs/brainstorms/2026-10-09-drafted-solution-docs-requirements.md
 ---
@@ -18,7 +18,7 @@ Proposals become durable knowledge only through a manual batch the operator star
 
 ## Requirements Trace
 
-- R1. Process every open learning proposal opened by capture (authored by `fro-bot[bot]`), at most five per run, oldest first; otherwise no-op.
+- R1. Process every open learning proposal opened by capture (authored by `fro-bot[bot]`), at most five per run, oldest first; otherwise no-op. The five-per-run cap is this plan's bound on the origin's R1, which names every open proposal.
 - R2. Verify each claim against the merged PR, its reviews and CI runs, and current `main`; drop or narrow the rest.
 - R3. Consolidate same-lesson proposals; extend an existing doc when it already covers the lesson.
 - R4. Covered or unverifiable proposals get no new doc text; outcome and reason recorded.
@@ -30,7 +30,7 @@ Proposals become durable knowledge only through a manual batch the operator star
 - R10. A run with no doc changes comments on and closes each processed proposal; no PR.
 - R11. No automerge.
 - R12. No writes to `main` or `data`.
-- R13. Fro Bot reviews App-authored PRs only on the drafted branch.
+- R13. Fro Bot reviews App-authored PRs only on the drafted branch. Removed in #4002: the agent cannot review App-authored PRs (fro-bot/agent#1520), so drafted PRs are reviewed manually.
 - R14. Docs, PR title and body, and every comment pass the private-repo check; failure blocks publication.
 - R15. Daily report's "Progressive Improvement" points to an open drafted PR instead of reporting covered proposals as stalled.
 
@@ -183,7 +183,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: Generalize the handoff validator**
+- [x] **Unit 1: Generalize the handoff validator**
 
 **Goal:** Validate and apply agent file handoffs under a caller-supplied path policy.
 
@@ -207,7 +207,7 @@ flowchart TB
 
 **Verification:** wiki behavior identical; drafted policy rejects every non-solutions path.
 
-- [ ] **Unit 2: Coverage block and PR body**
+- [x] **Unit 2: Coverage block and PR body**
 
 **Goal:** Parse, merge, and render the drafted PR's machine block and body.
 
@@ -231,7 +231,7 @@ flowchart TB
 
 **Verification:** every rendered body re-parses to the same rows.
 
-- [ ] **Unit 3: Harvest**
+- [x] **Unit 3: Harvest**
 
 **Goal:** Emit the digest of uncovered proposals and the drafted PR's state.
 
@@ -256,7 +256,7 @@ flowchart TB
 
 **Verification:** digest lists exactly the proposals needing a draft.
 
-- [ ] **Unit 4: Publish**
+- [x] **Unit 4: Publish**
 
 **Goal:** Gate and deliver the agent's handoff.
 
@@ -291,7 +291,7 @@ flowchart TB
 
 **Verification:** every write path is preceded by validation and privacy gating; no ref other than the drafted branch is written.
 
-- [ ] **Unit 5: Workflow**
+- [x] **Unit 5: Workflow**
 
 **Goal:** Wire harvest, agent, and publish on a weekly schedule.
 
@@ -320,7 +320,9 @@ flowchart TB
 
 **Verification:** contract test pins the credential split and token scopes.
 
-- [ ] **Unit 6: Review exception and daily report**
+- [x] **Unit 6: Review exception and daily report**
+
+The review exception was removed in #4002 (see R13); the daily-report change remains.
 
 **Goal:** Let Fro Bot review drafted PRs only; point the daily report at the open draft.
 
@@ -343,7 +345,7 @@ flowchart TB
 
 **Verification:** only `fro-bot[bot]` on the drafted branch passes the review gate.
 
-- [ ] **Unit 7: Documentation**
+- [x] **Unit 7: Documentation**
 
 **Goal:** Describe the drafted-docs flow where the repo documents its automation.
 

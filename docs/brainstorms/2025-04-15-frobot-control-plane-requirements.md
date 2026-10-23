@@ -28,7 +28,7 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
   - Verifies the inviting user is on an allowlist
   - Accepts the invitation
   - Performs initial repo survey (structure, languages, patterns, existing workflows)
-  - Stars the repo
+  - Stars the repo (shipped by plan 2026-06-21-002, #3532)
   - May propose adding a `fro-bot.yaml` workflow with tailored prompts if not already installed
 - R6. Fro Bot responds to **issue and PR events** in repos where it's a collaborator, following existing `fro-bot.yaml` patterns but with persona-consistent voice
 - R7. Fro Bot performs **scheduled oversight** across all repos where it's a collaborator — health checks, security updates, dependency reviews, DX improvements
@@ -41,7 +41,7 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 
 - R9. All persistent state lives in GitHub — auditable, versioned, public:
   - **Metadata files** (`metadata/*.yaml`) for structured state (repo inventory, Renovate tracking, activity metrics)
-  - **Issues as journal** — Fro Bot maintains a running journal of its activity, decisions, and reflections via GitHub Issues
+  - **Issues as journal** — Fro Bot maintains a running journal of its activity, decisions, and reflections via GitHub Issues (removed in the sunset, #3368)
   - **Discussions for reflection** — periodic self-assessment and milestone tracking
 - R10. Fro Bot builds a **knowledge base** per repo it collaborates on, using the Karpathy LLM wiki pattern (already prototyped in `fro-bot/agent/docs/wiki`):
   - Repo structure and conventions
@@ -60,6 +60,8 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 - R13. Fro Bot periodically **proposes prompt improvements** based on metric trends — stored as draft PRs to this repo for human review
 - R14. Self-improvement changes require **human approval** before taking effect — Fro Bot suggests, human decides
 - R15. Improvement history is tracked in git — every change to persona, prompts, or behavior is a versioned commit with rationale
+
+R12–R15 are superseded by A1, C4 and O8: see the `2026-06-22-skill-saving-grow-and-learn`, `2026-07-07-a1-recurring-pattern-synthesis` and `2026-07-09-o8-improvement-metric` brainstorms and their plans.
 
 ### Trust & Autonomy (Tiered Model)
 
@@ -84,7 +86,7 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 ### Cross-Platform Output (V1: Broadcast Only)
 
 - R20. Fro Bot posts **curated highlights** to Discord and BlueSky — it chooses what's interesting enough to share, like a real social media personality
-- R21. Content types: new repo onboarded, notable PR review, self-improvement milestone, weekly digest, personality-consistent commentary on its own work
+- R21. Content types: new repo onboarded, notable PR review, self-improvement milestone, weekly digest, personality-consistent commentary on its own work. R20–R21 were narrowed by the 2026-05-23 Discord presence brainstorm.
 - R22. Social output is **in character** — same trickster-helper voice as GitHub interactions
 - R23. Discord and BlueSky are **output-only in V1** — no bidirectional event handling yet
 
@@ -93,6 +95,8 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 - R24. Control plane changes are versioned using **changesets** — adapted from the `bfra-me/.github` pattern
 - R25. Releases create GitHub releases with changelogs, git tags, and floating major branches
 - R26. Workflow template pins are auto-updated on release via a `release.ts`-style script
+
+R24–R26 are dropped as obsolete. The only versioned artifact is `@fro.bot/wiki-write-core`, which has its own semantic-release pipeline (plan 2026-10-18-001).
 
 ## Success Criteria
 
@@ -104,7 +108,7 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 
 ## Scope Boundaries
 
-- **In scope**: GitHub event handling, GitHub-native memory, knowledge base, self-improvement proposals, social broadcast, Renovate smart dispatch, changeset releases, persona definition
+- **In scope**: GitHub event handling, GitHub-native memory, knowledge base, self-improvement proposals, social broadcast, Renovate smart dispatch, changeset releases (dropped, R24–R26), persona definition
 - **Not in scope for V1**: Bidirectional Discord/BlueSky (input from social), multi-user support (only Marcus's repos), third-party integrations beyond Discord/BlueSky, web dashboard, monetization
 - **Explicitly deferred**: Custom GitHub App (continue using PAT + existing App for V1, evaluate App migration for V2 based on privilege-splitting needs)
 
@@ -133,7 +137,7 @@ This `.github` repo becomes the **control plane** that drives the Fro Bot person
 - [Affects R10, R11][Needs research] What's the right granularity for wiki entries — per-repo file, per-topic, or per-interaction?
 - [Affects R12][Technical] How do we collect behavioral metrics from the agent action's output? Does fro-bot/agent expose structured feedback?
 - [Affects R20-R23][Needs research] Discord webhook vs bot for output? BlueSky API auth flow and rate limits?
-- [Affects R24-R26][Technical] Exact changeset config and release script adaptations needed for fro-bot's structure
+- [Affects R24-R26][Technical] Dropped with R24–R26.
 - [Affects R8][Technical] Best approach for "check if Renovate is already running" pre-dispatch — `gh run list` polling or workflow concurrency?
 
 ## Next Steps

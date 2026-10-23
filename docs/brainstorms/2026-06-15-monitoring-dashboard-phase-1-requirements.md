@@ -1,7 +1,6 @@
 ---
 title: Fro Bot Monitoring Dashboard — Phase 1
 date: 2026-06-15
-status: ready
 scope: deep
 parent: docs/brainstorms/2026-06-15-fro-bot-personal-agent-north-star-requirements.md
 ---
@@ -176,7 +175,7 @@ block the relief the other two populations deliver today.
   actually enumerate the needed installations (it can only see its own — confirm it can be
   installed everywhere the Agent App is, or this path fails). If viable, create it with
   minimal permissions. If not, fall back to a second independent private key for the existing
-  Agent App. Decide which permissions/events either path needs.
+  Agent App. Decide which permissions/events either path needs. Resolved in plan 2026-06-15-001 (Fork 2) to the second-key fallback: a second Agent App key enumerating the App's existing installations.
 - **D5 — Bindings fast-follow interface:** whether Pop 3 arrives via a new gateway read
   endpoint (`fro-bot/agent#907`-adjacent) or direct object-store read — decide when the
   fast-follow starts, not now.

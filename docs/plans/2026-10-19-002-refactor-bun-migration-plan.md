@@ -1,7 +1,7 @@
 ---
 title: 'refactor: Migrate from pnpm to Bun'
 type: refactor
-status: completed
+status: complete
 date: 2026-10-19
 origin: docs/brainstorms/2026-10-19-bun-migration-requirements.md
 deepened: 2026-10-19

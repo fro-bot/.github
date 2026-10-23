@@ -19,6 +19,8 @@ The weekly `data → main` promotion (PR #3396) was born conflicted in `metadata
 
 ## Requirements Trace
 
+ID mapping to the origin's success criteria: R1 = SC1, R2 = SC2, R3 = SC1, R4 = SC3, R5 = SC4, R6 = SC5, R7 = SC6.
+
 - R1. A `node-null` private entry on `data` must not block the weekly promotion (origin SC1).
 - R2. A `subprocess-threw` (transport/auth) resolution failure must still fail the gate closed (origin SC2).
 - R3. Slug-named wiki-page leak coverage for `node-null` private repos must be preserved — no privacy regression (origin SC1, review P1).

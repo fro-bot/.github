@@ -4,6 +4,7 @@ type: fix
 status: complete
 date: 2026-07-07
 source: https://github.com/fro-bot/.github/issues/3653
+origin: docs/brainstorms/2026-07-04-cross-repo-dispatch-tracking-push-model-requirements.md
 ---
 
 # Fix A3 receipt contract state handling

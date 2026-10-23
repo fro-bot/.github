@@ -1,7 +1,6 @@
 ---
 title: 'Merged-candidate evidence for dual-trigger PRs'
 date: 2026-06-23
-status: ready
 scope: standard
 kind: requirements
 parent: docs/brainstorms/2026-06-22-c2-failed-then-fixed-capture-requirements.md

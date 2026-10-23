@@ -1,7 +1,6 @@
 ---
 title: Private-repo handling
 type: feat
-status: draft
 date: 2026-05-05
 ---
 
@@ -163,6 +162,8 @@ Skipped entries DO NOT update `last_survey_at` or `last_survey_status`.
 
 #### R9 — `social-broadcast.yaml` privacy-aware
 
+Superseded: `social-broadcast.yaml` was deleted in #3439 (74043b7). Announcements go through the gateway announce path.
+
 `social-broadcast.yaml` accepts a `private: boolean` input with **default `true`** (fail-safe; uses redacted slug or skip steps when caller doesn't explicitly opt-in). When `true`, all external posts (Discord, Bluesky) are skipped; only in-repo journal entries proceed.
 
 The fail-safe default protects against the in-flight reusable-workflow versioning hazard: if the broadcast contract changes between `private: optional` and a stricter form, in-flight callers continue to invoke it without breaking, but get the safe-default behavior.
@@ -225,6 +226,8 @@ When the probe observes `true → false`, the next reconcile run treats the repo
 ### Continuous detection
 
 #### R16 — CI guard against private-name introduction
+
+Implemented by plans 2026-06-03-001 and 2026-06-04-003 (#3407).
 
 A new CI check on `fro-bot/.github` runs on every PR to `main`. It reads `node_id` values for `private: true` entries from `metadata/repos.yaml` on `data` (the always-redacted form), resolves each to `owner/name` via the GitHub API (App token, scoped to `fro-bot[bot]`), then scans the PR's added-lines diff (not removed lines, not unchanged lines) for any string match.
 

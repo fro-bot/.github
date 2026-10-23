@@ -59,7 +59,7 @@ posted from its own Discord identity via the gateway — not from an opaque webh
 ## Scope Boundaries
 
 - No LLM message composition (v2; gateway templates render v1).
-- No `reconcile_notable` / `wiki_lint_findings` events (fast-followers, post-v1).
+- No `reconcile_notable` / `wiki_lint_findings` events (dropped: the daily digest and the daily report cover them).
 - No high-risk privacy events (visibility transitions, integrity alerts) — stay on GitHub surfaces.
 - No durable queue / outage buffering — best-effort, single-retry.
 - No gateway-side work (shipped; this is POST-side only).

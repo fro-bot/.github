@@ -1,7 +1,6 @@
 ---
 title: Survey cadence + multi-channel discovery
 type: feat
-status: draft
 date: 2026-05-04
 ---
 

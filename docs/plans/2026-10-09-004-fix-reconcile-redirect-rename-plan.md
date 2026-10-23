@@ -1,7 +1,7 @@
 ---
 title: 'fix: Detect redirected repo renames and move them by operator dispatch'
 type: fix
-status: completed
+status: complete
 date: 2026-10-09
 ---
 

@@ -11,6 +11,8 @@ origin: docs/brainstorms/2026-07-03-bounded-correction-pr-execution-requirements
 
 ## Overview
 
+The CLI runner left as a stub here was completed in plan 2026-07-07-002 (U1).
+
 Replace the Status Truth workflow's disabled PR placeholder with a real, tested execution path
 that ships fully disarmed. The slice extends the pure planner with close actions, budget
 semantics, and corrector/re-verification seams; adds a PR execution shell with independent

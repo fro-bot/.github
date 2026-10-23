@@ -123,7 +123,8 @@ the machinery and graduating a kind are two different decisions, and only the fi
 
 - R11. Write credentials (`contents: write`, `pull-requests: write`) are minted only inside the
   PR job, only on armed runs, scoped at mint time, and never exposed to detect/open jobs or
-  rendered output.
+  rendered output. The list omits `issues: write`, which closure comments need; corrected in plan
+  2026-07-07-002 R6.
 - R11b. Planner limits are re-enforced in the execution shell: before any push, the PR job
   independently validates that the branch content deviates from base by exactly the planned
   single file and diff; any mismatch aborts without pushing.

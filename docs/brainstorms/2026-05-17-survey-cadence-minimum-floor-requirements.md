@@ -1,7 +1,6 @@
 ---
 title: Survey cadence — minimum-dispatch floor
 type: feat
-status: draft
 date: 2026-05-17
 ---
 
@@ -65,8 +64,8 @@ Add a per-day floor that always dispatches a small number of oldest-`last_survey
 
 1. **What is `FLOOR_MIN`?** Initial proposal: 2 per run. Daily cron × 2 = ~14/week, comfortable on the Anthropic seat capacity at 90s stagger. Confirm during planning.
 2. **What is `FLOOR_MIN_GAP_DAYS`?** Initial proposal: 7 days. Long enough to prevent ping-pong, short enough to make the floor meaningful at N=20+. Confirm during planning.
-3. **Floor vs threshold ordering in the dispatch list.** When both fire, do threshold-eligible repos go first (prioritizing the channel-cycle math) or oldest-`last_survey_at` regardless of source? Initial proposal: oldest-first regardless of source — keeps the dispatch order deterministic and explainable.
-4. **Drought-detection issue.** Should reconcile auto-open a `reconcile:cadence-drought` GitHub issue if the floor itself yields zero dispatches (e.g., every repo was within `FLOOR_MIN_GAP_DAYS`)? Probably yes, but verify the issue lifecycle pattern matches existing `reconcile:pending-review` handling.
+3. **Floor vs threshold ordering in the dispatch list.** When both fire, do threshold-eligible repos go first (prioritizing the channel-cycle math) or oldest-`last_survey_at` regardless of source? Initial proposal: oldest-first regardless of source — keeps the dispatch order deterministic and explainable. Resolved in plan 2026-05-17-001: oldest-first regardless of source.
+4. **Drought-detection issue.** Should reconcile auto-open a `reconcile:cadence-drought` GitHub issue if the floor itself yields zero dispatches (e.g., every repo was within `FLOOR_MIN_GAP_DAYS`)? Probably yes, but verify the issue lifecycle pattern matches existing `reconcile:pending-review` handling. Deferred in plan 2026-05-17-001: the run-summary counter is the signal.
 5. **Backfill stragglers.** Should the floor also pick from `pending-review` if they've been waiting longer than X days? Probably no (those are explicitly human-gated) but worth a question during planning.
 
 ## Scope Boundaries
