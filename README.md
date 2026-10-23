@@ -295,6 +295,8 @@ gh workflow run survey-repo.yaml -f node_id=<node_id>
 
 The `node_id` for each tracked repo is stored in `metadata/repos.yaml` on the `data` branch.
 
+The optional `rewrite` input (`-f rewrite=true`, default `false`) makes the survey rewrite the repo page from the repository's current state and discard its existing body instead of updating it; use it when a page describes the wrong repo after a rename collision. Other pages stay additive, and a conflict re-run keeps the setting.
+
 ### Status-Truth Proposals
 
 Machine-verifiable claims live in [docs/status.md](docs/status.md).

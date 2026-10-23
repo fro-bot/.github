@@ -6,6 +6,7 @@ run-name: Survey Repo
 # Manual dispatch contract:
 #   Use:    gh workflow run survey-repo.yaml -f node_id=<repository GraphQL node_id>
 #   Re-runs after a wiki page conflict add `-f attempt=<2|3>`; never set it by hand.
+#   Add `-f rewrite=true` to rebuild the repo page from the repository's current state; a re-run keeps it.
 #   Was:    gh workflow run survey-repo.yaml -f owner=<owner> -f repo=<repo>  # removed
 #
 # Look up node_id with:
@@ -22,6 +23,11 @@ on:
         required: false
         default: '1'
         type: string
+      rewrite:
+        description: Rewrite the repo page from the repository's current state instead of updating it
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -53,6 +59,16 @@ env:
 
     Target repository: $TARGET_REPOSITORY
     Repo wiki slug: $TARGET_SLUG
+
+  # Appended to INGEST_PROMPT only when the `rewrite` input is true.
+  REWRITE_PROMPT: |
+    Rewrite mode: for the repo page only, this replaces the rule against overwriting accumulated knowledge.
+    - Rewrite `knowledge/wiki/repos/$TARGET_SLUG.md` entirely from the repository's current state.
+    - Discard the existing body, including delta logs and superseded or collision notes.
+    - Keep frontmatter fields only where they are still accurate.
+    - `sources` must include `https://github.com/$TARGET_REPOSITORY`.
+    - Other pages stay additive.
+    - Append the log entry as usual.
 
 jobs:
   # ─── Trusted pre-agent resolver: privacy verification only ──────────────────
@@ -260,8 +276,13 @@ jobs:
           TARGET_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           TARGET_REPO: ${{ needs.survey-resolve.outputs.resolve-repo }}
           PROMPT_TEMPLATE: ${{ env.INGEST_PROMPT }}
+          REWRITE: ${{ inputs.rewrite }}
+          REWRITE_TEMPLATE: ${{ env.REWRITE_PROMPT }}
         run: |
           delimiter="EOF_$(openssl rand -hex 8)"
+          if [ "$REWRITE" = "true" ]; then
+            PROMPT_TEMPLATE="$PROMPT_TEMPLATE"$'\n'"$REWRITE_TEMPLATE"
+          fi
           target_repository="$TARGET_OWNER/$TARGET_REPO"
           target_slug="$(bun scripts/wiki-slug.ts "$TARGET_OWNER" "$TARGET_REPO")"
           export TARGET_REPOSITORY="$target_repository"
@@ -869,6 +890,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           NODE_ID: ${{ inputs.node_id }}
           ATTEMPT: ${{ inputs.attempt }}
+          REWRITE: ${{ inputs.rewrite }}
         run: |
           case "$ATTEMPT" in
             1) next=2 ;;
@@ -882,4 +904,11 @@ jobs:
             printf '::error::dispatch input shape invalid\n' >&2
             exit 1
           fi
-          gh workflow run survey-repo.yaml --ref main -f node_id="$NODE_ID" -f attempt="$next"
+          case "$REWRITE" in
+            true|false) ;;
+            *)
+              printf '::error::rewrite must be true or false\n' >&2
+              exit 1
+              ;;
+          esac
+          gh workflow run survey-repo.yaml --ref main -f node_id="$NODE_ID" -f attempt="$next" -f rewrite="$REWRITE"

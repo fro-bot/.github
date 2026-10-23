@@ -6,6 +6,8 @@ import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
+import {runStepWithStubs} from './workflow-step-test-helper.ts'
+
 interface WorkflowStep {
   name?: string
   id?: string
@@ -2314,6 +2316,7 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
   it('passes node_id and attempt to the dispatch through env, never through the script text', () => {
     expect(dispatchStep?.env?.NODE_ID).toBe(`${expressionStart} inputs.node_id }}`)
     expect(dispatchStep?.env?.ATTEMPT).toBe(`${expressionStart} inputs.attempt }}`)
+    expect(dispatchStep?.env?.REWRITE).toBe(`${expressionStart} inputs.rewrite }}`)
     expect(dispatchStep?.env?.GH_TOKEN).toBe(`${expressionStart} steps.app-token.outputs.token }}`)
     expect(dispatchStep?.run).not.toContain(expressionStart)
   })
@@ -2324,13 +2327,13 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
   ])('dispatches survey-repo.yaml on main for the same node with attempt %s -> %s', (attempt, next) => {
     const result = runStep(
       dispatchStep?.run ?? '',
-      {ATTEMPT: attempt, NODE_ID: 'R_kgDOExample-1=', GH_TOKEN: 't'},
+      {ATTEMPT: attempt, NODE_ID: 'R_kgDOExample-1=', GH_TOKEN: 't', REWRITE: 'false'},
       {gh: 'echo "$@" >> "$CALLS_FILE"'},
     )
 
     expect(result.status).toBe(0)
     expect(result.calls.trim()).toBe(
-      `workflow run survey-repo.yaml --ref main -f node_id=R_kgDOExample-1= -f attempt=${next}`,
+      `workflow run survey-repo.yaml --ref main -f node_id=R_kgDOExample-1= -f attempt=${next} -f rewrite=false`,
     )
   })
 
@@ -2345,7 +2348,7 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
   ])('dispatches nothing for attempt %j and node_id %j', (attempt, nodeId) => {
     const result = runStep(
       dispatchStep?.run ?? '',
-      {ATTEMPT: attempt, NODE_ID: nodeId, GH_TOKEN: 't'},
+      {ATTEMPT: attempt, NODE_ID: nodeId, GH_TOKEN: 't', REWRITE: 'false'},
       {gh: 'echo "$@" >> "$CALLS_FILE"'},
     )
 
@@ -2385,5 +2388,110 @@ describe('survey-repo.yaml agent prompt leaves knowledge/index.md to the trusted
       expect(text).not.toContain('the index')
       expect(text).not.toMatch(/index\.md/)
     }
+  })
+})
+
+describe('survey-repo.yaml rewrite input: a survey that replaces the repo page body', () => {
+  const expressionStart = '$' + '{{'
+  const workflowEnv = (workflowParsed as {env?: Record<string, string>}).env ?? {}
+  const dispatchInputs = (
+    (workflowParsed as {on?: {workflow_dispatch?: {inputs?: Record<string, Record<string, unknown>>}}}).on ?? {}
+  ).workflow_dispatch?.inputs
+  const promptStep = workflowParsed.jobs['survey-repo']?.steps.find(step => step.name === 'Resolve ingest prompt')
+  const redispatchStep = workflowParsed.jobs['survey-redispatch']?.steps.find(
+    step => step.name === 'Dispatch the next survey attempt',
+  )
+  const additiveRule = 'Do not overwrite accumulated knowledge; update pages additively and note contradictions.'
+
+  /** Runs the real prompt-building step with its env as the workflow sets it; returns the rendered prompt. */
+  function renderPrompt(rewrite: string): string {
+    const script = ['bun() { printf "%s" "owner-repo"; }', promptStep?.run ?? '', 'cat "$GITHUB_OUTPUT"'].join('\n')
+    const result = runStepWithStubs(script, {
+      env: {
+        TARGET_OWNER: 'marcusrbrown',
+        TARGET_REPO: 'marcusrbrown.github.io',
+        PROMPT_TEMPLATE: workflowEnv.INGEST_PROMPT ?? '',
+        REWRITE: rewrite,
+        REWRITE_TEMPLATE: workflowEnv.REWRITE_PROMPT ?? '',
+      },
+    })
+    expect(result.status).toBe(0)
+    const match = /prompt<<(EOF_\w+)\n([\s\S]*)\n\1\n/.exec(result.stdout)
+    return match?.[2] ?? ''
+  }
+
+  it('declares rewrite as an optional boolean input defaulting to false', () => {
+    expect(dispatchInputs?.rewrite).toMatchObject({required: false, default: false, type: 'boolean'})
+  })
+
+  it('reaches the prompt step through env, never through the script text', () => {
+    expect(promptStep?.env?.REWRITE).toBe(`${expressionStart} inputs.rewrite }}`)
+    expect(promptStep?.env?.REWRITE_TEMPLATE).toBe(`${expressionStart} env.REWRITE_PROMPT }}`)
+    expect(promptStep?.run).not.toContain(expressionStart)
+  })
+
+  it('leaves the prompt byte-identical to the base prompt when rewrite is false', () => {
+    const expected = (workflowEnv.INGEST_PROMPT ?? '')
+      .replaceAll('$TARGET_REPOSITORY', 'marcusrbrown/marcusrbrown.github.io')
+      .replaceAll('$TARGET_SLUG', 'owner-repo')
+      .trimEnd()
+    const prompt = renderPrompt('false')
+
+    expect(prompt).toBe(expected)
+    expect(prompt).toContain(additiveRule)
+    expect(prompt).not.toContain('Rewrite mode')
+    expect(prompt).not.toContain('Discard the existing body')
+  })
+
+  it('adds the repo-page rewrite clause after the base prompt when rewrite is true', () => {
+    const prompt = renderPrompt('true')
+
+    expect(prompt).toContain(additiveRule)
+    expect(prompt).toContain(
+      'Rewrite mode: for the repo page only, this replaces the rule against overwriting accumulated knowledge.',
+    )
+    expect(prompt).toContain(
+      "- Rewrite `knowledge/wiki/repos/owner-repo.md` entirely from the repository's current state.",
+    )
+    expect(prompt).toContain('- Discard the existing body, including delta logs and superseded or collision notes.')
+    expect(prompt).toContain('- Keep frontmatter fields only where they are still accurate.')
+    expect(prompt).toContain('- `sources` must include `https://github.com/marcusrbrown/marcusrbrown.github.io`.')
+    expect(prompt).toContain('- Other pages stay additive.')
+    expect(prompt).toContain('- Append the log entry as usual.')
+    expect(prompt).not.toContain('$TARGET_')
+    expect(prompt.indexOf('Rewrite mode')).toBeGreaterThan(prompt.indexOf('Repo wiki slug:'))
+  })
+
+  it('treats anything other than the literal true as not a rewrite', () => {
+    expect(renderPrompt('')).not.toContain('Rewrite mode')
+    expect(renderPrompt('TRUE')).not.toContain('Rewrite mode')
+  })
+
+  it('forwards rewrite to the re-dispatch through env and the gh call', () => {
+    expect(redispatchStep?.env?.REWRITE).toBe(`${expressionStart} inputs.rewrite }}`)
+    expect(redispatchStep?.run).not.toContain(expressionStart)
+    expect(redispatchStep?.run).toContain('-f rewrite="$REWRITE"')
+  })
+
+  it.each(['true', 'false'])('re-dispatches with rewrite=%s', rewrite => {
+    const result = runStepWithStubs(redispatchStep?.run ?? '', {
+      env: {ATTEMPT: '1', NODE_ID: 'R_kgDORgYjdA', GH_TOKEN: 't', REWRITE: rewrite},
+      stubTools: ['gh'],
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.trace).toStrictEqual([
+      `gh workflow run survey-repo.yaml --ref main -f node_id=R_kgDORgYjdA -f attempt=2 -f rewrite=${rewrite}`,
+    ])
+  })
+
+  it.each(['', 'TRUE', 'yes', '1', 'true\nfalse', ' true'])('re-dispatches nothing for rewrite %j', rewrite => {
+    const result = runStepWithStubs(redispatchStep?.run ?? '', {
+      env: {ATTEMPT: '1', NODE_ID: 'R_kgDORgYjdA', GH_TOKEN: 't', REWRITE: rewrite},
+      stubTools: ['gh'],
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(result.trace).toStrictEqual([])
   })
 })
