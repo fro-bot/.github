@@ -120,6 +120,11 @@ describe('quartz.config.yaml wiring', () => {
     expect(entry?.enabled).toBe(true)
     expect(entry?.source).toEqual({repo: './local-plugin', name: 'WikiEditLink'})
     expect(entry?.layout?.position).toBe('afterBody')
+    expect(entry?.layout?.priority).toBe(110)
+    expect(
+      config.plugins.find(plugin => typeof plugin.source === 'object' && plugin.source.name === 'GitHubSource')?.layout
+        ?.priority,
+    ).toBe(120)
   })
 
   it('declares WikiEditLink in the local plugin manifest', () => {
@@ -144,5 +149,13 @@ describe('quartz.config.yaml wiring', () => {
     const components = readFileSync(resolve(quartzSiteDir, 'local-plugin/dist/components/index.js'), 'utf8')
     const body = components.slice(components.indexOf('const WikiEditLink'))
     expect(body).toMatch(/!filePath/u)
+  })
+
+  it('groups both edit links into a quiet, keyboard-visible inline row', () => {
+    const components = readFileSync(resolve(quartzSiteDir, 'local-plugin/dist/components/index.js'), 'utf8')
+    expect(components).toMatch(/\.github-source-section\s*\{[^}]*display:\s*inline-block/u)
+    expect(components).toMatch(/\.wiki-edit-link\s*\{[^}]*display:\s*inline-block/u)
+    expect(components).toMatch(/\.github-source-section a:focus-visible/u)
+    expect(components).toMatch(/\.wiki-edit-link a:focus-visible/u)
   })
 })

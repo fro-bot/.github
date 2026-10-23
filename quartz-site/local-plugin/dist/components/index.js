@@ -77,7 +77,8 @@ const GitHubSource = () => {
 
   Component.css = `
   .github-source-section {
-    margin-top: 1.5rem;
+    display: inline-block;
+    margin: 1.5rem 0 0 1rem;
     font-size: 0.9rem;
   }
   .github-source-section a {
@@ -87,6 +88,10 @@ const GitHubSource = () => {
   .github-source-section a:hover {
     text-decoration: underline;
     color: var(--secondary);
+  }
+  .github-source-section a:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 0.15em;
   }
   `
 
@@ -114,7 +119,9 @@ const WikiEditLink = () => {
 
   Component.css = `
   .wiki-edit-link {
-    margin-top: 0.5rem;
+    display: inline-block;
+    margin-top: 1.5rem;
+    margin-right: 1rem;
     font-size: 0.9rem;
   }
   .wiki-edit-link a {
@@ -124,6 +131,10 @@ const WikiEditLink = () => {
   .wiki-edit-link a:hover {
     text-decoration: underline;
     color: var(--secondary);
+  }
+  .wiki-edit-link a:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 0.15em;
   }
   `
 

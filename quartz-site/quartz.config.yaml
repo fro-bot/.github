@@ -238,14 +238,14 @@ plugins:
     enabled: true
     layout:
       position: afterBody
-      priority: 110
+      priority: 120
   - source:
       repo: ./local-plugin
       name: WikiEditLink
     enabled: true
     layout:
       position: afterBody
-      priority: 120
+      priority: 110
 layout:
   groups:
     toolbar:
