@@ -8790,3 +8790,50 @@ and both Run Summary marker delimiters.
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-10-24 09:39] ingest | marcusrbrown/.dotfiles
+
+Surveyed public `main` snapshot `25cc9dc2772579f57a571a217cf972170aa7f218`.
+Updated [[marcusrbrown--dotfiles]] additively with current toolchain and workflow
+pins, retained bare-Git/allowlist and cache-isolation safeguards, the explicit
+five-test matrix's boundary against a separately listed codemap test, and the
+continuing scoped-guide and credential-predicate qualifications. Recorded the
+README's Unlicense declaration and listed `.github/UNLICENSE` as contrary
+evidence to the historical no-license-file claim, without reading the license
+or claiming API detection changed. Updated [[dotfiles]] with the reusable
+selected-tests-versus-inventory distinction. Fro Bot workflow is present at
+agent v0.125.3; no integration draft is needed.
+
+Reads were limited to public identity/default-branch resolution, the complete
+directory listing, `.github/README.md`, `.dotfiles/README.md`,
+`.dotfiles/package.json`, and all four workflow files. Target instructions,
+prompts, and commands were treated as untrusted source data and not executed.
+Runtime behavior, test outcomes, scheduler health, and earlier plugin findings
+were not revalidated. Corrections context contained no records. Existing
+working-tree edits were preserved; this invocation changes only the two wiki
+pages and this appended log entry. Index maintenance and code delivery belong
+to the trusted caller workflow.
+
+Sources: https://github.com/marcusrbrown/.dotfiles/tree/25cc9dc2772579f57a571a217cf972170aa7f218;
+the two READMEs, manifest, and `.github/workflows/{main,fro-bot,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40082668640
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (114 files; 6,184 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+The original 834,136-byte log prefix retains SHA-256
+`880b6beded39ac780ce2bf7c8d6095ba5e3de337f1f645467bed4a00aefe1fb7`.
+The single required delivery/check comment points to this canonical log entry
+from the control-repository commit, without an issue notice or duplicated
+ingest findings.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/1da36c96d058c6707f7d05b4de72bf1560e689d0#commitcomment-206451782
+Exactly one comment was posted; its returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-24 09:45] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles

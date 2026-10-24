@@ -2,8 +2,11 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-10-09
+updated: 2026-10-24
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 25cc9dc2772579f57a571a217cf972170aa7f218
+    accessed: 2026-10-24
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 61447f9a4817963afc88a9158b72bd93b86e6db7
     accessed: 2026-10-09
@@ -224,6 +227,28 @@ describing maintenance tooling; no run outcomes were inspected in this pass.
 Sources: [scoped-guide README](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.dotfiles/README.md),
 [CI workflow](https://github.com/marcusrbrown/.dotfiles/blob/61447f9a4817963afc88a9158b72bd93b86e6db7/.github/workflows/main.yaml),
 [skill directory](https://github.com/marcusrbrown/.dotfiles/tree/61447f9a4817963afc88a9158b72bd93b86e6db7/.agents/skills).
+
+### 2026-10-24 selected test gates versus the file inventory
+
+At `25cc9dc2772579f57a571a217cf972170aa7f218`, [[marcusrbrown--dotfiles]]
+retains its five named test-file invocations on Linux/macOS, now using Bun
+`1.4.3`. Its directory listing also contains
+`.config/opencode/skills/codemap/scripts/codemap.test.ts`, outside those five
+invocations. Neither the matrix's existence nor its stable aggregator means
+every tracked test file is included. No test source or run history was read,
+so this is not a claim about that test's outcome or other execution paths.
+
+The durable distinction: **compare a workflow's explicit selection with the
+test-file inventory before describing its coverage as repository-wide.** A
+cross-platform matrix broadens platforms, not automatically the set of tests.
+Likewise, the manifest's newer SDK `1.19.3` and frozen install establish the
+declared type-checking toolchain, not live-server coverage; the doctor step
+still explicitly permits integration skips when no OpenCode binary resolves.
+The October 9 boundaries above remain applicable.
+
+Sources: [directory snapshot](https://github.com/marcusrbrown/.dotfiles/tree/25cc9dc2772579f57a571a217cf972170aa7f218),
+[Main workflow](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/workflows/main.yaml),
+[toolchain manifest](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.dotfiles/package.json).
 
 ## Related Technologies
 
