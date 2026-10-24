@@ -1595,6 +1595,19 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
     ])
   })
 
+  it('maps a bare side-effect import and the vitest module references', () => {
+    const source = [
+      `import '@fro.bot/wiki-write-core/schemas'`,
+      `const a = await vi.importActual('@fro.bot/wiki-write-core/wiki-slug')`,
+      `vi.mock('@fro.bot/wiki-write-core')`,
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/wiki-write-core/src/schemas.ts',
+      'packages/wiki-write-core/src/wiki-slug.ts',
+      'packages/wiki-write-core/src/index.ts',
+    ])
+  })
+
   // The `@fro-bot/` scope names the private workspace packages. It is resolved through each
   // package's exports map by `froBotPackageSourceFiles`, never by this published-package scan.
   it('leaves the @fro-bot scope to the workspace-package resolver', () => {
@@ -1734,6 +1747,41 @@ describe('froBotPackageSourceFiles specifier scan', () => {
     ).toThrow('@fro-bot/core/guards')
   })
 
+  it('maps a bare side-effect import', () => {
+    expect(sourceFilesFor(`import '@fro-bot/core/guards'`)).toEqual(['packages/core/src/guards.ts'])
+  })
+
+  it('maps the vitest module references: importActual, importMock, mock and doMock', () => {
+    const source = [
+      `const a = await vi.importActual('@fro-bot/core/guards')`,
+      `const b = await vi.importActual<typeof import('@fro-bot/core/output')>('@fro-bot/core/output')`,
+      `vi.mock('@fro-bot/core/guards')`,
+      `vi.doMock('@fro-bot/core/output', () => ({}))`,
+      `const c = await vi.importMock('@fro-bot/core/guards')`,
+    ].join('\n')
+    expect(new Set(sourceFilesFor(source))).toEqual(
+      new Set(['packages/core/src/guards.ts', 'packages/core/src/output.ts']),
+    )
+  })
+
+  it('resolves a nested subpath key through the exports map', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/core', exports: {'./util/deep': './src/util/deep.ts'}})
+    expect(
+      sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`, {'packages/core/package.json': manifest}),
+    ).toEqual(['packages/core/src/util/deep.ts'])
+  })
+
+  it('does not resolve a nested subpath the exports map does not name', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`)).toEqual([])
+  })
+
+  it('does not stop a subpath at its first segment: the whole specifier is the exports key', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/core', exports: {'./util': './src/util.ts'}})
+    expect(
+      sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`, {'packages/core/package.json': manifest}),
+    ).toEqual([])
+  })
+
   it('ignores a manifest whose name is not the requested package', () => {
     const manifest = JSON.stringify({name: '@fro-bot/other', exports: {'./guards': './src/guards.ts'}})
     expect(sourceFilesFor(`import {x} from '@fro-bot/core/guards'`, {'packages/core/package.json': manifest})).toEqual(
@@ -1768,6 +1816,49 @@ describe('import closure through @fro-bot/ package names', () => {
       fakeSourceReader(files),
     )
     expect(result).toBeUndefined()
+  })
+
+  describe('a package imported by a file the entry reaches, not by the entry itself', () => {
+    const helperFiles = {
+      ...files,
+      'scripts/check-mutation-guards.ts': `import {helper} from './check-wiki-authority.ts'\nexport {helper}\n`,
+      'scripts/check-wiki-authority.ts': `import {isRecord} from '@fro-bot/core/guards'\nexport const helper = isRecord\n`,
+    }
+
+    it('puts the package file in the closure', () => {
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], fakeSourceReader(helperFiles))
+      expect(closure.files.has('scripts/check-wiki-authority.ts')).toBe(true)
+      expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
+    })
+
+    it('does not report not-applicable when only the package file changed', async () => {
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/guards.ts']}),
+        fakeSourceReader(helperFiles),
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('marks the dist directory a trigger when a reached file imports @fro.bot/wiki-write-core by name', () => {
+      const reader = fakeSourceReader({
+        ...helperFiles,
+        'scripts/check-wiki-authority.ts': `import {x} from '@fro.bot/wiki-write-core/schemas'\nexport const helper = x\n`,
+      })
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], reader)
+      expect(closure.hasWikiWriteCoreSubpathReference).toBe(true)
+      expect(closure.files.has('packages/wiki-write-core/src/schemas.ts')).toBe(true)
+    })
+
+    it('follows a package file reached from a reached file on to the package file it imports by relative path', () => {
+      const reader = fakeSourceReader({
+        ...helperFiles,
+        'packages/core/src/guards.ts': `export * from './output.ts'\n`,
+      })
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], reader)
+      expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
+    })
   })
 
   it('still reports a package file the closure does not reach as not-applicable', async () => {
@@ -1806,6 +1897,28 @@ describe('package manifests are fixed triggers', () => {
       expect(await evaluate([manifest])).toBeUndefined()
     },
   )
+
+  it('lists every existing package manifest in the trigger set, so the logged size counts them', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    for (const manifest of ['packages/core/package.json', 'packages/test-kit/package.json']) {
+      expect(triggerSet.files.has(manifest), manifest).toBe(true)
+    }
+    expect(triggerSet.closureSize).toBe(0)
+  })
+
+  it('carries the manifest pattern on the trigger set, so membership is decided from the trigger set alone', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(triggerSet.filePatterns.some(pattern => pattern.test('packages/brand-new/package.json'))).toBe(true)
+    expect(triggerSet.filePatterns.some(pattern => pattern.test('packages/core/README.md'))).toBe(false)
+    expect(changedFilesIntersectTriggerSet(['packages/brand-new/package.json'], triggerSet)).toBe(true)
+  })
+
+  it('reports the manifest-inclusive size in the not-applicable reason', async () => {
+    const result = await evaluate(['docs/x.md'])
+    const size = buildTriggerSet(fakeTriggerConfig()).files.size
+    expect(result?.mutants[0]?.reason).toContain(`${String(size)}-file trigger set`)
+    expect(size).toBeGreaterThanOrEqual(17)
+  })
 
   it('keeps the wiki-write-core manifest in the explicit fixed list', () => {
     expect(buildTriggerSet(fakeTriggerConfig()).files.has('packages/wiki-write-core/package.json')).toBe(true)
