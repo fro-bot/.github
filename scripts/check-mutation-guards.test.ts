@@ -16,6 +16,7 @@ import {
   flattenReport,
   froBotPackageSourceFiles,
   mutationReportPath,
+  reachedModulesTransitive,
   readMutateFileContents,
   readStrykerConfig,
   resolveReporterConfig,
@@ -1139,6 +1140,45 @@ describe('closure-based trigger set against the real config', () => {
       realConfig,
       PULL_REQUEST_EVENT,
       fakeGateDeps({fetchChangedFiles: () => [outsideClosureFile]}),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+  })
+
+  // (c2) Workspace packages. A PR that touches only @fro-bot/ code must run the check: a core module
+  // is a mutate entry, and a test-kit helper is reached only through a package-name import from a
+  // testFiles entry (scripts/merge-back-data.test.ts imports @fro-bot/test-kit/git-data-fake), which
+  // only the exports-map resolver follows.
+  it.each([
+    'packages/core/src/guards.ts',
+    'packages/core/src/json.ts',
+    'packages/core/src/output.ts',
+    'packages/core/package.json',
+    'packages/test-kit/package.json',
+    'packages/test-kit/src/git-data-fake.ts',
+  ])('does NOT report not-applicable for a changed set of only %s', async changedFile => {
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => [changedFile]}),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  it('reaches the test-kit helper only through a package name, so the exports-map resolver is what puts it in the closure', () => {
+    const helper = 'packages/test-kit/src/git-data-fake.ts'
+    expect(realTriggerSet.files.has(helper)).toBe(true)
+    expect(realConfig.mutate).not.toContain(helper)
+    expect(realConfig.testFiles).not.toContain(helper)
+    expect(reachedModulesTransitive('scripts/merge-back-data.test.ts').has(helper)).toBe(false)
+  })
+
+  it('reports not-applicable for a package README, which is neither a manifest nor imported', async () => {
+    const unreached = 'packages/core/README.md'
+    expect(realTriggerSet.files.has(unreached)).toBe(false)
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => [unreached]}),
     )
     expect(result?.verdict).toBe('not-applicable')
   })

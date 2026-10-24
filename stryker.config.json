@@ -1,6 +1,9 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
+    "packages/core/src/guards.ts",
+    "packages/core/src/json.ts",
+    "packages/core/src/output.ts",
     "packages/wiki-write-core/src/corrections-survival.ts",
     "packages/wiki-write-core/src/corrections.ts",
     "packages/wiki-write-core/src/private-leak.ts",
@@ -14,6 +17,9 @@
     "scripts/wiki-lockfile-gates.ts"
   ],
   "testFiles": [
+    "packages/core/src/guards.test.ts",
+    "packages/core/src/json.test.ts",
+    "packages/core/src/output.test.ts",
     "packages/wiki-write-core/src/corrections-survival.test.ts",
     "packages/wiki-write-core/src/corrections.test.ts",
     "packages/wiki-write-core/src/private-leak-adapter.test.ts",
