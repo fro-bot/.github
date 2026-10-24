@@ -2,6 +2,7 @@ import {existsSync, readdirSync, readFileSync} from 'node:fs'
 import {builtinModules} from 'node:module'
 import {join, posix, resolve} from 'node:path'
 
+import {isRecord} from '@fro-bot/core/guards'
 import {describe, expect, it} from 'vitest'
 import {parse as parseYaml} from 'yaml'
 import {stripComments} from './check-mutation-guards.ts'
@@ -39,10 +40,6 @@ interface LayoutInput {
   readonly rootDependencies: Readonly<Record<string, string>>
   /** The `workspaces` object of `bun.lock`, keyed by workspace path (`''`, `packages/core`, ...). */
   readonly lockWorkspaces: unknown
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function stringMap(value: unknown): Record<string, string> {
@@ -447,6 +444,24 @@ describe('findPackageLayoutViolations', () => {
       ])
     })
 
+    it('rejects a non-test import of a workspace package declared only in devDependencies', () => {
+      const devDependencies = {'@fro-bot/core': 'workspace:*'}
+      const coreLock = lockFor(
+        ['packages/core', CLEAN_LOCK_ENTRY],
+        ['packages/registry', {name: '@fro-bot/registry', version: '0.0.0', devDependencies}],
+      )
+      const input = layout(
+        [
+          fixturePackage('core'),
+          consumer({...registryExports, devDependencies}, `import {a} from '@fro-bot/core/guards'`),
+        ],
+        coreLock,
+      )
+      expect(findPackageLayoutViolations(input)).toEqual([
+        'packages/registry/src/run.ts: imports @fro-bot/core, which is not declared in dependencies',
+      ])
+    })
+
     it('requires a workspace dependency used only by tests to be declared, as a devDependency or a dependency', () => {
       const testFile = sourceFile('packages/registry/src/run.test.ts', `import {a} from '@fro-bot/core/guards'`)
       const base = fixturePackage('registry', {
@@ -527,6 +542,18 @@ describe('findPackageLayoutViolations', () => {
       const dependencies = {yaml: '^2.6.0'}
       const input = layout([withYaml({dependencies})], lockWith(dependencies), {yaml: '^2.6.0'})
       expect(findPackageLayoutViolations(input)).toEqual([])
+    })
+
+    it('rejects a non-test import of an external package declared only in devDependencies', () => {
+      const devDependencies = {yaml: '^2.6.0'}
+      const input = layout(
+        [withYaml({devDependencies})],
+        lockFor(['packages/core', {...CLEAN_LOCK_ENTRY, devDependencies}]),
+        {yaml: '^2.6.0'},
+      )
+      expect(findPackageLayoutViolations(input)).toEqual([
+        'packages/core/src/guards.ts: imports yaml, which is not declared in dependencies',
+      ])
     })
 
     it('rejects an undeclared external import', () => {

@@ -222,8 +222,7 @@ function reachedByPackageName(testFile: string): Set<string> {
 /**
  * A `mutate` entry whose tests reach it through an `@fro-bot/` name and through no relative path.
  * The Stryker sandbox links `node_modules` to the real tree, so a name import resolves to the
- * un-mutated file and every mutant in the entry survives (the Unit 1 probe: 0 of 7 killed by name,
- * 7 of 7 by relative path). `findMutateTestPairingViolations` already reports an entry no test
+ * un-mutated file and every mutant in the entry survives. `findMutateTestPairingViolations` already reports an entry no test
  * reaches by relative path; this one names the cause, so the fix is a relative import in the
  * paired test and not a second test file.
  */
