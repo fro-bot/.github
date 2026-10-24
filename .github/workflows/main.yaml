@@ -124,12 +124,29 @@ jobs:
         # Neither `tsc --noEmit` nor Vitest exercise the strip-only parser, so those runtime
         # errors used to surface only on scheduled workflow runs. Importing each production
         # script here catches them at merge time instead.
+        #
+        # The workspace packages (packages/*/src) export .ts source, so their modules load the
+        # same way. `find` replaces a `**` glob because default bash has no globstar and node
+        # would receive the literal pattern. @fro.bot/wiki-write-core is excluded: it ships
+        # compiled dist/, not source. `find` prints nothing when its pattern stops matching, so
+        # the loop fails when it finds no module while packages/core/src exists.
         run: |
           for f in scripts/*.ts; do
             case "$f" in *.test.ts) continue ;; esac
             node -e "import('./$f').then(() => {}).catch(err => { process.stderr.write('FAIL $f: ' + (err.code || err.message) + '\\n'); process.exit(1); })"
             echo "  ok   $f"
           done
+
+          package_files="$(find packages -path '*/src/*.ts' -not -name '*.test.ts' -not -path 'packages/wiki-write-core/*' | sort)"
+          if [ -z "$package_files" ] && [ -d packages/core/src ]; then
+            echo 'FAIL: find matched no package module although packages/core/src exists' >&2
+            exit 1
+          fi
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            node -e "import('./$f').then(() => {}).catch(err => { process.stderr.write('FAIL $f: ' + (err.code || err.message) + '\\n'); process.exit(1); })" < /dev/null
+            echo "  ok   $f"
+          done <<< "$package_files"
 
   check-workflows:
     name: Check Workflows

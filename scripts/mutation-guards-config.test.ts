@@ -2,8 +2,13 @@ import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import {tmpdir} from 'node:os'
 import {join, relative, resolve} from 'node:path'
 
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {isLiteralPath, reachedModulesTransitive, readStrykerConfig} from './check-mutation-guards.ts'
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
+import {
+  froBotPackageSourceFiles,
+  isLiteralPath,
+  reachedModulesTransitive,
+  readStrykerConfig,
+} from './check-mutation-guards.ts'
 import {normalizePath, treeOf} from './mutation-guards-reach.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -63,8 +68,8 @@ function walkNonTestTsFiles(dir: string, repoRelativePrefix: string): string[] {
 
 /**
  * Every package's `src/` directory under `packages/*`, paired with its repo-relative prefix.
- * Only one package (`wiki-write-core`) exists today; enumerated by directory rather than
- * hardcoded so Test 1 automatically covers a future second package without a code change.
+ * Enumerated by directory rather than hardcoded, so Test 1 covers a new package without a code
+ * change.
  */
 function listPackageSrcDirs(): {readonly dir: string; readonly prefix: string}[] {
   return readdirSync(packagesRoot, {withFileTypes: true})
@@ -189,6 +194,64 @@ export function findMutateTestPairingViolations(
   return violations
 }
 
+/**
+ * The source files `testFile` reaches through an `@fro-bot/<package>` name: every package source
+ * file a specifier in the test, or in anything it reaches by relative path, resolves to through the
+ * package's `exports` map, plus whatever those files reach in turn. A file reached this way is
+ * loaded from the real tree in the Stryker sandbox, so a mutant in it is never run against.
+ */
+function reachedByPackageName(testFile: string): Set<string> {
+  const named = new Set<string>()
+  const visited = new Set<string>()
+  const queue = [testFile, ...reachedModulesTransitive(testFile)]
+
+  while (queue.length > 0) {
+    const file = queue.shift()
+    if (file === undefined || visited.has(file)) continue
+    visited.add(file)
+    if (!existsSync(join(repositoryRoot, file))) continue
+    for (const target of froBotPackageSourceFiles(file)) {
+      named.add(target)
+      if (!existsSync(join(repositoryRoot, target))) continue
+      queue.push(target, ...reachedModulesTransitive(target))
+    }
+  }
+  return named
+}
+
+/**
+ * A `mutate` entry whose tests reach it through an `@fro-bot/` name and through no relative path.
+ * The Stryker sandbox links `node_modules` to the real tree, so a name import resolves to the
+ * un-mutated file and every mutant in the entry survives (the Unit 1 probe: 0 of 7 killed by name,
+ * 7 of 7 by relative path). `findMutateTestPairingViolations` already reports an entry no test
+ * reaches by relative path; this one names the cause, so the fix is a relative import in the
+ * paired test and not a second test file.
+ */
+export function findNameOnlyPairingViolations(
+  mutate: readonly string[],
+  testFiles: readonly string[],
+  reachByRelativePath: (testFile: string) => Iterable<string>,
+  reachByPackageName: (testFile: string) => Iterable<string>,
+): string[] {
+  const literalTests = testFiles.filter(isLiteralPath).map(normalizePath)
+  const reachedByRelative = new Set(
+    literalTests.flatMap(testFile => [...reachByRelativePath(testFile)].map(normalizePath)),
+  )
+
+  const violations: string[] = []
+  for (const entry of mutate.map(normalizePath)) {
+    if (reachedByRelative.has(entry)) continue
+    const namingTests = literalTests.filter(testFile =>
+      [...reachByPackageName(testFile)].map(normalizePath).includes(entry),
+    )
+    if (namingTests.length === 0) continue
+    violations.push(
+      `${entry}: reached by ${namingTests.join(', ')} only through an @fro-bot/ package name; import it by relative path so the Stryker sandbox runs its mutants`,
+    )
+  }
+  return violations
+}
+
 describe('mutation guard enumeration', () => {
   it('Test 1: every non-test package module (across all packages) is listed in mutate or not-mutated', () => {
     const {mutate} = readStrykerConfig(strykerConfigPath)
@@ -253,6 +316,13 @@ describe('mutation guard enumeration', () => {
     expect(testFiles.length).toBe(realTestFiles.length - directExercisers.size)
 
     expect(findMutateTestPairingViolations(mutate, testFiles, reachedModulesTransitive)).toEqual([])
+  })
+
+  it('Test 3c: no mutate entry is paired with a test that reaches it only through an @fro-bot/ package name', () => {
+    const {mutate, testFiles} = readStrykerConfig(strykerConfigPath)
+    const violations = findNameOnlyPairingViolations(mutate, testFiles, reachedModulesTransitive, reachedByPackageName)
+
+    expect(violations, violations.length === 0 ? undefined : `name-only pairing: ${violations.join('; ')}`).toEqual([])
   })
 
   it('Test 4: the redos-regression test file is not in testFiles', () => {
@@ -360,6 +430,61 @@ describe('findMutateTestPairingViolations (pure)', () => {
 
     const violations = findMutateTestPairingViolations(mutate, testFiles, reachedModulesTransitive)
     expect(violations).toEqual(['scripts/*.test.ts: glob testFiles entries are not supported for pairing'])
+  })
+})
+
+describe('findNameOnlyPairingViolations (pure)', () => {
+  const none = (): Iterable<string> => []
+
+  it('flags a mutate entry whose only exerciser reaches it through a package name', () => {
+    const violations = findNameOnlyPairingViolations(
+      ['packages/core/src/guards.ts'],
+      ['scripts/guards.test.ts'],
+      none,
+      () => ['packages/core/src/guards.ts'],
+    )
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('packages/core/src/guards.ts')
+    expect(violations[0]).toContain('scripts/guards.test.ts')
+    expect(violations[0]).toContain('@fro-bot/')
+  })
+
+  it('passes when a relative-path test also reaches the entry, whatever other tests import by name', () => {
+    const byRelative = (testFile: string): Iterable<string> =>
+      testFile === 'packages/core/src/guards.test.ts' ? ['packages/core/src/guards.ts'] : []
+    const byName = (testFile: string): Iterable<string> =>
+      testFile === 'scripts/other.test.ts' ? ['packages/core/src/guards.ts'] : []
+
+    expect(
+      findNameOnlyPairingViolations(
+        ['packages/core/src/guards.ts'],
+        ['packages/core/src/guards.test.ts', 'scripts/other.test.ts'],
+        byRelative,
+        byName,
+      ),
+    ).toEqual([])
+  })
+
+  it('leaves an entry nothing reaches to the unreached-entry check', () => {
+    expect(findNameOnlyPairingViolations(['scripts/orphan.ts'], ['scripts/unrelated.test.ts'], none, none)).toEqual([])
+  })
+
+  it('compares normalized paths, so a leading ./ in the config does not hide the pairing', () => {
+    const violations = findNameOnlyPairingViolations(
+      ['./packages/core/src/guards.ts'],
+      ['./scripts/guards.test.ts'],
+      none,
+      () => ['packages/core/src/guards.ts'],
+    )
+    expect(violations).toHaveLength(1)
+  })
+
+  it('skips a glob testFiles entry, which the pairing check already reports', () => {
+    const byName = vi.fn(() => ['packages/core/src/guards.ts'])
+    expect(findNameOnlyPairingViolations(['packages/core/src/guards.ts'], ['scripts/*.test.ts'], none, byName)).toEqual(
+      [],
+    )
+    expect(byName).not.toHaveBeenCalled()
   })
 })
 
