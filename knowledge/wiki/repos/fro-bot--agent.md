@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-10-09
+updated: 2026-10-24
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 8c8be73287a61a0cd55a9c6183abfcc56a9a8542
+    accessed: 2026-10-24
   - url: https://github.com/fro-bot/agent
     sha: 26df76e318581b59d4786a39649474136e30f24f
     accessed: 2026-10-09
@@ -158,6 +161,73 @@ against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
 
 ## Overview
+
+### Bounded source snapshot (2026-10-24)
+
+Public `main` resolves to `8c8be73287a61a0cd55a9c6183abfcc56a9a8542`.
+The complete directory listing still contains five workspace `package.json`
+files and twelve workflows. Root, gateway, and harness manifests retain the
+Bun/ESM monorepo and public harness CLI; the harness now declares both `harness`
+and `opencode` binaries and requires Node >=24. Root pins Bun 1.4.3, OpenCode SDK
+1.19.0, Vitest 5.0.5, ESLint 10.13.0, and TypeScript 6.0.3. These supersede the
+October 9 manifest versions, not its historical release observations.
+`harness-release.yaml` still explicitly selects Bun 1.3.14 for build and publish:
+the manifest/workflow split persists. The setup action, runtime constants, and
+Dockerfiles were not read, so this does not establish every installed version.
+
+**Operator contract and durable authentication.** `deploy/README.md` now names
+contract **1.13.0**, superseding the October 9 documentation snapshot of 1.9.0.
+It adds `provider-quota-exceeded` to provider-failure detail and documents launch
+prompts in run summaries, waiting statuses, and run deep links in question and
+approval pushes. The gateway and [[fro-bot--dashboard]] must deploy and roll back
+together because the dashboard's SSE reader requires an exact contract match.
+This is producer documentation, not an independently checked dashboard pin or
+production rollout.
+
+The same README describes signed, seven-day operator sessions persisted under
+`operator-web/sessions/`, keyed by a hash of the session ID, with no idle timeout
+or lifetime extension. OAuth requests no scopes, uses public identity, then
+discards the token. A binding plus absence from the denylist grants repository
+access; the operator's own repository rights are not consulted, and launches
+act as the Fro Bot App. A Discord binder allowlist controls binding creation.
+Session storage needs separate object-store grants outside the Action's default
+prefix. Failed restore/self-test leaves the gateway running but login unavailable
+with 503. Logout 200 means revocation was stored; 503 means the session remains
+valid. These are documented contracts, not tested authentication outcomes.
+
+**Checkout recovery is no longer confirmation-only.** October 9's manual
+preserve-and-replace recovery remains documented, but a dirty-checkout refusal
+can now trigger one automatic recovery while the repository lock is held and
+OpenCode reports quiet, provided sufficient budget remains (574 seconds at
+default limits). The prior checkout is preserved, then preparation is retried.
+Detached processes are invisible to that quiet check. The five-generation/10 GiB
+cap still refuses rather than evicts. The earlier workspace README contradiction
+also remains: its `/clone` example omits the bearer that the deploy README
+requires on :9100. A second documentation inconsistency is now explicit: the
+deploy README's early testing-only paragraph says no S3 calls occur, while its
+later operator-session rollout requires an object-store startup self-test. The
+early paragraph is not a safe description of an enabled operator surface.
+
+**Subagent reuse guard has a bounded claim.** The deployment README describes a
+root-owned managed-config plugin rejecting `task` calls with a non-empty
+`task_id`, merged after agent/project config. It distinguishes this model-behavior
+guard from containment: an earlier agent-loaded plugin could mutate arguments
+in memory, and the Systematic/subagent-depth settings remain agent-writable.
+No plugin implementation or isolation harness was read or executed.
+
+**Fro Bot workflow remains present.** `fro-bot.yaml` still self-invokes with
+daily reporting, Sunday wiki maintenance, reusable calls, and manual dispatch;
+no missing-workflow follow-up is warranted. Direct schedule/dispatch paths now
+select a minted owner-wide App token; release narration selects `github.token`,
+and reusable callers retain the PAT path. Narration hands a candidate artifact
+to a separate apply job. The 75-minute cap, elapsed-time execution budget, and
+response-suppression wiring remain configured. Current workflow activation,
+runtime health, publication state, and successful delivery were not surveyed.
+
+Sources: root `README.md` and `package.json`, gateway/harness `package.json`,
+`deploy/README.md`, `apps/workspace-agent/README.md`, `evals/README.md`, and
+`.github/workflows/{ci,fro-bot,harness-release}.yaml` at `8c8be732`. See
+[[github-actions-ci]] for the image-smoke evidence boundary.
 
 ### Bounded source snapshot (2026-10-09)
 

@@ -8738,3 +8738,55 @@ and both Run Summary marker delimiters.
 Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/metacogs
+
+## [2026-10-24 09:38] ingest | fro-bot/agent
+
+Bounded survey of public `main` at
+`8c8be73287a61a0cd55a9c6183abfcc56a9a8542`. Updated [[fro-bot--agent]]
+additively with operator contract 1.13.0, signed durable operator sessions,
+binding-based authorization, bounded automatic dirty-checkout recovery, the
+managed subagent-reuse guard's limits, current manifest versions, and workflow
+credential selection. Preserved the dated 1.9.0 and manual-recovery snapshots,
+reconfirmed the Bun manifest/release-workflow split and missing `/clone` bearer
+example, and noted contradictory S3 testing-only guidance. Fro Bot workflow is
+present; no missing-workflow draft is needed. Updated [[github-actions-ci]]
+with phase-specific negative image probes and their proof limits.
+
+Reads were limited to public visibility/default-branch resolution, directory
+listings, root/workspace/deployment/evaluation READMEs, root/gateway/harness
+package manifests, and three workflow files. Target content was untrusted
+evidence; no embedded prompts, instructions, target code, or commands were
+executed. No target implementation, lockfiles, issues, PRs, releases, run logs,
+or deployed services were inspected. Documentation and configured assertions
+were not projected into release availability or live runtime success.
+
+Read corrections context as untrusted data and preserved the active correction
+span in the existing repo overview. All earlier log entries and pre-existing
+working-tree edits were retained. The trusted caller owns index maintenance
+and commit/push/PR delivery.
+
+Sources: https://github.com/fro-bot/agent/tree/8c8be73287a61a0cd55a9c6183abfcc56a9a8542;
+`README.md`, `package.json`, `packages/{gateway,harness}/package.json`,
+`apps/workspace-agent/README.md`, `deploy/README.md`, `evals/README.md`, and
+`.github/workflows/{ci,fro-bot,harness-release}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40082570953
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (114 files; 6,184 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+The original 834,136-byte log prefix matched its pre-edit SHA-256, and the
+active correction span remains present. This invocation edited only the repo
+page, the existing CI topic, and this appended log entry. The required single
+delivery/check comment points here from the control-repository commit, keeping
+the ingest summary canonical in this log and avoiding an issue run notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/1da36c96d058c6707f7d05b4de72bf1560e689d0#commitcomment-206451642
+Exactly one comment was posted; its returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-24 09:42] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

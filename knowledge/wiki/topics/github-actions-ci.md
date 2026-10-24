@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-24
 sources:
+  - url: https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/.github/workflows/ci.yaml
+    sha: 8c8be73287a61a0cd55a9c6183abfcc56a9a8542
+    accessed: 2026-10-24
   - url: https://github.com/marcusrbrown/metacogs/tree/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5/.github/workflows
     sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
     accessed: 2026-10-24
@@ -348,6 +351,28 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Negative image probes must reject the intended failure phase (2026-10-24)
+
+At `8c8be732`, [[fro-bot--agent]]'s gateway image smoke does more than accept
+a non-zero exit. Its post-config probe seeds a readiness sentinel and requires
+exit 1, a structured startup-failure message, no module-resolution crash, and
+removal of the sentinel. A valid fake-core configuration must satisfy that
+predicate; invalid-log-level and missing-token controls must fail specifically
+at the sentinel check. Docker errors and timeouts are infrastructure failures,
+not successful negative controls. This distinguishes reaching initialization
+from failing earlier for an unrelated reason.
+
+The workspace job similarly runs smoke containers with explicit production
+security flags and runs workspace-agent tests against the image's Alpine git.
+Root `build` does not include the workspace-agent package, so CI separately
+builds it from the full monorepo and checks the expected entry-point symbol.
+The auth-file probe explicitly establishes validation, ownership/mode, and
+non-disclosure, not provider authentication or a completed model turn.
+These are workflow assertions, not evidence that a current run passed.
+
+Sources: [CI workflow](https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/.github/workflows/ci.yaml)
+and [root manifest](https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/package.json).
 
 ## An OR fallback can erase an event-specific author gate (2026-10-23)
 
