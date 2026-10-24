@@ -216,7 +216,7 @@ checked only through the test below.
 
 **The enforcement test is `scripts/data-branch-probe-workflows.test.ts`.** It finds every workflow
 step whose `run` matches `git ls-remote.*\sorigin\s+data\b` (lines 34-59), then runs each overlay
-step under bash with stub `git` and `node` binaries from `scripts/workflow-step-test-helper.ts`:
+step under bash with stub `git` and `node` binaries from `packages/test-kit/src/workflow-step.ts`:
 
 - exit 0 overlays;
 - exit 2 skips without fetching;

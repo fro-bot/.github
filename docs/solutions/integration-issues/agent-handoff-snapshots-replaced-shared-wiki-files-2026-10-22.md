@@ -122,7 +122,7 @@ Shared files from a handoff are never applied. The writer builds `index.md` and 
 - **Never apply a shared file from a handoff wholesale.** A file that is derived from the whole store (an index) or appended to by several writers (a log) can travel in the artifact as input. The trusted side derives the delta from it, such as the appended log entries, and rebuilds the file from its own sync.
 - **A staleness base is the commit the content was derived from.** For agent handoffs that is the agent job's sync commit, carried as a job output the agent cannot rewrite, never the writer's own sync.
 - **Check staleness before content validation.** If validation runs first, it turns a recoverable conflict into a terminal error class and skips the retry path.
-- **Regression coverage:** `scripts/wiki-handoff-sequence.test.ts` replays both incident sequences on `scripts/git-data-fake.ts`. On the pre-fix code, 12 of its 13 cases failed.
+- **Regression coverage:** `scripts/wiki-handoff-sequence.test.ts` replays both incident sequences on `packages/test-kit/src/git-data-fake.ts`. On the pre-fix code, 12 of its 13 cases failed.
 
 ## Related Issues
 

@@ -17,7 +17,7 @@ All four are test support. None is in the mutated set; `mutation-guards.json` li
 
 ## Mutated code and name imports
 
-A test that kills mutants must import the mutated module by relative path. The Stryker sandbox links `node_modules` to the real tree, so a name import loads the un-mutated file and every mutant survives. A Unit 1 probe measured 0 of 7 mutants killed by a package-name import and 7 of 7 by a relative one. `scripts/mutation-guards-config.test.ts` rejects a `mutate` entry whose tests reach it only through an `@fro-bot/` name.
+A test that kills mutants must import the mutated module by relative path. The Stryker sandbox links `node_modules` to the real tree, so a name import loads the un-mutated file and every mutant survives. A package-name import kills none of a module's mutants; a relative import kills all of them. `scripts/mutation-guards-config.test.ts` rejects a `mutate` entry whose tests reach it only through an `@fro-bot/` name.
 
 The helpers here are not mutated, so importing them by name is safe: a mutated module's tests may use them.
 
