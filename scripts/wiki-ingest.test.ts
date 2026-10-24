@@ -1,4 +1,4 @@
-import type {GitDataFake} from './git-data-fake.ts'
+import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
@@ -6,8 +6,8 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 
+import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {createGitDataFake} from './git-data-fake.ts'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiIngestModulePromise: Promise<{

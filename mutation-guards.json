@@ -103,6 +103,22 @@
     {
       "path": "scripts/check-renovate-config.ts",
       "reason": "CI lint orchestrating renovate-config-validator (--strict --no-global) over default.json, .github/renovate.json5 and the version-pinned github> presets they extend, then the allowedVersions range check. It protects the published default.json preset, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Fetch retry/404 fall-through, floating/unsupported preset classification, fail-closed fetch errors, and the real validator's exit-code contract are asserted directly in scripts/check-renovate-config.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
+    },
+    {
+      "path": "packages/test-kit/src/git-data-fake.ts",
+      "reason": "Test support: an in-memory Git Data API that the registry writers' tests (merge-back-data, rename-tracked-repo, wiki-repair, wiki-ingest) run against. No production module imports it, and it guards nothing itself; a defect in it can only make a writer's test wrong, which those tests' own decision tables would show. Mutating it would score the fake, not a gate."
+    },
+    {
+      "path": "packages/test-kit/src/workflow-step.ts",
+      "reason": "Test support: runs a workflow step's run: block under bash with stub binaries so the workflow contract tests can assert what the step would have done. No production module imports it, and it guards nothing itself."
+    },
+    {
+      "path": "packages/test-kit/src/workflow-expression.ts",
+      "reason": "Test support: a GitHub Actions if: expression evaluator for the workflow contract tests. No production module imports it, and it guards nothing itself. It has its own behavior test in packages/test-kit/src/workflow-expression.test.ts."
+    },
+    {
+      "path": "packages/test-kit/src/repo-page-move-fixtures.ts",
+      "reason": "Test support: constants and builders for the operator rename tests, no logic and no production importer. The decisions they feed live in packages/wiki-write-core/src/repo-page-move.ts and scripts/rename-tracked-repo.ts, each classified separately."
     }
   ]
 }

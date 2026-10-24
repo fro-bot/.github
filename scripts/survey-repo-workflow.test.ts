@@ -3,10 +3,9 @@ import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} 
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
+import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
-
-import {runStepWithStubs} from './workflow-step-test-helper.ts'
 
 interface WorkflowStep {
   name?: string

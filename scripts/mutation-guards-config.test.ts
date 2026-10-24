@@ -488,6 +488,20 @@ describe('findNameOnlyPairingViolations (pure)', () => {
   })
 })
 
+describe('reachedByPackageName (real tree)', () => {
+  it('finds the test-kit sources a real test imports by name, so a scan that matches nothing cannot pass', () => {
+    const reached = reachedByPackageName('scripts/rename-tracked-repo.test.ts')
+    expect(reached.has('packages/test-kit/src/git-data-fake.ts')).toBe(true)
+    expect(reached.has('packages/test-kit/src/repo-page-move-fixtures.ts')).toBe(true)
+  })
+
+  it('does not count a relative import as a name import', () => {
+    expect(reachedByPackageName('scripts/check-mutation-guards.test.ts').has('scripts/check-mutation-guards.ts')).toBe(
+      false,
+    )
+  })
+})
+
 describe('reachedModulesTransitive comment handling (item 3)', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-comment-test-'))
   const testFileAbsolutePath = join(tmpDir, 'commented-import.test.ts')

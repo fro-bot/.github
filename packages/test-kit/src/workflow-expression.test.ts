@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {evaluateExpression} from './workflow-expression-test-helper.ts'
+import {evaluateExpression} from './workflow-expression.ts'
 
 describe('evaluateExpression', () => {
   it('treats the number 0 as falsy, like Actions', () => {

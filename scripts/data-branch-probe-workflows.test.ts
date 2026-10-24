@@ -15,10 +15,9 @@
 import {readdirSync, readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import process from 'node:process'
+import {overlayWasAttempted, runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
-
-import {overlayWasAttempted, runStepWithStubs} from './workflow-step-test-helper.ts'
 
 const WORKFLOWS_DIR = resolve(import.meta.dirname, '../.github/workflows')
 

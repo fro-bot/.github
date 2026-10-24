@@ -1,10 +1,10 @@
-import type {FakeClient, FileSpec, GitDataFake} from './git-data-fake.ts'
+import type {FakeClient, FileSpec, GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {MergeBackAlert, MergeBackOutcome} from './merge-back-data.ts'
 import process from 'node:process'
+import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {isDataOwnedPath} from './check-wiki-authority.ts'
 import {DataBranchBootstrapError} from './data-branch-bootstrap.ts'
-import {createGitDataFake} from './git-data-fake.ts'
 import {mergeBackData, MergeBackError, runCli} from './merge-back-data.ts'
 
 // The Octokit the CLI builds is replaced by whatever `octokitMock.make` returns, so `runCli` runs

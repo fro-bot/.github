@@ -28,6 +28,10 @@
         "vitest": "4.1.11",
       },
     },
+    "packages/test-kit": {
+      "name": "@fro-bot/test-kit",
+      "version": "0.0.0",
+    },
     "packages/wiki-write-core": {
       "name": "@fro.bot/wiki-write-core",
       "version": "0.0.0-semantic-release",
@@ -182,6 +186,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@3.0.5", "", {}, "sha512-vqTaUEgxzm+YDSdElad6PiRoX4t8VGDjCtt05zn4nU810UIx/uNEV7/lZJ6KwFThKZOzOxzXy48da+No7HZaMw=="],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.3", "", { "dependencies": { "@eslint/core": "1.2.1", "levn": "0.4.1" } }, "sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q=="],
+
+    "@fro-bot/test-kit": ["@fro-bot/test-kit@workspace:packages/test-kit"],
 
     "@fro.bot/wiki-write-core": ["@fro.bot/wiki-write-core@workspace:packages/wiki-write-core"],
 
