@@ -18,6 +18,8 @@ Remove when upstream consumers require source-map-js >=1.2.2.
 
 GHSA-w293-vg96-wgc3, GHSA-vp8m-p9jh-q5pm, and GHSA-rfgv-xxqx-mfg5 affect <8.10.2.
 
+The floor is >=8.12.2 for [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c) (high): excessive content encodings can trigger an unhandled error and denial of service. The affected 8.x range is >=8.0.0 <8.12.2; 8.12.2 is the first patched 8.x release.
+
 Remove this floor only when all parent ranges exclude the affected versions.
 
 ## `zod@4`
