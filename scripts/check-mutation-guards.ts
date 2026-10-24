@@ -1003,15 +1003,19 @@ function defaultReadSource(absolutePath: string): string {
 const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
 const WIKI_WRITE_CORE_DIST_DIR = 'packages/wiki-write-core/dist'
 // How a module specifier is introduced: a `from '...'` clause (static import or re-export), a
-// dynamic `import('...')`, a bare side-effect `import '...'`, or a vitest module reference
+// bare side-effect `import '...'`, a dynamic `import('...')`, or a vitest module reference
 // (`vi.mock`, `vi.doMock`, `vi.importActual`, `vi.importMock`, with an optional type argument).
-// Every specifier scan below shares it, so no scan sees fewer shapes than another. These patterns
-// are not in a mutated module, so they may stay module-level constants.
-const SPECIFIER_INTRODUCER = String.raw`(?:from\s+['"]|import\(\s*['"]|import\s+['"]|vi\.(?:mock|doMock|importActual|importMock)\s*(?:<[^>\n]*>)?\(\s*['"])`
+// `from` and bare `import` take string literals only. A dynamic `import(...)` and the vitest
+// references also accept a no-substitution template literal (backtick, `\x60` below), which loads
+// the same module; a template with a `${` substitution cannot be resolved statically, and the
+// specifier character classes exclude `$` and `{`, so it never matches. Every specifier scan below
+// shares this, so no scan sees fewer shapes than another. These patterns are not in a mutated
+// module, so they may stay module-level constants.
+const SPECIFIER_INTRODUCER = String.raw`(?:from\s+['"]|import\s+['"]|(?:import|vi\.(?:mock|doMock|importActual|importMock)\s*(?:<[^>\n]*>)?)\(\s*['"\x60])`
 // `from '@fro.bot/wiki-write-core'` (bare, group 1 undefined) or
 // `from '@fro.bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug').
 const WIKI_WRITE_CORE_SPECIFIER_PATTERN = new RegExp(
-  String.raw`${SPECIFIER_INTRODUCER}@fro\.bot\/wiki-write-core(?:\/([\w-]+))?['"]`,
+  String.raw`${SPECIFIER_INTRODUCER}@fro\.bot\/wiki-write-core(?:\/([\w-]+))?['"\x60]`,
   'gu',
 )
 // `from '@fro-bot/core'` (group 1 = 'core', group 2 undefined), `from '@fro-bot/core/guards'`
@@ -1020,7 +1024,7 @@ const WIKI_WRITE_CORE_SPECIFIER_PATTERN = new RegExp(
 // package's `exports` map decides whether that key exists. The scope has a dash, the published
 // package's has a dot, so neither pattern matches the other.
 const FRO_BOT_PACKAGE_SPECIFIER_PATTERN = new RegExp(
-  String.raw`${SPECIFIER_INTRODUCER}@fro-bot\/([\w-]+)(?:\/([\w./-]+))?['"]`,
+  String.raw`${SPECIFIER_INTRODUCER}@fro-bot\/([\w-]+)(?:\/([\w./-]+))?['"\x60]`,
   'gu',
 )
 

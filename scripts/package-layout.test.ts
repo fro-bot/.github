@@ -73,11 +73,14 @@ function isNodeBuiltin(specifier: string): boolean {
 
 /**
  * The module specifiers a source file names: static `from`, re-exports, side-effect imports, dynamic
- * `import()` and the `vi.mock` family. This is a textual scan of comment-stripped content, so an
- * import-shaped string literal counts too, which can only add a declaration check, never skip one.
+ * `import()` and the `vi.mock` family. `from` and bare `import` take string literals only; a dynamic
+ * `import()` and the `vi.mock` family also take a no-substitution template literal (a backtick, `\x60`
+ * below). A template with a `${` substitution cannot be resolved statically and is skipped. This is a
+ * textual scan of comment-stripped content, so an import-shaped string literal counts too, which can
+ * only add a declaration check, never skip one.
  */
 const IMPORT_SPECIFIER_PATTERN =
-  /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\bvi\.(?:mock|doMock|importActual|importMock)\(\s*)['"]([^'"\n]+)['"]/gu
+  /(?:(?:\bfrom\s*|\bimport\s+)['"]|(?:\bimport\s*|\bvi\.(?:mock|doMock|importActual|importMock))\(\s*['"\x60])((?:(?!\$\{)[^'"\x60\n])+)['"\x60]/gu
 
 function importSpecifiers(source: string): string[] {
   return [...stripComments(source).matchAll(IMPORT_SPECIFIER_PATTERN)].map(match => match[1] ?? '')
@@ -487,6 +490,34 @@ describe('findPackageLayoutViolations', () => {
     })
   })
 
+  describe('template-literal imports', () => {
+    it('rejects an undeclared external package imported with a backtick dynamic import', () => {
+      const files = [sourceFile('packages/core/src/guards.ts', 'const m = await import(`yaml`)')]
+      const input = layout([fixturePackage('core', {files})], lockFor(['packages/core', CLEAN_LOCK_ENTRY]))
+      expect(findPackageLayoutViolations(input)).toEqual([
+        'packages/core/src/guards.ts: imports yaml, which is not declared in dependencies',
+      ])
+    })
+
+    it('rejects a backtick import of test-kit from a non-test module', () => {
+      const devDependencies = {'@fro-bot/test-kit': 'workspace:*'}
+      const files = [
+        sourceFile('packages/core/src/guards.ts', 'const m = await import(`@fro-bot/test-kit/git-data-fake`)'),
+      ]
+      const lock = lockFor(
+        ['packages/test-kit', {name: '@fro-bot/test-kit', version: '0.0.0'}],
+        ['packages/core', {...CLEAN_LOCK_ENTRY, devDependencies}],
+      )
+      const input = layout(
+        [fixturePackage('test-kit'), fixturePackage('core', {manifest: {devDependencies}, files})],
+        lock,
+      )
+      expect(findPackageLayoutViolations(input)).toEqual([
+        'packages/core/src/guards.ts: a non-test module must not import @fro-bot/test-kit',
+      ])
+    })
+  })
+
   describe('test-kit', () => {
     const kitLock = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
       lockFor(
@@ -737,6 +768,29 @@ describe('importSpecifiers', () => {
       'typeof-import',
       'mocked',
     ])
+  })
+
+  it('finds a no-substitution template-literal specifier in a dynamic import and the vi.mock family', () => {
+    const source = [
+      'const m = await import(`dynamic-backtick`)',
+      'await vi.importActual(`actual-backtick`)',
+      'vi.mock(`mock-backtick`)',
+      'vi.doMock(`domock-backtick`, () => ({}))',
+      'await vi.importMock(`importmock-backtick`)',
+    ].join('\n')
+    expect(importSpecifiers(source)).toEqual([
+      'dynamic-backtick',
+      'actual-backtick',
+      'mock-backtick',
+      'domock-backtick',
+      'importmock-backtick',
+    ])
+  })
+
+  it('skips a template literal with a substitution, and keeps from and bare import string-literal only', () => {
+    expect(importSpecifiers(`await import(\`prefix-\${name}\`)`)).toEqual([])
+    expect(importSpecifiers('import {a} from `not-valid-js`')).toEqual([])
+    expect(importSpecifiers('import `not-valid-js`')).toEqual([])
   })
 
   it('reduces a scoped or deep specifier to its package name', () => {

@@ -1595,6 +1595,23 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
     ])
   })
 
+  it('maps a no-substitution template-literal specifier in a dynamic import and the vitest references', () => {
+    const source = [
+      'const a = await import(`@fro.bot/wiki-write-core/schemas`)',
+      'await vi.importActual(`@fro.bot/wiki-write-core/wiki-slug`)',
+      'vi.mock(`@fro.bot/wiki-write-core`)',
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/wiki-write-core/src/schemas.ts',
+      'packages/wiki-write-core/src/wiki-slug.ts',
+      'packages/wiki-write-core/src/index.ts',
+    ])
+  })
+
+  it('leaves a template literal with a substitution alone', () => {
+    expect(sourceFilesFor(`await import(\`@fro.bot/wiki-write-core/\${name}\`)`)).toEqual([])
+  })
+
   it('maps a bare side-effect import and the vitest module references', () => {
     const source = [
       `import '@fro.bot/wiki-write-core/schemas'`,
@@ -1751,6 +1768,34 @@ describe('froBotPackageSourceFiles specifier scan', () => {
     expect(sourceFilesFor(`import '@fro-bot/core/guards'`)).toEqual(['packages/core/src/guards.ts'])
   })
 
+  it('maps a no-substitution template-literal specifier in a dynamic import', () => {
+    expect(sourceFilesFor('const m = await import(`@fro-bot/core/output`)')).toEqual(['packages/core/src/output.ts'])
+    expect(sourceFilesFor('const m = await import( `@fro-bot/core/output` )')).toEqual(['packages/core/src/output.ts'])
+  })
+
+  it('maps a template-literal specifier in every vitest module reference', () => {
+    const source = [
+      'await vi.importActual(`@fro-bot/core/guards`)',
+      'await vi.importActual<typeof import(`@fro-bot/core/output`)>(`@fro-bot/core/output`)',
+      'vi.mock(`@fro-bot/core/guards`)',
+      'vi.doMock(`@fro-bot/core/output`, () => ({}))',
+      'await vi.importMock(`@fro-bot/core/guards`)',
+    ].join('\n')
+    expect(new Set(sourceFilesFor(source))).toEqual(
+      new Set(['packages/core/src/guards.ts', 'packages/core/src/output.ts']),
+    )
+  })
+
+  it('leaves a template literal with a substitution alone: it cannot be resolved statically', () => {
+    expect(sourceFilesFor(`await import(\`@fro-bot/core/\${name}\`)`)).toEqual([])
+    expect(sourceFilesFor(`await import(\`@fro-bot/core/output\${suffix}\`)`)).toEqual([])
+  })
+
+  it('keeps `from` and bare `import` string-literal only: a backtick is not valid there', () => {
+    expect(sourceFilesFor('import {x} from `@fro-bot/core/guards`')).toEqual([])
+    expect(sourceFilesFor('import `@fro-bot/core/guards`')).toEqual([])
+  })
+
   it('maps the vitest module references: importActual, importMock, mock and doMock', () => {
     const source = [
       `const a = await vi.importActual('@fro-bot/core/guards')`,
@@ -1837,6 +1882,34 @@ describe('import closure through @fro-bot/ package names', () => {
         PULL_REQUEST_EVENT,
         fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/guards.ts']}),
         fakeSourceReader(helperFiles),
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('reports a change to the package file applicable when a mutate entry imports it by a template literal', async () => {
+      const reader = fakeSourceReader({
+        ...files,
+        'scripts/check-mutation-guards.ts': 'export const load = () => import(`@fro-bot/core/output`)\n',
+      })
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/output.ts']}),
+        reader,
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('does the same for a template-literal vi.importActual', async () => {
+      const reader = fakeSourceReader({
+        ...files,
+        'scripts/check-mutation-guards.ts': 'export const load = () => vi.importActual(`@fro-bot/core/output`)\n',
+      })
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/output.ts']}),
+        reader,
       )
       expect(result).toBeUndefined()
     })
