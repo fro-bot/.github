@@ -59,7 +59,8 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
   - **Repos registry:** metadata, reconcile, invitations, survey, `merge-back-data` and `rename-tracked-repo`.
   - **Cross-repo dispatch.**
   - **Status-truth.**
-  - **CI checks:** mutation guards, Renovate checks, wiki authority, privacy and private-leak checks.
+  - **CI checks:** mutation guards and Renovate checks.
+  - **Privacy:** the privacy and private-leak checks and the shared redaction helpers. The wiki-authority predicates go to core.
   - **Wiki operations,** built on `@fro.bot/wiki-write-core`.
   - **Knowledge:** learnings, patterns and drafted-solutions.
   - **Reports:** daily digest, improvement metrics and gateway announce.
@@ -113,7 +114,7 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
 ## Acceptance Examples
 
 - AE1. **Covers R8.** Given a workflow step runs `bun scripts/reconcile-repos.ts` both before and after the registry package lands, the stdout, stderr prefixes, `$GITHUB_OUTPUT` keys and exit code are identical for the same inputs.
-- AE2. **Covers R9, R10.** Given `scripts/check-wiki-authority.ts` moves into the CI-checks package, all three of these hold:
+- AE2. **Covers R9, R10.** Given `scripts/check-wiki-authority.ts` moves into the core package, all three of these hold:
   - Stryker still mutates its logic at 100%.
   - Test Scripts Load still loads it under Node.
   - Its `verify:` marker still resolves, and `bun run lint` passes.
@@ -177,7 +178,6 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
 ### Deferred to Planning
 
 - [Affects R4][Technical] The order of the domain packages after core, and the exact module boundaries inside each package.
-- [Affects R4, R12][Technical] Whether the privacy and private-leak checks stay in the CI-checks package or need their own package. The private-leak scan installs and runs differently from the other checks.
 - [Affects R1, R10][Needs research] Whether `@fro-bot/` packages export `.ts` source or built output. A probe should confirm that Node 24 strip-only can load a workspace-linked source file, because Test Scripts Load and the private-leak scan both depend on it.
 - [Affects R10][Technical] How each `verify:` marker survives a move. The resolver in `scripts/check-solutions-examples.ts` matches only top-level declarations in the named file. Options:
   - rewrite the marker path to the package file;

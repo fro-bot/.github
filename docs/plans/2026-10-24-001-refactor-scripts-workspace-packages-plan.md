@@ -16,24 +16,24 @@ Move the control-plane code in `scripts/` into unpublished `@fro-bot/` workspace
 
 `scripts/` holds 81 source modules (40.7k lines) that re-implement the same plumbing many times over:
 
-- 22 `isRecord` copies
+- `isRecord` defined in 20 script files, plus 9 in wiki-write-core
 - 25 JSON stdout sites
 - 14 `$GITHUB_OUTPUT` writers
-- 9 retry loops
-- about 15 Octokit constructions
+- 8 retry loops in scripts, plus one in wiki-write-core
+- `new Octokit(` in 11 files
 
 The copies have drifted apart. Four modules are over 2k lines, and nothing documents the shared layer (see origin: `docs/brainstorms/2026-10-24-scripts-workspace-packages-requirements.md`). Phase 2 needs a stable library and CLI layer to build on.
 
 ## Requirements Trace
 
 - R1. Shared code lives in `@fro-bot/` packages marked `private: true`. `@fro.bot/wiki-write-core` stays the only published package.
-- R2. Core provides one copy of each duplicated primitive, and every duplicating module uses it.
-- R3. The test kit provides the shared fakes and helpers.
+- R2. Core provides one copy of each duplicated primitive, and every duplicating module uses it. The foundation PRs migrate identical copies. Each domain PR moves its own remaining copies onto core, using the option that keeps their behavior. The metadata YAML write lives in registry (see Key Technical Decisions).
+- R3. The test kit provides the shared fakes and helpers. `octokit-fake` is created in the first domain PR that has two Octokit builders of the same shape, and later domain PRs move their builders onto it.
 - R4. Every module has a home: registry, dispatch, status-truth, ci-checks, wiki-ops, knowledge, reports, plus `privacy`, added in planning. Release and build scripts stay in `scripts/`.
 - R5. Modules of 2k lines or more are split as they move.
 - R6. Each package has a README.
-- R7. CLIs run on goke with schema-typed options, and every command declares whether it is read-only or writes.
-- R8. CLI contracts don't change. That covers flags, env, stdout and JSON, the stderr prefixes that workflows parse, `$GITHUB_OUTPUT` keys and exit codes.
+- R7. CLIs run on goke with schema-typed options, and every command declares whether it is read-only or writes. `wiki-context-expand` and `correction-lifecycle` are the hand-parsed exceptions, and they declare read-only or write in their package README.
+- R8. CLI contracts don't change. That covers flags, env, stdout and JSON, the stderr prefixes that workflows parse, `$GITHUB_OUTPUT` keys, and exit codes including parse errors and `--help`. Env-only CLIs may change behavior for argv that no caller sends.
 - R9. Each PR keeps behavior intact: a recorded test baseline, mutated code stays mutated, and `check:mutation-guards` reaches 100%.
 - R10. Every gate that covers a script today still covers its code after the move.
 - R11. Bun runs the CLIs, Node exceptions keep working, and no new success-path `process.exit` is added.
@@ -43,7 +43,10 @@ The copies have drifted apart. Four modules are over 2k lines, and nothing docum
 
 ## Scope Boundaries
 
-- No change to any workflow `run:` block, workflow input or agent prompt, with one exception. The `fro-bot.yaml` sentence that says Test Scripts Load covers `scripts/*.ts` is updated when that gate starts covering packages, so it doesn't go stale.
+- No change to how any workflow invokes a script, to any workflow input, or to any prompt behavior. The only workflow edits are gate wiring, each landing in the PR that needs it:
+  - the Test Scripts Load loop in `.github/workflows/main.yaml` (Unit 2);
+  - the `fro-bot.yaml` sentence that says Test Scripts Load covers `scripts/*.ts` (Unit 2);
+  - the Test Renovate Gate step in `main.yaml`, which names the three Renovate test files Unit 13 moves (Unit 13).
 - No behavior fixes. `apply-branding.yaml` sed escaping and `manage-issues.yaml` `|| true` get their own PRs.
 - No change under `packages/wiki-write-core/`, including the four CLIs inside that package.
 - These stay in `scripts/` unchanged:
@@ -214,9 +217,10 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 
 - **Packages export `.ts` source with no build step.** Nothing compiles, and Bun, Node strip-only, `tsc` and Vitest all load source. Unit 1 proves a real `bun install` link before anything depends on it. If it fails, the fallback is a per-package `tsc` emit with committed `dist/`, which matches wiki-write-core.
 - **Subpath exports per module, no wide barrels.** A barrel that re-exports `check-solutions-examples` would make every importer load `typescript`.
-- **Retry, the GitHub client and `check-wiki-authority` become core modules, not separate packages.** Each one is a separate PR. Fewer packages mean fewer manifests, lock entries and enumeration rows, and the dependency graph stays acyclic either way.
+- **Retry, the GitHub client and `check-wiki-authority` become core modules, not separate packages.** Retry and the client each get their own PR. `check-wiki-authority` moves in the registry PR (Unit 7), because `merge-back-data` is its only domain importer. Fewer packages mean fewer manifests, lock entries and enumeration rows, and the dependency graph stays acyclic either way.
 - **New `@fro-bot/privacy` package.** It takes the whole private-leak family and the shared redaction helpers: `capture-learnings-privacy`, `status-truth-public-output`, `loadRedactedCanonicalIdsFromDisk`, `private-repo-resolution`, `resolve-private`, `check-private-leak`, `check-wiki-private-presence` with its detector, and `enumerate-existing-leaks`. This breaks the knowledge ↔ status-truth cycle and keeps the mutated privacy modules with their tests.
-- **Metadata YAML write lives in registry, not core.** Both copies are registry modules (`commit-metadata`, `rename-tracked-repo`). This narrows R2's "metadata read/write in core", since no other domain writes metadata.
+- **Metadata YAML write lives in registry, not core.** Both copies are registry modules (`commit-metadata`, `rename-tracked-repo`). This narrows R2's "metadata read/write in core", since no other domain writes metadata. Reads outside registry, such as the privacy loader of `metadata/repos.yaml`, keep parsing through `@fro.bot/wiki-write-core/schemas`.
+- **Moved code never imports a `scripts/` file.** `scripts/schemas.ts`, `wiki-slug.ts`, `wiki-utils.ts`, `markdown-links.ts` and `data-branch-bootstrap.ts` re-export `@fro.bot/wiki-write-core` subpaths. Each move PR rewrites its modules' imports of them to those subpaths, and declares `@fro.bot/wiki-write-core` as a dependency of the package. `package-layout.test.ts` fails any relative import that leaves its package directory.
 - **Mutated code and its tests move together** into the same package, and those tests import by relative path. A new enumeration test fails any `mutate` entry whose paired test reaches it only through an `@fro-bot/` name.
 - **Divergent behavior becomes explicit options, not a single blessed default.**
   - `isRecord`, which rejects arrays, ships alongside `isObject`. The two array-accepting callers use `isObject`.
@@ -228,7 +232,8 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
   - The client factory takes timeout and logger options and one token per call.
 - **One goke runner in core** owns exit code, stdout, stderr and help. Every goke CLI goes through it. The runner:
   - registers help explicitly;
-  - treats "no matched command" as each CLI's documented usage-error code;
+  - registers a default root action that runs the CLI's current main, so the no-argv invocations workflows use today keep working (for example `check-private-leak.yaml` runs the scan with no arguments, and `dispatch-renovate` treats no subcommand as dispatch);
+  - treats non-empty argv that matches no command as each CLI's documented usage-error code;
   - disables colour;
   - sends unknown-command help to stderr;
   - injects `exit`;
@@ -239,7 +244,7 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 
 - **Hand-parsed exceptions.** `wiki-context-expand` and `correction-lifecycle` keep their argv parsers in phase 1, and are marked read-only or write in their README so phase 2 can still classify them.
 - **Env-only CLIs may change behavior for input no caller sends.** For example, `--help` now prints help, and an unknown flag exits 1. Every invocation that a workflow or prompt actually uses stays byte-identical.
-- **zod is the goke schema library.** It matches infra and is already resolved at 4.6.7 through Stryker. goke and zod are imported only by the core runner module and the package CLI modules, never by library modules.
+- **zod is the goke schema library.** It matches infra and is already resolved at 4.6.7 through Stryker. `@fro-bot/core/cli` re-exports the runner and `z`, so domain CLI modules import only `@fro-bot/core/cli`, and goke and zod are declared once, in core. Library modules never import them.
 - **The entry guard stays in each `scripts/<name>.ts`.** The shim imports the package function, maps its result to an exit code, and keeps the entry-guard test next to it. The exit-code mapping itself lives in the package, so it stays mutated where it is mutated today.
 - **`scripts/` shims are listed as not-mutated** with a reason (pure delegation). Their names still match Test 2.
 - **Reverts are last-in-first-out.** Later PRs import earlier packages and lock entries. The `scripts/` entrypoints keep workflow paths stable, so a revert never breaks a workflow.
@@ -324,20 +329,28 @@ Each moving unit treats this checklist as part of its verification:
    - The `scripts/` shim is in `mutation-guards.json` not-mutated, with a reason.
    - `bun run check:mutation-guards` reports 100% and the Stryker time is recorded.
 4. Every new non-test `packages/*/src` module is listed in `mutate` or `not-mutated`.
-5. Every `verify:` marker that names a moved symbol is repointed, and `bun run lint` passes.
-6. CLI parity: run every invocation the workflows and prompts actually use, before and after, and diff stdout, stderr and the exit code. Use a table-driven test where a pure `runCli` exists. Cover:
+5. Every `verify:` marker that names a moved symbol is repointed, and `bun run lint` passes. Tests that read a moved module's source text by path, and `vi.mock` targets of a moved module, are repointed in the same PR.
+6. The moved modules' imports of `scripts/` re-exports are rewritten to `@fro.bot/wiki-write-core` subpaths.
+7. The moved modules' remaining copies of core primitives (guards, output writers, JSON emit, `requiredEnv`, retry, client construction) use core, with the option that keeps their behavior. A grep over the package returns no local definition of a core primitive. If the package has two Octokit builders of the same shape, they move onto `@fro-bot/test-kit` `octokit-fake`.
+8. CLI parity: run every invocation the workflows and prompts actually use, before and after, and diff stdout, stderr and the exit code. Use a table-driven test where a pure `runCli` exists. Cover:
    - the stderr prefixes `wiki-ingest:warning:`, `wiki-ingest:finding:` and `corrections:warning:`;
    - `::error::` lines;
    - `$GITHUB_OUTPUT` keys;
    - exit codes 0, 1, 2 and 3.
-7. `bun install --frozen-lockfile` passes with the committed `bun.lock`, and `check-override-floors` passes.
-8. Package `README.md` exists (R6). Root docs that list the layout are updated:
-   - `.github/copilot-instructions.md`
-   - `README.md`
-   - `llms.txt`
-   - `.agents/skills/generating-project-docs/SKILL.md`
-9. Run the full gate unpiped: `bun run bootstrap`, `check-types`, `lint`, `test` and `check:mutation-guards`.
-10. Confirm that no path under `packages/wiki-write-core/` changed.
+9. `bun install --frozen-lockfile` passes with the committed `bun.lock`, and `check-override-floors` passes.
+10. Package `README.md` exists (R6). Root docs that list the layout are updated:
+
+- `.github/copilot-instructions.md`
+- `README.md`
+- `llms.txt`
+- `.agents/skills/generating-project-docs/SKILL.md`
+
+11. Run the full gate unpiped: `bun run bootstrap`, `check-types`, `lint`, `test` and `check:mutation-guards`.
+12. Confirm that no path under `packages/wiki-write-core/` changed.
+
+### CLI adoption rule
+
+Every CLI that moves adopts the core runner, except `wiki-context-expand` and `correction-lifecycle` (hand-parsed) and `wiki-lockfile-gates` (stays in `scripts/`). The four wiki-write-core wrappers are untouched. Each command declares `readOnly: false` if it writes to GitHub, to `data`, or to repo files, and `readOnly: true` otherwise. Writing `$GITHUB_OUTPUT`, the step summary or stdout does not count as a write. The package README lists every command with its value.
 
 ## Implementation Units
 
@@ -381,19 +394,19 @@ Each moving unit treats this checklist as part of its verification:
   - `packages/core/{package.json,README.md}`
   - `packages/core/src/{guards,output,json}.ts` and their tests
   - `packages/test-kit/{package.json,README.md}`
-  - `packages/test-kit/src/{git-data-fake,octokit-fake,workflow-step,workflow-expression}.ts`
+  - `packages/test-kit/src/{git-data-fake,workflow-step,workflow-expression}.ts`
 - Modify:
   - root `package.json` (workspaces) and `bun.lock`
   - `scripts/check-mutation-guards.ts` and `scripts/check-mutation-guards.test.ts` (resolver, fixed triggers, updated scope pins)
   - `scripts/mutation-guards-config.test.ts` (new tests below), `mutation-guards.json`, `stryker.config.json`
-  - `.github/workflows/main.yaml`: Test Scripts Load also loops over `packages/*/src/**/*.ts`, excluding tests and `packages/wiki-write-core/`. The PR CI job also replays the private-leak frozen install.
+  - `.github/workflows/main.yaml`: Test Scripts Load also loops over `packages/*/src/**/*.ts`, excluding tests and `packages/wiki-write-core/`. No install replay is needed: `.github/actions/setup` already runs `bun install --frozen-lockfile` on every PR job, so a stale `bun.lock` fails PR CI.
   - the `fro-bot.yaml` Test Scripts Load sentence
   - the scripts that duplicate guards, output writers and JSON emit
 - Delete / move:
   - `scripts/git-data-fake.ts`, `scripts/workflow-step-test-helper.ts` and `scripts/workflow-expression-test-helper.ts` move to test-kit, and their importers are rewritten.
 - Test:
   - `packages/core/src/*.test.ts`
-  - `scripts/package-layout.test.ts`: every `@fro-bot/*` package is `private: true` and `type: module`, internal dependencies are `workspace:*`, every import of an `@fro-bot/` name is declared as a dependency, and the package graph has no cycles.
+  - `scripts/package-layout.test.ts`: every `@fro-bot/*` package is `private: true` and `type: module`, internal dependencies are `workspace:*`, every import of an `@fro-bot/` or `@fro.bot/` name is declared as a dependency, no package imports a relative path outside its own directory, and the package graph has no cycles.
 
 **Approach:**
 
@@ -417,7 +430,7 @@ Each moving unit treats this checklist as part of its verification:
 - Edge case: the output writer with the variable unset skips under `skip` and throws under `throw`.
 - Edge case: a multiline value containing the delimiter is rejected.
 - Integration: Test Scripts Load loads `packages/core/src/*.ts` under Node strip-only, and a module using non-erasable syntax fails it.
-- Integration: the PR CI frozen-install replay fails on a stale `bun.lock`.
+- Error path: a package module importing `../../scripts/x.ts` fails `package-layout.test.ts`.
 
 **Verification:** The Per-PR Checklist passes. The test count only moves where tests moved. No test in `scripts/` defines its own Git Data fake or workflow step runner.
 
@@ -429,7 +442,7 @@ Each moving unit treats this checklist as part of its verification:
 
 **Dependencies:** Unit 2
 
-**Files:** Create `packages/core/src/retry.ts` and its test. Modify the 9 retry callers (`commit-metadata`, `private-repo-resolution`, `merge-data-pr`, `gateway-announce` and the rest from the repo lane) and their tests. `packages/wiki-write-core` keeps its own copy.
+**Files:** Create `packages/core/src/retry.ts` and its test. Modify the 8 script retry callers and their tests: `commit-metadata` (409, no delay), `wiki-repair` (conflict recompute), `rename-tracked-repo` (`RefRaceError`), `cross-repo-dispatch` (hash CAS), `private-repo-resolution` (rate limit, 2s × 2^n), `merge-data-pr` (429, 5xx, network, 1s fixed), `gateway-announce` (one retry after 5s) and `check-renovate-config` (non-200/404, no delay). The `wiki-ingest` loop inside `packages/wiki-write-core` is excluded and keeps its own copy. `reconcile-repos` staggering is not a retry and stays.
 
 **Approach:** The caller passes attempts, a delay function and a retry predicate. Each call site keeps its current numbers and predicate. Tests use injected delay and clock seams, not real sleeps.
 
@@ -463,6 +476,7 @@ Each moving unit treats this checklist as part of its verification:
 - Happy path: the factory passes the token, a 15s timeout and a no-op logger through to the constructor.
 - Edge case: a missing token produces each caller's current error.
 - Integration: caller tests that mock `@octokit/rest` still pass, for both seam shapes.
+- Integration: every `vi.mock('./capture-learnings-harvest.ts')` that stubs `createOctokitFromEnv` (for example `scripts/improvement-metrics-report.test.ts`) is retargeted to the core module, and the test asserts the mock is hit.
 
 **Verification:** No inline `new Octokit(` remains outside core and wiki-write-core.
 
@@ -493,6 +507,7 @@ Each moving unit treats this checklist as part of its verification:
 - Happy path: `--help` returns 0 with help on stdout.
 - Edge case: a 300 KB stdout payload is delivered complete under Bun when piped.
 - Edge case: `options['--']` never appears in the JSON output.
+- Happy path: no argv runs the default root action, with the same stdout, stderr, `$GITHUB_OUTPUT` and exit code as the hand-written entrypoint.
 - Happy path: `requiredEnv` treats an empty value as missing and uses the caller's message.
 
 **Verification:** The runner is in `mutate` at 100%, and no domain CLI exists yet.
@@ -514,20 +529,21 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
 - Move to `packages/privacy/src/` with their tests:
   - `capture-learnings-privacy`
   - `status-truth-public-output`
-  - `loadRedactedCanonicalIdsFromDisk`, extracted from `status-truth-proposals`
+  - `loadRedactedCanonicalIdsFromDisk` and `extractRedactedCanonicalIds`, extracted together from `status-truth-proposals` (moving only the loader would re-create the cycle), with their `describe` block from `status-truth-proposals.test.ts`
   - `private-repo-resolution`
   - `resolve-private`
   - `check-private-leak`
   - `check-wiki-private-presence`
   - `enumerate-existing-leaks`
 - Keep `scripts/` entrypoints for every CLI.
-- Rewrite the five `loadRedactedCanonicalIdsFromDisk` call sites.
+- Rewrite all 7 `loadRedactedCanonicalIdsFromDisk` call sites: `capture-patterns-cluster`, `capture-patterns-open`, `drafted-solutions-publish`, `improvement-metrics-detect`, `improvement-metrics-report`, `status-truth-prs` (dynamic import) and the in-file use in `status-truth-proposals`. Retarget the `vi.mock('./status-truth-proposals.ts')` stub in `improvement-metrics-report.test.ts`.
+- Rewrite the moved modules' `./schemas.ts` and `./wiki-slug.ts` imports to `@fro.bot/wiki-write-core` subpaths.
 - Repoint the `verify:` markers for `parseFrontmatterSources` and `sourceUrlMatchesRepo`.
 
 **Approach:**
 
 - `check-private-leak` keeps writing `scan_result` before every exit, and keeps running on Node from both invocations (the standalone job and the `merge-data.yaml` promotion step).
-- The privacy CLIs adopt the runner only where their argv surface is flags-only. `enumerate-existing-leaks` keeps its `--help` exit code.
+- The privacy CLIs adopt the runner under the CLI adoption rule. `enumerate-existing-leaks` keeps its `--help` exit 0.
 
 **Test scenarios:**
 
@@ -553,8 +569,9 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
   - `record-survey-result`, `reset-survey-status`, `check-repo-onboarded`
   - `merge-back-data`, `merge-data-pr`, `rename-tracked-repo`
   - `repo-page-move-fixtures` (test support)
-- Move `check-wiki-authority` to `packages/core/src/wiki-authority.ts`, with its tests. Repoint the `guardedPatterns` marker. `check-mutation-guards` imports it from core.
-- Delete `scripts/schemas.ts`, `scripts/wiki-utils.ts` and `scripts/markdown-links.ts` after rewriting their importers to `@fro.bot/wiki-write-core` subpaths.
+- Move `check-wiki-authority` to `packages/core/src/wiki-authority.ts`, with its tests. Keep `scripts/check-wiki-authority.ts` as its entrypoint, because `main.yaml` runs it. Repoint the `guardedPatterns` marker. `check-mutation-guards` imports it from core.
+- Rewrite the moved modules' `./data-branch-bootstrap.ts`, `./wiki-slug.ts` and `./schemas.ts` imports to `@fro.bot/wiki-write-core` subpaths.
+- Delete `scripts/schemas.ts`, `scripts/wiki-utils.ts` and `scripts/markdown-links.ts` after rewriting every remaining importer to `@fro.bot/wiki-write-core` subpaths, including the ones that move later (for example `wiki-query.ts` and `wiki-context-expand.ts`).
 
 **Approach:**
 
@@ -578,7 +595,7 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
 
 **Dependencies:** Units 2–5
 
-**Files:** `packages/dispatch/src/` and tests. `scripts/` entrypoints for both.
+**Files:** `packages/dispatch/src/` and tests. `scripts/` entrypoints for both. `@fro.bot/wiki-write-core` is a declared dependency (schemas).
 
 **Approach:** Keep `planDispatch` and the executor's pending re-check behavior. `dispatch-renovate` keeps throwing when `$GITHUB_OUTPUT` is unset.
 
@@ -597,7 +614,7 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
 
 **Dependencies:** Unit 6
 
-**Files:** `packages/status-truth/src/` and tests. `scripts/` entrypoints.
+**Files:** `packages/status-truth/src/` and tests. `scripts/` entrypoints. Repoint the source-text reads in `scripts/rollout-tracker-snapshot.test.ts` to the package file. `@fro.bot/wiki-write-core` is a declared dependency (schemas).
 
 **Approach:** Snapshot stdout stays complete when piped (the `process.exitCode` rule). The plan-status detector keeps accepting only `complete`.
 
@@ -648,7 +665,7 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
 
 **Dependencies:** Units 4, 6, 10
 
-**Files:** `packages/knowledge/src/` and tests for `capture-learnings-{harvest,open}`, `capture-patterns-{cluster,open,synthesis}` and `drafted-solutions-*`. `scripts/` entrypoints.
+**Files:** `packages/knowledge/src/` and tests for `capture-learnings-{harvest,open}`, `capture-patterns-{cluster,open,synthesis}` and `drafted-solutions-*`. `scripts/` entrypoints. Repoint the source-text reads of `drafted-solutions-{harvest,publish,handoff-build}.ts` in `scripts/draft-solutions-workflow.test.ts` to the package files.
 
 **Approach:** The label and marker constants stay in knowledge. The client comes from core. The `drafted-solutions` exitCode path stays.
 
@@ -691,6 +708,7 @@ Each domain unit follows the Per-PR Checklist. Splitting means focused modules b
   - `check-md-links`, `check-override-floors`, `check-solutions-examples`
   - `check-renovate-{config,ranges}`, `renovate-runtime`, `install-renovate`
 - Repoint the `isPureReexportBarrel` marker.
+- Repoint the three test paths in the `main.yaml` Test Renovate Gate step to `packages/ci-checks/src/`. Vitest exits 1 when a file filter matches nothing.
 - Keep `wiki-lockfile-gates.ts` in `scripts/`.
 
 **Approach:**
