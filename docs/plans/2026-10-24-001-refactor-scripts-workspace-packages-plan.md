@@ -253,6 +253,10 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 - **The entry guard stays in each `scripts/<name>.ts`.** The shim imports the package function, maps its result to an exit code, and keeps the entry-guard test next to it. The exit-code mapping itself lives in the package, so it stays mutated where it is mutated today.
 - **`scripts/` shims are listed as not-mutated** with a reason (pure delegation). Their names still match Test 2.
 - **Each domain PR owns its primitive migration.** Foundation PRs create primitives and migrate no callers. The exceptions are retry and the GitHub client, which migrate their callers in their own PRs. Every other primitive is migrated once, by each domain PR, for all of that domain's modules, so no file is edited twice.
+- **Diagrams live next to the code they describe, as Mermaid in Markdown.** GitHub renders Mermaid C4 (verified in a comment preview: Mermaid v12.2.0, `C4Component` with a boundary renders).
+  - Each package README has a `C4Component` diagram: the package as a `Container_Boundary`, its modules as `Component`s, `Rel`s between them, other `@fro-bot/` packages, `@fro.bot/wiki-write-core` and GitHub as external components, and which CLIs run on the core runner. Relationship labels get `UpdateRelStyle` offsets, because C4 uses fixed colours and labels otherwise sit on the arrow and read poorly in dark mode.
+  - The root `README.md` has the cross-package dependency `flowchart`, which adapts to the theme and is the authoritative package graph, plus a `C4Container` view of packages, `scripts/` entrypoints, workflows and GitHub.
+  - Diagrams are hand-maintained. The PR that adds a module, package or cross-package edge updates them. `package-layout.test.ts` enforces the real graph; the diagrams are documentation, not a gate.
 - **Reverts are last-in-first-out.** Later PRs import earlier packages and lock entries. The `scripts/` entrypoints keep workflow paths stable, so a revert never breaks a workflow.
 
 ## Open Questions
@@ -314,6 +318,20 @@ Production dependency edges, checked against static and dynamic imports. Each li
 - test-kit → nothing. Every package and the root scripts import it from tests only, and no non-test `src` module may import it.
 - `scripts/*.ts` entrypoints → the package that fronts each of them.
 
+```mermaid
+flowchart BT
+  core["@fro-bot/core"]
+  wwc["@fro.bot/wiki-write-core (published, unchanged)"]
+  privacy --> core & wwc
+  registry --> core & wwc
+  dispatch --> core & wwc
+  wikiops["wiki-ops"] --> core & wwc & privacy
+  statustruth["status-truth"] --> core & wwc & privacy
+  knowledge --> core & privacy & wikiops
+  reports --> core & privacy
+  cichecks["ci-checks"] --> core & wwc
+```
+
 The `renovate-runtime` ↔ `check-renovate-ranges` cycle is type-only. `renovate-runtime.ts` uses `import type` for `VersioningEngine`, which is erased under `verbatimModuleSyntax`, so nothing cycles at load time. The mutation-closure regex does not skip type imports, so the closure walker sees the cycle. That is harmless, because the walker keeps a visited set.
 
 Entrypoint shape, directional:
@@ -348,12 +366,7 @@ Each moving unit treats this checklist as part of its verification:
    - Cover the stderr prefixes `wiki-ingest:warning:`, `wiki-ingest:finding:` and `corrections:warning:`; `::error::` lines; `$GITHUB_OUTPUT` keys; exit codes 0, 1, 2 and 3; and the prompt-visible loops (`drafted-solutions-validate-rows` stdout, stderr and exit, and `check-override-floors` exit).
    - For an entrypoint that throws uncaught today, assert exit 1 and a non-empty stderr containing the message. Stack text may change, because no workflow parses it.
 9. `bun install --frozen-lockfile` passes with the committed `bun.lock`, and `check-override-floors` passes.
-10. Package `README.md` exists (R6). Root docs that list the layout are updated:
-
-- `.github/copilot-instructions.md`
-- `README.md`
-- `llms.txt`
-- `.agents/skills/generating-project-docs/SKILL.md`
+10. Package `README.md` exists (R6) and carries a Mermaid `C4Component` diagram of the package (see the diagram decision). The root `README.md` package flowchart and `C4Container` view are updated for any new package or edge. Root docs that list the layout are updated: `.github/copilot-instructions.md`, `README.md`, `llms.txt` and `.agents/skills/generating-project-docs/SKILL.md`.
 
 11. Run the full gate unpiped: `bun run bootstrap`, `check-types`, `lint`, `test` and `check:mutation-guards`.
 12. Confirm that no path under `packages/wiki-write-core/` changed.
@@ -429,6 +442,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
   - `scripts/mutation-guards-config.test.ts` (new tests below), `mutation-guards.json`, `stryker.config.json`
   - `.github/workflows/main.yaml`: Test Scripts Load also loops over `packages/*/src/**/*.ts`, excluding tests and `packages/wiki-write-core/`. No install replay is needed: `.github/actions/setup` already runs `bun install --frozen-lockfile` on every PR job, so a stale `bun.lock` fails PR CI.
   - the `fro-bot.yaml` Test Scripts Load sentence
+  - `README.md`: a packages section with the cross-package `flowchart` and the `C4Container` view, showing core and test-kit and the planned packages marked as planned
 - Move (with `git mv`):
   - `scripts/git-data-fake.ts`, `scripts/workflow-step-test-helper.ts`, `scripts/workflow-expression-test-helper.ts` and `scripts/repo-page-move-fixtures.ts` move to test-kit. Their importers (about 14 test files) are rewritten.
 - Test:
