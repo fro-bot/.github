@@ -9,7 +9,7 @@ topic: scripts-workspace-packages
 
 The control-plane code in `scripts/` moves into unpublished `@fro-bot/` workspace packages, one stage at a time.
 
-The first stage adds a shared core package and a test kit, and it removes the duplicated mechanical primitives. Follow-up stages migrate the primitives whose behavior varies, then move each domain into a documented package with a goke CLI. Phase 1 is done when every module has a home and `scripts/` holds only thin entrypoints plus the release and build scripts.
+The first stage adds a shared core package and a test kit with the new primitives, and it migrates no callers. Retry and the GitHub client then get their own PRs, which migrate their callers. After that, each domain PR moves one domain into a documented package with a goke CLI, and migrates that domain's remaining copies of the primitives. Phase 1 is done when every module has a home and `scripts/` holds only thin entrypoints plus the release and build scripts.
 
 Workflows, agent prompts, exit codes and outputs don't change in phase 1.
 
@@ -52,7 +52,7 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
   - `metadata/*.yaml` read and write
   - JSON output
 
-  Every non-test module that duplicates one of these uses the core version instead.
+  Every non-test module that duplicates one of these uses the core version instead. The foundation PRs add the primitives without migrating callers, except retry and the GitHub client. Each domain PR migrates all of its modules' copies exactly once.
 
 - R3. A test-kit package provides the shared test fakes and helpers: GitHub client and Git Data fakes, and the workflow step and expression helpers. Tests that build their own fake or guard for a covered surface use the kit instead.
 - R4. Every module gets a home. Once core ships, each domain moves into its own package in its own PR:
@@ -118,7 +118,7 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
   - Stryker still mutates its logic at 100%.
   - Test Scripts Load still loads it under Node.
   - Its `verify:` marker still resolves, and `bun run lint` passes.
-- AE3. **Covers R2.** Given the PR that migrates a primitive merges, no non-test module under `scripts/` or a `@fro-bot/` package keeps its own copy of that primitive.
+- AE3. **Covers R2.** Given the PR that migrates a primitive's last remaining caller merges, no non-test module under `scripts/` or a `@fro-bot/` package keeps its own copy of that primitive.
 - AE4. **Covers R13.** Given a phase 1 PR, `git diff --stat` shows no path under `packages/wiki-write-core/`. The release decide job therefore counts zero commits for that path since the last tag.
 - AE5. **Covers R12.** Given the private-leak scan moves into a package, both of its invocations still run on Node and fail closed when their inputs are missing:
   - the standalone job in `check-private-leak.yaml`;
@@ -157,7 +157,7 @@ Phase 2 will replace inline workflow shell with CLI calls, and may expose some c
 ## Key Decisions
 
 - **Unpublished `@fro-bot/` packages.** This follows the convention in fro-bot/agent and the other fro-bot repos: `@fro-bot/` is the scope for private workspace packages, and `@fro.bot/` is the scope for packages published to npm.
-- **Core first, with the risky primitives in their own PRs.** The first core PR migrates the mechanical primitives: type guards, output and summary writers, and JSON output. Retry and the GitHub client each get their own PR with parity tests, because their behavior varies across scripts today. After that, each domain package gets its own PR. Smaller PRs are easier to review and revert than one 40k-line move.
+- **Core first, with the risky primitives in their own PRs.** The first core PR creates the primitives (type guards, output and summary writers, JSON output) and the test kit, and it migrates no callers. Retry and the GitHub client each get their own PR, which migrates their callers, because their behavior varies across scripts and the callers span domains. After that, each domain package gets its own PR, which migrates all of that domain's remaining copies exactly once. Smaller PRs are easier to review and revert than one 40k-line move.
 - **goke now, `@goke/mcp` in phase 2.** goke 6.17.0 has no runtime dependencies. marcusrbrown/infra already uses it for a CLI that also serves an allowlisted, read-only MCP command, so the same command definitions can carry over to phase 2.
 - **`scripts/` stays as the entrypoint layer in phase 1.** Workflows, agent prompts and docs keep their current paths. Phase 2 decides when a workflow calls a package CLI directly.
 - **`@fro.bot/wiki-write-core` doesn't depend on private packages.** A published package can't import an unpublished one, so it keeps its own helper copies. The dedup covers `scripts/` and the new packages only.
