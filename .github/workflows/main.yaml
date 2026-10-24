@@ -130,10 +130,17 @@ jobs:
         # would receive the literal pattern. @fro.bot/wiki-write-core is excluded: it ships
         # compiled dist/, not source. `find` prints nothing when its pattern stops matching, so
         # the loop fails when it finds no module while packages/core/src exists.
+        #
+        # The path reaches node as an argv element (process.argv[1]) and is never spliced into
+        # the JavaScript source, so a file name with a quote in it cannot break or inject code.
         run: |
+          load_module() {
+            node -e 'const f = process.argv[1]; import(require("node:url").pathToFileURL(f).href).then(() => {}).catch(err => { process.stderr.write("FAIL " + f + ": " + (err.code || err.message) + "\n"); process.exit(1); })' "$1" < /dev/null
+          }
+
           for f in scripts/*.ts; do
             case "$f" in *.test.ts) continue ;; esac
-            node -e "import('./$f').then(() => {}).catch(err => { process.stderr.write('FAIL $f: ' + (err.code || err.message) + '\\n'); process.exit(1); })"
+            load_module "$f"
             echo "  ok   $f"
           done
 
@@ -144,7 +151,7 @@ jobs:
           fi
           while IFS= read -r f; do
             [ -n "$f" ] || continue
-            node -e "import('./$f').then(() => {}).catch(err => { process.stderr.write('FAIL $f: ' + (err.code || err.message) + '\\n'); process.exit(1); })" < /dev/null
+            load_module "$f"
             echo "  ok   $f"
           done <<< "$package_files"
 
