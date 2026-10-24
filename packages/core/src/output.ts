@@ -2,9 +2,10 @@
  * The two files a GitHub Actions step writes to: `$GITHUB_OUTPUT` (step outputs) and
  * `$GITHUB_STEP_SUMMARY` (the job summary).
  *
- * Callers disagree on a missing variable, so the policy is a required option and not a default:
- * `dispatch-renovate` and `wiki-change-detect` throw when `$GITHUB_OUTPUT` is unset, the rest skip
- * the write. An empty variable counts as unset in both cases.
+ * The policy for a missing variable is a required option, not a default, because writers differ:
+ * `wiki-change-detect` throws when `$GITHUB_OUTPUT` is unset and `dispatch-renovate` throws in
+ * plan mode, while the other writers skip the write. An empty variable counts as unset. Every
+ * writer returns whether it wrote, so an empty payload returns false and appends nothing.
  */
 
 import {randomUUID} from 'node:crypto'
@@ -29,9 +30,8 @@ export interface GithubOutputOptions extends RunnerFileOptions {
   readonly delimiter?: () => string
 }
 
-// The patterns below sit inside functions on purpose. Stryker marks a mutant in a module-level
-// constant as static and covers it with no test, so it survives (observed with the six regex
-// mutants of the constants these functions replaced).
+// The patterns below sit inside functions on purpose: Stryker covers a mutant in a module-level
+// constant with no test, so it survives.
 
 /** Whether `value` is made only of characters that cannot carry a line break, `=` or `<<` into the file format. */
 function isSafeToken(value: string): boolean {
@@ -48,6 +48,7 @@ function appendToRunnerFile(variable: string, content: string, options: RunnerFi
     if (options.onMissing === 'throw') throw new Error(options.missingMessage ?? `${variable} is required`)
     return false
   }
+  if (content === '') return false
   const append = options.append ?? appendFileSync
   append(path, content)
   return true

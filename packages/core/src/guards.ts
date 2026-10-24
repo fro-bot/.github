@@ -1,13 +1,12 @@
 /**
  * Type guards for untrusted values: parsed JSON and YAML, thrown errors, API payloads.
  *
- * The control plane carried a private copy of these in about thirty modules, and the copies
- * disagreed on arrays. The two shapes are separate exports so each caller names the one it means:
- * `isRecord` rejects arrays, `isObject` accepts them.
+ * The two object shapes are separate exports so each caller names the one it means: `isRecord`
+ * rejects arrays, `isObject` accepts them.
  */
 
 /** Any non-null object, arrays included. */
-export function isObject(value: unknown): value is Record<string, unknown> {
+export function isObject(value: unknown): value is object {
   return typeof value === 'object' && value !== null
 }
 
@@ -30,5 +29,5 @@ export function isApiStatus(error: unknown, status: number): boolean {
  * the caller that accepted every object needs this; the rest use `isApiStatus`.
  */
 export function isApiStatusOfAnyObject(error: unknown, status: number): boolean {
-  return isObject(error) && error.status === status
+  return isObject(error) && 'status' in error && error.status === status
 }

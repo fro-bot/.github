@@ -14,12 +14,16 @@ describe('formatJsonLine', () => {
   })
 
   it('indents by the given number of spaces, still ending in one newline', () => {
-    expect(formatJsonLine({a: 1, b: [1]}, 2)).toBe('{\n  "a": 1,\n  "b": [\n    1\n  ]\n}\n')
-    expect(formatJsonLine({a: 1}, 4)).toBe('{\n    "a": 1\n}\n')
+    expect(formatJsonLine({a: 1, b: [1]}, {indent: 2})).toBe('{\n  "a": 1,\n  "b": [\n    1\n  ]\n}\n')
+    expect(formatJsonLine({a: 1}, {indent: 4})).toBe('{\n    "a": 1\n}\n')
   })
 
   it('treats an indent of 0 as compact', () => {
-    expect(formatJsonLine({a: 1}, 0)).toBe('{"a":1}\n')
+    expect(formatJsonLine({a: 1}, {indent: 0})).toBe('{"a":1}\n')
+  })
+
+  it('is compact when the options carry no indent', () => {
+    expect(formatJsonLine({a: 1}, {})).toBe('{"a":1}\n')
   })
 
   it('serializes scalars and null', () => {

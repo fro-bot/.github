@@ -12,9 +12,12 @@ export interface TextSink {
   readonly write: (chunk: string) => unknown
 }
 
-export interface WriteJsonOptions {
+export interface JsonFormatOptions {
   /** Spaces per level, as `JSON.stringify` takes them. Omitted means compact. */
   readonly indent?: number
+}
+
+export interface WriteJsonOptions extends JsonFormatOptions {
   /** Defaults to `process.stdout`. */
   readonly sink?: TextSink
 }
@@ -24,14 +27,14 @@ export interface WriteJsonOptions {
  * represent (`undefined`, a function, a symbol): printing the text `undefined` would hand a JSON
  * consumer such as `jq` a broken document.
  */
-export function formatJsonLine(value: unknown, indent?: number): string {
-  const text: string | undefined = JSON.stringify(value, null, indent)
+export function formatJsonLine(value: unknown, options: JsonFormatOptions = {}): string {
+  const text: string | undefined = JSON.stringify(value, null, options.indent)
   if (text === undefined) throw new TypeError('value cannot be represented as JSON')
   return `${text}\n`
 }
 
-/** Writes `formatJsonLine(value, options.indent)` to the sink in one call. */
+/** Writes `formatJsonLine(value, options)` to the sink in one call. */
 export function writeJsonLine(value: unknown, options: WriteJsonOptions = {}): void {
   const sink = options.sink ?? process.stdout
-  sink.write(formatJsonLine(value, options.indent))
+  sink.write(formatJsonLine(value, options))
 }

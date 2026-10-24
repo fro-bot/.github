@@ -84,6 +84,13 @@ describe('isApiStatusOfAnyObject', () => {
     expect(isApiStatus(arrayWithStatus, 404)).toBe(false)
   })
 
+  it('tells a missing status from one that is present and undefined', () => {
+    const undefinedStatus = undefined as unknown as number
+    expect(isApiStatusOfAnyObject({status: undefined}, undefinedStatus)).toBe(true)
+    expect(isApiStatusOfAnyObject({}, undefinedStatus)).toBe(false)
+    expect(isApiStatusOfAnyObject([], undefinedStatus)).toBe(false)
+  })
+
   it('is false for a different status, a non-number status or a missing status', () => {
     expect(isApiStatusOfAnyObject({status: 404}, 403)).toBe(false)
     expect(isApiStatusOfAnyObject({status: '404'}, 404)).toBe(false)

@@ -37,6 +37,19 @@ describe('writeGithubOutputs', () => {
     expect(writes).toEqual([{path: '/runner/output', content: 'scan_result=success\n'}])
   })
 
+  it('writes nothing and returns false for no entries, so true always means a write happened', () => {
+    const {writes, append} = recorder()
+    expect(writeGithubOutputs({}, {onMissing: 'skip', env, append})).toBe(false)
+    expect(writes).toEqual([])
+  })
+
+  it('still applies the missing-variable policy to no entries', () => {
+    const {writes, append} = recorder()
+    expect(writeGithubOutputs({}, {onMissing: 'skip', env: {}, append})).toBe(false)
+    expect(() => writeGithubOutputs({}, {onMissing: 'throw', env: {}, append})).toThrow('GITHUB_OUTPUT is required')
+    expect(writes).toEqual([])
+  })
+
   it('writes every entry in object order in one append', () => {
     const {writes, append} = recorder()
     writeGithubOutputs({'selected-paths': '["a"]', 'byte-length': '12', hash: 'abc'}, {onMissing: 'skip', env, append})
@@ -227,6 +240,12 @@ describe('appendStepSummary', () => {
     const {writes, append} = recorder()
     expect(appendStepSummary('## Title\n\n| a |\n', {onMissing: 'skip', env, append})).toBe(true)
     expect(writes).toEqual([{path: '/runner/summary', content: '## Title\n\n| a |\n'}])
+  })
+
+  it('writes nothing and returns false for an empty summary', () => {
+    const {writes, append} = recorder()
+    expect(appendStepSummary('', {onMissing: 'skip', env, append})).toBe(false)
+    expect(writes).toEqual([])
   })
 
   it('does not touch GITHUB_OUTPUT, and writeGithubOutputs does not touch the summary', () => {
