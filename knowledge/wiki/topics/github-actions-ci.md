@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-23
+updated: 2026-10-24
 sources:
+  - url: https://github.com/marcusrbrown/metacogs/tree/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5/.github/workflows
+    sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
+    accessed: 2026-10-24
+  - url: https://github.com/marcusrbrown/metacogs/blob/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5/README.md
+    sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
+    accessed: 2026-10-24
   - url: https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows/renovate.yaml
     sha: f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93
     accessed: 2026-10-23
@@ -4083,3 +4089,24 @@ A workspace-only change does not select PR regeneration through that filter;
 scheduled/default-branch runs remain independent paths. The mechanism behind
 earlier generated-content riders persists, but current rider counts and delivery
 outcomes cannot be inferred from the workflow alone.
+
+### Deterministic skill checks do not rerun model evaluations (2026-10-24)
+
+[[marcusrbrown--metacogs]] separates portable Agent Skill packaging checks from
+local model-evaluation campaigns. At `2ef0e5c935f98e6c372c692dc9bbc2d42e403de5`,
+`ci.yml` runs typechecking, Bun tests, generated-helper consistency, README host
+matrix consistency, and a secret scan on pushes and pull requests. The root
+README explicitly places live baseline-versus-skill evaluations outside CI; no
+workflow step invokes the manifest's evaluation command. A passing deterministic
+pipeline therefore does not constitute a fresh held-out read or establish that a
+previous skill-quality claim survived a method edit. Historical model reports
+and current packaging checks are separate evidence with separate provenance.
+
+`release.yaml` independently runs on `main` pushes or manual dispatch. It obtains
+an App token, installs with `--frozen-lockfile --ignore-scripts`, invokes its
+release script on `main`, then calls Changesets to prepare a version PR. There is
+no visible CI dependency or `workflow_run` gate in that definition; script
+internals and repository protection settings were outside the survey. This does
+not prove release bypasses validation internally, only that the workflow itself
+does not encode a dependency on CI success. Both workflow files use SHA-pinned
+external actions. Neither calls a Fro Bot agent.

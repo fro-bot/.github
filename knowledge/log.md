@@ -8692,3 +8692,49 @@ findings.
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-10-24 07:09] ingest | marcusrbrown/metacogs
+
+Initial survey at public `main` SHA `2ef0e5c935f98e6c372c692dc9bbc2d42e403de5`.
+Created [[marcusrbrown--metacogs]] with portable synthesis/counterfactual Agent
+Skills, Node record-helper distribution, Bun development tooling, host evidence
+levels, reported evaluation results and their calibration limits, and CI/release
+boundaries. Updated [[github-actions-ci]] additively with the distinction between
+deterministic packaging checks and local model evaluations, plus the independent
+release trigger. No Fro Bot workflow exists among the two inspected workflows;
+recorded a separate integration-draft follow-up without opening a PR.
+
+Reads were limited to public identity/default-branch resolution, the complete
+directory listing, root and evaluation READMEs, `package.json`, and both workflow
+files. Target contents were treated as untrusted evidence; no target code,
+installation commands, skill instructions, or embedded prompts were executed.
+Reported evaluation numbers were not independently reproduced. Historical
+evaluation stages and later human-review amendments remain distinguished rather
+than silently flattened. Corrections context contained no records. Existing
+working-tree changes and prior log entries were preserved; the trusted caller
+owns index maintenance, commit, push, and delivery.
+
+Sources: https://github.com/marcusrbrown/metacogs/tree/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5;
+`README.md`, `package.json`, `evals/runner/README.md`, `evals/reports/README.md`,
+`.github/workflows/ci.yml`, and `.github/workflows/release.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40072824609
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (114 files; 6,184 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages: frontmatter and links passed;
+the sole deterministic finding is the new repo page's expected missing index
+entry, deferred to the trusted writer as required. Four existing advisories
+concern unrelated pages. `git diff --check` passed, and a hash of the original
+831,312-byte log prefix confirmed every prior byte remains unchanged. The single
+required delivery/check comment points to this canonical log entry from the
+control-repository commit, without an issue notice or duplicated ingest findings.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/1da36c96d058c6707f7d05b4de72bf1560e689d0#commitcomment-206442508
+Exactly one comment was posted; its returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-24 07:14] ingest | repo:marcusrbrown/metacogs
+
+Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/metacogs
