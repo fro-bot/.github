@@ -74,8 +74,8 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 - **Mutation config test.** `scripts/mutation-guards-config.test.ts` Test 1 requires every non-test `.ts` under `packages/*/src` to be listed in `mutate` or `not-mutated`. Test 2 matches `scripts/check-*.ts` by name.
 - **`verify:` resolver.** `findSignature` in `scripts/check-solutions-examples.ts` matches only top-level declarations in the named file. Five markers point at `guardedPatterns`, `isPureReexportBarrel`, `parseFrontmatterSources` and `sourceUrlMatchesRepo` (twice).
 - **Test Scripts Load.** The gate loops over `scripts/*.ts` only (`.github/workflows/main.yaml`).
-- **Private-leak job.** `check-private-leak.yaml` checks out `main` and runs `bun install --frozen-lockfile --ignore-scripts`, then Node. A stale `bun.lock` breaks it only after merge.
-- **Renovate automerge.** The `default.json` automerge rule matches `@fro-bot/**`. Whether Renovate skips `workspace:*` dependencies is unverified.
+- **Private-leak job.** `check-private-leak.yaml` checks out `main` and runs `bun install --frozen-lockfile --ignore-scripts`, then Node. A lock that lacks an entry breaks it. Frozen install does not catch every manifest and lock drift (see Unit 1).
+- **Renovate.** The `default.json` automerge rule matches `@fro-bot/**`. Renovate extracts `workspace:*` with `skipReason: unspecified-version` and proposes nothing (Unit 1).
 - **Release prefix.** The release trigger is `packages/wiki-write-core/` with a trailing slash, and sibling directories are tested as not counting. No new package may be named `wiki-write-core*`.
 - **Seam pattern.** `check-wiki-private-presence.ts` and `wiki-lockfile-gates.ts` already expose a pure `runCli(argv, env)` that returns `{exitCode, stdout, stderr}`. The goke runner follows this shape.
 - **Entry guards.** 55 scripts guard their entrypoint with `import.meta.url === file://${argv[1]}`, and 3 use `import.meta.main`. The entry-guard tests import the script in-process with a cache-busting query.
@@ -110,16 +110,15 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 - goke 6.17.0 (https://github.com/remorses/goke):
   - Accepts Standard Schema options. infra uses zod ^4.3.6.
   - `parse(argv, {run: false})` followed by `runMatchedCommand()`, which is infra's `packages/cli/src/cli.ts` pattern.
-  - Probe results in a scratch workspace:
-    - With no matched command and no `cli.help()`, it exits 0 silently.
-    - Help for an unknown command goes to stdout.
-    - Errors thrown from an action print `error:` plus a stack, with ANSI codes when `CI` is set.
-    - It calls `process.exit` unless an exit function is injected.
+  - Unit 1 probe results (a stub CLI under Bun with stdout piped; see Unit 1):
+    - With no `.help()` registered, an unknown command or a stray positional on a zero-argument root exits 0 silently. With `.help()`, it prints help to stdout and calls `exit(1)`. The same split applies to `--help`.
+    - A root that declares positionals silently drops undeclared extras and runs the action.
+    - Zod validation covers type, int and enum only. Refinements such as `.min(1)` are not enforced.
+    - Errors thrown from an action print `error:` plus a stack, with ANSI codes when `CI` is set. `NO_COLOR=1` overrides `CI`. There is no console injection, and `--no-color` is an unknown option.
+    - It calls `process.exit` unless an exit function is injected. A no-op `exit` makes `parse()` reject on parse errors and resolve on async action errors. Calling the injected `exit` from inside an action leaks a stack.
     - It honors `process.exitCode = 3` set inside an action.
     - Unknown flags, missing values and repeated scalar flags exit 1.
-    - Extra positionals are accepted.
     - It is ESM with no dependencies, and it loads under Node strip-only and Bun.
-  - The runner rules about exit injection, a zero-argument root given a positional, error formatting and colour come from a read of goke's source, not an executed probe. Unit 1 probes each one.
 - Node 24 refuses to strip types under `node_modules`. A workspace link that resolves to the real path outside `node_modules` avoids this.
 
 ## Prior-Art Survey
@@ -218,16 +217,17 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 
 ## Key Technical Decisions
 
-- **Packages export `.ts` source with no build step.** Nothing compiles, and Bun, Node strip-only, `tsc` and Vitest all load source. Unit 1 proves a real `bun install` link before anything depends on it. If Unit 1 fails, reopen this plan. There is no silent `dist` fallback. Per-package `dist` would multiply the `@fro.bot/wiki-write-core` dist gate across nine packages: the `check-wiki-write-core-dist` job (`.github/workflows/main.yaml:88-104`), a `.gitignore` un-ignore block, a CodeQL ignore and the `FIXED_TRIGGER_FILES` entries. The mutation closure would also have to follow `dist`.
+- **Packages export `.ts` source with no build step.** Nothing compiles, and Bun, Node strip-only, `tsc` and Vitest all load source. Unit 1 proved a real `bun install` link (see its results). If that stops holding, reopen this plan. There is no silent `dist` fallback. Per-package `dist` would multiply the `@fro.bot/wiki-write-core` dist gate across nine packages: the `check-wiki-write-core-dist` job (`.github/workflows/main.yaml:88-104`), a `.gitignore` un-ignore block, a CodeQL ignore and the `FIXED_TRIGGER_FILES` entries. The mutation closure would also have to follow `dist`.
 - **Subpath exports per module, no wide barrels.** A barrel that re-exports `check-solutions-examples` would make every importer load `typescript`.
 - **Retry, the GitHub client and `check-wiki-authority` become core modules, not separate packages.** Retry and the client each get their own PR and migrate their own callers. `check-wiki-authority` moves in the registry PR (Unit 7). It has two importers, `merge-back-data` (registry) and `check-mutation-guards` (ci-checks), so it lives in neither package. Fewer packages mean fewer manifests, lock entries and enumeration rows, and the dependency graph stays acyclic either way.
 - **New `@fro-bot/privacy` package.** It takes the whole private-leak family and the shared redaction helpers: `capture-learnings-privacy`, `status-truth-public-output`, `loadRedactedCanonicalIdsFromDisk`, `private-repo-resolution`, `resolve-private`, `check-private-leak`, `check-wiki-private-presence` with its detector, and `enumerate-existing-leaks`. This breaks the knowledge ↔ status-truth cycle and keeps the mutated privacy modules with their tests.
 - **Metadata YAML write lives in registry, not core.** Both copies are registry modules (`commit-metadata`, `rename-tracked-repo`). This narrows R2's "metadata read/write in core", since no other domain writes metadata. Reads outside registry, such as the privacy loader of `metadata/repos.yaml`, keep parsing through `@fro.bot/wiki-write-core/schemas`.
 - **Moved code never imports a `scripts/` file.** `scripts/schemas.ts`, `wiki-slug.ts`, `wiki-utils.ts`, `markdown-links.ts`, `data-branch-bootstrap.ts`, `wiki-lint.ts` and `wiki-ingest.ts` re-export `@fro.bot/wiki-write-core` subpaths (`wiki-ingest.ts` also adds the exit-3 mapping, which stays in the wrapper). Each move PR rewrites its modules' imports of them to those subpaths, such as `@fro.bot/wiki-write-core/wiki-ingest`, and declares `@fro.bot/wiki-write-core` as a dependency of the package. `package-layout.test.ts` fails any relative import that leaves its package directory.
 - **Declared dependencies.**
-  - The declaration rule applies to `packages/*` only. Root `scripts/` is not a package and declares nothing: it imports `@fro-bot/*` and `@fro.bot/wiki-write-core` by name through the workspace link. A root `workspace:*` devDependency would put `@fro-bot/**` in Renovate's automerge match.
+  - The declaration rule applies to `packages/*` only. Root `scripts/` is not a package and declares nothing: it imports `@fro-bot/*` and `@fro.bot/wiki-write-core` by name through the workspace link. Unit 1 confirmed that resolution works without a root declaration.
   - Tests in a package import `@fro-bot/test-kit` as a declared devDependency. Root tests import it by name.
   - Each package declares every external npm package its non-test modules import (for example `yaml`, `@octokit/rest`, `typescript`), at the range the root declares, and `package-layout.test.ts` checks it. `packages/ci-checks` declares `typescript`, which `check-solutions-examples` imports from the root devDependencies today. Each such declaration is a manifest change that touches `bun.lock`, so the PR body flags it for operator approval.
+  - `package-layout.test.ts` is the authority for internal edges and for lock drift. ESLint `compat-engines` skips `workspace:*` dependencies, so it gives internal edges no engines coverage. Frozen install passes when a manifest adds an already-locked dependency or swaps `workspace:*` for a matching range, so the test also compares each package's declared dependencies with its `bun.lock` workspace entry.
 - **Mutated code and its tests move together** into the same package, and those tests import by relative path. A new enumeration test fails any `mutate` entry whose paired test reaches it only through an `@fro-bot/` name. The same attribution rule applies to production imports: a mutated module in package A that imports package B by name runs against B's real tree in the Stryker sandbox, so B's mutants are killed only by B's own tests. Core's tests must kill core's mutants on their own.
 - **Divergent behavior becomes explicit options, not a single blessed default.**
   - `isRecord`, which rejects arrays, ships alongside `isObject`. The two array-accepting callers use `isObject`.
@@ -239,19 +239,20 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
   - The client factory takes timeout and logger options and one token per call.
 - **One goke runner in core** owns exit code, stdout, stderr and help. Every goke CLI goes through it, and it returns `{exitCode, stdout, stderr}` like the existing `runCli` seams. It follows these rules, and each has a Unit 5 test scenario:
   - **No-argv category.** Each CLI declares one of two categories. A CLI whose no-argv mode is a real run registers a default root action that runs its current main (for example `check-private-leak.yaml` runs the scan with no arguments, and `dispatch-renovate` treats no subcommand as dispatch). A CLI whose no-argv mode prints usage (`enumerate-existing-leaks`) returns its usage code (1) with the usage on stdout, as it does today.
-  - **Declared positionals and flags.** Each CLI declares, on its root command, the positionals and flags its callers use. Only argv that matches nothing declared returns the CLI's usage code, and then no action runs. goke alone exits 0 silently when no command matches, and a zero-argument root is skipped when a positional is passed, so a gate such as `check-private-leak` would report success without scanning. The unit CLI tables name every other declared argument. The callers that must keep working:
+  - **Declared positionals and flags.** Each CLI declares, on its root command, the positionals and flags its callers use. Only argv that matches nothing declared returns the CLI's usage code, and then no action runs. goke alone cannot enforce this. Without `.help()` it exits 0 silently on an unknown command or a stray positional, so a gate such as `check-private-leak` would report success without scanning. On a root that declares positionals it drops undeclared extras and runs the action (`a b c` on `[a] [b]` runs with `a` and `b`). The runner checks the positional count itself and returns the usage code, on every root. The unit CLI tables name every other declared argument. The callers that must keep working:
     - `fro-bot.yaml:1257`, `daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC"` (two optional positionals, argv over env);
     - `resolve-private` argv[2] (the repos path);
     - `check-renovate-ranges` positionals (config paths);
     - `wiki-lint-issues` argv[2] (after `WIKI_LINT_JSON_PATH`);
     - `check-private-leak --promotion` (`merge-data.yaml:95`).
-  - **`--help` is unmatched argv** for every CLI that documents no help today: usage code, help on stderr, no action. Today `check-private-leak --help` runs the full scan, and under a naive goke default it would exit 0 without scanning, which a workflow reads as a pass. The runner takes a per-CLI help exit code, which is 0 only where a runner-fronted CLI documents help today: `enumerate-existing-leaks`, with its usage on stdout. The two hand-parsed CLIs keep their help in their own parsers.
+  - **`--help` is unmatched argv** for every CLI that documents no help today: usage code, stdout empty, no action. Today `check-private-leak --help` runs the full scan, and with `.help()` registered plain goke prints help and exits 0 without scanning, which a workflow reads as a pass. The runner always registers `.help()`, because goke's behavior otherwise differs (a silent exit 0 on unknown commands, `Unknown option --help` on the flag). goke prints help to stdout, so the runner routes help to stderr for every usage error. It keeps stdout for an explicit `--help` only where a runner-fronted CLI documents help today: `enumerate-existing-leaks`, with its usage on stdout and exit 0. The two hand-parsed CLIs keep their help in their own parsers.
   - **`dispatch-renovate`** dispatches today on any argv other than `plan`, including `pln` and `--help`. It accepts `plan` and no argv. Anything else returns the usage code and dispatches nothing. No caller sends other argv, and the change is listed in Unit 8's scenarios.
-  - **Injected `exit` records, it does not decide.** goke calls `exit(1)` for async action errors and does not throw afterward, so a no-op `exit` resolves with 0. The injected `exit` records the code and throws a sentinel, and the runner catches the sentinel and returns the recorded code. The runner also catches action errors itself, including non-Error throws, before goke sees them, and formats them as the CLI's configured message. A stack never reaches a workflow.
+  - **Injected `exit` records, it does not decide.** A no-op `exit` is unsafe. On a parse error `parse()` rejects with the original GokeError, and on an async action error it resolves with the code only recorded, so a caller that trusts the promise sees 0. The runner passes an `exit` that records the code and throws a sentinel, and it catches the sentinel from `parse()`. Action errors are caught inside the runner's own action wrapper, including non-Error throws. The wrapper records the exit code in a local variable, writes the CLI's configured message and returns. It never calls the injected `exit` from inside an action: the sentinel thrown back into goke makes it print `error: exit:1` plus a stack and call `exit` a second time. A stack never reaches a workflow.
   - **Error format and exit code are per CLI.** The default is message-only on stderr and exit 1. Uncaught-throw CLIs keep exit 1 and a non-empty stderr that contains the message. Stack text may change, because no workflow parses it. `gateway-announce` keeps exit 0 on every error, so its error exit code is 0.
-  - **Colour off.** goke has no colour switch, and its colour codes come from a library that reads env at load, so setting `CI` at runtime is not enough. The mechanism is an injected console through goke's `createConsole` if Unit 1 confirms it is accepted. Otherwise the runner wraps every error before goke sees it and strips ANSI from goke's own parse-error output. The rule covers parse errors (unknown flag, missing value, zod validation) as well as action errors.
+  - **Colour off.** goke has no console injection (`createConsole` is exported, but `GokeOptions` has no `console` field), and `--no-color` is an unknown option. `CI=true` turns ANSI on even when piped, and `NO_COLOR=1` overrides it, but only if it is set before goke loads. The runner sets `NO_COLOR` for the parse, so core loads goke by dynamic import after setting it, and the runner's sinks strip ANSI as a backstop. There is no other mechanism. The rule covers parse errors (unknown flag, missing value, zod validation), action errors and help.
   - **Direct writes bypass the sinks.** The runner captures only output routed through its sinks, and moved modules keep their direct `process.stdout` and `process.stderr` writes (at least 108 in a 21-file sample). The in-process result can therefore miss output. Every CLI gets one spawned surface test through its `scripts/<name>.ts` entrypoint, and that test is the parity authority (Per-PR Checklist item 8). Usage-code constants are asserted per CLI, or a mutant on a constant survives.
-  - **Plumbing.** Unknown-command help goes to stderr, and the runner uses `process.exitCode` instead of `process.exit`.
+  - **Refinements.** goke enforces only type, int and enum from a zod schema. Refinements such as `.min(1)` are not enforced. The runner re-validates the parsed options against the full schema before running the action, and returns the usage code on failure.
+  - **Plumbing.** The runner uses `process.exitCode` instead of `process.exit`. A 300 KB stdout payload is complete after a natural exit and truncated to 64 KiB after `process.exit(0)`, under both Bun and Node (measured piped, on macOS). Linux is unverified.
 - **Hand-parsed exceptions.** `wiki-context-expand` and `correction-lifecycle` keep their argv parsers in phase 1, and are marked read-only or write in their README so phase 2 can still classify them.
 - **Env-only CLIs may change behavior for input no caller sends.** For example, an unknown flag exits 1, and `--help` returns the usage code. Every invocation that a workflow or prompt actually uses stays byte-identical, apart from the stack text of uncaught throws.
 - **zod is the goke schema library.** It matches infra. zod resolves to one copy, 4.6.7, because the root `zod@4` override in `package.json` floors it at `>=4.6.6`. Stryker's lock entry requests 4.5.4 and does not decide it. Core's direct zod dependency falls under the same floor. `@fro-bot/core/cli` re-exports the runner and `z`, so domain CLI modules import only `@fro-bot/core/cli`, and goke and zod are declared once, in core. Only `*-cli.ts` modules may import `@fro-bot/core/cli`; library modules never do. Duplicate zod copies would not break goke's typing (Standard Schema), so the real risk is zod-specific helpers crossing packages.
@@ -278,13 +279,13 @@ Lane files are under `/tmp/rr/scripts-bs/plan/lanes/` (untracked, local to this 
 - Uncaught-throw CLIs: exit 1 with a non-empty stderr message. Stack text may change.
 - Test files that cover a split module may stay whole and import the split modules by relative path. There is no facade barrel.
 - Parity depth: a spawned surface test for every shim, plus seam tests where a seam exists. Surface-only is acceptable for the network-heavy CLIs.
+- Renovate and `workspace:*`: skipped at extract with `skipReason: unspecified-version`, so no local rule is needed (Unit 1).
+- Colour-off mechanism: `NO_COLOR` set before goke loads, plus ANSI-stripping sinks (Unit 1).
 
 ### Deferred to Implementation
 
-- Whether Renovate skips `workspace:*` dependencies. Unit 1 dry-runs an extract. If Renovate proposes them, a local `.github/renovate.json5` rule disables them, so the shared `default.json` preset stays untouched.
 - Exact boundaries inside each seam named in Units 7–9, and whether the 530-line `planStatusTruthProposalActions` splits by action kind. Decide these while reading the file. Split by responsibility, not by line count.
-- The runner's colour-off mechanism, decided by the Unit 1 console probe.
-- The Stryker runtime increase from adding core modules to `mutate`. Unit 1 times the baseline, and each PR records the new time.
+- The Stryker runtime increase from adding core modules to `mutate`. The Unit 1 baseline is about 199 s, and each PR records the new time.
 - Whether `daily-digest-counts` reads better in reports or registry. It defaults to reports, as the origin doc says.
 
 ## Output Structure
@@ -370,7 +371,7 @@ Each moving unit treats this checklist as part of its verification:
    - **Surface-only is enough** for the network-heavy CLIs (reconcile, dispatch, capture, improvement-metrics), whose behavior the moved unit tests cover.
    - Cover the stderr prefixes `wiki-ingest:warning:`, `wiki-ingest:finding:` and `corrections:warning:`; `::error::` lines; `$GITHUB_OUTPUT` keys; exit codes 0, 1, 2 and 3; and the prompt-visible loops (`drafted-solutions-validate-rows` stdout, stderr and exit, and `check-override-floors` exit).
    - For an entrypoint that throws uncaught today, assert exit 1 and a non-empty stderr containing the message. Stack text may change, because no workflow parses it.
-9. `bun install --frozen-lockfile` passes with the committed `bun.lock`, and `check-override-floors` passes.
+9. `bun install --frozen-lockfile` passes with the committed `bun.lock`, `package-layout.test.ts` confirms each package's declared dependencies match its `bun.lock` workspace entry (frozen install alone misses drift for already-locked dependencies), and `check-override-floors` passes.
 10. Package `README.md` exists (R6) and carries a Mermaid `C4Component` diagram of the package (see the diagram decision). The root `README.md` package flowchart and `C4Container` view are updated for any new package or edge. Root docs that list the layout are updated: `.github/copilot-instructions.md`, `README.md`, `llms.txt` and `.agents/skills/generating-project-docs/SKILL.md`.
 
 11. Run the full gate unpiped: `bun run bootstrap`, `check-types`, `lint`, `test` and `check:mutation-guards`.
@@ -392,7 +393,7 @@ Every CLI that moves adopts the core runner, except `wiki-context-expand` and `c
 
 The foundation PRs create primitives and gates. They migrate no callers, with two exceptions: retry (Unit 3) and the GitHub client (Unit 4) migrate their callers, because those callers span domains and need parity tests in one place.
 
-- [ ] **Unit 1: Probe the workspace mechanics on the real repo**
+- [x] **Unit 1: Probe the workspace mechanics on the real repo**
 
 **Goal:** Confirm the assumptions the foundation rests on, before any code depends on them.
 
@@ -400,32 +401,41 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Dependencies:** None
 
-**Files:** None committed. Results go under `/tmp/rr/scripts-bs/probe/` and are summarized in Unit 2's PR body.
+**Files:** None committed. Results are under `/tmp/rr/scripts-bs/probe/` (`RESULTS.md` and `logs/`) and are summarized in Unit 2's PR body.
 
-**Approach:**
+**Probe results.** Run in a scratch clone at `1da36c9` with two throwaway packages (`probe-core` exporting `src/*.ts`, `probe-b` depending on it as `workspace:*`), the repo's `bunfig.toml` (hoisted, 3-day floor), Bun 1.4.3, Node 24.22.0, goke 6.17.0, zod 4.6.7, Renovate 44.172.1, on macOS arm64. The source-export decision holds. Log names are under `/tmp/rr/scripts-bs/probe/logs/`.
 
-- In a scratch worktree, add two throwaway packages that export `src/*.ts`, wire a script to import one, and run `bun install` with the hoisted linker. Then confirm:
-  - Test Scripts Load's exact `node -e "import(...)"` form loads the script through the real install link;
-  - `bun run check-types`, `lint` and `test` pass, including eslint `compat-engines` on a workspace dependency and Vitest resolving a `.ts` subpath export;
-  - `bun install --frozen-lockfile` passes with the new workspace entry, then the private-leak job's `--ignore-scripts` form, followed by its Node invocation;
-  - a timed `bun run check:mutation-guards` baseline, plus a Stryker run in which a relative-path test kills a mutant in a package and a test importing it by package name does not;
-  - a Renovate local `--dry-run=extract` shows how `workspace:*` dependencies are treated.
-- Probe the invocation shapes workflows use:
-  - a foreign cwd with `--no-install --no-env-file`, as in `merge-data.yaml:79`: the script lives in the main checkout and runs from `data-branch-check/`, and a package import must resolve from the script's location;
-  - exit propagation through `| tee` under `bash -Eeuo pipefail {0}`, through the `&&` chains at `package.json:33,36`, and through `if bun ... | jq -e` and `RESULT="$(...)"` under `set -euo pipefail`.
-- Probe a stub goke CLI under Bun with stdout piped, covering every runner rule in Key Technical Decisions:
-  - help, unknown command, unknown flag, missing value, repeated scalar flag and a zod validation failure;
-  - a zero-argument root given a positional;
-  - a root command that declares optional and variadic positionals and a flag, given declared and undeclared argv (the caller shapes in Key Technical Decisions);
-  - an injected `exit` that is a no-op, on parse errors and on async action errors;
-  - a thrown action error, including a non-Error throw;
-  - `CI=true` on parse errors and on action errors;
-  - whether an injected console (`createConsole`) is accepted, which decides the colour-off mechanism;
-  - `process.exitCode` set inside an action.
+- **PASS, the workspace mechanics:**
+  - The real `bun install` link loads `.ts` source under Node strip-only through the hoisted `node_modules/@fro-bot` symlink. The symlink's realpath is under `packages/`, so Node strips types (`1a-install-link.log`, `1-test-scripts-load.log`).
+  - The `find` loop enumerated the package files and each loaded. A package file using `enum` failed with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. `find` prints nothing when no package exists, so the loop must fail on that (`1-test-scripts-load.log`).
+  - `check-types`, `lint` (including `bun audit` in `check:override-floors`) and `test` (116 files, 6189 passed) pass (`2a-check-types.log`, `2b-lint.log`, `2c-test.log`). `mutation-guards-config` Test 1 already fails on an unlisted `packages/*/src` module.
+  - `bun install --frozen-lockfile` passes after the lock is regenerated (`3-frozen-installs.log`).
+  - The private-leak job form (`rm -rf node_modules`, frozen `--ignore-scripts`, then Node with no inputs) gives the same stderr and exit 1 as the pristine clone, and the same with `GITHUB_EVENT_PATH=/nonexistent` (`3c-private-leak-job-form.log`, `3d-private-leak-pristine-compare.log`, `0b-baseline-private-leak.log`).
+  - Vitest resolves `.ts` subpath exports, and the existing `packages/**/*.test.ts` include covers new packages (`5a-vitest-subpath.log`).
+  - The `merge-data.yaml:79` shape (`bun --no-install --no-env-file ../…` from a nested cwd, and from an absolute foreign cwd) resolves package imports from the script's location. A copy outside the repo fails, so cwd does not matter (`8a-foreign-cwd.log`).
+  - Exit codes propagate through `| tee`, `&&` chains via `bun run`, and `$(…)` under `bash -Eeuo pipefail`, and a 300 KB payload through `tee` arrives complete. `if bun … | jq -e` cannot tell exit 3 from a falsy result, which is existing behavior (`8b-exit-propagation.log`).
+- **Stryker:** the baseline `bun run check:mutation-guards` is about 199 s with 3041 mutants over 11 files, verdict `clean` (`4a-mutation-guards-pristine.log`). One tiny mutated module adds 7 mutants and no measurable time (`4b-mutation-guards-probe-tree.log`). A test importing the mutated module by package name kills 0 of 7 mutants, and a relative import kills 7 of 7 (`4c-stryker-probe-name.log`, `4c-stryker-probe-rel.log`).
+- **Renovate** (scratch config with `default.json`'s own `packageRules`): `workspace:*` is extracted with `skipReason: unspecified-version`, so nothing is proposed, and `goke` and `zod` extract as normal dependencies (`6c-renovate-extract-scratch-config.log`). No local rule is needed. `--platform=local` cannot load `local>` presets, so an extract with the real `.github/renovate.json5` is blocked and unverified (`6b-renovate-extract-asis.log`).
+- **Frozen install does not catch every manifest and lock drift.** It fails for a lock restored from `main`, a new unlocked dependency and a removed dependency. It passes when a manifest adds a dependency already in the lock (for example `yaml`), and when `workspace:*` is swapped for a range that matches the workspace version (`3-frozen-installs.log`, `3b-frozen-installs-more.log`).
+- **ESLint `node-dependencies/compat-engines` skips `workspace:*` dependencies.** A dependent with `engines >=18` and a workspace dependency declaring `>=99` still passes, while a real dependency fails (`5c-eslint-pkgjson.log`, `5d-eslint-compat-engines-negative.log`, `5e-eslint-compat-engines-control-nonworkspace.log`).
+- **goke 6.17.0 behavior** (`7a-goke-matrix.log`, `7b-goke-matrix2.log`). The runner rules in Key Technical Decisions encode these results:
+  - Undeclared extra positionals on a root that declares positionals are dropped silently.
+  - Zod refinements are not enforced.
+  - There is no console injection, and `--no-color` is an unknown option.
+  - Behavior depends on `.help()`.
+  - Calling the recording `exit` from inside an action leaks a stack.
+  - A no-op `exit` behaves differently on parse errors and on async action errors.
+  - A 300 KB payload truncates to 64 KiB after `process.exit(0)`.
+- **Not verified:**
+  - Stryker's `not-applicable` path with a real `pull_request` event and the `@fro-bot/` closure resolver. Unit 2 proves both.
+  - Linux CI pipe truncation. The probe ran on macOS arm64 only.
+  - An extract with the real Renovate config.
+  - The Actions-only pieces (`actionlint`, CodeQL, the `Setup` composite), which ran as plain `bun install --frozen-lockfile`.
+  - `check:renovate-config` and the Vitest tests that need the pinned installs.
 
-**Test scenarios:** Test expectation: none. This is a probe, and its result decides the source-export decision, the Renovate rule and the runner's colour-off mechanism.
+**Test scenarios:** Test expectation: none. This was a probe.
 
-**Verification:** Each probe has a saved log with an exit code. Any failure reopens the plan before Unit 2 starts.
+**Verification:** Done. Every probe has a saved log with an exit code, and no result reopens the plan.
 
 - [ ] **Unit 2: Core and test-kit packages, gate wiring and new primitives** (PR A)
 
@@ -446,14 +456,14 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
   - `bun.lock`, and root `package.json` if the `workspaces` glob needs it
   - `scripts/check-mutation-guards.ts` and `scripts/check-mutation-guards.test.ts` (resolver, fixed triggers, updated scope pins)
   - `scripts/mutation-guards-config.test.ts` (new tests below), `mutation-guards.json`, `stryker.config.json`
-  - `.github/workflows/main.yaml`: Test Scripts Load also loops over the files that `find packages -path '*/src/*.ts' -not -name '*.test.ts' -not -path 'packages/wiki-write-core/*'` returns. It does not use a `**` glob, because default bash has no globstar and node would receive the literal pattern. The loop fails if that `find` matches nothing once a package exists. No install replay is needed: `.github/actions/setup` already runs `bun install --frozen-lockfile` on every PR job, so a stale `bun.lock` fails PR CI.
+  - `.github/workflows/main.yaml`: Test Scripts Load also loops over the files that `find packages -path '*/src/*.ts' -not -name '*.test.ts' -not -path 'packages/wiki-write-core/*'` returns. It does not use a `**` glob, because default bash has no globstar and node would receive the literal pattern. The loop fails if that `find` matches nothing once a package exists. No install replay is needed, but frozen install is not enough: `.github/actions/setup` runs `bun install --frozen-lockfile` on every PR job, which fails on a missing or unresolved lock entry but passes when a manifest adds an already-locked dependency or swaps `workspace:*` for a matching range (Unit 1). `package-layout.test.ts` closes that gap.
   - the `fro-bot.yaml` Test Scripts Load sentence
   - `README.md`: a packages section with the cross-package `flowchart` and the `C4Container` view, showing core and test-kit and the planned packages marked as planned
 - Move (with `git mv`):
   - `scripts/git-data-fake.ts`, `scripts/workflow-step-test-helper.ts`, `scripts/workflow-expression-test-helper.ts` and `scripts/repo-page-move-fixtures.ts` move to test-kit. Their importers (about 14 test files) are rewritten.
 - Test:
   - `packages/core/src/*.test.ts`
-  - `scripts/package-layout.test.ts`: every `@fro-bot/*` package is `private: true` and `type: module`; internal dependencies are `workspace:*`; every import of an `@fro-bot/` or `@fro.bot/` name inside a package is declared as a dependency (test-kit as a devDependency); every external npm package a non-test module imports (for example `yaml`, `@octokit/rest`, `typescript`) is declared, at the range the root declares; no package imports a relative path outside its own directory; no non-test `src` module imports test-kit; and the package graph has no cycles.
+  - `scripts/package-layout.test.ts`: every `@fro-bot/*` package is `private: true` and `type: module`; internal dependencies are `workspace:*`; every import of an `@fro-bot/` or `@fro.bot/` name inside a package is declared as a dependency (test-kit as a devDependency); every external npm package a non-test module imports (for example `yaml`, `@octokit/rest`, `typescript`) is declared, at the range the root declares; each package's declared dependencies match its `bun.lock` workspace entry; no package imports a relative path outside its own directory; no non-test `src` module imports test-kit; and the package graph has no cycles.
 
 **Approach:**
 
@@ -463,7 +473,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 - `json` emits compact JSON plus a newline by default and takes an indent parameter.
 - Core modules are in `mutate` with 100% kills before any consumer exists. Core's own tests must kill core's mutants, because a consumer's tests never run against them (Stryker sandbox attribution).
 - No script or package module changes to use these primitives in this PR. Each domain PR migrates its own copies exactly once.
-- The root `scripts/` directory is not a package. `package-layout.test.ts` applies its dependency-declaration rule to `packages/*` only. Root scripts and tests import `@fro-bot/*` and `@fro.bot/wiki-write-core` by name through the workspace link, with no root declaration. A root `workspace:*` devDependency would put `@fro-bot/**` in Renovate's automerge match (`default.json`).
+- The root `scripts/` directory is not a package. `package-layout.test.ts` applies its dependency-declaration rule to `packages/*` only. Root scripts and tests import `@fro-bot/*` and `@fro.bot/wiki-write-core` by name through the workspace link, with no root declaration. Unit 1 confirmed that resolution works without a root declaration.
 - The `repo-page-move-fixtures` move is test support, so it is listed as not-mutated.
 
 **Execution note:** Write the new mutation-guard trigger tests first. A core-only change must be reported applicable, and it must fail before the resolver change.
@@ -477,6 +487,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 - Error path: a `mutate` entry whose paired test imports it only through `@fro-bot/` fails the enumeration test.
 - Error path: a non-test `packages/core/src/x.ts` that is in neither `mutate` nor `not-mutated` fails Test 1.
 - Error path: an undeclared `@fro-bot/` import, a non-`workspace:*` internal dependency, a non-test module importing test-kit, or a package cycle fails `package-layout.test.ts`.
+- Error path: a package whose declared dependencies differ from its `bun.lock` workspace entry fails `package-layout.test.ts`, for an added already-locked dependency and for `workspace:*` swapped for a matching range. Frozen install passes both.
 - Error path: a package module importing `../../scripts/x.ts` fails `package-layout.test.ts`.
 - Edge case: `isRecord([])` returns false and `isObject([])` returns true.
 - Edge case: the output writer with the variable unset skips under `skip` and throws under `throw`.
@@ -548,7 +559,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Approach:**
 
-- The runner wraps goke `parse(argv, {run: false})` with an injected `exit`, `stdout` and `stderr`, and returns `{exitCode, stdout, stderr}`. It follows the failure-mode rules in Key Technical Decisions.
+- The runner wraps goke `parse(argv, {run: false})` with an injected `exit`, `stdout` and `stderr`, and returns `{exitCode, stdout, stderr}`. It always registers `.help()`, sets `NO_COLOR` before goke loads, counts positionals itself, re-validates parsed options against the full schema, and records the exit code locally. It follows the failure-mode rules in Key Technical Decisions.
 - Each CLI declares the positionals and flags its callers use on its root command. It also configures: its category (a no-argv run, or no-argv usage), its usage-error code and the stream usage prints to (stderr by default, stdout for `enumerate-existing-leaks`), its help exit code, and its error format and error exit code. The error format defaults to message-only.
 - Each command declares `readOnly: true | false`.
 - `requiredEnv` takes an error factory.
@@ -561,17 +572,19 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 - Error path, no-argv-usage category (the `enumerate-existing-leaks` shape): zero argv prints usage on stdout (its configured stream), returns the usage code (1) and runs no action. `--help` prints the same usage and returns 0.
 - Error path, both categories: argv that matches nothing declared returns the usage code, leaves stdout empty and writes help to stderr (the default stream). The action does not run.
 - Happy path: a declared positional runs the action with its value. Cover the caller shapes: two optional positionals (`daily-digest-counts`), one optional positional (`resolve-private`, `wiki-lint-issues`), variadic positionals (`check-renovate-ranges`) and a flag (`check-private-leak --promotion`).
-- Error path: an undeclared positional returns the usage code and does not run the action. A root CLI that declares no positional, given one (the `check-private-leak` shape), is the case.
-- Error path: `--help` on a CLI that documents no help returns the usage code with help on stderr and does not run the action. With a help exit code of 0 and usage on stdout (the `enumerate-existing-leaks` shape), it returns 0 with usage on stdout.
+- Error path: an extra positional beyond the declared count returns the usage code and does not run the action. Cover a root that declares positionals (`a b c` on `[a] [b]`, where goke alone runs the action and drops `c`) and a root that declares none (the `check-private-leak` shape).
+- Error path: a parsed option that violates a zod refinement (`.min(1)` given `0` or `-3`) returns the usage code and does not run the action. goke alone runs it.
+- Error path: `--help` on a CLI that documents no help returns the usage code with help on stderr, stdout empty, and does not run the action. With `.help()` registered goke would print help to stdout and exit 0, so the runner redirects it. With a help exit code of 0 and usage on stdout (the `enumerate-existing-leaks` shape), it returns 0 with usage on stdout.
 - Error path: with the recording exit (it records the code and throws a sentinel), a thrown action error, a non-Error throw, an async rejection and a parse error each return a non-zero code.
-- Edge case: a stub goke driven with a no-op `exit` resolves an async action error as 0. This pins why the runner never accepts a caller-supplied no-op `exit`.
+- Error path: a thrown Error and a non-Error caught in the runner's action wrapper produce the CLI's message with no `error: exit:1` line and no stack, and the wrapper never calls the injected `exit`.
+- Edge case: a stub goke driven with a no-op `exit` makes `parse()` reject with the original GokeError on a parse error, and resolve with the code only recorded (0 if trusted) on an async action error. Pin both. They show why the runner never accepts a caller-supplied no-op `exit`.
 - Error path: an unknown flag, a missing value, a repeated scalar flag and a zod validation failure return exit 1 with the message on stderr and empty stdout.
-- Error path: under `CI=true`, parse errors and action errors contain no ANSI codes and no stack.
+- Error path: under `CI=true`, parse errors, zod errors, action errors and help contain no ANSI codes and no stack, with `NO_COLOR` set by the runner and with the sinks' ANSI stripping alone.
 - Error path: an action that throws returns the configured message format. A CLI configured with error exit code 0 (the `gateway-announce` shape) returns 0.
 - Happy path: a `dispatch-renovate`-shaped CLI runs `plan` as a read-only command, runs the dispatch command for no argv, and returns the usage code for `pln` and `--help` without dispatching.
 - Happy path: an action that sets exit 3 returns 3.
 - Edge case: a fixture action that writes straight to `process.stdout` is invisible to the in-process result and visible to the spawn helper. The spawned test is therefore the parity authority.
-- Edge case: a 300 KB stdout payload is delivered complete under Bun when piped.
+- Edge case: a 300 KB stdout payload is delivered complete under Bun and Node when piped and the process exits naturally. A control that calls `process.exit(0)` right after the write truncates to 64 KiB, which pins the `process.exitCode` rule. Run it on Linux CI, because the probe measured macOS only.
 - Edge case: `options['--']` never appears in the JSON output.
 - Happy path: `requiredEnv` treats an empty value as missing and uses the caller's message.
 
@@ -1011,7 +1024,7 @@ CLI tables follow one legend:
 
 - **Interaction graph:** Workflows → `scripts/<name>.ts` → package function. Agent prompts invoke `scripts/wiki-context-expand.ts`, `check-override-floors.ts` and `drafted-solutions-validate-rows.ts` by path, and those paths stay.
 - **Error propagation:** Exit codes and stderr prefixes are part of the contract. The runner never lets a goke default (silent 0, stack trace, ANSI, stdout help) reach a workflow.
-- **State lifecycle risks:** `bun.lock` changes in every PR. A stale lock breaks the main-only private-leak job, and the PR CI replay catches that before merge.
+- **State lifecycle risks:** `bun.lock` changes in every PR. A lock missing an entry breaks the main-only private-leak job, and the setup action's frozen install catches that before merge. Frozen install misses drift for already-locked dependencies, so `package-layout.test.ts` compares each package's declared dependencies with its lock entry.
 - **API surface parity:** `@fro.bot/wiki-write-core` keeps its own primitive copies. The two layers can drift, and that is accepted (origin Key Decisions).
 - **Integration coverage:** The spawned surface test per CLI, the seam tests and the Test Scripts Load glob cover what unit tests can't.
 - **Unchanged invariants:**
@@ -1026,16 +1039,17 @@ CLI tables follow one legend:
 
 | Risk | Mitigation |
 | --- | --- |
-| A real `bun install` link breaks Node strip-only loading | Unit 1 probe. If it fails, reopen this plan. There is no silent `dist` fallback (see Key Technical Decisions). |
+| A real `bun install` link breaks Node strip-only loading | The Unit 1 probe passed. If a later unit finds otherwise, reopen this plan. There is no silent `dist` fallback (see Key Technical Decisions). |
 | Mutated code silently drops out of mutation coverage after a move | Tests move with their code, plus the enumeration test for named-import pairing and the trigger resolver (Unit 2). |
 | A mutated module imports another package by name, so the other package's mutants run against its real tree | Accepted. Each package's own tests must kill its own mutants. Core's tests do this for core. |
 | goke defaults change a workflow-visible contract | The single runner, its failure-mode rules (Key Technical Decisions) and one spawned surface test per CLI. Free-text CLIs stay hand-parsed. |
-| PR CI does not execute production invocations | Test Scripts Load imports modules but never runs an entry guard. The first Bun run of each moved CLI is post-merge verification (Operational / Rollout Notes). The Unit 1 Bun piped-stdout probe stays a hard prerequisite for Unit 5. |
+| PR CI does not execute production invocations | Test Scripts Load imports modules but never runs an entry guard. The first Bun run of each moved CLI is post-merge verification (Operational / Rollout Notes). The Unit 1 Bun piped-stdout probe passed on macOS only, so the Unit 5 300 KB test runs on Linux CI. |
 | A fail-soft or degrade-to-zero CLI hides a regression behind a green job | Verify through annotations and step output values, not the job conclusion (Operational / Rollout Notes). |
 | One run straddles two code versions: survey-repo, fro-bot, capture-learnings and draft-solutions check out the moving default branch in a later job | Units 10 and 11 keep artifact contracts byte-identical, gated by the handoff-replay and harvest-parity tests. No merge while such a run is in flight. Fro Bot runs near-continuously, so zero in-flight cannot be guaranteed. The residual risk is accepted. |
 | A weekly or write-only unit has no dry run, so a regression shows only on a live run | Four operator-approved dispatches gate Units 9–12 (three are dry-run or default-input runs, and D2 still syncs lint issues). Units 6–8 verify on their next scheduled run. Write-only CLIs are never dispatched. |
 | A revert restores code but not data | Revert, then an operator-approved data repair (Operational / Rollout Notes). |
-| Renovate automerges `workspace:*` bumps | Unit 1 dry-run. A local rule disables them if needed. |
+| Renovate proposes `workspace:*` bumps | Unit 1: Renovate extracts `workspace:*` with `skipReason: unspecified-version` and proposes nothing, so no rule is needed. `goke` and `zod` become normal update targets. An extract with the real config is unverified. |
+| A manifest and its `bun.lock` entry drift apart, and frozen install passes | `package-layout.test.ts` compares each package's declared dependencies with its `bun.lock` workspace entry (Unit 2). |
 | Long-running moves conflict with Fro Bot PRs touching `scripts/` | One PR at a time (memory #10128), `git mv`, and merge soon after review. A file is edited at most once per primitive PR (retry, client) and once when its domain moves, because domain PRs own the other primitive migrations. |
 | Stryker runtime grows with core in `mutate` | Time recorded per PR. Mutate only modules that hold logic. |
 | A revert out of order breaks the frozen install | Revert last-in-first-out, documented here and in each PR body. |
