@@ -13,10 +13,9 @@ import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync}
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
+import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
-
-import {evaluateExpression} from './workflow-expression-test-helper.ts'
 
 interface WorkflowStep {
   name?: string

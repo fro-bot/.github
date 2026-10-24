@@ -25,9 +25,9 @@ If guidance conflicts, follow the order above.
 - This repo is the automation/config control center for the Fro Bot org.
 - Keep changes minimal and targeted; avoid broad refactors.
 - Use **Bun** for dependencies and package scripts (`bun run <script>`, `bunx --no-install <bin>`); never yarn or pnpm; npm only in the places listed below. Never run bare `bun test` or `bun build`: those are Bun built-ins, not the package scripts.
-- Bun is the runtime for `scripts/*.ts` (`bun scripts/<name>.ts`). Node 24 is the runtime for Vitest and Stryker, which run through their package binaries.
+- Bun is the runtime for `scripts/*.ts` (`bun scripts/<name>.ts`) and for the package source they import. Node 24 is the runtime for Vitest and Stryker, which run through their package binaries.
 - npm stays in these places only: `npm publish` and the publish job's tool install in `release-wiki-write-core.yaml` (with `min-release-age=3`), `npm pack` in the package test, and the Quartz site build in `publish-wiki.yaml`.
-- These also run on Node: the private-leak scan (`scripts/check-private-leak.ts`), the "Test Scripts Load" job in `main.yaml` (the strip-only import smoke test), the Vitest step of the `coverage` script (its build step runs on Bun), and `check:renovate-config` (its `re2` native binding is built for Node's ABI and does not load under Bun, so `scripts/install-renovate.ts` and `scripts/check-renovate-config.ts` run with `node`).
+- These also run on Node: the private-leak scan (`scripts/check-private-leak.ts`), the "Test Scripts Load" job in `main.yaml` (the strip-only import smoke test; it loads `scripts/*.ts` and every `packages/*/src` module except `packages/wiki-write-core`, and fails if its `find` matches nothing while `packages/core/src` exists), the Vitest step of the `coverage` script (its build step runs on Bun), and `check:renovate-config` (its `re2` native binding is built for Node's ABI and does not load under Bun, so `scripts/install-renovate.ts` and `scripts/check-renovate-config.ts` run with `node`).
 - Use existing conventions from `@bfra.me/*` configs.
 
 ## Architecture & Key Components
@@ -39,6 +39,7 @@ If guidance conflicts, follow the order above.
 - Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; the root `overrides` map pins 14 floors; [`docs/override-floors.md`](../docs/override-floors.md) records the rationale for four of them: brace-expansion, source-map-js, undici and zod)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Bun except the Node exceptions listed under Repository Contract; no build step)
+- Private workspace packages (`packages/core`, `packages/test-kit`): `@fro-bot/` packages that export `.ts` source through subpath `exports`, with `private: true`, `workspace:*` internal dependencies and a README with a Mermaid `C4Component` diagram. `@fro.bot/wiki-write-core` stays the only published package. Domain packages (privacy, registry, dispatch, status-truth, wiki-ops, knowledge, reports, ci-checks) are planned: `scripts/` modules move into them behind thin `scripts/<name>.ts` entrypoints. The root `README.md` carries the package dependency graph (`flowchart`) and the `C4Container` view; `scripts/package-layout.test.ts` enforces the real graph
 - Package release (`.github/workflows/release-wiki-write-core.yaml`, `packages/wiki-write-core/.releaserc.yaml`, `scripts/wiki-write-core-release.ts`): a merge to `main` that changes `packages/wiki-write-core/` publishes `@fro.bot/wiki-write-core` to npm via semantic-release; the release tools install into a scratch prefix with Bun (3-day `--minimum-release-age` floor), never `package.json` or the lockfile; the publish job installs its tools with npm and `--min-release-age=3`. Release-tool transitives are deliberately unlocked: the top-level tools are exact-pinned and installed with `--ignore-scripts`, and a committed lock would pin `braces@3.0.3` (GHSA-vfj7-8cjw-p6xm, no patched version)
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
@@ -49,7 +50,9 @@ If guidance conflicts, follow the order above.
 
 ### Tests
 
-- Vitest runs tests colocated as `scripts/*.test.ts`.
+- Vitest runs tests colocated as `scripts/*.test.ts` and `packages/*/src/*.test.ts`.
+- Shared fakes and helpers live in `@fro-bot/test-kit` (`git-data-fake`, `workflow-step`, `workflow-expression`, `repo-page-move-fixtures`). Tests import them by package name; no non-test module may import the test kit.
+- A test that must kill mutants imports the mutated module by relative path. The Stryker sandbox links `node_modules` to the real tree, so a package-name import runs against the un-mutated file and every mutant survives. `scripts/mutation-guards-config.test.ts` rejects a `mutate` entry whose tests reach it only through an `@fro-bot/` name. Keep regexes and other constants whose mutants matter inside functions: a mutant in a module-level constant is covered by no test and survives.
 - Mocks use `vi.hoisted()` + `vi.mock()` for static `@octokit/rest` shims.
 - Prefer behavior-level assertions over implementation-coupled ones.
 
@@ -83,7 +86,7 @@ If you touched workflows, also validate YAML shape and action references in modi
 
 If you touched docs/instructions/agent files, ensure markdown lint rules still pass.
 
-If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `bun run check:mutation-guards`.
+If you touched a module listed in `stryker.config.json`'s `mutate` list or its paired test, also run `bun run check:mutation-guards`. A change under `packages/<pkg>/` (a source file a mutated module imports by name, or a `package.json`) triggers the gate too.
 
 If you touched `default.json`, `.github/renovate.json5`, or `scripts/check-renovate-*.ts`, also run `bun run check:renovate-config` (needs network and Bun; installs the Renovate pinned in `main.yaml` into a scratch dir with a 3-day `--minimum-release-age` floor, never into the repo; CI runs it in the `Check Workflows` job).
 

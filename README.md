@@ -173,8 +173,12 @@ This repository provides shared configurations and automation for the Fro Bot ec
 │   ├── log.md              # Chronological ingest log
 │   └── wiki/{repos,topics,entities,comparisons}/
 ├── metadata/               # Versioned control-plane state (YAML)
+├── packages/               # Workspace packages (see Packages)
+│   ├── core/               # @fro-bot/core: guards, GITHUB_OUTPUT and step-summary writers, JSON output (private)
+│   ├── test-kit/           # @fro-bot/test-kit: shared test fakes and helpers (private)
+│   └── wiki-write-core/    # @fro.bot/wiki-write-core: the published wiki-write primitives
 ├── persona/                # Fro Bot voice and character definition
-├── scripts/                # TypeScript entrypoints (run with Bun)
+├── scripts/                # TypeScript entrypoints (run with Bun) and their tests
 ├── common-settings.yaml    # Shared repository settings for downstream repos
 ├── eslint.config.ts        # Linting configuration
 ├── mise.toml               # Pinned tool versions
@@ -182,6 +186,92 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── tsconfig.json           # TypeScript configuration
 └── vitest.config.ts        # Test runner configuration
 ```
+
+## Packages
+
+`packages/` is a Bun workspace (`"workspaces": ["packages/*"]`). Shared code lives in private `@fro-bot/` packages that export `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load them as written. `@fro.bot/wiki-write-core` stays the only published package and keeps its compiled `dist/`.
+
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`@fro-bot/core`](packages/core/README.md) | In the repository | Type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output. Held at 100% mutation kills. |
+| [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
+| [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
+| `@fro-bot/privacy`, `registry`, `dispatch`, `status-truth`, `wiki-ops`, `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
+
+`scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
+
+### Package dependency graph
+
+The graph below is the authoritative one: `scripts/package-layout.test.ts` checks the real graph, and this diagram is maintained by hand. Dashed nodes are planned. An arrow points from a package to what it depends on.
+
+```mermaid
+flowchart BT
+  core["@fro-bot/core"]
+  testkit["@fro-bot/test-kit<br/>(imported by tests only)"]
+  wwc["@fro.bot/wiki-write-core<br/>(published, unchanged)"]
+  privacy["privacy (planned)"]:::planned
+  registry["registry (planned)"]:::planned
+  dispatch["dispatch (planned)"]:::planned
+  wikiops["wiki-ops (planned)"]:::planned
+  statustruth["status-truth (planned)"]:::planned
+  knowledge["knowledge (planned)"]:::planned
+  reports["reports (planned)"]:::planned
+  cichecks["ci-checks (planned)"]:::planned
+
+  privacy --> core & wwc
+  registry --> core & wwc
+  dispatch --> core & wwc
+  wikiops --> core & wwc & privacy
+  statustruth --> core & wwc & privacy
+  knowledge --> core & privacy & wikiops
+  reports --> core & privacy
+  cichecks --> core & wwc
+
+  classDef planned stroke-dasharray: 5 5
+```
+
+### Containers
+
+How the packages relate to the `scripts/` entrypoints, the workflows and GitHub. Workflow paths do not change when code moves into a package: each `scripts/<name>.ts` stays as a thin entrypoint.
+
+```mermaid
+C4Container
+  title Containers of fro-bot/.github
+
+  Person(operator, "Operator", "Dispatches workflows and approves changes")
+
+  System_Boundary(repo, "fro-bot/.github") {
+    Container(workflows, "Workflows", "GitHub Actions YAML", "Schedules and events; run scripts/<name>.ts")
+    Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, and the modules not yet moved into a package")
+    Container(core, "@fro-bot/core", "Private package", "guards, output, json")
+    Container(testkit, "@fro-bot/test-kit", "Private package", "Test fakes and helpers, tests only")
+    Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, compiled dist/")
+    Container(domains, "Domain packages (planned)", "Private packages", "privacy, registry, dispatch, status-truth, wiki-ops, knowledge, reports, ci-checks")
+  }
+
+  System_Ext(github, "GitHub", "REST API, Git Data API, Actions runner")
+
+  Rel(operator, workflows, "dispatches")
+  Rel(workflows, scripts, "runs")
+  Rel(scripts, core, "imports")
+  Rel(scripts, wwc, "imports")
+  Rel(scripts, domains, "will front")
+  Rel(domains, core, "will import")
+  Rel(scripts, testkit, "tests import")
+  Rel(scripts, github, "calls")
+
+  UpdateElementStyle(domains, $bgColor="grey", $borderColor="grey")
+  UpdateRelStyle(operator, workflows, $offsetX="-40", $offsetY="-10")
+  UpdateRelStyle(workflows, scripts, $offsetX="-30", $offsetY="-10")
+  UpdateRelStyle(scripts, core, $offsetX="-60", $offsetY="20")
+  UpdateRelStyle(scripts, wwc, $offsetX="-10", $offsetY="20")
+  UpdateRelStyle(scripts, domains, $offsetX="20", $offsetY="10")
+  UpdateRelStyle(domains, core, $offsetX="-20", $offsetY="-10")
+  UpdateRelStyle(scripts, testkit, $offsetX="30", $offsetY="30")
+  UpdateRelStyle(scripts, github, $offsetX="40", $offsetY="-20")
+```
+
+Each package README carries a `C4Component` diagram of its own modules.
 
 ### Key Configuration Files
 
@@ -194,7 +284,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`eslint.config.ts`](eslint.config.ts) | Lint + format configuration (ESLint runs Prettier via `eslint-plugin-prettier`) |
 | [`mise.toml`](mise.toml) | Pinned Node, Bun, and Python versions |
 | [`tsconfig.json`](tsconfig.json) | TypeScript strict-mode configuration (native TS execution) |
-| [`vitest.config.ts`](vitest.config.ts) | Vitest configuration for colocated `scripts/*.test.ts` files |
+| [`vitest.config.ts`](vitest.config.ts) | Vitest configuration for colocated `scripts/*.test.ts` and `packages/*/src/*.test.ts` files |
+| [`stryker.config.json`](stryker.config.json) | The mutated modules and their paired tests (`mutate`, `testFiles`); [`mutation-guards.json`](mutation-guards.json) lists every package module that is not mutated, with a reason |
 
 ## Automation
 

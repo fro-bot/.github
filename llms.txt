@@ -22,6 +22,10 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 ## Control Plane
 
 - [Scripts directory](scripts/): TypeScript entrypoints run with Bun -- no build step; `.ts` import extensions required
+- [Packages](README.md#packages): private `@fro-bot/` workspace packages that export `.ts` source with no build step, with the package dependency graph and a C4 container view
+- [Core package](packages/core/README.md): `@fro-bot/core` type guards, `$GITHUB_OUTPUT` and step-summary writers, and JSON line output
+- [Test kit](packages/test-kit/README.md): `@fro-bot/test-kit` shared test fakes and helpers, imported by tests only
+- [Wiki-write core package](packages/wiki-write-core/README.md): `@fro.bot/wiki-write-core`, the only published package
 - [Metadata README](metadata/README.md): schemas for `metadata/*.yaml` (allowlist, repos, renovate dispatch, social cooldowns) and the `data` branch commit contract
 - [Commit helper](scripts/commit-metadata.ts): typed mutator-based writer for `metadata/*.yaml` on the `data` branch with 409-conflict retry and branch protection guards
 - [Repo reconciliation](scripts/reconcile-repos.ts): pure decision engine + thin I/O shell that syncs `metadata/repos.yaml` with actual collaborator access, with progressive dispatch pipeline (90s stagger, per-run cap, staleness gate)

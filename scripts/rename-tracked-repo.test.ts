@@ -1,20 +1,6 @@
-import type {GitDataFake} from './git-data-fake.ts'
+import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {Buffer} from 'node:buffer'
-import {describe, expect, expectTypeOf, it, vi, type Mock} from 'vitest'
-import {parse, stringify} from 'yaml'
-import {createGitDataFake} from './git-data-fake.ts'
-import {
-  assertChangePolicy,
-  assertWritableBranch,
-  RenameError,
-  renameTrackedRepo,
-  runCli,
-  type GitDataClient,
-  type RenameChange,
-  type RenameDeps,
-  type RenameOutcome,
-  type RenameTransport,
-} from './rename-tracked-repo.ts'
+import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {
   INDEX_PATH,
   LOG_HISTORY,
@@ -33,7 +19,21 @@ import {
   snapshot,
   TOPIC_PATH,
   topicPage,
-} from './repo-page-move-fixtures.ts'
+} from '@fro-bot/test-kit/repo-page-move-fixtures'
+import {describe, expect, expectTypeOf, it, vi, type Mock} from 'vitest'
+import {parse, stringify} from 'yaml'
+import {
+  assertChangePolicy,
+  assertWritableBranch,
+  RenameError,
+  renameTrackedRepo,
+  runCli,
+  type GitDataClient,
+  type RenameChange,
+  type RenameDeps,
+  type RenameOutcome,
+  type RenameTransport,
+} from './rename-tracked-repo.ts'
 
 // ---------------------------------------------------------------------------
 // Fixtures

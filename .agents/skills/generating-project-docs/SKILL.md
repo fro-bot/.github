@@ -19,7 +19,7 @@ If you cannot point at a file, command, or commit that justifies a sentence, do 
 - Fixing documentation drift (counts, structure, file inventories, runtime claims)
 - Updating `SECURITY.md` when reporting channels, supported versions, or badges change
 - Updating `.github/copilot-instructions.md` when AI-assistant conventions evolve
-- Adding or refreshing a subdirectory `README.md` (e.g. `metadata/`, `persona/`, `branding/`, `scripts/`)
+- Adding or refreshing a subdirectory `README.md` (e.g. `metadata/`, `persona/`, `branding/`, `scripts/`, `packages/<name>/`)
 - Generating a section-scoped update (e.g. only the "Repository Structure" tree)
 
 ## When NOT to Use
@@ -38,6 +38,7 @@ Before writing anything, gather these from the live repo:
 | `README.md` (current)                                 | banner, badges, navigation, section order, voice                                       |
 | `.github/workflows/`                                  | workflow names, triggers, purposes (read each `name:` and top-level `on:` block)       |
 | `scripts/*.ts`                                        | TypeScript entrypoints (run with `bun scripts/<name>.ts`), exported functions, test summary (`bun run test`) |
+| `packages/*/package.json`, `packages/*/README.md`     | workspace packages: name, `private`, `exports` subpaths, `workspace:*` dependencies, module list, which are planned |
 | `metadata/*.yaml`                                     | metadata files in scope and their schemas                                              |
 | `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities)                                  |
 | `persona/`, `branding/`, `assets/`                    | character + brand asset inventory                                                      |
@@ -74,7 +75,7 @@ For `README.md`, preserve this order (matches current main-branch README):
 3. Features (categorized, emoji-led headings allowed for top-level groups only)
 4. Branding (assets table, design system snippet)
 5. Getting Started (Prerequisites, Local Development with numbered steps)
-6. Repository Structure (ASCII tree + key configuration files table)
+6. Repository Structure (ASCII tree) and Packages (package table, dependency `flowchart`, `C4Container` view), then the key configuration files table
 7. Automation (workflows table)
 8. Development (code quality standards, AI development guidelines pointer)
 9. Resources (categorized link list)
@@ -82,6 +83,8 @@ For `README.md`, preserve this order (matches current main-branch README):
 For `SECURITY.md`, preserve: reporting channel, supported versions table, OpenSSF badges. Do not add new sections without justification.
 
 For subdirectory `README.md`, follow the pattern in `metadata/README.md` and `persona/README.md`: Files (with schemas) → Update convention → Credential expectations (if any) → See also.
+
+For a package `README.md` (`packages/<name>/README.md`): purpose and privacy status, a module table (subpath, exports), the rules that bind callers, a Mermaid `C4Component` diagram (the package as a `Container_Boundary`, its modules as `Component`s, other packages and GitHub as external systems, `UpdateRelStyle` offsets on every `Rel`), then how to add a module. The root `README.md` carries the package dependency `flowchart` and the `C4Container` view. Both are maintained by hand: update them in the change that adds a package, a module or a cross-package edge. `scripts/package-layout.test.ts` checks the real graph; the diagrams are documentation, not a gate.
 
 For section-scoped updates: read the current document, locate the section by heading, replace only that section's content. Preserve surrounding structure exactly.
 
@@ -106,6 +109,8 @@ For section-scoped updates: read the current document, locate the section by hea
 - Every count matches the inventory (`ls`, `find`, `bun run test` output — do not pipe or truncate test output)
 - Every workflow listed has a real `.github/workflows/*.yaml` file
 - Every script listed has a real `scripts/*.ts` file
+- Every package listed as present has a real `packages/<name>/package.json`; packages that do not exist yet are marked planned
+- Every module in a package diagram is a real `packages/<name>/src/*.ts` file, and every package-to-package edge matches the `dependencies` in the manifests
 - Every link resolves (relative paths exist, external URLs are correct)
 - Every badge URL points at a real workflow / service / endpoint
 - No phantom files or features
@@ -136,6 +141,8 @@ For section-scoped updates: read the current document, locate the section by hea
 ls .github/workflows/                      # workflow count + names
 ls scripts/*.ts | grep -v test             # production script count
 ls scripts/*.test.ts                       # test file count
+ls packages/*/package.json                # workspace packages
+find packages -path '*/src/*.ts' -not -name '*.test.ts' -not -path 'packages/wiki-write-core/*'  # package modules
 bun run test                                # test summary (do not pipe or truncate)
 ls metadata/*.yaml                         # metadata file count
 find knowledge/wiki -name '*.md' | wc -l   # wiki page count

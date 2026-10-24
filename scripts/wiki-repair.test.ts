@@ -1,12 +1,11 @@
-import type {GitDataFake} from './git-data-fake.ts'
+import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {RepoEntry} from './schemas.ts'
 import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
 import process from 'node:process'
+import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
-import {createGitDataFake} from './git-data-fake.ts'
 import {commitWikiChanges, rebuildWikiIndex} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
 import {

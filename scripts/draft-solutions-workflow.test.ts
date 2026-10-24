@@ -7,14 +7,13 @@
 
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
+import {overlayWasAttempted, runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
-
 import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from './drafted-solutions-pr-body.ts'
 import {DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
 import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
-import {overlayWasAttempted, runStepWithStubs} from './workflow-step-test-helper.ts'
 
 interface WorkflowStep {
   name?: string

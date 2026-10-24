@@ -1,21 +1,5 @@
 import type {RepoEntry} from './schemas.ts'
 import {
-  applyPageChanges,
-  attributesPageTo,
-  mergeWikiLogs,
-  pageReflectsRename,
-  pageSourceUrls,
-  parseFrontmatterDocument,
-  planRepoPageMove,
-  validateWikilinks,
-  type PageChange,
-  type PlanRepoPageMoveParams,
-  type RepoPageMovePlan,
-} from '@fro.bot/wiki-write-core'
-import {describe, expect, it} from 'vitest'
-import {parse} from 'yaml'
-import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'
-import {
   INDEX_PAGE,
   INDEX_PATH,
   LOG_HISTORY,
@@ -38,7 +22,23 @@ import {
   snapshot,
   TOPIC_PATH,
   topicPage,
-} from './repo-page-move-fixtures.ts'
+} from '@fro-bot/test-kit/repo-page-move-fixtures'
+import {
+  applyPageChanges,
+  attributesPageTo,
+  mergeWikiLogs,
+  pageReflectsRename,
+  pageSourceUrls,
+  parseFrontmatterDocument,
+  planRepoPageMove,
+  validateWikilinks,
+  type PageChange,
+  type PlanRepoPageMoveParams,
+  type RepoPageMovePlan,
+} from '@fro.bot/wiki-write-core'
+import {describe, expect, it} from 'vitest'
+import {parse} from 'yaml'
+import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'
 import {buildPrivateTokenSet, computeRepoSlug} from './wiki-slug.ts'
 
 const TIMESTAMP = new Date('2026-10-10T12:34:56Z')

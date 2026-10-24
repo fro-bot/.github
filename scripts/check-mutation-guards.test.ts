@@ -1,6 +1,6 @@
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {dirname, join, resolve} from 'node:path'
+import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
@@ -14,7 +14,9 @@ import {
   evaluateTriggerGate,
   exitCodeFor,
   flattenReport,
+  froBotPackageSourceFiles,
   mutationReportPath,
+  reachedModulesTransitive,
   readMutateFileContents,
   readStrykerConfig,
   resolveReporterConfig,
@@ -1142,6 +1144,45 @@ describe('closure-based trigger set against the real config', () => {
     expect(result?.verdict).toBe('not-applicable')
   })
 
+  // (c2) Workspace packages. A PR that touches only @fro-bot/ code must run the check: a core module
+  // is a mutate entry, and a test-kit helper is reached only through a package-name import from a
+  // testFiles entry (scripts/merge-back-data.test.ts imports @fro-bot/test-kit/git-data-fake), which
+  // only the exports-map resolver follows.
+  it.each([
+    'packages/core/src/guards.ts',
+    'packages/core/src/json.ts',
+    'packages/core/src/output.ts',
+    'packages/core/package.json',
+    'packages/test-kit/package.json',
+    'packages/test-kit/src/git-data-fake.ts',
+  ])('does NOT report not-applicable for a changed set of only %s', async changedFile => {
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => [changedFile]}),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  it('reaches the test-kit helper only through a package name, so the exports-map resolver is what puts it in the closure', () => {
+    const helper = 'packages/test-kit/src/git-data-fake.ts'
+    expect(realTriggerSet.files.has(helper)).toBe(true)
+    expect(realConfig.mutate).not.toContain(helper)
+    expect(realConfig.testFiles).not.toContain(helper)
+    expect(reachedModulesTransitive('scripts/merge-back-data.test.ts').has(helper)).toBe(false)
+  })
+
+  it('reports not-applicable for a package README, which is neither a manifest nor imported', async () => {
+    const unreached = 'packages/core/README.md'
+    expect(realTriggerSet.files.has(unreached)).toBe(false)
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => [unreached]}),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+  })
+
   // (d) Every not-mutated entry in mutation-guards.json that IS imported (directly or
   // transitively, per buildImportClosure) by a real mutate entry must be in the trigger set —
   // the table the review's discrimination case (a) generalizes to every such entry, not just
@@ -1554,9 +1595,42 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
     ])
   })
 
-  it('rejects the former @fro-bot scope', () => {
+  it('maps a no-substitution template-literal specifier in a dynamic import and the vitest references', () => {
+    const source = [
+      'const a = await import(`@fro.bot/wiki-write-core/schemas`)',
+      'await vi.importActual(`@fro.bot/wiki-write-core/wiki-slug`)',
+      'vi.mock(`@fro.bot/wiki-write-core`)',
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/wiki-write-core/src/schemas.ts',
+      'packages/wiki-write-core/src/wiki-slug.ts',
+      'packages/wiki-write-core/src/index.ts',
+    ])
+  })
+
+  it('leaves a template literal with a substitution alone', () => {
+    expect(sourceFilesFor(`await import(\`@fro.bot/wiki-write-core/\${name}\`)`)).toEqual([])
+  })
+
+  it('maps a bare side-effect import and the vitest module references', () => {
+    const source = [
+      `import '@fro.bot/wiki-write-core/schemas'`,
+      `const a = await vi.importActual('@fro.bot/wiki-write-core/wiki-slug')`,
+      `vi.mock('@fro.bot/wiki-write-core')`,
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/wiki-write-core/src/schemas.ts',
+      'packages/wiki-write-core/src/wiki-slug.ts',
+      'packages/wiki-write-core/src/index.ts',
+    ])
+  })
+
+  // The `@fro-bot/` scope names the private workspace packages. It is resolved through each
+  // package's exports map by `froBotPackageSourceFiles`, never by this published-package scan.
+  it('leaves the @fro-bot scope to the workspace-package resolver', () => {
     expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core'`)).toEqual([])
     expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core/wiki-slug'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core/guards'`)).toEqual([])
   })
 
   it('rejects a lookalike scope where the dot is any other character', () => {
@@ -1577,5 +1651,364 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
         expect(existsSync(join(resolve(import.meta.dirname, '..'), source)), source).toBe(true)
       }
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `@fro-bot/<pkg>[/<sub>]` resolution through each workspace package's `exports` map, and the
+// package-manifest triggers. The fake reader serves package manifests and sources from a map,
+// so these tests do not depend on which packages exist on disk.
+// ---------------------------------------------------------------------------
+
+const repositoryRootForFakes = resolve(import.meta.dirname, '..')
+
+/**
+ * A `SourceReader` backed by a repo-relative path map. A `.ts` path missing from the map reads as
+ * an empty module, so a closure walk that reaches a real file on disk stays inside the fake. Any
+ * other missing path fails with ENOENT, the way a package that does not exist does.
+ */
+function fakeSourceReader(files: Readonly<Record<string, string>>): (absolutePath: string) => string {
+  return absolutePath => {
+    const repoRelative = relative(repositoryRootForFakes, absolutePath).replaceAll('\\', '/')
+    const content = files[repoRelative]
+    if (content !== undefined) return content
+    if (repoRelative.endsWith('.ts')) return 'export {}\n'
+    throw Object.assign(new Error(`ENOENT: no such file or directory, open '${repoRelative}'`), {code: 'ENOENT'})
+  }
+}
+
+const CORE_MANIFEST = JSON.stringify({
+  name: '@fro-bot/core',
+  exports: {'./guards': './src/guards.ts', './output': './src/output.ts', '.': './src/index.ts'},
+})
+const WIKI_WRITE_CORE_MANIFEST = JSON.stringify({
+  name: '@fro.bot/wiki-write-core',
+  exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
+})
+
+describe('froBotPackageSourceFiles specifier scan', () => {
+  const sourceFilesFor = (source: string, extra: Readonly<Record<string, string>> = {}): string[] =>
+    froBotPackageSourceFiles(
+      'scripts/fixture.ts',
+      fakeSourceReader({
+        'scripts/fixture.ts': source,
+        'packages/core/package.json': CORE_MANIFEST,
+        'packages/wiki-write-core/package.json': WIKI_WRITE_CORE_MANIFEST,
+        ...extra,
+      }),
+    )
+
+  it('maps a subpath specifier to the source file its exports entry names', () => {
+    expect(sourceFilesFor(`import {isRecord} from '@fro-bot/core/guards'`)).toEqual(['packages/core/src/guards.ts'])
+  })
+
+  it('maps the bare package specifier through the "." exports entry', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core'`)).toEqual(['packages/core/src/index.ts'])
+  })
+
+  it('maps every reference shape: static from-clause, re-export and dynamic import', () => {
+    const source = [
+      `import {a} from '@fro-bot/core/guards'`,
+      `export * from '@fro-bot/core/output'`,
+      `const m = await import('@fro-bot/core/guards')`,
+    ].join('\n')
+    expect(sourceFilesFor(source)).toEqual([
+      'packages/core/src/guards.ts',
+      'packages/core/src/output.ts',
+      'packages/core/src/guards.ts',
+    ])
+  })
+
+  it('ignores a specifier inside a comment', () => {
+    expect(sourceFilesFor(`// import {x} from '@fro-bot/core/guards'\n/* import('@fro-bot/core/output') */`)).toEqual(
+      [],
+    )
+  })
+
+  it('does not resolve a subpath the exports map does not name', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core/missing'`)).toEqual([])
+  })
+
+  it('does not resolve a package whose manifest does not exist', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/absent/guards'`)).toEqual([])
+  })
+
+  it('does not resolve @fro-bot/wiki-write-core: the published package is @fro.bot/wiki-write-core', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '@fro.bot/wiki-write-core'`)).toEqual([])
+  })
+
+  it('rejects a lookalike scope where the dash is any other character', () => {
+    expect(sourceFilesFor(`import {x} from '@fro.bot/core/guards'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '@froxbot/core/guards'`)).toEqual([])
+  })
+
+  it('fails closed on a manifest it cannot read for any reason other than a missing file', () => {
+    const reader = (absolutePath: string): string => {
+      if (absolutePath.endsWith('package.json')) throw new Error('EACCES: permission denied (simulated)')
+      return `import {x} from '@fro-bot/core/guards'`
+    }
+    expect(() => froBotPackageSourceFiles('scripts/fixture.ts', reader)).toThrow('EACCES')
+  })
+
+  it('fails closed on a manifest that is not valid JSON', () => {
+    expect(() =>
+      sourceFilesFor(`import {x} from '@fro-bot/core/guards'`, {'packages/core/package.json': '{not json'}),
+    ).toThrow('packages/core/package.json')
+  })
+
+  it('fails closed on an exports entry that is not a plain string path', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/core', exports: {'./guards': {import: './src/guards.ts'}}})
+    expect(() =>
+      sourceFilesFor(`import {x} from '@fro-bot/core/guards'`, {'packages/core/package.json': manifest}),
+    ).toThrow('@fro-bot/core/guards')
+  })
+
+  it('maps a bare side-effect import', () => {
+    expect(sourceFilesFor(`import '@fro-bot/core/guards'`)).toEqual(['packages/core/src/guards.ts'])
+  })
+
+  it('maps a no-substitution template-literal specifier in a dynamic import', () => {
+    expect(sourceFilesFor('const m = await import(`@fro-bot/core/output`)')).toEqual(['packages/core/src/output.ts'])
+    expect(sourceFilesFor('const m = await import( `@fro-bot/core/output` )')).toEqual(['packages/core/src/output.ts'])
+  })
+
+  it('maps a template-literal specifier in every vitest module reference', () => {
+    const source = [
+      'await vi.importActual(`@fro-bot/core/guards`)',
+      'await vi.importActual<typeof import(`@fro-bot/core/output`)>(`@fro-bot/core/output`)',
+      'vi.mock(`@fro-bot/core/guards`)',
+      'vi.doMock(`@fro-bot/core/output`, () => ({}))',
+      'await vi.importMock(`@fro-bot/core/guards`)',
+    ].join('\n')
+    expect(new Set(sourceFilesFor(source))).toEqual(
+      new Set(['packages/core/src/guards.ts', 'packages/core/src/output.ts']),
+    )
+  })
+
+  it('leaves a template literal with a substitution alone: it cannot be resolved statically', () => {
+    expect(sourceFilesFor(`await import(\`@fro-bot/core/\${name}\`)`)).toEqual([])
+    expect(sourceFilesFor(`await import(\`@fro-bot/core/output\${suffix}\`)`)).toEqual([])
+  })
+
+  it('keeps `from` and bare `import` string-literal only: a backtick is not valid there', () => {
+    expect(sourceFilesFor('import {x} from `@fro-bot/core/guards`')).toEqual([])
+    expect(sourceFilesFor('import `@fro-bot/core/guards`')).toEqual([])
+  })
+
+  it('maps the vitest module references: importActual, importMock, mock and doMock', () => {
+    const source = [
+      `const a = await vi.importActual('@fro-bot/core/guards')`,
+      `const b = await vi.importActual<typeof import('@fro-bot/core/output')>('@fro-bot/core/output')`,
+      `vi.mock('@fro-bot/core/guards')`,
+      `vi.doMock('@fro-bot/core/output', () => ({}))`,
+      `const c = await vi.importMock('@fro-bot/core/guards')`,
+    ].join('\n')
+    expect(new Set(sourceFilesFor(source))).toEqual(
+      new Set(['packages/core/src/guards.ts', 'packages/core/src/output.ts']),
+    )
+  })
+
+  it('resolves a nested subpath key through the exports map', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/core', exports: {'./util/deep': './src/util/deep.ts'}})
+    expect(
+      sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`, {'packages/core/package.json': manifest}),
+    ).toEqual(['packages/core/src/util/deep.ts'])
+  })
+
+  it('does not resolve a nested subpath the exports map does not name', () => {
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`)).toEqual([])
+  })
+
+  it('does not stop a subpath at its first segment: the whole specifier is the exports key', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/core', exports: {'./util': './src/util.ts'}})
+    expect(
+      sourceFilesFor(`import {x} from '@fro-bot/core/util/deep'`, {'packages/core/package.json': manifest}),
+    ).toEqual([])
+  })
+
+  it('ignores a manifest whose name is not the requested package', () => {
+    const manifest = JSON.stringify({name: '@fro-bot/other', exports: {'./guards': './src/guards.ts'}})
+    expect(sourceFilesFor(`import {x} from '@fro-bot/core/guards'`, {'packages/core/package.json': manifest})).toEqual(
+      [],
+    )
+  })
+})
+
+describe('import closure through @fro-bot/ package names', () => {
+  const files = {
+    'scripts/check-mutation-guards.ts': `import {isRecord} from '@fro-bot/core/guards'\nexport {isRecord}\n`,
+    'packages/core/package.json': CORE_MANIFEST,
+  }
+  const config = (overrides: Partial<StrykerConfigShape> = {}): StrykerConfigShape =>
+    fakeTriggerConfig({
+      mutate: ['scripts/check-mutation-guards.ts'],
+      testFiles: ['scripts/check-mutation-guards.test.ts'],
+      ...overrides,
+    })
+
+  it('adds the resolved package source file to the closure, without a dist directory trigger', () => {
+    const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], fakeSourceReader(files))
+    expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
+    expect(closure.hasWikiWriteCoreSubpathReference).toBe(false)
+  })
+
+  it('reports a change to the package file applicable when a mutate entry imports it only by name', async () => {
+    const result = await evaluateTriggerGate(
+      config(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/guards.ts']}),
+      fakeSourceReader(files),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  describe('a package imported by a file the entry reaches, not by the entry itself', () => {
+    const helperFiles = {
+      ...files,
+      'scripts/check-mutation-guards.ts': `import {helper} from './check-wiki-authority.ts'\nexport {helper}\n`,
+      'scripts/check-wiki-authority.ts': `import {isRecord} from '@fro-bot/core/guards'\nexport const helper = isRecord\n`,
+    }
+
+    it('puts the package file in the closure', () => {
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], fakeSourceReader(helperFiles))
+      expect(closure.files.has('scripts/check-wiki-authority.ts')).toBe(true)
+      expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
+    })
+
+    it('does not report not-applicable when only the package file changed', async () => {
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/guards.ts']}),
+        fakeSourceReader(helperFiles),
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('reports a change to the package file applicable when a mutate entry imports it by a template literal', async () => {
+      const reader = fakeSourceReader({
+        ...files,
+        'scripts/check-mutation-guards.ts': 'export const load = () => import(`@fro-bot/core/output`)\n',
+      })
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/output.ts']}),
+        reader,
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('does the same for a template-literal vi.importActual', async () => {
+      const reader = fakeSourceReader({
+        ...files,
+        'scripts/check-mutation-guards.ts': 'export const load = () => vi.importActual(`@fro-bot/core/output`)\n',
+      })
+      const result = await evaluateTriggerGate(
+        config(),
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/output.ts']}),
+        reader,
+      )
+      expect(result).toBeUndefined()
+    })
+
+    it('marks the dist directory a trigger when a reached file imports @fro.bot/wiki-write-core by name', () => {
+      const reader = fakeSourceReader({
+        ...helperFiles,
+        'scripts/check-wiki-authority.ts': `import {x} from '@fro.bot/wiki-write-core/schemas'\nexport const helper = x\n`,
+      })
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], reader)
+      expect(closure.hasWikiWriteCoreSubpathReference).toBe(true)
+      expect(closure.files.has('packages/wiki-write-core/src/schemas.ts')).toBe(true)
+    })
+
+    it('follows a package file reached from a reached file on to the package file it imports by relative path', () => {
+      const reader = fakeSourceReader({
+        ...helperFiles,
+        'packages/core/src/guards.ts': `export * from './output.ts'\n`,
+      })
+      const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], reader)
+      expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
+    })
+  })
+
+  it('still reports a package file the closure does not reach as not-applicable', async () => {
+    const result = await evaluateTriggerGate(
+      config(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/core/src/unrelated.ts']}),
+      fakeSourceReader(files),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+  })
+
+  it('reports instrumentation-failed when a package manifest cannot be read during the closure walk', async () => {
+    const reader = (absolutePath: string): string => {
+      if (absolutePath.endsWith('package.json')) throw new Error('EACCES: permission denied (simulated manifest)')
+      return files['scripts/check-mutation-guards.ts']
+    }
+    const result = await evaluateTriggerGate(
+      config(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['docs/x.md']}),
+      reader,
+    )
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.mutants[0]?.reason).toContain('EACCES')
+  })
+})
+
+describe('package manifests are fixed triggers', () => {
+  const evaluate = async (changed: string[]) =>
+    evaluateTriggerGate(fakeTriggerConfig(), PULL_REQUEST_EVENT, fakeGateDeps({fetchChangedFiles: () => changed}))
+
+  it.each(['packages/core/package.json', 'packages/test-kit/package.json', 'packages/brand-new/package.json'])(
+    'runs for a changed %s',
+    async manifest => {
+      expect(await evaluate([manifest])).toBeUndefined()
+    },
+  )
+
+  it('lists every existing package manifest in the trigger set, so the logged size counts them', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    for (const manifest of ['packages/core/package.json', 'packages/test-kit/package.json']) {
+      expect(triggerSet.files.has(manifest), manifest).toBe(true)
+    }
+    expect(triggerSet.closureSize).toBe(0)
+  })
+
+  it('carries the manifest pattern on the trigger set, so membership is decided from the trigger set alone', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(triggerSet.filePatterns.some(pattern => pattern.test('packages/brand-new/package.json'))).toBe(true)
+    expect(triggerSet.filePatterns.some(pattern => pattern.test('packages/core/README.md'))).toBe(false)
+    expect(changedFilesIntersectTriggerSet(['packages/brand-new/package.json'], triggerSet)).toBe(true)
+  })
+
+  it('reports the manifest-inclusive size in the not-applicable reason', async () => {
+    const result = await evaluate(['docs/x.md'])
+    const size = buildTriggerSet(fakeTriggerConfig()).files.size
+    expect(result?.mutants[0]?.reason).toContain(`${String(size)}-file trigger set`)
+    expect(size).toBeGreaterThanOrEqual(17)
+  })
+
+  it('keeps the wiki-write-core manifest in the explicit fixed list', () => {
+    expect(buildTriggerSet(fakeTriggerConfig()).files.has('packages/wiki-write-core/package.json')).toBe(true)
+  })
+
+  it.each([
+    'packages/core/README.md',
+    'packages/core/src/nested/package.json',
+    'package.json.bak',
+    'docs/packages/core/package.json',
+  ])('does not run for %s, which is not a package manifest', async changed => {
+    expect((await evaluate([changed]))?.verdict).toBe('not-applicable')
+  })
+
+  it('matches a normalized path with a leading ./', () => {
+    expect(
+      changedFilesIntersectTriggerSet(['./packages/core/package.json'], buildTriggerSet(fakeTriggerConfig())),
+    ).toBe(true)
   })
 })

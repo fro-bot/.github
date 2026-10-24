@@ -15,9 +15,10 @@ import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
+import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
+import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
-
 import {
   buildMarker,
   buildSnapshot,
@@ -30,8 +31,6 @@ import {
   scanOperatorMentions,
   selectLatestMarkerCommentBody,
 } from './rollout-tracker-snapshot.ts'
-import {evaluateExpression} from './workflow-expression-test-helper.ts'
-import {runStepWithStubs} from './workflow-step-test-helper.ts'
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 

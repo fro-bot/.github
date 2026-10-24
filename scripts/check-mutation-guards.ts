@@ -1,5 +1,5 @@
 import {spawnSync} from 'node:child_process'
-import {appendFileSync, existsSync, readFileSync, rmSync} from 'node:fs'
+import {appendFileSync, existsSync, readdirSync, readFileSync, rmSync} from 'node:fs'
 import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 
@@ -1002,13 +1002,31 @@ function defaultReadSource(absolutePath: string): string {
 /** The one internal package this repo builds, and the two directories a subpath import maps between. */
 const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
 const WIKI_WRITE_CORE_DIST_DIR = 'packages/wiki-write-core/dist'
+// How a module specifier is introduced: a `from '...'` clause (static import or re-export), a
+// bare side-effect `import '...'`, a dynamic `import('...')`, or a vitest module reference
+// (`vi.mock`, `vi.doMock`, `vi.importActual`, `vi.importMock`, with an optional type argument).
+// `from` and bare `import` take string literals only. A dynamic `import(...)` and the vitest
+// references also accept a no-substitution template literal (backtick, `\x60` below), which loads
+// the same module; a template with a `${` substitution cannot be resolved statically, and the
+// specifier character classes exclude `$` and `{`, so it never matches. Every specifier scan below
+// shares this, so no scan sees fewer shapes than another. These patterns are not in a mutated
+// module, so they may stay module-level constants.
+const SPECIFIER_INTRODUCER = String.raw`(?:from\s+['"]|import\s+['"]|(?:import|vi\.(?:mock|doMock|importActual|importMock)\s*(?:<[^>\n]*>)?)\(\s*['"\x60])`
 // `from '@fro.bot/wiki-write-core'` (bare, group 1 undefined) or
-// `from '@fro.bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug') — matches the
-// same three reference shapes as the relative patterns above (static from-clause, dynamic
-// `import(...)`, and `export ... from`) in one pattern, since all three share the same
-// `from '...'`/`import('...')` text shape this is a plain textual scan over.
-const WIKI_WRITE_CORE_SPECIFIER_PATTERN =
-  /(?:from\s+['"]|import\(\s*['"])@fro\.bot\/wiki-write-core(?:\/([\w-]+))?['"]/gu
+// `from '@fro.bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug').
+const WIKI_WRITE_CORE_SPECIFIER_PATTERN = new RegExp(
+  String.raw`${SPECIFIER_INTRODUCER}@fro\.bot\/wiki-write-core(?:\/([\w-]+))?['"\x60]`,
+  'gu',
+)
+// `from '@fro-bot/core'` (group 1 = 'core', group 2 undefined), `from '@fro-bot/core/guards'`
+// (group 2 = 'guards') or a nested key such as `@fro-bot/core/util/deep` (group 2 = 'util/deep'):
+// the private workspace packages. Group 2 is the whole remainder of the specifier, and the
+// package's `exports` map decides whether that key exists. The scope has a dash, the published
+// package's has a dot, so neither pattern matches the other.
+const FRO_BOT_PACKAGE_SPECIFIER_PATTERN = new RegExp(
+  String.raw`${SPECIFIER_INTRODUCER}@fro-bot\/([\w-]+)(?:\/([\w./-]+))?['"\x60]`,
+  'gu',
+)
 
 /**
  * Resolves a dynamic-import template literal's raw content (e.g. `./x${'.js'}`) by inlining
@@ -1225,6 +1243,82 @@ export function wikiWriteCoreSubpathSourceFiles(
   return subpaths.map(subpath => `${WIKI_WRITE_CORE_SRC_DIR}/${subpath}.ts`)
 }
 
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+/**
+ * Resolves one `@fro-bot/<packageDir>[/<subpath>]` specifier to the repo-relative source file the
+ * package's `exports` map names for it. The package lives at `packages/<packageDir>` and must
+ * declare itself as `@fro-bot/<packageDir>`, so `@fro-bot/wiki-write-core` (the published
+ * package is `@fro.bot/wiki-write-core`) resolves to nothing, as it does at run time.
+ *
+ * Returns `undefined` when the package or the exports entry does not exist: nothing can load such
+ * an import, so it cannot affect a run. Anything else the gate cannot interpret throws, so the
+ * caller fails closed: a manifest it cannot read, one that is not JSON, or an entry that is not
+ * a plain string path (the workspace packages export `.ts` source with no conditions).
+ */
+function resolveFroBotPackageExport(
+  packageDir: string,
+  subpath: string | undefined,
+  readSource: SourceReader,
+): string | undefined {
+  const manifestPath = `packages/${packageDir}/package.json`
+  let raw: string
+  try {
+    raw = readSource(join(repositoryRoot, manifestPath))
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined
+    throw error
+  }
+
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(raw)
+  } catch (error) {
+    throw new Error(`${manifestPath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (!isRecord(manifest) || manifest.name !== `@fro-bot/${packageDir}`) return undefined
+
+  const key = subpath === undefined ? '.' : `./${subpath}`
+  const exportsMap = manifest.exports
+  if (!isRecord(exportsMap) || !Object.keys(exportsMap).includes(key)) return undefined
+
+  const target = exportsMap[key]
+  if (typeof target !== 'string') {
+    const specifier = subpath === undefined ? `@fro-bot/${packageDir}` : `@fro-bot/${packageDir}/${subpath}`
+    throw new Error(`${manifestPath}: the exports entry "${key}" for ${specifier} is not a plain string path`)
+  }
+  return relative(repositoryRoot, resolve(repositoryRoot, 'packages', packageDir, target)).replaceAll('\\', '/')
+}
+
+/**
+ * Resolves every `@fro-bot/<package>[/<subpath>]` specifier a file references directly (static
+ * from-clause, dynamic `import(...)`, or `export ... from`) to the source file that package's
+ * `exports` map points to. The workspace packages export `.ts` source with no build step, so the
+ * resolved file is what a run loads: a change to it can change a mutated module's behavior even
+ * though the importer has no `./`/`../` specifier for `directSpecifiers` to find.
+ *
+ * A mutated module that imports a package by name runs against that package's real tree in the
+ * Stryker sandbox, not against a mutant. This resolver only decides what triggers a run.
+ * `scripts/mutation-guards-config.test.ts` rejects a test that reaches a `mutate` entry only this
+ * way.
+ */
+export function froBotPackageSourceFiles(
+  repoRelativeFilePath: string,
+  readSource: SourceReader = defaultReadSource,
+): string[] {
+  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
+  const sources: string[] = []
+  for (const match of content.matchAll(FRO_BOT_PACKAGE_SPECIFIER_PATTERN)) {
+    const [, packageDir, subpath] = match
+    if (packageDir === undefined) continue
+    const source = resolveFroBotPackageExport(packageDir, subpath, readSource)
+    if (source !== undefined) sources.push(source)
+  }
+  return sources
+}
+
 export interface ImportClosure {
   readonly files: ReadonlySet<string>
   /**
@@ -1243,8 +1337,9 @@ export interface ImportClosure {
  * The transitive relative-import closure of every entry in `entries` — each entry's own
  * `reachedModulesTransitive` result, plus (recursively) the same for every
  * `@fro.bot/wiki-write-core` subpath specifier reference resolved to its source file (see
- * `wikiWriteCoreSubpathSourceFiles`), so a package-by-name reference from a `mutate`/
- * `testFiles` entry still pulls its source counterpart — and that counterpart's own further
+ * `wikiWriteCoreSubpathSourceFiles`) and every `@fro-bot/<package>` specifier resolved through that
+ * package's `exports` map (see `froBotPackageSourceFiles`), so a package-by-name reference from a
+ * `mutate`/`testFiles` entry still pulls its source counterpart — and that counterpart's own further
  * imports — into the closure. `entries` itself is not included in the returned `files`; the
  * caller (`buildTriggerSet`) already has the raw config entries and unions them in separately.
  *
@@ -1258,6 +1353,7 @@ export function buildImportClosure(
   const files = new Set<string>()
   const visited = new Set<string>()
   const queue: string[] = [...entries]
+  const scanned = new Set<string>()
   let hasWikiWriteCoreSubpathReference = false
 
   while (queue.length > 0) {
@@ -1268,14 +1364,27 @@ export function buildImportClosure(
     visited.add(normalized)
     if (!isLiteralPath(normalized) || !existsSync(join(repositoryRoot, normalized))) continue
 
-    for (const target of reachedModulesTransitive(normalized, readSource)) {
+    const reached = reachedModulesTransitive(normalized, readSource)
+    for (const target of reached) {
       files.add(target)
     }
 
-    for (const srcFile of wikiWriteCoreSubpathSourceFiles(normalized, readSource)) {
-      hasWikiWriteCoreSubpathReference = true
-      files.add(srcFile)
-      if (!visited.has(srcFile)) queue.push(srcFile)
+    // A package named in a file the entry reaches by relative path loads just as it would from the
+    // entry itself, so every reached file gets the package-name scans, not only the entry.
+    for (const file of [normalized, ...reached]) {
+      if (scanned.has(file)) continue
+      scanned.add(file)
+
+      for (const srcFile of wikiWriteCoreSubpathSourceFiles(file, readSource)) {
+        hasWikiWriteCoreSubpathReference = true
+        files.add(srcFile)
+        if (!visited.has(srcFile)) queue.push(srcFile)
+      }
+
+      for (const srcFile of froBotPackageSourceFiles(file, readSource)) {
+        files.add(srcFile)
+        if (!visited.has(srcFile)) queue.push(srcFile)
+      }
     }
   }
 
@@ -1314,6 +1423,25 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
   'packages/wiki-write-core/tsconfig.build.json',
 ]
 
+/**
+ * Every workspace package's manifest is a fixed trigger. The trigger set lists the manifests that
+ * exist (`listPackageManifests`, so the logged size counts them) and also carries this pattern, so
+ * a new package's manifest, or a deleted one with no file left to enumerate, still matches. A
+ * new package, a dependency edit or a `private`/`exports` change alters what its modules load.
+ * `packages/wiki-write-core/package.json` is also in `FIXED_TRIGGER_FILES`, which keeps its own
+ * explicit rule.
+ */
+const PACKAGE_MANIFEST_PATTERN = /^packages\/[^/]+\/package\.json$/u
+
+/** Repo-relative path of the manifest of every directory under `packages/` that has one. */
+function listPackageManifests(): string[] {
+  const packagesDir = join(repositoryRoot, 'packages')
+  if (!existsSync(packagesDir)) return []
+  return readdirSync(packagesDir, {withFileTypes: true})
+    .filter(entry => entry.isDirectory() && existsSync(join(packagesDir, entry.name, 'package.json')))
+    .map(entry => `packages/${entry.name}/package.json`)
+}
+
 export interface TriggerSet {
   readonly files: ReadonlySet<string>
   /**
@@ -1327,6 +1455,12 @@ export interface TriggerSet {
    * import to only the one compiled artifact it actually resolves to at run time.
    */
   readonly directoryPrefixes: readonly string[]
+  /**
+   * Pattern triggers: a changed file matches when its normalized path matches one of these, whether
+   * or not it is in `files`. Currently only the package-manifest pattern (see
+   * `PACKAGE_MANIFEST_PATTERN`), which `files` also lists for the manifests that exist.
+   */
+  readonly filePatterns: readonly RegExp[]
   /**
    * True when any `mutate`/`testFiles` entry contains a glob metacharacter (per
    * `isLiteralPath`). A glob's expansion depends on the file tree at run time, which this
@@ -1367,22 +1501,26 @@ export interface TriggerSet {
 export function buildTriggerSet(config: StrykerConfigShape, readSource: SourceReader = defaultReadSource): TriggerSet {
   const configEntries = [...config.mutate, ...config.testFiles]
   const hasGlobEntries = configEntries.some(entry => !isLiteralPath(entry))
-  const baseFiles = new Set([...configEntries, ...FIXED_TRIGGER_FILES].map(normalizeMutatePath))
+  const baseFiles = new Set(
+    [...configEntries, ...FIXED_TRIGGER_FILES, ...listPackageManifests()].map(normalizeMutatePath),
+  )
   const closure = buildImportClosure(configEntries, readSource)
   const files = new Set([...baseFiles, ...closure.files])
   const closureSize = [...closure.files].filter(file => !baseFiles.has(file)).length
   const directoryPrefixes = closure.hasWikiWriteCoreSubpathReference ? [`${WIKI_WRITE_CORE_DIST_DIR}/`] : []
-  return {files, directoryPrefixes, hasGlobEntries, closureSize}
+  return {files, directoryPrefixes, filePatterns: [PACKAGE_MANIFEST_PATTERN], hasGlobEntries, closureSize}
 }
 
 /**
  * Whether any changed file (normalized) is a member of the trigger set — an exact `files`
- * match, or a prefix match against one of `directoryPrefixes` (see `TriggerSet`'s docstring).
+ * match, a match against one of `filePatterns`, or a prefix match against one of
+ * `directoryPrefixes` (see `TriggerSet`'s docstring). All three live on the trigger set.
  */
 export function changedFilesIntersectTriggerSet(changedFiles: readonly string[], triggerSet: TriggerSet): boolean {
   return changedFiles.some(file => {
     const normalized = normalizeMutatePath(file)
     if (triggerSet.files.has(normalized)) return true
+    if (triggerSet.filePatterns.some(pattern => pattern.test(normalized))) return true
     return triggerSet.directoryPrefixes.some(prefix => normalized.startsWith(prefix))
   })
 }
