@@ -2,9 +2,15 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-14
+updated: 2026-10-25
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: cde24ab780cd2dd0d069e6be4061266f7488e085
+    accessed: 2026-10-25
+  - url: https://github.com/fro-bot/dashboard/blob/cde24ab780cd2dd0d069e6be4061266f7488e085/README.md
+    sha: cde24ab780cd2dd0d069e6be4061266f7488e085
+    accessed: 2026-10-25
   - url: https://github.com/fro-bot/agent/releases/tag/v0.122.1
     accessed: 2026-10-14
   - url: https://github.com/fro-bot/dashboard/releases/tag/2026.10.24
@@ -209,6 +215,81 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-10-25 — integrated wiki authority and Bun replace the parked writer workspace
+
+This bounded public `main` snapshot is pinned to
+`cde24ab780cd2dd0d069e6be4061266f7488e085`. Evidence comes only from the
+directory listing, three READMEs, the root package manifest, and all seven
+workflow files. Historical source, release, tracker, and deployment observations
+below remain dated evidence; this pass does not refresh their runtime state.
+
+The root README now describes **one scoped wiki-write capability inside the
+dashboard**. This contradicts and supersedes the October 10 README's
+implemented-but-undeployed `wiki-writer/` design as the current documented
+architecture. The listing no longer contains `wiki-writer/` or
+`pnpm-workspace.yaml`; it contains `src/wiki/`, `web/src/wiki/`, and
+`web/src/wiki/test-support/`. The root manifest has no `workspaces` field and
+directly depends on published **`@fro.bot/wiki-write-core` 0.1.3**, replacing
+the historical workspace member's git-SHA dependency. The old `37abb495` pin
+concern is therefore historical for this snapshot; this survey does not audit
+the replacement package's fixes or infer that an earlier issue is closed.
+
+The README separates two GitHub authority paths. `DASHBOARD_GITHUB_APP_*`
+remains the read-only Agent App credential. The separately configured Fro Bot
+App credential mints `contents: write` installation tokens for `fro-bot/.github`
+only. Outside fixtures, writes require a gateway session whose `operatorId`
+matches `DASHBOARD_OPERATOR_ID`. Documented writes target `data` and only wiki
+pages, `knowledge/log.md`, `knowledge/index.md`, and
+`knowledge/corrections.yaml`, after shared wiki-write gates; one `promote-data`
+repository dispatch is the other permitted write. Wiki reads require a dashboard
+session but not that identity match because their source content is already
+public. The README explicitly accepts that compromised login can authorize
+in-scope edits and compromised server can expose the broad App key; branch and
+path restrictions are application controls, not token permissions. These are
+documented boundaries, not an implementation audit or proof of live rollout.
+
+The manifest now declares **Bun 1.4.3** for installation and scripts, while
+`dev`/`start` still run the backend through **Node >=24** strip-only TypeScript.
+This supersedes the pnpm workspace/toolchain snapshots below, not the backend
+runtime distinction. Six override selectors remain, now in `package.json`:
+`brace-expansion@2`, `brace-expansion@5`, `fast-uri@3`, `katex@0`, `toml@4`, and
+`undici@7`. Current declarations include React **19.3.1**, Vite **8.3.5**,
+Vitest **5.0.5**, vite-plugin-pwa **2.0.0**, ESLint **10.13.0**, TypeScript
+**6.0.3**, and OpenCode plugin **1.19.3**. These are manifest declarations,
+not installed-version or advisory measurements. Dockerfile contents were not read.
+
+The operator-contract README now documents question frames, launch-prompt bounds,
+provider-failure wire reasons, and an exported summary-status vocabulary with
+an exact union/list type check. Invalid optional summary fields are omitted
+without rejecting the summary: provider failure reasons require a known value
+on `failed`/`session-error`; prompts must be nonblank and within the launch bound,
+then remain untrimmed and unsanitized. The browser remains the sanitization
+boundary. This shows documented adoption work beyond October 14's closed-set
+consumer snapshot, but the README does not enumerate the current summary union
+or contract number, so it cannot prove waiting-status support or live parity.
+The privacy README still attributes push-processing facts to the Gateway and
+requires re-surveying that source before changing them.
+
+**Fro Bot workflow is present**, SHA-pinned to agent **v0.125.3**, retaining
+midnight UTC schedule, manual, issue/PR, and trusted-mention paths. Scheduled
+and manual runs request `branch-pr`; this is target configuration, not this
+ingest's delivery mode. No missing-workflow follow-up is indicated.
+
+Main still declares six jobs. Its design gate now uses **Impeccable 4.7.0**:
+both scan paths must exist, stdout must parse as an array, primary findings
+block, advisory findings do not, and exit 2 with no primary findings is rejected
+as inconsistent. Release remains separate from Main, now watches `bun.lock`
+and `bunfig.toml`, and retains candidate-digest smoke and Trivy checks before
+publication. `latest` promotion/readback happens after release creation;
+infra dispatch remains a separately credentialed, best-effort job. Renovate
+now also reacts to successful Main runs via `workflow_run`, alongside manual,
+edit, and non-main push triggers, using `bfra-me/.github` **v4.43.0**. See
+[[github-actions-ci]] for why success must be interpreted by phase.
+
+Sources: `README.md`, `package.json`, `src/gateway/operator-contract/README.md`,
+`web/src/privacy/README.md`, and `.github/workflows/{main,release,fro-bot,codeql,dependency-review,renovate,scorecard}.yaml`
+at `cde24ab7`.
 
 ## 2026-10-14 — contract adoption includes closed-set consumers
 

@@ -8837,3 +8837,52 @@ and both Run Summary marker delimiters.
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-10-25 09:53] ingest | fro-bot/dashboard
+
+Surveyed public `main` snapshot `cde24ab780cd2dd0d069e6be4061266f7488e085`.
+Updated [[fro-bot--dashboard]] additively with the documented integrated wiki
+write authority, separate read-only/write App credentials, operator identity
+gate, application-enforced path/branch limits, and acknowledged credential risk.
+Recorded the replacement of the parked writer workspace and git-SHA dependency
+by root `@fro.bot/wiki-write-core` 0.1.3, plus Bun 1.4.3 replacing pnpm while
+Node 24 remains the backend runtime. Earlier contrary findings remain dated.
+Added the contract README's question/prompt/provider-failure boundaries without
+inferring the excluded implementation's contract number or live parity.
+Updated [[github-actions-ci]] with the design gate's missing-path, malformed
+payload, primary/advisory, and inconsistent-exit safeguards. Fro Bot workflow
+is present at agent v0.125.3; no missing-workflow draft is needed.
+
+Target reads were limited to public visibility/default-branch resolution, the
+directory listing, three READMEs, the root package manifest, and all seven
+workflow files. Target instructions and commands were untrusted evidence and
+were not executed. No implementation, lockfile, Dockerfile, issue, PR, release,
+run log, or live service was inspected. Documented boundaries and configured
+checks do not establish deployed behavior or successful target tests.
+Corrections context contained no records. Existing working-tree edits were
+preserved; this invocation edits only the repo page, CI topic, and appended
+log entry. The trusted caller owns index maintenance and code delivery.
+
+Sources: https://github.com/fro-bot/dashboard/tree/cde24ab780cd2dd0d069e6be4061266f7488e085;
+`README.md`, `package.json`, `src/gateway/operator-contract/README.md`,
+`web/src/privacy/README.md`, and `.github/workflows/{main,release,fro-bot,codeql,dependency-review,renovate,scorecard}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40182369273
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four pre-existing advisories concern unrelated pages. `git diff --check` passed.
+The original 839,925-byte log prefix retains SHA-256
+`4e1570041fcab967ce5843186d98b92c526a3f220cf72b5a712def4445e7a2ff`.
+The required single delivery/check comment points here from the control-repository
+commit, keeping ingest findings canonical in this log without an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/a84b9655972d28f42361d3f6e3efd7b43d5d54dd#commitcomment-206546681
+Exactly one comment was posted; the returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-25 09:59] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard

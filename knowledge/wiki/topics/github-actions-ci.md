@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-24
+updated: 2026-10-25
 sources:
+  - url: https://github.com/fro-bot/dashboard/blob/cde24ab780cd2dd0d069e6be4061266f7488e085/.github/workflows/main.yaml
+    sha: cde24ab780cd2dd0d069e6be4061266f7488e085
+    accessed: 2026-10-25
   - url: https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/.github/workflows/ci.yaml
     sha: 8c8be73287a61a0cd55a9c6183abfcc56a9a8542
     accessed: 2026-10-24
@@ -351,6 +354,23 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-25 — design-gate completeness includes paths, payloads, and exit semantics
+
+[[fro-bot--dashboard]] at `cde24ab7` configures Impeccable **4.7.0** to scan
+`web/src` and `web/privacy.html`. The workflow checks that both targets exist
+before invoking the detector, requires stdout to be a JSON array, and separates
+primary findings from entries explicitly marked `advisory: true`. Primary
+findings block; advisories are printed without blocking. Only exits 0 and 2
+are accepted for interpretation, and exit 2 without a primary finding fails
+as inconsistent rather than producing a green empty scan.
+
+This guards three distinct false-green paths: vanished scan targets, unreadable
+tool output, and contradictory exit/payload signals. A tool's zero exit alone
+is insufficient evidence of a complete scan. The workflow text establishes
+the configured policy; no target detector execution or CI outcome was inspected.
+The root manifest's Bun migration does not change the Node 24 backend runtime
+or the separately invoked `npx` design detector.
 
 ## Negative image probes must reject the intended failure phase (2026-10-24)
 
