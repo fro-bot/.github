@@ -2,8 +2,11 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-10-08
+updated: 2026-10-23
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-10-23
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-10-08
@@ -55,6 +58,27 @@ node_id: R_kgDORLxXng
 # fro-bot/fro-bot.github.io
 
 Org-level GitHub Pages custom domain holder for the `fro-bot` organization. Serves the `fro.bot` domain.
+
+## Bounded source confirmation (2026-10-23)
+
+The public repository still defaults to `main`. Its complete, non-truncated root
+tree at `3e44653c4d185b239b44b3af12255d18c86463ab` contains only the same
+eight-byte `CNAME` blob (`208ca8c19f45a2b15968aaa4c0c391f18df60df4`).
+There is no README, manifest, `.github` directory, or workflow file.
+**No Fro Bot workflow is present**; the standing proposal for a separate draft
+PR adding minimal triage or infrastructure monitoring remains justified.
+
+This confirmation reads identity and directory listings only; it does not read
+`CNAME` contents. The domain value and runtime findings below remain historical
+evidence. In particular, the September 25 TLS leaf and October 7 renewal forecast
+are not current certificate measurements. Reaching October 23 with the same
+source SHA proves neither renewal nor a missed renewal. DNS, redirects, HTTPS
+enforcement, Pages configuration, issue state, and sibling deployments are also
+not revalidated by an unchanged tree. The older recommendation to probe the live
+domain requires a separately authorized runtime check under this survey's
+directory/README/manifest/workflow-only read boundary. See [[github-pages]].
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## Bounded source confirmation (2026-10-08)
 

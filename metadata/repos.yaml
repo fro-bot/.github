@@ -17,11 +17,11 @@ repos:
     name: .dotfiles
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-09
+    last_survey_at: 2026-10-24
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-11-11
+    next_survey_eligible_at: 2026-11-23
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
@@ -30,11 +30,11 @@ repos:
     name: .github
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-10
+    last_survey_at: 2026-10-25
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-11-10
+    next_survey_eligible_at: 2026-11-24
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=
@@ -131,12 +131,12 @@ repos:
     name: marcusrbrown.github.io
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-12
+    last_survey_at: 2026-10-23
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-11-14
+    next_survey_eligible_at: 2026-11-25
     private: false
     node_id: R_kgDORgYjdA
     database_id: 1174807412
@@ -196,11 +196,11 @@ repos:
     name: vbs
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-08
+    last_survey_at: 2026-10-23
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-11-09
+    next_survey_eligible_at: 2026-11-22
     discovery_channel: collab
     private: false
     node_id: R_kgDOPOixzg
@@ -222,12 +222,12 @@ repos:
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-10-09
+    last_survey_at: 2026-10-24
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-10-25
+    next_survey_eligible_at: 2026-11-09
     private: false
     node_id: R_kgDOQyTMEw
     database_id: 1126485011
@@ -235,12 +235,12 @@ repos:
     name: fro-bot.github.io
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-10-08
+    last_survey_at: 2026-10-23
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-10-23
+    next_survey_eligible_at: 2026-11-08
     private: false
     node_id: R_kgDORLxXng
     database_id: 1153193886
@@ -352,12 +352,12 @@ repos:
     name: dashboard
     added: 2026-06-15
     onboarding_status: onboarded
-    last_survey_at: 2026-10-10
+    last_survey_at: 2026-10-25
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-10-25
+    next_survey_eligible_at: 2026-11-11
     private: false
     node_id: R_kgDOS6ys-g
     database_id: 1269607674
@@ -452,3 +452,16 @@ repos:
     private: false
     node_id: R_kgDOJt6i0Q
     database_id: 652124881
+  - owner: marcusrbrown
+    name: metacogs
+    added: 2026-10-24
+    onboarding_status: onboarded
+    last_survey_at: 2026-10-24
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-11-25
+    private: false
+    node_id: R_kgDOVUNN9g
+    database_id: 1430474230

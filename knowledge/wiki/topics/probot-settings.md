@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-10-13
+updated: 2026-10-25
 sources:
+  - url: https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml
+    sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+    accessed: 2026-10-25
   - url: https://github.com/bfra-me/.github/blob/087e542d3a59cbd06792266fe3eae140c7ec6dbb/.github/workflows/update-repo-settings.yaml
     sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
     accessed: 2026-10-13
@@ -435,6 +438,23 @@ This completes the pair this page has been building toward. The 2026-09-01 entry
 One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
+
+### Personal caller routing remains distinct at v4.43.0 (2026-10-25)
+
+At [[marcusrbrown--github]] snapshot `307d4eb4`, both reusable workflow pins
+advance to `e6a1ab17bb68213940f63de91bd0450acdf9fff4` (**v4.43.0**), replacing
+the October 10 **v4.37.0** snapshot below. The settings caller still targets
+`bfra-me/.github/.github/workflows/update-repo-settings.yaml`; its Renovate
+sibling still targets `renovate.yaml`. Settings sync declares push-to-main,
+daily **02:55 UTC**, manual dispatch, and the same two App-secret mappings.
+
+This renews only the static caller-routing evidence. It does not revalidate
+template contents, the callee's credential migration or apply behavior, live
+protections, or the historical successful-run measurements. Matching version
+pins do not establish equivalent tasks; the full workflow path remains the
+decisive distinction between the settings actuator and the dependency updater.
+
+Source: [settings caller at the surveyed commit](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml).
 
 ### Personal settings caller: current wiring, bounded evidence (2026-10-10)
 
