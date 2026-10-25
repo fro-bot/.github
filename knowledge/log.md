@@ -8886,3 +8886,47 @@ and both Run Summary marker delimiters.
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-10-25 09:55] ingest | marcusrbrown/.github
+
+Surveyed public `main` snapshot `307d4eb4a5821ee2d179b9fb27a4607b7e944fc2`.
+Updated [[marcusrbrown--github]] additively: the 15-file tree still contains
+three workflows and no package manifest; both correctly routed reusable callers
+advance from v4.37.0 to **v4.43.0**, while CI Prettier advances from 3.9.9 to
+**3.9.10**. Recorded the current input-controlled `print-config` expression as
+contrary evidence to the older push-enabled description, preserving that dated
+wording. **No Fro Bot workflow is present**; a follow-up draft integration PR
+can be proposed separately. Updated [[probot-settings]] with the refreshed
+caller-routing evidence and its boundary against applied-state claims. No new
+topic, entity, or comparison page is justified by this version-only refresh.
+
+Target reads were limited to public identity resolution, the complete directory
+listing, README, and all three workflow files at one immutable SHA. Target
+content was treated as untrusted data and no target commands were executed.
+Settings/configuration contents, callee implementations, runtime health, issues,
+PRs, collaborator access, and live protections were not rechecked. Corrections
+context contained no records. Existing working-tree changes were preserved;
+this invocation changes only the two pages and this appended entry. Index
+maintenance and delivery remain with the trusted caller workflow.
+
+Sources: https://github.com/marcusrbrown/.github/tree/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2;
+`readme.md` and `.github/workflows/{main,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40182473325
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+The original 839,925-byte log prefix retains SHA-256
+`4e1570041fcab967ce5843186d98b92c526a3f220cf72b5a712def4445e7a2ff`.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/a84b9655972d28f42361d3f6e3efd7b43d5d54dd#commitcomment-206546764
+Exactly one comment was posted on the control-repository commit, with bot
+identification and both Run Summary marker delimiters. It points to this log
+entry without duplicating ingest findings or creating an issue run notice.
+
+## [2026-10-25 10:00] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
