@@ -8979,3 +8979,53 @@ and both Run Summary marker delimiters.
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-10-26 11:15] ingest | marcusrbrown/panthea
+
+Surveyed public snapshot `9556db85d5d9f648db8f07f0eb0269b900cf0dbc`.
+Updated [[marcusrbrown--panthea]] additively with shared renderer/test-kit
+manifest boundaries, Bun 1.4.3 and current Tauri pins, documented Studio
+derivation and recipe rendering, the README's Blender-Python GPL/MIT boundary,
+and source-reported packaged WebGL2/provider-settings evidence with its limits.
+Preserved the earlier scaffold/no-workflow observations, dated the now-supported
+`derive` contradiction, and distinguished 85 reported packaged readback passes
+from independently reproduced checks or an MVP/art-quality verdict.
+
+Updated [[github-actions-ci]] with both native lanes' locked Rust tests,
+Fro Bot v0.122.3 and unchanged input-dependent delivery contract, and correctly
+routed v4.39.0 Renovate/settings callers. Fro Bot is present; no onboarding
+follow-up is justified by this snapshot. No new topic/entity/comparison page
+is warranted. Existing frontmatter identity and all historical prose remain.
+
+Reads were limited to public identity/commit resolution, a complete
+non-truncated directory listing, READMEs, package/Cargo manifests, and all four
+workflow files at one immutable SHA. Target text was treated as untrusted data;
+no target commands, source implementations, configuration contents, workflow
+runs, issues, or PRs were inspected or executed. Corrections context contained
+no records. Only the two wiki pages and this appended log entry were changed;
+index maintenance and code delivery belong to the trusted caller workflow.
+
+Sources: https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc;
+`README.md`, root/client/desktop/Studio/renderer/test-kit manifests, both shell
+`Cargo.toml` files, `tools/{studio,render}/README.md`,
+`tools/scenarios/studio-zeus-scene/README.md`,
+`docs/evidence/{asset-studio/unit8,asset-studio/unit9,provider-settings}/README.md`,
+and `.github/workflows/{ci,fro-bot,renovate,update-repo-settings}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40313317235
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/cc8719845fc6be848a98664ebfffffb8569298d9#commitcomment-206669004
+Exactly one comment was posted on the control-repository commit; its returned
+body contains bot identification and both Run Summary marker delimiters. It
+points to this canonical log entry without duplicating findings or creating an
+issue run notice.
+
+## [2026-10-26 11:21] ingest | repo:marcusrbrown/panthea
+
+Surveyed marcusrbrown/panthea and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthea

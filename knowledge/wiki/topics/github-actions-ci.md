@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-25
+updated: 2026-10-26
 sources:
+  - url: https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows
+    sha: 9556db85d5d9f648db8f07f0eb0269b900cf0dbc
+    accessed: 2026-10-26
   - url: https://github.com/fro-bot/dashboard/blob/cde24ab780cd2dd0d069e6be4061266f7488e085/.github/workflows/main.yaml
     sha: cde24ab780cd2dd0d069e6be4061266f7488e085
     accessed: 2026-10-25
@@ -1024,6 +1027,28 @@ runs `cargo test --locked`; the desktop lane stops at fmt/clippy, so the two
 native lanes have different behavioral-test coverage. Renovate and settings
 sync delegate to correctly pathed `bfra-me/.github` workflows at **v4.37.0**.
 Source: [workflow directory](https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows).
+
+**Panthea refresh (2026-10-26, `9556db8`).** The older row and source contract
+above remain dated history. [[marcusrbrown--panthea]] still has four workflows
+and three CI jobs. **Coverage change:** both macOS Rust lanes now build their
+sidecar, check formatting, run locked clippy with warnings denied, and run
+`cargo test --locked`; the desktop lane no longer stops at fmt/clippy. Ubuntu
+retains the frozen Bun install and type/lint/test gate with `prlimit --core=1:1`.
+All inspected Bun setup steps now select **1.4.3**.
+
+Fro Bot is SHA-pinned at **v0.122.3** (`7d273ac`), with `branch-pr` still
+selected only for schedule/default-prompt dispatch and `auto` for custom
+dispatch/content events. Checkout still disables credential persistence;
+same-repository PR-comment head resolution feeds `trusted-head-sha`, and
+brokered extra paths remain `apps,content,tools`. These are declared capability
+boundaries, not evidence of a delivered change or a successful run. Renovate
+and settings sync now call the correctly routed reusable workflows at
+**v4.39.0** (`e62de41`). Renovate's `workflow_run` path requires successful
+`CI`; settings sync declares the daily `17 5 * * *` schedule as well as a
+settings-path-filtered main push. Callee behavior and applied repository
+settings were not read.
+
+Source: [workflow directory at the surveyed SHA](https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 
