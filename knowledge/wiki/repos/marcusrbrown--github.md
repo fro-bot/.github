@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-10-10
+updated: 2026-10-25
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+    accessed: 2026-10-25
   - url: https://github.com/marcusrbrown/.github
     sha: a86828a50fdeb04558a47eaf414a63284d7432c1
     accessed: 2026-10-10
@@ -303,6 +306,48 @@ The 2026-09-04 deadlock sharpens the case and also bounds it honestly:
 - **Standing caveat.** An agent that proposes bumps would be a second writer against the same `uses:` lines Renovate owns, which is the re-derivation/duplicate-authoring class already cataloged in [[github-actions-ci]]. Scope any such workflow to _detect and report_ on this repo, or to act only when Renovate's delivery signal has been flat for multiple cycles.
 
 ## Survey History
+
+### Bounded source recheck (2026-10-25)
+
+At public `main` snapshot `307d4eb4a5821ee2d179b9fb27a4607b7e944fc2`, the
+complete directory listing still contains 15 files and exactly three workflows:
+`main.yaml`, `renovate.yaml`, and `update-repo-settings.yaml`. No package
+manifest or application-code paths are listed. The README continues to describe
+GitHub defaults and health checks. **No Fro Bot workflow is present** in the
+listed workflows; a separate follow-up draft PR remains appropriate.
+
+Both reusable callers now share SHA
+`e6a1ab17bb68213940f63de91bd0450acdf9fff4` (**v4.43.0**), superseding the
+October 10 v4.37.0 snapshot. Their paths remain distinct and basename-matched:
+Renovate calls `renovate.yaml`, while settings sync calls
+`update-repo-settings.yaml`. Both explicitly pass `APPLICATION_ID` and
+`APPLICATION_PRIVATE_KEY`. Settings sync retains push-to-main, daily
+`55 2 * * *`, and manual triggers. See [[probot-settings]] for the distinction
+between correct caller routing and verified settings application.
+
+CI remains a single Prettier `--check .` job, now declaring **3.9.10** rather
+than the October 10 **3.9.9**. Checkout **v5.1.0** and the Prettier action
+**v4.3** remain full-SHA-pinned. Renovate retains its four-hour schedule and
+event routes; the October 10 qualification of CI ordering still applies.
+
+**Contradiction to the older Renovate input description:** the current caller
+passes `print-config: ${{ inputs.print-config || false }}`, not a push-event
+predicate. Reusable and manual callers can explicitly enable it; a push event
+alone does not. The earlier statement that it is enabled on pushes is retained
+as historical wording, not a current guarantee. Log-level precedence is explicit
+input, repository variable `WORKFLOW_LOG_LEVEL`, then `debug`.
+
+Only the complete listing, README, and all three workflow files were read at
+this snapshot, following public identity resolution. Configuration contents,
+callee implementations, workflow runs, issues, PRs, collaborator access, and
+live protections were not rechecked. Earlier settings and incident observations
+remain dated evidence rather than refreshed runtime claims.
+
+Sources: [directory listing](https://github.com/marcusrbrown/.github/tree/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2),
+[README](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/readme.md),
+[CI](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/main.yaml),
+[Renovate caller](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml).
 
 ### Bounded source recheck (2026-10-10)
 

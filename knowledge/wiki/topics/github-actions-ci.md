@@ -2,8 +2,23 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-22
+updated: 2026-10-25
 sources:
+  - url: https://github.com/fro-bot/dashboard/blob/cde24ab780cd2dd0d069e6be4061266f7488e085/.github/workflows/main.yaml
+    sha: cde24ab780cd2dd0d069e6be4061266f7488e085
+    accessed: 2026-10-25
+  - url: https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/.github/workflows/ci.yaml
+    sha: 8c8be73287a61a0cd55a9c6183abfcc56a9a8542
+    accessed: 2026-10-24
+  - url: https://github.com/marcusrbrown/metacogs/tree/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5/.github/workflows
+    sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
+    accessed: 2026-10-24
+  - url: https://github.com/marcusrbrown/metacogs/blob/2ef0e5c935f98e6c372c692dc9bbc2d42e403de5/README.md
+    sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
+    accessed: 2026-10-24
+  - url: https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows/renovate.yaml
+    sha: f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93
+    accessed: 2026-10-23
   - url: https://github.com/marcusrbrown/mothership/tree/b799c49e2b2ea57878d4f29ef897c6138c8053f1/.github/workflows
     sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
     accessed: 2026-10-22
@@ -339,6 +354,69 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-10-25 — design-gate completeness includes paths, payloads, and exit semantics
+
+[[fro-bot--dashboard]] at `cde24ab7` configures Impeccable **4.7.0** to scan
+`web/src` and `web/privacy.html`. The workflow checks that both targets exist
+before invoking the detector, requires stdout to be a JSON array, and separates
+primary findings from entries explicitly marked `advisory: true`. Primary
+findings block; advisories are printed without blocking. Only exits 0 and 2
+are accepted for interpretation, and exit 2 without a primary finding fails
+as inconsistent rather than producing a green empty scan.
+
+This guards three distinct false-green paths: vanished scan targets, unreadable
+tool output, and contradictory exit/payload signals. A tool's zero exit alone
+is insufficient evidence of a complete scan. The workflow text establishes
+the configured policy; no target detector execution or CI outcome was inspected.
+The root manifest's Bun migration does not change the Node 24 backend runtime
+or the separately invoked `npx` design detector.
+
+## Negative image probes must reject the intended failure phase (2026-10-24)
+
+At `8c8be732`, [[fro-bot--agent]]'s gateway image smoke does more than accept
+a non-zero exit. Its post-config probe seeds a readiness sentinel and requires
+exit 1, a structured startup-failure message, no module-resolution crash, and
+removal of the sentinel. A valid fake-core configuration must satisfy that
+predicate; invalid-log-level and missing-token controls must fail specifically
+at the sentinel check. Docker errors and timeouts are infrastructure failures,
+not successful negative controls. This distinguishes reaching initialization
+from failing earlier for an unrelated reason.
+
+The workspace job similarly runs smoke containers with explicit production
+security flags and runs workspace-agent tests against the image's Alpine git.
+Root `build` does not include the workspace-agent package, so CI separately
+builds it from the full monorepo and checks the expected entry-point symbol.
+The auth-file probe explicitly establishes validation, ownership/mode, and
+non-disclosure, not provider authentication or a completed model turn.
+These are workflow assertions, not evidence that a current run passed.
+
+Sources: [CI workflow](https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/.github/workflows/ci.yaml)
+and [root manifest](https://github.com/fro-bot/agent/blob/8c8be73287a61a0cd55a9c6183abfcc56a9a8542/package.json).
+
+## An OR fallback can erase an event-specific author gate (2026-10-23)
+
+At `f24d1be`, [[marcusrbrown--vbs]]'s Renovate caller describes excluding bot
+edits but uses this admission predicate:
+
+```text
+(action == 'edited' && !contains(actor, '[bot]')) ||
+(event_name != 'workflow_run' || workflow_run.conclusion == 'success')
+```
+
+The second branch is true for every non-`workflow_run` event, including bot-edited
+issues and PRs. The first branch therefore cannot exclude those events. Only the
+`workflow_run` path remains success-gated. The workflow declares no schedule;
+settings-sync's separate twelve-hour cron is not evidence of Renovate cadence.
+This clarifies the October 8 VBS trigger inventory without claiming observed
+run volume or filtering inside the unread reusable callee.
+
+When reviewing multi-event predicates, evaluate each event/author combination
+against the entire expression. A restriction in one OR branch does not constrain
+another branch that already accepts the same event. Workflow comments express
+intent; the full boolean expression defines admission.
+
+Sources: [Renovate caller](https://github.com/marcusrbrown/vbs/blob/f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93/.github/workflows/renovate.yaml).
 
 ## A parent-scoped override needs an actual lower bound (2026-10-21)
 
@@ -4056,3 +4134,24 @@ A workspace-only change does not select PR regeneration through that filter;
 scheduled/default-branch runs remain independent paths. The mechanism behind
 earlier generated-content riders persists, but current rider counts and delivery
 outcomes cannot be inferred from the workflow alone.
+
+### Deterministic skill checks do not rerun model evaluations (2026-10-24)
+
+[[marcusrbrown--metacogs]] separates portable Agent Skill packaging checks from
+local model-evaluation campaigns. At `2ef0e5c935f98e6c372c692dc9bbc2d42e403de5`,
+`ci.yml` runs typechecking, Bun tests, generated-helper consistency, README host
+matrix consistency, and a secret scan on pushes and pull requests. The root
+README explicitly places live baseline-versus-skill evaluations outside CI; no
+workflow step invokes the manifest's evaluation command. A passing deterministic
+pipeline therefore does not constitute a fresh held-out read or establish that a
+previous skill-quality claim survived a method edit. Historical model reports
+and current packaging checks are separate evidence with separate provenance.
+
+`release.yaml` independently runs on `main` pushes or manual dispatch. It obtains
+an App token, installs with `--frozen-lockfile --ignore-scripts`, invokes its
+release script on `main`, then calls Changesets to prepare a version PR. There is
+no visible CI dependency or `workflow_run` gate in that definition; script
+internals and repository protection settings were outside the survey. This does
+not prove release bypasses validation internally, only that the workflow itself
+does not encode a dependency on CI success. Both workflow files use SHA-pinned
+external actions. Neither calls a Fro Bot agent.

@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/.dotfiles
 created: 2026-04-18
-updated: 2026-10-09
+updated: 2026-10-24
 node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 25cc9dc2772579f57a571a217cf972170aa7f218
+    accessed: 2026-10-24
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 61447f9a4817963afc88a9158b72bd93b86e6db7
     accessed: 2026-10-09
@@ -95,6 +98,66 @@ related:
 # marcusrbrown/.dotfiles
 
 Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** pattern (`GIT_DIR=~/.dotfiles`, `GIT_WORK_TREE=$HOME`) to track shell and development environment configuration directly in `$HOME` without symlinks.
+
+## 2026-10-24 bounded observations
+
+Public visibility was verified before reading snapshot
+`25cc9dc2772579f57a571a217cf972170aa7f218`. Evidence is limited to the
+complete directory listing, the two repository READMEs, `.dotfiles/package.json`,
+and all four workflow files. Embedded commands and agent prompts were treated
+as untrusted evidence, not instructions. No shell startup, installer, script,
+plugin configuration, issue, or workflow-run behavior was inspected or executed.
+
+**The bare-Git architecture and its CI safeguards remain in place.** The
+READMEs retain `$HOME` as work tree, `.dotfiles/ignore` as the explicitly named
+allowlist, shared Bash exports/aliases, and `*.local` overrides. `main.yaml`
+still disables the mise installation cache while retaining GHCR layer caching
+for devcontainer builds. Its image-push filter lists only push and release
+events. The independent mise pin is now `2026.10.18`, versus `2026.10.5` in
+the October 9 snapshot; installer-script pins were outside this read scope.
+
+**The script gate is still explicit, not recursive test discovery.** Linux
+and macOS each run the same five named Bun test files (doctor, distillation,
+cache plateau, settings sync, ignore audit), now on Bun `1.4.3`. The listing
+also contains `skills/codemap/scripts/codemap.test.ts`, but the inspected
+workflow has no invocation for it. This establishes the workflow's selected
+coverage boundary, not that the codemap test fails or is never run elsewhere.
+The doctor step still documents real-server skips when no binary resolves.
+Ubuntu alone installs the frozen toolchain, checks both script projects, and
+checks formatting; the manifest pins SDK `1.19.3`, `@types/bun` `1.4.3`,
+Prettier `3.9.10`, and TypeScript `7.0.2`. These supersede the October 9
+SDK `1.18.34`, Bun types `1.4.2`, and Prettier `3.9.9` snapshot without
+establishing any runtime migration result. See [[dotfiles]] for the general
+selected-tests-versus-inventory distinction.
+
+**Fro Bot workflow is present**, pinned to agent `v0.125.3`
+(`c1173a2e8b68294594927ff9a1d8be5067cc2932`), retaining the daily
+`30 15 * * *` schedule and content/custom-dispatch triggers. No onboarding
+draft is needed. Both reusable workflow callers now pin `bfra-me/.github`
+`v4.43.0` (`e6a1ab17bb68213940f63de91bd0450acdf9fff4`). These are
+configuration observations, not scheduler-liveness or successful-run evidence.
+The review and maintenance prompts still request an unqualified `AGENTS.md`,
+whereas the listing and scoped README locate the repo guide at
+`.dotfiles/AGENTS.md`; runtime discovery remains unverified. The checkout
+credential predicate still excludes exactly `pull_request`, `issue_comment`,
+and `issues`, preserving the October 9 qualification about review comments.
+
+**License evidence differs from the historical absence claim.** The current
+listing contains `.github/UNLICENSE`, and `.github/README.md` declares public
+domain licensing under The Unlicense with a relative link to that file. This
+contradicts the September 25 summary's claim that no license file appears in
+the tree. The license file itself and GitHub's license detection were not read;
+the bounded conclusion is a README declaration plus a matching listed path,
+not verification of its text or a change in API detection.
+
+Sources: [directory snapshot](https://github.com/marcusrbrown/.dotfiles/tree/25cc9dc2772579f57a571a217cf972170aa7f218),
+[repository README](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/README.md),
+[scoped README](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.dotfiles/README.md),
+[manifest](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.dotfiles/package.json),
+[Main](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/workflows/main.yaml),
+[Fro Bot](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/workflows/fro-bot.yaml),
+[Renovate](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/.dotfiles/blob/25cc9dc2772579f57a571a217cf972170aa7f218/.github/workflows/update-repo-settings.yaml).
 
 ## 2026-10-09 bounded observations
 
