@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-10-20
+updated: 2026-10-26
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 5ea06fe995842351bc8aa93748cdf60ec1c13032
+    accessed: 2026-10-26
   - url: https://github.com/marcusrbrown/systematic
     sha: 041aeaf9e74c70b048dfd86d6e9bcd170a6ec064
     accessed: 2026-10-20
@@ -106,6 +109,35 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-10-26: development pins, peer promises, and host coverage differ
+
+[[marcusrbrown--opencode-copilot-delegate]] declares OpenCode plugin dev pin
+**1.19.3** with peer floor **>=1.14.41** in its **0.12.1** manifest. The minor
+pin crossing since October 10 does not establish host compatibility across the
+advertised range. Its three package exports still separate server/default,
+server alias, and opt-in TUI; the manifest likewise separates unit, TUI-preload,
+and integration test scripts.
+
+All six inspected workflows leave the latter two scripts uninvoked. CI runs
+`test:unit` and imports only the built default entry under Node 24, asserting
+one function-valued default export without calling it. **Export-shape validity,
+factory behavior, TUI loading, and host-version compatibility are separate
+claims.** This corroborates the earlier packaging-gate boundary below; it does
+not demonstrate passing tests or current runtime behavior. Release's successful
+CI prerequisite inherits this configured scope.
+
+README still lists three tools while the directory listing includes the resume
+tool and its test, and its notification description still differs from the
+earlier implementation account. Preserve those as dated conflicting evidence
+rather than using dependency updates or filenames to resolve them. No source,
+test implementation, or run telemetry was read in this bounded observation.
+
+Sources: [manifest](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/5ea06fe995842351bc8aa93748cdf60ec1c13032/package.json),
+[CI workflow](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/5ea06fe995842351bc8aa93748cdf60ec1c13032/.github/workflows/ci.yaml),
+[release workflow](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/5ea06fe995842351bc8aa93748cdf60ec1c13032/.github/workflows/release.yaml),
+[README](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/5ea06fe995842351bc8aa93748cdf60ec1c13032/README.md),
+and [workflow listing](https://github.com/marcusrbrown/opencode-copilot-delegate/tree/5ea06fe995842351bc8aa93748cdf60ec1c13032/.github/workflows).
 
 ## 2026-10-20: integration status is conditional evidence
 

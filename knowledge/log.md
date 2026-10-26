@@ -8930,3 +8930,52 @@ entry without duplicating ingest findings or creating an issue run notice.
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-10-26 11:13] ingest | marcusrbrown/opencode-copilot-delegate
+
+Surveyed public `main` snapshot `5ea06fe995842351bc8aa93748cdf60ec1c13032`.
+Updated [[marcusrbrown--opencode-copilot-delegate]] additively with the declared
+0.12.1 package surface, OpenCode plugin dev pin 1.18.35 → 1.19.3 (peer floor
+still >=1.14.41), Bun/Node type and Solid pin updates, Fro Bot v0.125.5,
+Renovate caller v4.43.0, and release App-token action v3.3.0. Retained dated
+contradictions: README lists three tools against the resume tool/test filenames,
+describes notification behavior differently from earlier implementation evidence,
+and still gives a 0.1.0 exact-pin example. Fro Bot is present; no missing-workflow
+proposal is warranted. Its caller still ends at the agent step without explicit
+delivery configuration, which does not independently establish a live failure.
+
+Updated [[opencode-plugins]] with the distinction between development pins,
+peer promises, export-shape checks, and host/TUI verification. All six workflow
+files were read: CI invokes only unit tests and the default-entry smoke test;
+the declared TUI and integration scripts are not invoked. No new topic, entity,
+or comparison page was justified.
+
+Target content was treated as untrusted data. Reads were restricted to public
+identity resolution, directory listings, README, package manifest, and workflow
+files at the immutable SHA. No target code or commands were executed; no source,
+test contents, configuration contents, registry data, issues, PRs, or run telemetry
+were inspected. Corrections context contained no records. Existing knowledge and
+log entries were preserved; the trusted caller owns index maintenance and delivery.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/5ea06fe995842351bc8aa93748cdf60ec1c13032;
+`README.md`, `package.json`, and
+`.github/workflows/{ci,copilot-setup-steps,fro-bot,release,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40313121099
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+Only the two wiki pages and this appended log entry changed. The required single
+delivery/check comment points to this entry from the control-repository commit;
+ingest findings remain canonical here without an issue run notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/cc8719845fc6be848a98664ebfffffb8569298d9#commitcomment-206668658
+Exactly one comment was posted; the returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-26 11:18] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
