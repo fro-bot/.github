@@ -9029,3 +9029,52 @@ issue run notice.
 Surveyed marcusrbrown/panthea and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthea
+
+## [2026-10-27 10:42] ingest | marcusrbrown/containers
+
+Surveyed public snapshot `be4082462cf3f401dc33b1a9a6a90ca2addf2451`.
+Updated [[marcusrbrown--containers]] additively with context-wide workflow
+routing declarations, shared detector wiring, detector-aware aggregate checks,
+and the explicit schedule/dispatch `branch-pr` agent delivery contract. These
+supersede the October 11 trigger omission, container-dispatch dependency, and
+missing output-mode observations; prior evidence is preserved. Recorded agent
+v0.126.0, reusable workflows v4.43.0, Express 4.22.3, urllib3's 2.8.0 floor,
+five-module coverage scope, and the expanded script/test inventory. Fro Bot is
+present; a missing-workflow onboarding draft is not warranted.
+
+Updated [[docker-containers]] with the repaired routing and detector-failure
+aggregation boundaries. Remaining shell-only smoke checks, accepted skips, and
+Python/lint dispatch dependencies are explicitly distinguished from those
+repairs. No new topic/entity/comparison page was justified.
+
+Reads were limited to public identity/revision resolution, a non-truncated
+directory listing, READMEs, manifests, and all ten workflows at one immutable
+SHA. Target text was untrusted data; no target code or commands, Dockerfiles,
+lockfile contents, issue/PR bodies, runs, or registry artifacts were inspected
+or executed. Corrections context contained no records. Existing working-tree
+changes were preserved; index maintenance and code delivery belong to the caller.
+
+Sources: https://github.com/marcusrbrown/containers/tree/be4082462cf3f401dc33b1a9a6a90ca2addf2451;
+`README.md`, `node/README.md`, `docs/templates/README.md`, `pyproject.toml`,
+root and both Node application `package.json` files, and all ten
+`.github/workflows/*.yaml` files at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40490084678
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Read-only wiki lint scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages. `git diff --check`
+passed. This invocation changed only the repo page, Docker topic page, and this
+appended log entry; pre-existing edits remain in place.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/56653d76f2a37c36f6abfcd59963d93b56b551da#commitcomment-206850957
+Exactly one comment was posted on the control-repository commit; its returned
+body confirmed bot identification and both Run Summary markers. It points to
+this canonical log entry without duplicating ingest findings or creating an
+issue run notice. Commit, push, and PR creation remain with the caller.
+
+## [2026-10-27 10:48] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
