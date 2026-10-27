@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-26
+updated: 2026-10-27
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows/main.yaml
+    sha: 7386008aa74020dc7773cff96a92c82746b4530a
+    accessed: 2026-10-27
+  - url: https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows/fro-bot.yaml
+    sha: 7386008aa74020dc7773cff96a92c82746b4530a
+    accessed: 2026-10-27
   - url: https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows
     sha: 9556db85d5d9f648db8f07f0eb0269b900cf0dbc
     accessed: 2026-10-26
@@ -613,6 +619,16 @@ Sources: `fro-bot.yaml`, `ci.yaml`, `site.yaml`, root `package.json`, and
 and September workflow observations remain dated snapshots, not live results.
 
 ## A dispatch dry-run default can be overridden before execution (2026-10-11)
+
+**2026-10-27 static reconfirmation:** at `7386008`, the same repository still
+overrides requested dry-run on the default branch before invoking
+semantic-release. `INPUT_DRY_RUN` remains unused by the shell condition.
+The manifest and `main.yaml` still declare lint followed by release, without
+a separate test/schema-validation gate. Fro Bot has advanced to **v0.126.0**
+but its caller still ends at the agent call without explicit `output-mode`
+or a subsequent delivery step. These are persistent wiring observations,
+not evidence of an unintended release, a delivered repair, or a failing run.
+The bounded README/manifest/workflow survey cannot establish live outcomes.
 
 At `4d13f58`, [[marcusrbrown--renovate-config]]'s `main.yaml` declares a
 boolean `workflow_dispatch` input `dry-run` with default `true`. Its release

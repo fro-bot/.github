@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/renovate-config — Shareable Renovate Configuration Presets
 created: 2026-04-28
-updated: 2026-10-11
+updated: 2026-10-27
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: 7386008aa74020dc7773cff96a92c82746b4530a
+    accessed: 2026-10-27
   - url: https://github.com/marcusrbrown/renovate-config
     sha: 4d13f58d835da29513abb454c3928ca34a82cfbe
     accessed: 2026-10-11
@@ -65,6 +68,59 @@ node_id: R_kgDOHRfvyQ
 Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Marcus R. Brown's personal GitHub repositories. This is the canonical dependency-update policy source consumed by every `marcusrbrown/*` and `fro-bot/*` repo.
 
 ## Repository Basics
+
+### Bounded source snapshot — 2026-10-27
+
+At public `main` SHA `7386008aa74020dc7773cff96a92c82746b4530a`, the
+README still documents the same three presets and floating `#v5` usage. The
+complete, non-truncated directory listing confirms their files and the same
+six committed workflows. Preset contents, lint configuration, release
+configuration, lockfile resolutions, runtime results, and issue/PR/release
+state were not inspected. Earlier policy and release claims below remain dated
+evidence; this pass cannot resolve the September 8 grouping/cooldown questions.
+
+The private ESM package manifest still uses the `0.0.0-development` placeholder
+and declares only `bootstrap`, `lint`, `fix`, and `prepare`. Compared with
+October 11, pnpm advances **11.28.5 → 11.28.8**, ESLint **10.12.0 → 10.13.0**,
+and Prettier **3.9.9 → 3.9.10**. Shared ESLint/Prettier configs remain
+**0.54.0 / 0.16.13**, semantic-release remains **25.0.9**, and lint-staged
+remains **17.6.0**. These are manifest declarations, not installed-version or
+latest-release claims. The visible CI gate remains lint followed by release;
+no standalone test or preset-schema-validation script/job is declared.
+
+Workspace exact overrides advance `fast-uri` **3.1.8 → 3.1.9** and `undici`
+**7.30.0 → 7.30.1**; `js-yaml` stays **4.3.2**. The older package-manifest
+override map still coexists. `allowBuilds`, legacy `onlyBuiltDependencies`,
+and version-specific `minimumReleaseAgeExclude` entries remain present without
+a declared workspace `minimumReleaseAge`. Effective precedence, install-time
+build permissions, cooldown origin, and vulnerability status remain unverified.
+
+Renovate and settings-sync reusable callers advance **v4.37.0 → v4.43.0**
+(`e6a1ab17`), each still calling its correctly named workflow. Renovate has no
+local cron and its `workflow_run` path requires successful `main`; settings
+sync retains daily **12:23 UTC**. CodeQL declares PR/main-push and Friday
+**11:05 UTC** analysis; Scorecard declares main pushes, branch-protection
+events, and Monday **08:15 UTC** analysis with SARIF publication. Declared
+security workflows are not evidence of successful scans or advisory clearance.
+
+**Fro Bot remains present**, advancing **v0.119.3 → v0.126.0** (`bed5eaf7`),
+with the daily **15:30 UTC** schedule and six-category prompt still in place.
+Its final agent call still declares neither `output-mode` nor a subsequent
+caller delivery step, and checkout still disables persisted credentials.
+The September/October delivery-wiring concern is therefore still open on
+static evidence; no actual delivered fix or execution failure is inferred.
+A missing-workflow onboarding proposal is not justified.
+
+**Dry-run contradiction persists:** `main.yaml` still advertises a default-true
+dispatch input, then sets `DRY_RUN=false` on the default branch regardless of
+the request. `INPUT_DRY_RUN` remains unused by that shell condition. This
+reconfirms the October 11 mode-selection finding, not an unintended published
+release. See [[github-actions-ci]] for the input-to-command tracing rule.
+
+Sources: [README](https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/readme.md),
+[package manifest](https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/package.json),
+[workspace manifest](https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/pnpm-workspace.yaml),
+and [all six workflows](https://github.com/marcusrbrown/renovate-config/tree/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows).
 
 ### Bounded source snapshot — 2026-10-11
 

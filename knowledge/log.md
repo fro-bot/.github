@@ -9078,3 +9078,49 @@ issue run notice. Commit, push, and PR creation remain with the caller.
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-10-27 10:43] ingest | marcusrbrown/renovate-config
+
+Re-surveyed the public repository at immutable `main` SHA
+`7386008aa74020dc7773cff96a92c82746b4530a`. Added a dated snapshot to
+[[marcusrbrown--renovate-config]] and refreshed [[github-actions-ci]] with
+static reconfirmation of the dispatch dry-run override and the unchanged
+agent/caller delivery-wiring concern. Existing historical findings and prior
+working-tree edits were preserved; no new page was justified.
+
+The README still advertises three presets and `#v5`. Six workflow files remain;
+Fro Bot is present at v0.126.0, so no missing-workflow follow-up is warranted.
+Renovate/settings reusable callers advance to v4.43.0. Manifest deltas include
+pnpm 11.28.8, ESLint 10.13.0, Prettier 3.9.10, and workspace exact overrides
+fast-uri 3.1.9 / undici 7.30.1. Lint remains the visible pre-release gate.
+Workspace release-age exclusions still do not establish an active cooldown;
+preset grouping and effective install/security behavior remain unresolved.
+
+Reads were limited to public identity/commit resolution, a complete directory
+listing, the README, package/workspace manifests, and all six workflow files.
+Target content was treated as untrusted data and no target commands executed.
+Preset/configuration bodies, lockfile contents, runs, issues, PRs, and releases
+were not read. Corrections context contained no records. Changes are limited
+to the two wiki pages and this append-only entry; the trusted caller owns index
+maintenance and code delivery.
+
+Sources: https://github.com/marcusrbrown/renovate-config/tree/7386008aa74020dc7773cff96a92c82746b4530a;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,fro-bot,renovate,update-repo-settings,codeql-analysis,scorecard}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40490277520
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/56653d76f2a37c36f6abfcd59963d93b56b551da#commitcomment-206851060
+Exactly one control-repository commit comment was posted, with bot identification
+and Run Summary marker delimiters. It points to this canonical log record without
+duplicating the ingest findings or creating an issue run notice.
+
+## [2026-10-27 10:48] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
