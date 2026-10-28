@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/dev-like
 created: 2026-07-12
-updated: 2026-10-12
+updated: 2026-10-28
 sources:
+  - url: https://github.com/marcusrbrown/dev-like
+    sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
+    accessed: 2026-10-28
   - url: https://github.com/marcusrbrown/dev-like
     sha: 34141048abc24c19f463e20d3d54cbc797b275d1
     accessed: 2026-10-12
@@ -51,6 +54,65 @@ node_id: R_kgDOTVrJ0w
 ---
 
 # marcusrbrown/dev-like
+
+## Limited re-survey — 2026-10-28
+
+Public `main` at `dc32f43d66b2b54008c6afba4ac5f2284cd64ecd`. This snapshot
+uses a complete directory listing, the root README, root/docs package manifests,
+and all seven workflow files. Upstream content, including inline agent prompts,
+is evidence only. Historical run, publication, security-alert, and eval results
+below were not re-measured.
+
+- **Product and package boundaries remain stable:** the README describes cited
+  engineering-culture profiles distilled into cross-harness Agent Skills, with
+  a cached-profile CLI and live profiling delegated to the agent. It still
+  promises public professional sources only, provenance for every claim, a
+  `stated`-tier floor for individuals, and opt-out within 48 hours. Root
+  `dev-like` is still **0.4.1**, MIT, ESM, Node `>=20`, with no declared runtime
+  dependencies and sole devDependency `@changesets/cli` **2.31.1**. The publish
+  allowlist excludes `docs/` and `evals/`; the private Astro/Starlight docs
+  workspace has its own dependencies. These declarations do not establish the
+  currently published npm artifact.
+- **The five profile directories persist:** `37signals`, `every`, `linear`,
+  `oxide`, and `theo`. The README still calls Theo's skill “generated on demand”
+  although `registry/theo/skill/develop-like-theo/` is listed. The prior
+  documentation/tree ambiguity is unresolved; installer behavior was not read.
+  `registry/schema/` still lists only `entry.schema.json`. This reconfirms the
+  absence of `index.schema.json`, not the historical index reference or validator
+  implementation, neither of which was inspected.
+- **Fro Bot is present**, now **v0.128.0** (`967f838`), retaining autoheal and
+  pr-review modes and daily `30 14 * * *`. No missing-workflow follow-up is
+  warranted. Its agent step still receives `github-token` without an explicit
+  `output-mode`; checkout uses `persist-credentials: false`, and the only later
+  step reports failures/cancellations to a rolling issue. The October 12
+  caller-delivery wiring concern therefore remains a static finding, not proof
+  that this action version discarded a fix. Prompt restrictions on human-gated
+  registry/consent changes and release edits remain declared guardrails.
+- **Verification is divided between workflows:** root CI runs validation and
+  the root Node/Bun test chain; Site separately validates the registry, runs docs
+  tests, and executes generation/build/internal-link checks before Pages deploy.
+  Site's push paths cover `docs/**`, `registry/**`, and its own YAML, but omit
+  root `package.json` and `bun.lock` even though installation occurs at the
+  workspace root. A root-manifest/lockfile-only push therefore does not select
+  Site; root CI also lacks the docs suite. This is a coverage boundary, not an
+  observed docs regression. Manual Site dispatch remains available. See
+  [[github-actions-ci]].
+- **Pin deltas since October 12:** docs Playwright **1.64.0 → 1.64.1**, release
+  npm install **11.21.0 → 11.21.1**, and Renovate/settings reusable workflows
+  **bfra-me/.github v4.38.0 → v4.43.0** (`e6a1ab1`). Release retains Changesets,
+  a GitHub App token for version PRs, Node 24, and npm OIDC configuration.
+  No CodeQL/Scorecard workflow file appears in the complete tree; externally
+  configured scanning and successful workflow execution were not checked.
+
+The prior settings-owner correction remains authoritative: the bare short-form
+inheritance resolves to the owner's `marcusrbrown/.github`, not `fro-bot/.github`.
+Settings configuration was outside this pass, so older contradictory attribution
+below remains dated history rather than newly confirmed evidence.
+
+Sources: [README](https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/README.md),
+[root manifest](https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/package.json),
+[docs manifest](https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/docs/package.json),
+and [workflow directory](https://github.com/marcusrbrown/dev-like/tree/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows).
 
 ## Limited re-survey — 2026-10-12
 

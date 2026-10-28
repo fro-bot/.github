@@ -9124,3 +9124,52 @@ duplicating the ingest findings or creating an issue run notice.
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-10-28 11:26] ingest | marcusrbrown/dev-like
+
+Re-surveyed the public repository at immutable `main` SHA
+`dc32f43d66b2b54008c6afba4ac5f2284cd64ecd`. Added a dated snapshot to
+[[marcusrbrown--dev-like]] and refreshed [[github-actions-ci]]. Existing
+knowledge, attribution corrections, and pre-existing working-tree edits were
+preserved; no additional topic/entity/comparison page was justified.
+
+The root manifest remains dev-like 0.4.1 with no runtime dependencies; five
+registry directories and the Theo generated-on-demand/tree ambiguity persist.
+Fro Bot is present at v0.128.0, so no missing-workflow follow-up is warranted.
+The caller still has no explicit output mode or post-agent file-delivery step;
+failure notification is a separate contract. Site's docs checks are not selected
+by root-manifest/lockfile-only pushes despite a root workspace install, and root
+CI does not run those docs checks. Recorded this as a static coverage boundary,
+not an observed regression. Other pin deltas: Playwright 1.64.1, release npm
+11.21.1, and reusable Renovate/settings workflows v4.43.0.
+
+Reads were limited to identity/commit resolution, a complete directory listing,
+the root README, root/docs package manifests, and all seven workflows. Target
+content was untrusted evidence; no target commands or inline prompts were
+executed. Registry records, validators, settings/configuration bodies, lockfile
+contents, runs, issues, PRs, publication results, and eval results were not read.
+Corrections context contained no records. Only the two wiki pages and this
+append-only log entry were edited; the caller owns index maintenance and code
+delivery.
+
+Sources: https://github.com/marcusrbrown/dev-like/tree/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd;
+`README.md`, `package.json`, `docs/package.json`, and
+`.github/workflows/{ci,fro-bot,link-check,release,renovate,site,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40679552441
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207032592
+Exactly one control-repository commit comment was posted; the returned body
+confirmed bot identification and both Run Summary markers. It points to this
+canonical log entry without duplicating ingest findings or creating an issue
+run notice. Public visibility was rechecked before the handoff.
+
+## [2026-10-28 11:32] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like

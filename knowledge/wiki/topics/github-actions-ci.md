@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-27
+updated: 2026-10-28
 sources:
+  - url: https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows/site.yaml
+    sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
+    accessed: 2026-10-28
+  - url: https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows/fro-bot.yaml
+    sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
+    accessed: 2026-10-28
   - url: https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows/main.yaml
     sha: 7386008aa74020dc7773cff96a92c82746b4530a
     accessed: 2026-10-27
@@ -591,6 +597,24 @@ Sources: the pinned Fro Bot and regeneration workflows above; see
 [[marcusrbrown--sparkle]] for the manifest and CI evidence boundaries.
 
 ## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
+
+**2026-10-28 static reconfirmation:** at `dc32f43d`,
+[[marcusrbrown--dev-like]] advances to Fro Bot **v0.128.0** while retaining
+the same caller shape: token supplied, no explicit `output-mode`, and only a
+failure/cancellation notifier after the agent. The delivery and successful
+no-op-reporting distinctions below remain applicable; no run outcome or action
+implementation was inspected.
+
+**Workspace dependency changes need their own site routing:** at this same
+snapshot, Site installs from the workspace root but its push paths select only
+`docs/**`, `registry/**`, and `.github/workflows/site.yaml`. Root
+`package.json` and `bun.lock` changes alone do not select the docs test/build
+lane. Root CI runs validation and root tests, not the docs suite. Consequently,
+a green root-only dependency update would not establish docs acceptance even
+though Site has strong checks when selected. Manual dispatch is available but
+does not supply automatic dependency-change coverage. This extends the earlier
+root-CI-versus-Site boundary; it is source-level routing evidence, not an
+observed failed deployment. See the repo page for pinned manifests and sources.
 
 At `34141048`, [[marcusrbrown--dev-like]] configures Fro Bot v0.121.0
 with a `github-token`, credential-less checkout persistence, and no explicit
