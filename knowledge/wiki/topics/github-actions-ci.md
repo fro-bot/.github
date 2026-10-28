@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-28
 sources:
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/renovate.yaml
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-10-28
   - url: https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows/site.yaml
     sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
     accessed: 2026-10-28
@@ -369,6 +372,25 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Queue writers at job scope; isolate dry runs (2026-10-28)
+
+At `737d27ff`, [[bfra-me--github]]'s `renovate.yaml` places concurrency
+on the Renovate job. Write-capable runs share a repository/workflow group
+ending in `write`, with `cancel-in-progress: false` and `queue: max`.
+Non-default-branch pushes are configured as dry runs and use `github.run_id`
+instead, giving each such run its own group. The workflow comments name
+three intended properties: skipped jobs do not occupy the group, writers
+do not race to create the same branch/PR, and a newly arriving run does not
+replace the already waiting one.
+
+The durable distinction is **serialize active writers versus retain pending
+writers**: turning off cancellation of the active run does not itself
+express a policy to preserve the entire waiting queue. The extra queue
+declaration makes that intent explicit here. Keeping independent dry runs
+outside the write group also avoids making validation wait for publishing.
+This observation is limited to workflow source; scheduler acceptance,
+actual queue retention, and successful Renovate delivery were not checked.
 
 ## 2026-10-25 — design-gate completeness includes paths, payloads, and exit semantics
 

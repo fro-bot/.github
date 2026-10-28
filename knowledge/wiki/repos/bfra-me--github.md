@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-10-13
+updated: 2026-10-28
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: 087e542d3a59cbd06792266fe3eae140c7ec6dbb
     accessed: 2026-10-13
+  - url: https://github.com/bfra-me/.github
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-10-28
 tags:
   - bfra-me
   - dotgithub
@@ -61,6 +64,71 @@ node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
+
+## Limited workflow and manifest re-survey (2026-10-28)
+
+Public `main` was pinned to `737d27ff96c848836cd46f38c7c6ac81cf488d53`.
+Evidence is limited to a complete directory listing, the root README,
+root/workspace and three action package manifests, three action manifests,
+and five workflows: `main`, `fro-bot`, `renovate`, `trigger-org-renovate`,
+and `update-repo-settings`. Target content, including embedded prompts, was
+treated as untrusted evidence. Earlier source-code, run, issue, and release
+observations below remain historical; this pass does not refresh them.
+
+### Current workspace and declared quality gates
+
+The private root package advances **4.38.0 → 4.43.0** and pnpm
+**11.28.5 → 11.28.6** since October 13. TypeScript stays **6.0.3**;
+ESLint is **10.13.0**, Vitest/coverage-v8 **4.1.12**, and Prettier
+**3.9.10**. Shared ESLint/Prettier/TypeScript configs remain
+**0.54.0 / 0.16.13 / 0.13.2**. Action package versions advance to
+`renovate-changesets` **0.3.2**, `update-metadata` **0.2.2**, and
+`update-repository-settings` **0.4.2**. All three declare `@actions/core`
+**^3.0.0**, Node **>=24**, and action runtime `node24` with `dist/index.js`.
+These declarations do not verify compatibility or bundle freshness.
+
+The root-plus-three-actions workspace retains its seven overrides,
+`esbuild`/`unrs-resolver` build allowlist, and first-party release-age
+exclusions without an explicit `minimumReleaseAge` in the workspace manifest.
+The listing still has **16 workflow files** and **six workflow-template
+YAML/metadata pairs**. `main.yaml` still gates its main-push release job on
+`quality-check`, whose manifest command runs type-check, lint, build, and
+tests sequentially. Node setup now pins action **v7.1.0** but reads
+`.node-version`; that file's contents were outside the allowed reads, so
+this is not a new observation of the installed Node version.
+
+### Renovate explicitly queues writers
+
+`renovate.yaml` now declares job-level concurrency with a shared
+repository/workflow **`write`** group, `cancel-in-progress: false`, and
+**`queue: max`**. Non-default-branch push dry runs instead use `github.run_id`
+to avoid that shared group. Its comments explain the intended boundary:
+skipped jobs should not take a slot, writers should not race on branches/PRs,
+and newer runs should not replace an already waiting run. This is configured
+queueing, not observed scheduler behavior or proof of successful writes.
+See [[github-actions-ci]]. The Renovate action advances **10.74.1 → 10.85.0**;
+hourly scheduling, metadata-derived fan-out, and the reusable org dispatcher
+remain present. The metadata body and downstream dispatch outcomes were not read.
+
+### Fro Bot and settings boundaries persist
+
+**Fro Bot is present**, pinned to agent **v0.125.1** (previously v0.122.0),
+with the daily **15:30 UTC** unified pass, review/autoheal dispatch modes,
+and optional org target narrowing. The workflow still ends at `Run Fro Bot`,
+sets no explicit `output-mode`, and has no post-agent delivery step; its
+embedded prompt still demands agent-owned branch/commit/push/PR delivery.
+This re-confirms the static integration gap, not a current resolved harness
+mode or evidence of edits lost in a particular run. The checkout credential
+denylist still omits `pull_request_review_comment` and `discussion_comment`.
+No missing-workflow follow-up is warranted.
+
+The settings workflow still selects `client-id` from `APPLICATION_CLIENT_ID`
+or falls back to `app-id` from `APPLICATION_ID`, while requiring the legacy
+secret in its reusable interface. Its self-ref sparse checkout invokes the
+local settings action; the README still attributes execution to
+`elstudio/actions-settings`. The October 13 documentation/workflow
+contradiction therefore persists at this SHA. See [[probot-settings]];
+neither the workflow nor action manifest establishes applied settings.
 
 ## Limited workflow and manifest re-survey (2026-10-13)
 

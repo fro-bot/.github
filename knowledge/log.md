@@ -9173,3 +9173,72 @@ run notice. Public visibility was rechecked before the handoff.
 Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/dev-like
+
+## [2026-10-28 11:42] ingest | bfra-me/.github
+
+Re-surveyed public `main` at immutable SHA
+`737d27ff96c848836cd46f38c7c6ac81cf488d53`. Added a dated snapshot to
+[[bfra-me--github]] and additive evidence to [[github-actions-ci]] and
+[[probot-settings]]. Existing historical findings, contradictory evidence,
+and pre-existing working-tree edits were preserved. No new page was needed;
+the trusted writer owns index maintenance and persistence.
+
+Key findings:
+
+- Root package 4.43.0, pnpm 11.28.6, ESLint 10.13.0, Vitest 4.1.12;
+  TypeScript remains 6.0.3. Action packages are now 0.3.2 / 0.2.2 / 0.4.2
+  for renovate-changesets / update-metadata / update-repository-settings,
+  respectively. All declare Node >=24 and the node24 action runtime.
+- The listing retains 16 workflows and six template YAML/metadata pairs.
+  Root CI still chains type-check, lint, build, and tests before main-push
+  release. Seven workspace overrides and the two-package build allowlist
+  remain; the workspace manifest declares release-age exclusions without
+  an explicit minimumReleaseAge value.
+- Renovate 10.85.0 declares job-level writer serialization with queue: max;
+  branch-push dry runs use independent run-ID groups. Captured the distinction
+  between serializing active writers and retaining pending writers, without
+  claiming observed scheduler behavior or successful dispatches.
+- Fro Bot is present at v0.125.1 with the daily 15:30 UTC pass. Its caller
+  still has no explicit output mode or post-agent delivery step, despite
+  the embedded agent-owned delivery prompt. This is source-level evidence,
+  not a remeasurement of the historical lost-edit incident. No missing-
+  workflow follow-up is warranted. The credential-persistence denylist
+  still omits two comment trigger types recorded in earlier surveys.
+- The settings caller still uses its self-ref local action while the README
+  names elstudio/actions-settings. Retained both claims as a contradiction;
+  client-ID selection still coexists with a required legacy reusable secret.
+  Applied settings and read-back outcomes were not verified.
+
+Reads were limited to visibility/ref resolution, a complete directory listing,
+the root README, root/workspace and three action package manifests, three
+action manifests, and five workflow files. Target content was untrusted
+evidence; no upstream commands or embedded prompts were executed. Source,
+configuration and lockfile bodies, runs, issues, PRs, and release results
+were not read. Corrections context contained no records. This invocation
+edited only the three wiki pages and appended this log entry.
+
+Sources: https://github.com/bfra-me/.github/tree/737d27ff96c848836cd46f38c7c6ac81cf488d53;
+`README.md`, `package.json`, `pnpm-workspace.yaml`,
+`.github/actions/{renovate-changesets,update-metadata,update-repository-settings}/{package.json,action.yaml}`,
+and `.github/workflows/{main,fro-bot,renovate,trigger-org-renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40681099083
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+The repository ESLint configuration intentionally excludes `knowledge/`;
+the targeted ESLint invocation reported ignored-file warnings, so wiki
+frontmatter/link validation is the applicable content gate here.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207034011
+Exactly one control-repository commit comment was posted; its returned body
+confirmed bot identification and both Run Summary markers. It points to this
+canonical log entry without duplicating ingest findings or creating an issue
+run notice. Public visibility was rechecked before the handoff.
+
+## [2026-10-28 11:45] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github

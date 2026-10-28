@@ -2,8 +2,14 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-10-25
+updated: 2026-10-28
 sources:
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/update-repo-settings.yaml
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-10-28
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/README.md
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-10-28
   - url: https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml
     sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
     accessed: 2026-10-25
@@ -68,6 +74,18 @@ related:
 ---
 
 # Probot Settings
+
+## Settings caller and README still disagree (2026-10-28)
+
+Rechecked [[bfra-me--github]] at `737d27ff`: the root README still names
+`elstudio/actions-settings`, while `update-repo-settings.yaml` resolves its
+own workflow ref, sparse-checks out this repository's settings action, and
+invokes it locally. Its package manifest now declares **0.4.2**. This
+preserves the October 13 contradiction with fresh, pinned evidence rather
+than silently promoting the README claim to current execution behavior.
+Client-ID/legacy app-ID selection and the reusable interface's required
+`APPLICATION_ID` secret also remain. No settings source code or execution
+results were read; actual settings application and read-back remain unverified.
 
 ## Client-ID migration does not remove the reusable legacy contract (2026-10-13)
 
