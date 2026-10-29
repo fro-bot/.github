@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-28
+updated: 2026-10-29
 sources:
+  - url: https://github.com/marcusrbrown/sparkle/blob/b6116202d97cef5c6a535ffa9555f745729772e8/.github/workflows/regenerate-docs.yaml
+    sha: b6116202d97cef5c6a535ffa9555f745729772e8
+    accessed: 2026-10-29
+  - url: https://github.com/marcusrbrown/sparkle/blob/b6116202d97cef5c6a535ffa9555f745729772e8/.github/workflows/fro-bot.yaml
+    sha: b6116202d97cef5c6a535ffa9555f745729772e8
+    accessed: 2026-10-29
   - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/renovate.yaml
     sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
     accessed: 2026-10-28
@@ -586,6 +592,34 @@ when crossing the one-way ownership migration, not for every later rollback.
 Between releases at or after the `v0.118.2` migration, the documented rollback
 is a paired pin reversal. Preserve earlier dated cutover observations as
 history; do not apply their volume-recovery requirement to every version pair.
+
+## Generated-output selection is a separate delivery gate (2026-10-29)
+
+At `b6116202`, [[marcusrbrown--sparkle]] retains the documentation input-path
+mismatches recorded below, and its regeneration workflow exposes a second
+selection boundary after generation. The cache restores `api/**`,
+`components/**`, and `generated/**`, but the change-check step stages only
+`api/` and `generated/`. PR creation is conditional on a nonempty staged diff.
+Thus a components-only output change can be omitted from the decision to
+create a PR even if generation ran. This does not prove that such an output
+occurred: source generators and run artifacts were outside this survey.
+
+Check the whole chain: trigger paths, detected packages, generated paths,
+staged paths, and delivery condition. Valid input selection alone cannot prove
+that every generated artifact reaches delivery. Likewise, this workflow's
+directory-existence acceptance check can accept a directory restored from
+cache; existence is weaker than evidence of fresh or correct generation.
+The finding extends the earlier three-way input-path contract without
+changing its historical evidence.
+
+The same snapshot advances Fro Bot to **v0.129.0** while retaining the shared
+delivery-mode/credential gate and the boolean-losing fork guard below. Neither
+an agent version bump nor a source-level delivery declaration establishes a
+successful production run. The pnpm-major and class-policy prompt
+contradictions recorded on the repo page also remain visible.
+
+Sources: the pinned regeneration and Fro Bot workflows in frontmatter; see
+[[marcusrbrown--sparkle]] for the permitted-read boundary and manifest context.
 
 ## Fail-closed guards must preserve an allowed false value (2026-10-13)
 

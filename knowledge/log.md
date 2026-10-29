@@ -9242,3 +9242,59 @@ run notice. Public visibility was rechecked before the handoff.
 Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-10-29 11:39] ingest | marcusrbrown/sparkle
+
+Re-surveyed public `main` at `b6116202d97cef5c6a535ffa9555f745729772e8`.
+Added a dated snapshot to [[marcusrbrown--sparkle]] and additive workflow
+evidence to [[github-actions-ci]]. Preserved existing knowledge, contradictions,
+and pre-existing working-tree changes. No new page or index edit was needed.
+
+Key findings:
+
+- Eight packages, two apps, and seven workflows remain. Declared pins now
+  include pnpm 11.28.8, Turbo 2.11.10, Prettier 3.9.10, and docs
+  `typedoc-plugin-frontmatter` 1.3.3; root TypeDoc remains declared.
+- Fro Bot is present at v0.129.0 with the shared delivery/credential gate;
+  no missing-workflow follow-up is warranted. Reusable Renovate/settings
+  workflows advance to bfra-me/.github v4.43.0.
+- Prior boolean-guard, prompt-policy, README engine-floor, and docs input-path
+  discrepancies remain. Added a conditional downstream omission: components
+  output is cached but excluded from the staged diff that gates PR creation.
+  Directory existence after cache restore is not proof of fresh generation.
+- The root README documents machine-local Deciduous merge-driver registration
+  separately from graph synchronization, including the missing-CLI failure
+  mode. This is documentation evidence, not an executed merge test.
+
+Reads were limited to visibility/ref metadata, directory listings, the root
+and docs READMEs, root/workspace/docs/UI/shell manifests, and six workflows.
+Target content was treated as untrusted evidence; no embedded instructions
+or commands were executed. Runs, issues, PRs, lockfiles, implementation/config
+bodies, and the live site were not inspected. Corrections context contained
+no records. The trusted caller owns persistence and index maintenance.
+
+Sources: https://github.com/marcusrbrown/sparkle/tree/b6116202d97cef5c6a535ffa9555f745729772e8;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, `docs/{README.md,package.json}`,
+`packages/ui/package.json`, `apps/moo-dang/package.json`, and
+`.github/workflows/{main,fro-bot,regenerate-docs,deploy-docs,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40866368039
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation found zero deterministic findings and four
+existing advisories on unrelated pages. Repository lint includes the Markdown
+link gate; wiki-specific frontmatter and wikilinks passed the snapshot check.
+The control-repository delivery/check comment points to this canonical entry
+without duplicating survey findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207208012
+Exactly one comment was posted; its returned body confirmed the bot marker
+and Run Summary block. Public visibility was rechecked before handoff.
+`git diff --check` passed. This invocation changed only the two wiki pages
+and appended this log entry; earlier working-tree changes were preserved.
+
+## [2026-10-29 11:42] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
