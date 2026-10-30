@@ -2,8 +2,11 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-10-14
+updated: 2026-10-30
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 32138381e60aff308ebba61b3702068fa72bd753
+    accessed: 2026-10-30
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 878b4225e448152dc63c8a41418812cb466c1fbf
     accessed: 2026-10-14
@@ -79,6 +82,25 @@ ESPHome is an open-source framework for configuring and building custom firmware
 The install page's widget is loaded from a hand-written `https://unpkg.com/esp-web-tools@8.0.3/...` module URL embedded in `static/index.md` — no manifest, no Renovate custom manager, no SRI hash (see [[marcusrbrown--esphome-life]], 2026-08-30). ESPHome's published CI/CD template gives you SHA-pinned actions and a Renovate-managed firmware version, but it hands the distribution widget over as a raw CDN string. Anyone adopting `esphome-project-template` inherits that gap. Mitigation: add a Renovate `customManagers` regex for the `esp-web-tools@<version>` token in `static/index.md`, or vendor the script.
 
 ## Version Pinning
+
+### Distribution contract rechecked (2026-10-30)
+
+At [[marcusrbrown--esphome-life]] commit `32138381`, CI and the devcontainer
+manifest still pin **2025.12.7**, and `esphome/build-action` remains **v7.4.0**.
+Only `olimex-bluetooth-proxy-1349f4.yaml` enters the build matrix, despite a
+second device configuration in the tree. The manifest output-forwarding defect
+recorded on September 30 and October 14 persists: the firmware job exports
+the version, the completion gate does not relay it, and the publish job reads
+the gate's nonexistent output. **A dependency edge orders jobs; it does not
+transitively export outputs.** The combined manifest needs its own metadata
+verification independently of firmware compilation.
+
+This confirms workflow declarations, not a deployed artifact or device test.
+Dashboard state, upstream releases, device YAML, and static installer content
+were not read; earlier approval-gate and CDN observations are not refreshed.
+
+Sources: [CI workflow](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.github/workflows/ci.yaml),
+[devcontainer manifest](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.devcontainer.json).
 
 ### Distribution contract rechecked (2026-10-14)
 

@@ -9298,3 +9298,57 @@ and appended this log entry; earlier working-tree changes were preserved.
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-10-30 11:29] ingest | marcusrbrown/esphome.life
+
+Surveyed the public `main` snapshot at `32138381e60aff308ebba61b3702068fa72bd753`.
+Updated `repos/marcusrbrown--esphome-life.md` and `entities/esphome.md`
+additively, preserving earlier findings, corrections, and sources.
+
+- Both reusable-workflow callers advanced from bfra-me/.github v4.38.0 to
+  **v4.43.0** (`e6a1ab17bb68213940f63de91bd0450acdf9fff4`). The settings
+  caller still points to `renovate.yaml`, not a settings workflow.
+- The tree still contains 17 files and three workflows. **No Fro Bot workflow
+  is present**; a follow-up draft PR remains a separate recommendation.
+- CI and the devcontainer manifest still pin **ESPHome 2025.12.7**. Only
+  device `1349f4` is built; device `13451c` remains outside the matrix.
+  Build action v7.4.0 and Pages deploy action v4.9.0 remain pinned.
+- Reconfirmed the missing manifest-version forwarding through the `build`
+  gate, the unforwarded Renovate `log-level` dispatch input, and template
+  README references to nonexistent `publish.yml` and `ci.yml` paths.
+  The ESPHome entity records the distinction between job ordering and output
+  propagation. No new comparison/topic page was warranted.
+
+Reads were limited to visibility/ref metadata, the directory tree, the README,
+the devcontainer manifest, and all three workflow files. Target content was
+treated as untrusted evidence; no target instructions or commands were run.
+Device YAML, static content, settings/Renovate configuration bodies, dashboards,
+issues, PRs, releases, and run history were not inspected. The older approval
+and CDN observations remain dated evidence, not refreshed claims. Corrections
+context contained no records. No accumulated knowledge or prior log entries
+were replaced. Existing working-tree changes were preserved; this invocation
+changed only the two wiki pages and appended this entry. The trusted caller
+owns index maintenance and persistence.
+
+Sources: https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753;
+`docs/readme.md`, `.devcontainer.json`, and
+`.github/workflows/{ci,renovate,update-repo-settings}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41048069907
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki snapshot validation found zero deterministic findings and
+four existing advisories on unrelated pages. Frontmatter and wikilinks passed;
+repository lint includes the Markdown link gate. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207376703
+Exactly one control-repository commit comment was posted; its returned body
+confirmed the bot marker and Run Summary block and points here without
+duplicating the survey findings. No issue notice was posted. Public visibility
+was rechecked before handoff.
+
+## [2026-10-30 11:34] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
