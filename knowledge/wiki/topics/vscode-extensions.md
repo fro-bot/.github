@@ -2,7 +2,7 @@
 type: topic
 title: VS Code Extension Development
 created: 2026-04-18
-updated: 2026-10-15
+updated: 2026-10-30
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 2c78b3d2b86a0f3dd09171131ae6e29916118fcc
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 3c1dafe6d45f9772cbadc02c9f09fe99de26810f
     accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: bd093f3b2c54940ba6324e596a65b780d8815170
+    accessed: 2026-10-30
 tags: [vscode, vscode-extension, typescript, extension-development, semantic-release]
 related:
   - marcusrbrown--extend-vscode
@@ -75,6 +78,27 @@ Extensions in this ecosystem publish to three registries:
 | Visual      | Screenshot-based regression              | Playwright              |
 
 ## Release Posture
+
+### Declaration boundaries rechecked (2026-10-30)
+
+At [[marcusrbrown--extend-vscode]] commit
+`bd093f3b2c54940ba6324e596a65b780d8815170`, the October 15 distinctions still
+hold: separate Node/Web extension-host entries coexist with nine Node-only
+library export routes; the README's VS Code 1.71+ badge conflicts with the
+`^1.102.0` engine floor and `1.140.0` API types. These are declaration
+discrepancies, not evidence of a browser-runtime failure or newer-API usage.
+
+Main still explicitly invokes lint, unit tests, web tests, and build, while
+Publish retains its eight-leg matrix with integration commented out. The
+manifest's standalone type-check, integration, visual, and coverage scripts
+are not equivalent to active workflow invocations. Vitest `4.1.11` and its
+coverage/UI packages `4.1.0` remain skewed; runtime compatibility was not tested.
+Earlier assertions about absent guardrails inside validation scripts are
+historical, not reverified here: those implementations were outside read scope.
+
+Sources: [manifest](https://github.com/marcusrbrown/extend-vscode/blob/bd093f3b2c54940ba6324e596a65b780d8815170/package.json),
+[README](https://github.com/marcusrbrown/extend-vscode/blob/bd093f3b2c54940ba6324e596a65b780d8815170/README.md),
+and [workflow directory](https://github.com/marcusrbrown/extend-vscode/tree/bd093f3b2c54940ba6324e596a65b780d8815170/.github/workflows).
 
 ### Host entry points are not library export conditions (2026-10-15)
 

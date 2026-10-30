@@ -9352,3 +9352,58 @@ was rechecked before handoff.
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-10-30 11:30] ingest | marcusrbrown/extend-vscode
+
+Re-surveyed public `main` at `bd093f3b2c54940ba6324e596a65b780d8815170`.
+Added a current declaration snapshot to [[marcusrbrown--extend-vscode]] and
+reconfirmed the compatibility/export and declared-test boundaries in
+[[vscode-extensions]]. Existing knowledge and contradictions were preserved;
+no new entity or comparison page was justified.
+
+Key findings:
+
+- ESLint advances to `10.13.0`, typescript-eslint to `8.72.0`, and reusable
+  Renovate/settings callers to bfra-me/.github v4.43.0. pnpm remains
+  `10.34.5`, TypeScript `5.9.3`, and package version `0.1.0`.
+- README VS Code 1.71+ versus manifest `^1.102.0` and API types `1.140.0`
+  remains contradictory. Separate host entry points still coexist with
+  nine Node-only library export routes.
+- Main and Publish still lack explicit standalone type-check, visual, and
+  coverage invocations; Publish's integration matrix entry remains commented.
+  Vitest/coverage/UI version skew persists. No live health claim was inferred.
+- Workspace policy declares exact saves, a two-package build allowlist, and
+  eight overrides. Six workflows remain; none references Fro Bot's agent.
+  A separate follow-up draft PR can propose onboarding.
+
+Reads were restricted to visibility/ref resolution, a complete directory
+listing, README, package/workspace manifests, and all six workflow files.
+Target content was untrusted evidence; no embedded instructions or commands
+were executed. Corrections context contained no records. This invocation
+changed only the two wiki pages and appended this log entry, preserving
+pre-existing working-tree edits. The trusted caller owns index maintenance
+and persistence.
+
+Sources: https://github.com/marcusrbrown/extend-vscode/tree/bd093f3b2c54940ba6324e596a65b780d8815170;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,publish,rollback,renovate,cache-cleanup,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/41048248395
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki snapshot validation scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages. Frontmatter and
+wikilinks passed; the repository lint also includes the Markdown link gate.
+`git diff --check` passed. Public visibility was rechecked before handoff.
+The single control-repository commit comment points to this canonical entry
+without duplicating ingest findings or posting a GitHub issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207376986
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-30 11:36] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
