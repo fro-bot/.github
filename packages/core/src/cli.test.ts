@@ -1557,6 +1557,117 @@ describe('dotted option names', () => {
   })
 })
 
+describe('the option name __proto__', () => {
+  // goke assigns an option through a plain object, so `__proto__` goes to the inherited setter and never
+  // becomes an own option: the unknown-option check cannot see it, and the action would run with exit 0.
+  const rooted = (action: () => void, options: boolean): CliConfig => ({
+    name: 'x',
+    usageCode: 64,
+    commands: [
+      defineCommand({
+        readOnly: false,
+        ...(options ? {options: {flag: {flag: '--flag', schema: z.boolean().optional()}}} : {}),
+        action,
+      }),
+    ],
+  })
+
+  it.each([
+    [['--__proto__'], '--__proto__'],
+    [['--__proto__=attacker'], '--__proto__'],
+    [['--__proto__='], '--__proto__'],
+    [['--__proto__', 'attacker'], '--__proto__'],
+    [['--no-__proto__'], '--no-__proto__'],
+    [['--no-__proto__=attacker'], '--no-__proto__'],
+    [['-__proto__'], '-__proto__'],
+    [['---__proto__=attacker'], '---__proto__'],
+    [['-no-__proto__'], '-no-__proto__'],
+    [['--flag', '--__proto__'], '--__proto__'],
+  ])('rejects %j as a usage error naming %s, and runs nothing', async (argv, named) => {
+    for (const options of [false, true]) {
+      const action = vi.fn()
+      const result = await run(rooted(action, options), argv)
+      expect(result.exitCode).toBe(64)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain(`error: unsupported option name \`${named}\`\n`)
+      expect(result.stderr).toContain('Usage:')
+      expect(result.stderr).not.toContain('attacker')
+      expect(action).not.toHaveBeenCalled()
+    }
+  })
+
+  it('writes the usage error to the usage stream of the CLI', async () => {
+    const result = await run({...usageShape([]), usageStream: 'stdout', usageCode: 3}, ['--__proto__=1'])
+    expect(result.exitCode).toBe(3)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stderr).toBe('error: unsupported option name `--__proto__`\n')
+  })
+
+  it('strips ANSI from the name it reports', async () => {
+    const result = await run(rooted(vi.fn(), false), [`--__proto__=${ESC}[31mred${ESC}[0m`])
+    expect(result.stderr).toContain('error: unsupported option name `--__proto__`\n')
+    expect(result.stderr).not.toContain(ESC)
+  })
+
+  it('reports a dotted name as dotted even when it is built on __proto__', async () => {
+    const result = await run(rooted(vi.fn(), false), ['--__proto__.x=1'])
+    expect(result.stderr).toContain('error: unsupported dotted option name `--__proto__.x`\n')
+  })
+
+  it.each([
+    [['--__Proto__'], '--__Proto__'],
+    [['--__proto-_'], '--__proto-_'],
+    [['--_-proto__'], '--_-proto__'],
+    [['--proto__'], '--proto__'],
+    [['--__proto'], '--__proto'],
+    [['--my__proto__'], '--my__proto__'],
+    [['--a-__proto__'], '--a-__proto__'],
+    [['--no-a-__proto__'], '--noA-__proto__'],
+    [['--no-no-__proto__'], '--noNo-__proto__'],
+    [['--__proto__x'], '--__proto__x'],
+    [['--prototype'], '--prototype'],
+    [['--prototype=x'], '--prototype'],
+    [['--toString'], '--toString'],
+    [['--valueOf'], '--valueOf'],
+  ])('leaves %j to goke, which rejects it as an unknown option', async (argv, named) => {
+    const action = vi.fn()
+    const result = await run(rooted(action, false), argv)
+    expect(result.exitCode).toBe(64)
+    expect(result.stderr).toContain(`error: Unknown option \`${named}\`\n`)
+    expect(result.stderr).not.toContain('unsupported')
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('only looks at option names: __proto__ as a value or a positional is not rejected', async () => {
+    const seen: unknown[] = []
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          positionals: [{name: 'path', kind: 'optional'}],
+          options: {mode: {flag: '--mode <m>', schema: z.string().optional()}},
+          action: context => {
+            seen.push([context.positionals.path, context.options.mode])
+          },
+        }),
+      ],
+    }
+    expect((await run(config, ['__proto__', '--mode', '__proto__'])).exitCode).toBe(0)
+    expect((await run(config, ['--mode=__proto__'])).exitCode).toBe(0)
+    expect(seen).toEqual([
+      ['__proto__', '__proto__'],
+      [undefined, '__proto__'],
+    ])
+  })
+
+  it('does not look past `--`: what follows is rejected as arguments after the terminator', async () => {
+    const result = await run(rooted(vi.fn(), false), ['--', '--__proto__'])
+    expect(result.stderr).toContain('error: unexpected arguments after `--`\n')
+    expect(result.stderr).not.toContain('unsupported')
+  })
+})
+
 describe('positional declarations', () => {
   const define = (positionals: Parameters<typeof defineCommand>[0]['positionals']): Command =>
     defineCommand({readOnly: true, positionals, action: () => {}})

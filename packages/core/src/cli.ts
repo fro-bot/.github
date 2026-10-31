@@ -20,7 +20,8 @@
  * - A dotted option name (`--a.b`, `--a.b=v`) is rejected before goke sees argv, and no command may
  *   declare one. goke writes a dotted name into nested objects, and a path through an inherited
  *   property (`--toString.call=x`, `--a.0=x --a.map.call=x`) reaches a built-in prototype, so no list of
- *   forbidden segments is enough: the dotted form itself is not accepted.
+ *   forbidden segments is enough: the dotted form itself is not accepted. The name `__proto__` is
+ *   rejected the same way, because goke's own unknown-option check never sees it.
  * - Defaults are applied once, by the zod schema: goke is told not to seed them, because it would hand
  *   the schema an already-defaulted value to parse a second time.
  * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
@@ -300,17 +301,26 @@ interface ExitCodes {
 }
 
 /**
- * The first flag, before any `--`, whose name contains a `.`, as written and without its value. goke
- * splits a dotted option name on `.` and assigns down the path through whatever objects it finds,
- * inherited ones included, so this runs before goke parses anything. A negative number is a value, not
- * a flag, and a dot after `=` belongs to the value.
+ * The usage message for the first flag, before any `--`, that goke would mishandle, or undefined. The
+ * flag is named as written and without its value; a negative number is a value, not a flag, and
+ * anything after `=` belongs to the value.
+ *
+ * - A dotted name: goke splits it on `.` and assigns down the path through whatever objects it finds,
+ *   inherited ones included, so `--toString.call=x` reaches a built-in.
+ * - The name `__proto__` (behind any leading dashes and a `no-`): goke assigns options through a plain
+ *   object, so it goes to the inherited `__proto__` setter and never becomes an own option. goke's
+ *   unknown-option check cannot see it, and the action would run.
+ *
+ * Every other name goke either handles or rejects as an unknown option; this is not an unknown-flag
+ * parser. The regex lives in the function: Stryker covers a module-level constant with no test.
  */
-function findDottedOptionName(argv: readonly string[]): string | undefined {
+function findUnsupportedOption(argv: readonly string[]): string | undefined {
   for (const token of argv) {
     if (token === '--') return undefined
     if (!token.startsWith('-') || Number.isFinite(Number(token))) continue
     const flag = token.split('=')[0] ?? token
-    if (flag.includes('.')) return flag
+    if (flag.includes('.')) return `unsupported dotted option name \`${flag}\``
+    if (/^-+(?:no-)?__proto__$/u.test(flag)) return `unsupported option name \`${flag}\``
   }
   return undefined
 }
@@ -327,8 +337,8 @@ async function resolveVerdict(
     output.errors += stripAnsi(`error: ${message}\n`)
     return codes.usage
   }
-  const dotted = findDottedOptionName(argv)
-  if (dotted !== undefined) return usage(`unsupported dotted option name \`${dotted}\``)
+  const unsupported = findUnsupportedOption(argv)
+  if (unsupported !== undefined) return usage(unsupported)
 
   // No argv on a CLI whose no-argv mode is usage prints what `--help` prints.
   const noArgvUsage = argv.length === 0 && config.noArgv === 'usage'
