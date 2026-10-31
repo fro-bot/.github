@@ -25,6 +25,7 @@
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
 import {
   assertBranchWritable,
   attributesPageTo,
@@ -609,16 +610,12 @@ export async function renameTrackedRepo(deps: RenameDeps): Promise<RenameOutcome
     return {result: 'renamed', commit, attempts: attempt, page: plan.outcome}
   }
 
-  let lastRace = 409
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return await attemptOnce(attempt)
-    } catch (error: unknown) {
-      if (!(error instanceof RefRaceError)) throw error
-      lastRace = error.status
-    }
+  try {
+    return await retry(attemptOnce, {attempts: MAX_ATTEMPTS, shouldRetry: error => error instanceof RefRaceError})
+  } catch (error: unknown) {
+    if (!(error instanceof RefRaceError)) throw error
+    throw new RenameError({code: 'RETRIES_EXHAUSTED', phase: 'updateRef', status: error.status})
   }
-  throw new RenameError({code: 'RETRIES_EXHAUSTED', phase: 'updateRef', status: lastRace})
 }
 
 function safeSlug(owner: string, name: string): string | undefined {

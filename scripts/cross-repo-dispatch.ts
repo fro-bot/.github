@@ -1,5 +1,6 @@
 import {createHash, randomBytes} from 'node:crypto'
 import process from 'node:process'
+import {retry} from '@fro-bot/core/retry'
 import {assertReposFile} from './schemas.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1261,42 +1262,44 @@ async function readLatestMarker(
 }
 
 async function casWriteMarker(input: CasWriteInput): Promise<CasWriteResult> {
-  for (let attempt = 0; attempt < CAS_MAX_RETRIES; attempt++) {
-    const found = await readLatestMarkerComment(
-      input.octokit,
-      {owner: input.owner, repo: input.repo},
-      input.issueNumber,
-    )
-    const currentHash = found?.marker.hash
+  return retry(
+    async (): Promise<CasWriteResult> => {
+      const found = await readLatestMarkerComment(
+        input.octokit,
+        {owner: input.owner, repo: input.repo},
+        input.issueNumber,
+      )
+      const currentHash = found?.marker.hash
 
-    if (currentHash !== input.expectedPriorHash) {
-      // Someone else wrote since we last read. Retry against the latest state
-      // only if our nextState was derived from a state that's still coherent;
-      // callers that cannot re-derive a plan safely should treat this as defer.
-      continue
-    }
+      if (currentHash !== input.expectedPriorHash) {
+        // Someone else wrote since we last read. Retry against the latest state
+        // only if our nextState was derived from a state that's still coherent;
+        // callers that cannot re-derive a plan safely should treat this as defer.
+        return {ok: false, reason: 'mismatch'}
+      }
 
-    const body = buildMarkerComment(input.nextState)
-    if (found === null) {
-      // Cold start: no bot marker comment exists yet.
-      await input.octokit.rest.issues.createComment({
-        owner: input.owner,
-        repo: input.repo,
-        issue_number: input.issueNumber,
-        body,
-      })
-    } else {
-      // Update the existing marker comment in place — never append a new one.
-      await input.octokit.rest.issues.updateComment({
-        owner: input.owner,
-        repo: input.repo,
-        comment_id: found.commentId,
-        body,
-      })
-    }
-    return {ok: true}
-  }
-  return {ok: false, reason: 'mismatch'}
+      const body = buildMarkerComment(input.nextState)
+      if (found === null) {
+        // Cold start: no bot marker comment exists yet.
+        await input.octokit.rest.issues.createComment({
+          owner: input.owner,
+          repo: input.repo,
+          issue_number: input.issueNumber,
+          body,
+        })
+      } else {
+        // Update the existing marker comment in place — never append a new one.
+        await input.octokit.rest.issues.updateComment({
+          owner: input.owner,
+          repo: input.repo,
+          comment_id: found.commentId,
+          body,
+        })
+      }
+      return {ok: true}
+    },
+    {attempts: CAS_MAX_RETRIES, retryResult: result => !result.ok},
+  )
 }
 
 // ─── Dispatch shell ───────────────────────────────────────────────────────────

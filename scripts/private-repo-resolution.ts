@@ -2,6 +2,8 @@ import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -42,10 +44,6 @@ function isRateLimitError(err: unknown): boolean {
   return err instanceof Error && /rate.?limit/i.test(err.message)
 }
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 function extractStderr(err: unknown): string | undefined {
   if (!isRecord(err)) return undefined
   const s = err.stderr
@@ -68,52 +66,54 @@ export function makeGhNodeIdResolver(
   token?: string,
   retryOptions: RetryOptions = {maxRetries: 3, baseDelayMs: 2000},
 ): NodeIdResolver {
+  // `maxRetries` counts retries, so the first try adds one; a negative count is no retries.
+  const attempts = Math.max(0, Math.ceil(retryOptions.maxRetries)) + 1
+
+  const resolveOnce = async (nodeId: string): Promise<NodeIdResolverResult> => {
+    // Scope the gh subprocess token. Always strip the named PAT (it must never
+    // co-exist with GH_TOKEN). When an explicit token is supplied, also strip the
+    // ambient GitHub token aliases and set GH_TOKEN from that token, so exactly one
+    // token form reaches the subprocess. When no token is supplied, preserve the
+    // ambient GH_TOKEN/GITHUB_TOKEN so callers relying on workflow auth still work.
+    const env: NodeJS.ProcessEnv = {...process.env}
+    delete env.FRO_BOT_POLL_PAT
+    if (token !== undefined) {
+      delete env.GH_TOKEN
+      delete env.GITHUB_TOKEN
+      env.GH_TOKEN = token
+    }
+    const stdout = execFileSync('gh', ['api', 'graphql', '-f', `query=${GRAPHQL_QUERY}`, '-f', `id=${nodeId}`], {
+      encoding: 'utf8',
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    const parsed: unknown = JSON.parse(stdout)
+    if (!isRecord(parsed)) return {error: 'error'}
+
+    const data = parsed.data
+    if (!isRecord(data)) return {error: 'error'}
+
+    const node = data.node
+    if (node === null || node === undefined) return {error: 'access-lost'}
+
+    if (isRecord(node) && typeof node.nameWithOwner === 'string') {
+      return {nameWithOwner: node.nameWithOwner}
+    }
+
+    // node exists but no nameWithOwner (unexpected shape)
+    return {error: 'access-lost'}
+  }
+
   return async (nodeId: string): Promise<NodeIdResolverResult> => {
-    let attempt = 0
-
-    while (true) {
-      try {
-        // Scope the gh subprocess token. Always strip the named PAT (it must never
-        // co-exist with GH_TOKEN). When an explicit token is supplied, also strip the
-        // ambient GitHub token aliases and set GH_TOKEN from that token, so exactly one
-        // token form reaches the subprocess. When no token is supplied, preserve the
-        // ambient GH_TOKEN/GITHUB_TOKEN so callers relying on workflow auth still work.
-        const env: NodeJS.ProcessEnv = {...process.env}
-        delete env.FRO_BOT_POLL_PAT
-        if (token !== undefined) {
-          delete env.GH_TOKEN
-          delete env.GITHUB_TOKEN
-          env.GH_TOKEN = token
-        }
-        const stdout = execFileSync('gh', ['api', 'graphql', '-f', `query=${GRAPHQL_QUERY}`, '-f', `id=${nodeId}`], {
-          encoding: 'utf8',
-          env,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-
-        const parsed: unknown = JSON.parse(stdout)
-        if (!isRecord(parsed)) return {error: 'error'}
-
-        const data = parsed.data
-        if (!isRecord(data)) return {error: 'error'}
-
-        const node = data.node
-        if (node === null || node === undefined) return {error: 'access-lost'}
-
-        if (isRecord(node) && typeof node.nameWithOwner === 'string') {
-          return {nameWithOwner: node.nameWithOwner}
-        }
-
-        // node exists but no nameWithOwner (unexpected shape)
-        return {error: 'access-lost'}
-      } catch (error: unknown) {
-        if (isRateLimitError(error) && attempt < retryOptions.maxRetries) {
-          attempt++
-          await sleep(retryOptions.baseDelayMs * 2 ** (attempt - 1))
-          continue
-        }
-        return {error: 'error', stderr: extractStderr(error)}
-      }
+    try {
+      return await retry(async () => resolveOnce(nodeId), {
+        attempts,
+        delayMs: attempt => retryOptions.baseDelayMs * 2 ** (attempt - 1),
+        shouldRetry: isRateLimitError,
+      })
+    } catch (error: unknown) {
+      return {error: 'error', stderr: extractStderr(error)}
     }
   }
 }

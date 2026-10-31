@@ -16,6 +16,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   buildMarkerComment,
   buildResultMarker,
+  CAS_MAX_RETRIES,
   classifyReceiptCapability,
   computeApprovalFingerprint,
   createTargetClientResolver,
@@ -2124,6 +2125,92 @@ describe('runDispatch — CAS mismatch defers', () => {
     })
 
     expect(result.counts.casDeferred).toBeGreaterThan(0)
+  })
+})
+
+describe('runDispatch — the cold-start marker write retries its compare-and-swap exactly CAS_MAX_RETRIES times', () => {
+  const decomposition = '- [ ] fro-bot/agent: do the thing'
+  const item: DispatchItem = {
+    id: 'item-1',
+    target: TARGET_A,
+    promptHash: extractPromptHash(decomposition, TARGET_A),
+    status: 'pending',
+  }
+  const botDecomposition = {id: 1, body: decomposition, user: {login: 'fro-bot'}}
+  const foreignMarker = {
+    id: 2,
+    body: buildMarkerComment({goal: 'goal-1', items: [item], markerHash: ''}),
+    user: {login: 'fro-bot'},
+  }
+
+  async function runColdStart(readsAfterTheFirst: (read: number) => 'marker' | 'live') {
+    const listed: {id: number; body: string; user: {login: string}}[] = [botDecomposition]
+    let reads = 0
+    let readsWhenCreated: number | undefined
+    const createComment = vi.fn(async (params: {body: string}) => {
+      readsWhenCreated = reads
+      listed.push({id: listed.length + 1, body: params.body, user: {login: 'fro-bot'}})
+      return {data: {id: listed.length}}
+    })
+    const updateComment = vi.fn(async (params: {comment_id: number; body: string}) => {
+      const existing = listed.find(c => c.id === params.comment_id)
+      if (existing !== undefined) existing.body = params.body
+      return {}
+    })
+    const {octokit} = mockOctokit()
+    const result = await runDispatch({
+      octokit: {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {
+            ...octokit.rest.issues,
+            // Read 1 is the dispatch shell's own read (no marker yet). Every later read is a CAS read.
+            listComments: async () => {
+              reads += 1
+              if (reads === 1) return {data: [botDecomposition]}
+              return readsAfterTheFirst(reads) === 'marker' ? {data: [botDecomposition, foreignMarker]} : {data: listed}
+            },
+            createComment,
+            updateComment,
+          },
+        },
+      },
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'nonce-1',
+    })
+    return {result, reads: () => reads, readsWhenCreated: () => readsWhenCreated, createComment, updateComment}
+  }
+
+  it('reads the marker exactly CAS_MAX_RETRIES times when every read disagrees, then defers without writing', async () => {
+    const run = await runColdStart(() => 'marker')
+    expect(CAS_MAX_RETRIES).toBe(3)
+    // One read by the dispatch shell, then one per compare-and-swap attempt.
+    expect(run.reads()).toBe(1 + CAS_MAX_RETRIES)
+    expect(run.result.counts.casDeferred).toBe(1)
+    expect(run.createComment).not.toHaveBeenCalled()
+    expect(run.updateComment).not.toHaveBeenCalled()
+  })
+
+  it('writes once, on the attempt whose read finally matches, and stops reading', async () => {
+    const run = await runColdStart(read => (read < 4 ? 'marker' : 'live'))
+    // CAS reads 2 and 3 disagree; read 4 (the third and last attempt) sees no marker and writes.
+    expect(run.createComment).toHaveBeenCalledTimes(1)
+    expect(run.readsWhenCreated()).toBe(4)
+    expect(run.result.counts.casDeferred).toBe(0)
+  })
+
+  it('writes on the second attempt when the first read disagrees, without a third read', async () => {
+    const run = await runColdStart(read => (read < 3 ? 'marker' : 'live'))
+    expect(run.createComment).toHaveBeenCalledTimes(1)
+    expect(run.readsWhenCreated()).toBe(3)
+    expect(run.result.counts.casDeferred).toBe(0)
   })
 })
 
