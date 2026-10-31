@@ -11,9 +11,10 @@ Tests import it by package name. No non-test module may import it, and `scripts/
 | `@fro-bot/test-kit/git-data-fake` | `createGitDataFake`: an in-memory Git Data API (blobs, trees, commits, refs, compare) with a real fast-forward check on `updateRef`, holding several branches over one commit graph |
 | `@fro-bot/test-kit/workflow-step` | `runStepWithStubs`, `overlayWasAttempted`: run a workflow step's `run:` block under bash with stub `git`, `bun` and `node` binaries and a temp `$GITHUB_OUTPUT` |
 | `@fro-bot/test-kit/workflow-expression` | `evaluateExpression`: a GitHub Actions `if:` expression evaluator for the predicates under test |
+| `@fro-bot/test-kit/spawn-entrypoint` | `spawnEntrypoint`: runs a `scripts/<name>.ts` entrypoint in a child process under Bun or Node with a minimal environment and a fresh `$GITHUB_OUTPUT`, and returns the exit code, stdout, stderr and the file's content. The parity authority for a CLI, because direct writes bypass the runner's sinks |
 | `@fro-bot/test-kit/repo-page-move-fixtures` | Redacted-shape fixtures for the operator rename tests: the repo page, the topic page that references it, and their index and log rows |
 
-All four are test support. None is in the mutated set; `mutation-guards.json` lists each as not-mutated with its reason.
+All five are test support. None is in the mutated set; `mutation-guards.json` lists each as not-mutated with its reason.
 
 ## Mutated code and name imports
 
@@ -32,6 +33,7 @@ C4Component
     Component(step, "workflow-step", "TypeScript", "Runs a workflow step under bash with stubbed binaries")
     Component(expression, "workflow-expression", "TypeScript", "Evaluates workflow if: expressions")
     Component(fixtures, "repo-page-move-fixtures", "TypeScript", "Rename test fixtures")
+    Component(spawn, "spawn-entrypoint", "TypeScript", "Runs an entrypoint in a child process")
   }
 
   System_Ext(tests, "Vitest suites", "packages/*/src and scripts/*.test.ts")
@@ -41,6 +43,7 @@ C4Component
   Rel(tests, step, "imports")
   Rel(tests, expression, "imports")
   Rel(tests, fixtures, "imports")
+  Rel(tests, spawn, "imports")
   Rel(gitdata, github, "replaces in tests")
   Rel(step, github, "replaces in tests")
 
@@ -48,6 +51,7 @@ C4Component
   UpdateRelStyle(tests, step, $offsetX="-20", $offsetY="-30")
   UpdateRelStyle(tests, expression, $offsetX="20", $offsetY="-30")
   UpdateRelStyle(tests, fixtures, $offsetX="60", $offsetY="-20")
+  UpdateRelStyle(tests, spawn, $offsetX="100", $offsetY="-10")
   UpdateRelStyle(gitdata, github, $offsetX="-30", $offsetY="10")
   UpdateRelStyle(step, github, $offsetX="20", $offsetY="10")
 ```

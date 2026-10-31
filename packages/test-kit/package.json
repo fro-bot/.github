@@ -7,6 +7,7 @@
   "exports": {
     "./git-data-fake": "./src/git-data-fake.ts",
     "./repo-page-move-fixtures": "./src/repo-page-move-fixtures.ts",
+    "./spawn-entrypoint": "./src/spawn-entrypoint.ts",
     "./workflow-expression": "./src/workflow-expression.ts",
     "./workflow-step": "./src/workflow-step.ts"
   }
