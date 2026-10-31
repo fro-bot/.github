@@ -2,6 +2,7 @@ import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
 import {
@@ -181,68 +182,71 @@ export async function commitMetadata(params: CommitMetadataParams): Promise<Comm
     await bootstrapDataBranch()
   }
 
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    try {
-      await assertWritableBranch(octokit, owner, repo, branch)
+  const isBootstrapRecoverable = (error: unknown): boolean =>
+    shouldBootstrapDataBranch && isRecoverableDataBranchMissingError(error)
 
-      const current = await readExistingMetadataFile({
-        octokit,
-        owner,
-        repo,
-        branch,
-        path: params.path,
-      })
+  return retry(
+    async (attempt): Promise<CommitMetadataResult> => {
+      try {
+        await assertWritableBranch(octokit, owner, repo, branch)
 
-      const next = await params.mutator(current.parsed)
-      const nextSerialized = serializeYaml(next)
-
-      // Authoritative unchanged-content check: compare serialized text, not
-      // deep-equal on objects. This catches (a) in-place mutations that return
-      // the same reference, (b) key-order or whitespace changes that would
-      // otherwise commit identical data.
-      if (nextSerialized === current.serialized) {
-        return {committed: false, attempts: attempt}
-      }
-
-      const response = await octokit.rest.repos.createOrUpdateFileContents({
-        owner,
-        repo,
-        branch,
-        path: params.path,
-        message: params.message,
-        sha: current.sha,
-        content: Buffer.from(nextSerialized, 'utf8').toString('base64'),
-      })
-
-      return {
-        committed: true,
-        sha: response.data.commit.sha,
-        attempts: attempt,
-      }
-    } catch (error: unknown) {
-      if (shouldBootstrapDataBranch && isRecoverableDataBranchMissingError(error) && attempt < maxRetries) {
-        await bootstrapDataBranch()
-        continue
-      }
-
-      if (isConflictError(error) && attempt < maxRetries) {
-        continue
-      }
-
-      if (isConflictError(error)) {
-        throw new CommitMetadataError({
-          code: 'CONFLICT_EXHAUSTED',
-          message: `commitMetadata exhausted ${maxRetries} attempt(s) updating ${params.path} on ${owner}/${repo}@${branch}`,
-          remediation:
-            'Another writer is contending on the same file. Increase maxRetries, serialize writes via concurrency groups, or investigate the concurrent caller.',
+        const current = await readExistingMetadataFile({
+          octokit,
+          owner,
+          repo,
+          branch,
+          path: params.path,
         })
+
+        const next = await params.mutator(current.parsed)
+        const nextSerialized = serializeYaml(next)
+
+        // Authoritative unchanged-content check: compare serialized text, not
+        // deep-equal on objects. This catches (a) in-place mutations that return
+        // the same reference, (b) key-order or whitespace changes that would
+        // otherwise commit identical data.
+        if (nextSerialized === current.serialized) {
+          return {committed: false, attempts: attempt}
+        }
+
+        const response = await octokit.rest.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          branch,
+          path: params.path,
+          message: params.message,
+          sha: current.sha,
+          content: Buffer.from(nextSerialized, 'utf8').toString('base64'),
+        })
+
+        return {
+          committed: true,
+          sha: response.data.commit.sha,
+          attempts: attempt,
+        }
+      } catch (error: unknown) {
+        // Only the last attempt's own conflict is exhausted; an error thrown while preparing a retry
+        // (the bootstrap in `onRetry`) never passes through here.
+        if (attempt === maxRetries && isConflictError(error)) {
+          throw new CommitMetadataError({
+            code: 'CONFLICT_EXHAUSTED',
+            message: `commitMetadata exhausted ${maxRetries} attempt(s) updating ${params.path} on ${owner}/${repo}@${branch}`,
+            remediation:
+              'Another writer is contending on the same file. Increase maxRetries, serialize writes via concurrency groups, or investigate the concurrent caller.',
+          })
+        }
+
+        throw error
       }
-
-      throw error
-    }
-  }
-
-  throw new Error('commitMetadata reached an unreachable retry state')
+    },
+    {
+      attempts: maxRetries,
+      shouldRetry: error => isBootstrapRecoverable(error) || isConflictError(error),
+      onRetry: async error => {
+        if (isBootstrapRecoverable(error)) await bootstrapDataBranch()
+      },
+    },
+  )
 }
 
 /**

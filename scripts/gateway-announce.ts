@@ -1,6 +1,8 @@
 import {createHmac} from 'node:crypto'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
+
 const EVENT_TYPES = ['survey_completed', 'invitation_accepted', 'daily_digest'] as const
 
 export type EventType = (typeof EVENT_TYPES)[number]
@@ -39,6 +41,9 @@ export type AnnounceResult =
   | {posted: false; failure: 'invalid-event-type'}
   | {posted: false; failure: 'missing-context'}
   | {posted: false; failure: 'malformed-context'}
+
+/** The wait before the one retry. */
+const RETRY_DELAY_MS = 5000
 
 async function defaultSleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -111,22 +116,17 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   const doPost = async (): Promise<Response> =>
     fetchImpl(url, {method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs)})
 
+  // A network error or timeout on the first POST earns one more after the wait.
   let res: Response
   try {
-    res = await doPost()
-  } catch {
-    // Network error or timeout on first attempt — retry once.
-    await sleep(5000)
-    try {
-      res = await doPost()
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error)
-      // Redact: log only event type + error class, never secret/sig/body/context.repos.
-      process.stderr.write(
-        `gateway-announce: event_type=${params.eventType} error=network-error detail=${errMsg.slice(0, 80)}\n`,
-      )
-      return {posted: false, failure: 'network'}
-    }
+    res = await retry(doPost, {attempts: 2, delayMs: () => RETRY_DELAY_MS, shouldRetry: () => true, sleep})
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error)
+    // Redact: log only event type + error class, never secret/sig/body/context.repos.
+    process.stderr.write(
+      `gateway-announce: event_type=${params.eventType} error=network-error detail=${errMsg.slice(0, 80)}\n`,
+    )
+    return {posted: false, failure: 'network'}
   }
 
   if (res.status >= 200 && res.status < 300) {
@@ -136,7 +136,7 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   // 5xx (including 503) — retry once.
   if (res.status >= 500) {
     const firstStatus = res.status
-    await sleep(5000)
+    await sleep(RETRY_DELAY_MS)
     let retryRes: Response
     try {
       retryRes = await doPost()

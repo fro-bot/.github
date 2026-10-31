@@ -14,6 +14,7 @@
 
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 
 import {isDataOwnedPath} from './check-wiki-authority.ts'
@@ -307,15 +308,14 @@ async function attemptMergeBack(params: MergeBackParams, attempt: number): Promi
   return {result: 'merged', commit: commit.data.sha, attempts: attempt}
 }
 
-export async function mergeBackData(params: MergeBackParams, attempt = 1): Promise<MergeBackOutcome> {
-  const result = await attemptMergeBack(params, attempt)
-  if (result.result !== 'raced' && result.result !== 'main-moved') return result
-  if (attempt >= maxAttempts()) {
-    throw result.result === 'raced'
-      ? new MergeBackError('RETRIES_EXHAUSTED', result.status)
-      : new MergeBackError('MAIN_MOVED')
-  }
-  return mergeBackData(params, attempt + 1)
+export async function mergeBackData(params: MergeBackParams): Promise<MergeBackOutcome> {
+  const result = await retry(async attempt => attemptMergeBack(params, attempt), {
+    attempts: maxAttempts(),
+    retryResult: attemptResult => attemptResult.result === 'raced' || attemptResult.result === 'main-moved',
+  })
+  if (result.result === 'raced') throw new MergeBackError('RETRIES_EXHAUSTED', result.status)
+  if (result.result === 'main-moved') throw new MergeBackError('MAIN_MOVED')
+  return result
 }
 
 /**
