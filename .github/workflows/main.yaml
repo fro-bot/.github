@@ -22,7 +22,7 @@ env:
   # reads it from this file, and the inherited bfra-me regex manager for `*_VERSION: x # renovate: ...`
   # in workflow files keeps it current. Renovate is not a repo dependency (its tree carries unfixed
   # advisories that fail `check:override-floors`); it is installed into a scratch prefix at check time.
-  RENOVATE_VERSION: 44.181.2 # renovate: datasource=npm depName=renovate
+  RENOVATE_VERSION: 44.190.0 # renovate: datasource=npm depName=renovate
 
 defaults:
   run:
