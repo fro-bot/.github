@@ -584,7 +584,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 - Happy path: a `dispatch-renovate`-shaped CLI runs `plan` as a read-only command, runs the dispatch command for no argv, and returns the usage code for `pln` and `--help` without dispatching.
 - Happy path: an action that sets exit 3 returns 3.
 - Edge case: a fixture action that writes straight to `process.stdout` is invisible to the in-process result and visible to the spawn helper. The spawned test is therefore the parity authority.
-- Edge case: a 300 KB stdout payload is delivered complete under Bun and Node when piped and the process exits naturally. A control that calls `process.exit(0)` right after the write truncates to 64 KiB, which pins the `process.exitCode` rule. Run it on Linux CI, because the probe measured macOS only.
+- Edge case: a 300 KB stdout payload is delivered complete under Bun and Node when piped and the process exits naturally. No `process.exit(0)` control is kept: Linux CI delivered the full 300 KB under Bun after `process.exit(0)`, so truncation is platform-dependent and cannot be asserted. The `process.exitCode` rule stands because truncation is possible on some pipes, as measured on macOS.
 - Edge case: `options['--']` never appears in the JSON output.
 - Happy path: `requiredEnv` treats an empty value as missing and uses the caller's message.
 

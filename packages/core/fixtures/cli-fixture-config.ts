@@ -8,7 +8,7 @@ import {defineCommand, z, type CliConfig} from '../src/cli.ts'
  */
 
 export type FixtureShape =
-  'dispatch' | 'usage' | 'direct-write' | 'payload' | 'exit-control' | 'github-output' | 'exit-three' | 'limit'
+  'dispatch' | 'usage' | 'direct-write' | 'payload' | 'github-output' | 'exit-three' | 'limit'
 
 const PAYLOAD_BYTES = 300_000
 
@@ -72,20 +72,6 @@ export function fixtureConfig(shape: FixtureShape): CliConfig {
             readOnly: true,
             action: () => {
               process.stdout.write('x'.repeat(PAYLOAD_BYTES))
-            },
-          }),
-        ],
-      }
-    }
-    case 'exit-control': {
-      return {
-        name: 'fixture',
-        commands: [
-          defineCommand({
-            readOnly: true,
-            action: () => {
-              process.stdout.write('x'.repeat(PAYLOAD_BYTES))
-              process.exit(0)
             },
           }),
         ],

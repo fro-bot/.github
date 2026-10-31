@@ -76,12 +76,6 @@ describe.each<Runtime>(['bun', 'node'])('the runner through a spawned process un
     expect(result.stdout).toHaveLength(300_000)
   })
 
-  it('control: process.exit(0) right after a 300 KB write loses part of it when stdout is a pipe', async () => {
-    const result = await spawnFixture('exit-control')
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout.length).toBeLessThan(300_000)
-  })
-
   it('CI=true: help and a parse error carry no ANSI, because the runner sets NO_COLOR before goke loads', async () => {
     for (const argv of [['--help'], ['--bogus'], ['pln']]) {
       const result = await spawnFixture('dispatch', argv, {CI: 'true'})
