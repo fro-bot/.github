@@ -35,6 +35,7 @@ interface WorkflowJob {
   if?: string
   outputs?: Record<string, string>
   with?: Record<string, unknown>
+  'timeout-minutes'?: number
 }
 
 interface WorkflowInput {
@@ -96,6 +97,12 @@ describe('fro-bot.yaml daily-pass job split', () => {
   it('fro-bot-observe sets output-mode: working-dir on the agent step', () => {
     const agentStep = observeJob?.steps?.find(step => step.id === 'fro-bot-agent')
     expect(agentStep?.with?.['output-mode']).toBe('working-dir')
+  })
+
+  it('fro-bot-observe gives the agent 45 minutes, inside the 60-minute job limit', () => {
+    const agentStep = observeJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    expect(agentStep?.with?.timeout).toBe('2700000')
+    expect(observeJob?.['timeout-minutes']).toBe(60)
   })
 
   it('the content-trigger job does not set an output-mode (unaffected by the split)', () => {

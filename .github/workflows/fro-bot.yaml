@@ -1072,6 +1072,8 @@ jobs:
           model: ${{ vars.FRO_BOT_MODEL }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           output-mode: working-dir
+          # Observe runs 20-30 minutes; the job's 60-minute limit stays the backstop.
+          timeout: '2700000'
           prompt: |
             <persona>
             ${{ env.PERSONA }}
