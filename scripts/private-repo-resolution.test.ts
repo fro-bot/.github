@@ -1,6 +1,6 @@
 import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {makeGhNodeIdResolver} from './private-repo-resolution.ts'
 
@@ -16,6 +16,28 @@ vi.mock('node:child_process', () => ({
 // ---------------------------------------------------------------------------
 // makeGhNodeIdResolver
 // ---------------------------------------------------------------------------
+
+/** Runs the resolver on a fake clock; every execFileSync call records the clock. */
+async function runRateLimited(
+  retryOptions: {maxRetries: number; baseDelayMs: number} | undefined,
+  failures: number,
+): Promise<{callTimes: number[]; result: unknown; endedAt: number}> {
+  vi.useFakeTimers()
+  mockExecFileSync.mockReset()
+  const callTimes: number[] = []
+  const payload = JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}})
+  mockExecFileSync.mockImplementation(() => {
+    callTimes.push(Date.now())
+    if (callTimes.length <= failures) throw new Error('API rate limit exceeded')
+    return payload
+  })
+  const start = Date.now()
+  const resolver = retryOptions === undefined ? makeGhNodeIdResolver('t') : makeGhNodeIdResolver('t', retryOptions)
+  const pending = resolver('R_rate')
+  await vi.runAllTimersAsync()
+  const result = await pending
+  return {callTimes: callTimes.map(time => time - start), result, endedAt: Date.now() - start}
+}
 
 describe('makeGhNodeIdResolver', () => {
   it('resolves a successful GraphQL response to nameWithOwner', async () => {
@@ -100,6 +122,38 @@ describe('makeGhNodeIdResolver', () => {
     expect(result).toMatchObject({error: 'error'})
     // #and retried: 1 initial + 2 retries = 3 calls
     expect(mockExecFileSync).toHaveBeenCalledTimes(3)
+  })
+
+  describe('rate-limit backoff schedule (fake clock)', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('doubles the wait after each failed attempt: base, 2x base, 4x base, with none after the last', async () => {
+      const run = await runRateLimited({maxRetries: 3, baseDelayMs: 100}, Number.POSITIVE_INFINITY)
+      expect(run.callTimes).toEqual([0, 100, 300, 700])
+      expect(run.endedAt).toBe(700)
+      expect(run.result).toMatchObject({error: 'error'})
+    })
+
+    it('defaults to 3 retries starting at 2000 ms: 2s, 4s, 8s', async () => {
+      const run = await runRateLimited(undefined, Number.POSITIVE_INFINITY)
+      expect(run.callTimes).toEqual([0, 2000, 6000, 14_000])
+      expect(run.endedAt).toBe(14_000)
+    })
+
+    it('stops waiting as soon as an attempt succeeds', async () => {
+      const run = await runRateLimited({maxRetries: 3, baseDelayMs: 100}, 2)
+      expect(run.callTimes).toEqual([0, 100, 300])
+      expect(run.endedAt).toBe(300)
+      expect(run.result).toEqual({nameWithOwner: 'org/repo'})
+    })
+
+    it('makes one attempt and never waits for maxRetries 0', async () => {
+      const run = await runRateLimited({maxRetries: 0, baseDelayMs: 100}, Number.POSITIVE_INFINITY)
+      expect(run.callTimes).toEqual([0])
+      expect(run.endedAt).toBe(0)
+    })
   })
 
   it('does not retry on non-rate-limit errors', async () => {

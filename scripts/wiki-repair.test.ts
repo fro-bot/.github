@@ -6,7 +6,7 @@ import process from 'node:process'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
-import {commitWikiChanges, rebuildWikiIndex} from './wiki-ingest.ts'
+import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
 import {
   createWikiRepairTreeLoader,
@@ -806,6 +806,98 @@ describe('runWikiRepair', () => {
 
     expect(result.conflict_retries).toBe(1)
     expect(loadTree).toHaveBeenCalledTimes(2)
+  })
+
+  describe('persistent conflict exhausts the attempts', () => {
+    const driftedFiles = (): Record<string, string> => {
+      const files = buildCleanFiles()
+      files['knowledge/index.md'] = buildIndex([
+        '## Repos',
+        '',
+        '- [[fro-bot--github]] — Fro Bot .github',
+        '- [[ghost--repo]] — Ghost Repo',
+        '',
+        '## Topics',
+        '',
+        '- [[github-actions-ci]] — GitHub Actions CI',
+        '',
+        '## Entities',
+        '',
+        '_No entity pages yet._',
+        '',
+        '## Comparisons',
+        '',
+        '_No comparison pages yet._',
+      ])
+      return files
+    }
+
+    it.each([1, 2, 3, 5])(
+      'a tip that always moves aborts after maxRetries=%s attempts: conflict_retries == maxRetries, loadTree ran one more time',
+      async maxRetries => {
+        const files = driftedFiles()
+        const commitWikiChangesMock = vi.fn(async () => ({committed: true, commitSha: 'never', attempts: 1}))
+        const loadTree = vi.fn(async () => makeTree(files, 'tip-1'))
+        const getCurrentDataTipSha = vi.fn(async () => 'tip-2')
+
+        const result = await runWikiRepair({
+          loadTree,
+          getCurrentDataTipSha,
+          commitWikiChanges: commitWikiChangesMock,
+          maxRetries,
+        })
+
+        expect(result).toMatchObject({aborted: 1, repaired: 0, noop: 0, conflict_retries: maxRetries})
+        expect(loadTree).toHaveBeenCalledTimes(maxRetries + 1)
+        expect(getCurrentDataTipSha).toHaveBeenCalledTimes(maxRetries)
+        expect(commitWikiChangesMock).not.toHaveBeenCalled()
+      },
+    )
+
+    it('uses 3 attempts by default', async () => {
+      const files = driftedFiles()
+      const loadTree = vi.fn(async () => makeTree(files, 'tip-1'))
+      const result = await runWikiRepair({
+        loadTree,
+        getCurrentDataTipSha: async () => 'tip-2',
+        commitWikiChanges: vi.fn(async () => ({committed: true, commitSha: 'never', attempts: 1})),
+      })
+      expect(result).toMatchObject({aborted: 1, conflict_retries: 3})
+      expect(loadTree).toHaveBeenCalledTimes(4)
+    })
+
+    it('a commit that keeps losing the ref race (CONFLICT_EXHAUSTED) aborts the same way', async () => {
+      const files = driftedFiles()
+      const commitWikiChangesMock = vi.fn(async () => {
+        throw new WikiIngestError({code: 'CONFLICT_EXHAUSTED', message: 'lost', remediation: 'retry'})
+      })
+      const loadTree = vi.fn(async () => makeTree(files, 'tip-1'))
+
+      const result = await runWikiRepair({
+        loadTree,
+        getCurrentDataTipSha: async () => 'tip-1',
+        commitWikiChanges: commitWikiChangesMock,
+        maxRetries: 2,
+      })
+
+      expect(result).toMatchObject({aborted: 1, conflict_retries: 2})
+      expect(commitWikiChangesMock).toHaveBeenCalledTimes(2)
+      expect(loadTree).toHaveBeenCalledTimes(3)
+    })
+
+    it('runs no attempt for maxRetries below 1, loading the tree once and aborting', async () => {
+      const loadTree = vi.fn(async () => makeTree(driftedFiles(), 'tip-1'))
+      const getCurrentDataTipSha = vi.fn(async () => 'tip-1')
+      const result = await runWikiRepair({
+        loadTree,
+        getCurrentDataTipSha,
+        commitWikiChanges: vi.fn(async () => ({committed: true, commitSha: 'never', attempts: 1})),
+        maxRetries: 0,
+      })
+      expect(result).toMatchObject({aborted: 1, conflict_retries: 0})
+      expect(loadTree).toHaveBeenCalledTimes(1)
+      expect(getCurrentDataTipSha).not.toHaveBeenCalled()
+    })
   })
 
   it('commit message is byte-identical to the constant across scenarios and result JSON carries no paths/slugs (AE7)', async () => {

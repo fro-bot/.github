@@ -49,15 +49,35 @@ describe('retry: success and the attempt number', () => {
     expect(seen).toEqual([1, 2, 3])
   })
 
+  // The two operations below are deliberately not `async`: ESLint's autofix turns a plain function that
+  // returns a promise into an async one, and an async function turns a throw into a rejection, which is
+  // not the case under test. The `toThrow` checks (on a bound call, which the autofix leaves alone) pin that each really throws before returning a promise.
   it('catches a synchronous throw from the operation like a rejection', async () => {
     const seen: number[] = []
-    const operation = async (attempt: number): Promise<string> => {
+    // eslint-disable-next-line @typescript-eslint/promise-function-async
+    const operation = (attempt: number): Promise<string> => {
       seen.push(attempt)
       if (attempt === 1) throw new Boom('sync')
       return Promise.resolve('recovered')
     }
-    await expect(retry(operation, {attempts: 2, shouldRetry: () => true})).resolves.toBe('recovered')
+    expect(operation.bind(undefined, 1)).toThrow(Boom)
+    seen.length = 0
+
+    const retryable = vi.fn((_error: unknown) => true)
+    await expect(retry(operation, {attempts: 2, shouldRetry: retryable})).resolves.toBe('recovered')
     expect(seen).toEqual([1, 2])
+    expect(retryable).toHaveBeenCalledTimes(1)
+    expect(retryable.mock.calls[0]?.[0]).toBeInstanceOf(Boom)
+  })
+
+  it('throws a synchronous error on the last attempt unchanged', async () => {
+    const error = new Boom('sync last')
+    // eslint-disable-next-line @typescript-eslint/promise-function-async
+    const operation = (): Promise<string> => {
+      throw error
+    }
+    expect(operation).toThrow(error)
+    await expect(retry(operation, {attempts: 2, shouldRetry: () => true})).rejects.toBe(error)
   })
 })
 
