@@ -19,7 +19,7 @@ import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 
 import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
-
+import {createOctokit} from '@fro-bot/core/github'
 import {parse} from 'yaml'
 import {assertRenovateFile} from './schemas.ts'
 
@@ -243,8 +243,7 @@ export interface CliDeps {
 }
 
 async function createRealOctokit(token: string): Promise<CliClient> {
-  const {Octokit} = await import('@octokit/rest')
-  return new Octokit({auth: token})
+  return createOctokit(token)
 }
 
 /**

@@ -1,6 +1,7 @@
 import type {Octokit} from '@octokit/rest'
 import process from 'node:process'
 
+import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -14,8 +15,6 @@ const MERGEABLE_STATE_RETRY_DELAY_MS = 1000
 const REDISCOVER_PULL_REQUEST_RETRY_COUNT = 1
 const REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS = 1000
 const CONFLICT_ALERT_TITLE_PREFIX = 'Conflicted data promotion PR:'
-
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 type MergeLabel = 'automerge' | 'needs-review'
 
 export interface MergeDataPrParams {
@@ -719,39 +718,24 @@ function createConflictAlertBody(params: {
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-
-  if (token === undefined || token === '') {
-    throw new MergeDataPrError({
-      code: 'MISSING_TOKEN',
-      message: 'mergeDataPr requires params.octokit or GITHUB_TOKEN in the environment',
-      remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
+  try {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
+      missingToken: () =>
+        new MergeDataPrError({
+          code: 'MISSING_TOKEN',
+          message: 'mergeDataPr requires params.octokit or GITHUB_TOKEN in the environment',
+          remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
+        }),
     })
-  }
-
-  const Octokit = await loadOctokitConstructor()
-
-  return new Octokit({auth: token})
-}
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  const loaded: unknown = await import('@octokit/rest')
-
-  if (!isRecord(loaded) || !('Octokit' in loaded)) {
+  } catch (error: unknown) {
+    if (!(error instanceof OctokitLoadError)) throw error
+    if (error.reason === 'not-a-constructor') throw new TypeError('Invalid @octokit/rest Octokit export')
     throw new MergeDataPrError({
       code: 'OCTOKIT_LOAD_FAILED',
       message: 'Failed to load @octokit/rest Octokit constructor',
       remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
     })
   }
-
-  const octokit = loaded.Octokit
-
-  if (typeof octokit !== 'function') {
-    throw new TypeError('Invalid @octokit/rest Octokit export')
-  }
-
-  return octokit as OctokitConstructor
 }
 
 function isMergeConflictError(error: unknown): boolean {

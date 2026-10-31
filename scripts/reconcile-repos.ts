@@ -50,12 +50,12 @@
  * contract, whole-state replacement would silently drop concurrently-added entries.
  */
 
-import type {RestEndpointMethodTypes} from '@octokit/rest'
+import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 
 import {Buffer} from 'node:buffer'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
-import {Octokit} from '@octokit/rest'
+import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {parse} from 'yaml'
 
 import {
@@ -1745,8 +1745,6 @@ function repoKey(owner: string, name: string): string {
  * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
  */
 export type OctokitClient = Octokit
-
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -4203,27 +4201,23 @@ async function callIssuesCreate(octokit: OctokitClient, payload: IssuePayload): 
 async function createOctokitFromEnv(
   envVar: 'FRO_BOT_POLL_PAT' | 'RECONCILE_DISCOVERY_TOKEN' | 'RECONCILE_WRITER_TOKEN',
 ): Promise<OctokitClient> {
-  const token = process.env[envVar]
-  if (token === undefined || token === '') {
-    throw new ReconcileError({
-      code: 'MISSING_TOKEN',
-      message: `reconcileRepos requires ${envVar} in the environment`,
-      remediation: `Export ${envVar} before invocation. See .github/workflows/reconcile-repos.yaml for how this is mounted.`,
+  try {
+    return await createOctokit(process.env[envVar], {
+      missingToken: () =>
+        new ReconcileError({
+          code: 'MISSING_TOKEN',
+          message: `reconcileRepos requires ${envVar} in the environment`,
+          remediation: `Export ${envVar} before invocation. See .github/workflows/reconcile-repos.yaml for how this is mounted.`,
+        }),
     })
-  }
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token})
-}
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  if (typeof Octokit !== 'function') {
+  } catch (error: unknown) {
+    if (!(error instanceof OctokitLoadError)) throw error
     throw new ReconcileError({
       code: 'OCTOKIT_LOAD_FAILED',
       message: 'Failed to load @octokit/rest Octokit constructor',
       remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
     })
   }
-  return Octokit
 }
 
 function toApiError(error: unknown, action: string): ReconcileError {

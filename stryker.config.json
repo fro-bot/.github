@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
+    "packages/core/src/github.ts",
     "packages/core/src/guards.ts",
     "packages/core/src/json.ts",
     "packages/core/src/output.ts",
@@ -18,6 +19,8 @@
     "scripts/wiki-lockfile-gates.ts"
   ],
   "testFiles": [
+    "packages/core/src/github-loader.test.ts",
+    "packages/core/src/github.test.ts",
     "packages/core/src/guards.test.ts",
     "packages/core/src/json.test.ts",
     "packages/core/src/output.test.ts",

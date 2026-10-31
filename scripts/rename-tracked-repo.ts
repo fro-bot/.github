@@ -25,6 +25,7 @@
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
+import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {
   assertBranchWritable,
@@ -754,8 +755,7 @@ export interface CliDeps {
 }
 
 async function createRealTransport(token: string): Promise<RenameTransport> {
-  const {Octokit} = await import('@octokit/rest')
-  const octokit = new Octokit({auth: token})
+  const octokit = await createOctokit(token)
   return {
     getRepositoryById: async databaseId => {
       const response: {data: unknown} = await octokit.request('GET /repositories/{repository_id}', {
@@ -771,8 +771,7 @@ async function createRealTransport(token: string): Promise<RenameTransport> {
 }
 
 async function createRealWriter(token: string): Promise<GitDataClient> {
-  const {Octokit} = await import('@octokit/rest')
-  return new Octokit({auth: token})
+  return createOctokit(token)
 }
 
 const BLOCK_HINTS: Partial<Record<RenameBlockReason, string>> = {

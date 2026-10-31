@@ -11,11 +11,12 @@
  */
 
 import type {Dirent} from 'node:fs'
+import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
-import {Octokit} from '@octokit/rest'
+import {createOctokit} from '@fro-bot/core/github'
 import {parse} from 'yaml'
 
 import {
@@ -104,8 +105,6 @@ const SOLUTIONS_SUBDIRS = [
 // ---------------------------------------------------------------------------
 
 export type OctokitClient = Octokit
-
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -857,20 +856,10 @@ async function writeDigestFile(digest: CandidateDigest): Promise<void> {
 // Octokit constructor helpers
 // ---------------------------------------------------------------------------
 
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  if (typeof Octokit !== 'function') {
-    throw new TypeError('Failed to load @octokit/rest Octokit constructor')
-  }
-  return Octokit
-}
-
 export async function createOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') {
-    throw new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment')
-  }
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token})
+  return createOctokit(process.env.GITHUB_TOKEN, {
+    missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+  })
 }
 
 // ---------------------------------------------------------------------------

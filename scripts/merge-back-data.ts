@@ -14,6 +14,7 @@
 
 import process from 'node:process'
 
+import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 
@@ -333,8 +334,7 @@ export async function runCli(env: Record<string, string | undefined>): Promise<n
   if (token === undefined || token === '') return fail('MISSING_TOKEN')
 
   try {
-    const {Octokit} = await import('@octokit/rest')
-    const octokit = new Octokit({auth: token})
+    const octokit = await createOctokit(token)
     const owner = 'fro-bot'
     const repo = '.github'
     const outcome = await mergeBackData({

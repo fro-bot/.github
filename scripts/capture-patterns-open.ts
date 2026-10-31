@@ -34,6 +34,7 @@
 import type {PatternCandidateDigest} from './capture-patterns-cluster.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 import {isRecord} from './capture-learnings-privacy.ts'
 import {
   buildPatternProposalMarkers,
@@ -551,8 +552,6 @@ async function main(): Promise<void> {
   const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
   const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
   const {fetchExistingPatternProposals} = await import('./capture-patterns-synthesis.ts')
-  const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
-
   const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
   const bodiesPath = process.env.CAPTURE_PATTERNS_BODIES_PATH
   const resultPath = process.env.CAPTURE_PATTERNS_RESULT_PATH
@@ -591,7 +590,9 @@ async function main(): Promise<void> {
     publicOutputTokens = {loaded: false, error: 'token load failed'}
   }
 
-  const octokit = await createOctokitFromEnv()
+  const octokit = await createOctokit(process.env.GITHUB_TOKEN, {
+    missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+  })
   const existing = tokenLoadFailed
     ? {openByFingerprint: new Map(), closedByFingerprint: new Map(), invalidMarkerCount: 0}
     : await fetchExistingPatternProposals({

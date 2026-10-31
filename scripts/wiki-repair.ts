@@ -12,6 +12,7 @@ import {readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
 
+import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {
   commitWikiChanges,
@@ -719,23 +720,15 @@ async function loadWikiFilesFromDisk(rootDir: string): Promise<Record<string, st
   return files
 }
 
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  const loaded: unknown = await import('@octokit/rest')
-  if (typeof loaded !== 'object' || loaded === null || !('Octokit' in loaded) || typeof loaded.Octokit !== 'function') {
+async function createOctokitFromEnv(): Promise<OctokitClient> {
+  try {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
+      missingToken: () => new Error('wiki-repair: GITHUB_TOKEN is required in the environment'),
+    })
+  } catch (error: unknown) {
+    if (!(error instanceof OctokitLoadError)) throw error
     throw new Error('wiki-repair: failed to load @octokit/rest Octokit constructor')
   }
-  return (loaded as {Octokit: OctokitConstructor}).Octokit
-}
-
-async function createOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') {
-    throw new Error('wiki-repair: GITHUB_TOKEN is required in the environment')
-  }
-  const Octokit = await loadOctokitConstructor()
-  return new Octokit({auth: token})
 }
 
 async function main(): Promise<void> {

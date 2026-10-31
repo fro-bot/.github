@@ -2,6 +2,7 @@ import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
+import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 import {parse, stringify} from 'yaml'
@@ -109,8 +110,6 @@ interface FileSnapshot {
   parsed: unknown
   serialized: string
 }
-
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 /**
  * Structured error with a remediation hint. Thrown for every expected failure
@@ -324,19 +323,24 @@ function deepEqualsInternal(
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-
-  if (token === undefined || token === '') {
+  try {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
+      missingToken: () =>
+        new CommitMetadataError({
+          code: 'MISSING_TOKEN',
+          message: 'commitMetadata requires params.octokit or GITHUB_TOKEN in the environment',
+          remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
+        }),
+    })
+  } catch (error: unknown) {
+    if (!(error instanceof OctokitLoadError)) throw error
+    if (error.reason === 'not-a-constructor') throw new TypeError('Invalid @octokit/rest Octokit export')
     throw new CommitMetadataError({
-      code: 'MISSING_TOKEN',
-      message: 'commitMetadata requires params.octokit or GITHUB_TOKEN in the environment',
-      remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
+      code: 'OCTOKIT_LOAD_FAILED',
+      message: 'Failed to load @octokit/rest Octokit constructor',
+      remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
     })
   }
-
-  const Octokit = await loadOctokitConstructor()
-
-  return new Octokit({auth: token})
 }
 
 async function assertWritableBranch(
@@ -445,27 +449,4 @@ function isRecoverableDataBranchMissingError(error: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  const loaded: unknown = await import('@octokit/rest')
-
-  if (!isRecord(loaded) || !('Octokit' in loaded)) {
-    throw new CommitMetadataError({
-      code: 'OCTOKIT_LOAD_FAILED',
-      message: 'Failed to load @octokit/rest Octokit constructor',
-      remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
-    })
-  }
-
-  const octokit = loaded.Octokit
-
-  if (typeof octokit !== 'function') {
-    throw new TypeError('Invalid @octokit/rest Octokit export')
-  }
-
-  // Safe cast: the preceding type guards verify `octokit` is a function exported
-  // under the `Octokit` key of @octokit/rest. We narrow the broader public
-  // Octokit constructor signature to the `OctokitClient` subset this module uses.
-  return octokit as OctokitConstructor
 }

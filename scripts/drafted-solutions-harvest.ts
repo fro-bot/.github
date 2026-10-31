@@ -22,6 +22,7 @@
 import type {OctokitClient} from './capture-learnings-harvest.ts'
 import {appendFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 
 import {LEARNING_PROPOSAL_LABEL, parseMergeShaMarker} from './capture-learnings-harvest.ts'
 import {hashProposalBody, parseCoverageBlock} from './drafted-solutions-pr-body.ts'
@@ -130,8 +131,7 @@ async function main(): Promise<void> {
     throw new DraftedSolutionsError('GITHUB_REPOSITORY must be "owner/repo"')
   }
 
-  const {Octokit} = await import('@octokit/rest')
-  const octokit = new Octokit({auth: requiredEnv('GITHUB_TOKEN')})
+  const octokit = await createOctokit(requiredEnv('GITHUB_TOKEN'))
 
   const {digest, hasWork} = await harvestDraftedProposals({octokit, owner, repo})
 

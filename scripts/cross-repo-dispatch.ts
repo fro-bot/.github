@@ -1,5 +1,6 @@
 import {createHash, randomBytes} from 'node:crypto'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {assertReposFile} from './schemas.ts'
 
@@ -2048,27 +2049,17 @@ async function writeResult(resultPath: string | undefined, result: unknown): Pro
   }
 }
 
-type CrossRepoOctokitConstructor = new (params: {
-  auth: string
-  request: {timeout: number}
-}) => CrossRepoDispatchOctokitClient
-
-async function loadOctokitConstructor(): Promise<CrossRepoOctokitConstructor> {
-  const {Octokit} = await import('@octokit/rest')
-  return Octokit
-}
+const REQUEST_TIMEOUT_MS = 15_000
 
 async function createOctokitForToken(token: string): Promise<CrossRepoDispatchOctokitClient> {
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token, request: {timeout: 15_000}})
+  return createOctokit(token, {timeoutMs: REQUEST_TIMEOUT_MS})
 }
 
 async function createOctokitFromEnv(): Promise<CrossRepoDispatchOctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') {
-    throw new Error('cross-repo-dispatch: GITHUB_TOKEN is required in the environment')
-  }
-  return createOctokitForToken(token)
+  return createOctokit(process.env.GITHUB_TOKEN, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    missingToken: () => new Error('cross-repo-dispatch: GITHUB_TOKEN is required in the environment'),
+  })
 }
 
 /** Env var carrying the owner→token JSON map minted per-owner in the workflow. */
