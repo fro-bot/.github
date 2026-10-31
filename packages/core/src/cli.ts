@@ -371,18 +371,19 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
         positionals: positionalValues(verdict.command, verdict.args),
         env: input.env ?? process.env,
         stdout: text => {
-          stdout.push(stripAnsi(text))
+          stdout.push(text)
         },
         stderr: text => {
-          stderr.push(stripAnsi(text))
+          stderr.push(text)
         },
       })
       if (typeof result === 'number') exitCode = result
     } catch (error: unknown) {
-      stderr.push(stripAnsi(errorFormat(error)))
+      stderr.push(errorFormat(error))
       exitCode = config.errorExitCode ?? 1
     }
-    return {exitCode, stdout: stdout.join(''), stderr: stderr.join('')}
+    // Stripped after joining, so a sequence split across two writes is removed too.
+    return {exitCode, stdout: stripAnsi(stdout.join('')), stderr: stripAnsi(stderr.join(''))}
   }
 
   if (output.help === '') cli.outputHelp()

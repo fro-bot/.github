@@ -1198,6 +1198,24 @@ describe('ANSI in the output the runner writes', () => {
     }
     expect(await run(config, [])).toEqual({exitCode: 0, stdout: 'red out\n', stderr: 'bold err\n'})
   })
+
+  it('strips a sequence an action splits across two writes', async () => {
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          action: context => {
+            context.stdout(`${ESC}[`)
+            context.stdout(`31mred${ESC}[0m\n`)
+            context.stderr(`${ESC}[`)
+            context.stderr(`1mbold${ESC}[22m\n`)
+          },
+        }),
+      ],
+    }
+    expect(await run(config, [])).toEqual({exitCode: 0, stdout: 'red\n', stderr: 'bold\n'})
+  })
 })
 
 /** An import that waits at a gate, so overlapping runs are both inside it at once. */
