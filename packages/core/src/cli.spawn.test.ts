@@ -73,7 +73,7 @@ describe.each<Runtime>(['bun', 'node'])('the runner through a spawned process un
   it('delivers a 300 KB stdout payload whole when the process exits on its own', async () => {
     const result = await spawnFixture('payload')
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toHaveLength(300_000)
+    expect(result.stdout).toBe('x'.repeat(300_000))
   })
 
   it('CI=true: help and a parse error carry no ANSI, because the runner sets NO_COLOR before goke loads', async () => {

@@ -80,7 +80,7 @@ appendFileSync(process.env.GITHUB_OUTPUT ?? '', 'scan_result=error\n')
   it('collects a 300 KB stdout payload whole', async () => {
     const entrypoint = await script(`payload-${runtime}.ts`, `process.stdout.write('x'.repeat(300_000))`)
     const result = await spawnEntrypoint({entrypoint, runtime})
-    expect(result.stdout).toHaveLength(300_000)
+    expect(result.stdout).toBe('x'.repeat(300_000))
   })
 
   it('kills a child that outlives the timeout and rejects', async () => {

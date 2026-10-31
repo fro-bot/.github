@@ -17,6 +17,11 @@
  *   with the original error on a parse error and resolve with the code only recorded on an async
  *   action error. The action wrapper never calls `exit`: it writes the CLI's message and records the
  *   code itself.
+ * - An option name with a `__proto__`, `constructor` or `prototype` segment is rejected before goke
+ *   sees argv: goke writes dotted option names into nested objects, and those segments would reach
+ *   `Object.prototype`.
+ * - Defaults are applied once, by the zod schema: goke is told not to seed them, because it would hand
+ *   the schema an already-defaulted value to parse a second time.
  * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
  *   backstop: goke's output, the runner's own usage errors, and what an action writes.
  *
@@ -225,11 +230,29 @@ function rawCommandName(command: Command): string {
   return command.name === '' ? tokens.join(' ') : [command.name, ...tokens].join(' ')
 }
 
+function assertPositionalLayout(label: string, positionals: readonly PositionalSpec[]): void {
+  let optional: PositionalSpec | undefined
+  for (const [index, positional] of positionals.entries()) {
+    if (positional.kind === 'variadic' && index !== positionals.length - 1) {
+      throw new TypeError(`${label}: variadic positional \`${positional.name}\` must be the last positional`)
+    }
+    if (positional.kind === 'optional') optional ??= positional
+    if (positional.kind === 'required' && optional !== undefined) {
+      throw new TypeError(
+        `${label}: required positional \`${positional.name}\` cannot follow optional positional \`${optional.name}\``,
+      )
+    }
+  }
+}
+
 function assertConfig(config: CliConfig): void {
   const roots = config.commands.filter(command => command.name === '')
   if (roots.length > 1) throw new TypeError(`${config.name}: more than one root command`)
   if ((config.noArgv ?? 'run') === 'run' && roots.length === 0) {
     throw new TypeError(`${config.name}: a CLI that runs for no argv needs a root command`)
+  }
+  for (const command of config.commands) {
+    assertPositionalLayout(command.name === '' ? config.name : `${config.name} ${command.name}`, command.positionals)
   }
 }
 
@@ -259,6 +282,27 @@ interface ExitCodes {
   readonly help: number
 }
 
+/**
+ * The first flag, before any `--`, whose name has a `__proto__`, `constructor` or `prototype` path
+ * segment, as written and without its value. goke splits a dotted option name on `.` and assigns down
+ * the path, so those segments would reach a prototype, and this runs before goke parses anything. Every
+ * leading dash and a leading `no-` (which negates a flag) are not part of the name. The segment list
+ * lives in the function: Stryker covers a module-level constant with no test.
+ */
+function findUnsafeOptionName(argv: readonly string[]): string | undefined {
+  const unsafe = new Set(['__proto__', 'constructor', 'prototype'])
+  for (const token of argv) {
+    if (token === '--') return undefined
+    if (!token.startsWith('-')) continue
+    const flag = token.split('=')[0] ?? token
+    let start = 0
+    while (flag[start] === '-') start += 1
+    const name = flag.slice(start).startsWith('no-') ? flag.slice(start + 3) : flag.slice(start)
+    if (name.split('.').some(segment => unsafe.has(segment))) return flag
+  }
+  return undefined
+}
+
 /** Matches argv to a command and checks everything goke would check before an action, except the action. */
 async function resolveVerdict(
   session: Session,
@@ -271,6 +315,9 @@ async function resolveVerdict(
     output.errors += stripAnsi(`error: ${message}\n`)
     return codes.usage
   }
+  const unsafe = findUnsafeOptionName(argv)
+  if (unsafe !== undefined) return usage(`unsafe option name \`${unsafe}\``)
+
   // No argv on a CLI whose no-argv mode is usage prints what `--help` prints.
   const noArgvUsage = argv.length === 0 && config.noArgv === 'usage'
 
@@ -295,6 +342,11 @@ async function resolveVerdict(
 
   const {command} = match
   const args: readonly string[] = cli.args
+  // goke has checked this already; the runner does not hand an action a gap in its own mapping.
+  const missing = command.positionals.find(
+    (positional, index) => positional.kind === 'required' && args[index] === undefined,
+  )
+  if (missing !== undefined) return usage(`missing required argument \`<${missing.name}>\``)
   const hasVariadic = command.positionals.some(positional => positional.kind === 'variadic')
   if (!hasVariadic && args.length > command.positionals.length) {
     return usage(`unexpected argument \`${args[command.positionals.length]}\``)
@@ -349,6 +401,8 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
   cli.help()
   const registered = config.commands.map(command => {
     const goke = cli.command(rawCommandName(command))
+    // The schemas apply their own defaults in `prepare`, once; goke only prints them in help.
+    goke.ignoreOptionDefaultValue()
     for (const option of Object.values(command.options)) goke.option(option.flag, option.schema)
     // The runner runs actions itself, after its own checks. If goke ran one, the run would end as a usage error.
     goke.action(() => {

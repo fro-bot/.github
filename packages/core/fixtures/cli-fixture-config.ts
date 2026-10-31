@@ -7,8 +7,7 @@ import {defineCommand, z, type CliConfig} from '../src/cli.ts'
  * entrypoints; `cli-fixture.ts` picks one by `FIXTURE_SHAPE`.
  */
 
-export type FixtureShape =
-  'dispatch' | 'usage' | 'direct-write' | 'payload' | 'github-output' | 'exit-three' | 'limit'
+export type FixtureShape = 'dispatch' | 'usage' | 'direct-write' | 'payload' | 'github-output' | 'exit-three' | 'limit'
 
 const PAYLOAD_BYTES = 300_000
 

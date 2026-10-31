@@ -295,7 +295,7 @@ describe('declared positionals and flags', () => {
     const {config, seen} = capture([{name: 'path', kind: 'required'}])
     const result = await run(config, [])
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('missing required argument `<path>`')
+    expect(result.stderr).toContain('error: missing required argument `<path>` for command `<path>`\n')
     expect(seen).toEqual([])
   })
 
@@ -1398,5 +1398,346 @@ describe('a command exposes no unchecked way to run its action', () => {
     const command = defineCommand({readOnly: true, action: () => 7})
     const prepared = command.prepare({})
     expect(prepared.ok && prepared.run(io)).toBe(7)
+  })
+})
+
+describe('option names that could reach a prototype', () => {
+  const POLLUTION_KEY = 'reviewProbe'
+
+  afterEach(() => {
+    delete (Object.prototype as Record<string, unknown>)[POLLUTION_KEY]
+  })
+
+  function polluted(): unknown {
+    return ({} as Record<string, unknown>)[POLLUTION_KEY]
+  }
+
+  it.each([
+    [['--__proto__.reviewProbe', 'attacker']],
+    [['--__proto__.reviewProbe=attacker']],
+    [['--constructor.prototype.reviewProbe', 'attacker']],
+    [['--constructor.prototype.reviewProbe=attacker']],
+    [['--prototype.reviewProbe=attacker']],
+    [['--constructor.reviewProbe=attacker']],
+    [['--a.constructor', 'attacker']],
+    [['--a.__proto__.reviewProbe', 'attacker']],
+    [['--a.b.constructor.prototype.reviewProbe=attacker']],
+    [['--a.prototype=attacker']],
+    [['--a.__proto__']],
+    [['--__proto__']],
+    [['--flag', '--a.__proto__.reviewProbe=attacker']],
+    [['-__proto__.reviewProbe=attacker']],
+    [['---__proto__.reviewProbe=attacker']],
+    [['----constructor.prototype.reviewProbe', 'attacker']],
+    [['--no-__proto__.reviewProbe']],
+    [['--no-a.constructor.prototype.reviewProbe']],
+    [['--no-prototype']],
+  ])('rejects %j as a usage error before goke parses it, and leaves Object.prototype alone', async argv => {
+    const action = vi.fn()
+    const config: CliConfig = {
+      name: 'x',
+      usageCode: 64,
+      commands: [
+        defineCommand({
+          readOnly: false,
+          options: {flag: {flag: '--flag', schema: z.boolean().optional()}},
+          action,
+        }),
+      ],
+    }
+    const result = await run(config, argv)
+    expect(polluted()).toBeUndefined()
+    expect(result.exitCode).toBe(64)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toMatch(/^error: unsafe option name `-[^`]+`\n/u)
+    expect(result.stderr).toContain('Usage:')
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('writes the usage error to the CLI usage stream', async () => {
+    const config: CliConfig = {
+      ...usageShape([]),
+      usageStream: 'stdout',
+      usageCode: 3,
+    }
+    const result = await run(config, ['--__proto__.reviewProbe=attacker'])
+    expect(polluted()).toBeUndefined()
+    expect(result.exitCode).toBe(3)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stderr).toBe('error: unsafe option name `--__proto__.reviewProbe`\n')
+  })
+
+  it('names the flag as given, without its value and without ANSI', async () => {
+    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
+    const result = await run(config, [`--__proto__.${ESC}[31mred${ESC}[0m=attacker`])
+    expect(result.stderr).toContain('error: unsafe option name `--__proto__.red`\n')
+    expect(result.stderr).not.toContain('attacker')
+    expect(result.stderr).not.toContain(ESC)
+  })
+
+  it('lets a benign dotted or look-alike option name through to goke', async () => {
+    const action = vi.fn()
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {
+            protoType: {flag: '--proto-type <v>', schema: z.string().optional()},
+            constructors: {flag: '--constructors <v>', schema: z.string().optional()},
+          },
+          action,
+        }),
+      ],
+    }
+    const result = await run(config, ['--proto-type', 'a', '--constructors=b'])
+    expect(result.exitCode).toBe(0)
+    expect(action).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not read a `no-` that is not at the start of the name as a negation', async () => {
+    const action = vi.fn()
+    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action})]}
+    const result = await run(config, ['--x.no-__proto__', '--no-constructors.y'])
+    expect(result.stderr).not.toContain('unsafe option name')
+    expect(result.stderr).toContain('Unknown option')
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('only looks at option names: a positional or a value that spells a dangerous segment is not rejected', async () => {
+    const seen: unknown[] = []
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          positionals: [{name: 'path', kind: 'optional'}],
+          options: {mode: {flag: '--mode <mode>', schema: z.string().optional()}},
+          action: context => {
+            seen.push([context.positionals.path, context.options.mode])
+          },
+        }),
+      ],
+    }
+    const result = await run(config, ['__proto__.x', '--mode', 'constructor.prototype'])
+    expect(result.exitCode).toBe(0)
+    expect(seen).toEqual([['__proto__.x', 'constructor.prototype']])
+  })
+
+  it('does not look past `--`: what follows is already rejected as arguments after the terminator', async () => {
+    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
+    const result = await run(config, ['--', '--__proto__.reviewProbe=attacker'])
+    expect(polluted()).toBeUndefined()
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('error: unexpected arguments after `--`\n')
+  })
+})
+
+describe('positional declarations', () => {
+  const define = (positionals: Parameters<typeof defineCommand>[0]['positionals']): Command =>
+    defineCommand({readOnly: true, positionals, action: () => {}})
+  const config = (command: Command): CliConfig => ({name: 'x', commands: [command]})
+
+  it('rejects an optional positional before a required one', async () => {
+    const command = define([
+      {name: 'scope', kind: 'optional'},
+      {name: 'confirmation', kind: 'required'},
+    ])
+    await expect(run(config(command), [])).rejects.toThrow(
+      new TypeError('x: required positional `confirmation` cannot follow optional positional `scope`'),
+    )
+  })
+
+  it('rejects a variadic positional that is not last', async () => {
+    const command = define([
+      {name: 'files', kind: 'variadic'},
+      {name: 'target', kind: 'required'},
+    ])
+    await expect(run(config(command), [])).rejects.toThrow(
+      new TypeError('x: variadic positional `files` must be the last positional'),
+    )
+  })
+
+  it('rejects a variadic positional before an optional one', async () => {
+    const command = define([
+      {name: 'files', kind: 'variadic'},
+      {name: 'extra', kind: 'optional'},
+    ])
+    await expect(run(config(command), [])).rejects.toThrow(
+      new TypeError('x: variadic positional `files` must be the last positional'),
+    )
+  })
+
+  it('rejects a bad layout on a named command too, and says which command', async () => {
+    const command = defineCommand({
+      name: 'plan',
+      readOnly: true,
+      positionals: [
+        {name: 'a', kind: 'optional'},
+        {name: 'b', kind: 'required'},
+      ],
+      action: () => {},
+    })
+    await expect(run({name: 'x', noArgv: 'usage', commands: [command]}, [])).rejects.toThrow(
+      new TypeError('x plan: required positional `b` cannot follow optional positional `a`'),
+    )
+  })
+
+  it.each([
+    ['none', []],
+    [
+      'required then optional',
+      [
+        {name: 'a', kind: 'required'},
+        {name: 'b', kind: 'optional'},
+      ],
+    ],
+    [
+      'required then required',
+      [
+        {name: 'a', kind: 'required'},
+        {name: 'b', kind: 'required'},
+      ],
+    ],
+    [
+      'optional then optional',
+      [
+        {name: 'a', kind: 'optional'},
+        {name: 'b', kind: 'optional'},
+      ],
+    ],
+    [
+      'required then variadic',
+      [
+        {name: 'a', kind: 'required'},
+        {name: 'rest', kind: 'variadic'},
+      ],
+    ],
+    [
+      'optional then variadic',
+      [
+        {name: 'a', kind: 'optional'},
+        {name: 'rest', kind: 'variadic'},
+      ],
+    ],
+    ['variadic alone', [{name: 'rest', kind: 'variadic'}]],
+  ] as const)('accepts %s', async (_label, positionals) => {
+    const command = define([...positionals])
+    await expect(run(config(command), [])).resolves.toBeDefined()
+  })
+
+  it('a required positional that goke let through reaches no action: the runner checks its own mapping', async () => {
+    const real = await import('goke')
+    const action = vi.fn()
+    const command = defineCommand({
+      readOnly: true,
+      positionals: [
+        {name: 'scope', kind: 'required'},
+        {name: 'confirmation', kind: 'required'},
+      ],
+      action,
+    })
+    // goke's own required-argument check passes; only the runner's mapping can catch the gap.
+    const importGoke = async () => {
+      class LenientGoke extends real.Goke {}
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const original = real.Goke.prototype.command
+      LenientGoke.prototype.command = function command(
+        this: InstanceType<typeof real.Goke>,
+        ...args: Parameters<typeof original>
+      ) {
+        const registered = original.apply(this, args) as InstanceType<typeof real.Command>
+        registered.checkRequiredArgs = () => {}
+        return registered
+      } as typeof original
+      return {...real, Goke: LenientGoke} as unknown as typeof real
+    }
+    const result = await runCli(config(command), {argv: ['repo'], importGoke})
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('error: missing required argument `<confirmation>`\n')
+    expect(action).not.toHaveBeenCalled()
+  })
+})
+
+function captureValue(schema: z.ZodType): {config: CliConfig; seen: unknown[]} {
+  const seen: unknown[] = []
+  const config: CliConfig = {
+    name: 'x',
+    commands: [
+      defineCommand({
+        readOnly: true,
+        options: {value: {flag: '--value <v>', schema}},
+        action: context => {
+          seen.push(context.options.value)
+        },
+      }),
+    ],
+  }
+  return {config, seen}
+}
+
+describe('zod defaults', () => {
+  it('an omitted string default that trims keeps exactly what schema.parse(undefined) gives', async () => {
+    const schema = z.string().trim().default('  keep spaces  ')
+    const {config, seen} = captureValue(schema)
+    expect((await run(config, [])).exitCode).toBe(0)
+    expect(seen).toEqual([schema.parse(undefined)])
+    expect(seen).toEqual(['  keep spaces  '])
+  })
+
+  it('an omitted default that its own refinement would reject is not a usage error', async () => {
+    const schema = z.number().min(10).default(1)
+    const {config, seen} = captureValue(schema)
+    const result = await run(config, [])
+    expect(result.exitCode).toBe(0)
+    expect(seen).toEqual([schema.parse(undefined)])
+    expect(seen).toEqual([1])
+  })
+
+  it('an omitted transformed default is transformed once', async () => {
+    const schema = z
+      .string()
+      .default('abc')
+      .transform(value => `${value}!`)
+    const {config, seen} = captureValue(schema)
+    await run(config, [])
+    expect(seen).toEqual([schema.parse(undefined)])
+    expect(seen).toEqual(['abc!'])
+  })
+
+  it('an explicit value still goes through the full schema', async () => {
+    const schema = z.string().trim().default('  keep spaces  ')
+    const {config, seen} = captureValue(schema)
+    await run(config, ['--value', '  explicit  '])
+    expect(seen).toEqual(['explicit'])
+    const bounded = captureValue(z.number().min(10).default(1))
+    expect((await run(bounded.config, ['--value', '5'])).exitCode).toBe(1)
+    expect(bounded.seen).toEqual([])
+    expect((await run(bounded.config, ['--value', '12'])).exitCode).toBe(0)
+    expect(bounded.seen).toEqual([12])
+  })
+
+  it('help still shows the default', async () => {
+    const {config} = captureValue(z.string().trim().default('shown'))
+    const result = await run(config, ['--help'])
+    expect(result.stderr).toContain('(default: shown)')
+  })
+
+  it('an enum default is applied once and reaches the action', async () => {
+    const seen: unknown[] = []
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {mode: {flag: '--mode <m>', schema: z.enum(['a', 'b']).default('a')}},
+          action: context => {
+            seen.push(context.options.mode)
+          },
+        }),
+      ],
+    }
+    await run(config, [])
+    expect(seen).toEqual(['a'])
   })
 })
