@@ -1383,6 +1383,7 @@ describe('the CLI entry builds its client through the core factory', () => {
   let root = ''
   let originalEntry: string | undefined
   let stderrLines: string[] = []
+  let processSpies: {mockRestore: () => void}[] = []
 
   /** A checkout whose index omits an existing topic page, so a repair is planned and needs GitHub. */
   async function writeDriftedCheckout(): Promise<void> {
@@ -1444,13 +1445,15 @@ describe('the CLI entry builds its client through the core factory', () => {
     }
     originalEntry = process.argv[1]
     root = await mkdtemp(join(tmpdir(), 'wiki-repair-entry-'))
-    vi.spyOn(process, 'cwd').mockReturnValue(root)
+    processSpies = [
+      vi.spyOn(process, 'cwd').mockReturnValue(root),
+      vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+        stderrLines.push(String(chunk))
+        return true
+      }),
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true),
+    ]
     stderrLines = []
-    vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
-      stderrLines.push(String(chunk))
-      return true
-    })
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     await writeDriftedCheckout()
   })
 
@@ -1462,6 +1465,7 @@ describe('the CLI entry builds its client through the core factory', () => {
     if (originalEntry === undefined) process.argv.length = 1
     else process.argv[1] = originalEntry
     process.exitCode = undefined
+    for (const spy of processSpies) spy.mockRestore()
     vi.doUnmock('@octokit/rest')
     vi.resetModules()
     await rm(root, {recursive: true, force: true})

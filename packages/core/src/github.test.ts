@@ -176,13 +176,14 @@ describe('createOctokit: the default constructor is the real @octokit/rest', () 
 describe('createOctokit: the default path is checked against the real Octokit', () => {
   it('returns the real Octokit type, with no client type to name', async () => {
     const direct = createOctokit('tok')
-    const checked = createOctokit(process.env.NOT_SET, {missingToken: () => new Error('no token')})
+    const unset: string | undefined = undefined
+    const checked = createOctokit(unset, {missingToken: () => new Error('no token')})
     const constructor = loadOctokitConstructor()
     expectTypeOf(direct).resolves.toEqualTypeOf<Octokit>()
     expectTypeOf(checked).resolves.toEqualTypeOf<Octokit>()
     expectTypeOf(constructor).resolves.toEqualTypeOf<new (options: OctokitConstructorOptions) => Octokit>()
     await expect(direct).resolves.toBeDefined()
-    // The token is unset here, so the checked call rejects with the caller's error.
+    // The token is undefined, so the checked call rejects with the caller's error.
     await expect(checked).rejects.toThrow('no token')
     await expect(constructor).resolves.toBeTypeOf('function')
   })
