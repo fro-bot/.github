@@ -1,12 +1,28 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the four that have one: brace-expansion, source-map-js, undici and zod.
+The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod.
 
 ## `brace-expansion`
 
 GHSA-qhr7-859c-m2p7 and GHSA-6j4f-fj2g-mc7p: recursion DoS; 5.0.12 also fixes GHSA-q2hr-2g5m-vwhr.
 
 Remove this floor only when all parent ranges exclude the affected versions.
+
+## `fast-uri`
+
+GHSA-hrr3-gc8f-f4qj, GHSA-jvvf-x445-j334, GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-769h, GHSA-wjr9-j795-jxcr and GHSA-333x-w4r6-6crp: URI parsing and normalization flaws (host confusion, scheme spoofing, mailto header injection) in the 4.x line. 4.2.3 is the first release patched against all six.
+
+The installed copy is a transitive of `ajv`, which declares `fast-uri ^3.0.1`, so no parent range admits 4.2.3 and an override is the only way to move it.
+
+Remove this floor only when all parent ranges exclude the affected versions.
+
+## `qs`
+
+GHSA-6pq8-jhm2-2vcw: `qs.stringify` with `arrayFormat: 'comma'` throws an uncaught `TypeError` on array elements carrying a non-callable own `toString` (denial of service). It affects >=6.7.0 <=6.16.0; 6.16.1 is the first patched release.
+
+The installed copy is a transitive of Stryker: `@stryker-mutator/core` depends on `typed-rest-client`, which pins `qs` to the exact version 6.15.1, so a parent bump cannot move it.
+
+Remove this floor when the `typed-rest-client` release in use requires `qs >=6.16.1`.
 
 ## `source-map-js`
 
