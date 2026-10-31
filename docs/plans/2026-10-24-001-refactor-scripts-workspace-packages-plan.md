@@ -523,7 +523,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Verification:** No retry loop remains outside core and wiki-write-core, and the caller tests are unchanged.
 
-- [ ] **Unit 4: GitHub client factory** (PR C)
+- [x] **Unit 4: GitHub client factory** (PR C)
 
 **Goal:** One Octokit construction module with explicit options.
 
