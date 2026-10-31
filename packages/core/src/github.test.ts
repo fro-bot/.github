@@ -1,6 +1,8 @@
+import type {Octokit} from '@octokit/rest'
 import type {OctokitConstructorOptions, OctokitLog} from './github.ts'
 
-import {describe, expect, it, vi} from 'vitest'
+import process from 'node:process'
+import {describe, expect, expectTypeOf, it, vi} from 'vitest'
 import {createOctokit, loadOctokitConstructor, noopLog, OctokitLoadError} from './github.ts'
 
 /** The error a promise rejects with. */
@@ -114,7 +116,12 @@ describe('createOctokit: a token that must exist', () => {
 
   it('throws the very error the factory returned, not a copy', async () => {
     const error = new RangeError('custom class')
-    const thrown = await rejection(createOctokit<FakeClient>(undefined, {missingToken: () => error}))
+    const thrown = await rejection(
+      createOctokit(undefined, {
+        missingToken: () => error,
+        loadConstructor: async () => recordingConstructor().Constructor,
+      }),
+    )
     expect(thrown).toBe(error)
   })
 
@@ -163,6 +170,54 @@ describe('createOctokit: the default constructor is the real @octokit/rest', () 
   it('applies a request timeout to the real client without throwing', async () => {
     const client = await createOctokit('tok', {timeoutMs: 1234, log: LOG})
     expect(typeof client.rest.issues.create).toBe('function')
+  })
+})
+
+describe('createOctokit: the default path is checked against the real Octokit', () => {
+  it('returns the real Octokit type, with no client type to name', async () => {
+    const direct = createOctokit('tok')
+    const checked = createOctokit(process.env.NOT_SET, {missingToken: () => new Error('no token')})
+    const constructor = loadOctokitConstructor()
+    expectTypeOf(direct).resolves.toEqualTypeOf<Octokit>()
+    expectTypeOf(checked).resolves.toEqualTypeOf<Octokit>()
+    expectTypeOf(constructor).resolves.toEqualTypeOf<new (options: OctokitConstructorOptions) => Octokit>()
+    await expect(direct).resolves.toBeDefined()
+    // The token is unset here, so the checked call rejects with the caller's error.
+    await expect(checked).rejects.toThrow('no token')
+    await expect(constructor).resolves.toBeTypeOf('function')
+  })
+
+  it('accepts a caller interface the real Octokit satisfies', async () => {
+    interface NeedsRepos {
+      readonly rest: {readonly repos: {readonly get: Octokit['rest']['repos']['get']}}
+    }
+    const client: NeedsRepos = await createOctokit('tok')
+    expect(typeof client.rest.repos.get).toBe('function')
+  })
+
+  it('rejects a client type the real Octokit does not satisfy', async () => {
+    interface Unrelated {
+      missingMethod: () => void
+    }
+    // @ts-expect-error The default path returns Octokit, which has no `missingMethod`.
+    const byAssignment: Unrelated = await createOctokit('tok')
+    // @ts-expect-error A client type cannot be named on the default path.
+    const byGeneric = await createOctokit<Unrelated>('tok')
+    expect(byAssignment).toBeDefined()
+    expect(byGeneric).toBeDefined()
+  })
+
+  it('rejects an unchecked possibly-undefined token on the default path', async () => {
+    // @ts-expect-error `undefined` needs `missingToken`.
+    await createOctokit(process.env.NOT_SET).catch(() => undefined)
+  })
+
+  it('infers the client type from a custom loadConstructor, and only then', async () => {
+    const {Constructor} = recordingConstructor()
+    const client = await createOctokit('tok', {loadConstructor: async () => Constructor})
+    expectTypeOf(client).toEqualTypeOf<FakeClient>()
+    // @ts-expect-error The constructor builds a FakeClient, not the Unrelated type the caller named.
+    await createOctokit<{missingMethod: () => void}>('tok', {loadConstructor: async () => Constructor})
   })
 })
 

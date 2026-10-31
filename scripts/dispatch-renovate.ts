@@ -243,7 +243,7 @@ export interface CliDeps {
 }
 
 async function createRealOctokit(token: string): Promise<CliClient> {
-  return createOctokit<CliClient>(token)
+  return createOctokit(token)
 }
 
 /**

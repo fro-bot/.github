@@ -1910,12 +1910,15 @@ export const NOOP_LOG = noopLog()
 
 const REQUEST_TIMEOUT_MS = 10_000
 
+// `StatusTruthOctokitClient` declares narrower response shapes than the real client (for example
+// `issues.listForRepo` data), so the real client is not assignable and each boundary casts.
 async function createOctokitFromEnv(): Promise<StatusTruthOctokitClient> {
-  return createOctokit<StatusTruthOctokitClient>(process.env.GITHUB_TOKEN, {
+  const octokit = await createOctokit(process.env.GITHUB_TOKEN, {
     timeoutMs: REQUEST_TIMEOUT_MS,
     log: NOOP_LOG,
     missingToken: () => new Error('status-truth-proposals: GITHUB_TOKEN is required in the environment'),
   })
+  return octokit as unknown as StatusTruthOctokitClient
 }
 
 /** Counts-only result written to stdout and STATUS_TRUTH_OPEN_RESULT_PATH. */
@@ -2051,10 +2054,10 @@ async function runOpen(): Promise<void> {
     const dryRunToken = process.env.GITHUB_TOKEN
     if (dryRunToken !== undefined && dryRunToken !== '' && owner !== '' && repo !== '') {
       try {
-        const dryRunOctokit = await createOctokit<StatusTruthOctokitClient>(dryRunToken, {
+        const dryRunOctokit = (await createOctokit(dryRunToken, {
           timeoutMs: REQUEST_TIMEOUT_MS,
           log: NOOP_LOG,
-        })
+        })) as unknown as StatusTruthOctokitClient
         existingIssues = await fetchExistingProposalIssues({octokit: dryRunOctokit, owner, repo})
       } catch {
         // Non-fatal in dry-run: proceed with empty list (counts may over-estimate opens)

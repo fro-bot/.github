@@ -722,7 +722,7 @@ async function loadWikiFilesFromDisk(rootDir: string): Promise<Record<string, st
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
   try {
-    return await createOctokit<OctokitClient>(process.env.GITHUB_TOKEN, {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
       missingToken: () => new Error('wiki-repair: GITHUB_TOKEN is required in the environment'),
     })
   } catch (error: unknown) {

@@ -1,14 +1,17 @@
 /**
  * One place that builds an authenticated Octokit client.
  *
- * Each caller passes its own token and the numbers it has always used: there is no default timeout
- * and no default logger, so a caller that passed neither keeps passing neither. What a missing token
- * means is also the caller's (its own error class and message), handed in as `missingToken`.
+ * The token is the caller's, and so are the numbers: there is no default timeout and no default
+ * logger, so the constructor receives `request` and `log` only when a caller passes them. What a
+ * missing token means is the caller's too (its own error class and message), handed in as
+ * `missingToken`.
  *
- * `@octokit/rest` is loaded with a dynamic import inside this module. Vitest mocks a module by its
- * resolved id, so a test that mocks `@octokit/rest` reaches the client built here no matter how the
- * caller used to import it. `loadConstructor` is the seam for a test that would rather not touch the
- * module registry.
+ * `@octokit/rest` is loaded with a dynamic import inside this module, so a test's
+ * `vi.mock('@octokit/rest')` reaches every client built here. The default path returns the real
+ * `Octokit` type and names no client type: a caller takes the client into its own interface by
+ * assignment or return type, and the compiler checks `Octokit` against it. A client type is inferred
+ * only when a matching `loadConstructor` is supplied, the seam for a test that would rather not
+ * touch the module registry.
  */
 
 import type {Octokit} from '@octokit/rest'
@@ -58,46 +61,57 @@ export class OctokitLoadError extends TypeError {
 }
 
 /** The default constructor seam: the `Octokit` export of `@octokit/rest`. */
-export async function loadOctokitConstructor<TClient = Octokit>(): Promise<OctokitConstructor<TClient>> {
+export async function loadOctokitConstructor(): Promise<OctokitConstructor<Octokit>> {
   const loaded: object = await import('@octokit/rest')
   if (!('Octokit' in loaded)) throw new OctokitLoadError('missing-export')
   const constructor: unknown = loaded.Octokit
   if (typeof constructor !== 'function') throw new OctokitLoadError('not-a-constructor')
-  // The check above makes it a constructor; the caller names the client shape it uses.
-  return constructor as OctokitConstructor<TClient>
+  // The checks above make it a constructor; `@octokit/rest` types its `Octokit` export as this one.
+  return constructor as OctokitConstructor<Octokit>
 }
 
-export interface CreateOctokitOptions<TClient> {
+interface ClientOptions {
   /** Request timeout in milliseconds. Omitted means the constructor gets no `request` option. */
   readonly timeoutMs?: number
   /** Omitted means the constructor gets no `log` option, so Octokit logs as it always has. */
   readonly log?: OctokitLog
-  /** Defaults to `loadOctokitConstructor`. */
-  readonly loadConstructor?: () => Promise<OctokitConstructor<TClient>>
 }
 
-export interface CreateOctokitCheckedOptions<TClient> extends CreateOctokitOptions<TClient> {
+/** Builds the real `@octokit/rest` client. */
+export interface DefaultClientOptions extends ClientOptions {
+  readonly loadConstructor?: undefined
+}
+
+/** Builds whatever client the supplied constructor makes, and returns that type. */
+export interface CustomClientOptions<TClient> extends ClientOptions {
+  readonly loadConstructor: () => Promise<OctokitConstructor<TClient>>
+}
+
+/** Marks a token that may be undefined or empty and names the error that means. */
+export interface MissingTokenOption {
   /** The error to throw when the token is undefined or empty. Thrown before the constructor is loaded. */
   readonly missingToken: () => Error
 }
 
 /** A token the caller already holds. It is used as given, an empty string included. */
-export async function createOctokit<TClient = Octokit>(
-  token: string,
-  options?: CreateOctokitOptions<TClient>,
-): Promise<TClient>
+export async function createOctokit(token: string, options?: DefaultClientOptions): Promise<Octokit>
 /** A token read from the environment: undefined or empty throws the caller's own error. */
-export async function createOctokit<TClient = Octokit>(
+export async function createOctokit(
   token: string | undefined,
-  options: CreateOctokitCheckedOptions<TClient>,
+  options: DefaultClientOptions & MissingTokenOption,
+): Promise<Octokit>
+export async function createOctokit<TClient>(token: string, options: CustomClientOptions<TClient>): Promise<TClient>
+export async function createOctokit<TClient>(
+  token: string | undefined,
+  options: CustomClientOptions<TClient> & MissingTokenOption,
 ): Promise<TClient>
-export async function createOctokit<TClient = Octokit>(
+export async function createOctokit(
   token: string | undefined,
-  options: CreateOctokitOptions<TClient> & {readonly missingToken?: () => Error} = {},
-): Promise<TClient> {
+  options: (DefaultClientOptions | CustomClientOptions<unknown>) & Partial<MissingTokenOption> = {},
+): Promise<unknown> {
   if (options.missingToken !== undefined && (token === undefined || token === '')) throw options.missingToken()
 
-  const Constructor = await (options.loadConstructor ?? loadOctokitConstructor<TClient>)()
+  const Constructor = await (options.loadConstructor ?? loadOctokitConstructor)()
   const request = options.timeoutMs === undefined ? {} : {request: {timeout: options.timeoutMs}}
   const log = options.log === undefined ? {} : {log: options.log}
   // The overloads leave `undefined` possible here only when `missingToken` is given, and it threw.

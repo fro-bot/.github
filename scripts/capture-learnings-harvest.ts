@@ -857,7 +857,7 @@ async function writeDigestFile(digest: CandidateDigest): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function createOctokitFromEnv(): Promise<OctokitClient> {
-  return createOctokit<OctokitClient>(process.env.GITHUB_TOKEN, {
+  return createOctokit(process.env.GITHUB_TOKEN, {
     missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
   })
 }

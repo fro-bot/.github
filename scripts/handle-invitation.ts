@@ -605,7 +605,7 @@ async function createOctokitFromEnv(): Promise<OctokitClient> {
 /** One client for one credential; a load failure becomes the module's own `OCTOKIT_LOAD_FAILED`. */
 async function createInvitationOctokit(token: string | undefined, missingToken: () => Error): Promise<OctokitClient> {
   try {
-    return await createOctokit<OctokitClient>(token, {missingToken})
+    return await createOctokit(token, {missingToken})
   } catch (error: unknown) {
     if (!(error instanceof OctokitLoadError)) throw error
     throw new InvitationHandlingError({

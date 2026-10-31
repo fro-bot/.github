@@ -418,7 +418,7 @@ describe('main builds its client through the core factory', () => {
       expect(options.missingToken()).toEqual(
         new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
       )
-      // The old factory passed no timeout and no logger; neither is invented here.
+      // This caller sets no timeout and no logger.
       expect(options.timeoutMs).toBeUndefined()
       expect(options.log).toBeUndefined()
       expect(run.result.digestReadFailure).toBe(false)

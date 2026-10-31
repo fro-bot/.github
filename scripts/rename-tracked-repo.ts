@@ -771,7 +771,7 @@ async function createRealTransport(token: string): Promise<RenameTransport> {
 }
 
 async function createRealWriter(token: string): Promise<GitDataClient> {
-  return createOctokit<GitDataClient>(token)
+  return createOctokit(token)
 }
 
 const BLOCK_HINTS: Partial<Record<RenameBlockReason, string>> = {

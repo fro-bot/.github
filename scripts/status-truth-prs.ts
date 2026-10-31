@@ -1436,11 +1436,14 @@ const REQUEST_TIMEOUT_MS = 10_000
  * other.
  */
 async function createOctokitFromToken(token: string | undefined): Promise<StatusTruthPrOctokitClient> {
-  return createOctokit<StatusTruthPrOctokitClient>(token, {
+  const octokit = await createOctokit(token, {
     timeoutMs: REQUEST_TIMEOUT_MS,
     log: noopLog(),
     missingToken: () => new Error('status-truth-prs: required token is missing from the environment'),
   })
+  // `StatusTruthPrOctokitClient` declares narrower response shapes than the real client (for
+  // example `repos.getContent` data with a required `sha`), so the real client is not assignable.
+  return octokit as unknown as StatusTruthPrOctokitClient
 }
 
 async function createOctokitFromEnv(): Promise<StatusTruthPrOctokitClient> {

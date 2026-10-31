@@ -2139,10 +2139,12 @@ async function runDetect(): Promise<void> {
 
     if (token !== undefined && token !== '') {
       const options = buildDetectOctokitOptions(token)
-      const octokit = await createOctokit<DetectOctokitClient>(options.auth, {
+      // `DetectOctokitClient` declares narrower response shapes than the real client (for example
+      // `issues.listForRepo` data), so the real client is not assignable and the boundary casts.
+      const octokit = (await createOctokit(options.auth, {
         timeoutMs: options.request.timeout,
         log: options.log,
-      })
+      })) as unknown as DetectOctokitClient
 
       // Build injected issue lister/comment fetcher using paginated helpers
       // (avoids the per_page:100 truncation bug — fetches all pages)

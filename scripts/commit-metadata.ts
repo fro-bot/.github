@@ -324,7 +324,7 @@ function deepEqualsInternal(
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
   try {
-    return await createOctokit<OctokitClient>(process.env.GITHUB_TOKEN, {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
       missingToken: () =>
         new CommitMetadataError({
           code: 'MISSING_TOKEN',

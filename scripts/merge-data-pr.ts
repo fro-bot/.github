@@ -719,7 +719,7 @@ function createConflictAlertBody(params: {
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
   try {
-    return await createOctokit<OctokitClient>(process.env.GITHUB_TOKEN, {
+    return await createOctokit(process.env.GITHUB_TOKEN, {
       missingToken: () =>
         new MergeDataPrError({
           code: 'MISSING_TOKEN',

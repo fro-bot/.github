@@ -4202,7 +4202,7 @@ async function createOctokitFromEnv(
   envVar: 'FRO_BOT_POLL_PAT' | 'RECONCILE_DISCOVERY_TOKEN' | 'RECONCILE_WRITER_TOKEN',
 ): Promise<OctokitClient> {
   try {
-    return await createOctokit<OctokitClient>(process.env[envVar], {
+    return await createOctokit(process.env[envVar], {
       missingToken: () =>
         new ReconcileError({
           code: 'MISSING_TOKEN',

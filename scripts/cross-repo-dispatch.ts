@@ -2052,11 +2052,11 @@ async function writeResult(resultPath: string | undefined, result: unknown): Pro
 const REQUEST_TIMEOUT_MS = 15_000
 
 async function createOctokitForToken(token: string): Promise<CrossRepoDispatchOctokitClient> {
-  return createOctokit<CrossRepoDispatchOctokitClient>(token, {timeoutMs: REQUEST_TIMEOUT_MS})
+  return createOctokit(token, {timeoutMs: REQUEST_TIMEOUT_MS})
 }
 
 async function createOctokitFromEnv(): Promise<CrossRepoDispatchOctokitClient> {
-  return createOctokit<CrossRepoDispatchOctokitClient>(process.env.GITHUB_TOKEN, {
+  return createOctokit(process.env.GITHUB_TOKEN, {
     timeoutMs: REQUEST_TIMEOUT_MS,
     missingToken: () => new Error('cross-repo-dispatch: GITHUB_TOKEN is required in the environment'),
   })
