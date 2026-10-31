@@ -42,8 +42,11 @@ const HOSTILE: readonly (readonly string[])[] = [
   ['--flag', '--a.b=c'],
 ]
 
-/** A bare `__proto__` is no dotted name, and goke's `__proto__` setter swallows it before any option check. */
-const PROTO_NAMES: readonly (readonly string[])[] = [
+/**
+ * Names every object already has. goke's `__proto__` setter swallows a bare `__proto__` before any option
+ * check, and `constructor` makes goke call an inherited method and throw out of `runCli`.
+ */
+const INHERITED_NAMES: readonly (readonly string[])[] = [
   ['--__proto__'],
   ['--__proto__=attacker'],
   ['--__proto__='],
@@ -53,6 +56,13 @@ const PROTO_NAMES: readonly (readonly string[])[] = [
   ['-__proto__'],
   ['---__proto__=attacker'],
   ['--flag', '--__proto__'],
+  ['--constructor'],
+  ['--constructor=attacker'],
+  ['--toString'],
+  ['--toString=attacker'],
+  ['--hasOwnProperty'],
+  ['--__defineGetter__'],
+  ['--no-constructor'],
 ]
 
 describe.each<Runtime>(['bun', 'node'])('hostile option names under %s', runtime => {
@@ -67,10 +77,10 @@ describe.each<Runtime>(['bun', 'node'])('hostile option names under %s', runtime
     expect(report.map).toEqual([1])
   })
 
-  it.each(PROTO_NAMES)('%j: usage error, no action, no built-in touched', async (...argv) => {
+  it.each(INHERITED_NAMES)('%j: usage error, no action, no built-in touched', async (...argv) => {
     const report = await probe(runtime, argv)
     expect(report.outcome).toMatchObject({exitCode: 64, stdout: ''})
-    expect(report.outcome.stderr).toMatch(/^error: unsupported option name `-+(?:no-)?__proto__`\n/u)
+    expect(report.outcome.stderr).toMatch(/^error: unsupported option name `-+(?:no-)?\w+`\n/u)
     expect(report.outcome.stderr).not.toContain('attacker')
     expect(report.ran).toBe(false)
     expect(report.changed).toEqual([])

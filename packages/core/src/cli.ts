@@ -20,8 +20,12 @@
  * - A dotted option name (`--a.b`, `--a.b=v`) is rejected before goke sees argv, and no command may
  *   declare one. goke writes a dotted name into nested objects, and a path through an inherited
  *   property (`--toString.call=x`, `--a.0=x --a.map.call=x`) reaches a built-in prototype, so no list of
- *   forbidden segments is enough: the dotted form itself is not accepted. The name `__proto__` is
- *   rejected the same way, because goke's own unknown-option check never sees it.
+ *   forbidden segments is enough: the dotted form itself is not accepted.
+ * - An option name that is a property of every object (`__proto__`, `constructor`, `toString`,
+ *   `hasOwnProperty`, ...) is rejected the same way, in argv and in a declaration. goke keeps options and
+ *   aliases in plain objects: `__proto__` goes to the inherited setter, so its unknown-option check never
+ *   sees it and the action would run, and `constructor` and the like make goke call an inherited method
+ *   and throw out of `runCli`.
  * - Defaults are applied once, by the zod schema: goke is told not to seed them, because it would hand
  *   the schema an already-defaulted value to parse a second time.
  * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
@@ -252,11 +256,18 @@ function flagNames(flag: string): string[] {
   return flag.split(',').flatMap(item => item.trim().split(' ').slice(0, 1))
 }
 
-function assertNoDottedFlags(label: string, options: OptionSpecs): void {
+function assertNoUnsupportedFlags(label: string, options: OptionSpecs): void {
   for (const option of Object.values(options)) {
-    const dotted = flagNames(option.flag).find(name => name.includes('.'))
+    const names = flagNames(option.flag)
+    const dotted = names.find(name => name.includes('.'))
     if (dotted !== undefined) {
       throw new TypeError(`${label}: option flag \`${dotted}\` has a dotted name, which the runner does not accept`)
+    }
+    const inherited = names.find(namesInheritedProperty)
+    if (inherited !== undefined) {
+      throw new TypeError(
+        `${label}: option flag \`${inherited}\` names a property every object has, which the runner does not accept`,
+      )
     }
   }
 }
@@ -270,7 +281,7 @@ function assertConfig(config: CliConfig): void {
   for (const command of config.commands) {
     const label = command.name === '' ? config.name : `${config.name} ${command.name}`
     assertPositionalLayout(label, command.positionals)
-    assertNoDottedFlags(label, command.options)
+    assertNoUnsupportedFlags(label, command.options)
   }
 }
 
@@ -301,15 +312,25 @@ interface ExitCodes {
 }
 
 /**
+ * Whether a flag names a property every object has. Leading dashes and a `no-` are not part of the name.
+ * This is a test against `Object.prototype` itself, not a list, so it covers `__proto__` and whatever
+ * the runtime defines. goke keeps options and aliases in plain objects and either writes such a name
+ * through an inherited setter or calls an inherited method on it.
+ */
+function namesInheritedProperty(flag: string): boolean {
+  const bare = flag.slice(flag.search(/[^-]/u))
+  const name = bare.startsWith('no-') ? bare.slice(3) : bare
+  return name in Object.prototype
+}
+
+/**
  * The usage message for the first flag, before any `--`, that goke would mishandle, or undefined. The
  * flag is named as written and without its value; a negative number is a value, not a flag, and
  * anything after `=` belongs to the value.
  *
  * - A dotted name: goke splits it on `.` and assigns down the path through whatever objects it finds,
  *   inherited ones included, so `--toString.call=x` reaches a built-in.
- * - The name `__proto__` (behind any leading dashes and a `no-`): goke assigns options through a plain
- *   object, so it goes to the inherited `__proto__` setter and never becomes an own option. goke's
- *   unknown-option check cannot see it, and the action would run.
+ * - A name every object has (`namesInheritedProperty`).
  *
  * Every other name goke either handles or rejects as an unknown option; this is not an unknown-flag
  * parser. The regex lives in the function: Stryker covers a module-level constant with no test.
@@ -320,7 +341,7 @@ function findUnsupportedOption(argv: readonly string[]): string | undefined {
     if (!token.startsWith('-') || Number.isFinite(Number(token))) continue
     const flag = token.split('=')[0] ?? token
     if (flag.includes('.')) return `unsupported dotted option name \`${flag}\``
-    if (/^-+(?:no-)?__proto__$/u.test(flag)) return `unsupported option name \`${flag}\``
+    if (namesInheritedProperty(flag)) return `unsupported option name \`${flag}\``
   }
   return undefined
 }

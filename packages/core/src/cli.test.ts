@@ -1557,9 +1557,11 @@ describe('dotted option names', () => {
   })
 })
 
-describe('the option name __proto__', () => {
-  // goke assigns an option through a plain object, so `__proto__` goes to the inherited setter and never
-  // becomes an own option: the unknown-option check cannot see it, and the action would run with exit 0.
+describe('option names every object already has', () => {
+  // goke keeps options and aliases in plain objects. `__proto__` goes to the inherited setter and never
+  // becomes an own option, so the unknown-option check cannot see it and the action would run with
+  // exit 0; `constructor`, `hasOwnProperty` and the like make goke call a method of Object.prototype,
+  // and a TypeError escapes `runCli`.
   const rooted = (action: () => void, options: boolean): CliConfig => ({
     name: 'x',
     usageCode: 64,
@@ -1583,18 +1585,40 @@ describe('the option name __proto__', () => {
     [['---__proto__=attacker'], '---__proto__'],
     [['-no-__proto__'], '-no-__proto__'],
     [['--flag', '--__proto__'], '--__proto__'],
-  ])('rejects %j as a usage error naming %s, and runs nothing', async (argv, named) => {
-    for (const options of [false, true]) {
-      const action = vi.fn()
-      const result = await run(rooted(action, options), argv)
-      expect(result.exitCode).toBe(64)
-      expect(result.stdout).toBe('')
-      expect(result.stderr).toContain(`error: unsupported option name \`${named}\`\n`)
-      expect(result.stderr).toContain('Usage:')
-      expect(result.stderr).not.toContain('attacker')
-      expect(action).not.toHaveBeenCalled()
-    }
-  })
+    [['--constructor'], '--constructor'],
+    [['--constructor=x'], '--constructor'],
+    [['--constructor', 'x'], '--constructor'],
+    [['--hasOwnProperty'], '--hasOwnProperty'],
+    [['--isPrototypeOf'], '--isPrototypeOf'],
+    [['--__defineGetter__'], '--__defineGetter__'],
+    [['--__defineSetter__'], '--__defineSetter__'],
+    [['--__lookupGetter__'], '--__lookupGetter__'],
+    [['--__lookupSetter__'], '--__lookupSetter__'],
+    [['--propertyIsEnumerable'], '--propertyIsEnumerable'],
+    [['--toLocaleString'], '--toLocaleString'],
+    [['--toString'], '--toString'],
+    [['--toString=1'], '--toString'],
+    [['--valueOf'], '--valueOf'],
+    [['--no-constructor'], '--no-constructor'],
+    [['--no-toString=x'], '--no-toString'],
+    [['-constructor'], '-constructor'],
+    [['---valueOf'], '---valueOf'],
+    [['--flag', '--constructor'], '--constructor'],
+  ])(
+    'rejects %j as a usage error naming %s, resolving rather than rejecting, and runs nothing',
+    async (argv, named) => {
+      for (const options of [false, true]) {
+        const action = vi.fn()
+        const result = await run(rooted(action, options), argv)
+        expect(result.exitCode).toBe(64)
+        expect(result.stdout).toBe('')
+        expect(result.stderr).toContain(`error: unsupported option name \`${named}\`\n`)
+        expect(result.stderr).toContain('Usage:')
+        expect(result.stderr).not.toContain('attacker')
+        expect(action).not.toHaveBeenCalled()
+      }
+    },
+  )
 
   it('writes the usage error to the usage stream of the CLI', async () => {
     const result = await run({...usageShape([]), usageStream: 'stdout', usageCode: 3}, ['--__proto__=1'])
@@ -1627,8 +1651,11 @@ describe('the option name __proto__', () => {
     [['--__proto__x'], '--__proto__x'],
     [['--prototype'], '--prototype'],
     [['--prototype=x'], '--prototype'],
-    [['--toString'], '--toString'],
-    [['--valueOf'], '--valueOf'],
+    [['--Constructor'], '--Constructor'],
+    [['--to-string'], '--toString'],
+    [['--has-own-property'], '--hasOwnProperty'],
+    [['--constructors'], '--constructors'],
+    [['--no-a-constructor'], '--noA-constructor'],
   ])('leaves %j to goke, which rejects it as an unknown option', async (argv, named) => {
     const action = vi.fn()
     const result = await run(rooted(action, false), argv)
@@ -1665,6 +1692,58 @@ describe('the option name __proto__', () => {
     const result = await run(rooted(vi.fn(), false), ['--', '--__proto__'])
     expect(result.stderr).toContain('error: unexpected arguments after `--`\n')
     expect(result.stderr).not.toContain('unsupported')
+  })
+})
+
+describe('declared option names every object already has', () => {
+  const declare = (flag: string, name = 'option'): Command =>
+    defineCommand({readOnly: true, options: {[name]: {flag, schema: z.string().optional()}}, action: () => {}})
+
+  it.each([
+    ['--constructor <v>', '--constructor'],
+    ['--__proto__ <v>', '--__proto__'],
+    ['--toString', '--toString'],
+    ['-t, --valueOf <v>', '--valueOf'],
+    ['-c, --hasOwnProperty', '--hasOwnProperty'],
+    ['--no-constructor', '--no-constructor'],
+    ['-constructor', '-constructor'],
+  ])('rejects a command that declares %s', async (flag, named) => {
+    await expect(run({name: 'x', commands: [declare(flag)]}, [])).rejects.toThrow(
+      new TypeError(`x: option flag \`${named}\` names a property every object has, which the runner does not accept`),
+    )
+  })
+
+  it('names the command when a named command declares one', async () => {
+    const command = defineCommand({
+      name: 'plan',
+      readOnly: true,
+      options: {bad: {flag: '--constructor <v>', schema: z.string().optional()}},
+      action: () => {},
+    })
+    await expect(run({name: 'x', noArgv: 'usage', commands: [command]}, [])).rejects.toThrow(
+      new TypeError(
+        'x plan: option flag `--constructor` names a property every object has, which the runner does not accept',
+      ),
+    )
+  })
+
+  it.each([
+    ['--proto__ <v>'],
+    ['--constructors <v>'],
+    ['--my-constructor <v>'],
+    ['--prototype <v>'],
+    ['--to-string <v>'],
+    ['--Constructor <v>'],
+    ['-p, --port <constructor>'],
+    ['--file <toString>'],
+  ])('accepts a command that declares %s', async flag => {
+    await expect(run({name: 'x', commands: [declare(flag)]}, [])).resolves.toMatchObject({exitCode: 0})
+  })
+
+  it('reports a dotted declaration as dotted even when it names a property every object has', async () => {
+    await expect(run({name: 'x', commands: [declare('--constructor.x <v>')]}, [])).rejects.toThrow(
+      new TypeError('x: option flag `--constructor.x` has a dotted name, which the runner does not accept'),
+    )
   })
 })
 
