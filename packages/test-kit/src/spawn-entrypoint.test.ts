@@ -1,7 +1,9 @@
+import {spawnSync} from 'node:child_process'
 import {mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {fileURLToPath} from 'node:url'
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 
 import {spawnEntrypoint, type Runtime} from './spawn-entrypoint.ts'
@@ -97,5 +99,69 @@ describe('spawnEntrypoint', () => {
   it('rejects when the runtime cannot start', async () => {
     const entrypoint = await script('missing-path.ts', `process.exitCode = 0`)
     await expect(spawnEntrypoint({entrypoint, env: {PATH: '/nonexistent'}})).rejects.toThrow()
+  })
+})
+
+describe('GITHUB_OUTPUT', () => {
+  const writeOutput = String.raw`import {appendFileSync} from 'node:fs'
+const path = process.env.GITHUB_OUTPUT
+process.stdout.write(path === undefined ? 'unset' : 'set')
+if (path !== undefined) appendFileSync(path, 'key=value\n')
+`
+
+  it('is always the helper temp file: a caller GITHUB_OUTPUT does not override it', async () => {
+    const entrypoint = await script('override-output.ts', writeOutput)
+    const elsewhere = join(directory, 'elsewhere-output')
+    const result = await spawnEntrypoint({entrypoint, env: {GITHUB_OUTPUT: elsewhere}})
+    expect(result.stdout).toBe('set')
+    expect(result.githubOutput).toBe('key=value\n')
+    await expect(import('node:fs/promises').then(async fs => fs.readFile(elsewhere, 'utf8'))).rejects.toThrow()
+  })
+
+  it('is always set: an undefined GITHUB_OUTPUT in the caller env does not remove it', async () => {
+    const entrypoint = await script('undefined-output.ts', writeOutput)
+    const result = await spawnEntrypoint({entrypoint, env: {GITHUB_OUTPUT: undefined}})
+    expect(result.stdout).toBe('set')
+    expect(result.githubOutput).toBe('key=value\n')
+  })
+})
+
+describe('the runtime executable', () => {
+  const HELPER = fileURLToPath(new URL('./spawn-entrypoint.ts', import.meta.url))
+
+  it('is resolved on its own: a Bun parent running the node runtime gets Node, and a Node parent running bun gets Bun', async () => {
+    const reporter = await script(
+      'which-runtime.ts',
+      `process.stdout.write(typeof Bun === 'undefined' ? 'node' : 'bun')`,
+    )
+    const parent = await script(
+      'bun-parent.ts',
+      `import {spawnEntrypoint} from ${JSON.stringify(HELPER)}
+const asNode = await spawnEntrypoint({entrypoint: ${JSON.stringify(reporter)}, runtime: 'node'})
+const asBun = await spawnEntrypoint({entrypoint: ${JSON.stringify(reporter)}, runtime: 'bun'})
+process.stdout.write(JSON.stringify({parent: typeof Bun === 'undefined' ? 'node' : 'bun', asNode: asNode.stdout, asBun: asBun.stdout}))
+`,
+    )
+    const run = (executable: string) =>
+      spawnSync(executable, [parent], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: process.env.HOME}})
+
+    const fromBun = run('bun')
+    expect(fromBun.stderr).toBe('')
+    expect(JSON.parse(fromBun.stdout)).toEqual({parent: 'bun', asNode: 'node', asBun: 'bun'})
+  })
+
+  it('can be given explicitly, and that wins over PATH', async () => {
+    const entrypoint = await script(
+      'explicit-runtime.ts',
+      `process.stdout.write(typeof Bun === 'undefined' ? 'node' : 'bun')`,
+    )
+    const bunPath = spawnSync('which', ['bun'], {encoding: 'utf8'}).stdout.trim()
+    const result = await spawnEntrypoint({
+      entrypoint,
+      runtime: 'node',
+      executable: bunPath,
+      env: {PATH: '/nonexistent'},
+    })
+    expect(result.stdout).toBe('bun')
   })
 })

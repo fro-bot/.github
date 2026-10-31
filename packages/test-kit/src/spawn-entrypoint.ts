@@ -7,7 +7,11 @@
  * step reads and the exit code the job gets.
  *
  * The child starts with a minimal environment (`PATH`, `HOME`) plus the caller's, so nothing from the
- * developer's shell leaks into a result. `GITHUB_OUTPUT` always points at a fresh temp file.
+ * developer's shell leaks into a result. `GITHUB_OUTPUT` is applied last and always points at a fresh
+ * temp file, whatever the caller's `env` says.
+ *
+ * `bun` and `node` are found on `PATH`, never from the parent's `process.execPath`: a Bun parent would
+ * otherwise run the `node` runtime on Bun. `executable` names the program outright.
  */
 
 import {Buffer} from 'node:buffer'
@@ -28,6 +32,8 @@ export interface SpawnEntrypointOptions {
   readonly env?: Readonly<Record<string, string | undefined>>
   /** `bun` is what the workflows run for most scripts; `node` is what Test Scripts Load and a few steps use. Default `bun`. */
   readonly runtime?: Runtime
+  /** The program to run instead of `bun` or `node` found on `PATH`, for example an absolute path. */
+  readonly executable?: string
   readonly cwd?: string
   /** The child is killed and the call rejects after this long. Default 30 s. */
   readonly timeoutMs?: number
@@ -53,14 +59,15 @@ function baseEnvironment(): Record<string, string> {
 export async function spawnEntrypoint(options: SpawnEntrypointOptions): Promise<SpawnEntrypointResult> {
   const workDirectory = await mkdtemp(join(tmpdir(), 'spawn-entrypoint-'))
   const outputPath = join(workDirectory, 'github-output')
-  const environment: Record<string, string> = {...baseEnvironment(), GITHUB_OUTPUT: outputPath}
+  const environment: Record<string, string> = baseEnvironment()
   for (const [name, value] of Object.entries(options.env ?? {})) {
     if (value === undefined) delete environment[name]
     else environment[name] = value
   }
+  environment.GITHUB_OUTPUT = outputPath
 
   try {
-    const command = (options.runtime ?? 'bun') === 'bun' ? 'bun' : process.execPath
+    const command = options.executable ?? options.runtime ?? 'bun'
     const child = spawn(command, [options.entrypoint, ...(options.argv ?? [])], {
       cwd: options.cwd,
       env: environment,
