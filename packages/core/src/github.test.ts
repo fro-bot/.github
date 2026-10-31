@@ -1,4 +1,4 @@
-import type {OctokitConstructorOptions} from './github.ts'
+import type {OctokitConstructorOptions, OctokitLog} from './github.ts'
 
 import {describe, expect, it, vi} from 'vitest'
 import {createOctokit, loadOctokitConstructor, noopLog, OctokitLoadError} from './github.ts'
@@ -202,7 +202,7 @@ describe('noopLog', () => {
   })
 
   it('accepts and ignores a message argument', () => {
-    const log = noopLog()
+    const log: OctokitLog = noopLog()
     expect(log.debug('GET /repos/x/y - 404')).toBeUndefined()
     expect(log.error('boom', {extra: true})).toBeUndefined()
   })

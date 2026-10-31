@@ -15,17 +15,17 @@ import type {Octokit} from '@octokit/rest'
 
 /** The four log methods Octokit calls. Passing no-ops keeps request URLs out of stderr. */
 export interface OctokitLog {
-  readonly debug: (...args: unknown[]) => unknown
-  readonly info: (...args: unknown[]) => unknown
-  readonly warn: (...args: unknown[]) => unknown
-  readonly error: (...args: unknown[]) => unknown
+  readonly debug: (message: string, additionalInfo?: object) => unknown
+  readonly info: (message: string, additionalInfo?: object) => unknown
+  readonly warn: (message: string, additionalInfo?: object) => unknown
+  readonly error: (message: string, additionalInfo?: object) => unknown
 }
 
 /**
  * A logger whose four methods do nothing. A function and not a constant: Stryker covers a mutant in a
  * module-level constant with no test, so it would survive.
  */
-export function noopLog(): OctokitLog {
+export function noopLog() {
   return {
     debug: () => undefined,
     info: () => undefined,
