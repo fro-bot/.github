@@ -40,6 +40,6 @@ Remove this floor only when all parent ranges exclude the affected versions.
 
 ## `zod@4`
 
-GHSA-mrhx-c7xc-m3w5 (high) affects zod <4.6.6; 4.6.6 is the only patched release. `@fro-bot/core` depends on zod directly, at the exact version the floor allows (`4.6.7`), for the goke option schemas in `@fro-bot/core/cli`. Stryker brings a second requester: `@stryker-mutator/core` depends on `mutation-server-protocol`, which requires `zod ^4.1.12` (its lock entry asks for 4.5.4, and the floor lifts it). Every requester resolves to the one copy.
+GHSA-mrhx-c7xc-m3w5 (high) affects zod <4.6.6; 4.6.6 is the first patched release. `@fro-bot/core` depends on zod directly, pinned at `4.6.7`, which satisfies the `>=4.6.6` floor, for the goke option schemas in `@fro-bot/core/cli`. Stryker brings a second requester: `@stryker-mutator/core` depends on `mutation-server-protocol`, which requires `zod ^4.1.12` (its lock entry asks for 4.5.4, and the floor lifts it). Every requester resolves to the one copy.
 
 The key is `zod@4` so the floor can never apply to a zod 3 copy (no patched 3.x exists). Remove this floor when the Stryker/`mutation-server-protocol` release in use pins `zod >=4.6.6` and core's own pin is at or above it.

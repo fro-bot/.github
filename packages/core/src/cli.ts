@@ -17,7 +17,8 @@
  *   with the original error on a parse error and resolve with the code only recorded on an async
  *   action error. The action wrapper never calls `exit`: it writes the CLI's message and records the
  *   code itself.
- * - `NO_COLOR` is set for the load of goke, and every sink strips ANSI as a backstop.
+ * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
+ *   backstop: goke's output, the runner's own usage errors, and what an action writes.
  *
  * Output a command writes straight to `process.stdout` or `process.stderr` bypasses the sinks, so a
  * spawned test of the `scripts/<name>.ts` entrypoint is the parity authority for a CLI.
@@ -77,26 +78,49 @@ export interface CommandSpec<Specs extends OptionSpecs> {
   readonly action: (context: CommandContext<Specs>) => unknown
 }
 
-/** A command with its option types erased, ready to sit in a list. Build one with `defineCommand`. */
+/** What a command's action reads besides its options. */
+export type RunIo = Omit<CommandContext<OptionSpecs>, 'options'>
+
+/** The outcome of checking raw options against a command's schemas. */
+export type Prepared =
+  {readonly ok: true; readonly run: (io: RunIo) => unknown} | {readonly ok: false; readonly message: string}
+
+/**
+ * A command with its option types erased, ready to sit in a list. Build one with `defineCommand`.
+ * The only way to run its action is `prepare`, which validates the options first, so nothing that
+ * holds a `Command` can hand the action a value its schemas did not parse.
+ */
 export interface Command {
   /** The command name; the empty string for the root command. */
   readonly name: string
   readonly readOnly: boolean
   readonly positionals: readonly PositionalSpec[]
   readonly options: OptionSpecs
-  readonly run: (context: CommandContext<OptionSpecs>) => unknown
+  /** Parses `rawOptions` with the full schemas. On success, `run` calls the action with what they parsed. */
+  readonly prepare: (rawOptions: Readonly<Record<string, unknown>>) => Prepared
+}
+
+function describeIssues(error: z.ZodError): string {
+  return error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
 }
 
 export function defineCommand<const Specs extends OptionSpecs = Record<never, OptionSpec>>(
   spec: CommandSpec<Specs>,
 ): Command {
+  const options: OptionSpecs = spec.options ?? {}
+  const schema = z.object(Object.fromEntries(Object.entries(options).map(([key, option]) => [key, option.schema])))
   return {
     name: spec.name ?? '',
     readOnly: spec.readOnly,
     positionals: spec.positionals ?? [],
-    options: spec.options ?? {},
-    // The runner validated the options against these specs' schemas before it calls `run`.
-    run: context => spec.action(context as unknown as CommandContext<Specs>),
+    options,
+    prepare: rawOptions => {
+      const parsed = schema.safeParse(rawOptions)
+      if (!parsed.success) return {ok: false, message: describeIssues(parsed.error)}
+      // `parsed.data` is what each of `Specs`' schemas produced.
+      const parsedOptions = parsed.data as OptionValues<Specs>
+      return {ok: true, run: io => spec.action({...io, options: parsedOptions})}
+    },
   }
 }
 
@@ -153,16 +177,40 @@ async function importGokeModule(): Promise<typeof GokeModule> {
   return import('goke')
 }
 
-/** goke reads `NO_COLOR` when it loads, so it is set for the import and put back after. */
+/** How many imports are in flight, and the `NO_COLOR` the first of them found. */
+let importsInFlight = 0
+let foundNoColor: string | undefined
+
+/**
+ * goke reads `NO_COLOR` when it loads, so it is set for the import and put back after. Overlapping
+ * imports share one set and one restore: the first to start saves the value, the last to finish puts
+ * it back, so no run restores another run's temporary value.
+ */
 async function importWithoutColor(importGoke: () => Promise<typeof GokeModule>): Promise<typeof GokeModule> {
-  const previous = process.env.NO_COLOR
-  process.env.NO_COLOR = '1'
+  if (importsInFlight === 0) {
+    foundNoColor = process.env.NO_COLOR
+    process.env.NO_COLOR = '1'
+  }
+  importsInFlight += 1
   try {
     return await importGoke()
   } finally {
-    if (previous === undefined) delete process.env.NO_COLOR
-    else process.env.NO_COLOR = previous
+    importsInFlight -= 1
+    if (importsInFlight === 0) {
+      if (foundNoColor === undefined) delete process.env.NO_COLOR
+      else process.env.NO_COLOR = foundNoColor
+    }
   }
+}
+
+/** The one default import every run without a seam shares. */
+let defaultGoke: Promise<typeof GokeModule> | undefined
+
+/** A seam bypasses the shared import: it is a stand-in, and each run that passes one loads its own. */
+async function loadGoke(importGoke: (() => Promise<typeof GokeModule>) | undefined): Promise<typeof GokeModule> {
+  if (importGoke !== undefined) return importWithoutColor(importGoke)
+  defaultGoke ??= importWithoutColor(importGokeModule)
+  return defaultGoke
 }
 
 function positionalToken(positional: PositionalSpec): string {
@@ -200,7 +248,7 @@ interface Session {
 interface RunVerdict {
   readonly command: Command
   readonly args: readonly string[]
-  readonly options: Readonly<Record<string, unknown>>
+  readonly run: (io: RunIo) => unknown
 }
 
 /** A run, or the exit code of a usage error or help. */
@@ -209,10 +257,6 @@ type Verdict = RunVerdict | number
 interface ExitCodes {
   readonly usage: number
   readonly help: number
-}
-
-function describeIssues(error: z.ZodError): string {
-  return error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
 }
 
 /** Matches argv to a command and checks everything goke would check before an action, except the action. */
@@ -224,7 +268,7 @@ async function resolveVerdict(
 ): Promise<Verdict> {
   const {cli, output, GokeError} = session
   const usage = (message: string): number => {
-    output.errors += `error: ${message}\n`
+    output.errors += stripAnsi(`error: ${message}\n`)
     return codes.usage
   }
   // No argv on a CLI whose no-argv mode is usage prints what `--help` prints.
@@ -255,16 +299,15 @@ async function resolveVerdict(
   if (!hasVariadic && args.length > command.positionals.length) {
     return usage(`unexpected argument \`${args[command.positionals.length]}\``)
   }
+  // A `--` terminator is never declared, so bare or followed by values it matches nothing.
   const afterDashes: unknown = cli.options['--']
   if (Array.isArray(afterDashes) && afterDashes.length > 0) return usage('unexpected arguments after `--`')
+  if (argv.includes('--')) return usage('unexpected `--`')
 
-  const schema = z.object(
-    Object.fromEntries(Object.entries(command.options).map(([key, option]) => [key, option.schema])),
-  )
-  const parsed = schema.safeParse(cli.options)
-  if (!parsed.success) return usage(describeIssues(parsed.error))
+  const prepared = command.prepare(cli.options)
+  if (!prepared.ok) return usage(prepared.message)
 
-  return {command, args, options: parsed.data}
+  return {command, args, run: prepared.run}
 }
 
 function positionalValues(
@@ -285,7 +328,7 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
   const usageStream = config.usageStream ?? 'stderr'
   const errorFormat = config.errorFormat ?? defaultErrorFormat
 
-  const {Goke, GokeError} = await importWithoutColor(input.importGoke ?? importGokeModule)
+  const {Goke, GokeError} = await loadGoke(input.importGoke)
   const output = {errors: '', help: ''}
   const cli = new Goke(config.name, {
     stdout: {
@@ -324,15 +367,14 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
     const stderr: string[] = []
     let exitCode = 0
     try {
-      const result = await verdict.command.run({
+      const result = await verdict.run({
         positionals: positionalValues(verdict.command, verdict.args),
-        options: verdict.options,
         env: input.env ?? process.env,
         stdout: text => {
-          stdout.push(text)
+          stdout.push(stripAnsi(text))
         },
         stderr: text => {
-          stderr.push(text)
+          stderr.push(stripAnsi(text))
         },
       })
       if (typeof result === 'number') exitCode = result

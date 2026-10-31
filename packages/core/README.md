@@ -2,7 +2,7 @@
 
 Shared primitives for the Fro Bot control plane: type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, a retry loop, the Octokit client factory, the goke CLI runner and the required-env reader. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written. It depends on `@octokit/rest` (only `github` imports it), `goke` and `zod` (only `cli` imports them). `goke` is pinned to an exact version and `zod` follows the root `zod@4` floor, which resolves to one copy.
 
-Where callers need different behavior, the primitive takes the difference as an explicit option or a separate export, so a caller states the behavior it means. `retry` is used by nine `scripts/` modules and `github` by every `scripts/` module that builds an Octokit client (both listed below). `@fro.bot/wiki-write-core` builds its own clients and does not import core. The other primitives, `cli` and `env` included, have no caller yet; each domain package migrates its own copies when it moves.
+Where callers need different behavior, the primitive takes the difference as an explicit option or a separate export, so a caller states the behavior it means. `retry` is used by nine `scripts/` modules and `github` by every `scripts/` module that builds an Octokit client (both listed below). `@fro.bot/wiki-write-core` builds its own clients and does not import core. `guards`, `output`, `json`, `cli` and `env` have no `scripts/` caller.
 
 ## Modules
 
@@ -27,20 +27,21 @@ Where callers need different behavior, the primitive takes the difference as an 
 
 `defineCommand({name?, readOnly, positionals?, options?, action})` declares a command; `runCli({name, commands, ...}, {argv, env?})` runs one CLI and returns `{exitCode, stdout, stderr}`. `runCliMain` is the entry for a `scripts/<name>.ts` shim: it runs against `process.argv`, writes the result and sets `process.exitCode`, never calling `process.exit`. Only `*-cli.ts` modules import `@fro-bot/core/cli`; `scripts/package-layout.test.ts` fails any other non-test module. `z` is re-exported so a CLI module imports only this subpath.
 
-- **Each command declares `readOnly`.** `false` if it can mutate GitHub, `data`, an external service, or a tracked path in the checkout; writes to a caller-supplied artifact path, `$GITHUB_OUTPUT` or stdout do not count. `dispatch-renovate` declares it per command (`plan` is read-only, the dispatch root is not). No CLI is on the runner yet, so no command is classified here.
+- **Each command declares `readOnly`.** `false` if it can mutate GitHub, `data`, an external service, or a tracked path in the checkout; writes to a caller-supplied artifact path, `$GITHUB_OUTPUT` or stdout do not count. A CLI that splits its commands declares it per command: a read-only `plan` next to a dispatching root.
 - **Declared argument shapes.** A command with no name is the root: it runs for no argv and for argv that names no command. Positionals are `required`, `optional` or `variadic`; options are a goke flag plus a zod schema. Argv that matches nothing declared is a usage error and runs no action.
-- **No-argv category.** `noArgv: 'run'` (default) runs the root. `noArgv: 'usage'` prints usage and returns the usage code, as `enumerate-existing-leaks` does today.
+- **No-argv category.** `noArgv: 'run'` (default) runs the root. `noArgv: 'usage'` prints usage and returns the usage code without running anything.
 - **Usage and help.** `usageCode` (default 1), `usageStream` (default `stderr`) and `helpCode` (default: the usage code) are per CLI. `.help()` is always registered, because without it goke exits 0 silently on an unknown command or a stray positional. `--help` on a CLI that documents none is unmatched argv: usage code, stdout empty, no action. A CLI that documents help sets `helpCode: 0` and `usageStream: 'stdout'`.
-- **The runner checks what goke does not.** It counts the positionals itself (goke drops extras on a root that declares positionals and accepts any on a root that declares none), rejects arguments after `--`, runs goke's unknown-option and required-argument checks (it parses with `run: false`), and validates the parsed options against the full zod schemas, because goke enforces only type, int and enum, not refinements such as `.min(1)`. The action receives what zod parsed. `options['--']` never reaches it.
-- **Exit codes are recorded, not decided by goke.** The injected `exit` throws a sentinel the runner catches around `parse()`. A no-op `exit` would let `parse()` reject with the original error on a parse error and resolve with the code only recorded on an async action error, so a caller-supplied `exit` is not accepted. The action wrapper writes the CLI's message and records the code itself. It never calls `exit`, so no `error: exit:1` line and no stack reach a workflow. An action returns a number for a non-zero code; a throw uses `errorExitCode` (default 1; `gateway-announce` will set 0) and `errorFormat` (default: the message and a newline).
-- **No colour.** goke reads `NO_COLOR` when it loads, so the runner sets it around a dynamic import of goke and puts it back; every sink also strips SGR sequences, as a backstop for a goke loaded earlier. `CI=true` alone turns ANSI on even when piped.
+- **The runner checks what goke does not.** It counts the positionals itself (goke drops extras on a root that declares positionals and accepts any on a root that declares none), rejects `--` (bare or followed by arguments, since a terminator is never declared), runs goke's unknown-option and required-argument checks (it parses with `run: false`), and validates the parsed options against the full zod schemas, because goke enforces only type, int and enum, not refinements such as `.min(1)`. The action receives what zod parsed. `options['--']` never reaches it.
+- **Exit codes are recorded, not decided by goke.** The injected `exit` throws a sentinel the runner catches around `parse()`. A no-op `exit` would let `parse()` reject with the original error on a parse error and resolve with the code only recorded on an async action error, so a caller-supplied `exit` is not accepted. The action wrapper writes the CLI's message and records the code itself. It never calls `exit`, so no `error: exit:1` line and no stack reach a workflow. An action returns a number for a non-zero code; a throw uses `errorExitCode` (default 1; 0 for a CLI that must never fail its job) and `errorFormat` (default: the message and a newline).
+- **No colour.** goke reads `NO_COLOR` when it loads, so the runner sets it around a dynamic import of goke and puts it back; goke is imported once and every run shares that import, so overlapping runs cannot leave `NO_COLOR` changed; every sink also strips SGR sequences, as a backstop for a goke loaded earlier. That covers goke's own output, the runner's usage errors and what an action writes through its `stdout` and `stderr`. `CI=true` alone turns ANSI on even when piped.
 - **Direct writes bypass the sinks.** Output a command writes straight to `process.stdout` or `process.stderr` is not in the result. A spawned test of the `scripts/<name>.ts` entrypoint through `@fro-bot/test-kit/spawn-entrypoint` is the parity authority; `src/cli.spawn.test.ts` does this for the runner on a fixture CLI under Bun and Node, including a 300 KB stdout payload that survives a natural exit and is truncated by a `process.exit(0)` control.
 - **Mutation coverage.** The spawned tests do not run under Stryker. `cli.test.ts` kills the runner's mutants in process.
-- **Seams.** `importGoke` replaces the goke import, so a test can drive a stand-in.
+- **Seams.** `importGoke` replaces the shared goke import for that run, so a test can drive a stand-in. It still runs with `NO_COLOR` set, and overlapping seam imports share one set and one restore.
+- **Running an action.** A `Command` has no `run`. `prepare(rawOptions)` parses the options with the full schemas and returns `{ok: true, run}` or `{ok: false, message}`; `run` calls the action with what zod parsed. No exported member accepts options the schemas have not checked.
 
 ### `env`
 
-`requiredEnv(env, name, {missing})` returns the value, or throws for an unset or empty one. The error is `<NAME> is required` unless `missing(name)` builds the caller's own. No caller uses it yet; each domain unit migrates its copies (`wiki-handoff-*`, `reset-survey-status`, `record-survey-result`, `wiki-change-detect`, `drafted-solutions-*`, `update-metadata`).
+`requiredEnv(env, name, {missing})` returns the value, or throws for an unset or empty one. The error is `<NAME> is required` unless `missing(name)` builds the caller's own.
 
 ### `retry`
 
@@ -111,7 +112,7 @@ C4Component
   UpdateRelStyle(json, stdout, $offsetX="20", $offsetY="10")
 ```
 
-No CLI runs on the runner yet; `src/cli.spawn.test.ts` runs a fixture CLI (`fixtures/cli-fixture.ts`) through it.
+`src/cli.spawn.test.ts` runs a fixture CLI (`fixtures/cli-fixture.ts`) through the runner.
 
 ## Adding a module
 

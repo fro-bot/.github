@@ -1,7 +1,7 @@
 import process from 'node:process'
-import {afterEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, expectTypeOf, it, vi} from 'vitest'
 
-import {defineCommand, runCli, runCliMain, z, type CliConfig, type CliResult} from './cli.ts'
+import {defineCommand, runCli, runCliMain, z, type CliConfig, type CliResult, type Command} from './cli.ts'
 
 const ESC = String.fromCodePoint(27)
 
@@ -388,8 +388,8 @@ describe('argv that does not fit the declaration', () => {
     expect(trailing.exitCode).toBe(1)
     expect(trailing.stderr).toContain('error: unexpected arguments after `--`')
 
-    const bare = await run(config, ['--flag', '--'])
-    expect(bare.exitCode).toBe(0)
+    const plain = await run(config, ['--flag'])
+    expect(plain.exitCode).toBe(0)
     expect(seen).toHaveLength(1)
     expect(Object.keys(seen[0] as object)).toEqual(['flag'])
     expect(JSON.stringify(seen[0])).not.toContain('--')
@@ -1081,5 +1081,304 @@ describe('runCliMain', () => {
     expect(stdoutWrite).toHaveBeenCalledWith('out\n')
     expect(stderrWrite).toHaveBeenCalledWith('err\n')
     expect(process.exitCode).toBe(6)
+  })
+})
+
+describe('a bare `--`', () => {
+  it('is non-empty argv that matches nothing: the usage error, and the root action does not run', async () => {
+    const action = vi.fn()
+    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: false, action})]}
+    const result = await run(config, ['--'])
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('error: unexpected `--`\n')
+    expect(result.stderr).toContain('Usage:')
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch on a dispatch-shaped CLI', async () => {
+    const ran: string[] = []
+    const result = await run(dispatchShape(ran), ['--'])
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(ran).toEqual([])
+  })
+
+  it('uses the usage code and usage stream of a CLI whose no-argv mode is usage', async () => {
+    const ran: unknown[] = []
+    const config: CliConfig = {...usageShape(ran), usageCode: 64}
+    const result = await run(config, ['--'])
+    expect(result.exitCode).toBe(64)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stderr).toBe('error: unexpected `--`\n')
+    expect(ran).toEqual([])
+  })
+
+  it('is rejected after a flag as well', async () => {
+    const action = vi.fn()
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {flag: {flag: '--flag', schema: z.boolean().optional()}},
+          action,
+        }),
+      ],
+    }
+    const result = await run(config, ['--flag', '--'])
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('error: unexpected `--`\n')
+    expect(action).not.toHaveBeenCalled()
+  })
+
+  it('keeps the message for values after it', async () => {
+    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
+    const result = await run(config, ['--', 'extra'])
+    expect(result.stderr).toContain('error: unexpected arguments after `--`\n')
+  })
+})
+
+describe('ANSI in the output the runner writes', () => {
+  const sgr = `${ESC}[31mred${ESC}[0m`
+
+  it.each([
+    ['an unknown option', [`--bogus${sgr}`], 'Unknown option'],
+    ['an unexpected positional', ['one', `two${sgr}`], 'unexpected argument'],
+  ])('strips it from the usage error for %s', async (_label, argv, message) => {
+    const config: CliConfig = {
+      name: 'x',
+      commands: [defineCommand({readOnly: true, positionals: [{name: 'a', kind: 'optional'}], action: () => {}})],
+    }
+    const result = await run(config, argv)
+    expect(result.stderr).toContain(message)
+    expect(result.stderr).toContain('red')
+    expect(result.stderr).not.toContain(ESC)
+  })
+
+  it('strips it from the unrecognized-arguments error', async () => {
+    const config: CliConfig = {
+      name: 'x',
+      noArgv: 'usage',
+      commands: [defineCommand({name: 'plan', readOnly: true, action: () => {}})],
+    }
+    const result = await run(config, [`--bogus${sgr}`])
+    expect(result.stderr).toContain('error: unrecognized arguments: --bogusred\n')
+    expect(result.stderr).not.toContain(ESC)
+  })
+
+  it('strips it from a zod message', async () => {
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {mode: {flag: '--mode <mode>', schema: z.string().refine(() => false, `bad ${sgr}`)}},
+          action: () => {},
+        }),
+      ],
+    }
+    const result = await run(config, ['--mode', 'a'])
+    expect(result.stderr).toContain('mode: bad red')
+    expect(result.stderr).not.toContain(ESC)
+  })
+
+  it('strips it from what an action writes to stdout and stderr', async () => {
+    const config: CliConfig = {
+      name: 'x',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          action: context => {
+            context.stdout(`${sgr} out\n`)
+            context.stderr(`${ESC}[1;4mbold${ESC}[22;24m err\n`)
+          },
+        }),
+      ],
+    }
+    expect(await run(config, [])).toEqual({exitCode: 0, stdout: 'red out\n', stderr: 'bold err\n'})
+  })
+})
+
+/** An import that waits at a gate, so overlapping runs are both inside it at once. */
+function gatedImport(seen: (string | undefined)[], gate: Promise<void>) {
+  return async () => {
+    seen.push(process.env.NO_COLOR)
+    await gate
+    return import('goke')
+  }
+}
+
+describe('NO_COLOR around the goke import', () => {
+  const EMPTY: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
+
+  it.each([
+    ['absent', undefined],
+    ['set to a value', 'kept'],
+    ['set to an empty string', ''],
+  ])('leaves NO_COLOR as it found it (%s) after overlapping runs with their own import', async (_label, initial) => {
+    if (initial === undefined) vi.stubEnv('NO_COLOR', 'placeholder')
+    else vi.stubEnv('NO_COLOR', initial)
+    if (initial === undefined) delete process.env.NO_COLOR
+    const seen: (string | undefined)[] = []
+    let open: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      open = resolve
+    })
+    const importGoke = gatedImport(seen, gate)
+
+    const pending = Promise.all([
+      runCli(EMPTY, {argv: [], importGoke}),
+      runCli(EMPTY, {argv: [], importGoke}),
+      runCli(EMPTY, {argv: [], importGoke}),
+    ])
+    await Promise.resolve()
+    open()
+    await pending
+
+    expect(seen).toEqual(['1', '1', '1'])
+    if (initial === undefined) expect('NO_COLOR' in process.env).toBe(false)
+    else expect(process.env.NO_COLOR).toBe(initial)
+    vi.unstubAllEnvs()
+  })
+
+  it('keeps NO_COLOR set for a slow import after a faster overlapping one has finished', async () => {
+    vi.stubEnv('NO_COLOR', 'kept')
+    const seenBySlow: (string | undefined)[] = []
+    let open: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      open = resolve
+    })
+    const fast = runCli(EMPTY, {argv: [], importGoke: async () => import('goke')})
+    const slow = runCli(EMPTY, {
+      argv: [],
+      importGoke: async () => {
+        await gate
+        seenBySlow.push(process.env.NO_COLOR)
+        return import('goke')
+      },
+    })
+    await fast
+    expect(process.env.NO_COLOR).toBe('1')
+    open()
+    await slow
+
+    expect(seenBySlow).toEqual(['1'])
+    expect(process.env.NO_COLOR).toBe('kept')
+    vi.unstubAllEnvs()
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['set to a value', 'kept'],
+  ])('leaves NO_COLOR as it found it (%s) after overlapping runs on the default import', async (_label, initial) => {
+    vi.stubEnv('NO_COLOR', initial ?? 'placeholder')
+    if (initial === undefined) delete process.env.NO_COLOR
+    vi.resetModules()
+    const fresh = await import('./cli.ts')
+
+    await Promise.all([fresh.runCli(EMPTY, {argv: []}), fresh.runCli(EMPTY, {argv: []})])
+
+    if (initial === undefined) expect('NO_COLOR' in process.env).toBe(false)
+    else expect(process.env.NO_COLOR).toBe(initial)
+    vi.unstubAllEnvs()
+  })
+
+  it('sets and restores NO_COLOR once for the default import, however many runs follow', async () => {
+    vi.stubEnv('NO_COLOR', 'kept')
+    const writes: string[] = []
+    const realEnvironment = process.env
+    process.env = new Proxy(realEnvironment, {
+      set(target, key, value: string) {
+        if (key === 'NO_COLOR') writes.push(`set ${value}`)
+        return Reflect.set(target, key, value)
+      },
+      deleteProperty(target, key) {
+        if (key === 'NO_COLOR') writes.push('delete')
+        return Reflect.deleteProperty(target, key)
+      },
+    })
+    try {
+      vi.resetModules()
+      const fresh = await import('./cli.ts')
+      await fresh.runCli(EMPTY, {argv: []})
+      expect(writes).toEqual(['set 1', 'set kept'])
+      await fresh.runCli(EMPTY, {argv: []})
+      await Promise.all([fresh.runCli(EMPTY, {argv: []}), fresh.runCli(EMPTY, {argv: []})])
+      expect(writes).toEqual(['set 1', 'set kept'])
+    } finally {
+      process.env = realEnvironment
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('does not use the cached import for a seam: each seam run goes through its own import', async () => {
+    const calls: number[] = []
+    const importGoke = async () => {
+      calls.push(calls.length)
+      return import('goke')
+    }
+    await runCli(EMPTY, {argv: [], importGoke})
+    await runCli(EMPTY, {argv: [], importGoke})
+    expect(calls).toEqual([0, 1])
+  })
+})
+
+describe('a command exposes no unchecked way to run its action', () => {
+  it('has no run member on its type', () => {
+    expectTypeOf<Command>().not.toHaveProperty('run')
+  })
+
+  it('gives the action the types its schemas parse to', () => {
+    defineCommand({
+      readOnly: true,
+      options: {
+        limit: {flag: '--limit <n>', schema: z.number().optional()},
+        name: {flag: '--name <name>', schema: z.string().default('x')},
+      },
+      action: context => {
+        expectTypeOf(context.options.limit).toEqualTypeOf<number | undefined>()
+        expectTypeOf(context.options.name).toEqualTypeOf<string>()
+      },
+    })
+  })
+
+  const limited = (seen: unknown[]) =>
+    defineCommand({
+      readOnly: true,
+      options: {limit: {flag: '--limit <n>', schema: z.number().int().min(1)}},
+      action: context => {
+        seen.push(context.options.limit)
+      },
+    })
+  const io = {
+    positionals: {},
+    env: {},
+    stdout: () => {},
+    stderr: () => {},
+  }
+
+  it('prepare refuses options a schema rejects, with the issue text, and runs nothing', () => {
+    const seen: unknown[] = []
+    const prepared = limited(seen).prepare({limit: '5'})
+    expect(prepared).toEqual({ok: false, message: 'limit: Invalid input: expected number, received string'})
+    const refined = limited(seen).prepare({limit: 0})
+    expect(refined).toEqual({ok: false, message: 'limit: Too small: expected number to be >=1'})
+    expect(seen).toEqual([])
+  })
+
+  it('prepare hands the action what the schemas parsed, and only when run', () => {
+    const seen: unknown[] = []
+    const prepared = limited(seen).prepare({limit: 5})
+    expect(prepared.ok).toBe(true)
+    expect(seen).toEqual([])
+    if (prepared.ok) prepared.run(io)
+    expect(seen).toEqual([5])
+  })
+
+  it('prepare returns the action result', () => {
+    const command = defineCommand({readOnly: true, action: () => 7})
+    const prepared = command.prepare({})
+    expect(prepared.ok && prepared.run(io)).toBe(7)
   })
 })
