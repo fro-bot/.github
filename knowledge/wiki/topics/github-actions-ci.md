@@ -4,6 +4,12 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-10-31
 sources:
+  - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/docs/package.json
+    sha: c4513522011cf0cc0adaef695381b4761157ce43
+    accessed: 2026-10-31
+  - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/.github/workflows/main.yaml
+    sha: c4513522011cf0cc0adaef695381b4761157ce43
+    accessed: 2026-10-31
   - url: https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/action.yaml
     sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
     accessed: 2026-10-31
@@ -384,6 +390,27 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Parallel checks need individual exit-status aggregation (2026-10-31)
+
+At `c4513522`, [[bfra-me--works]]'s private docs manifest declares
+`pnpm run type-check & pnpm run lint & pnpm run test & wait && pnpm run build`.
+The checks launch asynchronously; bare `wait` waits for them but returns zero
+rather than aggregating their failures. A successful final build can therefore
+mask a failed background check. Parallel execution requires retaining each PID
+and checking each wait status, or a runner with explicit failure aggregation.
+
+Keep this scoped to the actual entrypoint: root `validate` instead uses `&&`
+throughout, and Main invokes explicit root lint/type/test/build jobs rather
+than docs `validate`. The manifest establishes a latent local-command failure
+mode, not an observed CI escape. It complements the October 18 semantic-release
+fallback finding below: both hide failures, but one discards background statuses
+and the other explicitly replaces a non-zero result with success. Those older
+fallback and advisory-analysis declarations were rechecked and remain present.
+
+Sources: the pinned docs manifest and Main workflow above, plus the
+[root manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/package.json)
+and [semantic-release manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/packages/semantic-release/package.json).
 
 ## Queue writers at job scope; isolate dry runs (2026-10-28)
 

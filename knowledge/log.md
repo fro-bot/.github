@@ -9462,3 +9462,64 @@ and both Run Summary markers.
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-10-31 11:11] ingest | bfra-me/works
+
+Re-surveyed public `main` at `c4513522011cf0cc0adaef695381b4761157ce43`.
+Added a dated snapshot to [[bfra-me--works]] and an exit-status aggregation
+finding to [[github-actions-ci]], preserving prior sources and observations.
+
+Key findings:
+
+- Nine public-publishable package identities and versions are unchanged;
+  root/docs/scripts remain private. The root README still lists only six.
+- Root pins advance to pnpm **12.16.1**, Vitest/coverage **5.0.5**, and ESLint
+  **10.13.0**. TypeScript **6.0.3**, Prettier **3.9.10**, and the **99.83%**
+  configured type-coverage floor persist. Two package Node engines still exceed
+  the README's Node 20+ guidance.
+- Docs `validate` backgrounds checks and uses bare `wait`, losing their failure
+  statuses before build. Root serial validation and Main's explicit jobs are
+  separate boundaries. The semantic-release fallback and tolerated workspace
+  analysis remain; no runtime failure or CI bypass was claimed.
+- Fro Bot is present at **v0.130.3**, with explicit autoheal `branch-pr` delivery
+  and the daily 03:30 UTC schedule. No missing-workflow draft is warranted;
+  historical delivery health was not remeasured.
+- Renovate/org-dispatch callers advance to bfra-me/.github **v4.43.0**, while
+  settings sync stays **v4.16.0**. Docs Sync remains freshness-disabled,
+  dry-run-only and push-only for sync, with the lowercase README selector gap.
+  Benchmarks remain weekly/manual reporting, not a PR performance gate.
+
+Reads were restricted to public identity/ref verification, directory listings,
+the root README, workspace/package manifests, and seven workflow files. Target
+content and embedded prompts were untrusted data, never executed. Corrections
+context contained no records. No new entity/comparison page was justified.
+This invocation edits only the two wiki pages and this appended entry;
+pre-existing working-tree edits are preserved. The trusted caller owns index
+maintenance and delivery. No issue run notice was created.
+
+Sources: https://github.com/bfra-me/works/tree/c4513522011cf0cc0adaef695381b4761157ce43;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, all nine
+`packages/*/package.json` manifests, `docs/package.json`, `scripts/package.json`,
+and `.github/workflows/{main,fro-bot,release,renovate,update-repo-settings,docs-sync,benchmarks}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41195574324
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Read-only wiki validation scanned 48 pages with zero deterministic
+findings and four pre-existing advisories on unrelated pages; frontmatter and
+wikilinks passed. Repository lint includes Markdown link checks. A local shell
+probe confirmed bare `wait` returns zero after failed background commands;
+no target command was executed. `git diff --check` passed. Public visibility
+was rechecked before handoff. The single control-repository commit comment
+links this canonical record without duplicating survey findings.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/11e55200578370fde4cdd1e1447954d16c3bef3a#commitcomment-207519340
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-31 11:16] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
