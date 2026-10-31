@@ -14,6 +14,8 @@ const packagesRoot = join(repositoryRoot, 'packages')
 const PUBLISHED_PACKAGE_DIRS: ReadonlySet<string> = new Set(['wiki-write-core'])
 const PRIVATE_SCOPE = '@fro-bot/'
 const TEST_KIT_NAME = '@fro-bot/test-kit'
+/** The goke runner. Library modules never import it; a `*-cli.ts` module does. */
+const CLI_RUNNER_SPECIFIER = '@fro-bot/core/cli'
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
 
 interface SourceFileFacts {
@@ -203,6 +205,9 @@ export function findPackageLayoutViolations(input: LayoutInput): string[] {
         if (dependency === TEST_KIT_NAME && !file.isTest) {
           violations.push(`${file.path}: a non-test module must not import ${TEST_KIT_NAME}`)
           continue
+        }
+        if (specifier === CLI_RUNNER_SPECIFIER && !file.isTest && !file.path.endsWith('-cli.ts')) {
+          violations.push(`${file.path}: only *-cli.ts modules may import ${CLI_RUNNER_SPECIFIER}`)
         }
         if (isWorkspace) {
           const declaredHere = file.isTest ? dependency in allDeclared : dependency in dependencies
@@ -557,6 +562,54 @@ describe('findPackageLayoutViolations', () => {
         layout([kit, core([test], {dependencies})], kitLock({dependencies})),
       )
       expect(violations).toEqual(expect.arrayContaining([expect.stringContaining('belongs in devDependencies')]))
+    })
+  })
+
+  describe('the core CLI runner', () => {
+    const dependencies = {'@fro-bot/core': 'workspace:*'}
+    const registry = (files: SourceFileFacts[]): PackageFacts =>
+      fixturePackage('registry', {
+        manifest: {exports: {'./run': './src/run.ts'}, dependencies},
+        files,
+        extraPaths: ['packages/registry/src/run.ts'],
+      })
+    const lock = lockFor(
+      ['packages/core', CLEAN_LOCK_ENTRY],
+      ['packages/registry', {name: '@fro-bot/registry', version: '0.0.0', dependencies}],
+    )
+    const importCli = `import {runCliMain} from '@fro-bot/core/cli'`
+
+    it('accepts a *-cli.ts module that imports @fro-bot/core/cli', () => {
+      const file = sourceFile('packages/registry/src/rename-cli.ts', importCli)
+      expect(findPackageLayoutViolations(layout([fixturePackage('core'), registry([file])], lock))).toEqual([])
+    })
+
+    it('accepts a test that imports @fro-bot/core/cli', () => {
+      const file = sourceFile('packages/registry/src/run.test.ts', importCli)
+      expect(findPackageLayoutViolations(layout([fixturePackage('core'), registry([file])], lock))).toEqual([])
+    })
+
+    it.each([
+      ['a library module', 'packages/registry/src/run.ts'],
+      ['a module whose name only contains cli', 'packages/registry/src/cli.ts'],
+      ['a module named for a client', 'packages/registry/src/rename-client.ts'],
+    ])('rejects %s that imports @fro-bot/core/cli', (_label, path) => {
+      const file = sourceFile(path, importCli)
+      expect(findPackageLayoutViolations(layout([fixturePackage('core'), registry([file])], lock))).toEqual([
+        `${path}: only *-cli.ts modules may import @fro-bot/core/cli`,
+      ])
+    })
+
+    it('rejects a backtick dynamic import of the runner from a library module', () => {
+      const file = sourceFile('packages/registry/src/run.ts', 'const cli = await import(`@fro-bot/core/cli`)')
+      expect(findPackageLayoutViolations(layout([fixturePackage('core'), registry([file])], lock))).toEqual([
+        'packages/registry/src/run.ts: only *-cli.ts modules may import @fro-bot/core/cli',
+      ])
+    })
+
+    it('leaves other core subpaths open to library modules', () => {
+      const file = sourceFile('packages/registry/src/run.ts', `import {isRecord} from '@fro-bot/core/guards'`)
+      expect(findPackageLayoutViolations(layout([fixturePackage('core'), registry([file])], lock))).toEqual([])
     })
   })
 
