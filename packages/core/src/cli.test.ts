@@ -1401,135 +1401,159 @@ describe('a command exposes no unchecked way to run its action', () => {
   })
 })
 
-describe('option names that could reach a prototype', () => {
-  const POLLUTION_KEY = 'reviewProbe'
-
-  afterEach(() => {
-    delete (Object.prototype as Record<string, unknown>)[POLLUTION_KEY]
+describe('dotted option names', () => {
+  // goke writes a dotted option name into nested objects. These names are harmless to goke, so a
+  // regression cannot poison this process; the hostile names run in their own process in
+  // `cli.pollution.test.ts`.
+  const config = (action: () => void, usageCode = 64): CliConfig => ({
+    name: 'x',
+    usageCode,
+    commands: [
+      defineCommand({
+        readOnly: false,
+        options: {flag: {flag: '--flag', schema: z.boolean().optional()}},
+        action,
+      }),
+    ],
   })
 
-  function polluted(): unknown {
-    return ({} as Record<string, unknown>)[POLLUTION_KEY]
-  }
-
   it.each([
-    [['--__proto__.reviewProbe', 'attacker']],
-    [['--__proto__.reviewProbe=attacker']],
-    [['--constructor.prototype.reviewProbe', 'attacker']],
-    [['--constructor.prototype.reviewProbe=attacker']],
-    [['--prototype.reviewProbe=attacker']],
-    [['--constructor.reviewProbe=attacker']],
-    [['--a.constructor', 'attacker']],
-    [['--a.__proto__.reviewProbe', 'attacker']],
-    [['--a.b.constructor.prototype.reviewProbe=attacker']],
-    [['--a.prototype=attacker']],
-    [['--a.__proto__']],
-    [['--__proto__']],
-    [['--flag', '--a.__proto__.reviewProbe=attacker']],
-    [['-__proto__.reviewProbe=attacker']],
-    [['---__proto__.reviewProbe=attacker']],
-    [['----constructor.prototype.reviewProbe', 'attacker']],
-    [['--no-__proto__.reviewProbe']],
-    [['--no-a.constructor.prototype.reviewProbe']],
-    [['--no-prototype']],
-  ])('rejects %j as a usage error before goke parses it, and leaves Object.prototype alone', async argv => {
+    [['--a.b=1'], '--a.b'],
+    [['--a.b', '1'], '--a.b'],
+    [['--a.b.c=1'], '--a.b.c'],
+    [['--no-a.b'], '--no-a.b'],
+    [['-a.b'], '-a.b'],
+    [['---a.b=1'], '---a.b'],
+    [['--.a'], '--.a'],
+    [['--a.'], '--a.'],
+    [['--flag', '--a.b=1'], '--a.b'],
+    [['--a.b=1.5'], '--a.b'],
+    [['-1.5.x'], '-1.5.x'],
+    [['-x-1.5'], '-x-1.5'],
+  ])('rejects %j as a usage error naming %s, and runs nothing', async (argv, named) => {
     const action = vi.fn()
-    const config: CliConfig = {
-      name: 'x',
-      usageCode: 64,
-      commands: [
-        defineCommand({
-          readOnly: false,
-          options: {flag: {flag: '--flag', schema: z.boolean().optional()}},
-          action,
-        }),
-      ],
-    }
-    const result = await run(config, argv)
-    expect(polluted()).toBeUndefined()
+    const result = await run(config(action), argv)
     expect(result.exitCode).toBe(64)
     expect(result.stdout).toBe('')
-    expect(result.stderr).toMatch(/^error: unsafe option name `-[^`]+`\n/u)
+    expect(result.stderr).toMatch(/^error: unsupported dotted option name `[^`]+`\n/u)
+    expect(result.stderr).toContain(`error: unsupported dotted option name \`${named}\`\n`)
     expect(result.stderr).toContain('Usage:')
     expect(action).not.toHaveBeenCalled()
   })
 
-  it('writes the usage error to the CLI usage stream', async () => {
-    const config: CliConfig = {
-      ...usageShape([]),
-      usageStream: 'stdout',
-      usageCode: 3,
-    }
-    const result = await run(config, ['--__proto__.reviewProbe=attacker'])
-    expect(polluted()).toBeUndefined()
+  it('writes the usage error to the usage stream of the CLI', async () => {
+    const result = await run({...usageShape([]), usageStream: 'stdout', usageCode: 3}, ['--a.b=1'])
     expect(result.exitCode).toBe(3)
     expect(result.stdout).toContain('Usage:')
-    expect(result.stderr).toBe('error: unsafe option name `--__proto__.reviewProbe`\n')
+    expect(result.stderr).toBe('error: unsupported dotted option name `--a.b`\n')
   })
 
-  it('names the flag as given, without its value and without ANSI', async () => {
-    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
-    const result = await run(config, [`--__proto__.${ESC}[31mred${ESC}[0m=attacker`])
-    expect(result.stderr).toContain('error: unsafe option name `--__proto__.red`\n')
-    expect(result.stderr).not.toContain('attacker')
+  it('names the flag as written, without its value, and without ANSI', async () => {
+    const result = await run(config(vi.fn()), [`--a.${ESC}[31mred${ESC}[0m=secret`])
+    expect(result.stderr).toContain('error: unsupported dotted option name `--a.red`\n')
+    expect(result.stderr).not.toContain('secret')
     expect(result.stderr).not.toContain(ESC)
   })
 
-  it('lets a benign dotted or look-alike option name through to goke', async () => {
-    const action = vi.fn()
-    const config: CliConfig = {
-      name: 'x',
-      commands: [
-        defineCommand({
-          readOnly: true,
-          options: {
-            protoType: {flag: '--proto-type <v>', schema: z.string().optional()},
-            constructors: {flag: '--constructors <v>', schema: z.string().optional()},
-          },
-          action,
-        }),
-      ],
-    }
-    const result = await run(config, ['--proto-type', 'a', '--constructors=b'])
-    expect(result.exitCode).toBe(0)
-    expect(action).toHaveBeenCalledTimes(1)
+  it('names the first dotted flag when several are given', async () => {
+    const result = await run(config(vi.fn()), ['--a.b', '--c.d'])
+    expect(result.stderr).toContain('`--a.b`')
+    expect(result.stderr).not.toContain('`--c.d`')
   })
 
-  it('does not read a `no-` that is not at the start of the name as a negation', async () => {
-    const action = vi.fn()
-    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action})]}
-    const result = await run(config, ['--x.no-__proto__', '--no-constructors.y'])
-    expect(result.stderr).not.toContain('unsafe option name')
-    expect(result.stderr).toContain('Unknown option')
-    expect(action).not.toHaveBeenCalled()
-  })
-
-  it('only looks at option names: a positional or a value that spells a dangerous segment is not rejected', async () => {
+  it.each([
+    [['--limit', '-1.5']],
+    [['--limit=-1.5']],
+    [['--limit', '-12.5']],
+    [['--limit', '1.5']],
+    [['--limit=1.5']],
+    [['--mode', 'a.b']],
+    [['--mode=a.b']],
+    [['--mode', 'v1.2.3', '--limit', '2']],
+  ])('lets a dot in a value through: %j', async argv => {
     const seen: unknown[] = []
-    const config: CliConfig = {
-      name: 'x',
-      commands: [
-        defineCommand({
-          readOnly: true,
-          positionals: [{name: 'path', kind: 'optional'}],
-          options: {mode: {flag: '--mode <mode>', schema: z.string().optional()}},
-          action: context => {
-            seen.push([context.positionals.path, context.options.mode])
-          },
-        }),
-      ],
-    }
-    const result = await run(config, ['__proto__.x', '--mode', 'constructor.prototype'])
+    const result = await run(
+      {
+        name: 'x',
+        commands: [
+          defineCommand({
+            readOnly: true,
+            options: {
+              limit: {flag: '--limit <n>', schema: z.number().optional()},
+              mode: {flag: '--mode <m>', schema: z.string().optional()},
+            },
+            action: context => {
+              seen.push(context.options)
+            },
+          }),
+        ],
+      },
+      argv,
+    )
+    expect(result.stderr).not.toContain('dotted')
     expect(result.exitCode).toBe(0)
-    expect(seen).toEqual([['__proto__.x', 'constructor.prototype']])
+    expect(seen).toHaveLength(1)
   })
 
-  it('does not look past `--`: what follows is already rejected as arguments after the terminator', async () => {
-    const config: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
-    const result = await run(config, ['--', '--__proto__.reviewProbe=attacker'])
-    expect(polluted()).toBeUndefined()
-    expect(result.exitCode).toBe(1)
+  it('lets a dot in a positional through', async () => {
+    const seen: unknown[] = []
+    const result = await run(
+      {
+        name: 'x',
+        commands: [
+          defineCommand({
+            readOnly: true,
+            positionals: [{name: 'path', kind: 'optional'}],
+            action: context => {
+              seen.push(context.positionals.path)
+            },
+          }),
+        ],
+      },
+      ['metadata/repos.yaml'],
+    )
+    expect(result.exitCode).toBe(0)
+    expect(seen).toEqual(['metadata/repos.yaml'])
+  })
+
+  it('does not look past `--`: what follows is rejected as arguments after the terminator', async () => {
+    const result = await run(config(vi.fn()), ['--', '--a.b=1'])
+    expect(result.exitCode).toBe(64)
     expect(result.stderr).toContain('error: unexpected arguments after `--`\n')
+    expect(result.stderr).not.toContain('dotted')
+  })
+
+  it.each([
+    ['a dotted long flag', {nested: {flag: '--a.b <v>', schema: z.string().optional()}}, '--a.b'],
+    ['a dotted alias', {port: {flag: '-p, --net.port <n>', schema: z.number().optional()}}, '--net.port'],
+    ['a dotted short alias', {port: {flag: '-p.q, --port <n>', schema: z.number().optional()}}, '-p.q'],
+    ['a dotted boolean flag', {on: {flag: '--feature.on', schema: z.boolean().optional()}}, '--feature.on'],
+  ])('rejects a command that declares %s', async (_label, options, named) => {
+    const command = defineCommand({readOnly: true, options, action: () => {}})
+    await expect(run({name: 'x', commands: [command]}, [])).rejects.toThrow(
+      new TypeError(`x: option flag \`${named}\` has a dotted name, which the runner does not accept`),
+    )
+  })
+
+  it('names the command when a named command declares one', async () => {
+    const command = defineCommand({
+      name: 'plan',
+      readOnly: true,
+      options: {nested: {flag: '--a.b <v>', schema: z.string().optional()}},
+      action: () => {},
+    })
+    await expect(run({name: 'x', noArgv: 'usage', commands: [command]}, [])).rejects.toThrow(
+      new TypeError('x plan: option flag `--a.b` has a dotted name, which the runner does not accept'),
+    )
+  })
+
+  it('accepts a dot in a value placeholder or description, which is not part of the name', async () => {
+    const command = defineCommand({
+      readOnly: true,
+      options: {file: {flag: '--file <name.txt>', schema: z.string().optional().describe('a file.txt')}},
+      action: () => {},
+    })
+    await expect(run({name: 'x', commands: [command]}, [])).resolves.toMatchObject({exitCode: 0})
   })
 })
 

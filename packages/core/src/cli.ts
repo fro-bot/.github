@@ -17,9 +17,10 @@
  *   with the original error on a parse error and resolve with the code only recorded on an async
  *   action error. The action wrapper never calls `exit`: it writes the CLI's message and records the
  *   code itself.
- * - An option name with a `__proto__`, `constructor` or `prototype` segment is rejected before goke
- *   sees argv: goke writes dotted option names into nested objects, and those segments would reach
- *   `Object.prototype`.
+ * - A dotted option name (`--a.b`, `--a.b=v`) is rejected before goke sees argv, and no command may
+ *   declare one. goke writes a dotted name into nested objects, and a path through an inherited
+ *   property (`--toString.call=x`, `--a.0=x --a.map.call=x`) reaches a built-in prototype, so no list of
+ *   forbidden segments is enough: the dotted form itself is not accepted.
  * - Defaults are applied once, by the zod schema: goke is told not to seed them, because it would hand
  *   the schema an already-defaulted value to parse a second time.
  * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
@@ -245,6 +246,20 @@ function assertPositionalLayout(label: string, positionals: readonly PositionalS
   }
 }
 
+/** The flag names of a goke flag spec (`-p, --port <port>`): each comma item's first word, so a value placeholder is not read. */
+function flagNames(flag: string): string[] {
+  return flag.split(',').flatMap(item => item.trim().split(' ').slice(0, 1))
+}
+
+function assertNoDottedFlags(label: string, options: OptionSpecs): void {
+  for (const option of Object.values(options)) {
+    const dotted = flagNames(option.flag).find(name => name.includes('.'))
+    if (dotted !== undefined) {
+      throw new TypeError(`${label}: option flag \`${dotted}\` has a dotted name, which the runner does not accept`)
+    }
+  }
+}
+
 function assertConfig(config: CliConfig): void {
   const roots = config.commands.filter(command => command.name === '')
   if (roots.length > 1) throw new TypeError(`${config.name}: more than one root command`)
@@ -252,7 +267,9 @@ function assertConfig(config: CliConfig): void {
     throw new TypeError(`${config.name}: a CLI that runs for no argv needs a root command`)
   }
   for (const command of config.commands) {
-    assertPositionalLayout(command.name === '' ? config.name : `${config.name} ${command.name}`, command.positionals)
+    const label = command.name === '' ? config.name : `${config.name} ${command.name}`
+    assertPositionalLayout(label, command.positionals)
+    assertNoDottedFlags(label, command.options)
   }
 }
 
@@ -283,22 +300,17 @@ interface ExitCodes {
 }
 
 /**
- * The first flag, before any `--`, whose name has a `__proto__`, `constructor` or `prototype` path
- * segment, as written and without its value. goke splits a dotted option name on `.` and assigns down
- * the path, so those segments would reach a prototype, and this runs before goke parses anything. Every
- * leading dash and a leading `no-` (which negates a flag) are not part of the name. The segment list
- * lives in the function: Stryker covers a module-level constant with no test.
+ * The first flag, before any `--`, whose name contains a `.`, as written and without its value. goke
+ * splits a dotted option name on `.` and assigns down the path through whatever objects it finds,
+ * inherited ones included, so this runs before goke parses anything. A negative number is a value, not
+ * a flag, and a dot after `=` belongs to the value.
  */
-function findUnsafeOptionName(argv: readonly string[]): string | undefined {
-  const unsafe = new Set(['__proto__', 'constructor', 'prototype'])
+function findDottedOptionName(argv: readonly string[]): string | undefined {
   for (const token of argv) {
     if (token === '--') return undefined
-    if (!token.startsWith('-')) continue
+    if (!token.startsWith('-') || Number.isFinite(Number(token))) continue
     const flag = token.split('=')[0] ?? token
-    let start = 0
-    while (flag[start] === '-') start += 1
-    const name = flag.slice(start).startsWith('no-') ? flag.slice(start + 3) : flag.slice(start)
-    if (name.split('.').some(segment => unsafe.has(segment))) return flag
+    if (flag.includes('.')) return flag
   }
   return undefined
 }
@@ -315,8 +327,8 @@ async function resolveVerdict(
     output.errors += stripAnsi(`error: ${message}\n`)
     return codes.usage
   }
-  const unsafe = findUnsafeOptionName(argv)
-  if (unsafe !== undefined) return usage(`unsafe option name \`${unsafe}\``)
+  const dotted = findDottedOptionName(argv)
+  if (dotted !== undefined) return usage(`unsupported dotted option name \`${dotted}\``)
 
   // No argv on a CLI whose no-argv mode is usage prints what `--help` prints.
   const noArgvUsage = argv.length === 0 && config.noArgv === 'usage'
