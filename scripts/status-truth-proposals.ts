@@ -33,8 +33,7 @@ import type {RepoEntry} from './schemas.ts'
 import type {PublicStatusTruthFinding, StatusTruthFinding, StatusTruthJsonReport} from './status-truth-detect.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
-
-import {Octokit} from '@octokit/rest'
+import {createOctokit, noopLog} from '@fro-bot/core/github'
 import {parse} from 'yaml'
 import {isRecord, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 import {assertReposFile} from './schemas.ts'
@@ -1907,33 +1906,16 @@ export async function executeStatusTruthProposalActions(
 // ---------------------------------------------------------------------------
 
 /** No-op log handler object — suppresses all Octokit default logger output. */
-export const NOOP_LOG = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-}
+export const NOOP_LOG = noopLog()
 
-type OctokitConstructor = new (params: {
-  auth: string
-  request?: {timeout?: number}
-  log?: {debug: () => void; info: () => void; warn: () => void; error: () => void}
-}) => StatusTruthOctokitClient
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  if (typeof Octokit !== 'function') {
-    throw new TypeError('Failed to load @octokit/rest Octokit constructor')
-  }
-  return Octokit as unknown as OctokitConstructor
-}
+const REQUEST_TIMEOUT_MS = 10_000
 
 async function createOctokitFromEnv(): Promise<StatusTruthOctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') {
-    throw new Error('status-truth-proposals: GITHUB_TOKEN is required in the environment')
-  }
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token, request: {timeout: 10_000}, log: NOOP_LOG})
+  return createOctokit<StatusTruthOctokitClient>(process.env.GITHUB_TOKEN, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    log: NOOP_LOG,
+    missingToken: () => new Error('status-truth-proposals: GITHUB_TOKEN is required in the environment'),
+  })
 }
 
 /** Counts-only result written to stdout and STATUS_TRUTH_OPEN_RESULT_PATH. */
@@ -2069,8 +2051,10 @@ async function runOpen(): Promise<void> {
     const dryRunToken = process.env.GITHUB_TOKEN
     if (dryRunToken !== undefined && dryRunToken !== '' && owner !== '' && repo !== '') {
       try {
-        const LoadedOctokit = await loadOctokitConstructor()
-        const dryRunOctokit = new LoadedOctokit({auth: dryRunToken, request: {timeout: 10_000}, log: NOOP_LOG})
+        const dryRunOctokit = await createOctokit<StatusTruthOctokitClient>(dryRunToken, {
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          log: NOOP_LOG,
+        })
         existingIssues = await fetchExistingProposalIssues({octokit: dryRunOctokit, owner, repo})
       } catch {
         // Non-fatal in dry-run: proceed with empty list (counts may over-estimate opens)

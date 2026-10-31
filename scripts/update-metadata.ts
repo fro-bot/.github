@@ -30,6 +30,7 @@ import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 import type {RenovateFile} from './schemas.ts'
 
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 
@@ -207,9 +208,7 @@ export async function runFromEnv(
 }
 
 async function main(): Promise<void> {
-  const {Octokit} = await import('@octokit/rest')
-
-  const summary = await runFromEnv(process.env, async token => new Octokit({auth: token}))
+  const summary = await runFromEnv(process.env, async token => createOctokit(token))
   process.stdout.write(`${JSON.stringify(summary)}\n`)
 }
 

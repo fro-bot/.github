@@ -1,8 +1,8 @@
+import type {Octokit} from '@octokit/rest'
 import type {WikiLintJsonReport} from './wiki-lint.ts'
 import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
-
-import {Octokit} from '@octokit/rest'
+import {createOctokit} from '@fro-bot/core/github'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -429,9 +429,7 @@ export async function syncWikiLintIssues(params: SyncParams): Promise<SyncResult
 // ---------------------------------------------------------------------------
 
 async function loadOctokit(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-  if (token === undefined || token === '') throw new Error('GITHUB_TOKEN is not set')
-  return new Octokit({auth: token})
+  return createOctokit(process.env.GITHUB_TOKEN, {missingToken: () => new Error('GITHUB_TOKEN is not set')})
 }
 
 const KNOWN_SCHEMA_VERSION = 1

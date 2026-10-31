@@ -1,8 +1,8 @@
+import type {Octokit} from '@octokit/rest'
 import {appendFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
-
-import {Octokit} from '@octokit/rest'
+import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {parse} from 'yaml'
 
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
@@ -16,8 +16,6 @@ const DEFAULT_ALLOWLIST_PATH = 'metadata/allowlist.yaml'
 const DEFAULT_REPOS_PATH = 'metadata/repos.yaml'
 const DEFAULT_WORKFLOW_FILE = 'survey-repo.yaml'
 const DEFAULT_WORKFLOW_REF = 'main'
-
-type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 export interface RepositoryInvitation {
   id: number
@@ -595,18 +593,27 @@ function normalizePerInvitationError(error: unknown): {
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.GITHUB_TOKEN
-
-  if (token === undefined || token === '') {
-    throw new InvitationHandlingError({
+  return createInvitationOctokit(process.env.GITHUB_TOKEN, () => {
+    return new InvitationHandlingError({
       code: 'MISSING_TOKEN',
       message: 'handleInvitations requires params.octokit or GITHUB_TOKEN in the environment',
       remediation: 'Pass an authenticated Octokit via params.octokit, or export GITHUB_TOKEN before invocation.',
     })
-  }
+  })
+}
 
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token})
+/** One client for one credential; a load failure becomes the module's own `OCTOKIT_LOAD_FAILED`. */
+async function createInvitationOctokit(token: string | undefined, missingToken: () => Error): Promise<OctokitClient> {
+  try {
+    return await createOctokit<OctokitClient>(token, {missingToken})
+  } catch (error: unknown) {
+    if (!(error instanceof OctokitLoadError)) throw error
+    throw new InvitationHandlingError({
+      code: 'OCTOKIT_LOAD_FAILED',
+      message: 'Failed to load @octokit/rest Octokit constructor',
+      remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
+    })
+  }
 }
 
 /**
@@ -616,31 +623,14 @@ async function createOctokitFromEnv(): Promise<OctokitClient> {
  * the PAT for a write it should never make.
  */
 async function createMetadataOctokitFromEnv(): Promise<OctokitClient> {
-  const token = process.env.METADATA_WRITE_TOKEN
-
-  if (token === undefined || token === '') {
-    throw new InvitationHandlingError({
+  return createInvitationOctokit(process.env.METADATA_WRITE_TOKEN, () => {
+    return new InvitationHandlingError({
       code: 'MISSING_METADATA_TOKEN',
       message: 'handleInvitations requires params.metadataOctokit or METADATA_WRITE_TOKEN in the environment',
       remediation:
         'Mint a GitHub App installation token in the workflow (contents:write) and pass it as METADATA_WRITE_TOKEN, or supply params.metadataOctokit directly.',
     })
-  }
-
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token})
-}
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  if (typeof Octokit !== 'function') {
-    throw new InvitationHandlingError({
-      code: 'OCTOKIT_LOAD_FAILED',
-      message: 'Failed to load @octokit/rest Octokit constructor',
-      remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
-    })
-  }
-
-  return Octokit
+  })
 }
 
 function isApiStatus(error: unknown, status: number): boolean {

@@ -27,7 +27,7 @@ import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import process from 'node:process'
-import {Octokit} from '@octokit/rest'
+import {createOctokit, noopLog} from '@fro-bot/core/github'
 import {
   correctPlanConsistencyStatusLine,
   KNOWN_FINGERPRINT_VERSION,
@@ -1425,25 +1425,7 @@ export interface PrsResult {
   readonly terminalFingerprintDuplicates?: number
 }
 
-type OctokitConstructor = new (params: {
-  auth: string
-  request: {timeout: number}
-  log?: {debug: () => void; info: () => void; warn: () => void; error: () => void}
-}) => StatusTruthPrOctokitClient
-
-const NOOP_LOG = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-}
-
-async function loadOctokitConstructor(): Promise<OctokitConstructor> {
-  if (typeof Octokit !== 'function') {
-    throw new TypeError('Failed to load @octokit/rest Octokit constructor')
-  }
-  return Octokit as unknown as OctokitConstructor
-}
+const REQUEST_TIMEOUT_MS = 10_000
 
 /**
  * Build an Octokit client authenticated with the given token.
@@ -1454,11 +1436,11 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
  * other.
  */
 async function createOctokitFromToken(token: string | undefined): Promise<StatusTruthPrOctokitClient> {
-  if (token === undefined || token === '') {
-    throw new Error('status-truth-prs: required token is missing from the environment')
-  }
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token, request: {timeout: 10_000}, log: NOOP_LOG})
+  return createOctokit<StatusTruthPrOctokitClient>(token, {
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    log: noopLog(),
+    missingToken: () => new Error('status-truth-prs: required token is missing from the environment'),
+  })
 }
 
 async function createOctokitFromEnv(): Promise<StatusTruthPrOctokitClient> {

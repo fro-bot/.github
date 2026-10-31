@@ -22,6 +22,7 @@
  */
 
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 import {isRecord} from './capture-learnings-privacy.ts'
 import {
   buildEdgeChecklistLine,
@@ -478,8 +479,9 @@ export async function main(): Promise<void> {
     }
 
     if (digestFile !== null) {
-      const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
-      const rawOctokit = await createOctokitFromEnv()
+      const rawOctokit = await createOctokit(process.env.GITHUB_TOKEN, {
+        missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+      })
       const octokit = (rawOctokit as unknown as {rest: ImprovementMetricsReportOctokitClient}).rest
 
       const upsertResult = await upsertReportIssue({

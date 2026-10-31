@@ -16,6 +16,7 @@ import type {Dirent} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 
 import {
   classifyPatternProposalOutcome,
@@ -871,8 +872,9 @@ async function main(): Promise<void> {
       return
     }
 
-    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
-    const octokit = (await createOctokitFromEnv()) as unknown as PatternDetectOctokitClient
+    const octokit = (await createOctokit(process.env.GITHUB_TOKEN, {
+      missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+    })) as unknown as PatternDetectOctokitClient
     const headSha = process.env.GITHUB_SHA ?? ''
 
     const [solutionDocs, learningProposalIssues, existing] = await Promise.all([

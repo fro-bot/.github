@@ -3,6 +3,7 @@ import type {SnapshotItem, RolloutSnapshot as TrackerSnapshot} from './rollout-t
 import {createHash} from 'node:crypto'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 
 /** Status Truth resolves claims against the tracked items only; the wake signals are not consumed here. */
 export type StatusTruthSnapshot = Pick<TrackerSnapshot, 'items'>
@@ -2137,8 +2138,11 @@ async function runDetect(): Promise<void> {
     let resolverResults: Record<string, ResolverResult>
 
     if (token !== undefined && token !== '') {
-      const {Octokit} = await import('@octokit/rest')
-      const octokit = new Octokit(buildDetectOctokitOptions(token)) as unknown as DetectOctokitClient
+      const options = buildDetectOctokitOptions(token)
+      const octokit = await createOctokit<DetectOctokitClient>(options.auth, {
+        timeoutMs: options.request.timeout,
+        log: options.log,
+      })
 
       // Build injected issue lister/comment fetcher using paginated helpers
       // (avoids the per_page:100 truncation bug — fetches all pages)

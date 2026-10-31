@@ -56,6 +56,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import {createOctokit} from '@fro-bot/core/github'
 
 import {isRecord, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 import {
@@ -661,8 +662,7 @@ export interface CliDeps {
 }
 
 async function createRealOctokit(token: string): Promise<OctokitClient> {
-  const {Octokit} = await import('@octokit/rest')
-  return new Octokit({auth: token})
+  return createOctokit<OctokitClient>(token)
 }
 
 /**

@@ -29,13 +29,13 @@ import {
 } from './improvement-metrics-report.ts'
 import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
-const {mockCreateOctokitFromEnv, mockLoadRedactedCanonicalIdsFromDisk} = vi.hoisted(() => ({
-  mockCreateOctokitFromEnv: vi.fn(),
+const {mockCreateOctokit, mockLoadRedactedCanonicalIdsFromDisk} = vi.hoisted(() => ({
+  mockCreateOctokit: vi.fn(),
   mockLoadRedactedCanonicalIdsFromDisk: vi.fn(),
 }))
 
-vi.mock('./capture-learnings-harvest.ts', () => ({
-  createOctokitFromEnv: mockCreateOctokitFromEnv,
+vi.mock('@fro-bot/core/github', () => ({
+  createOctokit: mockCreateOctokit,
 }))
 
 vi.mock('./status-truth-proposals.ts', () => ({
@@ -397,6 +397,59 @@ describe('main digest-read failure handling', () => {
   })
 })
 
+describe('main builds its client through the core factory', () => {
+  it('reaches createOctokit with GITHUB_TOKEN and the harvest missing-token error, even when the token is empty', async () => {
+    const digestPath = join(tmpdir(), `improvement-metrics-digest-${randomUUID()}.json`)
+    const resultPath = join(tmpdir(), `improvement-metrics-result-${randomUUID()}.json`)
+    const originalToken = process.env.GITHUB_TOKEN
+    process.env.GITHUB_TOKEN = ''
+    mockCreateOctokit.mockClear()
+
+    try {
+      const run = await runMainWithDigestPath(digestPath, resultPath, {digest: makeDigest(), edges: [makeEdge()]})
+
+      // The mock stands in for the whole core factory, so an empty token never short-circuits before it.
+      expect(mockCreateOctokit).toHaveBeenCalledTimes(1)
+      const [token, options] = mockCreateOctokit.mock.calls[0] as [
+        string | undefined,
+        {missingToken: () => Error; timeoutMs?: number; log?: unknown},
+      ]
+      expect(token).toBe('')
+      expect(options.missingToken()).toEqual(
+        new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+      )
+      // The old factory passed no timeout and no logger; neither is invented here.
+      expect(options.timeoutMs).toBeUndefined()
+      expect(options.log).toBeUndefined()
+      expect(run.result.digestReadFailure).toBe(false)
+      expect(run.result.outcome).not.toBeNull()
+    } finally {
+      if (originalToken === undefined) delete process.env.GITHUB_TOKEN
+      else process.env.GITHUB_TOKEN = originalToken
+      await rm(digestPath, {force: true})
+      await rm(resultPath, {force: true})
+    }
+  })
+
+  it('passes the live GITHUB_TOKEN value through', async () => {
+    const digestPath = join(tmpdir(), `improvement-metrics-digest-${randomUUID()}.json`)
+    const resultPath = join(tmpdir(), `improvement-metrics-result-${randomUUID()}.json`)
+    const originalToken = process.env.GITHUB_TOKEN
+    process.env.GITHUB_TOKEN = 'live-token'
+    mockCreateOctokit.mockClear()
+
+    try {
+      await runMainWithDigestPath(digestPath, resultPath, {digest: makeDigest(), edges: [makeEdge()]})
+      expect(mockCreateOctokit.mock.calls[0]?.[0]).toBe('live-token')
+    } finally {
+      if (originalToken === undefined) delete process.env.GITHUB_TOKEN
+      else process.env.GITHUB_TOKEN = originalToken
+      await rm(digestPath, {force: true})
+      await rm(resultPath, {force: true})
+    }
+  })
+})
+
 async function runMainWithDigestPath(
   digestPath: string,
   resultPath: string,
@@ -414,7 +467,7 @@ async function runMainWithDigestPath(
 
   const mock = makeMockOctokit({listResponses: [{data: []}]})
   mockLoadRedactedCanonicalIdsFromDisk.mockResolvedValue(new Set())
-  mockCreateOctokitFromEnv.mockResolvedValue({rest: mock.octokit})
+  mockCreateOctokit.mockResolvedValue({rest: mock.octokit})
   process.env.IMPROVEMENT_METRICS_DIGEST_PATH = digestPath
   process.env.IMPROVEMENT_METRICS_RESULT_PATH = resultPath
   const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
