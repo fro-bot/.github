@@ -1502,7 +1502,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
 })
 
 describe('defaultStrykerSpawner (CI step-summary and credential isolation)', () => {
-  // Vitest 4's auto-registered github-actions reporter appends a "## Vitest Test Report"
+  // Vitest's auto-registered github-actions reporter (unchanged in Vitest 5) appends a "## Vitest Test Report"
   // block to GITHUB_STEP_SUMMARY on every run. Stryker's vitest runner spawns Vitest once for
   // the dry run and again per mutant batch, each inheriting the job env by default, so an
   // unfiltered spawn floods the step summary. Only this wrapper's own printResult should ever

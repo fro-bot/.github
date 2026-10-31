@@ -917,9 +917,10 @@ function printResult(result: ClassificationResult): void {
  * Builds the child env for the Stryker spawn: a copy of `process.env` with
  * `GITHUB_STEP_SUMMARY`, `GH_TOKEN`, and `GITHUB_TOKEN` deleted, never mutating the parent env.
  *
- * Vitest 4 auto-registers its `github-actions` reporter whenever `GITHUB_ACTIONS === 'true'`,
- * and that reporter appends a `## Vitest Test Report` block to `GITHUB_STEP_SUMMARY` on every
- * run. Stryker's vitest runner spawns Vitest once for the dry run and again for every mutant
+ * Vitest auto-registers its `github-actions` reporter whenever `GITHUB_ACTIONS === 'true'`
+ * (unchanged from Vitest 4 through 5; it is added to the default `reporters` list), and that
+ * reporter appends a `## Vitest Test Report` block to `GITHUB_STEP_SUMMARY` on every run.
+ * Stryker's vitest runner spawns Vitest once for the dry run and again for every mutant
  * batch, each inheriting the job env by default — so an unfiltered spawn floods the step
  * summary with dozens of blocks. This wrapper is the only writer of the step summary (in
  * `printResult`, after Stryker exits); deleting the key (rather than setting it to `''`) is
