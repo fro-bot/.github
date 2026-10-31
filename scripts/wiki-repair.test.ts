@@ -2,9 +2,13 @@ import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {RepoEntry} from './schemas.ts'
 import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {dirname, join} from 'node:path'
 import process from 'node:process'
+import {fileURLToPath} from 'node:url'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
-import {afterEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
 import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
@@ -1364,5 +1368,160 @@ describe('recordWikiRepairResult', () => {
     ).rejects.toThrow('disk full')
 
     expect(process.exitCode).toBeUndefined()
+  })
+})
+
+describe('the CLI entry builds its client through the core factory', () => {
+  const ENVIRONMENT = [
+    'GITHUB_TOKEN',
+    'WIKI_REPAIR_DATA_TIP_SHA',
+    'GRANDFATHER_WIKI_REPOS_DIR',
+    'WIKI_REPAIR_DRY_RUN',
+    'WIKI_REPAIR_RESULT_PATH',
+  ] as const
+  const saved: Record<string, string | undefined> = {}
+  let root = ''
+  let originalEntry: string | undefined
+  let stderrLines: string[] = []
+
+  /** A checkout whose index omits an existing topic page, so a repair is planned and needs GitHub. */
+  async function writeDriftedCheckout(): Promise<void> {
+    const files = Object.fromEntries([
+      [
+        'knowledge/index.md',
+        buildIndex([
+          '## Repos',
+          '',
+          '_No repo pages yet._',
+          '',
+          '## Topics',
+          '',
+          '_No topic pages yet._',
+          '',
+          '## Entities',
+          '',
+          '_No entity pages yet._',
+          '',
+          '## Comparisons',
+          '',
+          '_No comparison pages yet._',
+        ]),
+      ],
+      buildPage({
+        path: 'knowledge/wiki/topics/github-actions-ci.md',
+        type: 'topic',
+        title: 'GitHub Actions CI',
+        bodyLines: ['Workflow conventions.'],
+      }),
+    ])
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(dirname(join(root, path)), {recursive: true})
+      await writeFile(join(root, path), content, 'utf8')
+    }
+    await mkdir(join(root, 'metadata'), {recursive: true})
+    await writeFile(join(root, 'metadata', 'repos.yaml'), 'version: 1\nrepos: []\n', 'utf8')
+    process.env.WIKI_REPAIR_DATA_TIP_SHA = 'tip-1'
+    process.env.GRANDFATHER_WIKI_REPOS_DIR = join(root, 'grandfather')
+  }
+
+  /** Runs the CLI against `@octokit/rest` replaced by `mocked`; resolves to what the run rejected with. */
+  async function runCli(mocked: Record<string, unknown>): Promise<unknown> {
+    vi.resetModules()
+    vi.doMock('@octokit/rest', () => mocked)
+    process.argv[1] = fileURLToPath(new URL('./wiki-repair.ts', import.meta.url))
+    try {
+      await import('./wiki-repair.ts')
+      return undefined
+    } catch (error: unknown) {
+      return error
+    }
+  }
+
+  beforeEach(async () => {
+    for (const name of ENVIRONMENT) {
+      saved[name] = process.env[name]
+      delete process.env[name]
+    }
+    originalEntry = process.argv[1]
+    root = await mkdtemp(join(tmpdir(), 'wiki-repair-entry-'))
+    vi.spyOn(process, 'cwd').mockReturnValue(root)
+    stderrLines = []
+    vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+      stderrLines.push(String(chunk))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    await writeDriftedCheckout()
+  })
+
+  afterEach(async () => {
+    for (const name of ENVIRONMENT) {
+      if (saved[name] === undefined) delete process.env[name]
+      else process.env[name] = saved[name]
+    }
+    if (originalEntry === undefined) process.argv.length = 1
+    else process.argv[1] = originalEntry
+    process.exitCode = undefined
+    vi.doUnmock('@octokit/rest')
+    vi.resetModules()
+    await rm(root, {recursive: true, force: true})
+  })
+
+  it('builds the client from GITHUB_TOKEN, with no timeout and no logger', async () => {
+    process.env.GITHUB_TOKEN = 'repair-token'
+    const constructed: unknown[] = []
+
+    await runCli({
+      Octokit: function Octokit(options: unknown) {
+        constructed.push(options)
+      },
+    })
+
+    expect(constructed).toStrictEqual([{auth: 'repair-token'}])
+  })
+
+  it('without GITHUB_TOKEN, aborts with its own message and builds no client', async () => {
+    const constructed: unknown[] = []
+
+    await runCli({
+      Octokit: function Octokit(options: unknown) {
+        constructed.push(options)
+      },
+    })
+
+    expect(stderrLines.join('')).toContain(
+      '::error::wiki-repair aborted: wiki-repair: GITHUB_TOKEN is required in the environment',
+    )
+    expect(constructed).toStrictEqual([])
+    expect(process.exitCode).toBe(1)
+  })
+
+  it.each([
+    ['a missing Octokit export', {}],
+    ['a non-constructor Octokit export', {Octokit: 'not a function'}],
+  ])('turns %s into its own load-failure message', async (_label, mocked) => {
+    process.env.GITHUB_TOKEN = 'repair-token'
+
+    await runCli(mocked)
+
+    expect(stderrLines.join('')).toContain(
+      '::error::wiki-repair aborted: wiki-repair: failed to load @octokit/rest Octokit constructor',
+    )
+    expect(process.exitCode).toBe(1)
+  })
+
+  it('reports an unrelated constructor error as it is, without the load-failure message', async () => {
+    process.env.GITHUB_TOKEN = 'repair-token'
+
+    await runCli({
+      Octokit: function Octokit() {
+        throw new RangeError('constructor exploded')
+      },
+    })
+
+    const stderr = stderrLines.join('')
+    expect(stderr).toContain('::error::wiki-repair aborted: constructor exploded')
+    expect(stderr).not.toContain('failed to load @octokit/rest')
+    expect(process.exitCode).toBe(1)
   })
 })
