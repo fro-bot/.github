@@ -5,9 +5,13 @@
   "description": "Shared primitives for the Fro Bot control plane",
   "type": "module",
   "exports": {
+    "./github": "./src/github.ts",
     "./guards": "./src/guards.ts",
     "./json": "./src/json.ts",
     "./output": "./src/output.ts",
     "./retry": "./src/retry.ts"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.1"
   }
 }

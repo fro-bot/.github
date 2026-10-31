@@ -31,6 +31,9 @@
     "packages/core": {
       "name": "@fro-bot/core",
       "version": "0.0.0",
+      "dependencies": {
+        "@octokit/rest": "^22.0.1",
+      },
     },
     "packages/test-kit": {
       "name": "@fro-bot/test-kit",
