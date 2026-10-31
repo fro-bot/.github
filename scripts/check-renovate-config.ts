@@ -5,6 +5,8 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {basename, join, resolve} from 'node:path'
 import process from 'node:process'
+
+import {retry} from '@fro-bot/core/retry'
 import {checkRenovateRanges, DEFAULT_CONFIG_FILES, reportRangeCheck} from './check-renovate-ranges.ts'
 import {loadRenovateRuntime, readPinnedVersion, resolvePrefix} from './renovate-runtime.ts'
 
@@ -155,18 +157,20 @@ export const defaultFetchText: FetchText = async url => {
 }
 
 async function fetchWithRetry(url: string, fetchText: FetchText): Promise<{status: number; text: string}> {
-  let lastError = 'no attempt made'
-  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetchText(url)
-      // 404 is an answer (try the next candidate file); other statuses are retried as transient.
-      if (response.status === 200 || response.status === 404) return response
-      lastError = `HTTP ${response.status}`
-    } catch (error) {
-      lastError = errorMessage(error)
-    }
+  // 404 is an answer (try the next candidate file); other statuses are retried as transient.
+  const isAnswer = (response: {status: number}): boolean => response.status === 200 || response.status === 404
+  let response: {status: number; text: string}
+  try {
+    response = await retry(async () => fetchText(url), {
+      attempts: FETCH_ATTEMPTS,
+      shouldRetry: () => true,
+      retryResult: result => !isAnswer(result),
+    })
+  } catch (error) {
+    throw new Error(`${url}: ${errorMessage(error)} after ${FETCH_ATTEMPTS} attempts`)
   }
-  throw new Error(`${url}: ${lastError} after ${FETCH_ATTEMPTS} attempts`)
+  if (!isAnswer(response)) throw new Error(`${url}: HTTP ${response.status} after ${FETCH_ATTEMPTS} attempts`)
+  return response
 }
 
 export interface FetchedPreset {

@@ -12,6 +12,7 @@ import {readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
 import {
   commitWikiChanges,
   lintWikiSnapshot,
@@ -445,7 +446,11 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
   let tree = await params.loadTree()
   let conflictRetries = 0
 
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+  // Loses to a newer `data` tip: the tree is reloaded here, on the last attempt too, and `retry`
+  // tries again until it runs out of attempts.
+  const CONFLICT = Symbol('conflict')
+
+  const attemptRepair = async (): Promise<WikiRepairResultCounts | typeof CONFLICT> => {
     const baseline = lintWikiSnapshot({files: tree.wikiFiles}).deterministicFindings
 
     if (baseline.length === 0) {
@@ -507,7 +512,7 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
     if (currentTip !== tree.tipSha) {
       conflictRetries += 1
       tree = await params.loadTree()
-      continue
+      return CONFLICT
     }
 
     try {
@@ -522,7 +527,7 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
       if (error instanceof WikiIngestError && error.code === 'CONFLICT_EXHAUSTED') {
         conflictRetries += 1
         tree = await params.loadTree()
-        continue
+        return CONFLICT
       }
       throw error
     }
@@ -540,7 +545,12 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
     }
   }
 
-  return {...emptyResultCounts(dryRun), aborted: 1, conflict_retries: conflictRetries}
+  const attempts = Math.floor(maxRetries)
+  if (!(attempts >= 1)) return {...emptyResultCounts(dryRun), aborted: 1, conflict_retries: conflictRetries}
+
+  const outcome = await retry(attemptRepair, {attempts, retryResult: result => result === CONFLICT})
+  if (outcome === CONFLICT) return {...emptyResultCounts(dryRun), aborted: 1, conflict_retries: conflictRetries}
+  return outcome
 }
 
 /**

@@ -7,6 +7,7 @@
   "exports": {
     "./guards": "./src/guards.ts",
     "./json": "./src/json.ts",
-    "./output": "./src/output.ts"
+    "./output": "./src/output.ts",
+    "./retry": "./src/retry.ts"
   }
 }

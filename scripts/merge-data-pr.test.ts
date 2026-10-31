@@ -854,6 +854,131 @@ describe('mergeDataPr', () => {
     }
   })
 
+  describe('retry timing (fake clock)', () => {
+    const NOW = new Date('2026-04-16T00:00:00.000Z')
+    const duplicatePullRequest = async (): Promise<never> => {
+      throw Object.assign(new Error('Validation Failed'), {
+        status: 422,
+        response: {
+          data: {
+            message: 'Validation Failed',
+            errors: [{message: 'A pull request already exists for fro-bot:data.'}],
+          },
+        },
+      })
+    }
+
+    /** Runs `mergeDataPr` on a fake clock and reports the clock at the start and end, whatever the outcome. */
+    async function runTimed(octokit: OctokitClient): Promise<{elapsedMs: number; failure: unknown}> {
+      const clockStart = Date.now()
+      let failure: unknown
+      const finished = mergeDataPr({octokit, now: NOW}).then(
+        () => Date.now(),
+        (error: unknown) => {
+          failure = error
+          return Date.now()
+        },
+      )
+      await vi.runAllTimersAsync()
+      const clockEnd = await finished
+      return {elapsedMs: clockEnd - clockStart, failure}
+    }
+
+    it('waits 1000 ms between the three mergeability checks, none before the first or after the last', async () => {
+      vi.useFakeTimers()
+      try {
+        const callTimes: number[] = []
+        const getPullRequest = vi.fn(async () => {
+          callTimes.push(Date.now())
+          return {data: {mergeable_state: 'unknown', head: {sha: 'new-pr-head-sha'}}}
+        })
+        const clockStart = Date.now()
+
+        const run = await runTimed(mockOctokit({getPullRequest}))
+
+        expect(callTimes).toHaveLength(3)
+        expect(callTimes[0]).toBe(clockStart)
+        expect(callTimes.map(time => time - clockStart)).toEqual([0, 1000, 2000])
+        expect(run.elapsedMs).toBe(2000)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('stops waiting as soon as the mergeability resolves', async () => {
+      vi.useFakeTimers()
+      try {
+        const getPullRequest = vi
+          .fn()
+          .mockResolvedValueOnce({data: {mergeable_state: 'unknown', head: {sha: 'a'}}})
+          .mockResolvedValueOnce({data: {mergeable_state: 'clean', head: {sha: 'b'}}})
+
+        const run = await runTimed(mockOctokit({getPullRequest}))
+
+        expect(getPullRequest).toHaveBeenCalledTimes(2)
+        expect(run.elapsedMs).toBe(1000)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rediscovers a duplicate PR twice, 1000 ms apart, with no wait before the first or after the last', async () => {
+      vi.useFakeTimers()
+      try {
+        const callTimes: number[] = []
+        const listPullRequests = vi.fn(async () => {
+          callTimes.push(Date.now())
+          return {data: []}
+        })
+        const clockStart = Date.now()
+
+        const run = await runTimed(mockOctokit({listPullRequests, createPullRequest: duplicatePullRequest}))
+
+        expect(callTimes.map(time => time - clockStart)).toEqual([0, 1000])
+        expect(run.elapsedMs).toBe(1000)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rediscovery retries a retryable listing error once, 1000 ms later, then rethrows it', async () => {
+      vi.useFakeTimers()
+      try {
+        const callTimes: number[] = []
+        const listPullRequests = vi.fn(async () => {
+          callTimes.push(Date.now())
+          throw Object.assign(new Error('socket hang up'), {code: 'ECONNRESET'})
+        })
+        const clockStart = Date.now()
+
+        const run = await runTimed(mockOctokit({listPullRequests, createPullRequest: duplicatePullRequest}))
+
+        expect(callTimes.map(time => time - clockStart)).toEqual([0, 1000])
+        expect(run.elapsedMs).toBe(1000)
+        expect(run.failure).toBeInstanceOf(MergeDataPrError)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('rediscovery does not retry a non-retryable listing error', async () => {
+      vi.useFakeTimers()
+      try {
+        const listPullRequests = vi.fn(async () => {
+          throw Object.assign(new Error('Forbidden'), {status: 403})
+        })
+
+        const run = await runTimed(mockOctokit({listPullRequests, createPullRequest: duplicatePullRequest}))
+
+        expect(listPullRequests).toHaveBeenCalledTimes(1)
+        expect(run.elapsedMs).toBe(0)
+        expect(run.failure).toBeInstanceOf(MergeDataPrError)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('detects duplicate-PR 422s from the top-level message', async () => {
     const listPullRequests = vi.fn(async () => ({
       data: [

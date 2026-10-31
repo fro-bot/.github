@@ -263,6 +263,96 @@ describe('announce', () => {
     expect(sleepSpy).toHaveBeenCalledOnce()
   })
 
+  // ─── Retry delay and the failure of the wait itself ─────────────────────────
+
+  it('network throw then 200: waits exactly 5000 ms between the two POSTs and posts', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce(new Response(null, {status: 200})) as unknown as typeof globalThis.fetch
+    const sleepSpy = vi.fn(noSleep)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep: sleepSpy,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleepSpy.mock.calls).toEqual([[5000]])
+  })
+
+  it('network throw twice: the one wait is 5000 ms, and none follows the second failure', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof globalThis.fetch
+    const sleepSpy = vi.fn(noSleep)
+
+    await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep: sleepSpy,
+    })
+
+    expect(sleepSpy.mock.calls).toEqual([[5000]])
+  })
+
+  it('network throw, then 503, then 200: waits 5000 ms twice and makes a third POST', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce(new Response(null, {status: 503}))
+      .mockResolvedValueOnce(new Response(null, {status: 200})) as unknown as typeof globalThis.fetch
+    const sleepSpy = vi.fn(noSleep)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep: sleepSpy,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(sleepSpy.mock.calls).toEqual([[5000], [5000]])
+  })
+
+  it('a wait that itself rejects after a network error is reported as failure:network, not thrown', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('ECONNRESET')) as unknown as typeof globalThis.fetch
+    const failingSleep = vi.fn(async () => {
+      throw new Error('timer unavailable')
+    })
+
+    const {result, stderr} = await captureStderr(async () =>
+      announce({
+        eventType: TEST_EVENT_TYPE,
+        context: TEST_CONTEXT,
+        now: () => TEST_TS,
+        secret: TEST_SECRET,
+        url: TEST_URL,
+        fetchImpl,
+        sleep: failingSleep,
+      }),
+    )
+
+    expect(result).toEqual({posted: false, failure: 'network'})
+    // The second POST never happens: the wait failed first.
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(stderr).toContain('error=network-error')
+    expect(stderr).toContain('timer unavailable')
+    expect(stderr).not.toContain(TEST_SECRET)
+  })
+
   // ─── 4xx → no retry ───────────────────────────────────────────────────────
 
   it.each([400, 401, 429])('status %i: no retry, returns posted:false with failure:http', async status => {

@@ -500,7 +500,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Verification:** The Per-PR Checklist passes. The test count only moves where tests moved. No test in `scripts/` defines its own Git Data fake or workflow step runner. No `scripts/` or package module changed except importers of the moved helpers.
 
-- [ ] **Unit 3: Retry primitive** (PR B)
+- [x] **Unit 3: Retry primitive** (PR B)
 
 **Goal:** One retry module that carries each caller's policy.
 

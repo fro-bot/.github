@@ -1,6 +1,8 @@
 import type {Octokit} from '@octokit/rest'
 import process from 'node:process'
 
+import {retry} from '@fro-bot/core/retry'
+
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
 const DEFAULT_BASE_BRANCH = 'main'
@@ -458,22 +460,11 @@ async function waitForKnownMergeableState(params: {
   repo: string
   pullRequestNumber: number
 }) {
-  let pullRequest = await getPullRequest(params)
-
-  for (
-    let attemptsRemaining = MERGEABLE_STATE_RETRY_COUNT;
-    pullRequest.data.mergeable_state === 'unknown';
-    attemptsRemaining--
-  ) {
-    if (attemptsRemaining === 0) {
-      return pullRequest
-    }
-
-    await delay(MERGEABLE_STATE_RETRY_DELAY_MS)
-    pullRequest = await getPullRequest(params)
-  }
-
-  return pullRequest
+  return retry(async () => getPullRequest(params), {
+    attempts: MERGEABLE_STATE_RETRY_COUNT + 1,
+    delayMs: () => MERGEABLE_STATE_RETRY_DELAY_MS,
+    retryResult: pullRequest => pullRequest.data.mergeable_state === 'unknown',
+  })
 }
 
 async function compareBranches(params: {
@@ -635,24 +626,12 @@ async function waitForExistingPullRequestByBranch(params: {
   headBranch: string
   baseBranch: string
 }): Promise<{number: number; html_url: string} | null> {
-  let attemptsRemaining = REDISCOVER_PULL_REQUEST_RETRY_COUNT
-
-  while (true) {
-    try {
-      const pullRequest = await findExistingPullRequestByBranch(params)
-
-      if (pullRequest !== null || attemptsRemaining === 0) {
-        return pullRequest
-      }
-    } catch (error: unknown) {
-      if (!isRetryableGitHubApiError(error) || attemptsRemaining === 0) {
-        throw error
-      }
-    }
-
-    await delay(REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS)
-    attemptsRemaining--
-  }
+  return retry(async () => findExistingPullRequestByBranch(params), {
+    attempts: REDISCOVER_PULL_REQUEST_RETRY_COUNT + 1,
+    delayMs: () => REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS,
+    shouldRetry: isRetryableGitHubApiError,
+    retryResult: pullRequest => pullRequest === null,
+  })
 }
 
 async function addLabel(params: {
@@ -900,12 +879,6 @@ function toMergeDataPrError(error: unknown, action: string): MergeDataPrError {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-async function delay(milliseconds: number): Promise<void> {
-  await new Promise<void>(resolve => {
-    setTimeout(resolve, milliseconds)
-  })
 }
 
 async function main(): Promise<void> {
