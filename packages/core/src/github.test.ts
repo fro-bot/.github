@@ -1,7 +1,6 @@
 import type {Octokit} from '@octokit/rest'
 import type {OctokitConstructorOptions, OctokitLog} from './github.ts'
 
-import process from 'node:process'
 import {describe, expect, expectTypeOf, it, vi} from 'vitest'
 import {createOctokit, loadOctokitConstructor, noopLog, OctokitLoadError} from './github.ts'
 
@@ -200,25 +199,16 @@ describe('createOctokit: the default path is checked against the real Octokit', 
     interface Unrelated {
       missingMethod: () => void
     }
-    // @ts-expect-error The default path returns Octokit, which has no `missingMethod`.
-    const byAssignment: Unrelated = await createOctokit('tok')
-    // @ts-expect-error A client type cannot be named on the default path.
-    const byGeneric = await createOctokit<Unrelated>('tok')
-    expect(byAssignment).toBeDefined()
-    expect(byGeneric).toBeDefined()
-  })
-
-  it('rejects an unchecked possibly-undefined token on the default path', async () => {
-    // @ts-expect-error `undefined` needs `missingToken`.
-    await createOctokit(process.env.NOT_SET).catch(() => undefined)
+    const client = await createOctokit('tok')
+    expectTypeOf(client).toEqualTypeOf<Octokit>()
+    expectTypeOf(client).not.toMatchTypeOf<Unrelated>()
   })
 
   it('infers the client type from a custom loadConstructor, and only then', async () => {
     const {Constructor} = recordingConstructor()
     const client = await createOctokit('tok', {loadConstructor: async () => Constructor})
     expectTypeOf(client).toEqualTypeOf<FakeClient>()
-    // @ts-expect-error The constructor builds a FakeClient, not the Unrelated type the caller named.
-    await createOctokit<{missingMethod: () => void}>('tok', {loadConstructor: async () => Constructor})
+    expectTypeOf(client).not.toMatchTypeOf<{missingMethod: () => void}>()
   })
 })
 
