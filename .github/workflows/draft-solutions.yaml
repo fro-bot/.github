@@ -126,7 +126,7 @@ jobs:
 
       - name: 🤖 Draft solution docs
         id: agent
-        uses: fro-bot/agent@df330ed27cccb3c4105f5dfe0f4918dc8a7238f2 # v0.125.1
+        uses: fro-bot/agent@64c758d854179d4561ee13a3bb72ac165cf71788 # v0.130.3
         timeout-minutes: 45
         env:
           TASK_PROMPT: |
