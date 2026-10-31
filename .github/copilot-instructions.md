@@ -36,7 +36,7 @@ If guidance conflicts, follow the order above.
 - Automation hub (`.github/workflows/`, `.github/actions/`)
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
-- Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; the root `overrides` map pins 14 floors; [`docs/override-floors.md`](../docs/override-floors.md) records the rationale for four of them: brace-expansion, source-map-js, undici and zod)
+- Dependency policy (`package.json` `overrides` and `trustedDependencies`, `bunfig.toml`; the root `overrides` map pins 14 floors; [`docs/override-floors.md`](../docs/override-floors.md) records the rationale for six of them: brace-expansion, fast-uri, qs, source-map-js, undici and zod)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
 - Control-plane TypeScript (`scripts/*.ts`, executed with Bun except the Node exceptions listed under Repository Contract; no build step)
 - Private workspace packages (`packages/core`, `packages/test-kit`): `@fro-bot/` packages that export `.ts` source through subpath `exports`, with `private: true`, `workspace:*` internal dependencies and a README with a Mermaid `C4Component` diagram. `@fro.bot/wiki-write-core` stays the only published package. Domain packages (privacy, registry, dispatch, status-truth, wiki-ops, knowledge, reports, ci-checks) are planned: `scripts/` modules move into them behind thin `scripts/<name>.ts` entrypoints. The root `README.md` carries the package dependency graph (`flowchart`) and the `C4Container` view; `scripts/package-layout.test.ts` enforces the real graph
