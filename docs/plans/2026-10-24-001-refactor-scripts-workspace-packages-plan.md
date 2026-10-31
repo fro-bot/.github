@@ -547,7 +547,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Verification:** No inline `new Octokit(` remains outside core and wiki-write-core.
 
-- [ ] **Unit 5: goke CLI runner and env reader** (PR D)
+- [x] **Unit 5: goke CLI runner and env reader** (PR D)
 
 **Goal:** The single runner every goke CLI uses, plus the shared env reader. No caller migrations.
 
