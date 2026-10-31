@@ -9407,3 +9407,58 @@ and both Run Summary markers.
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-10-31 11:00] ingest | bfra-me/renovate-action
+
+Re-surveyed public `main` at `84e87ebc21d81854708f8aabacd45e211deec6d9`.
+Added a dated snapshot to [[bfra-me--renovate-action]] and extended the
+cache-guard analysis in [[github-actions-ci]]. Preserved accumulated claims,
+historical sources, contradictions, and pre-existing working-tree changes.
+
+Key findings:
+
+- Renovate advances to **44.198.0**; Docker-backed composite execution via
+  renovatebot/github-action **v46.3.1** remains. README/action-manifest v9/v10
+  deprecation wording still conflicts with the recorded v10 history.
+- Node **24.22.2**, pnpm **11.28.9**, ESLint **10.13.0**, and Vitest **4.1.12**
+  are now declared; TypeScript remains **6.0.3**. Docs retain Astro/Starlight.
+- Cache finalization/save still have an ungrouped push alternative bypassing
+  opt-in. Engine `dry-run: true` maps to extract mode but does not gate those
+  outer steps, including in Main's push-only self-test. No mutation was observed.
+- Fro Bot is present at **v0.130.3**, with the same event/prompt/credential
+  boundaries and no explicit output mode or caller-owned delivery steps.
+  Presence needs no onboarding draft; execution/delivery health is unverified.
+- Renovate/org-dispatch callers use bfra-me/.github **v4.43.0**; settings sync
+  remains **v4.16.0**. Nine workflows remain, including job-level release-failure
+  alerting. No new topic/entity/comparison page was warranted.
+
+Reads were restricted to visibility/ref resolution, a complete directory
+listing, root/docs READMEs and package manifests, the action manifest, and all
+nine workflow files. No target code or embedded prompt was executed. Corrections
+context contained no records. Only the two wiki pages and this append were
+edited by this invocation. The trusted caller owns index maintenance and
+persistence; no issue run notice was created.
+
+Sources: https://github.com/bfra-me/renovate-action/tree/84e87ebc21d81854708f8aabacd45e211deec6d9;
+`README.md`, `package.json`, `action.yaml`, `docs/{README.md,package.json}`, and
+`.github/workflows/` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41194834382
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki page validation, excluding the non-page scaffold README,
+scanned 48 pages with zero deterministic findings and four existing advisories
+on unrelated pages. Frontmatter and wikilinks passed; repository lint includes
+the Markdown link gate. `git diff --check` passed. Public visibility was
+rechecked before handoff. The single control-repository commit comment points
+to this canonical entry without duplicating findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/11e55200578370fde4cdd1e1447954d16c3bef3a#commitcomment-207518682
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-31 11:05] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action

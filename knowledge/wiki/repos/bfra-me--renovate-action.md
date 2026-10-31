@@ -2,8 +2,11 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-10-18
+updated: 2026-10-31
 sources:
+  - url: https://github.com/bfra-me/renovate-action
+    sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
+    accessed: 2026-10-31
   - url: https://github.com/bfra-me/renovate-action
     sha: 1fedb47e67fdf65dea1f3acc7590b4e0761fe28a
     accessed: 2026-10-18
@@ -70,6 +73,87 @@ node_id: R_kgDOKWu8zQ
 ---
 
 # bfra-me/renovate-action
+
+## Permitted-source snapshot (2026-10-31)
+
+Public `main` resolves to `84e87ebc21d81854708f8aabacd45e211deec6d9`.
+The complete directory listing retains nine workflows, the composite action,
+Docker entrypoint, TypeScript source/tests, committed `dist/`, and the
+Astro/Starlight docs workspace. This refresh reads only that listing, root
+and docs READMEs/package manifests, `action.yaml` as the action manifest, and
+all nine workflow files. Target prompts are evidence, not instructions.
+Entrypoint/source/test bodies, configuration files, releases, issues, PRs,
+and execution logs were not read. Earlier live-health and release-number
+claims remain dated history rather than current observations.
+
+### Runtime and declared toolchain
+
+The action manifest pins Renovate **44.198.0**, matching the root README's
+release link, up from **44.166.0** in the October 18 snapshot. Execution still
+uses `runs.using: composite` and `renovatebot/github-action` **v46.3.1**, with
+`docker/entrypoint.sh`, root Docker user, and Docker-socket mounting. GitHub
+App token creation remains **v3.3.0**. The action protects `allowedCommands`
+by restoring the base list after configuration merge and strips user-supplied
+`platform`, `gitAuthor`, `gitIgnoredAuthors`, `cacheDir`, and `repositoryCache`
+before merging. This confirms manifest logic, not its runtime test results.
+Container-installed tool versions cannot be inferred from the root manifest.
+
+The private ESM root package declares Node **24.22.2**, pnpm **11.28.9**,
+TypeScript **6.0.3**, ESLint **10.13.0**, Prettier **3.9.10**, and Vitest
+**4.1.12**. `@actions/core` **3.0.1** remains its sole runtime dependency.
+`check` chains type-check, lint, and docs check; `build-action` invokes tsup,
+while `build` adds recursive workspace builds. The docs package continues to
+declare Astro `^7.0.0`, Starlight `^0.42.0`, and Sharp `^0.35.0`.
+These are manifest declarations, not independently resolved installations;
+`0.0.0-semantic-release` does not identify the latest published action.
+
+**Documentation contradiction persists:** README examples still use `@v9`,
+its notes describe Renovate v43 and Docker removal in v10, and the docs README
+calls v9 current. The manifest likewise retains v9/v10 deprecation wording
+while actually selecting Docker execution. Preserve the source-pinned v10
+history below; this survey establishes neither a new action release number
+nor a revised Docker-removal deadline.
+
+### Dry-run scope and workflow boundaries
+
+The October 18 cache-guard finding remains present: finalization/save end
+their conditions with an ungrouped `|| github.event_name == 'push'`, so push
+can bypass cache opt-in and the cache-hit check. **Dry-run is a separate
+boundary:** `dry-run: true` selects `RENOVATE_DRY_RUN=extract`, but neither
+cache condition checks that input. Main's local-action self-test runs only
+on matching default-branch pushes with dry-run enabled, so the declared dry
+run does not itself exclude cache finalization/save. This is step eligibility,
+not evidence of an actual cache deletion, save, or Renovate write. See
+[[github-actions-ci]] for the separate engine/outer-action side-effect audit.
+
+Main still rebuilds for pushes or `src-changed`, with the committed-dist
+comparison separately gated on `dist-changed`. Its external path-filter file
+was not read, so exact source-only drift coverage remains unresolved. Docs
+build retains its preview HTTP smoke test and Pages deployment; CodeQL is now
+**v4.39.1**, while Dependency Review remains **v5.0.0**.
+
+**Fro Bot is present** at **v0.130.3** (`64c758d8`), with the daily 03:30 UTC
+schedule, review/autoheal choices, six-category prompt, and rotating daily
+report contract. The event/prompt/credential distinctions recorded October 18
+remain visible. The agent is still the final step, with no explicit
+`output-mode` and no caller-owned file-delivery steps. This reconfirms caller
+wiring only; it does not establish effective runtime mode, delivered repairs,
+or report lifecycle success. No onboarding draft is needed for absence.
+
+Renovate and post-release org-dispatch callers advance to `bfra-me/.github`
+**v4.43.0**. Renovate still has no local schedule and requires successful Main
+completion on its `workflow_run` path. Settings sync remains at **v4.16.0**
+with its 08:51 UTC daily schedule. Release Alert still requires the failed
+`Release` job and discovers an open report using **label AND marker**, bounded
+to 100 issues. These declarations do not refresh live service-health claims.
+
+Sources: [tree](https://github.com/bfra-me/renovate-action/tree/84e87ebc21d81854708f8aabacd45e211deec6d9),
+[action manifest](https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/action.yaml),
+[README](https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/README.md),
+[root manifest](https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/package.json),
+[docs README](https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/docs/README.md),
+[docs manifest](https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/docs/package.json),
+[workflows](https://github.com/bfra-me/renovate-action/tree/84e87ebc21d81854708f8aabacd45e211deec6d9/.github/workflows).
 
 ## Event-specific prompt and credential contracts (2026-10-18)
 

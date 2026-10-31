@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-29
+updated: 2026-10-31
 sources:
+  - url: https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/action.yaml
+    sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
+    accessed: 2026-10-31
+  - url: https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/.github/workflows/main.yaml
+    sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
+    accessed: 2026-10-31
   - url: https://github.com/marcusrbrown/sparkle/blob/b6116202d97cef5c6a535ffa9555f745729772e8/.github/workflows/regenerate-docs.yaml
     sha: b6116202d97cef5c6a535ffa9555f745729772e8
     accessed: 2026-10-29
@@ -536,6 +542,17 @@ unauthorized write. The matrix complements the separate delivery checks below.
 Source: [Fro Bot workflow](https://github.com/bfra-me/renovate-action/blob/1fedb47e67fdf65dea1f3acc7590b4e0761fe28a/.github/workflows/fro-bot.yaml).
 
 ## An event alternative must not bypass feature opt-in (2026-10-18)
+
+**2026-10-31 reconfirmation and dry-run scope:** the same ungrouped push
+alternative remains at `84e87ebc`. Main invokes the local action on eligible
+default-branch pushes with `dry-run: true`, which the manifest maps to
+`RENOVATE_DRY_RUN=extract`. Neither cache finalization nor save tests dry-run,
+so engine dry-run does not establish a side-effect-free outer action. Audit
+token creation, cache writes/deletions, and other surrounding steps separately
+from the engine's branch/PR mode. These are static eligibility findings, not
+an observed cache mutation or a claim that Renovate ignored extract mode.
+The current pinned manifest and Main workflow are listed in frontmatter;
+the October 18 expression analysis below remains applicable.
 
 [[bfra-me--renovate-action]]'s action manifest at `1fedb47e` gates cache
 restore/prepare on `enable-cache == 'true'`, but cache finalization and save
