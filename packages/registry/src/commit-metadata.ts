@@ -5,12 +5,12 @@ import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
-import {parse, stringify} from 'yaml'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
-} from './data-branch-bootstrap.ts'
+} from '@fro.bot/wiki-write-core/data-branch-bootstrap'
+import {parse, stringify} from 'yaml'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'

@@ -161,10 +161,151 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
   )
 })
 
+// The remaining shims fail closed before any network call when their inputs are missing, so the
+// spawned runs below need no fake server: they pin the exit code, the stderr prefix a workflow greps
+// for, and that argv which matches nothing declared stops before the CLI body runs.
+const REPOS_FILE = `version: 1
+repos:
+  - owner: fro-bot
+    name: dashboard
+    added: 2026-06-15
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDOPUBLIC1
+`
+
+const NO_TOKENS = {
+  GITHUB_TOKEN: undefined,
+  METADATA_WRITE_TOKEN: undefined,
+  RENAME_WRITER_TOKEN: undefined,
+  UPDATE_METADATA_DISCOVERY_TOKEN: undefined,
+  UPDATE_METADATA_WRITER_TOKEN: undefined,
+  GITHUB_REPOSITORY: undefined,
+  TARGETS: undefined,
+  NODE_ID: undefined,
+}
+
+function checkout(): string {
+  const directory = scratch('onboarded')
+  mkdirSync(join(directory, 'metadata'))
+  writeFileSync(join(directory, 'metadata', 'repos.yaml'), REPOS_FILE)
+  return directory
+}
+
+describe('check-repo-onboarded (bun, survey-repo.yaml: no argv)', () => {
+  it('prints the verdict and appends onboarded=true for a public entry', async () => {
+    const result = await run('check-repo-onboarded', {
+      runtime: 'bun',
+      cwd: checkout(),
+      env: {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard'},
+    })
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: '{"onboarded":true,"target":"fro-bot/dashboard"}\n',
+      stderr: '',
+      githubOutput: 'onboarded=true\n',
+    })
+  })
+
+  it('appends onboarded=false, explains why on stderr and still exits 0 for a repo that is not listed', async () => {
+    const result = await run('check-repo-onboarded', {
+      runtime: 'bun',
+      cwd: checkout(),
+      env: {REPO_OWNER: 'fro-bot', REPO_NAME: 'ghost'},
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.githubOutput).toBe('onboarded=false\n')
+    expect(result.stderr).toBe('check-repo-onboarded: fro-bot/ghost has no public entry in metadata/repos.yaml\n')
+  })
+})
+
+describe('the Octokit-backed shims fail closed on missing input', () => {
+  const cases: {name: string; env: Record<string, string | undefined>; stderr: string | RegExp}[] = [
+    {name: 'merge-back-data', env: {}, stderr: '::error::merge-back-data: MISSING_TOKEN\n'},
+    {name: 'merge-data-pr', env: {}, stderr: /mergeDataPr requires params\.octokit or GITHUB_TOKEN/u},
+    {
+      name: 'rename-tracked-repo',
+      env: {},
+      stderr: '::error::rename-tracked-repo: INVALID_INPUT (field=node_id)\n',
+    },
+    {name: 'reset-survey-status', env: {}, stderr: 'reset-survey-status: TARGETS is required\n'},
+    {
+      name: 'record-survey-result',
+      env: {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard', SURVEY_STATUS: 'success', REPO_NODE_ID: undefined},
+      stderr: 'record-survey-result: REPO_NODE_ID is required\n',
+    },
+    {name: 'update-metadata', env: {}, stderr: /UPDATE_METADATA_DISCOVERY_TOKEN/u},
+  ]
+
+  it.each(cases)('$name exits 1 with its stderr prefix and writes nothing to stdout', async ({name, env, stderr}) => {
+    const result = await run(name, {runtime: 'bun', env: {...NO_TOKENS, ...env}})
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.githubOutput).toBe('')
+    if (typeof stderr === 'string') expect(result.stderr).toBe(stderr)
+    else expect(result.stderr).toMatch(stderr)
+  })
+
+  it('handle-invitation exits 1 when the poll token is missing', async () => {
+    const directory = scratch('invitations')
+    mkdirSync(join(directory, 'metadata'))
+    writeFileSync(join(directory, 'metadata', 'repos.yaml'), REPOS_FILE)
+    writeFileSync(join(directory, 'metadata', 'allowlist.yaml'), 'version: 1\napproved_inviters: []\n')
+    const result = await run('handle-invitation', {runtime: 'bun', cwd: directory, env: NO_TOKENS})
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.githubOutput).toBe('')
+    expect(result.stderr).toContain('handleInvitations requires params.octokit or GITHUB_TOKEN')
+  })
+})
+
+describe('argv that matches nothing declared stops before the CLI body runs', () => {
+  const shims = [
+    'check-repo-onboarded',
+    'handle-invitation',
+    'merge-back-data',
+    'merge-data-pr',
+    'record-survey-result',
+    'rename-tracked-repo',
+    'reset-survey-status',
+    'update-metadata',
+  ]
+  const argvs = [['--help'], ['--bogus'], ['stray'], ['--help=false']]
+
+  it.each(shims.flatMap(name => argvs.map(argv => [name, argv] as const)))(
+    '%s %j is a usage error',
+    async (name, argv) => {
+      const result = await run(name, {runtime: 'bun', argv, env: NO_TOKENS})
+      expect(result.exitCode, `${name} ${JSON.stringify(argv)}`).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.githubOutput).toBe('')
+      expect(result.stderr).toContain(name)
+      expect(result.stderr).not.toContain('MISSING_TOKEN')
+      expect(result.stderr).not.toContain('is required')
+    },
+  )
+})
+
 describe('importing a shim runs nothing', () => {
   // The entry guard compares import.meta.url with process.argv[1]; an import from another module
   // (a test, Test Scripts Load) must not check, print, write $GITHUB_OUTPUT or set an exit code.
-  const shims = ['check-wiki-authority']
+  const shims = [
+    'check-repo-onboarded',
+    'check-wiki-authority',
+    'handle-invitation',
+    'merge-back-data',
+    'merge-data-pr',
+    'record-survey-result',
+    'rename-tracked-repo',
+    'reset-survey-status',
+    'update-metadata',
+  ]
 
   it.each(shims)('scripts/%s.ts imported as a library does nothing', async name => {
     const directory = scratch('import-only')

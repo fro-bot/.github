@@ -57,6 +57,24 @@ import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {
+  commitMetadata as defaultCommitMetadata,
+  type CommitMetadataParams,
+  type CommitMetadataResult,
+} from '@fro-bot/registry/commit-metadata'
+import {
+  findBlockedPublicAssociations,
+  lookupRepoWikiPage,
+  publicAssociationKey,
+  type WikiPageState,
+} from '@fro-bot/registry/metadata-wiki-rename-guard'
+import {
+  addRepoEntry,
+  CHANNEL_INTERVAL_DAYS,
+  computeNextEligibleAt,
+  JITTER_MAX_DAYS,
+  normalizeRepoEntryForStorage,
+} from '@fro-bot/registry/repos-metadata'
+import {
   assertAllowlistFile,
   assertReposFile,
   NODE_ID_PATTERN,
@@ -68,28 +86,10 @@ import {
 } from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
 import {
-  commitMetadata as defaultCommitMetadata,
-  type CommitMetadataParams,
-  type CommitMetadataResult,
-} from './commit-metadata.ts'
-import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
-import {
-  findBlockedPublicAssociations,
-  lookupRepoWikiPage,
-  publicAssociationKey,
-  type WikiPageState,
-} from './metadata-wiki-rename-guard.ts'
-import {
-  addRepoEntry,
-  CHANNEL_INTERVAL_DAYS,
-  computeNextEligibleAt,
-  JITTER_MAX_DAYS,
-  normalizeRepoEntryForStorage,
-} from './repos-metadata.ts'
 
 /**
  * Whether a discovery-channel + access-list combination is pre-trusted (skips the

@@ -1,4 +1,4 @@
-import type {OctokitClient} from './commit-metadata.ts'
+import type {OctokitClient} from '@fro-bot/registry/commit-metadata'
 /**
  * Behavior tests for reconcile's wiki rename guard. `handleReconcile` runs end to end against one
  * in-memory fake of the `data` branch and the real `commitMetadata`, and every assertion is about
@@ -8,9 +8,9 @@ import type {OctokitClient} from './commit-metadata.ts'
 import type {HandleReconcileParams} from './reconcile-repos.ts'
 
 import {Buffer} from 'node:buffer'
+import {commitMetadata} from '@fro-bot/registry/commit-metadata'
 import {describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
-import {commitMetadata} from './commit-metadata.ts'
 import {handleReconcile} from './reconcile-repos.ts'
 
 const NODE_ID = 'R_kgDOWIDGET'

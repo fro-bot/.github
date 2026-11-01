@@ -3,8 +3,8 @@ import type {MergeBackAlert, MergeBackOutcome} from './merge-back-data.ts'
 import process from 'node:process'
 import {isDataOwnedPath} from '@fro-bot/core/wiki-authority'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
+import {DataBranchBootstrapError} from '@fro.bot/wiki-write-core/data-branch-bootstrap'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {mergeBackData, MergeBackError, runCli} from './merge-back-data.ts'
 
 // The Octokit the CLI builds is replaced by whatever `octokitMock.make` returns, so `runCli` runs
@@ -19,8 +19,8 @@ const bootstrapMock = vi.hoisted(() => ({
   override: undefined as undefined | (() => Promise<never>),
 }))
 
-vi.mock('./data-branch-bootstrap.ts', async importOriginal => {
-  const actual = await importOriginal<typeof import('./data-branch-bootstrap.ts')>()
+vi.mock('@fro.bot/wiki-write-core/data-branch-bootstrap', async importOriginal => {
+  const actual = await importOriginal<typeof import('@fro.bot/wiki-write-core/data-branch-bootstrap')>()
   return {
     ...actual,
     bootstrapDataBranch: async (params: Parameters<typeof actual.bootstrapDataBranch>[0]) =>
@@ -1180,54 +1180,5 @@ describe('runCli', () => {
     expect(await runCli({GITHUB_TOKEN: 'tok'})).toBe(1)
 
     expect(stderr).toEqual(['::error::merge-back-data: UNEXPECTED_FAILURE\n'])
-  })
-})
-
-describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
-  const originalArgv = [...process.argv]
-  const originalToken = process.env.GITHUB_TOKEN
-  const originalExitCode = process.exitCode
-
-  afterEach(() => {
-    vi.restoreAllMocks()
-    process.argv = originalArgv
-    process.exitCode = originalExitCode
-    if (originalToken === undefined) delete process.env.GITHUB_TOKEN
-    else process.env.GITHUB_TOKEN = originalToken
-  })
-
-  it('runs the CLI and sets process.exitCode without calling process.exit when invoked as the entry script', async () => {
-    const modulePath = new URL('./merge-back-data.ts', import.meta.url)
-    const fake = createRepo()
-    octokitMock.make = () => ({paginate: vi.fn(), rest: fake.client.rest})
-    const out: string[] = []
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
-      out.push(String(chunk))
-      return true
-    })
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-    process.env.GITHUB_TOKEN = 'tok'
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    process.exitCode = undefined
-
-    await import(`${modulePath.href}?guard-test-entry`)
-
-    expect(out).toEqual(['{"result":"noop"}\n'])
-    expect(process.exitCode).toBe(0)
-    expect(exitSpy).not.toHaveBeenCalled()
-  })
-
-  it('stays inert when imported without being the entry script', async () => {
-    const modulePath = new URL('./merge-back-data.ts', import.meta.url)
-    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    process.argv = [originalArgv[0] ?? 'node', '/somewhere/else.ts']
-    process.exitCode = undefined
-
-    await import(`${modulePath.href}?guard-test-inert`)
-
-    expect(write).not.toHaveBeenCalled()
-    expect(process.exitCode).toBeUndefined()
   })
 })

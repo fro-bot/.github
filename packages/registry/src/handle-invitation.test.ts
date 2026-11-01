@@ -1,6 +1,9 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import type {OctokitClient, RepositoryInvitation} from './handle-invitation.ts'
 
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import process from 'node:process'
 
 import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
@@ -11,6 +14,7 @@ import {
   formatInvitationGithubOutput,
   handleInvitations,
   InvitationHandlingError,
+  runHandleInvitation,
 } from './handle-invitation.ts'
 
 type CommitMetadataMock = (params: CommitMetadataParams) => Promise<CommitMetadataResult>
@@ -1485,5 +1489,60 @@ describe('handleInvitations — identity-only write-back', () => {
 
     expect(createWorkflowDispatch).toHaveBeenCalledOnce()
     expect(state.file).toBe(initial)
+  })
+})
+
+function recordingIo() {
+  const out: string[] = []
+  const err: string[] = []
+  return {io: {stdout: (text: string) => out.push(text), stderr: (text: string) => err.push(text)}, out, err}
+}
+
+describe('runHandleInvitation', () => {
+  const accepted = {
+    invitationId: 11,
+    inviter: 'marcusrbrown',
+    owner: 'marcusrbrown',
+    repo: 'newrepo',
+    status: 'accepted',
+  }
+  const redacted = {
+    invitationId: 12,
+    inviter: 'marcusrbrown',
+    owner: '[REDACTED]',
+    repo: 'R_kgDOSECRET1',
+    status: 'accepted',
+  }
+
+  it('prints the result as one JSON line and appends the two public keys to $GITHUB_OUTPUT', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'handle-invitation-'))
+    const path = join(directory, 'github-output')
+    try {
+      const {io, out} = recordingIo()
+      const processed = [accepted, redacted] as never
+      await runHandleInvitation({GITHUB_OUTPUT: path}, io, async () => ({processed}))
+      expect(out).toEqual([`${JSON.stringify({processed})}\n`])
+      expect(readFileSync(path, 'utf8')).toBe(
+        'public_invitations_accepted=1\npublic_invitations_accepted_repos=[{"owner":"marcusrbrown","name":"newrepo"}]\n',
+      )
+    } finally {
+      rmSync(directory, {recursive: true, force: true})
+    }
+  })
+
+  it.each([[undefined], ['']])('writes no output file when GITHUB_OUTPUT is %j', async githubOutput => {
+    const {io, out} = recordingIo()
+    await runHandleInvitation({GITHUB_OUTPUT: githubOutput}, io, async () => ({processed: []}))
+    expect(out).toEqual(['{"processed":[]}\n'])
+  })
+
+  it('lets a handler failure propagate and writes nothing', async () => {
+    const {io, out} = recordingIo()
+    await expect(
+      runHandleInvitation({}, io, async () => {
+        throw new Error('GitHub rejected invitation polling credentials')
+      }),
+    ).rejects.toThrow('GitHub rejected invitation polling credentials')
+    expect(out).toEqual([])
   })
 })

@@ -1,6 +1,6 @@
 import type {MergeDataPrLogger, OctokitClient} from './merge-data-pr.ts'
 import {describe, expect, it, vi} from 'vitest'
-import {mergeDataPr, MergeDataPrError, upsertAlertIssue} from './merge-data-pr.ts'
+import {mergeDataPr, MergeDataPrError, runMergeDataPr, upsertAlertIssue} from './merge-data-pr.ts'
 
 interface CreateIssueParams {
   owner: string
@@ -1662,5 +1662,53 @@ describe('mergeDataPr with a persistent data branch', () => {
       'Manual resolution is required: resolve the conflicts, push to the head branch, and re-run the promotion.',
     )
     expect(alert?.body).not.toContain('Only the Fro Bot App')
+  })
+})
+
+function sinks() {
+  const out: string[] = []
+  const err: string[] = []
+  return {io: {stdout: (text: string) => out.push(text), stderr: (text: string) => err.push(text)}, out, err}
+}
+
+describe('runMergeDataPr', () => {
+  const clean = {
+    createdPullRequest: true,
+    pullRequestNumber: 77,
+    pullRequestUrl: 'https://github.com/fro-bot/.github/pull/77',
+    label: 'auto-merge',
+    journalIssueNumber: null,
+    staleAlertIssueNumber: null,
+    conflicted: false,
+    conflictAlertIssueNumber: null,
+    mergeabilityUnavailable: false,
+  } as unknown as Awaited<ReturnType<typeof mergeDataPr>>
+
+  it('prints the result as one JSON line and returns 0 for a clean promotion', async () => {
+    const {io, out, err} = sinks()
+    expect(await runMergeDataPr(io, async () => clean)).toBe(0)
+    expect(out).toEqual([`${JSON.stringify(clean)}\n`])
+    expect(err).toEqual([])
+  })
+
+  it.each([
+    [{conflicted: true}],
+    [{mergeabilityUnavailable: true}],
+    [{conflicted: true, mergeabilityUnavailable: true}],
+  ])('returns 1 for %j and still prints the result', async patch => {
+    const result = {...clean, ...patch}
+    const {io, out} = sinks()
+    expect(await runMergeDataPr(io, async () => result)).toBe(1)
+    expect(out).toEqual([`${JSON.stringify(result)}\n`])
+  })
+
+  it('lets a promotion failure propagate and prints nothing', async () => {
+    const {io, out} = sinks()
+    await expect(
+      runMergeDataPr(io, async () => {
+        throw new Error('GitHub API error while comparing main...data: boom')
+      }),
+    ).rejects.toThrow('comparing main...data')
+    expect(out).toEqual([])
   })
 })

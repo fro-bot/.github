@@ -1146,7 +1146,7 @@ describe('closure-based trigger set against the real config', () => {
 
   // (c2) Workspace packages. A PR that touches only @fro-bot/ code must run the check: a core module
   // is a mutate entry, and a test-kit helper is reached only through a package-name import from a
-  // testFiles entry (scripts/merge-back-data.test.ts imports @fro-bot/test-kit/git-data-fake), which
+  // testFiles entry (packages/registry/src/merge-back-data.test.ts imports @fro-bot/test-kit/git-data-fake), which
   // only the exports-map resolver follows.
   it.each([
     'packages/core/src/guards.ts',
@@ -1169,7 +1169,7 @@ describe('closure-based trigger set against the real config', () => {
     expect(realTriggerSet.files.has(helper)).toBe(true)
     expect(realConfig.mutate).not.toContain(helper)
     expect(realConfig.testFiles).not.toContain(helper)
-    expect(reachedModulesTransitive('scripts/merge-back-data.test.ts').has(helper)).toBe(false)
+    expect(reachedModulesTransitive('packages/registry/src/merge-back-data.test.ts').has(helper)).toBe(false)
   })
 
   it('reports not-applicable for a package README, which is neither a manifest nor imported', async () => {

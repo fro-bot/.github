@@ -16,8 +16,8 @@
  */
 import type {OctokitClient} from './commit-metadata.ts'
 
+import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import {WIKI_ROOT} from '@fro.bot/wiki-write-core/wiki-utils'
-import {computeRepoSlug} from './wiki-slug.ts'
 
 const REDACTED_OWNER = '[REDACTED]'
 

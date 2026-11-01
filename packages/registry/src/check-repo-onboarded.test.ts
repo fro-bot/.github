@@ -1,7 +1,10 @@
+import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import YAML from 'yaml'
 
-import {runCheck} from './check-repo-onboarded.ts'
+import {runCheck, runCheckRepoOnboarded} from './check-repo-onboarded.ts'
 
 // Minimal valid repos.yaml with a single public entry
 function makeReposYaml(repos: unknown[]): string {
@@ -233,5 +236,66 @@ describe('runCheck', () => {
       const result = await runCheck(env, deps)
       expect(result.onboarded, `expected onboarded:false for path: ${label}`).toBe(false)
     }
+  })
+})
+
+function sinks() {
+  const out: string[] = []
+  const err: string[] = []
+  return {io: {stdout: (text: string) => out.push(text), stderr: (text: string) => err.push(text)}, out, err}
+}
+
+async function withOutputFile<T>(run: (path: string) => Promise<T>): Promise<{value: T; written: string}> {
+  const directory = mkdtempSync(join(tmpdir(), 'check-repo-onboarded-'))
+  const path = join(directory, 'github-output')
+  try {
+    const value = await run(path)
+    return {value, written: existsSync(path) ? readFileSync(path, 'utf8') : ''}
+  } finally {
+    rmSync(directory, {recursive: true, force: true})
+  }
+}
+
+describe('runCheckRepoOnboarded', () => {
+  const found = async () => makeReposYaml([makePublicEntry('fro-bot', 'dashboard')])
+
+  it('prints the verdict as one JSON line and appends onboarded=true for a public entry', async () => {
+    const {io, out, err} = sinks()
+    const {written} = await withOutputFile(async path =>
+      runCheckRepoOnboarded({REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard', GITHUB_OUTPUT: path}, io, {
+        readFileImpl: found as never,
+      }),
+    )
+    expect(out).toEqual(['{"onboarded":true,"target":"fro-bot/dashboard"}\n'])
+    expect(err).toEqual([])
+    expect(written).toBe('onboarded=true\n')
+  })
+
+  it('reports the reason on stderr and appends onboarded=false for a repo that is not listed', async () => {
+    const {io, out, err} = sinks()
+    const {written} = await withOutputFile(async path =>
+      runCheckRepoOnboarded({REPO_OWNER: 'fro-bot', REPO_NAME: 'ghost', GITHUB_OUTPUT: path}, io, {
+        readFileImpl: found as never,
+      }),
+    )
+    const reason = 'fro-bot/ghost has no public entry in metadata/repos.yaml'
+    expect(err).toEqual([`check-repo-onboarded: ${reason}\n`])
+    expect(out).toEqual([`{"onboarded":false,"target":"fro-bot/ghost","reason":"${reason}"}\n`])
+    expect(written).toBe('onboarded=false\n')
+  })
+
+  it.each([[undefined], ['']])('writes no output file when GITHUB_OUTPUT is %j', async githubOutput => {
+    const {io, out} = sinks()
+    await runCheckRepoOnboarded({REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard', GITHUB_OUTPUT: githubOutput}, io, {
+      readFileImpl: found as never,
+    })
+    expect(out).toEqual(['{"onboarded":true,"target":"fro-bot/dashboard"}\n'])
+  })
+
+  it('never throws: a missing target is onboarded=false with the reason', async () => {
+    const {io, out, err} = sinks()
+    await runCheckRepoOnboarded({}, io, {readFileImpl: found as never})
+    expect(err).toEqual(['check-repo-onboarded: REPO_OWNER and REPO_NAME must be set\n'])
+    expect(out).toEqual(['{"onboarded":false,"target":"/","reason":"REPO_OWNER and REPO_NAME must be set"}\n'])
   })
 })

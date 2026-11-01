@@ -1,0 +1,38 @@
+{
+  "name": "@fro-bot/registry",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The repository registry writers, reconcile, invitations, survey results and data-branch merges of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./check-repo-onboarded-cli": "./src/check-repo-onboarded-cli.ts",
+    "./check-repo-onboarded": "./src/check-repo-onboarded.ts",
+    "./commit-metadata": "./src/commit-metadata.ts",
+    "./handle-invitation-cli": "./src/handle-invitation-cli.ts",
+    "./handle-invitation": "./src/handle-invitation.ts",
+    "./merge-back-data-cli": "./src/merge-back-data-cli.ts",
+    "./merge-back-data": "./src/merge-back-data.ts",
+    "./merge-data-pr-cli": "./src/merge-data-pr-cli.ts",
+    "./merge-data-pr": "./src/merge-data-pr.ts",
+    "./metadata-wiki-rename-guard": "./src/metadata-wiki-rename-guard.ts",
+    "./record-survey-result-cli": "./src/record-survey-result-cli.ts",
+    "./record-survey-result": "./src/record-survey-result.ts",
+    "./registry-io": "./src/registry-io.ts",
+    "./rename-tracked-repo-cli": "./src/rename-tracked-repo-cli.ts",
+    "./rename-tracked-repo": "./src/rename-tracked-repo.ts",
+    "./repos-metadata": "./src/repos-metadata.ts",
+    "./reset-survey-status-cli": "./src/reset-survey-status-cli.ts",
+    "./reset-survey-status": "./src/reset-survey-status.ts",
+    "./update-metadata-cli": "./src/update-metadata-cli.ts",
+    "./update-metadata": "./src/update-metadata.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

@@ -49,8 +49,8 @@
       "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is packages/privacy/src/repo-page-move.test.ts, which imports the built dist/ output through the @fro.bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
     },
     {
-      "path": "scripts/rename-tracked-repo.ts",
-      "reason": "Operator-dispatched writer, never run on a schedule: it commits to data only after a human dispatches it and GitHub itself proves the rename (same node ID, same owner, public). It does have real rejection paths (every evidence and row block, the branch and tip-author checks, a truncated tree, the path and no-overwrite policy, the 3-attempt retry), and each is pinned by a decision-table test in scripts/rename-tracked-repo.test.ts against an in-memory Git Data fake that enforces fast-forward updates. The page-move decisions it delegates to live in packages/wiki-write-core/src/repo-page-move.ts, classified separately. It is not in the mutate list because the module's boundary is its injected clients rather than a pure predicate, so a Stryker run would mostly score transport glue. Re-evaluate if it gains an unattended caller."
+      "path": "packages/registry/src/rename-tracked-repo.ts",
+      "reason": "Operator-dispatched writer, never run on a schedule: it commits to data only after a human dispatches it and GitHub itself proves the rename (same node ID, same owner, public). It does have real rejection paths (every evidence and row block, the branch and tip-author checks, a truncated tree, the path and no-overwrite policy, the 3-attempt retry), and each is pinned by a decision-table test in packages/registry/src/rename-tracked-repo.test.ts against an in-memory Git Data fake that enforces fast-forward updates. The page-move decisions it delegates to live in packages/wiki-write-core/src/repo-page-move.ts, classified separately. It is not in the mutate list because the module's boundary is its injected clients rather than a pure predicate, so a Stryker run would mostly score transport glue. Re-evaluate if it gains an unattended caller."
     },
     {
       "path": "packages/wiki-write-core/src/branch-safety.ts",
@@ -73,8 +73,8 @@
       "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands. Its test stays in stryker.config.json testFiles regardless: it is private-leak.ts's only same-tree source exerciser (scripts/check-private-leak.ts imports the dist specifier), so mutate=9/testFiles=10 is intentional."
     },
     {
-      "path": "scripts/check-repo-onboarded.ts",
-      "reason": "Survey routing predicate, not an independent write or promotion authority. runCheck fails closed (onboarded:false) on every error path -- missing env, ENOENT, malformed YAML, and schema failure all resolve to false, never true. The deciding predicate, publicRepoEntryExists in scripts/repos-metadata.ts, is not itself in the mutated set, so mutating this wrapper would not exercise the real decision."
+      "path": "packages/registry/src/check-repo-onboarded.ts",
+      "reason": "Survey routing predicate, not an independent write or promotion authority. runCheck fails closed (onboarded:false) on every error path -- missing env, ENOENT, malformed YAML, and schema failure all resolve to false, never true. The deciding predicate, publicRepoEntryExists in packages/registry/src/repos-metadata.ts, is not itself in the mutated set, so mutating this wrapper would not exercise the real decision."
     },
     {
       "path": "scripts/check-md-links.ts",
@@ -167,6 +167,102 @@
     {
       "path": "scripts/check-wiki-authority.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/core/wiki-authority-cli and runs it under the entry guard. The check, the block message and the exit codes are in packages/core/src/wiki-authority.ts and wiki-authority-cli.ts, both mutated and reached by their own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/check-repo-onboarded.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/check-repo-onboarded-cli and runs it under the entry guard. The behaviour is in packages/registry/src/check-repo-onboarded.ts and check-repo-onboarded-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/handle-invitation.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/handle-invitation-cli and runs it under the entry guard. The behaviour is in packages/registry/src/handle-invitation.ts and handle-invitation-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/record-survey-result.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/record-survey-result-cli and runs it under the entry guard. The behaviour is in packages/registry/src/record-survey-result.ts and record-survey-result-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/reset-survey-status.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/reset-survey-status-cli and runs it under the entry guard. The behaviour is in packages/registry/src/reset-survey-status.ts and reset-survey-status-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/merge-back-data.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/merge-back-data-cli and runs it under the entry guard. The behaviour is in packages/registry/src/merge-back-data.ts and merge-back-data-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/merge-data-pr.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/merge-data-pr-cli and runs it under the entry guard. The behaviour is in packages/registry/src/merge-data-pr.ts and merge-data-pr-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/rename-tracked-repo.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/rename-tracked-repo-cli and runs it under the entry guard. The behaviour is in packages/registry/src/rename-tracked-repo.ts and rename-tracked-repo-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "scripts/update-metadata.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/update-metadata-cli and runs it under the entry guard. The behaviour is in packages/registry/src/update-metadata.ts and update-metadata-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "packages/registry/src/check-repo-onboarded-cli.ts",
+      "reason": "The goke entrypoint of the survey onboarded gate: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/check-repo-onboarded-cli.test.ts, and the body by check-repo-onboarded.test.ts."
+    },
+    {
+      "path": "packages/registry/src/handle-invitation-cli.ts",
+      "reason": "The goke entrypoint of invitation polling: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/handle-invitation-cli.test.ts, and the body by handle-invitation.test.ts."
+    },
+    {
+      "path": "packages/registry/src/record-survey-result-cli.ts",
+      "reason": "The goke entrypoint of the survey write-back: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/record-survey-result-cli.test.ts, and the body by record-survey-result.test.ts."
+    },
+    {
+      "path": "packages/registry/src/reset-survey-status-cli.ts",
+      "reason": "The goke entrypoint of the recovery tool: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/reset-survey-status-cli.test.ts, and the body by reset-survey-status.test.ts."
+    },
+    {
+      "path": "packages/registry/src/merge-data-pr-cli.ts",
+      "reason": "The goke entrypoint of the data promotion PR: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/merge-data-pr-cli.test.ts, and the body by merge-data-pr.test.ts."
+    },
+    {
+      "path": "packages/registry/src/rename-tracked-repo-cli.ts",
+      "reason": "The goke entrypoint of the operator rename: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/rename-tracked-repo-cli.test.ts, and the body by rename-tracked-repo.test.ts."
+    },
+    {
+      "path": "packages/registry/src/update-metadata-cli.ts",
+      "reason": "The goke entrypoint of the Renovate metadata refresh: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/update-metadata-cli.test.ts, and the body by update-metadata.test.ts."
+    },
+    {
+      "path": "packages/registry/src/registry-io.ts",
+      "reason": "Type-only module: it declares the RegistryIo interface (stdout and stderr sinks) and has no runtime code, so there is nothing to mutate."
+    },
+    {
+      "path": "packages/registry/src/repos-metadata.ts",
+      "reason": "The pure shape and lookup helpers for metadata/repos.yaml (addRepoEntry, the survey write-back, the rename and visibility lookups). Their rejection paths (RepoEntryNotFoundError, DuplicateRepoIdentityError) are pinned by decision-table tests in repos-metadata.test.ts and exercised through the callers' tests, but the module is not a promotion gate: the data branch, the integrity check and the privacy gates decide what reaches main. It is not in the mutate list because its consumers that are mutated (merge-back-data) do not reach it. Re-evaluate if a mutated gate starts to depend on it."
+    },
+    {
+      "path": "packages/registry/src/commit-metadata.ts",
+      "reason": "The App-token writer for metadata/*.yaml on data, with the 409 retry and the branch-protection guard. Its rejection paths (CommitMetadataError codes, CONFLICT_EXHAUSTED) are pinned by commit-metadata.test.ts and every writer's tests exercise it, but it writes only to data, which the repository rulesets and the reconcile integrity check protect, and nothing it returns reaches main without the merge-data privacy gates. It is not in the mutate list because its mutants would score Octokit transport glue and the retry wiring, which core's retry tests already cover. Re-evaluate if it gains a caller outside the data-branch writers."
+    },
+    {
+      "path": "packages/registry/src/handle-invitation.ts",
+      "reason": "Scheduled invitation poller: it accepts invitations only from allowlisted inviters and writes new rows to data through commit-metadata. Its decisions (inviter allowlist, privacy refresh, the redacted-ID output, the public-only GITHUB_OUTPUT keys) are pinned by handle-invitation.test.ts. It is not in the mutate list because it is an I/O shell around injected Octokit clients rather than a pure predicate, and the privacy decision it makes (never announce a private repo) is enforced again by gateway-announce and the privacy gates. Re-evaluate if it gains an unattended caller that bypasses them."
+    },
+    {
+      "path": "packages/registry/src/record-survey-result.ts",
+      "reason": "Survey write-back: it records a survey outcome on the matching row of metadata/repos.yaml on data. The decisions (name-mismatch, visibility-mismatch, duplicate identity, the exit-0 skip for a missing entry) are pinned by record-survey-result.test.ts, and the write goes through commit-metadata to data only. It is not in the mutate list because it is a thin shell over repos-metadata and commit-metadata, classified separately, and nothing it writes reaches main without the merge-data gates."
+    },
+    {
+      "path": "packages/registry/src/reset-survey-status.ts",
+      "reason": "Operator recovery tool for survey fields on data, dispatched by hand. Its parsing and failure paths are pinned by reset-survey-status.test.ts, and the write goes through commit-metadata to data only. It is not in the mutate list because it has no unattended caller and its decisions are shared with repos-metadata, classified separately."
+    },
+    {
+      "path": "packages/registry/src/merge-data-pr.ts",
+      "reason": "Opens or refreshes the data to main promotion PR and files the stale, conflict and journal alerts. The PR it opens is the human-reviewed promotion path: the privacy gates run before it and the conditional auto-merge rule decides what merges. Its decisions are pinned by merge-data-pr.test.ts. It is not in the mutate list because it is an I/O shell around injected Octokit clients, and merge-back-data (mutated) reaches only upsertAlertIssue. Re-evaluate if the PR gains an auto-merge path of its own."
+    },
+    {
+      "path": "packages/registry/src/metadata-wiki-rename-guard.ts",
+      "reason": "The lookup that stops a rename or merge from stranding a wiki page: findBlockedPublicAssociations, publicAssociationKey and lookupRepoWikiPage, used by reconcile. Its decisions are pinned by metadata-wiki-rename-guard.test.ts and reconcile-wiki-rename-guard.test.ts. It is not in the mutate list because it is consumed only by reconcile, which is not mutated. Re-evaluate together with reconcile."
+    },
+    {
+      "path": "packages/registry/src/update-metadata.ts",
+      "reason": "Refreshes metadata/renovate.yaml on data from the Renovate repos the App installation can see. The sort and dedupe in buildRenovateFile and the 404 handling in discovery are pinned by update-metadata.test.ts. It is not in the mutate list because it is a scheduled writer to data only, behind the same rulesets and gates as the other metadata writers, and it makes no privacy or promotion decision."
     }
   ]
 }

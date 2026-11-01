@@ -1,5 +1,5 @@
-import type {DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
-import type {DiscoveryClient, OctokitClient} from './update-metadata.ts'
+import type {DataBranchBootstrapResult} from '@fro.bot/wiki-write-core/data-branch-bootstrap'
+import type {DiscoveryClient, OctokitClient, RunUpdateMetadataParams} from './update-metadata.ts'
 
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
@@ -502,5 +502,45 @@ describe('createClientsFromEnv', () => {
 
     // #then each token produced exactly one client
     expect(createClient.mock.calls.map(c => c[0]).sort()).toEqual(['d-tok', 'w-tok'])
+  })
+})
+
+describe('runUpdateMetadataCli', () => {
+  const env = {UPDATE_METADATA_DISCOVERY_TOKEN: 'disc', UPDATE_METADATA_WRITER_TOKEN: 'writer'}
+
+  it('discovers with the first client, commits with the second and prints the summary as one JSON line', async () => {
+    const {runUpdateMetadataCli} = await import('./update-metadata.ts')
+    const out: string[] = []
+    const discovery = {
+      paginate: vi.fn().mockResolvedValue([repo('agent'), repo('archived', {archived: true})]),
+      rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn().mockResolvedValue({})}},
+    }
+    const writer = {tag: 'writer'}
+    const createClient = vi.fn(async (token: string) => (token === 'disc' ? discovery : writer) as never)
+    const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>().mockResolvedValue({
+      committed: true,
+      sha: 'a'.repeat(40),
+      attempts: 1,
+    })
+
+    await runUpdateMetadataCli(env, {stdout: text => out.push(text), stderr: () => {}}, {createClient, commit})
+
+    expect(createClient.mock.calls.map(call => call[0])).toEqual(['disc', 'writer'])
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(commit.mock.calls[0]?.[0].octokit).toBe(writer)
+    expect(out).toEqual(['{"owner":"fro-bot","detected":1,"committed":true,"attempts":1}\n'])
+  })
+
+  it('throws when a token is missing, before any client exists', async () => {
+    const {runUpdateMetadataCli} = await import('./update-metadata.ts')
+    const createClient = vi.fn()
+    await expect(
+      runUpdateMetadataCli(
+        {UPDATE_METADATA_DISCOVERY_TOKEN: 'disc'},
+        {stdout: () => {}, stderr: () => {}},
+        {createClient},
+      ),
+    ).rejects.toThrow('UPDATE_METADATA_WRITER_TOKEN')
+    expect(createClient).not.toHaveBeenCalled()
   })
 })

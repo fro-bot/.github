@@ -1,10 +1,11 @@
+import type {CommitMetadataParams, CommitMetadataResult} from '@fro-bot/registry/commit-metadata'
 import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
-import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
 import {Buffer} from 'node:buffer'
 import {readFileSync} from 'node:fs'
 import process from 'node:process'
 
+import {addRepoEntry, computeNextEligibleAt} from '@fro-bot/registry/repos-metadata'
 import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import {
@@ -37,7 +38,6 @@ import {
   type RepoStatusProbe,
   type VisibilityTransitionIssue,
 } from './reconcile-repos.ts'
-import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
 

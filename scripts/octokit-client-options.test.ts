@@ -82,7 +82,7 @@ describe('handle-invitation builds one client per credential', () => {
   it('uses GITHUB_TOKEN for the poll client and METADATA_WRITE_TOKEN for the metadata client, in that order', async () => {
     process.env.GITHUB_TOKEN = 'poll-token'
     process.env.METADATA_WRITE_TOKEN = 'metadata-token'
-    const {handleInvitations} = await import('./handle-invitation.ts')
+    const {handleInvitations} = await import('@fro-bot/registry/handle-invitation')
     // The recording constructor yields objects with no API, so the run fails once both clients exist.
     await handleInvitations().catch(() => undefined)
     expect(constructed.slice(0, 2)).toStrictEqual([{auth: 'poll-token'}, {auth: 'metadata-token'}])
@@ -91,7 +91,7 @@ describe('handle-invitation builds one client per credential', () => {
   it('never reuses the poll credential for the metadata client', async () => {
     process.env.GITHUB_TOKEN = 'poll-token'
     delete process.env.METADATA_WRITE_TOKEN
-    const {handleInvitations} = await import('./handle-invitation.ts')
+    const {handleInvitations} = await import('@fro-bot/registry/handle-invitation')
     const failure = await handleInvitations().then(
       () => undefined,
       (error: unknown) => error,

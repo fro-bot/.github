@@ -1,8 +1,8 @@
 import type {RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
-import {describe, expect, it} from 'vitest'
+import type {commitMetadata} from './commit-metadata.ts'
+import {describe, expect, it, vi} from 'vitest'
 import YAML from 'yaml'
-
 import {
   buildRecordSurveyResultInput,
   createSurveyWriteBack,
@@ -10,6 +10,7 @@ import {
   formatRecordSurveyResultNonFatalOutcome,
   formatSurveyResultTarget,
   formatSurveyWriteBackWarning,
+  runRecordSurveyResult,
 } from './record-survey-result.ts'
 import {DuplicateRepoIdentityError, RepoEntryNotFoundError} from './repos-metadata.ts'
 
@@ -293,5 +294,135 @@ describe('survey write-back outcome', () => {
 
     writeBack.mutator(trackedRow({private: true}))
     expect(writeBack.written()).toBeUndefined()
+  })
+})
+
+function sinks() {
+  const out: string[] = []
+  const err: string[] = []
+  return {io: {stdout: (text: string) => out.push(text), stderr: (text: string) => err.push(text)}, out, err}
+}
+
+function row(overrides: Record<string, unknown> = {}): RepoEntry {
+  return {
+    owner: 'fro-bot',
+    name: 'dashboard',
+    added: '2026-06-15',
+    onboarding_status: 'onboarded',
+    last_survey_at: null,
+    last_survey_status: null,
+    has_fro_bot_workflow: true,
+    has_renovate: false,
+    discovery_channel: 'owned',
+    next_survey_eligible_at: null,
+    private: false,
+    node_id: 'R_kgDOPUBLIC1',
+    ...overrides,
+  }
+}
+
+const SURVEY_ENV = {
+  GITHUB_REPOSITORY: 'fro-bot/.github',
+  REPO_OWNER: 'fro-bot',
+  REPO_NAME: 'dashboard',
+  REPO_NODE_ID: 'R_kgDOPUBLIC1',
+  SURVEY_STATUS: 'success',
+  SURVEY_AT: '2026-10-30T00:00:00Z',
+}
+
+/** A commit that runs the mutator against `file` the way `commitMetadata` does, then reports a write. */
+function committing(file: unknown, result = {committed: true as const, sha: 'c'.repeat(40), attempts: 1}) {
+  return vi.fn<typeof commitMetadata>(async params => {
+    await params.mutator(file)
+    return result
+  })
+}
+
+describe('runRecordSurveyResult', () => {
+  it('records the survey, prints the commit as one JSON line and returns 0', async () => {
+    const commit = committing({version: 1, repos: [row()]})
+    const {io, out, err} = sinks()
+
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      owner: 'fro-bot',
+      repo: '.github',
+      path: 'metadata/repos.yaml',
+      message: 'chore(reconcile): record survey success for fro-bot/dashboard',
+    })
+    expect(out).toEqual([
+      `{"committed":true,"sha":"${'c'.repeat(40)}","attempts":1,"target":"fro-bot/dashboard","status":"success"}\n`,
+    ])
+    expect(err).toEqual([])
+  })
+
+  it('prints a no-op commit without a sha', async () => {
+    const commit = committing(
+      {version: 1, repos: [row()]},
+      {committed: false as never, sha: undefined as never, attempts: 1},
+    )
+    const {io, out} = sinks()
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+    expect(out).toEqual(['{"committed":false,"attempts":1,"target":"fro-bot/dashboard","status":"success"}\n'])
+  })
+
+  it('warns and reports the outcome when the node ID matches a row stored under another name', async () => {
+    const commit = committing({version: 1, repos: [row({name: 'stored-name'})]})
+    const {io, out, err} = sinks()
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+    expect(err).toEqual([
+      'record-survey-result: survey target does not match the tracked row for its node ID (pending rename or transfer); recorded failure and kept the stored name\n',
+    ])
+    expect(out[0]).toContain('"outcome":"name-mismatch"')
+    expect(out[0]).toContain('"status":"failure"')
+  })
+
+  it('skips with exit 0 and a stderr line when the survey target has no entry', async () => {
+    const commit = committing({version: 1, repos: [row({node_id: 'R_kgDOOTHER00', name: 'other'})]})
+    const {io, out, err} = sinks()
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+    expect(out).toEqual([])
+    expect(err).toEqual([
+      'record-survey-result: metadata/repos.yaml has no entry for fro-bot/dashboard; skipping (non-fatal)\n',
+    ])
+  })
+
+  it('treats a duplicate identity as exit 0 with the non-fatal output', async () => {
+    const commit = committing({version: 1, repos: [row(), row({name: 'twin'})]})
+    const {io, out, err} = sinks()
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+    expect(out).toEqual([
+      '{"committed":false,"outcome":"duplicate-identity","target":"fro-bot/dashboard","status":"success"}\n',
+    ])
+    expect(err[0]).toMatch(/^record-survey-result: .*; scheduled reconcile run owns the repair \(non-fatal\)\n$/u)
+  })
+
+  it.each([
+    [{...SURVEY_ENV, REPO_NODE_ID: undefined}, 'record-survey-result: REPO_NODE_ID is required\n'],
+    [
+      {...SURVEY_ENV, SURVEY_STATUS: 'maybe'},
+      "record-survey-result: SURVEY_STATUS must be 'success' or 'failure', got 'maybe'\n",
+    ],
+    [{...SURVEY_ENV, SURVEY_AT: 'nope'}, "record-survey-result: SURVEY_AT is not a parseable date: 'nope'\n"],
+    [{...SURVEY_ENV, GITHUB_REPOSITORY: undefined}, 'record-survey-result: GITHUB_REPOSITORY is required\n'],
+    [
+      {...SURVEY_ENV, GITHUB_REPOSITORY: 'nope'},
+      "record-survey-result: GITHUB_REPOSITORY must be 'owner/name', got 'nope'\n",
+    ],
+  ])('returns 1 with the message on stderr for %j', async (env, line) => {
+    const commit = vi.fn<typeof commitMetadata>()
+    const {io, out, err} = sinks()
+    expect(await runRecordSurveyResult(env, io, commit)).toBe(1)
+    expect(commit).not.toHaveBeenCalled()
+    expect(out).toEqual([])
+    expect(err).toEqual([line])
+  })
+
+  it('returns 1 and describes a messageless API error by name and status', async () => {
+    const commit = vi.fn<typeof commitMetadata>().mockRejectedValue(messagelessHttpError(502))
+    const {io, err} = sinks()
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(1)
+    expect(err).toEqual(['record-survey-result: HttpError with no message (HTTP 502)\n'])
   })
 })
