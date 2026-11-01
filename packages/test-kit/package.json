@@ -5,6 +5,7 @@
   "description": "Shared test fakes and helpers for the Fro Bot control plane",
   "type": "module",
   "exports": {
+    "./fake-github": "./src/fake-github.ts",
     "./git-data-fake": "./src/git-data-fake.ts",
     "./repo-page-move-fixtures": "./src/repo-page-move-fixtures.ts",
     "./spawn-entrypoint": "./src/spawn-entrypoint.ts",

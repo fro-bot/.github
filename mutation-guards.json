@@ -303,6 +303,10 @@
     {
       "path": "packages/registry/src/reconcile-handler.ts",
       "reason": "The I/O shell of a reconcile run: handleReconcile reads, plans, verifies the data branch, commits to data through commit-metadata, then dispatches, files issues and syncs stars. Pinned end to end by packages/registry/src/reconcile-repos.test.ts and packages/registry/src/reconcile-wiki-rename-guard.test.ts with injected clients. Not in the mutate list because it is an I/O shell around those clients and a scheduled writer to data only."
+    },
+    {
+      "path": "packages/test-kit/src/fake-github.ts",
+      "reason": "Test support: the route table, preload arguments and call log of a fake GitHub API for spawned CLI tests. It decides nothing for a gate and has no production importer; its behaviour, including the preload fixture it points at, is pinned by packages/test-kit/src/fake-github.test.ts."
     }
   ]
 }

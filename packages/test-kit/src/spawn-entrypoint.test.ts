@@ -148,6 +148,26 @@ if (path !== undefined) appendFileSync(path, 'key=value\n')
   })
 })
 
+describe('githubOutput: unset', () => {
+  const report = "process.stdout.write(process.env.GITHUB_OUTPUT === undefined ? 'unset' : 'set')"
+
+  it('removes GITHUB_OUTPUT from the child, even when the caller env sets it', async () => {
+    const entrypoint = await script('unset-output.ts', report)
+    const result = await spawnEntrypoint({
+      entrypoint,
+      githubOutput: 'unset',
+      env: {GITHUB_OUTPUT: join(directory, 'elsewhere-output')},
+    })
+    expect(result).toEqual({exitCode: 0, stdout: 'unset', stderr: '', githubOutput: ''})
+  })
+
+  it("is 'file' by default and when named", async () => {
+    const entrypoint = await script('file-output.ts', report)
+    expect((await spawnEntrypoint({entrypoint})).stdout).toBe('set')
+    expect((await spawnEntrypoint({entrypoint, githubOutput: 'file'})).stdout).toBe('set')
+  })
+})
+
 describe('the runtime executable', () => {
   const HELPER = fileURLToPath(new URL('./spawn-entrypoint.ts', import.meta.url))
 
