@@ -2,11 +2,18 @@
   "name": "@fro-bot/dispatch",
   "version": "0.0.0",
   "private": true,
-  "description": "The Renovate dispatcher of the Fro Bot control plane",
+  "description": "The cross-repo coordination dispatcher and the Renovate dispatcher of the Fro Bot control plane",
   "type": "module",
   "exports": {
+    "./dispatch-cli": "./src/dispatch-cli.ts",
+    "./dispatch-github": "./src/dispatch-github.ts",
+    "./dispatch-marker": "./src/dispatch-marker.ts",
+    "./dispatch-model": "./src/dispatch-model.ts",
+    "./dispatch-plan": "./src/dispatch-plan.ts",
+    "./dispatch-receipts": "./src/dispatch-receipts.ts",
     "./dispatch-renovate": "./src/dispatch-renovate.ts",
-    "./dispatch-renovate-cli": "./src/dispatch-renovate-cli.ts"
+    "./dispatch-renovate-cli": "./src/dispatch-renovate-cli.ts",
+    "./dispatch-run": "./src/dispatch-run.ts"
   },
   "dependencies": {
     "@fro-bot/core": "workspace:*",

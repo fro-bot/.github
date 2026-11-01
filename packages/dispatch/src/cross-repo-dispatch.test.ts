@@ -5,49 +5,48 @@ import type {
   DispatchTarget,
   GateEntry,
   GoalState,
-  LabeledEventPayload,
-  OpenGoalIssue,
-  RunDispatchResult,
   TrackerComment,
-} from './cross-repo-dispatch.ts'
+} from './dispatch-model.ts'
+import type {LabeledEventPayload, OpenGoalIssue, RunDispatchResult} from './dispatch-run.ts'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
+import {runDispatchCli, runTrackCli} from './dispatch-cli.ts'
 import {
-  buildMarkerComment,
-  buildResultMarker,
-  CAS_MAX_RETRIES,
-  classifyReceiptCapability,
-  computeApprovalFingerprint,
   createTargetClientResolver,
-  CROSS_REPO_GOAL_LABEL,
-  extractItemPrompts,
-  extractMarker,
   findRunByCorrelationId,
   findRunConclusion,
-  gateTarget,
-  hashNonce,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
-  MARKER_PREFIX,
-  MAX_ITEMS_PER_GOAL,
-  parseDecomposition,
-  parseResult,
   parseTargetTokens,
-  planDispatch,
-  planSnapshot,
-  RECEIPT_SLA_MS,
-  repairJsonStringEscapes,
-  REQUIRED_APPROVER,
-  resolveReceipts,
-  runDispatch,
-  runDispatchCli,
-  runTrack,
-  runTrackCli,
+} from './dispatch-github.ts'
+import {
+  buildMarkerComment,
+  computeApprovalFingerprint,
+  extractMarker,
   selectStateMarker,
   serializeMarker,
+} from './dispatch-marker.ts'
+import {
+  CAS_MAX_RETRIES,
+  CROSS_REPO_GOAL_LABEL,
+  MARKER_PREFIX,
+  MAX_ITEMS_PER_GOAL,
+  RECEIPT_SLA_MS,
+  REQUIRED_APPROVER,
   TARGET_WORKFLOW_ID,
-} from './cross-repo-dispatch.ts'
+} from './dispatch-model.ts'
+import {classifyReceiptCapability, gateTarget, planDispatch, planSnapshot} from './dispatch-plan.ts'
+import {
+  buildResultMarker,
+  extractItemPrompts,
+  hashNonce,
+  parseDecomposition,
+  parseResult,
+  repairJsonStringEscapes,
+  resolveReceipts,
+} from './dispatch-receipts.ts'
+import {runDispatch, runTrack} from './dispatch-run.ts'
 
 function makeItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
   return {

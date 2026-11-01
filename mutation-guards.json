@@ -309,12 +309,44 @@
       "reason": "Test support: the route table, preload arguments and call log of a fake GitHub API for spawned CLI tests. It decides nothing for a gate and has no production importer; its behaviour, including the preload fixture it points at, is pinned by packages/test-kit/src/fake-github.test.ts."
     },
     {
+      "path": "packages/dispatch/src/dispatch-model.ts",
+      "reason": "The types, constants and type guards of a coordination goal (ELIGIBLE_OWNERS, FROBOT_COMMENT_AUTHORS, REQUIRED_APPROVER, RECEIPT_SLA_MS, CAS_MAX_RETRIES, the status sets, isGoalStateBody). It holds data and shape checks, no I/O. The guards are exercised through the marker round-trip and parse tests in packages/dispatch/src/cross-repo-dispatch.test.ts, and the constants through the gate, plan and approver tests in the same file. Not in the mutate list: a Stryker run would mostly score literal changes to constants that other modules' decision tables already pin."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-marker.ts",
+      "reason": "Hash, parse, select and serialize of the state marker embedded in a coordination issue's comments. Its decisions (last marker wins, bot-authored markers only, a malformed or hash-less marker is null, a canonical latest-state-only hash) are pinned by the marker round-trip, selectStateMarker and fingerprint tests in packages/dispatch/src/cross-repo-dispatch.test.ts. Not in the mutate list: the module has no caller of its own, only the executors in dispatch-run.ts, which write through a compare-and-swap."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-receipts.ts",
+      "reason": "Text parsing of coordination comments (the planner checklist, the worker receipt with its escape repair) and the three-gate receipt resolver (Fro Bot author, correlation id maps to an item, hash(nonce) equals the stored hash), plus the nonce primitives. Pinned by decision-table tests in packages/dispatch/src/cross-repo-dispatch.test.ts: the checklist grammar, the receipt region and bare-marker forms, escape repair, earliest-receipt-wins, forged-nonce and non-bot receipts, and early receipts. Not in the mutate list: it never writes; the executors that act on its verdicts are in dispatch-run.ts and write only to the coordination issue's marker comment."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-plan.ts",
+      "reason": "The pure planners (registry gate, dispatch plan, snapshot plan) and the prompt safety policy and builder. Pinned by the gate, same-target serialization, snapshot and prompt-safety tests in packages/dispatch/src/cross-repo-dispatch.test.ts. Not in the mutate list: it is pure planning over values the executors pass in, and the executors re-read and re-compare the approval fingerprint before every item."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-run.ts",
+      "reason": "The executors: runDispatch on an approval and runTrack on a schedule, with the compare-and-swap marker write they share. They dispatch workflows into owner repos and update the coordination issue, never data or main. Pinned end to end by the runDispatch, runTrack and CAS tests in packages/dispatch/src/cross-repo-dispatch.test.ts, against injected clients, and by scripts/dispatch-flows.test.ts through the real entrypoint against a fake GitHub. Not in the mutate list because the module's boundary is its injected clients, so a Stryker run would mostly score transport glue."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-github.ts",
+      "reason": "GitHub adapters: run and goal-issue lookups, parseTargetTokens and the per-owner client resolver. Pinned by the lookup, token-map and resolver tests in packages/dispatch/src/cross-repo-dispatch.test.ts and, for the 15 s timeout on every client, by scripts/octokit-entrypoints.test.ts. Not in the mutate list: thin wrappers over injected clients."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-cli.ts",
+      "reason": "The production composition of cross-repo-dispatch (the registry read, the per-owner clients, the dispatch and track bodies) and its goke entrypoint. Pinned by the runDispatchCli and runTrackCli composition tests in packages/dispatch/src/cross-repo-dispatch.test.ts, by packages/dispatch/src/dispatch-cli.test.ts for the CLI surface, and by scripts/dispatch-flows.test.ts, which spawns the shim. Not in the mutate list: it is I/O wiring, and the decisions it wires are in the modules above."
+    },
+    {
       "path": "packages/dispatch/src/dispatch-renovate.ts",
       "reason": "Plans the repositories Renovate may be dispatched to (the installation's repositories intersected with metadata/renovate.yaml) and dispatches the workflow, skipping a repository whose run is queued or in progress. It writes only workflow_dispatch events and one $GITHUB_OUTPUT line, never data or main. Pinned by packages/dispatch/src/dispatch-renovate.test.ts: the plan, the running-run check, the failure shapes and the missing-input errors. Not in the mutate list: transport glue over an injected client."
     },
     {
       "path": "packages/dispatch/src/dispatch-renovate-cli.ts",
       "reason": "The goke entrypoint of dispatch-renovate: `plan` and a no-argument root command, nothing else. Argv that matches neither is a usage error and dispatches nothing. Pinned by packages/dispatch/src/dispatch-renovate-cli.test.ts and, through the shim, by scripts/dispatch-flows.test.ts. Not in the mutate list: it declares two commands, so a mutation run would score only the config object."
+    },
+    {
+      "path": "scripts/cross-repo-dispatch.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/dispatch/dispatch-cli and runs it under the entry guard. The behaviour is in packages/dispatch/src/dispatch-*.ts, pinned by packages/dispatch/src/cross-repo-dispatch.test.ts. The shim's surface, including the mode errors, a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/dispatch-flows.test.ts."
     },
     {
       "path": "scripts/dispatch-renovate.ts",
