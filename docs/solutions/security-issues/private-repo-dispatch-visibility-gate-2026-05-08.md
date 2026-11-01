@@ -8,7 +8,7 @@ resolution_type: code_fix
 severity: high
 date: 2026-05-08
 last_updated: 2026-05-08
-module: scripts/reconcile-repos.ts
+module: packages/registry/src/reconcile-effects.ts
 related_components:
   - development_workflow
   - testing_framework

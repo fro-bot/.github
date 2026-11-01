@@ -196,7 +196,7 @@ The recheck snippet above now matches production verbatim: the `2>/dev/null` swa
   # a recheck failure suppresses the announce without relying on job-level propagation
 ```
 
-**5. Tighten the caller-side dispatch contract** — `scripts/reconcile-repos.ts`:
+**5. Tighten the caller-side dispatch contract** — `packages/registry/src/reconcile-effects.ts`:
 
 ```typescript
 export interface DispatchRequest {
@@ -218,7 +218,7 @@ await params.appOctokit.rest.actions.createWorkflowDispatch({
 })
 ```
 
-**6. Use the refreshed `nodeId` from the invitation refresh path** — `scripts/handle-invitation.ts`:
+**6. Use the refreshed `nodeId` from the invitation refresh path** — `packages/registry/src/handle-invitation.ts`:
 
 ```typescript
 async function acceptedInvitationRepositoryPrivacy(invitationPrivacy: {kind: string; nodeId: string}) {

@@ -5,7 +5,7 @@ import type {
   OctokitClient,
   WikiLintFinding,
 } from '@fro.bot/wiki-write-core'
-import type {RepoEntry} from './schemas.ts'
+import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
@@ -28,8 +28,8 @@ import {
   splitFrontmatter,
   WikiIngestError,
 } from '@fro.bot/wiki-write-core'
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import YAML from 'yaml'
-import {assertReposFile} from './schemas.ts'
 
 // ---------------------------------------------------------------------------
 // Unit 1: pure repair core

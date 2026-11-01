@@ -9,11 +9,11 @@
 
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
+import {RENAME_PENDING_LABELS, TRANSITION_LABELS} from '@fro-bot/registry/reconcile-labels'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 import {LEARNING_PROPOSAL_LABEL_DESCRIPTOR} from './capture-learnings-open.ts'
 import {PATTERN_PROPOSAL_REQUIRED_LABELS} from './capture-patterns-synthesis.ts'
-import {RENAME_PENDING_LABELS, TRANSITION_LABELS} from './reconcile-repos.ts'
 import {REQUIRED_LABELS} from './status-truth-proposals.ts'
 
 interface Label {

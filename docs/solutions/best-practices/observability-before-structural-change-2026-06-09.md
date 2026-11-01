@@ -6,7 +6,7 @@ applies_when:
   - A proposed schema or state change is meant to fix a latent gap.
   - Live production evidence is available and should be checked before adding permanent state.
   - The failure mode may already be covered by existing workflow behavior.
-module: scripts/reconcile-repos
+module: packages/registry/src/reconcile-handler
 component: development_workflow
 severity: low
 tags:

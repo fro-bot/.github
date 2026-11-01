@@ -37,6 +37,12 @@ export interface SpawnEntrypointOptions {
   /** The program to run instead of `bun` or `node` found on `PATH`, for example an absolute path. */
   readonly executable?: string
   readonly cwd?: string
+  /**
+   * `file` (default) points `GITHUB_OUTPUT` at a fresh temp file. `unset` removes the variable and
+   * `empty` sets it to the empty string: the two ways a run can see no output file outside Actions.
+   * `githubOutput` in the result is then empty. The caller's `env` cannot change any of the three.
+   */
+  readonly githubOutput?: 'file' | 'unset' | 'empty'
   /** The child is killed and the call rejects after this long. Default 30 s. */
   readonly timeoutMs?: number
 }
@@ -66,7 +72,8 @@ export async function spawnEntrypoint(options: SpawnEntrypointOptions): Promise<
     if (value === undefined) delete environment[name]
     else environment[name] = value
   }
-  environment.GITHUB_OUTPUT = outputPath
+  if (options.githubOutput === 'unset') delete environment.GITHUB_OUTPUT
+  else environment.GITHUB_OUTPUT = options.githubOutput === 'empty' ? '' : outputPath
 
   try {
     const command = options.executable ?? options.runtime ?? 'bun'

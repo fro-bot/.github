@@ -4,7 +4,7 @@ date: 2026-10-10
 last_updated: 2026-10-10
 verified: 2026-10-10
 category: integration-issues
-module: scripts/reconcile-repos.ts
+module: packages/registry/src/reconcile-plan.ts
 problem_type: integration_issue
 component: development_workflow
 severity: medium
@@ -45,7 +45,7 @@ These were design alternatives that the plan rejected, not fixes that were tried
 
 ## Solution
 
-1. **Detect.** `detectRenames` (`scripts/reconcile-repos.ts:815-858`) takes the returned name from a `matched` probe and compares every observed name against the stored row:
+1. **Detect.** `detectRenames` (`packages/registry/src/reconcile-plan.ts`, then `scripts/reconcile-repos.ts:815-858`) takes the returned name from a `matched` probe and compares every observed name against the stored row:
 
    ```ts
    if (identity.returned_node_id === nodeId && identity.resolution === 'matched') {
@@ -66,7 +66,7 @@ These were design alternatives that the plan rejected, not fixes that were tried
    ```
 
 2. **Report, and keep the node out of every survey path.** The pending set and the blocked transfers form one exclusion set (`:505-506`), applied once after every dispatch path has pushed (`:582`, and the final filter at `:2162`). Each pending rename gets a `reconcile:rename-pending` issue that names the node by ID only (`renderRenamePendingIssue`, `:3767-3788`).
-3. **Apply only by operator dispatch.** `.github/workflows/rename-tracked-repo.yaml` proves the rename again at write time. `proveIdentity` (`scripts/rename-tracked-repo.ts:320-331`) reads the repository by its database ID and requires the same node ID, the same owner and `private === false`. When the row already holds the new name, the operator must also pass `old_name`, and `proveResidueOldName` (`:347-371`) requires that name to redirect to the same node.
+3. **Apply only by operator dispatch.** `.github/workflows/rename-tracked-repo.yaml` proves the rename again at write time. `proveIdentity` (`packages/registry/src/rename-tracked-repo.ts:320-331`) reads the repository by its database ID and requires the same node ID, the same owner and `private === false`. When the row already holds the new name, the operator must also pass `old_name`, and `proveResidueOldName` (`:347-371`) requires that name to redirect to the same node.
 4. **Write one commit.** The row rename, the page move, the link repairs, the index and the log entry land in one non-force Git Data commit (`writeCommit`, `:704-746`). The caller rebuilds from the current head on a ref race and gives up after three attempts (`:612-621`):
 
    ```ts fragment

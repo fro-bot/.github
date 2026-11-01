@@ -11,7 +11,9 @@
     "./guards": "./src/guards.ts",
     "./json": "./src/json.ts",
     "./output": "./src/output.ts",
-    "./retry": "./src/retry.ts"
+    "./retry": "./src/retry.ts",
+    "./wiki-authority": "./src/wiki-authority.ts",
+    "./wiki-authority-cli": "./src/wiki-authority-cli.ts"
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
@@ -19,6 +21,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@fro-bot/test-kit": "workspace:*"
+    "@fro-bot/test-kit": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*"
   }
 }

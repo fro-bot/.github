@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 25
     steps:
       # Discovery: owner-wide and read-only — installation enumeration and the owned/contrib
-      # probes (repo metadata, `.github/workflows/fro-bot.yaml` content) in `scripts/reconcile-repos.ts`.
+      # probes (repo metadata, `.github/workflows/fro-bot.yaml` content) in `packages/registry/src/reconcile-discovery.ts`.
       - id: discovery-token
         name: Get Discovery Access Token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0

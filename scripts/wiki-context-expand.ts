@@ -18,10 +18,6 @@
 import {readdir, readFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {parse} from 'yaml'
-
-import {filterSafeCandidates} from './wiki-context-safety.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
 import {
   buildWikiTargetIndex,
   byteLength,
@@ -29,7 +25,10 @@ import {
   collectWikiPages,
   truncateToBytes,
   WIKI_ROOT,
-} from './wiki-utils.ts'
+} from '@fro.bot/wiki-write-core/wiki-utils'
+import {parse} from 'yaml'
+import {filterSafeCandidates} from './wiki-context-safety.ts'
+import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 /** Per-invocation hard cap on returned excerpt bytes. */
 export const MAX_EXPANDED_CONTEXT_BYTES = 8 * 1024

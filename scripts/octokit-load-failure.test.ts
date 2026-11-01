@@ -43,7 +43,7 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 async function runCommitMetadata(): Promise<unknown> {
-  const {commitMetadata} = await import('./commit-metadata.ts')
+  const {commitMetadata} = await import('@fro-bot/registry/commit-metadata')
   return rejection(
     commitMetadata({
       path: 'metadata/repos.yaml',
@@ -54,7 +54,7 @@ async function runCommitMetadata(): Promise<unknown> {
 }
 
 async function runMergeDataPr(): Promise<unknown> {
-  const {mergeDataPr} = await import('./merge-data-pr.ts')
+  const {mergeDataPr} = await import('@fro-bot/registry/merge-data-pr')
   return rejection(mergeDataPr())
 }
 
@@ -107,7 +107,7 @@ describe('handle-invitation', () => {
     ['a non-constructor export', NOT_A_CONSTRUCTOR],
   ])('maps %s to OCTOKIT_LOAD_FAILED', async (_label, mocked) => {
     mockOctokitRest(mocked)
-    const {handleInvitations} = await import('./handle-invitation.ts')
+    const {handleInvitations} = await import('@fro-bot/registry/handle-invitation')
     const error = await rejection(handleInvitations())
     expect(error).toMatchObject({
       name: 'InvitationHandlingError',
@@ -119,7 +119,7 @@ describe('handle-invitation', () => {
 
   it('maps the metadata client the same way when only that one is built', async () => {
     mockOctokitRest(MISSING_EXPORT)
-    const {handleInvitations} = await import('./handle-invitation.ts')
+    const {handleInvitations} = await import('@fro-bot/registry/handle-invitation')
     const poll = {} as never
     const error = await rejection(handleInvitations({octokit: poll}))
     expect(error).toMatchObject({code: 'OCTOKIT_LOAD_FAILED'})
@@ -132,7 +132,7 @@ describe('reconcile-repos', () => {
     ['a non-constructor export', NOT_A_CONSTRUCTOR],
   ])('maps %s to OCTOKIT_LOAD_FAILED', async (_label, mocked) => {
     mockOctokitRest(mocked)
-    const {handleReconcile} = await import('./reconcile-repos.ts')
+    const {handleReconcile} = await import('@fro-bot/registry/reconcile-handler')
     const error = await rejection(handleReconcile())
     expect(error).toMatchObject({
       name: 'ReconcileError',

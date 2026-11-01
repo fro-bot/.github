@@ -662,7 +662,7 @@ CLI tables follow one legend:
 
 **Verification:** Mutated privacy modules reach 100% from their new paths, and the import graph has no knowledge ↔ status-truth edge.
 
-- [ ] **Unit 7: `@fro-bot/registry`** (includes the `check-wiki-authority` move into core)
+- [x] **Unit 7: `@fro-bot/registry`** (includes the `check-wiki-authority` move into core)
 
 **Goal:** Move the metadata writers, reconcile, invitations, survey, `merge-back-data` and `rename-tracked-repo`, and split `reconcile-repos`.
 

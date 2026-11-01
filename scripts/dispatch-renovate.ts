@@ -20,8 +20,8 @@ import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
+import {assertRenovateFile} from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
-import {assertRenovateFile} from './schemas.ts'
 
 export type OctokitClient = Octokit
 

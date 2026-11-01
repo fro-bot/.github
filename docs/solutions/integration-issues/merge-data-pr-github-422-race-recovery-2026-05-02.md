@@ -8,7 +8,7 @@ resolution_type: code_fix
 severity: high
 date: 2026-05-02
 last_updated: 2026-05-02
-module: .github/workflows/merge-data.yaml + scripts/merge-data-pr.ts
+module: .github/workflows/merge-data.yaml + packages/registry/src/merge-data-pr.ts
 tags:
   - merge-data
   - github-actions
@@ -27,7 +27,7 @@ symptoms:
 
 ## Problem
 
-`merge-data.yaml` needs to create or reuse the `data -> main` promotion PR and then bring it up to date when GitHub reports that the branch is behind. The old recovery logic in `scripts/merge-data-pr.ts` collapsed several different GitHub API states into the same outcome, so duplicate-PR races, true merge conflicts, eventually consistent mergeability, and transient API failures could all send the workflow down the wrong path.
+`merge-data.yaml` needs to create or reuse the `data -> main` promotion PR and then bring it up to date when GitHub reports that the branch is behind. The old recovery logic in `packages/registry/src/merge-data-pr.ts` collapsed several different GitHub API states into the same outcome, so duplicate-PR races, true merge conflicts, eventually consistent mergeability, and transient API failures could all send the workflow down the wrong path.
 
 That mattered in production because the repo had already needed operator recovery after the integrity guard rejected the `data` tip due to unexpected authorship. The long-term fix still had to make the promotion PR path resilient enough to recover on its own.
 
@@ -180,7 +180,7 @@ This is the right reliability model for autonomous workflow recovery: resilient 
 This learning is verified by one successful production recovery plus targeted unit coverage for the synthetic GitHub failure paths.
 
 - **Production evidence:** PR `#3215` merged, manual dispatch of `merge-data.yaml` succeeded in run `25238381534`, PR `#3214` updated and merged cleanly, and integrity alert issues `#3204` / `#3208` were closed.
-- **Automated evidence:** `scripts/merge-data-pr.test.ts` covers behind-update recovery for new and existing PRs, `mergeable_state: unknown` resolution and bounded timeout behavior, retryable and permanent `pulls.get` / `pulls.updateBranch` failures, duplicate-PR `422` recovery, duplicate-PR rediscovery after an empty list response, duplicate-PR rediscovery after a transient `pulls.list` failure, and non-conflict `422` failures surfacing as structured errors.
+- **Automated evidence:** `packages/registry/src/merge-data-pr.test.ts` covers behind-update recovery for new and existing PRs, `mergeable_state: unknown` resolution and bounded timeout behavior, retryable and permanent `pulls.get` / `pulls.updateBranch` failures, duplicate-PR `422` recovery, duplicate-PR rediscovery after an empty list response, duplicate-PR rediscovery after a transient `pulls.list` failure, and non-conflict `422` failures surfacing as structured errors.
 - **Known gap:** the suite still does not cover duplicate-PR rediscovery exhausting retries and returning `null`; keep that as follow-up regression coverage rather than treating it as already proven.
 
 ## Related Issues

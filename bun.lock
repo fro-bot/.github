@@ -38,6 +38,7 @@
       },
       "devDependencies": {
         "@fro-bot/test-kit": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
       },
     },
     "packages/privacy": {
@@ -46,6 +47,19 @@
       "dependencies": {
         "@fro-bot/core": "workspace:*",
         "@fro.bot/wiki-write-core": "workspace:*",
+        "yaml": "^2.6.0",
+      },
+      "devDependencies": {
+        "@fro-bot/test-kit": "workspace:*",
+      },
+    },
+    "packages/registry": {
+      "name": "@fro-bot/registry",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
+        "@octokit/rest": "^22.0.1",
         "yaml": "^2.6.0",
       },
       "devDependencies": {
@@ -214,6 +228,8 @@
     "@fro-bot/core": ["@fro-bot/core@workspace:packages/core"],
 
     "@fro-bot/privacy": ["@fro-bot/privacy@workspace:packages/privacy"],
+
+    "@fro-bot/registry": ["@fro-bot/registry@workspace:packages/registry"],
 
     "@fro-bot/test-kit": ["@fro-bot/test-kit@workspace:packages/test-kit"],
 

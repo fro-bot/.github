@@ -8,7 +8,7 @@ resolution_type: process_improvement
 severity: high
 date: 2026-04-18
 last_updated: 2026-04-18
-module: scripts/repos-metadata.ts
+module: packages/registry/src/repos-metadata.ts
 tags:
   [
     typescript,

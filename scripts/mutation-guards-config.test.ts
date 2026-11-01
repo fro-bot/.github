@@ -489,7 +489,7 @@ describe('findNameOnlyPairingViolations (pure)', () => {
 
 describe('reachedByPackageName (real tree)', () => {
   it('finds the test-kit sources a real test imports by name, so a scan that matches nothing cannot pass', () => {
-    const reached = reachedByPackageName('scripts/rename-tracked-repo.test.ts')
+    const reached = reachedByPackageName('packages/registry/src/rename-tracked-repo.test.ts')
     expect(reached.has('packages/test-kit/src/git-data-fake.ts')).toBe(true)
     expect(reached.has('packages/test-kit/src/repo-page-move-fixtures.ts')).toBe(true)
   })

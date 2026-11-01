@@ -4,7 +4,7 @@ date: 2026-05-20
 last_updated: 2026-07-04
 verified: 2026-05-20
 category: best-practices
-module: scripts/reconcile-repos.ts
+module: packages/registry/src/reconcile-effects.ts
 problem_type: best_practice
 component: background_job
 severity: medium
@@ -32,7 +32,7 @@ The GitHub Issues API has an asymmetric consistency window. A `POST /repos/{owne
 
 Within a single workflow run, code that creates an issue and then lists issues to check for duplicates will see the OLD list and create a second duplicate. The same shape applies to PRs, labels, and comments; the Issues API is just where `fro-bot/.github` hit it first.
 
-Concrete instance: `scripts/reconcile-repos.ts` had three sequential stages:
+Concrete instance: `packages/registry/src/reconcile-effects.ts` (then `scripts/reconcile-repos.ts`) had three sequential stages:
 
 1. `runIssueQueue()` — creates `reconcile:rollup` issues for new pending-review repos.
 2. `autoCloseStaleIssues()` — closes stale rollups (orthogonal concern).
@@ -95,7 +95,7 @@ A regression test must reproduce the race shape: mock `issues.listForRepo` to re
 
 ## Verified: two call sites now use this pattern
 
-As of 2026-07-04, this pattern guards two independent call sites in `scripts/reconcile-repos.ts`, not just the rollup path:
+As of 2026-07-04, this pattern guards two independent call sites in `packages/registry/src/reconcile-effects.ts`, not just the rollup path:
 
 - **Per-owner rollups** — `currentRunRollupOwners` (built ~line 1665, passed into `selfHealRollups` at line 1668) is checked against `existingRollupOwners` inside `selfHealRollups` (function starts ~line 3106; the same-run check is at lines 3158-3166, separate from the `listForRepo`-derived set built at lines 3130-3153).
 - **Visibility-transition alerts** — `runIssueQueue` (function starts ~line 2680) declares its own same-run `attemptedTransitionNodeIds` Set at line 2708 and checks it at lines 2727-2739, independently of the `listForRepo`-based duplicate check earlier in the same loop.
@@ -113,7 +113,7 @@ Any code path in this repo (or similar) where:
 
 Specifically in `fro-bot/.github`:
 
-- `scripts/reconcile-repos.ts` — applies, fixed in PR #3321
+- `packages/registry/src/reconcile-effects.ts` — applies, fixed in PR #3321
 - Future per-PR dedup that adds an after-create list check would apply
 - Future autoheal create-then-verify patterns would apply
 

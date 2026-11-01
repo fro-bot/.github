@@ -1,0 +1,295 @@
+import type {ReposFile} from '@fro.bot/wiki-write-core/schemas'
+
+import type {RegistryIo} from './registry-io.ts'
+
+import {commitMetadata} from './commit-metadata.ts'
+import {
+  applySurveyResult,
+  DuplicateRepoIdentityError,
+  RepoEntryNotFoundError,
+  type RecordSurveyResultInput,
+  type SurveyWriteBackOutcome,
+} from './repos-metadata.ts'
+
+/**
+ * Write the outcome of a Survey Repo run back to `metadata/repos.yaml` on the `data` branch.
+ *
+ * Survey workflows call this after the agent completes and the wiki commit step finishes.
+ * Writing `last_survey_at` + `last_survey_status` here is what lets reconcile's staleness
+ * gate (`>30d since last survey`) distinguish fresh surveys from stale ones.
+ *
+ * Inputs (env vars):
+ *   REPO_OWNER        — target repository owner (e.g. "marcusrbrown")
+ *   REPO_NAME         — target repository name (e.g. ".dotfiles")
+ *   REPO_PRIVATE      — optional "true" | "false" visibility hint
+ *   REPO_NODE_ID      — GitHub GraphQL node ID. Required: the row is matched by node ID only,
+ *                       so a survey can never rename or re-key a row. Also required when REPO_PRIVATE=true.
+ *   SURVEY_STATUS     — "success" | "failure"
+ *   SURVEY_CONFLICT   — optional "true" when the failure was a wiki page conflict; the repo is then
+ *                       eligible again the next day instead of after its channel interval
+ *   SURVEY_AT         — ISO 8601 timestamp; defaults to "now" if absent
+ *   GITHUB_TOKEN      — fro-bot App installation token, minted in the trusted survey-persist job
+ *   GITHUB_REPOSITORY — caller-supplied "owner/name" of the control-plane repo hosting
+ *                       metadata/repos.yaml (GitHub Actions sets this automatically).
+ *
+ * Writes to: `metadata/repos.yaml` on the `data` branch via `commitMetadata`. Exits 0 on
+ * success, duplicate-identity write-back (reconcile owns the repair), or a missing entry;
+ * other failures (including a missing REPO_NODE_ID) exit non-zero. When the node ID matches a row
+ * stored under a different owner/name (a pending rename or a transfer), the row keeps its stored
+ * name and `failure` is recorded; the outcome is reported as `name-mismatch`. When the survey target has no entry in `metadata/repos.yaml`,
+ * writes nothing and exits 0 with a warning (the entry must already exist — reconcile is the
+ * canonical writer for new entries).
+ */
+async function recordSurveyResult(
+  env: NodeJS.ProcessEnv,
+  io: RegistryIo,
+  commit: typeof commitMetadata,
+): Promise<void> {
+  const input = buildRecordSurveyResultInput(env)
+  const target = formatSurveyResultTarget(input)
+  const [controlPlaneOwner, controlPlaneRepo] = splitControlPlane(requiredEnvFrom(env, 'GITHUB_REPOSITORY'))
+
+  const writeBack = createSurveyWriteBack(input)
+
+  const result = await commit({
+    owner: controlPlaneOwner,
+    repo: controlPlaneRepo,
+    path: 'metadata/repos.yaml',
+    message: `chore(reconcile): record survey ${input.status} for ${target}`,
+    mutator: writeBack.mutator,
+  })
+
+  const outcome = writeBack.outcome()
+  const warning = outcome === undefined ? undefined : formatSurveyWriteBackWarning(outcome)
+  if (warning !== undefined) {
+    io.stderr(warning)
+  }
+  const outcomeField = outcome === undefined || outcome === 'recorded' ? {} : {outcome}
+  // What the mutator actually wrote; `null` when it wrote nothing, so output never claims a success.
+  const status = writeBack.written() ?? null
+
+  if (result.committed) {
+    io.stdout(
+      `${JSON.stringify({committed: true, sha: result.sha, attempts: result.attempts, target, status, ...outcomeField})}\n`,
+    )
+    return
+  }
+
+  // No-op commit (mutator returned the same file) — valid when status + date already match.
+  io.stdout(`${JSON.stringify({committed: false, attempts: result.attempts, target, status, ...outcomeField})}\n`)
+}
+
+export interface SurveyWriteBack {
+  /** Pure mutator for `commitMetadata`. Re-runs on a 409 retry and always reflects the latest run. */
+  mutator: (current: unknown) => ReposFile
+  /** Outcome of the most recent mutator run, or `undefined` before the first run. */
+  outcome: () => SurveyWriteBackOutcome | undefined
+  /** Status the most recent mutator run wrote, or `undefined` before the first run or if it wrote nothing. */
+  written: () => RecordSurveyResultInput['status'] | undefined
+}
+
+/**
+ * Bind a survey input to a mutator that also surfaces how the survey target related to the row it
+ * matched. `applySurveyResult` is pure, so the outcome travels out through this closure.
+ */
+export function createSurveyWriteBack(input: RecordSurveyResultInput): SurveyWriteBack {
+  let lastOutcome: SurveyWriteBackOutcome | undefined
+  let lastWritten: RecordSurveyResultInput['status'] | undefined
+  return {
+    mutator: (current: unknown) => {
+      const applied = applySurveyResult(current, input)
+      lastOutcome = applied.outcome
+      lastWritten = applied.written
+      return applied.file
+    },
+    outcome: () => lastOutcome,
+    written: () => lastWritten,
+  }
+}
+
+/**
+ * Counts-only warning for a write-back that did not record the survey as requested. Deliberately
+ * carries no owner, name, or node ID: the mismatch is the signal, and reconcile's node-ID issue
+ * is where the operator acts on it.
+ */
+export function formatSurveyWriteBackWarning(outcome: SurveyWriteBackOutcome): string | undefined {
+  if (outcome === 'name-mismatch') {
+    return 'record-survey-result: survey target does not match the tracked row for its node ID (pending rename or transfer); recorded failure and kept the stored name\n'
+  }
+  if (outcome === 'visibility-mismatch') {
+    return 'record-survey-result: survey reported public for a row stored as private; nothing was written\n'
+  }
+  return undefined
+}
+
+export function buildRecordSurveyResultInput(env: NodeJS.ProcessEnv): RecordSurveyResultInput {
+  const privateFlag = parseOptionalBoolean('REPO_PRIVATE', env.REPO_PRIVATE)
+  const nodeId = optionalEnv(env, 'REPO_NODE_ID')
+
+  if (privateFlag === true && nodeId === undefined) {
+    throw new Error('REPO_NODE_ID is required when REPO_PRIVATE is true')
+  }
+  // Write-backs match rows by node ID only, so reject its absence here rather than on every
+  // commit retry inside the mutator.
+  const requiredNodeId = requiredEnvFrom(env, 'REPO_NODE_ID')
+
+  return {
+    owner: requiredEnvFrom(env, 'REPO_OWNER'),
+    repo: requiredEnvFrom(env, 'REPO_NAME'),
+    ...(privateFlag === undefined ? {} : {private: privateFlag}),
+    node_id: requiredNodeId,
+    at: parseAt(env.SURVEY_AT),
+    status: parseStatus(requiredEnvFrom(env, 'SURVEY_STATUS')),
+    ...(parseOptionalBoolean('SURVEY_CONFLICT', env.SURVEY_CONFLICT) === true ? {conflict: true} : {}),
+  }
+}
+
+export function formatSurveyResultTarget(
+  input: Pick<RecordSurveyResultInput, 'owner' | 'repo' | 'private' | 'node_id'>,
+): string {
+  if (input.private === true) {
+    if (input.node_id === undefined) {
+      throw new Error('node_id is required for private repos')
+    }
+    return input.node_id
+  }
+  return `${input.owner}/${input.repo}`
+}
+
+export function formatRecordSurveyResultError(error: unknown, env: NodeJS.ProcessEnv): string {
+  if (error instanceof RepoEntryNotFoundError) {
+    const target = safeSurveyResultTarget(env)
+    if (target !== undefined) {
+      return `metadata/repos.yaml has no entry for ${target}`
+    }
+  }
+  const detail = error instanceof Error ? error.message : String(error)
+  return detail.trim() === '' ? describeOpaqueError(error) : detail
+}
+
+/**
+ * Describe an error that carries no usable message.
+ *
+ * The Contents API returns 5xx responses with an empty body when writers contend
+ * on the same `data`-branch ref, and Octokit surfaces those as a `RequestError`
+ * whose `message` is the empty string. Printing that verbatim emitted a bare
+ * `record-survey-result: ` line with zero signal about what actually failed.
+ *
+ * The description is deliberately limited to the error name and HTTP status —
+ * never response bodies or request URLs — so a failure against a private survey
+ * target cannot leak its identity into workflow logs.
+ */
+function describeOpaqueError(error: unknown): string {
+  const name = error instanceof Error && error.name !== '' ? error.name : 'Error'
+  const status = extractErrorStatus(error)
+  return status === undefined ? `${name} with no message` : `${name} with no message (HTTP ${status})`
+}
+
+function extractErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return undefined
+  const {status} = error
+  return typeof status === 'number' ? status : undefined
+}
+
+export interface RecordSurveyResultNonFatalOutcome {
+  exitCode: 0
+  stderr: string
+  stdout: string
+}
+
+export function formatRecordSurveyResultNonFatalOutcome(
+  error: unknown,
+  env: NodeJS.ProcessEnv,
+): RecordSurveyResultNonFatalOutcome | undefined {
+  if (!(error instanceof DuplicateRepoIdentityError)) return undefined
+
+  const input = buildRecordSurveyResultInput(env)
+  const target = formatSurveyResultTarget(input)
+  return {
+    exitCode: 0,
+    stderr: `record-survey-result: ${error.message}; scheduled reconcile run owns the repair (non-fatal)\n`,
+    stdout: `${JSON.stringify({committed: false, outcome: 'duplicate-identity', target, status: input.status})}\n`,
+  }
+}
+
+function safeSurveyResultTarget(env: NodeJS.ProcessEnv): string | undefined {
+  try {
+    return formatSurveyResultTarget(buildRecordSurveyResultInput(env))
+  } catch {
+    return undefined
+  }
+}
+
+function parseStatus(raw: string): 'success' | 'failure' {
+  if (raw === 'success' || raw === 'failure') return raw
+  throw new Error(`SURVEY_STATUS must be 'success' or 'failure', got '${raw}'`)
+}
+
+function parseAt(raw: string | undefined): Date {
+  if (raw === undefined || raw === '') return new Date()
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TypeError(`SURVEY_AT is not a parseable date: '${raw}'`)
+  }
+  return parsed
+}
+
+function splitControlPlane(raw: string): [string, string] {
+  const [owner, repo] = raw.split('/')
+  if (owner === undefined || repo === undefined || owner === '' || repo === '') {
+    throw new Error(`GITHUB_REPOSITORY must be 'owner/name', got '${raw}'`)
+  }
+  return [owner, repo]
+}
+
+function requiredEnvFrom(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name]
+  if (value === undefined || value === '') {
+    throw new Error(`${name} is required`)
+  }
+  return value
+}
+
+function optionalEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name]
+  return value === undefined || value === '' ? undefined : value
+}
+
+function parseOptionalBoolean(name: string, raw: string | undefined): boolean | undefined {
+  if (raw === undefined || raw === '') return undefined
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  throw new Error(`${name} must be 'true' or 'false', got '${raw}'`)
+}
+
+/**
+ * The CLI body. Returns the exit code: 0 when the survey was recorded, when the survey target has no
+ * entry in `metadata/repos.yaml` (a non-fatal skip, because reconcile owns adding entries) and for a
+ * duplicate identity (reconcile owns the repair); 1 for every other failure.
+ */
+export async function runRecordSurveyResult(
+  env: NodeJS.ProcessEnv,
+  io: RegistryIo,
+  commit: typeof commitMetadata = commitMetadata,
+): Promise<number> {
+  try {
+    await recordSurveyResult(env, io, commit)
+    return 0
+  } catch (error: unknown) {
+    // Surface the common "entry not found" error as a non-fatal warning — it means reconcile
+    // hasn't added the repo yet, which is legitimate when a manual survey dispatch runs
+    // against an un-onboarded repo. Exit 0 so the workflow doesn't mark the run as failed.
+    if (error instanceof RepoEntryNotFoundError) {
+      io.stderr(`record-survey-result: ${formatRecordSurveyResultError(error, env)}; skipping (non-fatal)\n`)
+      return 0
+    }
+    const nonFatalOutcome = formatRecordSurveyResultNonFatalOutcome(error, env)
+    if (nonFatalOutcome === undefined) {
+      io.stderr(`record-survey-result: ${formatRecordSurveyResultError(error, env)}\n`)
+      return 1
+    }
+    io.stdout(nonFatalOutcome.stdout)
+    io.stderr(nonFatalOutcome.stderr)
+    return nonFatalOutcome.exitCode
+  }
+}
