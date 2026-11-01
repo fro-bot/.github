@@ -4,7 +4,7 @@ date: 2026-10-10
 last_updated: 2026-10-10
 verified: 2026-10-10
 category: best-practices
-module: scripts/repos-metadata.ts
+module: packages/registry/src/repos-metadata.ts
 problem_type: best_practice
 component: development_workflow
 severity: high
@@ -27,7 +27,7 @@ tags:
 
 ## Context
 
-PR #3977 narrowed the survey and invitation write-backs in `scripts/repos-metadata.ts` to match a row by `node_id` only, so a write-back can never rename a row. Before the PR, `findRepoEntryIndex` fell through `node_id`, then `database_id`, then owner/name. Removing the last two steps for write-back callers changed what each caller's no-match path did implicitly.
+PR #3977 narrowed the survey and invitation write-backs in `packages/registry/src/repos-metadata.ts` to match a row by `node_id` only, so a write-back can never rename a row. Before the PR, `findRepoEntryIndex` fell through `node_id`, then `database_id`, then owner/name. Removing the last two steps for write-back callers changed what each caller's no-match path did implicitly.
 
 Two regressions in that change were found during pre-merge review, both on a no-match or name-conflict path:
 
@@ -41,7 +41,7 @@ Before #3977 the mutator was `mutator: current => addRepoEntry(current, entryInp
 1. **Before narrowing a matcher, enumerate every caller's no-match path.** For each caller, record what the no-match branch did implicitly: redact, re-key, dispatch or survey. Include callers you are not changing, since they may still depend on the old chain.
 2. **Keep the transform on the write path and gate only the outward effect.** A caller must not short-circuit the helper's transform to avoid a no-op write. The early return should suppress the survey dispatch, not the redaction.
 3. **Make "name held by another identity" its own predicate**, separate from the node match, so a caller can suppress an effect without changing the write.
-4. **Make asymmetries visible in code.** If one caller keeps the old fallback chain, say so in a comment and test it. `resetSurveyResult` (`scripts/repos-metadata.ts:555`) still calls `findRepoEntryIndex` without `identityOnly`, so it keeps the full chain. "Match by node ID only" is true for write-backs, not for the module.
+4. **Make asymmetries visible in code.** If one caller keeps the old fallback chain, say so in a comment and test it. `resetSurveyResult` (`packages/registry/src/repos-metadata.ts:555`) still calls `findRepoEntryIndex` without `identityOnly`, so it keeps the full chain. "Match by node ID only" is true for write-backs, not for the module.
 
 ## Why This Matters
 
@@ -66,7 +66,7 @@ The matcher tail before the change (`git show 8792b53^1:scripts/repos-metadata.t
   return repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
 ```
 
-The identity-only gate after it (`scripts/repos-metadata.ts:108-112`):
+The identity-only gate after it (`packages/registry/src/repos-metadata.ts:108-112`):
 
 ```ts fragment
   if (options.identityOnly === true) {
@@ -76,7 +76,7 @@ The identity-only gate after it (`scripts/repos-metadata.ts:108-112`):
   return repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
 ```
 
-The separate predicate (`scripts/repos-metadata.ts:145-160`):
+The separate predicate (`packages/registry/src/repos-metadata.ts:145-160`):
 
 ```ts
 export function findNameHeldByOtherNode(repos: readonly RepoEntry[], input: RepoIdentityInput): boolean {
@@ -97,7 +97,7 @@ export function findNameHeldByOtherNode(repos: readonly RepoEntry[], input: Repo
 }
 ```
 
-The invitation mutator (`scripts/handle-invitation.ts:264-271`). The early return applies only to non-private inputs, and the dispatch is gated on both flags:
+The invitation mutator (`packages/registry/src/handle-invitation.ts:264-271`). The early return applies only to non-private inputs, and the dispatch is gated on both flags:
 
 ```ts fragment
       mutator: current => {
@@ -112,7 +112,7 @@ The invitation mutator (`scripts/handle-invitation.ts:264-271`). The early retur
 
 The line before the fix was `return nameConflict ? current : addRepoEntry(current, entryInput)`.
 
-The regression tests in `scripts/handle-invitation.test.ts`:
+The regression tests in `packages/registry/src/handle-invitation.test.ts`:
 
 - `redacts the row, stores no new name and dispatches no survey %s` (`:1393`), run on the first attempt and after a 409 retry. It asserts `owner: '[REDACTED]'` and that the new name appears nowhere in the persisted file or the warning.
 - `never takes the held-by-another-node path: a private input is stored redacted under its node ID` (`:1412`).

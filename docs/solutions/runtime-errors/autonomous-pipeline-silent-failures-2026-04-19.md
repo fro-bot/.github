@@ -17,7 +17,7 @@ verified: 2026-04-19
 
 Two linked bugs in the `Survey Repo` workflow produced silent wiki-coverage loss across the full daily reconcile fan-out. The agent step succeeded, the wiki commit step crashed on `ENOENT`, and the metadata write-back recorded `last_survey_status: success` anyway — telling the reconcile staleness gate to skip those repos for 30 days despite no wiki content landing.
 
-Neither bug was visible in tests or CI. Both required the progressive-dispatch pipeline (`scripts/reconcile-repos.ts`) to fire real surveys in production to surface.
+Neither bug was visible in tests or CI. Both required the progressive-dispatch pipeline (`packages/registry/src/reconcile-effects.ts`) to fire real surveys in production to surface.
 
 ## Symptoms
 
@@ -98,7 +98,7 @@ The compound expression works because GitHub Actions evaluates every `steps.<id>
 
 ## Recovery
 
-After the fix lands, entries already contaminated with `last_survey_status: success` from the misclassified cron still need to be cleared. `scripts/reset-survey-status.ts` + `.github/workflows/reset-survey-status.yaml` (PR #3145) reset any entry's survey fields back to `null`, forcing the reconcile staleness gate to treat the repo as never-surveyed. Authored by `fro-bot[bot]` via App installation token so the reconcile integrity check doesn't tamper-alert on the recovery commits.
+After the fix lands, entries already contaminated with `last_survey_status: success` from the misclassified cron still need to be cleared. `packages/registry/src/reset-survey-status.ts` + `.github/workflows/reset-survey-status.yaml` (PR #3145) reset any entry's survey fields back to `null`, forcing the reconcile staleness gate to treat the repo as never-surveyed. Authored by `fro-bot[bot]` via App installation token so the reconcile integrity check doesn't tamper-alert on the recovery commits.
 
 ## Prevention
 

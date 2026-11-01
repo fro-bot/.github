@@ -56,7 +56,7 @@ The agent jobs overlap. The persist jobs never do.
 - **Treating dispatch spacing as overlap.** Reconcile dispatches surveys about 90 s apart, which led to a theory that two `survey-persist` jobs raced on `log.md` and `index.md`. Nobody checked the job timings first. When they were checked, the persist jobs ran strictly in sequence.
 - **A guard based on the writer's own sync (#4032).** `commitWikiChanges` refuses when a write-set path changed between `baseCommitSha` and head. The survey passed the persist job's own `sync-wiki` commit as that base. The stale bytes came from the artifact after that sync, so head still matched the base and the guard passed. It could not make the loss loud.
 - **A writer queue.** A job-level concurrency group with `queue: max` was planned to serialize the writers. It cannot help, because the agent reads `data` before any persist job runs, and serializing persist doesn't change what the agent read. The pinned actionlint (1.7.12) also rejects the `queue` key.
-- **Assuming a refused survey retries the next day.** A recorded failure sets `next_survey_eligible_at` to the channel interval (14, 21 or 30 days) plus jitter, in `computeNextEligibleAt` in `scripts/repos-metadata.ts`.
+- **Assuming a refused survey retries the next day.** A recorded failure sets `next_survey_eligible_at` to the channel interval (14, 21 or 30 days) plus jitter, in `computeNextEligibleAt` in `packages/registry/src/repos-metadata.ts`.
 
 ## Solution
 

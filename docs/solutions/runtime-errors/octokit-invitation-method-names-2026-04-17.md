@@ -8,7 +8,7 @@ resolution_type: code_fix
 severity: high
 date: 2026-04-17
 last_updated: 2026-04-17
-module: scripts/handle-invitation.ts
+module: packages/registry/src/handle-invitation.ts
 tags: [octokit, github-api, invitation-api, runtime-error, ai-hallucination, type-safety, handwritten-interface]
 verified: 2026-04-17
 ---

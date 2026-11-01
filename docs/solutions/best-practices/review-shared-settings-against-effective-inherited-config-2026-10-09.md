@@ -75,7 +75,7 @@ Review shared repository settings against the complete effective payload the syn
    effective set deletes.
 
 6. **Search for consumers before renaming a label.** PR #3916 renamed `auto-merge` to `automerge`
-   only after confirming no workflow consumed the old name. Today `scripts/merge-data-pr.ts` and its
+   only after confirming no workflow consumed the old name. Today `packages/registry/src/merge-data-pr.ts` and its
    tests use `automerge`.
 
 7. **Codify the reviewed contract as a drift guard.** `scripts/settings-labels-effective-set.test.ts`

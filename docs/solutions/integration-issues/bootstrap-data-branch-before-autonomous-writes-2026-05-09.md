@@ -167,7 +167,7 @@ implementation.
 - Put missing-branch recovery in shared writer utilities, not individual workflow call sites.
 - Treat ref-creation `422` responses as recoverable only after verifying the ref exists afterward.
 - Restore `data` through `bootstrapDataBranch()` rather than manually recreating the branch. The
-  merge-data merge-back (`scripts/merge-back-data.ts`) calls it first when `data` is missing, and
+  merge-data merge-back (`packages/registry/src/merge-back-data.ts`) calls it first when `data` is missing, and
   otherwise leaves the existing branch in place.
 - Check both GitHub branch protection shapes before writing:
   - `response.data.protected`

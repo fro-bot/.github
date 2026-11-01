@@ -1,6 +1,6 @@
 # `@fro-bot/core`
 
-Shared primitives for the Fro Bot control plane: type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, a retry loop, the Octokit client factory, the goke CLI runner and the required-env reader. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written. It depends on `@octokit/rest` (only `github` imports it), `goke` and `zod` (only `cli` imports them). `goke` is pinned to an exact version and `zod` follows the root `zod@4` floor, which resolves to one copy.
+Shared primitives for the Fro Bot control plane: type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, a retry loop, the Octokit client factory, the goke CLI runner, the required-env reader and the PR wiki-authority check. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written. It depends on `@octokit/rest` (only `github` imports it), `goke` and `zod` (only `cli` imports them). `goke` is pinned to an exact version and `zod` follows the root `zod@4` floor, which resolves to one copy.
 
 Where callers need different behavior, the primitive takes the difference as an explicit option or a separate export, so a caller states the behavior it means. `retry` is used by nine `scripts/` modules and `github` by every `scripts/` module that builds an Octokit client (both listed below). `@fro.bot/wiki-write-core` builds its own clients and does not import core. `@fro-bot/privacy` uses `guards`, `output` and `retry`, and its four CLI modules run on `cli`. `json` and `env` have no caller yet.
 
@@ -14,6 +14,8 @@ Where callers need different behavior, the primitive takes the difference as an 
 | `@fro-bot/core/cli` | `runCli`, `runCliMain`, `defineCommand`, `z` | The runner every goke CLI goes through. Returns `{exitCode, stdout, stderr}`. See below. |
 | `@fro-bot/core/env` | `requiredEnv` | An empty value counts as missing; the caller's `missing` factory sets the error. |
 | `@fro-bot/core/retry` | `retry` | `retry(operation, {attempts, delayMs, shouldRetry, retryResult, onRetry, sleep})`. The caller owns the numbers and the predicates. |
+| `@fro-bot/core/wiki-authority` | `runWikiAuthority`, `checkWikiAuthority`, `isDataOwnedPath`, `guardedPatterns`, `readPullRequestContext`, `fetchChangedFiles`, `formatBlockMessage` | The PR authority check: a pull request may touch `knowledge/wiki/`, `knowledge/index.md`, `knowledge/log.md`, `knowledge/corrections.yaml` and `metadata/*.yaml` only as Fro Bot, from this repository's `data` branch. `runWikiAuthority(env)` reads the `pull_request` event and returns `{exitCode, stdout, stderr}`. `merge-back-data` (registry) and `check-mutation-guards` read `isDataOwnedPath`, `readPullRequestContext` and `fetchChangedFiles` from here. |
+| `@fro-bot/core/wiki-authority-cli` | `checkWikiAuthorityCli`, `main` | The goke CLI over `runWikiAuthority`, run by `scripts/check-wiki-authority.ts` in `main.yaml`. `readOnly: true`. |
 | `@fro-bot/core/json` | `formatJsonLine`, `writeJsonLine` | Compact JSON plus a newline. Both take `{indent}`; `{indent: 2}` is the output `reset-survey-status` prints. `writeJsonLine` also takes `{sink}`. A value with no JSON form throws. |
 
 ### `output`
@@ -67,7 +69,7 @@ Where callers need different behavior, the primitive takes the difference as an 
 
 ### Mutation coverage
 
-`guards`, `output`, `json`, `retry`, `github`, `cli` and `env` are in the `mutate` set of `stryker.config.json` and held at 100% kills by `bun run check:mutation-guards`. Their tests import them by relative path, because the Stryker sandbox links `node_modules` to the real tree and a package-name import would run against the un-mutated file. Core's tests must kill core's mutants on their own: a consumer's tests never run against them.
+`guards`, `output`, `json`, `retry`, `github`, `cli`, `env`, `wiki-authority` and `wiki-authority-cli` are in the `mutate` set of `stryker.config.json` and held at 100% kills by `bun run check:mutation-guards`. Their tests import them by relative path, because the Stryker sandbox links `node_modules` to the real tree and a package-name import would run against the un-mutated file. Core's tests must kill core's mutants on their own: a consumer's tests never run against them.
 
 ## Package diagram
 
@@ -83,6 +85,8 @@ C4Component
     Component(github, "github", "TypeScript", "Octokit client factory, no-op logger")
     Component(cli, "cli", "TypeScript", "goke CLI runner")
     Component(env, "env", "TypeScript", "Required environment variable reader")
+    Component(authority, "wiki-authority", "TypeScript", "PR authority check for Fro Bot-only paths")
+    Component(authoritycli, "wiki-authority-cli", "TypeScript", "goke CLI over the authority check")
   }
 
   System_Ext(callers, "Domain packages and scripts/", "Import by package name")
@@ -98,6 +102,9 @@ C4Component
   Rel(callers, github, "imports")
   Rel(callers, cli, "*-cli.ts modules import")
   Rel(callers, env, "imports")
+  Rel(callers, authority, "imports")
+  Rel(authoritycli, authority, "runs")
+  Rel(authoritycli, cli, "runs on")
   Rel(output, runner, "appends to")
   Rel(json, stdout, "writes to")
   Rel(github, octokit, "constructs clients from")
@@ -110,6 +117,9 @@ C4Component
   UpdateRelStyle(callers, github, $offsetX="110", $offsetY="0")
   UpdateRelStyle(callers, cli, $offsetX="140", $offsetY="10")
   UpdateRelStyle(callers, env, $offsetX="170", $offsetY="20")
+  UpdateRelStyle(callers, authority, $offsetX="200", $offsetY="30")
+  UpdateRelStyle(authoritycli, authority, $offsetX="-10", $offsetY="10")
+  UpdateRelStyle(authoritycli, cli, $offsetX="-40", $offsetY="20")
   UpdateRelStyle(cli, goke, $offsetX="-20", $offsetY="10")
   UpdateRelStyle(github, octokit, $offsetX="-20", $offsetY="-10")
   UpdateRelStyle(output, runner, $offsetX="-20", $offsetY="10")

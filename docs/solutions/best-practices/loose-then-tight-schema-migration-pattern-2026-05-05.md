@@ -159,7 +159,7 @@ function isRepoEntry(value: unknown): value is RepoEntry {
 **Producer always emits the new fields**
 
 ```ts
-// scripts/repos-metadata.ts
+// packages/registry/src/repos-metadata.ts
 export function addRepoEntry(input: AddRepoEntryInput): ReposFile {
   return {
     ...input.reposFile,
