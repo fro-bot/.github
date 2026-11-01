@@ -154,6 +154,16 @@ export interface CliConfig {
   readonly errorExitCode?: number
   /** Text written to stderr for a thrown action error, newline included. Default: the message and a newline. */
   readonly errorFormat?: (error: unknown) => string
+  /**
+   * The text usage and help print instead of goke's help, newline included. For a CLI whose usage
+   * text is part of its contract. Default: goke's help.
+   */
+  readonly usageText?: string
+  /**
+   * Called once, with the env of the run, when argv ends in usage or help and no action ran. For a CLI
+   * that must report that outcome somewhere else, such as a step output.
+   */
+  readonly onUsage?: (env: Readonly<Record<string, string | undefined>>) => void
 }
 
 export interface CliInput {
@@ -483,11 +493,13 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
     return {exitCode, stdout: stripAnsi(stdout.join('')), stderr: stripAnsi(stderr.join(''))}
   }
 
+  config.onUsage?.(input.env ?? process.env)
   if (output.help === '') cli.outputHelp()
+  const usageText = config.usageText ?? output.help
   return {
     exitCode: verdict,
-    stdout: usageStream === 'stdout' ? output.help : '',
-    stderr: output.errors + (usageStream === 'stderr' ? output.help : ''),
+    stdout: usageStream === 'stdout' ? usageText : '',
+    stderr: output.errors + (usageStream === 'stderr' ? usageText : ''),
   }
 }
 

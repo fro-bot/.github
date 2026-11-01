@@ -1955,3 +1955,139 @@ describe('zod defaults', () => {
     expect(seen).toEqual(['a'])
   })
 })
+
+describe('usageText', () => {
+  const TEXT = 'Usage: tool --private <spec>\n\nA hand-written usage text.\n'
+  const withText = (extra: Partial<CliConfig> = {}): CliConfig => ({
+    name: 'x',
+    usageText: TEXT,
+    commands: [defineCommand({readOnly: true, action: () => {}})],
+    ...extra,
+  })
+
+  it('is what --help prints, in place of goke help, on the usage stream with the help code', async () => {
+    const result = await run(withText({usageStream: 'stdout', helpCode: 0}), ['--help'])
+    expect(result).toEqual({exitCode: 0, stdout: TEXT, stderr: ''})
+  })
+
+  it('is what a CLI whose no-argv mode is usage prints', async () => {
+    const result = await run(withText({noArgv: 'usage', usageStream: 'stdout'}), [])
+    expect(result).toEqual({exitCode: 1, stdout: TEXT, stderr: ''})
+  })
+
+  it('follows the error line on a usage error, and goke help is not printed', async () => {
+    const result = await run(withText({usageCode: 64}), ['--bogus'])
+    expect(result.exitCode).toBe(64)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(`error: Unknown option \`--bogus\`\n${TEXT}`)
+    expect(result.stderr).not.toContain('Display this message')
+  })
+
+  it('goes to stdout for a usage error when the CLI prints usage there', async () => {
+    const result = await run(withText({usageStream: 'stdout'}), ['--bogus'])
+    expect(result.stdout).toBe(TEXT)
+    expect(result.stderr).toBe('error: Unknown option `--bogus`\n')
+  })
+
+  it('does not change what a run prints', async () => {
+    const config: CliConfig = {
+      name: 'x',
+      usageText: TEXT,
+      commands: [
+        defineCommand({
+          readOnly: true,
+          action: context => {
+            context.stdout('ran\n')
+          },
+        }),
+      ],
+    }
+    expect(await run(config, [])).toEqual({exitCode: 0, stdout: 'ran\n', stderr: ''})
+  })
+})
+
+describe('onUsage', () => {
+  const hooked = (
+    onUsage: (env: Readonly<Record<string, string | undefined>>) => void,
+    extra: Partial<CliConfig> = {},
+  ) =>
+    ({
+      name: 'x',
+      onUsage,
+      commands: [defineCommand({readOnly: true, action: () => {}})],
+      ...extra,
+    }) satisfies CliConfig
+
+  it.each([
+    ['unmatched argv', ['stray']],
+    ['an unknown flag', ['--bogus']],
+    ['--help', ['--help']],
+    ['a bare --', ['--']],
+    ['a dotted flag', ['--a.b=1']],
+    ['an inherited name', ['--constructor']],
+  ])('runs once for %s, with the env of the run, before the result returns', async (_label, argv) => {
+    const onUsage = vi.fn()
+    const result = await runCli(hooked(onUsage), {argv, env: {TOKEN: 'abc'}})
+    expect(result.exitCode).toBe(1)
+    expect(onUsage).toHaveBeenCalledExactlyOnceWith({TOKEN: 'abc'})
+  })
+
+  it('runs for a no-argv usage CLI and for a zod refinement failure', async () => {
+    const onUsage = vi.fn()
+    await runCli(hooked(onUsage, {noArgv: 'usage'}), {argv: [], env: {}})
+    expect(onUsage).toHaveBeenCalledTimes(1)
+
+    const refined = vi.fn()
+    const config: CliConfig = {
+      name: 'x',
+      onUsage: refined,
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {limit: {flag: '--limit <n>', schema: z.number().min(1).optional()}},
+          action: () => {},
+        }),
+      ],
+    }
+    await runCli(config, {argv: ['--limit', '0'], env: {}})
+    expect(refined).toHaveBeenCalledTimes(1)
+  })
+
+  it('defaults to the process environment', async () => {
+    const onUsage = vi.fn()
+    vi.stubEnv('ONUSAGE_PROBE', 'present')
+    await runCli(hooked(onUsage), {argv: ['stray']})
+    expect(onUsage).toHaveBeenCalledTimes(1)
+    expect(onUsage.mock.calls[0]?.[0]).toMatchObject({ONUSAGE_PROBE: 'present'})
+    vi.unstubAllEnvs()
+  })
+
+  it('does not run when the action runs, or when it throws or returns a code', async () => {
+    const onUsage = vi.fn()
+    const make = (action: () => unknown): CliConfig => ({
+      name: 'x',
+      onUsage,
+      commands: [defineCommand({readOnly: true, action})],
+    })
+    await run(
+      make(() => {}),
+      [],
+    )
+    await run(
+      make(() => {
+        throw new Error('x')
+      }),
+      [],
+    )
+    await run(
+      make(() => 3),
+      [],
+    )
+    expect(onUsage).not.toHaveBeenCalled()
+  })
+
+  it('is absent by default: a usage error without it still returns', async () => {
+    const result = await run({name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}, ['stray'])
+    expect(result.exitCode).toBe(1)
+  })
+})
