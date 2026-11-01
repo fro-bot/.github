@@ -51,7 +51,7 @@ implements a fail-soft `main()`, while `scripts/capture-patterns-open.ts` commen
 The second concern was predicate drift: `isRecord` was defined privately in one module while
 another module imported it from a shared privacy module. Two implementations of the same
 predicate inside one feature can diverge over time. On main today, the capture-patterns feature
-uses the shared definition in `scripts/capture-learnings-privacy.ts`; the duplication described in
+uses the shared definition in `packages/privacy/src/capture-learnings-privacy.ts`; the duplication described in
 issue #3695 has been resolved for that feature. Other, unrelated scripts still have local guards,
 so this is not a claim that every `isRecord` in `scripts/` is globally deduplicated.
 
@@ -225,7 +225,7 @@ with configured tests and no `testFiles` map yields `instrumentation-failed`, no
 
 ### One canonical `isRecord` for capture-patterns
 
-The current shared definition is in `scripts/capture-learnings-privacy.ts`:
+The current shared definition is in `packages/privacy/src/capture-learnings-privacy.ts`:
 
 ```ts
 export function isRecord(value: unknown): value is Record<string, unknown> {

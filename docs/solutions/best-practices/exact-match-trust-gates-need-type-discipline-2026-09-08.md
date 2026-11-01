@@ -4,7 +4,7 @@ date: 2026-09-08
 last_updated: 2026-09-08
 verified: 2026-09-08
 category: best-practices
-module: scripts/check-wiki-private-presence.ts
+module: packages/privacy/src/check-wiki-private-presence.ts
 problem_type: best_practice
 component: tooling
 severity: high
@@ -83,7 +83,7 @@ sources:
 
 The discipline:
 
-<!-- verify: sourceUrlMatchesRepo from scripts/check-wiki-private-presence.ts -->
+<!-- verify: sourceUrlMatchesRepo from packages/privacy/src/check-wiki-private-presence.ts -->
 ```ts
 // Before: sourceUrlMatchesRepo calls `new URL(sourceUrl)`, which stringifies its
 // argument, so the one-element array parses and matches.

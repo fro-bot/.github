@@ -1,0 +1,1243 @@
+import type {NodeIdResolver} from './private-repo-resolution.ts'
+import {Buffer} from 'node:buffer'
+import {execFileSync} from 'node:child_process'
+import {readFileSync} from 'node:fs'
+import {readFile} from 'node:fs/promises'
+import process from 'node:process'
+import {isObject} from '@fro-bot/core/guards'
+import {writeGithubOutputs} from '@fro-bot/core/output'
+import {checkPrivateLeak} from '@fro.bot/wiki-write-core/private-leak'
+import {assertReposFile, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
+import {buildPrivateNameTokens} from '@fro.bot/wiki-write-core/wiki-slug'
+import {parse as parseYaml} from 'yaml'
+import {makeGhNodeIdResolver} from './private-repo-resolution.ts'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type {GuardResult} from '@fro.bot/wiki-write-core/private-leak'
+
+/**
+ * Result of a promotion scan.
+ *
+ * - `{ok: true}` — scan passed (no private tokens found in diff).
+ * - `{ok: false, matchedFiles}` — private token found; matchedFiles lists affected file paths only
+ *   (any path segment containing a private token is redacted to `[REDACTED]`).
+ * - `{ok: false, resolutionFailed: true, failedNodeIds}` — one or more node_ids could not be
+ *   resolved (including access-lost); promotion is blocked fail-closed.
+ */
+export type PromotionScanResult =
+  | {readonly ok: true}
+  | {readonly ok: false; readonly matchedFiles: readonly string[]}
+  | {readonly ok: false; readonly resolutionFailed: true; readonly failedNodeIds: readonly string[]}
+
+export interface PromotionScanInputs {
+  /** Raw YAML text of data branch's metadata/repos.yaml */
+  readonly reposYaml: string
+  /** Injectable resolver — caller wires FRO_BOT_POLL_PAT into makeGhNodeIdResolver(token) */
+  readonly resolver: NodeIdResolver
+  /** Unified diff text (main...data three-dot diff) */
+  readonly diff: string
+}
+
+export interface OverrideOptions {
+  readonly titlePrefixed: boolean
+  readonly isOperator: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Seam types for CLI testability (Fix E)
+// ---------------------------------------------------------------------------
+
+/**
+ * Injectable git-diff runner. Receives an explicit env so FRO_BOT_POLL_PAT
+ * never reaches the git subprocess (Fix C). Defaults to the real execFileSync.
+ */
+export type GitDiffRunner = (args: string[], env: NodeJS.ProcessEnv) => string
+
+/**
+ * Injectable repos.yaml reader. Defaults to fs.readFile.
+ */
+export type ReposYamlReader = (path: string) => Promise<string>
+
+/**
+ * Injectable resolver factory. Receives the PAT and returns a NodeIdResolver.
+ * Defaults to makeGhNodeIdResolver.
+ */
+export type ResolverFactory = (pat: string) => NodeIdResolver
+
+// ---------------------------------------------------------------------------
+// Seam types for main() workflow_run testability
+// ---------------------------------------------------------------------------
+
+/**
+ * Injectable workflow_run event reader. Reads the raw JSON from GITHUB_EVENT_PATH.
+ * Defaults to fs.readFile.
+ */
+export type WorkflowRunReader = (path: string) => Promise<string>
+
+/**
+ * Injectable GitHub API resolver for PR identity.
+ * - fetchPrByNumber: fetch a PR by its number (for validation after pull_requests[] lookup)
+ * - fetchPrsByHeadSha: fetch PRs associated with a head SHA (fallback when pull_requests[] is empty)
+ */
+export interface PrApiResolver {
+  readonly fetchPrByNumber: (prNumber: number) => Promise<object>
+  readonly fetchPrsByHeadSha: (headSha: string) => Promise<object[]>
+}
+
+/**
+ * Injectable data-branch existence checker for fetchPrivateNodeIds.
+ *
+ * Returns `true` if the `data` branch ref exists in the remote, `false` if it
+ * is absent (HTTP 404 from the branches API), or throws for any other error
+ * (5xx, network, rate-limit, etc.) so the caller can fail closed.
+ */
+export type DataBranchChecker = (fullName: string) => boolean
+
+/**
+ * Injectable main-branch repos.yaml reader for fetchPrivateNodeIds fallback.
+ *
+ * Reads `metadata/repos.yaml` from the local working tree (the workflow checks
+ * out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD).
+ * Defaults to fs.readFileSync so it stays synchronous alongside execFileSync.
+ */
+export type MainReposYamlReader = (path: string) => string
+
+// ---------------------------------------------------------------------------
+// Operator override
+// ---------------------------------------------------------------------------
+
+/**
+ * The GitHub login of the operator permitted to use the [allow-private-leak] title prefix.
+ * A `function` declaration rather than a top-level `const` string literal, for the same
+ * static-mutant reason as `largeOutputMaxBufferBytes` above: a literal assigned directly to a
+ * top-level const is evaluated once at module load, before any per-test mutant activation can
+ * scope it, making its StringLiteral mutant unkillable by any test regardless of assertion
+ * strength (confirmed live: mutating the value here breaks 5 tests when run directly against the
+ * mutated source, but the mutant still reports Survived under Stryker's mutation switching
+ * because the ESM module instance is cached across mutants within a worker process). Calling a
+ * function evaluates the literal fresh per call site at test-invocation time, making the same
+ * string a normal, per-test-killable mutant. Behavior-neutral: same value, same one call site,
+ * only the evaluation timing changes.
+ */
+function operatorLogin(): string {
+  return 'marcusrbrown'
+}
+
+/**
+ * Maximum output accepted from commands that return diffs or repository metadata.
+ * Node's default `execFileSync` ceiling is 1 MiB, which is smaller than legitimate
+ * promotion diffs. If a command still exceeds this ceiling, `execFileSync` throws
+ * (typically with `ENOBUFS`) and the caller exits non-zero rather than passing.
+ * Apply this to responses that scale with repository or diff size; bounded fixed-shape
+ * responses intentionally keep Node's default ceiling.
+ *
+ * A function rather than a top-level `const`: Stryker classifies a top-level arithmetic
+ * initializer as a "static" mutant (evaluated once at module load, before any per-test mutant
+ * activation can scope it), which is unkillable by any test regardless of assertion strength.
+ * Computing the value inside a function evaluates it per call site at test-invocation time,
+ * making the same arithmetic a normal, per-test-killable mutant. Behavior-neutral: same value,
+ * same call sites, only the evaluation timing changes.
+ */
+export function largeOutputMaxBufferBytes(): number {
+  return 32 * 1024 * 1024
+}
+
+type ScanResultOutput = 'success' | 'detection' | 'error'
+
+/**
+ * Write a redacted machine-readable result for the workflow's status step. `env` defaults to the
+ * process environment; an unset or empty `$GITHUB_OUTPUT` writes nothing.
+ */
+export function writeScanResult(
+  result: ScanResultOutput,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  writeGithubOutputs({scan_result: result}, {onMissing: 'skip', env})
+}
+
+export {checkPrivateLeak}
+
+// ---------------------------------------------------------------------------
+// CLI helpers
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// workflow_run event reader + PR identity resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * The expected base repository for PRs this gate scans.
+ * Fail-closed if the PR targets a different repo.
+ *
+ * A function rather than a top-level `const`, for the same static-mutant reason documented on
+ * `largeOutputMaxBufferBytes` above: a top-level string-literal initializer is a "static" mutant,
+ * unkillable by any test. Computing it inside a function evaluates it per call site.
+ */
+function expectedBaseRepo(): string {
+  return 'fro-bot/.github'
+}
+
+/**
+ * The expected base branch for PRs this gate scans.
+ * Fail-closed if the PR targets a different branch.
+ */
+function expectedBaseBranch(): string {
+  return 'main'
+}
+
+/**
+ * `value[key]` for any object, an array included: an API payload that is an array reads the same
+ * as one that is a mapping, and a missing object or key is `undefined`.
+ */
+function fieldOf(value: object | undefined, key: string): unknown {
+  return value === undefined ? undefined : Reflect.get(value, key)
+}
+
+function objectFieldOf(value: object | undefined, key: string): object | undefined {
+  const field = fieldOf(value, key)
+  return isObject(field) ? field : undefined
+}
+
+function stringFieldOf(value: object | undefined, key: string): string | undefined {
+  const field = fieldOf(value, key)
+  return typeof field === 'string' ? field : undefined
+}
+
+/**
+ * Validate a PR object against the expected base repo, base branch, and head SHA.
+ * Returns true only if all three match.
+ */
+function validatePrIdentity(pr: object, expectedHeadSha: string): boolean {
+  const head = objectFieldOf(pr, 'head')
+  const base = objectFieldOf(pr, 'base')
+  const baseRepo = objectFieldOf(base, 'repo')
+
+  const headSha = stringFieldOf(head, 'sha')
+  const baseRef = stringFieldOf(base, 'ref')
+  const baseRepoFullName = stringFieldOf(baseRepo, 'full_name')
+
+  return headSha === expectedHeadSha && baseRef === expectedBaseBranch() && baseRepoFullName === expectedBaseRepo()
+}
+
+/**
+ * Read the workflow_run event payload and resolve PR identity.
+ *
+ * Resolution order:
+ * 1. Extract PR NUMBERS from `workflow_run.pull_requests[]` as hints (do NOT validate
+ *    the abbreviated objects — they lack base.repo.full_name).
+ * 2. For each candidate number, fetch the FULL PR via fetchPrByNumber and validate that.
+ * 3. If pull_requests[] yields no candidate numbers, fall back to fetchPrsByHeadSha and
+ *    apply the same number-extraction-then-fetchPrByNumber pattern.
+ *
+ * Invariant: validatePrIdentity is ONLY ever called on full PR objects from fetchPrByNumber.
+ * The abbreviated pull_requests[] entries are used only to extract PR numbers.
+ *
+ * Validation: base repo == fro-bot/.github, base branch == main, PR head SHA == workflow_run.head_sha.
+ * Requires EXACTLY ONE PR to survive full-object validation — fail-closed otherwise.
+ *
+ * Returns the validated PR number, title, and author.
+ */
+async function readWorkflowRunContext(
+  eventPath: string,
+  reader: WorkflowRunReader,
+  prApiResolver: PrApiResolver,
+): Promise<{prNumber: number; title: string; author: string; headSha: string}> {
+  const raw = await reader(eventPath)
+  const parsed: unknown = JSON.parse(raw)
+
+  if (!isObject(parsed)) {
+    throw new Error(`check-private-leak: workflow_run event payload is not an object (path=${eventPath})`)
+  }
+
+  const workflowRun = objectFieldOf(parsed, 'workflow_run')
+  if (workflowRun === undefined) {
+    throw new Error(`check-private-leak: event payload missing workflow_run field (path=${eventPath})`)
+  }
+
+  // Require workflow_run.event == 'pull_request' — fail-closed otherwise.
+  const triggerEvent = fieldOf(workflowRun, 'event')
+  if (triggerEvent !== 'pull_request') {
+    throw new Error(
+      `check-private-leak: workflow_run.event is "${String(triggerEvent)}", expected "pull_request" — fail-closed`,
+    )
+  }
+
+  const headSha = fieldOf(workflowRun, 'head_sha')
+  if (typeof headSha !== 'string' || headSha === '') {
+    throw new Error(`check-private-leak: workflow_run.head_sha is missing or empty (path=${eventPath})`)
+  }
+
+  // Resolve PR number from pull_requests[] or API fallback.
+  // IMPORTANT: pull_requests[] entries are ABBREVIATED — they lack base.repo.full_name.
+  // Extract PR numbers only; fetch the full PR object via fetchPrByNumber for validation.
+  const pullRequestsField = fieldOf(workflowRun, 'pull_requests')
+  // Stryker disable next-line ArrayDeclaration: the only variant is a non-empty placeholder array
+  // (e.g. `["Stryker was here"]`). Its single string element fails `isObject()` in extractNumbers'
+  // `for (const pr of prs) { if (!isObject(pr)) continue }` loop below, so it yields zero candidate
+  // numbers -- identical to the real `[]` fallback triggering the head-SHA fallback path. No input
+  // can distinguish a non-record placeholder element from an empty array at this call site.
+  const pullRequests = Array.isArray(pullRequestsField) ? pullRequestsField : []
+
+  const resolvedPrNumber: number = await (async (): Promise<number> => {
+    /** Extract PR numbers from an array of PR objects (abbreviated or full). */
+    const extractNumbers = (prs: unknown[]): number[] => {
+      const nums: number[] = []
+      for (const pr of prs) {
+        if (!isObject(pr)) continue
+        const num = fieldOf(pr, 'number')
+        if (typeof num === 'number') {
+          nums.push(num)
+        }
+      }
+      return nums
+    }
+
+    // Step 1: collect candidate PR numbers from pull_requests[] (abbreviated objects — numbers only).
+    // IMPORTANT: do NOT validate the abbreviated objects — they lack base.repo.full_name.
+    const fromPullRequests = extractNumbers(pullRequests)
+
+    // Step 2: if pull_requests[] yielded no numbers, fall back to the head-SHA API.
+    // The SHA fallback may also return abbreviated objects, so apply the same pattern:
+    // extract numbers only, then fetch full objects for validation.
+    let usedHeadShaFallback = false
+    const candidateNumbers: number[] =
+      fromPullRequests.length > 0
+        ? fromPullRequests
+        : await (async (): Promise<number[]> => {
+            usedHeadShaFallback = true
+            const prs = await prApiResolver.fetchPrsByHeadSha(headSha)
+            const nums = extractNumbers(prs)
+            if (nums.length === 0) {
+              throw new Error(
+                `check-private-leak: head-SHA fallback returned ${nums.length} valid PR(s), expected exactly 1 — fail-closed`,
+              )
+            }
+            return nums
+          })()
+
+    // Step 3: for each candidate number, fetch the FULL PR object and validate it.
+    // validatePrIdentity requires base.repo.full_name — only full objects have it.
+    const validCandidates: number[] = []
+    for (const num of candidateNumbers) {
+      const fullPr = await prApiResolver.fetchPrByNumber(num)
+      if (validatePrIdentity(fullPr, headSha)) {
+        validCandidates.push(num)
+      }
+    }
+
+    if (validCandidates.length !== 1) {
+      throw new Error(
+        usedHeadShaFallback
+          ? `check-private-leak: expected exactly 1 valid PR from head-SHA fallback, found ${validCandidates.length} — fail-closed`
+          : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
+      )
+    }
+    // Length is exactly 1 after the throw above; `noUncheckedIndexedAccess` can't see that. A
+    // runtime guard here would be an unreachable branch carrying a half-equivalent mutant.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return validCandidates[0]!
+  })()
+
+  // Fetch the validated PR's details (number, title, author).
+  // The full PR was already fetched during validation above; fetch again for title/author.
+  // (fetchPrByNumber is idempotent and the result is not cached — acceptable for correctness.)
+  const prDetails = await prApiResolver.fetchPrByNumber(resolvedPrNumber)
+
+  const title = fieldOf(prDetails, 'title')
+  const author = stringFieldOf(objectFieldOf(prDetails, 'user'), 'login')
+
+  if (typeof title !== 'string') {
+    throw new TypeError(`check-private-leak: PR #${resolvedPrNumber} missing title field`)
+  }
+  if (author === undefined || author === '') {
+    throw new Error(`check-private-leak: PR #${resolvedPrNumber} missing user.login field`)
+  }
+
+  return {prNumber: resolvedPrNumber, title, author, headSha}
+}
+
+// ---------------------------------------------------------------------------
+// 404-detection helper (exported for unit testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads `error[key]` if it's a string, else `''`. Its own function so the `''` fallback's
+ * `StringLiteral` mutant sits alone on a line: the directive below is line-scoped and would
+ * otherwise also suppress the killable `'string'` typeof literal.
+ */
+function stringFieldOrEmpty(error: unknown, key: 'stdout' | 'stderr'): string {
+  const value = isObject(error) ? fieldOf(error, key) : undefined
+  if (typeof value === 'string') return value
+  // Stryker disable next-line StringLiteral: the one variant (`'Stryker was here!'`) is observable
+  // only through isGh404Error's two fixed regexes, and neither matches that placeholder text.
+  return ''
+}
+
+/**
+ * Returns true when `error` carries the clear HTTP 404 signal that `gh` emits
+ * for branch/content API calls: `\bHTTP 404\b` in stderr OR `"status":"404"` in stdout.
+ *
+ * Any other error shape (401/403/5xx/network/rate-limit) returns false so the
+ * caller can fail closed.
+ */
+export function isGh404Error(error: unknown): boolean {
+  const stdout = stringFieldOrEmpty(error, 'stdout')
+  const stderr = stringFieldOrEmpty(error, 'stderr')
+  return /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
+}
+
+// ---------------------------------------------------------------------------
+// Default seam implementations for main()
+// ---------------------------------------------------------------------------
+
+// A function declaration rather than an arrow-const: Stryker classifies the ArrowFunction mutator
+// on a top-level `const fn = (...) => ...` initializer as a "static" mutant (the function VALUE is
+// created once at module load, even though its body runs per call), which is unkillable by any
+// test regardless of assertion strength -- the same static-mutant issue documented on
+// `largeOutputMaxBufferBytes` above. A `function` declaration is not mutated by the ArrowFunction
+// mutator at all, so its body's mutants (BlockStatement, etc.) are ordinary per-call, dynamic
+// mutants instead. Behavior-neutral: same signature, same body, same default-parameter role.
+async function defaultWorkflowRunReader(path: string): Promise<string> {
+  return readFile(path, 'utf8')
+}
+
+// A factory function, called once per `main()` invocation via the default-parameter expression
+// below, rather than a top-level `const` object literal: the same static-mutant reason as
+// defaultWorkflowRunReader above -- an object literal assigned directly to a top-level const is
+// constructed once at module load; Stryker's ObjectLiteral mutator on that construction is a
+// static, unkillable mutant. Calling a factory from a default-parameter expression re-constructs
+// the object fresh on every uninjected call, making the same object literal a dynamic mutant.
+function createDefaultPrApiResolver(): PrApiResolver {
+  return {
+    fetchPrByNumber: async (prNumber: number): Promise<object> => {
+      const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/pulls/${prNumber}`, '--jq', '.'], {
+        encoding: 'utf8',
+      })
+      const parsed: unknown = JSON.parse(raw)
+      if (!isObject(parsed)) {
+        throw new TypeError(`check-private-leak: fetchPrByNumber returned non-object for PR #${prNumber}`)
+      }
+      return parsed
+    },
+    fetchPrsByHeadSha: async (headSha: string): Promise<object[]> => {
+      const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
+        encoding: 'utf8',
+        maxBuffer: largeOutputMaxBufferBytes(),
+      })
+      const parsed: unknown = JSON.parse(raw)
+      if (!Array.isArray(parsed)) {
+        throw new TypeError(`check-private-leak: fetchPrsByHeadSha returned non-array for SHA ${headSha}`)
+      }
+      // Stryker disable next-line MethodExpression: dropping `.filter(isObject)` (returning
+      // `parsed` unfiltered) is unobservable through main()'s only call site -- this array flows
+      // directly into readWorkflowRunContext's extractNumbers, which applies the IDENTICAL
+      // `isObject(pr)` predicate to every entry before reading `.number` (see extractNumbers
+      // above). Filtering twice with the same predicate on the same unmodified data cannot change
+      // which entries extractNumbers accepts. Kept (not deleted) because `PrApiResolver` is an
+      // exported interface: this filter is the type-contract enforcement point for any other
+      // implementation or caller that trusts `fetchPrsByHeadSha`'s declared `Record<string,
+      // unknown>[]` return type without re-checking, even though this repository's one production
+      // caller happens to re-check.
+      return parsed.filter(isObject)
+    },
+  }
+}
+
+/**
+ * Default DataBranchChecker: calls `gh api repos/<fullName>/branches/data` and
+ * returns true if the branch exists, false on HTTP 404, throws on any other error.
+ *
+ * `gh` exits non-zero on API errors and writes a JSON body + HTTP status to stdout/stderr.
+ * We capture both streams and inspect for `HTTP 404` to distinguish branch-absent from
+ * other failures (5xx, network, rate-limit, etc.).
+ */
+const defaultDataBranchChecker: DataBranchChecker = (fullName: string): boolean => {
+  try {
+    execFileSync('gh', ['api', `repos/${fullName}/branches/data`], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return true
+  } catch (error: unknown) {
+    if (isGh404Error(error)) {
+      return false
+    }
+    // Any other error (5xx, network, rate-limit, etc.) — re-throw so caller fails closed.
+    throw error
+  }
+}
+
+/**
+ * Default MainReposYamlReader: reads `metadata/repos.yaml` from the local working tree.
+ * The workflow checks out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD.
+ */
+// A function declaration rather than an arrow-const, for the same static-mutant reason as
+// defaultWorkflowRunReader above.
+function defaultMainReposYamlReader(path: string): string {
+  return readFileSync(path, 'utf8')
+}
+
+/**
+ * True when `r.node_id` is present and non-empty. A type guard (not a plain boolean predicate) so
+ * every caller's `.filter(hasNonEmptyNodeId)` narrows `node_id` to `string` at the type level --
+ * this removes the `.map(r => r.node_id as string)` cast at every call site, which used to let a
+ * ConditionalExpression mutant forcing this function to always return `true` become a genuine,
+ * observable bug rather than equivalent code: with the old boolean-returning form, `true` let
+ * entries with `node_id: undefined` through the filter, and the (unchecked) `as string` cast
+ * silently turned that into a literal `undefined` value flowing into `privateNodeIds`/
+ * `resolvedNodeIds` arrays typed `string[]`. The type guard closes this: TypeScript rejects the
+ * `.map(r => r.node_id)` cast-free access unless every caller has actually filtered by this
+ * predicate.
+ */
+function hasNonEmptyNodeId<T extends Pick<RepoEntry, 'node_id'>>(r: T): r is T & {node_id: string} {
+  // Split from a single `&&` expression onto its own guard line so this clause's mutants
+  // (ConditionalExpression true/false, EqualityOperator `!==`→`===`) are ordinary, per-test-
+  // killable mutants -- they are NOT equivalent (an entry with `node_id: undefined` reaching the
+  // length check below would throw, and a valid string entry wrongly excluded here would be
+  // observable everywhere `hasNonEmptyNodeId` gates a private entry into the scan). A single-line
+  // `&&` expression would put this guard's mutants on the SAME line as the length check below,
+  // and Stryker's directive is line-scoped, not sub-expression-scoped -- naming a mutator on that
+  // shared line would have silently also suppressed these, non-equivalent, mutants.
+  if (typeof r.node_id !== 'string') return false
+  // No `r.node_id.length > 0` check here: it would be dead code, not equivalent code. `.node_id`
+  // reaching this point is confirmed a string (guarded above) and, by the schema invariant,
+  // non-empty -- `assertReposFile` (called by every caller before filtering) throws via
+  // assertRepoEntry/isRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) for any
+  // `typeof node_id === 'string' && node_id.length === 0`, so no entry reaching here can ever have
+  // `node_id.length === 0` -- the comparison would always evaluate to `true` for every legally
+  // constructed input. A live `r.node_id.length > 0` here would carry a `ConditionalExpression`
+  // mutant with two variants, only one of which (`true`) is equivalent under the invariant -- the
+  // other (`false`) is a genuine, killable bug (confirmed live: forcing it broke 47 tests), and
+  // Stryker's `disable next-line` directive is mutator-scoped, not variant-scoped, so a single
+  // directive cannot suppress only the equivalent half. Deleting the tautological check removes
+  // the mutant surface entirely, per
+  // docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md
+  // rule 3 ("prefer deletion over a directive when the code itself is unnecessary").
+  return true
+}
+
+/**
+ * Parse a repos.yaml YAML string and extract private node_ids.
+ */
+function extractPrivateNodeIds(yamlText: string): string[] {
+  const parsed: unknown = parseYaml(yamlText)
+  assertReposFile(parsed)
+  return parsed.repos
+    .filter(r => r.private === true)
+    .filter(hasNonEmptyNodeId)
+    .map(r => r.node_id)
+}
+
+/**
+ * Fetch metadata/repos.yaml from the `data` branch and return node_ids for private entries.
+ *
+ * Algorithm (PR mode):
+ * 1. Try fetching `metadata/repos.yaml` content from `data` via the GitHub API.
+ * 2. SUCCESS → parse and return private node_ids.
+ * 3. Content fetch returns HTTP 404:
+ *    a. Check whether the `data` branch ref exists.
+ *    b. data branch ABSENT → fall back to reading `metadata/repos.yaml` from the local
+ *       main checkout on disk. Emit a bounded warning. NOT empty — main carries redacted
+ *       private entries (always-redacted-everywhere model).
+ *    c. data branch EXISTS (content 404 but ref present → create/race) → RETRY once.
+ *       If retry succeeds, use data. If retry still 404 → FAIL CLOSED.
+ * 4. ANY OTHER failure (401/403/5xx/network/rate-limit/unknown) → FAIL CLOSED.
+ *
+ * Injectable seams (dataBranchChecker, mainReposYamlReader) allow tests to drive each branch.
+ */
+function fetchPrivateNodeIds(
+  fullName: string,
+  dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
+  mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
+): string[] {
+  // Step 1: attempt to fetch content from the data branch.
+  let encoded: string
+  try {
+    // No `.trim()`: the base64 payload is immediately `.replaceAll('\n', '')`-stripped below, and
+    // Node's `Buffer.from(str, 'base64')` decoder silently skips every non-base64-alphabet
+    // character (spaces, tabs, `\r`, `\n`) wherever it appears in the string -- confirmed:
+    // `Buffer.from('  \r\nSGVsbG8=\r\n  ', 'base64').toString()` decodes identically to the
+    // untrimmed-whitespace-free input. `.trim()` cannot change the decoded result for any input.
+    encoded = execFileSync(
+      'gh',
+      ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
+      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: largeOutputMaxBufferBytes()},
+    )
+  } catch (error: unknown) {
+    if (!isGh404Error(error)) {
+      // Step 4: non-404 error (401/403/5xx/network/rate-limit) → fail closed.
+      throw error
+    }
+
+    // Step 3: content fetch returned HTTP 404 — check branch existence.
+    let branchExists: boolean
+    try {
+      branchExists = dataBranchChecker(fullName)
+    } catch {
+      // Step 5: branch-existence check itself failed → fail closed.
+      throw new Error('check-private-leak: data branch existence check failed (non-404 error) — fail closed')
+    }
+
+    if (!branchExists) {
+      // Step 3b: data branch ABSENT → fall back to main checkout on disk.
+      // The workflow checks out ref: main, so metadata/repos.yaml is present in CWD.
+      process.stderr.write('check-private-leak: data branch absent — falling back to main metadata/repos.yaml\n')
+      const mainYaml = mainReposYamlReader('metadata/repos.yaml')
+      return extractPrivateNodeIds(mainYaml)
+    }
+
+    // Step 3c: data branch EXISTS but content is 404 (create/race) → retry once.
+    let retryEncoded: string
+    try {
+      // No `.trim()`: same equivalence proof as the initial fetch above.
+      retryEncoded = execFileSync(
+        'gh',
+        ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
+        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: largeOutputMaxBufferBytes()},
+      )
+    } catch {
+      // Retry also 404 or other error → fail closed.
+      throw new Error(
+        'check-private-leak: data branch exists but metadata/repos.yaml is missing/corrupt after retry — fail closed',
+      )
+    }
+
+    // Retry succeeded — use data branch content.
+    // No `.replaceAll('\n', '')`: Node's `Buffer.from(str, 'base64')` decoder silently skips
+    // embedded `\n` characters wherever they appear, decoding identically with or without them
+    // stripped -- confirmed: `Buffer.from('SGVs\nbG8=', 'base64')` decodes the same as
+    // `Buffer.from('SGVsbG8=', 'base64')`. Stripping cannot change the decoded result for any
+    // input (same equivalence class as the deleted `.trim()` calls above).
+    const retryYaml = Buffer.from(retryEncoded, 'base64').toString('utf8')
+    return extractPrivateNodeIds(retryYaml)
+  }
+
+  // Step 2: SUCCESS — parse and return private node_ids.
+  // GitHub API returns base64 with potential embedded newlines; no `.replaceAll('\n', '')` needed
+  // (see the equivalence note above the retry-path decode).
+  const yamlText = Buffer.from(encoded, 'base64').toString('utf8')
+  return extractPrivateNodeIds(yamlText)
+}
+
+/**
+ * The maximum number of files the GitHub compare API returns in a single JSON response.
+ * If `files.length` reaches this cap, the response is truncated and we cannot guarantee
+ * a complete scan — fail closed.
+ */
+const COMPARE_API_FILE_CAP = 300
+
+/**
+ * Check the compare JSON response for file-list truncation.
+ * Exported for unit testing.
+ *
+ * GitHub's compare API caps `files` at 300 entries per response. When the cap is
+ * hit, additional changed files are silently omitted from the JSON — we cannot
+ * guarantee a complete scan, so we throw (fail closed).
+ *
+ * A missing per-file `patch` field is NOT a truncation signal. The JSON
+ * representation omits `patch` for individually large files, but the raw unified
+ * diff media response (fetched separately by `fetchDiffForSha`) always includes
+ * the full patch content. The raw diff is the actual scan source; the JSON check
+ * exists only to guard against file-list truncation.
+ *
+ * Throws with a redacted message if truncation is detected so the caller (main()'s
+ * try/catch) exits non-zero — fail closed.
+ */
+export function assertCompareNotTruncated(compareJson: unknown): void {
+  if (!isObject(compareJson)) {
+    throw new TypeError('check-private-leak: compare API returned non-object JSON — fail closed')
+  }
+
+  const files = fieldOf(compareJson, 'files')
+  if (!Array.isArray(files)) {
+    throw new TypeError('check-private-leak: compare API response missing files array — fail closed')
+  }
+
+  // File count at or above the API cap: additional files may be missing from the list.
+  // This is the only truncation signal we guard against here. A missing per-file `patch`
+  // field is not fatal — the raw diff fetch (Step 2 in fetchDiffForSha) always includes
+  // the full patch content and is the actual scan source.
+  if (files.length >= COMPARE_API_FILE_CAP) {
+    throw new Error(
+      `check-private-leak: diff too large to scan completely (${files.length} files >= ${COMPARE_API_FILE_CAP}-file cap) — fail closed`,
+    )
+  }
+}
+
+/**
+ * Fetch the unified diff for an immutable, pinned head SHA against the base branch.
+ *
+ * Uses the GitHub compare API pinned to the workflow_run head SHA, never from a
+ * checked-out tree. Pinning to scannedHeadSha (the workflow_run head_sha) closes the
+ * force-push TOCTOU: the diff is for exactly the SHA the commit status is posted to,
+ * regardless of any subsequent force-push to the PR branch.
+ *
+ * Two-step fetch:
+ * 1. JSON truncation check — queries the compare endpoint without a diff media type to
+ *    inspect `files.length`. If the file list is at or above the 300-entry cap, the
+ *    response is truncated and we cannot guarantee a complete scan → throws (fail closed).
+ *    A missing per-file `patch` in the JSON is NOT a truncation signal and does not throw.
+ * 2. Raw diff fetch — requests the same endpoint with `Accept: application/vnd.github.v3.diff`.
+ *    This always returns the full unified diff, including patches for large files that the
+ *    JSON representation omits. The raw diff is the actual scan source.
+ *
+ * Accepts an explicit env so FRO_BOT_POLL_PAT never reaches the gh subprocess
+ * (mirrors the --promotion gitEnv isolation pattern). The PAT-stripped env is used
+ * for BOTH the JSON truncation check and the raw diff fetch.
+ */
+function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
+  // Step 1: fetch the compare JSON to check for file-list truncation.
+  // No diff media type — returns { total_commits, files: [...] }.
+  // Throws if files.length >= 300 (file list truncated) — fail closed.
+  // A missing per-file `patch` in the JSON is not fatal; the raw diff (Step 2) is the scan source.
+  const compareJsonRaw = execFileSync(
+    'gh',
+    ['api', `repos/{owner}/{repo}/compare/${expectedBaseBranch()}...${headSha}`],
+    {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()},
+  )
+  const compareJson: unknown = JSON.parse(compareJsonRaw)
+  assertCompareNotTruncated(compareJson)
+
+  // Step 2: fetch the raw unified diff — the actual scan source.
+  // The raw diff always includes full patch content, even for files whose JSON `patch` was omitted.
+  return execFileSync(
+    'gh',
+    [
+      'api',
+      `repos/{owner}/{repo}/compare/${expectedBaseBranch()}...${headSha}`,
+      '-H',
+      'Accept: application/vnd.github.v3.diff',
+    ],
+    {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()},
+  )
+}
+
+/**
+ * Post a transparency comment on the PR about the override.
+ */
+function postOverrideComment(prNumber: number, author: string): void {
+  const body = `⚠️ **[allow-private-leak] override honored** — \`${author}\` bypassed the private-leak guard on this PR. Operator-approved.`
+  execFileSync(
+    'gh',
+    ['api', `repos/{owner}/{repo}/issues/${prNumber}/comments`, '--method', 'POST', '-f', `body=${body}`],
+    {encoding: 'utf8'},
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Promotion scan — pure testable core
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the private token set from a resolved nameWithOwner string.
+ * Returns [canonical, raw-double-dash, slug] — all carry the owner prefix for specificity.
+ * The raw double-dash form (`owner--name`) is added before the slug so it is always present
+ * even if computeRepoSlug throws. For simple names the raw form equals the slug; for names
+ * with underscores, dots, or uppercase it differs and closes a scan+redaction gap.
+ * Bare name is intentionally excluded (false-positive risk on short names).
+ * Duplicate forms are collapsed via a Set round-trip.
+ */
+function buildTokensForName(nameWithOwner: string): string[] {
+  return buildPrivateNameTokens(nameWithOwner)
+}
+
+/**
+ * Redact any occurrence of a known private token within a file path string.
+ *
+ * Approach: replace each private token (case-insensitive) found in the path with
+ * `[REDACTED]`. This keeps the path structure operator-actionable (directory depth,
+ * extension, surrounding segments are preserved) while never printing the literal
+ * private name. Operators can run `bun scripts/resolve-private.ts metadata/repos.yaml`
+ * to map node_ids back to owner/name.
+ */
+function redactPathTokens(filePath: string, privateTokens: readonly string[]): string {
+  let result = filePath
+  for (const token of privateTokens) {
+    // Case-insensitive replacement of the token anywhere in the path.
+    const escaped = token.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)
+    result = result.replaceAll(new RegExp(escaped, 'gi'), '[REDACTED]')
+  }
+  return result
+}
+
+/**
+ * Promotion-mode scan: pure, injectable, testable.
+ *
+ * Resolves private node_ids from repos.yaml content, builds the token set, and
+ * runs `checkPrivateLeak` against the provided diff. The resolver and diff are
+ * both injectable so tests can exercise the full matrix without shelling out.
+ *
+ * Resolution matrix (exhaustive, fail-closed):
+ * - `access-lost` → BLOCK: returns `{ok:false, resolutionFailed:true, failedNodeIds}`.
+ *   Rationale: GitHub GraphQL `node()` returns null for BOTH a deleted repo AND a repo
+ *   the token cannot see. A mis-scoped/expired PAT makes every private repo look
+ *   access-lost → treating it as "skip" would make the gate pass everything (mass
+ *   fail-open). The cost — a genuinely-deleted repo's stale node_id blocks promotion
+ *   until an operator removes it from data's repos.yaml — is the correct tradeoff for
+ *   a privacy gate. Operators can verify and clean up stale entries manually.
+ * - any other failure (transient/auth/rate-limit/unknown) → BLOCK: same result.
+ *   Cannot guarantee a complete scan; block promotion.
+ * - `private:true` entry with missing/empty node_id → BLOCK: included as the sentinel
+ *   string `"<missing-node-id>"` in failedNodeIds (never any owner/name).
+ * - success → include `owner/name` + `owner--slug` in the token set
+ *
+ * Zero private entries → `{ok:true}` immediately (nothing to scan).
+ *
+ * Redaction guarantee: no resolved private name appears in any returned value.
+ * Matched file paths have private tokens replaced with `[REDACTED]`.
+ * The caller (CLI shell) is responsible for redacted stderr output.
+ */
+export async function runPromotionScan(inputs: PromotionScanInputs): Promise<PromotionScanResult> {
+  const {reposYaml, resolver, diff} = inputs
+
+  // Parse repos.yaml and extract private entries.
+  const parsed: unknown = parseYaml(reposYaml)
+  assertReposFile(parsed)
+  const privateEntries = parsed.repos.filter(r => r.private === true)
+
+  // No early return for privateEntries.length === 0: zero private entries yields
+  // missingNodeIdCount === 0, an empty privateNodeIds/resolvedNames/privateTokens, and
+  // checkPrivateLeak([], diff, ...) converges to {ok: true} through the main path anyway (mirrors
+  // the identical dead-code removal already documented in
+  // packages/wiki-write-core/src/private-leak.ts's own checkPrivateLeak) -- a pure optimization,
+  // not a behavior difference. Pinned by the "zero private entries" test rather than special-cased
+  // here.
+
+  // Fix B: any private entry with missing/empty node_id is a blocking condition.
+  // We cannot scan what we cannot identify — fail closed.
+  const privateNodeIds = privateEntries.filter(hasNonEmptyNodeId).map(r => r.node_id)
+  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, rather than a second,
+  // differently-worded predicate (`typeof r.node_id !== 'string' || r.node_id.length === 0`) that
+  // would have to independently re-derive the identical partition -- removes both the duplicate
+  // logic and the ConditionalExpression/EqualityOperator mutant surface a hand-written negation
+  // would otherwise carry (a wrong-operator or forced-branch mutant on a second predicate can
+  // silently disagree with the first one; subtraction against the same source cannot disagree with
+  // itself).
+  const missingNodeIdCount = privateEntries.length - privateNodeIds.length
+
+  // Resolve each node_id — exhaustive matrix.
+  // Stryker disable next-line ArrayDeclaration: seeding this with Stryker's placeholder string
+  // (`['Stryker was here']`) is unobservable -- `resolvedNames` is consumed only by
+  // `buildTokensForName(nameWithOwner)` below, and `buildPrivateNameTokens` (which it delegates
+  // to) requires a `/` at index >= 1 to produce any token at all (`slashIndex < 1` -> `return []`,
+  // wiki-slug.ts:35-36) -- "Stryker was here" has no `/`, so it contributes zero tokens to
+  // `privateTokens` regardless of whether it's seeded here.
+  const resolvedNames: string[] = []
+  const failedNodeIds: string[] = []
+
+  // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
+  // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
+  // "kill"-able mutant at all), which is why this used to need two Stryker directives
+  // (UpdateOperator, EqualityOperator). `Array.from({length: missingNodeIdCount}, ...)` has no
+  // loop guard or counter to mutate into a hang; its own `ArithmeticOperator`/`ObjectLiteral`
+  // mutants on `{length: missingNodeIdCount}` are ordinary, per-test-killable mutants, caught by
+  // the existing exact-sentinel-count assertions.
+  failedNodeIds.push(...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'))
+
+  for (const nodeId of privateNodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      resolvedNames.push(result.nameWithOwner)
+    } else {
+      // Fix A: access-lost → BLOCK (same as any other failure).
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything.
+      failedNodeIds.push(nodeId)
+    }
+  }
+
+  // Any failure (access-lost, transient, auth, missing node_id) → block (fail-closed).
+  if (failedNodeIds.length > 0) {
+    return {ok: false, resolutionFailed: true, failedNodeIds}
+  }
+
+  // Build token set from resolved names.
+  const privateTokens: string[] = []
+  for (const nameWithOwner of resolvedNames) {
+    privateTokens.push(...buildTokensForName(nameWithOwner))
+  }
+
+  // Run the pure scan. No override in promotion mode (operator-supervised scheduled job).
+  // Stryker disable next-line BooleanLiteral,ObjectLiteral: `false` has exactly one variant
+  // (`true`); flipping EITHER `titlePrefixed` or `isOperator` alone cannot change behavior --
+  // checkPrivateLeak's own override gate is `override.titlePrefixed && override.isOperator`
+  // (packages/wiki-write-core/src/private-leak.ts:30), both must be true simultaneously to bypass
+  // detection, and Stryker mutates exactly one BooleanLiteral per mutant, never both at once. The
+  // ObjectLiteral variant (`{}`) makes both fields `undefined`, and `undefined && undefined` is
+  // also falsy -- same no-override outcome. This promotion path deliberately never offers an
+  // override (operator-supervised scheduled job, comment above), so no input can distinguish any
+  // of these three mutants from the real code.
+  const scanResult = checkPrivateLeak(privateTokens, diff, {titlePrefixed: false, isOperator: false})
+
+  // Fix D: redact private tokens from matched file paths before returning.
+  // `GuardResult = {ok: true} | {ok: false; matchedFiles: ...}` (packages/wiki-write-core/src/
+  // private-leak.ts:1) is fully discriminated on `ok`; TypeScript narrows `scanResult` to the
+  // `{ok: false; matchedFiles}` arm from `!scanResult.ok` alone — no redundant `'matchedFiles' in
+  // scanResult` conjunct needed (and no LogicalOperator mutant exists on this line to directive).
+  if (!scanResult.ok) {
+    const redactedFiles = scanResult.matchedFiles.map(f => redactPathTokens(f, privateTokens))
+    return {ok: false, matchedFiles: redactedFiles}
+  }
+
+  return scanResult
+}
+
+// ---------------------------------------------------------------------------
+// Default seam implementations for runPromotionCli
+// ---------------------------------------------------------------------------
+
+/**
+ * Default git-diff runner: strips FRO_BOT_POLL_PAT from the subprocess env
+ * so the PAT never reaches git (Fix C). The env argument is the already-sanitized
+ * env built by the caller.
+ */
+// Function declarations rather than arrow-consts, for the same static-mutant reason as
+// defaultWorkflowRunReader above.
+function defaultGitDiffRunner(args: string[], env: NodeJS.ProcessEnv): string {
+  return execFileSync('git', args, {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()})
+}
+
+async function defaultReposYamlReader(path: string): Promise<string> {
+  return readFile(path, 'utf8')
+}
+
+function defaultResolverFactory(pat: string): NodeIdResolver {
+  return makeGhNodeIdResolver(pat)
+}
+
+// ---------------------------------------------------------------------------
+// Promotion CLI shell — injectable seams for testability (Fix E)
+// ---------------------------------------------------------------------------
+
+/**
+ * CLI shell for promotion mode: wires env (FRO_BOT_POLL_PAT), reads repos.yaml
+ * from the data subtree, runs git diff, maps result to exit code.
+ *
+ * Accepts the repos.yaml path via PROMOTION_REPOS_YAML_PATH env (injectable for
+ * testing; defaults to 'metadata/repos.yaml' relative to CWD which is the
+ * data-branch-check subtree in CI).
+ *
+ * Injectable seams (all default to real implementations):
+ * - `gitDiffRunner`: receives args + a PAT-stripped env; never sees FRO_BOT_POLL_PAT
+ * - `reposYamlReader`: reads the repos.yaml file
+ * - `resolverFactory`: builds the NodeIdResolver from the PAT
+ *
+ * Returns an exit code (0 = pass, 1 = block/error) instead of calling process.exit
+ * directly, so tests can assert without killing the test process. The `check-private-leak-cli`
+ * module returns it as the exit code.
+ */
+export async function runPromotionCli(
+  gitDiffRunner: GitDiffRunner = defaultGitDiffRunner,
+  reposYamlReader: ReposYamlReader = defaultReposYamlReader,
+  resolverFactory: ResolverFactory = defaultResolverFactory,
+): Promise<number> {
+  // This path intentionally does not write scan_result: scheduled promotion runs post
+  // no commit status. If it gains a status surface, emit scan_result here too.
+  const pat = process.env.FRO_BOT_POLL_PAT
+  if (pat === undefined || pat === '') {
+    process.stderr.write(
+      'check-private-leak: FRO_BOT_POLL_PAT not set. This is required for promotion mode to resolve private repo names.\n',
+    )
+    return 1
+  }
+
+  // Read repos.yaml from the data subtree (CWD = data-branch-check in CI).
+  const reposYamlPath = process.env.PROMOTION_REPOS_YAML_PATH ?? 'metadata/repos.yaml'
+  let reposYaml: string
+  try {
+    reposYaml = await reposYamlReader(reposYamlPath)
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not read repos.yaml at ${reposYamlPath}: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    return 1
+  }
+
+  // Fix C: build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to git.
+  // The PAT must reach ONLY makeGhNodeIdResolver — never the git subprocess.
+  const gitEnv: NodeJS.ProcessEnv = {...process.env}
+  delete gitEnv.FRO_BOT_POLL_PAT
+
+  // Obtain the main...data diff via local git — no token needed.
+  let diff: string
+  try {
+    diff = gitDiffRunner(['diff', 'origin/main...origin/data'], gitEnv)
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not obtain main...data diff: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    return 1
+  }
+
+  // Wire FRO_BOT_POLL_PAT ONLY to the resolver — not to the diff or any other call.
+  const resolver = resolverFactory(pat)
+
+  // Parse repos.yaml to log access-lost and missing-node-id cases (the pure function doesn't log).
+  const parsedForLog: unknown = parseYaml(reposYaml)
+  assertReposFile(parsedForLog)
+  const allPrivateEntries = parsedForLog.repos.filter(r => r.private === true)
+  // Count only — this value is used for logging counts (`missingCount`, the final "ok (scanned N
+  // ...)" message), never the resolved node_id string values themselves; the actual resolution
+  // loop below iterates `privateNodeIds` returned from `runPromotionScan`'s own internal
+  // computation, not this count.
+  const privateNodeIdCount = allPrivateEntries.filter(hasNonEmptyNodeId).length
+
+  // Log missing node_id entries (Fix B — these will block in runPromotionScan).
+  const missingCount = allPrivateEntries.length - privateNodeIdCount
+  if (missingCount > 0) {
+    process.stderr.write(
+      `check-private-leak [promotion]: ${missingCount} private entry/entries have no node_id — will block\n`,
+    )
+  }
+
+  // Wrap resolver to emit redacted stderr for access-lost and error cases.
+  // Fix A: access-lost now BLOCKS — log it as a blocking condition, not a skip.
+  const loggingResolver: NodeIdResolver = async (nodeId: string) => {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      // Success — no logging (name is private; never log it)
+    } else if (result.error === 'access-lost') {
+      process.stderr.write(
+        `check-private-leak [promotion]: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+      )
+    } else {
+      process.stderr.write(`check-private-leak [promotion]: could not resolve node_id=${nodeId} (error)\n`)
+    }
+    return result
+  }
+
+  const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
+
+  if (result.ok) {
+    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIdCount} private node_id(s))\n`)
+    return 0
+  }
+
+  // `PromotionScanResult`'s `resolutionFailed` branch is typed as `{ok: false; resolutionFailed:
+  // true; ...}` -- the key is either wholly absent (`matchedFiles` branch) or present as the
+  // literal `true` (never `false`), so `'resolutionFailed' in result` alone already narrows to
+  // this arm; no redundant `&& result.resolutionFailed` conjunct is needed (and no LogicalOperator
+  // mutant exists on this line to directive).
+  if ('resolutionFailed' in result) {
+    // Fail-closed: resolution failure (including access-lost) blocks promotion.
+    // Print only the COUNT, never the raw node_ids: a node_id is normally an opaque
+    // public identifier, but the schema is defense-in-depth and a malformed
+    // owner/repo-shaped value could otherwise be echoed into a public log. The count
+    // keeps the failure operator-actionable; the local resolver maps ids to repos.
+    process.stderr.write(
+      `check-private-leak [promotion]: FAILED — could not resolve ${result.failedNodeIds.length} private node_id(s)\n`,
+    )
+    process.stderr.write('check-private-leak [promotion]: cannot guarantee a complete scan — blocking promotion\n')
+    return 1
+  }
+
+  // Diff match: print redacted file paths only, never the matched name.
+  // Fix D: paths are already redacted by runPromotionScan before being returned here.
+  process.stderr.write(
+    'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
+  )
+  process.stderr.write('\nMatched files (private tokens redacted):\n')
+  // `result` at this point has already excluded `ok: true` (checked above, returns 0) and
+  // `resolutionFailed: true` (checked above, returns 1) -- TypeScript already narrows
+  // `PromotionScanResult`'s only remaining variant to `{ok: false, matchedFiles}` here by
+  // construction; no runtime `'matchedFiles' in result` check is needed (and no ConditionalExpression
+  // mutant exists on this line to directive).
+  for (const file of result.matchedFiles) {
+    process.stderr.write(`  - ${file}\n`)
+  }
+  process.stderr.write(
+    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts metadata/repos.yaml\n',
+  )
+  process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
+  process.stderr.write('To resolve: redact the private name from the data branch and re-run the promotion.\n')
+  return 1
+}
+
+// ---------------------------------------------------------------------------
+// Scan entrypoint (the `check-private-leak-cli` module wires it to argv)
+// ---------------------------------------------------------------------------
+
+export async function main(
+  workflowRunReader: WorkflowRunReader = defaultWorkflowRunReader,
+  prApiResolver: PrApiResolver = createDefaultPrApiResolver(),
+  dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
+  mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
+): Promise<void> {
+  const eventPath = process.env.GITHUB_EVENT_PATH
+  if (eventPath === undefined || eventPath === '') {
+    writeScanResult('error')
+    process.stderr.write(
+      'check-private-leak: GITHUB_EVENT_PATH not set. This script must run inside a GitHub Actions workflow_run event.\n',
+    )
+    process.exit(1)
+  }
+
+  // Fail-closed if FRO_BOT_POLL_PAT is absent — resolver cannot run without it.
+  const pat = process.env.FRO_BOT_POLL_PAT
+  if (pat === undefined || pat === '') {
+    writeScanResult('error')
+    process.stderr.write(
+      'check-private-leak: FRO_BOT_POLL_PAT not set. This is required to resolve private repo names.\n',
+    )
+    process.exit(1)
+  }
+
+  // Read workflow_run payload and resolve PR identity (fail-closed on any error).
+  let prNumber: number
+  let title: string
+  let author: string
+  let scannedHeadSha: string
+  try {
+    ;({
+      prNumber,
+      title,
+      author,
+      headSha: scannedHeadSha,
+    } = await readWorkflowRunContext(eventPath, workflowRunReader, prApiResolver))
+  } catch (error) {
+    writeScanResult('error')
+    process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
+
+  const fullName = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+    encoding: 'utf8',
+  }).trim()
+
+  // Resolve private node_ids from data branch (with 404 fallback to main).
+  let privateNodeIds: string[]
+  try {
+    privateNodeIds = fetchPrivateNodeIds(fullName, dataBranchChecker, mainReposYamlReader)
+  } catch (error) {
+    writeScanResult('error')
+    process.stderr.write(
+      `check-private-leak: failed to fetch private node_ids — fail closed: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    process.exit(1)
+  }
+  if (privateNodeIds.length === 0) {
+    writeScanResult('success')
+    process.stdout.write('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
+    return
+  }
+
+  // FIX #1: evaluate override BEFORE deciding to fail-closed.
+  const titlePrefixed = title.startsWith('[allow-private-leak]')
+  const isOperator = author === operatorLogin()
+  const override: OverrideOptions = {titlePrefixed, isOperator}
+
+  // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to the compare-API diff fetch.
+  // The PAT must reach ONLY makeGhNodeIdResolver — never the diff subprocess.
+  // Mirrors the --promotion gitEnv isolation pattern (Fix C in runPromotionCli).
+  const diffEnv: NodeJS.ProcessEnv = {...process.env}
+  delete diffEnv.FRO_BOT_POLL_PAT
+
+  // Wire FRO_BOT_POLL_PAT ONLY to the resolver — never the diff or any other call.
+  // Mirror the --promotion gitEnv isolation: the PAT must reach ONLY makeGhNodeIdResolver.
+  const resolver = makeGhNodeIdResolver(pat)
+  const resolvedNames: string[] = []
+  const failedNodeIds: string[] = []
+
+  for (const nodeId of privateNodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      resolvedNames.push(result.nameWithOwner)
+    } else if (result.error === 'access-lost') {
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything — fail closed.
+      // Mirror runPromotionScan's Fix A: push to failedNodeIds so the fail-closed block catches it.
+      failedNodeIds.push(nodeId)
+      process.stderr.write(
+        `check-private-leak: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+      )
+    } else {
+      // 'error' class: transient/auth/rate-limit/unknown — fail closed.
+      // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
+      failedNodeIds.push(nodeId)
+      process.stderr.write(`check-private-leak: could not resolve node_id=${nodeId} (error)\n`)
+    }
+  }
+
+  // FIX #1: fail-closed if ANY node_id failed to resolve, unless override is active.
+  if (failedNodeIds.length > 0) {
+    if (titlePrefixed && isOperator) {
+      // Operator override allows proceeding even during a GitHub outage.
+      process.stderr.write(
+        `check-private-leak: ⚠️  resolution failed for node_id(s): ${failedNodeIds.join(', ')} — operator override active, proceeding with ${resolvedNames.length} resolved name(s)\n`,
+      )
+    } else {
+      // Fail closed: cannot guarantee a complete scan.
+      process.stderr.write(
+        `check-private-leak: FAILED — could not resolve private node_id(s): ${failedNodeIds.join(', ')}\n`,
+      )
+      process.stderr.write(
+        'check-private-leak: cannot guarantee a complete scan — refusing to pass the PR without full resolution\n',
+      )
+      writeScanResult('error')
+      process.exit(1)
+    }
+  }
+
+  // Build the full set of tokens to scan for.
+  // P3: use buildTokensForName to share token semantics with the promotion path.
+  const privateTokens: string[] = []
+  for (const nameWithOwner of resolvedNames) {
+    privateTokens.push(...buildTokensForName(nameWithOwner))
+  }
+
+  // Fetch the diff pinned to the immutable scannedHeadSha via the GitHub compare API.
+  // This closes the force-push TOCTOU (Finding B): the diff is for exactly the SHA the
+  // commit status is posted to — a force-push after the workflow_run fires cannot desync
+  // the scanned diff from the status target. No extra round-trip needed (no revalidation).
+  // Pass diffEnv (PAT-stripped) so FRO_BOT_POLL_PAT never reaches the gh subprocess.
+  // fetchDiffForSha also performs a truncation check (fail-closed) before fetching the raw diff.
+  let diff: string
+  try {
+    diff = fetchDiffForSha(scannedHeadSha, diffEnv)
+  } catch (error) {
+    writeScanResult('error')
+    process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
+  const result = checkPrivateLeak(privateTokens, diff, override)
+
+  if (result.ok) {
+    writeScanResult('success')
+    if (titlePrefixed && isOperator) {
+      process.stderr.write(
+        `check-private-leak: ⚠️  override honored for operator ${author} — bypassing private-leak guard\n`,
+      )
+      try {
+        postOverrideComment(prNumber, author)
+      } catch {
+        process.stderr.write('check-private-leak: could not post override transparency comment\n')
+      }
+    }
+    process.stdout.write(`check-private-leak: ok (scanned ${resolvedNames.length} private name(s))\n`)
+    return
+  }
+
+  // Failure: print file paths only, never the matched name.
+  // Redact any private token from the matched file paths before printing (parity with promotion path).
+  writeScanResult('detection')
+  process.stderr.write('check-private-leak: FAILED — private repository name(s) detected in PR diff\n')
+  process.stderr.write('\nMatched files:\n')
+  for (const file of result.matchedFiles) {
+    process.stderr.write(`  - ${redactPathTokens(file, privateTokens)}\n`)
+  }
+  // FIX #5: corrected remediation command (resolve-private takes a file path, not a node_id).
+  // prettier-ignore
+  // Stryker disable next-line StringLiteral,CallExpression: operator-facing remediation prose.
+  // Not read by any parser, not compared by any assertion, does not affect classification, exit
+  // status, redaction, or downstream parsing — purely a human instruction for the PR author.
+  // Removing the call entirely (CallExpression) is equally unobservable for the same reason.
+  process.stderr.write('\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> bun scripts/resolve-private.ts metadata/repos.yaml\n')
+  // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
+  process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
+  // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
+  process.stderr.write('To bypass (operator only): prefix the PR title with [allow-private-leak] and re-run.\n')
+  process.exit(1)
+}

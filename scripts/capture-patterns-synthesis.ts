@@ -6,9 +6,8 @@
  * labels, and outcome classification for pattern-proposal issues.
  */
 
+import {isRecord} from '@fro-bot/core/guards'
 import {parse} from 'yaml'
-
-import {isRecord} from './capture-learnings-privacy.ts'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ tags:
 
 ## Context
 
-The wiki-presence gate (`scripts/check-wiki-private-presence.ts`) blocks a `data → main`
+The wiki-presence gate (`packages/privacy/src/check-wiki-private-presence.ts`) blocks a `data → main`
 promotion when a wiki page's slug collides with a *private* repo's slug, unless the page can be
 **attributed** to a *public* repo of the same slug. Attribution originally asked one question:
 "does the page body contain `https://github.com/owner/name`?" That substring check is spoofable —
@@ -96,7 +96,7 @@ under-block writes a private name to the public branch, which is unrecoverable.
 ### Three-state frontmatter read (presence, not truthiness)
 
 ```ts
-// scripts/check-wiki-private-presence.ts — parseFrontmatterSources
+// packages/privacy/src/check-wiki-private-presence.ts — parseFrontmatterSources
 // null → key ABSENT (legacy fallback); [] → key PRESENT but malformed (authoritative-no-match);
 // string[] → key PRESENT with usable URLs.
 if (!Object.prototype.hasOwnProperty.call(obj, 'sources')) return null
@@ -115,8 +115,8 @@ if (parsed.hostname !== 'github.com') return false
 
 ### Structured-first decision with legacy fallback
 
-<!-- verify: parseFrontmatterSources from scripts/check-wiki-private-presence.ts -->
-<!-- verify: sourceUrlMatchesRepo from scripts/check-wiki-private-presence.ts -->
+<!-- verify: parseFrontmatterSources from packages/privacy/src/check-wiki-private-presence.ts -->
+<!-- verify: sourceUrlMatchesRepo from packages/privacy/src/check-wiki-private-presence.ts -->
 ```ts
 // detectPrivateWikiLeaks
 const structuredSources = parseFrontmatterSources(page.content)

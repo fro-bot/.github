@@ -13,6 +13,7 @@ import {chmod, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it} from 'vitest'
 import {
   buildCandidateDigest,
@@ -27,7 +28,6 @@ import {
   type ExistingPatternProposalIssue,
   type ExistingPatternProposals,
 } from './capture-patterns-synthesis.ts'
-import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Fixtures

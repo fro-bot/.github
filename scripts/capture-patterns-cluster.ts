@@ -17,7 +17,7 @@ import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-
+import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {
   classifyPatternProposalOutcome,
   collectLearningProposalSources,
@@ -31,7 +31,6 @@ import {
   type PatternSourceSignals,
 } from './capture-patterns-synthesis.ts'
 import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
-import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -852,9 +851,9 @@ async function main(): Promise<void> {
   let digestCandidates: PatternCandidateDigest[] = []
 
   try {
-    const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
-    const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
-    const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+    const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
+    const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
+    const {makePublicOutputTokens} = await import('@fro-bot/privacy/status-truth-public-output')
 
     let publicOutputTokens: PublicOutputTokens
     try {

@@ -14,6 +14,7 @@
  * - Non-eligible/ambiguous candidates downgrade to proposal-only; no throws.
  */
 
+import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import type {StatusTruthJsonReport} from './status-truth-detect.ts'
 import type {
   ExecuteStatusTruthPrActionsInput,
@@ -24,12 +25,12 @@ import type {
   StatusTruthPrFetchClient,
   StatusTruthPrOctokitClient,
 } from './status-truth-prs.ts'
-import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import process from 'node:process'
+import * as publicOutputModule from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
 import {
@@ -46,7 +47,6 @@ import {
   runPrs,
   runPrsCore,
 } from './status-truth-prs.ts'
-import * as publicOutputModule from './status-truth-public-output.ts'
 
 // Mirrors the production digest derivation so tests stay in sync without
 // importing the private helper.

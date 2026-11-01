@@ -82,7 +82,7 @@ For a parser sitting on a trust boundary, **before** collecting mutation coverag
    that happens to reproduce a structural marker's leading bytes is misclassified, unconditionally,
    regardless of how well-tested the branch containing the prefix test is.
 3. **Bound the residual risk by the threat model**, don't leave it unstated. Who controls the input
-   *structure* versus the input *content*? Here, `scripts/check-private-leak.ts` builds the diff via
+   *structure* versus the input *content*? Here, `packages/privacy/src/check-private-leak.ts` builds the diff via
    `execFileSync git diff` — an adversary controls file content (what appears after `+`/`-`), not the
    diff frame (`diff --git`/`---`/`+++`/`@@` placement). The remaining theoretical gap — a header-block
    `--- `/`+++` pair whose *path itself* leaks a private name — requires forging the diff frame, which

@@ -3,8 +3,8 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 
+import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-
 import {buildMergeShaMarker} from './capture-learnings-harvest.ts'
 import {
   FIELD_LIMITS,
@@ -22,7 +22,6 @@ import {
   type PublishResult,
 } from './drafted-solutions-publish.ts'
 import {DIGEST_VERSION, DraftedSolutionsError, type DraftedDigest} from './drafted-solutions-shared.ts'
-import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 const OWNER = 'fro-bot'
 const REPO = '.github'

@@ -11,8 +11,8 @@
 
 import type {OctokitClient} from './capture-learnings-harvest.ts'
 
+import {isRecord} from '@fro-bot/core/guards'
 import {LEARNING_PROPOSAL_LABEL} from './capture-learnings-harvest.ts'
-import {isRecord} from './capture-learnings-privacy.ts'
 import {validateCoverageRows, type CoverageRow} from './drafted-solutions-pr-body.ts'
 
 export const DRAFTED_BRANCH = 'docs/drafted-solutions'

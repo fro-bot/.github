@@ -10,7 +10,7 @@ import process from 'node:process'
  * `main`) share one operator model. If this set ever changes, change both files.
  *
  * Function, not const: static-mutant workaround — see `operatorLogin()` in
- * `scripts/check-private-leak.ts` and `size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md`.
+ * `packages/privacy/src/check-private-leak.ts` and `size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md`.
  */
 function frobotAuthors(): ReadonlySet<string> {
   return new Set(['fro-bot', 'fro-bot[bot]'])

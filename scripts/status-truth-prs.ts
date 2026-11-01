@@ -22,19 +22,19 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
+import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import type {PublicStatusTruthFinding, StatusTruthFinding, StatusTruthJsonReport} from './status-truth-detect.ts'
-import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import process from 'node:process'
 import {createOctokit, noopLog} from '@fro-bot/core/github'
+import {applyPublicOutputGate} from '@fro-bot/privacy/status-truth-public-output'
 import {
   correctPlanConsistencyStatusLine,
   KNOWN_FINGERPRINT_VERSION,
   KNOWN_SCHEMA_VERSION,
   reverifyPlanConsistencyCorrection,
 } from './status-truth-detect.ts'
-import {applyPublicOutputGate} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1797,9 +1797,9 @@ export function buildEnvBackedRunPrsCoreDeps(): RunPrsCoreDeps {
       return {valid: true, report: validation.report}
     },
     loadPublicOutputTokens: async () => {
-      const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
-      const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
-      const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+      const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
+      const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
+      const {makePublicOutputTokens} = await import('@fro-bot/privacy/status-truth-public-output')
       const [privateTokens, redactedCanonicalIds] = await Promise.all([
         loadPrivateTokensFromDisk(),
         loadRedactedCanonicalIdsFromDisk(),

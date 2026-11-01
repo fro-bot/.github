@@ -46,7 +46,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/repo-page-move.ts",
-      "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is scripts/repo-page-move.test.ts, which imports the built dist/ output through the @fro.bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
+      "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is packages/privacy/src/repo-page-move.test.ts, which imports the built dist/ output through the @fro.bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
     },
     {
       "path": "scripts/rename-tracked-repo.ts",
@@ -123,6 +123,46 @@
     {
       "path": "packages/test-kit/src/repo-page-move-fixtures.ts",
       "reason": "Test support: constants and builders for the operator rename tests, no logic and no production importer. The decisions they feed live in packages/wiki-write-core/src/repo-page-move.ts and scripts/rename-tracked-repo.ts, each classified separately."
+    },
+    {
+      "path": "packages/privacy/src/capture-learnings-privacy.ts",
+      "reason": "Fail-closed denylist for learning bodies and log diffs (secret patterns, private repo tokens). It moved from scripts/ unchanged and was outside the mutate list there; its decisions are pinned by decision-table tests in packages/privacy/src/capture-learnings-privacy.test.ts and again through the public-output gate. Promoting it to mutate needs its own mutation pass over the secret-pattern regexes, which this move does not make."
+    },
+    {
+      "path": "packages/privacy/src/status-truth-public-output.ts",
+      "reason": "The public-output gate: one function that blocks any surface body containing a private token, a redacted canonical ID or a secret, and fails closed when the token load failed. It moved from scripts/ unchanged and was outside the mutate list there. Its decisions are pinned by packages/privacy/src/status-truth-public-output.test.ts, which includes a mutation-style test (an identity passthrough fails a private-identity case). It only wraps the capture-learnings-privacy predicates, which are classified separately."
+    },
+    {
+      "path": "packages/privacy/src/redacted-ids.ts",
+      "reason": "Loader for the node_id and database_id denylist of private repos. It fails closed: an unreadable, unparseable or schema-invalid metadata/repos.yaml throws and callers must not publish. It moved out of status-truth-proposals.ts unchanged and was outside the mutate list there; both functions are pinned by packages/privacy/src/redacted-ids.test.ts."
+    },
+    {
+      "path": "packages/privacy/src/private-repo-resolution.ts",
+      "reason": "Shells out to gh to resolve a node_id to owner/name, classifying the result as resolved, access-lost or error. It guards nothing itself: the fail-closed decision on an unresolved id is made by check-private-leak.ts, which is mutated. The classification and the 2s doubling retry are pinned by packages/privacy/src/private-repo-resolution.test.ts against a mocked execFileSync."
+    },
+    {
+      "path": "packages/privacy/src/resolve-private.ts",
+      "reason": "Operator lookup table for redacted node_ids, run locally with an operator PAT and never by a workflow. It decides nothing about promotion or publication. Its entry classification is pinned by packages/privacy/src/resolve-private.test.ts."
+    },
+    {
+      "path": "packages/privacy/src/resolve-private-cli.ts",
+      "reason": "The goke entrypoint of the operator lookup (resolve-private.ts): it declares one optional positional and prints the table. No workflow runs it and it decides nothing, so a mutation run would score only argument plumbing. The CLI surface is pinned by packages/privacy/src/resolve-private-cli.test.ts."
+    },
+    {
+      "path": "packages/privacy/src/enumerate-existing-leaks.ts",
+      "reason": "Operator-only scan of the local checkout for surfaces that name a supplied private repo. Never run by a workflow, and it guards nothing: its output tells the operator what to remediate. enumerateLeaks and the report format are pinned by packages/privacy/src/enumerate-existing-leaks.test.ts."
+    },
+    {
+      "path": "packages/privacy/src/enumerate-existing-leaks-cli.ts",
+      "reason": "The goke entrypoint of the operator scan: it declares --private and --branch and carries the fixed usage text. No workflow runs it, so a mutation run would score the usage text and plumbing. The CLI surface, including the usage text and exit codes, is pinned by packages/privacy/src/enumerate-existing-leaks-cli.test.ts."
+    },
+    {
+      "path": "scripts/check-private-leak.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/privacy/check-private-leak-cli and runs it under the entry guard. The scan, the exit codes and scan_result are in packages/privacy/src/check-private-leak.ts and check-private-leak-cli.ts, both mutated and reached by their own tests. The shim's surface is pinned by scripts/privacy-entrypoints.test.ts, which spawns it."
+    },
+    {
+      "path": "scripts/check-wiki-private-presence.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/privacy/check-wiki-private-presence-cli and runs it under the entry guard. The detection and the report formats are in packages/privacy/src/check-wiki-private-presence.ts and check-wiki-private-presence-cli.ts, both mutated and reached by their own tests. The shim's surface, including the merge-data.yaml foreign-cwd shape, is pinned by scripts/privacy-entrypoints.test.ts, which spawns it."
     }
   ]
 }

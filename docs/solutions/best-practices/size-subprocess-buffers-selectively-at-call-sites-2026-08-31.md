@@ -3,7 +3,7 @@ title: Size subprocess buffers selectively at the call sites that can grow
 date: 2026-08-31
 last_updated: 2026-08-31
 category: best-practices
-module: scripts/check-private-leak.ts
+module: packages/privacy/src/check-private-leak.ts
 problem_type: best_practice
 component: development_workflow
 severity: high
@@ -129,7 +129,7 @@ failure status for both cases; only the explanation becomes truthful.
 
 ### Verification at the shell seam
 
-`scripts/check-private-leak.test.ts` mocks the real subprocess boundary and asserts that
+`packages/privacy/src/check-private-leak.test.ts` mocks the real subprocess boundary and asserts that
 both compare calls receive a numeric buffer greater than 1 MiB. A second test makes the
 compare call throw an `ENOBUFS` error, verifies exit code 1, and checks that stderr
 contains the diagnostic. The promotion path's intentional omission of `scan_result` is

@@ -9,8 +9,8 @@
  * Privacy gate unit tests live in capture-learnings-privacy.test.ts (single source of truth).
  */
 
+import {learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from '@fro-bot/privacy/capture-learnings-privacy'
 import {describe, expect, it, vi} from 'vitest'
-
 import {
   buildMergeShaMarker,
   LEARNING_PROPOSAL_LABEL,
@@ -26,7 +26,6 @@ import {
   type LearningToOpen,
   type PlanLearningsInput,
 } from './capture-learnings-open.ts'
-import {learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------

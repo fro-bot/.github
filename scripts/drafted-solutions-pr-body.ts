@@ -13,7 +13,7 @@
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 
-import {isRecord} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
 import {isAllowedDraftedSolutionPath} from './wiki-handoff-core.ts'
 
 export const COVERAGE_OUTCOMES = ['new-doc', 'extension', 'covered', 'unverified'] as const
