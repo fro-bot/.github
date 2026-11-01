@@ -377,7 +377,7 @@ describe('runPlanMode', () => {
   })
 })
 
-describe('runCli (mode selection and inputs)', () => {
+describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
   let dir = ''
   let outputPath = ''
   let renovatePath = ''
@@ -401,12 +401,12 @@ describe('runCli (mode selection and inputs)', () => {
   const planEnv = () => ({GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: outputPath})
   const dispatchEnv = () => ({GITHUB_TOKEN: 'dispatch-token', DISPATCH_REPOSITORIES: 'agent,.github'})
 
-  it('runs plan mode for the `plan` argument: lists, writes the output, never dispatches', async () => {
-    const {runCli} = await import('./dispatch-renovate.ts')
+  it('plan mode lists, writes the output and never dispatches', async () => {
+    const {runRenovatePlanCli} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github'))
 
     // DISPATCH_REPOSITORIES is set on purpose: plan mode must ignore it.
-    await runCli(['plan'], {...planEnv(), DISPATCH_REPOSITORIES: 'other'}, {createOctokit, stdout, renovatePath})
+    await runRenovatePlanCli({...planEnv(), DISPATCH_REPOSITORIES: 'other'}, {createOctokit, stdout, renovatePath})
 
     expect(createOctokit).toHaveBeenCalledExactlyOnceWith('discovery-token')
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=agent,.github\n')
@@ -415,12 +415,12 @@ describe('runCli (mode selection and inputs)', () => {
     expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()
   })
 
-  it('runs dispatch mode when there is no argument: dispatches the planned list, never lists the installation', async () => {
-    const {runCli} = await import('./dispatch-renovate.ts')
+  it('dispatch mode dispatches the planned list and never lists the installation', async () => {
+    const {runRenovateDispatchCli} = await import('./dispatch-renovate.ts')
     mocks.listWorkflowRuns.mockResolvedValue({data: {total_count: 0}})
     mocks.createWorkflowDispatch.mockResolvedValue({status: 204})
 
-    await runCli([], dispatchEnv(), {createOctokit, stdout})
+    await runRenovateDispatchCli(dispatchEnv(), {createOctokit, stdout})
 
     expect(createOctokit).toHaveBeenCalledExactlyOnceWith('dispatch-token')
     expect(mocks.createWorkflowDispatch).toHaveBeenCalledTimes(2)
@@ -434,42 +434,24 @@ describe('runCli (mode selection and inputs)', () => {
     expect(JSON.parse(out.join(''))).toEqual({eligible: 2, dispatched: 2, skippedRunning: 0, failed: 0})
   })
 
-  it.each([['Plan'], ['dispatch'], ['plan '], ['']])(
-    'treats %j as dispatch mode (only the exact `plan` selects planning)',
-    async arg => {
-      const {runCli} = await import('./dispatch-renovate.ts')
-      await expect(runCli([arg], planEnv(), {createOctokit, stdout, renovatePath})).rejects.toThrow(
-        /DISPATCH_REPOSITORIES is required/,
-      )
-      expect(mocks.paginate).not.toHaveBeenCalled()
-      await expect(readFile(outputPath, 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
+  it.each(['plan', 'dispatch'] as const)(
+    '%s mode fails without GITHUB_TOKEN, before building any client',
+    async mode => {
+      const {runRenovateDispatchCli, runRenovatePlanCli} = await import('./dispatch-renovate.ts')
+      const run = mode === 'plan' ? runRenovatePlanCli : runRenovateDispatchCli
+      for (const token of [undefined, '']) {
+        await expect(
+          run({GITHUB_TOKEN: token, GITHUB_OUTPUT: outputPath, DISPATCH_REPOSITORIES: 'agent'}, {createOctokit}),
+        ).rejects.toThrow('GITHUB_TOKEN is required')
+      }
+      expect(createOctokit).not.toHaveBeenCalled()
     },
   )
 
-  it('selects plan mode only from the first argument', async () => {
-    const {runCli} = await import('./dispatch-renovate.ts')
-    await expect(runCli(['other', 'plan'], planEnv(), {createOctokit, stdout, renovatePath})).rejects.toThrow(
-      /DISPATCH_REPOSITORIES is required/,
-    )
-  })
-
-  it.each([
-    ['plan', ['plan']],
-    ['dispatch', []],
-  ])('%s mode fails without GITHUB_TOKEN, before building any client', async (_mode, argv) => {
-    const {runCli} = await import('./dispatch-renovate.ts')
-    for (const token of [undefined, '']) {
-      await expect(
-        runCli(argv, {GITHUB_TOKEN: token, GITHUB_OUTPUT: outputPath, DISPATCH_REPOSITORIES: 'agent'}, {createOctokit}),
-      ).rejects.toThrow('GITHUB_TOKEN is required')
-    }
-    expect(createOctokit).not.toHaveBeenCalled()
-  })
-
   it.each([[undefined], ['']])('plan mode fails without GITHUB_OUTPUT (%j) and makes no API call', async output => {
-    const {runCli} = await import('./dispatch-renovate.ts')
+    const {runRenovatePlanCli} = await import('./dispatch-renovate.ts')
     await expect(
-      runCli(['plan'], {GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: output}, {createOctokit, renovatePath}),
+      runRenovatePlanCli({GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: output}, {createOctokit, renovatePath}),
     ).rejects.toThrow('GITHUB_OUTPUT is required in plan mode')
     expect(mocks.paginate).not.toHaveBeenCalled()
   })
@@ -477,9 +459,12 @@ describe('runCli (mode selection and inputs)', () => {
   it.each([[undefined], [''], ['   '], [' , ,']])(
     'dispatch mode fails when DISPATCH_REPOSITORIES is %j and dispatches nothing',
     async repositories => {
-      const {runCli} = await import('./dispatch-renovate.ts')
+      const {runRenovateDispatchCli} = await import('./dispatch-renovate.ts')
       await expect(
-        runCli([], {GITHUB_TOKEN: 'dispatch-token', DISPATCH_REPOSITORIES: repositories}, {createOctokit, stdout}),
+        runRenovateDispatchCli(
+          {GITHUB_TOKEN: 'dispatch-token', DISPATCH_REPOSITORIES: repositories},
+          {createOctokit, stdout},
+        ),
       ).rejects.toThrow('DISPATCH_REPOSITORIES is required and must name at least one repository')
       expect(mocks.listWorkflowRuns).not.toHaveBeenCalled()
       expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()

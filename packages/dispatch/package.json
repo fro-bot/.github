@@ -1,0 +1,17 @@
+{
+  "name": "@fro-bot/dispatch",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Renovate dispatcher of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./dispatch-renovate": "./src/dispatch-renovate.ts",
+    "./dispatch-renovate-cli": "./src/dispatch-renovate-cli.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  }
+}

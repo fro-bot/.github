@@ -307,6 +307,18 @@
     {
       "path": "packages/test-kit/src/fake-github.ts",
       "reason": "Test support: the route table, preload arguments and call log of a fake GitHub API for spawned CLI tests. It decides nothing for a gate and has no production importer; its behaviour, including the preload fixture it points at, is pinned by packages/test-kit/src/fake-github.test.ts."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-renovate.ts",
+      "reason": "Plans the repositories Renovate may be dispatched to (the installation's repositories intersected with metadata/renovate.yaml) and dispatches the workflow, skipping a repository whose run is queued or in progress. It writes only workflow_dispatch events and one $GITHUB_OUTPUT line, never data or main. Pinned by packages/dispatch/src/dispatch-renovate.test.ts: the plan, the running-run check, the failure shapes and the missing-input errors. Not in the mutate list: transport glue over an injected client."
+    },
+    {
+      "path": "packages/dispatch/src/dispatch-renovate-cli.ts",
+      "reason": "The goke entrypoint of dispatch-renovate: `plan` and a no-argument root command, nothing else. Argv that matches neither is a usage error and dispatches nothing. Pinned by packages/dispatch/src/dispatch-renovate-cli.test.ts and, through the shim, by scripts/dispatch-flows.test.ts. Not in the mutate list: it declares two commands, so a mutation run would score only the config object."
+    },
+    {
+      "path": "scripts/dispatch-renovate.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/dispatch/dispatch-renovate-cli and runs it under the entry guard. The behaviour is in packages/dispatch/src/dispatch-renovate.ts and dispatch-renovate-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/dispatch-flows.test.ts."
     }
   ]
 }
