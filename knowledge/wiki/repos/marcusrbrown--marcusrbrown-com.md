@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.com
 created: 2026-07-13
-updated: 2026-10-18
+updated: 2026-11-01
 node_id: R_kgDOPOkk2A
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
@@ -23,6 +23,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 9e2adcc677240a5180aa40f84bc56def31453b20
     accessed: 2026-10-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 9702a13da360d9bc7e21f24cb95d8d04aa9c0294
+    accessed: 2026-11-01
 tags:
   - brand-site
   - react
@@ -50,6 +53,7 @@ related:
   - marcusrbrown--dev-like
   - bfra-me--ha-addon-repository
   - github-actions-ci
+  - github-pages
   - probot-settings
 ---
 
@@ -57,7 +61,71 @@ related:
 
 Personal brand site for Marcus R. Brown ("Principal Software Engineer"). Single-page React 19 landing site deployed to [[github-pages]] at [marcusrbrown.com](https://marcusrbrown.com). Simpler than [[marcusrbrown--marcusrbrown-github-io]] (the full developer portfolio at mrbro.dev) — no routing, no theme system, no blog.
 
-## Current bounded observations (2026-10-18)
+## Bounded source snapshot (2026-11-01)
+
+Public `main` resolves to `9702a13da360d9bc7e21f24cb95d8d04aa9c0294`.
+This snapshot uses only the complete directory listing, README, package/workspace
+manifests, and all five workflow files. The listing retains 66 files, including
+15 under `src/`, 15 under `scripts/`, and one E2E test. Matching paths do not
+establish unchanged implementation. Historical outage, issue/PR, coverage,
+installed-dependency, and live-site claims below remain dated observations.
+
+### Declared stack and identity drift
+
+- pnpm advances **11.28.5 → 11.28.6**. React/React DOM `^19.0.0`, TypeScript
+  `^6.0.0`, Vite `^8.1.3`, Vitest/coverage `^4.0.0`, Playwright `^1.58.0`,
+  ESLint `^10.0.0`, and `@bfra.me/eslint-config` `^0.54.0` retain their ranges.
+  Node's engine floor remains `>=22.0.0`; the setup action was not read, so
+  this does not refresh the historical CI-runtime measurement.
+- The workspace still declares 16 overrides; `postcss` advances **8.5.30 →
+  8.5.31**, while `brace-expansion: 5.0.12` and `fast-uri: 3.1.8` remain.
+  The manifest retains its separate top-level `overrides` object. These are
+  declarations, not verified installed resolutions or advisory coverage.
+- **Contradictions persist:** README's build badge and the manifest repository
+  URL still target `marcusrbrown.github.io`. All three agent prompts retain
+  that repository name and Vite 7 wording. README's pnpm 10.13.1+ and ESLint 9
+  guidance still lag the manifest; its `LICENSE` link still has no matching
+  listed file. Preserve the October correction distinguishing top-level
+  `overrides` from the older ledger's `pnpm.overrides` terminology.
+
+### Workflow presence, admission, and delivery are distinct
+
+**Fro Bot is present**, pinned to
+`fro-bot/agent@df330ed27cccb3c4105f5dfe0f4918dc8a7238f2` (**v0.125.1**, up
+from v0.122.3). It retains the three dispatch modes and daily 03:30/15:30 UTC
+crons. The caller still ends at `Run Fro Bot`, without an explicit `output-mode`
+or downstream persistence steps. That is a missing explicit delivery contract,
+not proof that PAT-backed publication fails. No missing-workflow draft is needed.
+
+The comment-trigger fork preflight extracts `.head.repo.fork // "unknown"`
+and refuses anything other than the string `false`. **jq's `//` discards false
+as well as null**, so a legitimate same-repository `false` becomes `unknown`
+and is refused too. A synthetic local jq probe confirms that transformation;
+no target PR or run was sampled. This is an admission defect distinct from the
+historical scheduled-run outage and from downstream delivery. The job also
+explicitly excludes `fro-bot` and `[bot]` PR authors, independently of the
+preflight.
+
+PR CI still aggregates lint, build, unit tests, type checking, and the moderate
+audit into Quality Gate. Pages deployment separately runs lint and
+`build` (`tsc && vite build`) before publishing `dist`; it does not depend on
+the PR workflow or execute its tests/audit. The CI build checks output existence
+and prints directory size, but no inspected workflow invokes `analyze-build`,
+`test:e2e`, or Lighthouse. Performance budgets in agent prompts are therefore
+not demonstrated deployment gates; see [[github-pages]]. CodeQL and Scorecard
+remain absent from the five-file workflow listing.
+
+Renovate's reusable caller advances **bfra-me/.github v4.39.0 → v4.42.0**
+(`22ed95a3440f8fee5776e1dccd08dd48f64f689f`). It retains no cron and includes
+successful Deploy completion among its triggers. These source contracts do not
+refresh current automation health, branch protections, or merge behavior.
+
+Sources: [README](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/README.md),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/package.json),
+[workspace](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/pnpm-workspace.yaml),
+[workflows](https://github.com/marcusrbrown/marcusrbrown.com/tree/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/.github/workflows).
+
+## Earlier bounded observations (2026-10-18)
 
 Public `main` resolves to `9e2adcc677240a5180aa40f84bc56def31453b20`.
 Only the directory listing, README, package/workspace manifests, and all five
