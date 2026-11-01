@@ -314,7 +314,7 @@
     },
     {
       "path": "packages/dispatch/src/dispatch-marker.ts",
-      "reason": "Hash, parse, select and serialize of the state marker embedded in a coordination issue's comments. Its decisions (last marker wins, bot-authored markers only, a malformed or hash-less marker is null, a canonical latest-state-only hash) are pinned by the marker round-trip, selectStateMarker and fingerprint tests in packages/dispatch/src/cross-repo-dispatch.test.ts. Not in the mutate list: the module has no caller of its own, only the executors in dispatch-run.ts, which write through a compare-and-swap."
+      "reason": "Hash, parse, select and serialize of the state marker embedded in a coordination issue's comments. Its decisions (last marker wins, bot-authored markers only, a malformed or hash-less marker is null, a canonical latest-state-only hash) are pinned by the marker round-trip, selectStateMarker and fingerprint tests in packages/dispatch/src/cross-repo-dispatch.test.ts. The marker hash it computes is what every compare-and-swap in dispatch-run.ts compares, and dispatch-plan.ts serializes through it; scripts/dispatch-flows.test.ts parses the markers the real entrypoint writes with extractMarker and scripts the confirm write's read from buildMarkerComment. Not in the mutate list: it never writes to GitHub itself, and a hash or parse regression fails the executors' compare-and-swap tests and those flows."
     },
     {
       "path": "packages/dispatch/src/dispatch-receipts.ts",

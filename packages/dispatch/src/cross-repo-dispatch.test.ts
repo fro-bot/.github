@@ -784,6 +784,116 @@ describe('planDispatch', () => {
     expect(result.toDispatch).toHaveLength(0)
     expect(result.deferred).toHaveLength(0)
   })
+
+  describe('a #4050-shaped goal: five report-only targets, past the receipt SLA', () => {
+    const targets = ['agent', 'dashboard', 'infra', 'gateway', 'docs'].map(name => ({owner: 'fro-bot', name}))
+    const [agent, dashboard, infra, gateway, docs] = targets as [
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+    ]
+    const goal = () =>
+      makeState({
+        goal: 'issue-4050',
+        items: [
+          makeItem({id: 'item-1', target: agent, status: 'dispatched', receiptContract: 'receipt-accountable'}),
+          makeItem({id: 'item-2', target: dashboard, status: 'dispatched', receiptContract: 'receipt-accountable'}),
+          makeItem({
+            id: 'item-3',
+            target: infra,
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+            noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+          }),
+          makeItem({
+            id: 'item-4',
+            target: gateway,
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+            noReceiptDiagnostic: 'run-observed-no-receipt',
+          }),
+          makeItem({
+            id: 'item-5',
+            target: docs,
+            status: 'needs-attention',
+            needsAttentionReason: 'unparseable-receipt',
+          }),
+        ],
+      })
+
+    it('plans nothing: dispatched items are in flight and needs-attention items are never re-dispatched (#4049)', () => {
+      const result = planDispatch({state: goal(), fingerprint: 'fp', otherOpenGoalMarkers: []})
+
+      expect(result).toStrictEqual({
+        toDispatch: [],
+        deferred: [],
+        blocked: [],
+        toDispatchCount: 0,
+        deferredCount: 0,
+        blockedCount: 0,
+      })
+    })
+
+    it('stays empty when another open goal holds the same targets in flight', () => {
+      const other = makeState({
+        goal: 'other',
+        items: targets.map((target, index) => makeItem({id: `x${index}`, target, status: 'dispatched'})),
+      })
+      const result = planDispatch({state: goal(), fingerprint: 'fp', otherOpenGoalMarkers: [other]})
+
+      expect(result.toDispatchCount).toBe(0)
+      expect(result.deferredCount).toBe(0)
+      expect(result.blockedCount).toBe(0)
+    })
+
+    it('dispatches only the pending item when the goal is re-approved with one more item added', () => {
+      const state = goal()
+      const extra = makeItem({id: 'item-6', target: {owner: 'fro-bot', name: 'wiki'}, status: 'pending'})
+      const result = planDispatch({
+        state: {...state, items: [...state.items, extra]},
+        fingerprint: 'fp',
+        otherOpenGoalMarkers: [],
+      })
+
+      expect(result.toDispatch.map(item => item.id)).toStrictEqual(['item-6'])
+      expect(result.toDispatchCount).toBe(1)
+      expect(result.deferredCount).toBe(0)
+      expect(result.blockedCount).toBe(0)
+    })
+  })
+
+  describe('a goal with mixed statuses', () => {
+    it('splits pending, deferred and blocked items and leaves the rest out', () => {
+      const busy = {owner: 'fro-bot', name: 'agent'}
+      const state = makeState({
+        items: [
+          makeItem({id: 'pending-free', target: {owner: 'fro-bot', name: 'dashboard'}, status: 'pending'}),
+          makeItem({id: 'pending-busy', target: busy, status: 'pending'}),
+          makeItem({id: 'blocked', target: {owner: 'fro-bot', name: 'legacy'}, status: 'blocked'}),
+          makeItem({id: 'intent', target: {owner: 'fro-bot', name: 'infra'}, status: 'intent'}),
+          makeItem({id: 'dispatched', target: {owner: 'fro-bot', name: 'gateway'}, status: 'dispatched'}),
+          makeItem({
+            id: 'attention',
+            target: {owner: 'fro-bot', name: 'docs'},
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+          }),
+          makeItem({id: 'completed', target: {owner: 'fro-bot', name: 'wiki'}, status: 'completed'}),
+          makeItem({id: 'failed', target: {owner: 'fro-bot', name: 'tools'}, status: 'failed'}),
+        ],
+      })
+      const other = makeState({goal: 'other', items: [makeItem({id: 'x', target: busy, status: 'intent'})]})
+
+      const result = planDispatch({state, fingerprint: 'fp', otherOpenGoalMarkers: [other]})
+
+      expect(result.toDispatch.map(item => item.id)).toStrictEqual(['pending-free'])
+      expect(result.deferred.map(item => item.id)).toStrictEqual(['pending-busy'])
+      expect(result.blocked.map(item => item.id)).toStrictEqual(['blocked'])
+      expect([result.toDispatchCount, result.deferredCount, result.blockedCount]).toStrictEqual([1, 1, 1])
+    })
+  })
 })
 
 describe('planSnapshot', () => {

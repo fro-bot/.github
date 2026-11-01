@@ -8,12 +8,18 @@
  * would read as zero without an error: the result-file tests pin every key the workflow reads.
  */
 
+import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
-import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
-import {buildResultMarker, hashNonce, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
+import {buildMarkerComment, computeApprovalFingerprint, extractMarker} from '@fro-bot/dispatch/dispatch-marker'
+import {
+  buildResultMarker,
+  computeCorrelationId,
+  hashNonce,
+  parseDecomposition,
+} from '@fro-bot/dispatch/dispatch-receipts'
 import {createFakeGithub, route, type FakeGithub, type FakeRoute} from '@fro-bot/test-kit/fake-github'
 import {spawnEntrypoint, type SpawnEntrypointResult} from '@fro-bot/test-kit/spawn-entrypoint'
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
@@ -21,6 +27,10 @@ import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
 const repoRoot = resolve(import.meta.dirname, '..')
 const CONTROL = '/repos/fro-bot/.github'
 const HOUR = 3_600_000
+
+/** The byte `packages/dispatch/fixtures/pin-random-bytes-preload.mjs` fills `randomBytes` with. */
+const PINNED_FILL = 7
+const pinNoncePreload = join(repoRoot, 'packages', 'dispatch', 'fixtures', 'pin-random-bytes-preload.mjs')
 
 /** The keys `cross-repo-dispatch.yaml` reads from the result file (`:143-150` and `:290-297`). */
 const WORKFLOW_DISPATCH_KEYS = [
@@ -72,6 +82,18 @@ repos:
     next_survey_eligible_at: null
     private: false
     node_id: R_kgDOLEGACY01
+  - owner: marcusrbrown
+    name: dashboard
+    added: 2026-06-15
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDODASH0001
 `
 
 const TOKENS = JSON.stringify({'fro-bot': 'tok-fro-bot', marcusrbrown: 'tok-mrb'})
@@ -110,6 +132,8 @@ async function run(
     readonly cwd?: string
     readonly env?: Readonly<Record<string, string | undefined>>
     readonly githubOutput?: 'file' | 'unset' | 'empty'
+    /** Pin `randomBytes` in the child, so the nonce a dispatch mints is known to the scripted marker answers. */
+    readonly pinNonce?: boolean
   } = {},
 ): Promise<SpawnEntrypointResult> {
   const github = createFakeGithub(routes)
@@ -117,11 +141,11 @@ async function run(
   return spawnEntrypoint({
     entrypoint: join(repoRoot, 'scripts', `${script}.ts`),
     runtime: 'bun',
-    runtimeArgs: github.runtimeArgs('bun'),
+    runtimeArgs: [...github.runtimeArgs('bun'), ...(options.pinNonce === true ? ['--preload', pinNoncePreload] : [])],
     argv,
     cwd: options.cwd ?? checkout({}),
     githubOutput: options.githubOutput,
-    env: {FAKE_GH_DIR: github.directory, ...options.env},
+    env: {FAKE_GH_DIR: github.directory, PIN_RANDOM_BYTES_FILL: String(PINNED_FILL), ...options.env},
   })
 }
 
@@ -188,6 +212,19 @@ const issueComments = (number: number, ...answers: readonly (readonly ReturnType
   route('GET', `${CONTROL}/issues/${number}/comments`, {seq: answers.map(b => ({b}))})
 const anyCommentPatch = route('PATCH', String.raw`~^/repos/fro-bot/\.github/issues/comments/\d+$`, {b: {}})
 const anyCommentPost = route('POST', String.raw`~^/repos/fro-bot/\.github/issues/\d+/comments$`, {s: 201, b: {id: 900}})
+
+/** The marker state a logged `PATCH .../issues/comments/<id>` wrote, parsed from the comment body. */
+function writtenState(line: string) {
+  const request: unknown = JSON.parse(line.slice(line.indexOf(' body=') + ' body='.length))
+  const body = (request as {body: string}).body
+  const marker = extractMarker(body)
+  if (marker === null) throw new TypeError('the written comment carries no marker')
+  return {body, marker}
+}
+
+function dispatchBody(line: string): {ref: string; inputs: {prompt: string}} {
+  return JSON.parse(line.slice(line.indexOf(' body=') + ' body='.length)) as {ref: string; inputs: {prompt: string}}
+}
 
 describe('cross-repo-dispatch dispatch (bun, cross-repo-dispatch.yaml: argv `dispatch`)', () => {
   it('a refusal removes the label and writes all nine counts to the result file and stdout', async () => {
@@ -299,6 +336,172 @@ describe('cross-repo-dispatch dispatch (bun, cross-repo-dispatch.yaml: argv `dis
     expect(requestsTo('PATCH /repos/fro-bot/.github/issues/comments/2')).toHaveLength(2)
     expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
     expect(unhandledMutations()).toStrictEqual([])
+  })
+
+  describe('a pending item (nonce pinned, marker answers scripted in order)', () => {
+    const PROMPT = 'Update the agent docs'
+    const RAW_NONCE = Buffer.alloc(32, PINNED_FILL).toString('base64url')
+    const CORRELATION_ID_FORMAT = /^[0-9a-f]{20}$/u
+
+    interface Scenario {
+      readonly cwd: string
+      readonly routes: FakeRoute[]
+      readonly correlationId: string
+    }
+
+    /** One pending item on `owner/name`, already approved: a dispatch reads the marker, writes `intent`, dispatches and confirms. */
+    function scenario(owner: string, name: string, dispatchRoute: FakeRoute): Scenario {
+      const cwd = checkout({'event.json': JSON.stringify(EVENT), 'metadata/repos.yaml': REPOS_YAML})
+      const checklist = decomposition(`- [ ] ${owner}/${name}: ${PROMPT}`)
+      const parsed = parseDecomposition(checklist)
+      const pending = parsed.items[0]
+      if (pending === undefined) throw new TypeError('the fixture checklist did not parse')
+      const approved = {
+        goal: 'issue-50',
+        items: [pending],
+        approvalFingerprint: computeApprovalFingerprint([pending]),
+        markerHash: '',
+      }
+      const correlationId = computeCorrelationId('issue-50', pending.id, RAW_NONCE)
+      const intent = {
+        ...approved,
+        items: [{...pending, status: 'intent' as const, correlationId, nonceHash: hashNonce(RAW_NONCE)}],
+      }
+      const planner = comment(1, checklist)
+      const approvedMarker = comment(2, buildMarkerComment(approved))
+      const intentMarker = comment(2, buildMarkerComment(intent))
+
+      return {
+        cwd,
+        correlationId,
+        routes: [
+          goalIssues(50),
+          // Reads: the initial list; the re-read before the item; the intent write's compare-and-swap read
+          // (all the approved marker); the confirm write's read, which must see the intent marker's hash.
+          issueComments(
+            50,
+            [planner, approvedMarker],
+            [planner, approvedMarker],
+            [planner, approvedMarker],
+            [planner, intentMarker],
+          ),
+          anyCommentPatch,
+          dispatchRoute,
+        ],
+      }
+    }
+
+    it('dispatches with the target owner token, writes intent then dispatched with the control token, and counts it', async () => {
+      const dispatchUrl = '/repos/fro-bot/agent/actions/workflows/fro-bot.yaml/dispatches'
+      const {cwd, routes, correlationId} = scenario('fro-bot', 'agent', route('POST', dispatchUrl, {s: 204}))
+      const startedAt = Date.now()
+
+      const result = await run('cross-repo-dispatch', ['dispatch'], routes, {
+        cwd,
+        env: crossRepoEnv(cwd),
+        pinNonce: true,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+        dispatched: 1,
+        dispatchError: 0,
+        casDeferred: 0,
+        skippedUnsafePrompt: 0,
+      })
+
+      const writes = requests().filter(line => !line.startsWith('GET '))
+      expect(writes).toHaveLength(3)
+      const [intentWrite, dispatchWrite, confirmWrite] = writes as [string, string, string]
+
+      // The marker writes use the control token and update the existing comment in place; the dispatch uses the target owner's.
+      expect(intentWrite).toMatch(/^PATCH \/repos\/fro-bot\/\.github\/issues\/comments\/2 auth=tok-control /u)
+      expect(confirmWrite).toMatch(/^PATCH \/repos\/fro-bot\/\.github\/issues\/comments\/2 auth=tok-control /u)
+      expect(dispatchWrite).toMatch(
+        new RegExp(`^POST ${dispatchUrl.replaceAll('.', String.raw`\.`)} auth=tok-fro-bot `, 'u'),
+      )
+
+      // The intent write records the correlation id and the nonce hash, never the raw nonce.
+      const intent = writtenState(intentWrite)
+      expect(intent.marker.state.items).toHaveLength(1)
+      expect(intent.marker.state.items[0]).toMatchObject({
+        status: 'intent',
+        correlationId,
+        nonceHash: hashNonce(RAW_NONCE),
+      })
+      expect(intent.marker.state.items[0]?.epoch).toBeUndefined()
+      expect(correlationId).toMatch(CORRELATION_ID_FORMAT)
+      expect(intent.body).not.toContain(RAW_NONCE)
+
+      // The dispatch carries only `prompt`, with the correlation id and raw nonce inside it.
+      const dispatched = dispatchBody(dispatchWrite)
+      expect(dispatched.ref).toBe('main')
+      expect(Object.keys(dispatched.inputs)).toStrictEqual(['prompt'])
+      expect(dispatched.inputs.prompt.startsWith(`${PROMPT}\n\n--- fro-bot cross-repo receipt contract`)).toBe(true)
+      expect(dispatched.inputs.prompt).toContain(`correlation_id: ${correlationId}\nnonce: ${RAW_NONCE}\n`)
+      expect(dispatched.inputs.prompt).toContain(
+        '  owner: fro-bot\n  repo: .github\n  number: 50\n  url: https://github.com/fro-bot/.github/issues/50',
+      )
+
+      // The confirm write flips the item to dispatched with an epoch and the receipt contract snapshot.
+      const confirmed = writtenState(confirmWrite)
+      expect(confirmed.marker.state.items[0]).toMatchObject({
+        status: 'dispatched',
+        correlationId,
+        nonceHash: hashNonce(RAW_NONCE),
+        receiptContract: 'legacy-best-effort',
+      })
+      const epoch = confirmed.marker.state.items[0]?.epoch ?? 0
+      expect(epoch).toBeGreaterThanOrEqual(startedAt)
+      expect(epoch).toBeLessThanOrEqual(Date.now())
+      expect(confirmed.body).not.toContain(RAW_NONCE)
+      expect(unhandledMutations()).toStrictEqual([])
+    })
+
+    it('a failed workflow dispatch leaves the item at intent, counts dispatchError and still exits 0', async () => {
+      const dispatchUrl = '/repos/marcusrbrown/dashboard/actions/workflows/fro-bot.yaml/dispatches'
+      const {cwd, routes, correlationId} = scenario(
+        'marcusrbrown',
+        'dashboard',
+        route('POST', dispatchUrl, {s: 403, b: {message: 'Resource not accessible by integration'}}),
+      )
+
+      const result = await run('cross-repo-dispatch', ['dispatch'], routes, {
+        cwd,
+        env: crossRepoEnv(cwd),
+        pinNonce: true,
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+        dispatched: 0,
+        dispatchError: 1,
+        casDeferred: 0,
+      })
+      // Octokit logs the failed request line; the run adds no detail of its own, so no token or response body reaches stderr.
+      expect(result.stderr).toMatch(
+        /^POST \/repos\/marcusrbrown\/dashboard\/actions\/workflows\/fro-bot\.yaml\/dispatches - 403 with id UNKNOWN in \d+ms\n$/u,
+      )
+      expect(result.stderr).not.toContain('tok-')
+      expect(result.stderr).not.toContain('Resource not accessible')
+
+      // Recovery state: exactly one marker write, the intent, with the ids a later resume reconciles by. No confirm write.
+      const writes = requests().filter(line => !line.startsWith('GET '))
+      expect(writes).toHaveLength(2)
+      const [intentWrite, dispatchWrite] = writes as [string, string]
+      expect(intentWrite).toMatch(/^PATCH \/repos\/fro-bot\/\.github\/issues\/comments\/2 auth=tok-control /u)
+      expect(writtenState(intentWrite).marker.state.items[0]).toMatchObject({
+        status: 'intent',
+        correlationId,
+        nonceHash: hashNonce(RAW_NONCE),
+      })
+      expect(dispatchWrite).toMatch(
+        new RegExp(`^POST ${dispatchUrl.replaceAll('.', String.raw`\.`)} auth=tok-mrb `, 'u'),
+      )
+      expect(requestsTo('PATCH ')).toHaveLength(1)
+      expect(unhandledMutations()).toStrictEqual([])
+    })
   })
 
   it('a checklist that fails the grammar is reported as seedRejected and writes nothing', async () => {
@@ -567,7 +770,20 @@ describe('dispatch-renovate (bun, dispatch-renovate.yaml)', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toMatch(/^dispatch-renovate: failed dashboard: .*workflow_dispatch trigger/mu)
-    expect(JSON.parse(result.stdout)).toMatchObject({dispatched: 1, failed: 1})
+    expect(JSON.parse(result.stdout)).toStrictEqual({eligible: 2, dispatched: 1, skippedRunning: 0, failed: 1})
+
+    // Both repositories are attempted, in the planned order, each with the dispatch token and only a ref: one
+    // failure does not stop the next dispatch or change what is sent.
+    expect(requestsTo('POST ')).toStrictEqual([
+      'POST /repos/fro-bot/agent/actions/workflows/renovate.yaml/dispatches auth=tok-dispatch body={"ref":"main"}',
+      'POST /repos/fro-bot/dashboard/actions/workflows/renovate.yaml/dispatches auth=tok-dispatch body={"ref":"main"}',
+    ])
+    expect(
+      requests()
+        .filter(line => !line.startsWith('POST '))
+        .every(line => line.startsWith('GET ')),
+    ).toBe(true)
+    expect(unhandledMutations()).toStrictEqual([])
   })
 
   it('without DISPATCH_REPOSITORIES it names the variable and exits 1 before any request', async () => {
