@@ -10,7 +10,7 @@
 
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
-import {chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -160,13 +160,8 @@ async function run(
 }
 
 function ghCalls(directory: string): string[] {
-  try {
-    return execFileSync('cat', [join(directory, 'calls.log')], {encoding: 'utf8'})
-      .split('\n')
-      .filter(Boolean)
-  } catch {
-    return []
-  }
+  const log = join(directory, 'calls.log')
+  return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []
 }
 
 describe('check-private-leak (node, check-private-leak.yaml: no argv)', () => {
