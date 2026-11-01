@@ -32,6 +32,18 @@ export interface FakeRoute extends FakeAnswer {
   readonly seq?: readonly FakeAnswer[]
 }
 
+/** One request the child made. `line` is the log line without the `UNHANDLED ` marker. */
+export interface FakeRequest {
+  readonly method: string
+  /** The path and query, as logged. */
+  readonly target: string
+  /** False when no route matched and the fake answered 404. */
+  readonly handled: boolean
+  readonly line: string
+}
+
+const MUTATING_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
 export interface FakeGithub {
   /** The directory the child reads its routes from and writes `calls.log` to. */
   readonly directory: string
@@ -39,8 +51,12 @@ export interface FakeGithub {
   readonly runtimeArgs: (runtime: 'bun' | 'node') => string[]
   /** Replaces the routes; call before the run. */
   readonly setRoutes: (routes: readonly FakeRoute[]) => void
-  /** Every request the child made, in order. */
+  /** Every request the child made, in order, as logged: an unmatched one carries an `UNHANDLED ` prefix. */
   readonly calls: () => string[]
+  /** The same requests, parsed. Matched and unmatched requests are both here, so a count cannot miss one. */
+  readonly requests: () => FakeRequest[]
+  /** The unmatched POST, PUT, PATCH and DELETE requests: a write the run attempted that no route allowed. */
+  readonly unhandledMutations: () => FakeRequest[]
   readonly cleanup: () => void
 }
 
@@ -57,12 +73,28 @@ export function route(
   return {m, p, ...answer}
 }
 
+/** Parses one `calls.log` line. */
+export function parseCall(line: string): FakeRequest {
+  const handled = !line.startsWith('UNHANDLED ')
+  const text = handled ? line : line.slice('UNHANDLED '.length)
+  const [method = '', target = ''] = text.split(' ')
+  return {method, target, handled, line: text}
+}
+
 export function createFakeGithub(routes: readonly FakeRoute[] = []): FakeGithub {
   const directory = mkdtempSync(join(tmpdir(), 'fake-github-'))
   const setRoutes = (next: readonly FakeRoute[]) => {
     writeFileSync(join(directory, 'routes.json'), JSON.stringify(next))
   }
   setRoutes(routes)
+  const calls = () => {
+    try {
+      return readFileSync(join(directory, 'calls.log'), 'utf8').split('\n').filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+  const requests = () => calls().map(parseCall)
   return {
     directory,
     runtimeArgs: runtime =>
@@ -70,13 +102,9 @@ export function createFakeGithub(routes: readonly FakeRoute[] = []): FakeGithub 
         ? ['--no-install', '--no-env-file', '--preload', fakeGithubPreloadPath]
         : ['--import', fakeGithubPreloadPath],
     setRoutes,
-    calls: () => {
-      try {
-        return readFileSync(join(directory, 'calls.log'), 'utf8').split('\n').filter(Boolean)
-      } catch {
-        return []
-      }
-    },
+    calls,
+    requests,
+    unhandledMutations: () => requests().filter(request => !request.handled && MUTATING_METHODS.has(request.method)),
     cleanup: () => {
       rmSync(directory, {recursive: true, force: true})
     },

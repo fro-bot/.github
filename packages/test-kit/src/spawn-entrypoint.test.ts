@@ -148,8 +148,9 @@ if (path !== undefined) appendFileSync(path, 'key=value\n')
   })
 })
 
-describe('githubOutput: unset', () => {
-  const report = "process.stdout.write(process.env.GITHUB_OUTPUT === undefined ? 'unset' : 'set')"
+describe('githubOutput: unset and empty', () => {
+  const report = `const value = process.env.GITHUB_OUTPUT
+process.stdout.write(value === undefined ? 'unset' : value === '' ? 'empty' : 'set')`
 
   it('removes GITHUB_OUTPUT from the child, even when the caller env sets it', async () => {
     const entrypoint = await script('unset-output.ts', report)
@@ -159,6 +160,22 @@ describe('githubOutput: unset', () => {
       env: {GITHUB_OUTPUT: join(directory, 'elsewhere-output')},
     })
     expect(result).toEqual({exitCode: 0, stdout: 'unset', stderr: '', githubOutput: ''})
+  })
+
+  it("'empty' sets GITHUB_OUTPUT to the empty string, even when the caller env sets a path", async () => {
+    const entrypoint = await script('empty-output.ts', report)
+    const result = await spawnEntrypoint({
+      entrypoint,
+      githubOutput: 'empty',
+      env: {GITHUB_OUTPUT: join(directory, 'elsewhere-output')},
+    })
+    expect(result).toEqual({exitCode: 0, stdout: 'empty', stderr: '', githubOutput: ''})
+  })
+
+  it("'empty' and 'unset' are different to the child", async () => {
+    const entrypoint = await script('empty-vs-unset.ts', report)
+    expect((await spawnEntrypoint({entrypoint, githubOutput: 'empty'})).stdout).toBe('empty')
+    expect((await spawnEntrypoint({entrypoint, githubOutput: 'unset'})).stdout).toBe('unset')
   })
 
   it("is 'file' by default and when named", async () => {

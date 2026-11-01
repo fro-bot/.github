@@ -2,7 +2,7 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
-import {createFakeGithub, fakeGithubPreloadPath, route, type FakeGithub} from './fake-github.ts'
+import {createFakeGithub, fakeGithubPreloadPath, parseCall, route, type FakeGithub} from './fake-github.ts'
 import {spawnEntrypoint, type Runtime} from './spawn-entrypoint.ts'
 
 let scratch = ''
@@ -64,6 +64,37 @@ out.push(response.status)`,
     expect(github.calls()).toEqual(['UNHANDLED POST /nope auth=- body={"a":2,"b":1}'])
   })
 
+  it('counts an unmatched write in requests() and unhandledMutations(), which a prefix match on calls() misses', async () => {
+    const {github} = await run(
+      `await fetch('https://api.github.com/repos/o/r/contents/f', {method: 'PUT', body: '{}'})
+await fetch('https://api.github.com/repos/o/r/actions/workflows/w/dispatches', {method: 'POST', body: '{}'})
+await fetch('https://api.github.com/repos/o/r', {method: 'PATCH', body: '{}'})
+await fetch('https://api.github.com/repos/o/r/labels/x', {method: 'DELETE'})
+await fetch('https://api.github.com/repos/o/r')`,
+    )
+    // The raw log carries the marker, so a `PUT /repos` prefix match finds none of the four.
+    expect(github.calls().filter(call => call.startsWith('PUT /repos'))).toEqual([])
+    expect(github.requests().map(request => `${request.method} ${request.handled ? 'handled' : 'unhandled'}`)).toEqual([
+      'PUT unhandled',
+      'POST unhandled',
+      'PATCH unhandled',
+      'DELETE unhandled',
+      'GET unhandled',
+    ])
+    expect(github.requests().filter(request => request.line.startsWith('PUT /repos'))).toHaveLength(1)
+    expect(github.unhandledMutations().map(request => request.method)).toEqual(['PUT', 'POST', 'PATCH', 'DELETE'])
+  })
+
+  it('does not count a matched write or an unmatched read as an unhandled mutation', async () => {
+    fake = createFakeGithub([route('PUT', '/repos/o/r/contents/f', {b: {}})])
+    const {github} = await run(
+      `await fetch('https://api.github.com/repos/o/r/contents/f', {method: 'PUT', body: '{}'})
+await fetch('https://api.github.com/missing')`,
+    )
+    expect(github.requests().map(request => request.handled)).toEqual([true, false])
+    expect(github.unhandledMutations()).toEqual([])
+  })
+
   it('matches a regex route, a query filter and a method, and steps through a seq', async () => {
     fake = createFakeGithub([
       route('GET', '~^/repos/o/[^/]+/issues$', {q: 'state=open', seq: [{s: 500, b: {message: 'boom'}}, {b: [1]}]}),
@@ -104,6 +135,21 @@ out.push(response.status, await response.text())`,
       `out.push((await fetch('https://api.github.com/a')).status, (await fetch('https://api.github.com/b')).status)`,
     )
     expect(JSON.parse(result.stdout)).toEqual([404, 200])
+  })
+
+  it('parses a log line with and without the UNHANDLED marker', () => {
+    expect(parseCall('GET /a?x=1 auth=tok')).toEqual({
+      method: 'GET',
+      target: '/a?x=1',
+      handled: true,
+      line: 'GET /a?x=1 auth=tok',
+    })
+    expect(parseCall('UNHANDLED POST /b auth=- body={}')).toEqual({
+      method: 'POST',
+      target: '/b',
+      handled: false,
+      line: 'POST /b auth=- body={}',
+    })
   })
 
   it('removes its directory on cleanup', () => {

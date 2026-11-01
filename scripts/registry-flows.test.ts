@@ -108,7 +108,7 @@ async function run(
   options: {
     readonly cwd?: string
     readonly env?: Readonly<Record<string, string | undefined>>
-    readonly githubOutput?: 'file' | 'unset'
+    readonly githubOutput?: 'file' | 'unset' | 'empty'
   } = {},
 ): Promise<SpawnEntrypointResult> {
   const github = createFakeGithub(routes)
@@ -123,13 +123,18 @@ async function run(
   })
 }
 
-function calls(): string[] {
-  return fake?.calls() ?? []
+/**
+ * The requests whose log line starts with `prefix`, matched and unmatched alike: an unmatched request is
+ * logged with an `UNHANDLED ` marker, which `FakeRequest.line` omits, so a write no route allowed is counted
+ * where a test says there must be none. A prefix of method and path keeps dated bodies out of the match.
+ */
+function callsTo(prefix: string): string[] {
+  return (fake?.requests() ?? []).filter(request => request.line.startsWith(prefix)).map(request => request.line)
 }
 
-/** The calls with a method and a path prefix, so a test asserts a request happened without matching dated bodies. */
-function callsTo(prefix: string): string[] {
-  return calls().filter(call => call.startsWith(prefix))
+/** Writes the run attempted that no route allowed. Every flow here declares the routes for the writes it expects. */
+function unhandledMutations(): string[] {
+  return (fake?.unhandledMutations() ?? []).map(request => request.line)
 }
 
 describe('reconcile-repos (bun, reconcile-repos.yaml: no argv)', () => {
@@ -240,6 +245,7 @@ describe('reconcile-repos (bun, reconcile-repos.yaml: no argv)', () => {
       expect(alerts[0]).toContain(variant.alertText)
       expect(callsTo('PUT /repos/fro-bot/.github/contents')).toHaveLength(0)
       expect(callsTo('POST /repos/fro-bot/.github/actions')).toHaveLength(0)
+      expect(unhandledMutations()).toEqual([])
     })
 
     it('reports a failed alert as a stderr line and still exits 1 with the tamper diagnostic', async () => {
@@ -254,6 +260,10 @@ describe('reconcile-repos (bun, reconcile-repos.yaml: no argv)', () => {
       expect(result.exitCode).toBe(1)
       expect(result.stderr).toContain('reconcile: failed to file integrity alert issue (status=404).')
       expect(result.stderr).toContain('Unexpected author on data branch tip commit: someone-else')
+      // The alert is the only write, and it is the one the fixture left without a route.
+      expect(unhandledMutations()).toHaveLength(1)
+      expect(unhandledMutations()[0]).toMatch(new RegExp(`^POST ${CONTROL}/issues auth=tok-writer `, 'u'))
+      expect(callsTo('PUT ')).toHaveLength(0)
     })
   })
 
@@ -303,6 +313,7 @@ describe('reconcile-repos (bun, reconcile-repos.yaml: no argv)', () => {
         callsTo('POST /repos/fro-bot/.github/actions/workflows/survey-repo.yaml/dispatches auth=tok-writer'),
       ).toHaveLength(1)
       expect(callsTo('PUT /user/starred/marcusrbrown/newrepo auth=tok-user')).toHaveLength(1)
+      expect(unhandledMutations()).toEqual([])
     })
   })
 })
@@ -343,6 +354,7 @@ describe('handle-invitation (bun, poll-invitations.yaml: no argv)', () => {
     )
     expect(callsTo('PATCH /user/repository_invitations/11 auth=tok-poll')).toHaveLength(1)
     expect(callsTo('PUT /repos/fro-bot/.github/contents/metadata/repos.yaml auth=tok-meta')).toHaveLength(1)
+    expect(unhandledMutations()).toEqual([])
   })
 
   it('writes both keys as zero and an empty list when there is nothing to accept', async () => {
@@ -365,14 +377,13 @@ describe('handle-invitation (bun, poll-invitations.yaml: no argv)', () => {
     expect(readdirSync(cwd)).toEqual(['metadata'])
   })
 
-  it('writes nothing to a file when GITHUB_OUTPUT is empty', async () => {
+  it('writes nothing to a file when GITHUB_OUTPUT is the empty string, and still prints the result', async () => {
     const cwd = checkout(files)
-    const result = await run('handle-invitation', acceptRoutes(), {
-      cwd,
-      env: {...env, GITHUB_OUTPUT: ''},
-      githubOutput: 'unset',
-    })
+    const result = await run('handle-invitation', acceptRoutes(), {cwd, env, githubOutput: 'empty'})
+    // The fixture reached the point where the keys would be written: the invitation was accepted.
     expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('"status":"accepted"')
+    expect(callsTo('PUT /repos/fro-bot/.github/contents/metadata/repos.yaml auth=tok-meta')).toHaveLength(1)
     expect(result.githubOutput).toBe('')
     expect(readdirSync(cwd)).toEqual(['metadata'])
   })
@@ -412,6 +423,7 @@ describe('record-survey-result (bun, survey-repo.yaml: no argv)', () => {
     const writes = callsTo('PUT /repos/fro-bot/.github/contents/metadata/repos.yaml auth=tok-app')
     expect(writes).toHaveLength(1)
     expect(writes[0]).toContain('last_survey_status: success')
+    expect(unhandledMutations()).toEqual([])
   })
 
   it('skips with exit 0 and a stderr line when the survey target has no entry, and writes nothing', async () => {
@@ -466,6 +478,7 @@ describe('reset-survey-status (bun, reset-survey-status.yaml: no argv)', () => {
     const writes = callsTo('PUT /repos/fro-bot/.github/contents/metadata/repos.yaml auth=tok-app')
     expect(writes).toHaveLength(1)
     expect(writes[0]).toContain('last_survey_status: null')
+    expect(unhandledMutations()).toEqual([])
   })
 
   it('prints the script name and the message and exits 1 for a target that is not in the registry', async () => {
