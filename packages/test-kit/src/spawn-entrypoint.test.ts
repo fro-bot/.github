@@ -49,6 +49,28 @@ appendFileSync(process.env.GITHUB_OUTPUT ?? '', 'scan_result=error\n')
     expect(result.githubOutput).toBe('scan_result=error\n')
   })
 
+  it('passes runtimeArgs to the runtime, before the script path and not as script arguments', async () => {
+    const entrypoint = await script(
+      `runtime-args-${runtime}.ts`,
+      `process.stdout.write(JSON.stringify({exec: process.execArgv, argv: process.argv.slice(2)}))
+`,
+    )
+    const flags = runtime === 'bun' ? ['--no-install', '--no-env-file'] : ['--no-warnings']
+    const result = await spawnEntrypoint({entrypoint, argv: ['x'], runtime, runtimeArgs: flags})
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({exec: flags, argv: ['x']})
+  })
+
+  it('runs with no runtime arguments by default', async () => {
+    const entrypoint = await script(
+      `no-runtime-args-${runtime}.ts`,
+      `process.stdout.write(JSON.stringify(process.execArgv))
+`,
+    )
+    const result = await spawnEntrypoint({entrypoint, runtime})
+    expect(JSON.parse(result.stdout)).toEqual([])
+  })
+
   it('does not pass the caller shell environment through, and lets env remove a variable', async () => {
     process.env.SPAWN_ENTRYPOINT_LEAK = 'leaked'
     const entrypoint = await script(

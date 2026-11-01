@@ -26,6 +26,8 @@ export type Runtime = 'bun' | 'node'
 export interface SpawnEntrypointOptions {
   /** Absolute path to the `.ts` entrypoint. */
   readonly entrypoint: string
+  /** Arguments to the runtime before the script path, for example `--no-install --no-env-file` for `bun`. */
+  readonly runtimeArgs?: readonly string[]
   /** Arguments after the script path. */
   readonly argv?: readonly string[]
   /** Added to the base environment; an `undefined` value removes the variable. */
@@ -68,7 +70,7 @@ export async function spawnEntrypoint(options: SpawnEntrypointOptions): Promise<
 
   try {
     const command = options.executable ?? options.runtime ?? 'bun'
-    const child = spawn(command, [options.entrypoint, ...(options.argv ?? [])], {
+    const child = spawn(command, [...(options.runtimeArgs ?? []), options.entrypoint, ...(options.argv ?? [])], {
       cwd: options.cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],
