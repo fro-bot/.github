@@ -314,7 +314,7 @@ No private-name collision check runs, in this workflow or at promotion: private 
 
 ## Commit conventions
 
-- All programmatic metadata writes must go through `packages/registry/src/commit-metadata.ts` and target the `data` branch.
+- All programmatic metadata writes must go through `packages/registry/src/commit-metadata.ts` and target the `data` branch. There are two exceptions, both Git Data commits to `data`: `packages/registry/src/rename-tracked-repo.ts` (the operator-dispatched rename, which writes `metadata/repos.yaml` together with the wiki page move in one atomic commit) and `packages/registry/src/merge-back-data.ts` (which merges `main` into `data` at the start of every merge-data run).
 - Reconcile won't drop a public `owner/name` from `metadata/repos.yaml` while its wiki page exists on `data` or can't be read: it keeps the old name (and both rows of a blocked merge), skips that repo's dispatch, and logs a counts-only warning. Downgrades to private/unknown always apply. Other writers rely on the promotion privacy gate. To release a kept rename, repair the old page on `data` via an App-backed write, then rerun reconcile.
 - Manual edits to `metadata/*.{yaml,yml}` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
