@@ -734,7 +734,7 @@ CLI tables follow one legend:
 
 **Verification:** No non-test module in `packages/registry/src` is 2,000 lines or longer, and no top-level declaration of the original `reconcile-repos.ts` is left outside a seam or core.
 
-- [ ] **Unit 8: `@fro-bot/dispatch`**
+- [x] **Unit 8: `@fro-bot/dispatch`**
 
 **Goal:** Move `cross-repo-dispatch` (split) and `dispatch-renovate`.
 
