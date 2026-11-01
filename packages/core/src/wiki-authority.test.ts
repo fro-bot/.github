@@ -1,7 +1,6 @@
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import process from 'node:process'
 import {CORRECTIONS_PATH} from '@fro.bot/wiki-write-core/corrections'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
@@ -11,7 +10,8 @@ import {
   guardedPatterns,
   isDataOwnedPath,
   readPullRequestContext,
-} from './check-wiki-authority.ts'
+  runWikiAuthority,
+} from './wiki-authority.ts'
 
 // Hoisted mock for execFileSync — must precede any import that might trigger the module.
 const {mockExecFileSync} = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ vi.mock('node:child_process', () => ({
   execFileSync: mockExecFileSync,
 }))
 
-// Shared by the readPullRequestContext discrimination tests and the CLI self-invoke guard tests
+// Shared by the readPullRequestContext discrimination tests and the `runWikiAuthority` tests
 // below — both need a real event-payload file on disk (readFile in the module under test is real,
 // not mocked). Module scope, not nested inside a describe, per unicorn/consistent-function-scoping:
 // the helper closes over no test-local state.
@@ -1232,17 +1232,14 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
   })
 })
 
-// Drives main() end to end for a Fro Bot PR on the `data` head so the head-repo / base-repo
+// Drives runWikiAuthority end to end for a Fro Bot PR on the `data` head so the head-repo / base-repo
 // wiring (event payload -> checkWikiAuthority) is observable, not just the pure function.
-async function runMainAsFroBot(options: {
+async function runAsFroBot(options: {
   suffix: string
   headRepo: {full_name: string} | null
   base: {repo: {full_name: string}} | undefined
   mockedGh: string[]
-}): Promise<{exited: boolean; stderr: string; stdout: string}> {
-  const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-  const originalArgv = [...process.argv]
-  const originalEventPath = process.env.GITHUB_EVENT_PATH
+}): Promise<{exitCode: number; stderr: string; stdout: string}> {
   const {eventPath, cleanup} = writeTempEvent(`check-wiki-authority-${options.suffix}-`, {
     pull_request: {
       number: 5,
@@ -1251,128 +1248,48 @@ async function runMainAsFroBot(options: {
       base: options.base,
     },
   })
-  const stderrOutput: string[] = []
-  const stdoutOutput: string[] = []
-  vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-    stderrOutput.push(String(msg))
-    return true
-  })
-  vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
-    stdoutOutput.push(String(msg))
-    return true
-  })
-  vi.spyOn(process, 'exit').mockImplementation(() => {
-    throw new Error('process.exit called')
-  })
   mockExecFileSync.mockReset()
   for (const value of options.mockedGh) mockExecFileSync.mockReturnValueOnce(value)
-
-  process.env.GITHUB_EVENT_PATH = eventPath
-  process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-  let exited = false
   try {
-    await import(`${modulePath.href}?guard-test-${options.suffix}`)
-  } catch (error: unknown) {
-    if (!(error instanceof Error) || error.message !== 'process.exit called') throw error
-    exited = true
+    return await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
   } finally {
-    vi.restoreAllMocks()
-    process.argv = originalArgv
     cleanup()
-    if (originalEventPath === undefined) {
-      delete process.env.GITHUB_EVENT_PATH
-    } else {
-      process.env.GITHUB_EVENT_PATH = originalEventPath
-    }
   }
-  return {exited, stderr: stderrOutput.join(''), stdout: stdoutOutput.join('')}
 }
 
 // ---------------------------------------------------------------------------
-// CLI self-invoke guard (import.meta.url === file://<argv[1]>)
+// runWikiAuthority
 // ---------------------------------------------------------------------------
 
-describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
-  // Every other test in this file imports the module without ever setting process.argv[1] to its
-  // own path, so the `false` branch of every mutator variant here is trivially exercised (real
-  // code and every mutant behave identically when the condition is never true) -- that is NOT
-  // sufficient to kill the mutants; a genuine discriminating test must make the condition true for
-  // the *real* code and observe main() actually run. Cache-busts the dynamic import (unique query
-  // string) so the module's top-level code re-executes with the manipulated argv/env, rather than
-  // returning the already-cached module instance from every earlier `import` in this file.
-
-  // Several tests below call mockExecFileSync.mockReset() and then queue mockReturnValueOnce calls
-  // for their own scenario, without restoring afterward — order-independent only if every leftover
-  // queued return value is cleared before the next test runs.
+describe('runWikiAuthority', () => {
+  // Several tests below queue mockReturnValueOnce calls for their own scenario without restoring
+  // afterward -- order-independent only if every leftover queued return value is cleared before the
+  // next test runs.
   afterEach(() => {
     mockExecFileSync.mockReset()
   })
 
   it('exits 1 with the GITHUB_EVENT_PATH diagnostic when the env var is unset', async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-    const originalEventPath = process.env.GITHUB_EVENT_PATH
+    const result = await runWikiAuthority({})
 
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    delete process.env.GITHUB_EVENT_PATH
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    try {
-      await expect(import(`${modulePath.href}?guard-test-no-event-path`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      expect(stderrOutput.join('')).toContain('GITHUB_EVENT_PATH not set')
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      if (originalEventPath === undefined) {
-        delete process.env.GITHUB_EVENT_PATH
-      } else {
-        process.env.GITHUB_EVENT_PATH = originalEventPath
-      }
-    }
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toBe(
+      'check-wiki-authority: GITHUB_EVENT_PATH not set. This script must run inside a GitHub Actions pull_request event.\n',
+    )
+    expect(result.stdout).toBe('')
+    expect(mockExecFileSync).not.toHaveBeenCalled()
   })
 
-  it('exits 1 with the empty-string GITHUB_EVENT_PATH treated the same as unset', async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-    const originalEventPath = process.env.GITHUB_EVENT_PATH
+  it('treats an empty-string GITHUB_EVENT_PATH the same as unset', async () => {
+    const result = await runWikiAuthority({GITHUB_EVENT_PATH: ''})
 
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.env.GITHUB_EVENT_PATH = ''
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    try {
-      await expect(import(`${modulePath.href}?guard-test-empty-event-path`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      if (originalEventPath === undefined) {
-        delete process.env.GITHUB_EVENT_PATH
-      } else {
-        process.env.GITHUB_EVENT_PATH = originalEventPath
-      }
-    }
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('GITHUB_EVENT_PATH not set')
+    expect(mockExecFileSync).not.toHaveBeenCalled()
   })
 
-  it('invokes main() and writes the ok summary to stdout when the PR is allowed (fullName from event payload)', async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-    const originalEventPath = process.env.GITHUB_EVENT_PATH
-
-    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-ok-', {
+  it('writes the ok summary to stdout when the PR is allowed (fullName from the event payload)', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-ok-', {
       pull_request: {
         number: 42,
         user: {login: 'marcusrbrown'},
@@ -1380,27 +1297,17 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
         base: {repo: {full_name: 'fro-bot/.github'}},
       },
     })
-
-    const stdoutOutput: string[] = []
-    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
-      stdoutOutput.push(String(msg))
-      return true
-    })
-    const stderrSpyGuard = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
     mockExecFileSync.mockReset()
     mockExecFileSync.mockReturnValueOnce('scripts/foo.ts\nREADME.md\n')
-
-    process.env.GITHUB_EVENT_PATH = eventPath
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
     try {
-      await import(`${modulePath.href}?guard-test-main-ok`)
-      expect(exitSpy).not.toHaveBeenCalled()
-      expect(stdoutOutput.join('')).toContain('check-wiki-authority: ok (author=marcusrbrown, files_checked=2)')
-      expect(stderrSpyGuard).not.toHaveBeenCalled()
-      // fullName came from the event payload — the gh repo view fallback must not have been called.
+      const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+      expect(result).toStrictEqual({
+        exitCode: 0,
+        stdout: 'check-wiki-authority: ok (author=marcusrbrown, files_checked=2)\n',
+        stderr: '',
+      })
+      // fullName came from the event payload: the gh repo view fallback must not have been called.
       expect(mockExecFileSync).toHaveBeenCalledTimes(1)
       expect(mockExecFileSync).toHaveBeenCalledWith(
         'gh',
@@ -1408,24 +1315,12 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
         {encoding: 'utf8'},
       )
     } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
       cleanup()
-      if (originalEventPath === undefined) {
-        delete process.env.GITHUB_EVENT_PATH
-      } else {
-        process.env.GITHUB_EVENT_PATH = originalEventPath
-      }
     }
   })
 
-  it('invokes main() and exits 1 with the block message on stderr when the PR is blocked', async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-    const originalEventPath = process.env.GITHUB_EVENT_PATH
-
-    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-blocked-', {
+  it('exits 1 with the block message on stderr when the PR is blocked', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-blocked-', {
       pull_request: {
         number: 7,
         user: {login: 'marcusrbrown'},
@@ -1433,126 +1328,91 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
         base: {repo: {full_name: 'fro-bot/.github'}},
       },
     })
-
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const stdoutSpyGuard = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
     mockExecFileSync.mockReset()
     mockExecFileSync.mockReturnValueOnce('metadata/repos.yaml\n')
-
-    process.env.GITHUB_EVENT_PATH = eventPath
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
     try {
-      await expect(import(`${modulePath.href}?guard-test-main-blocked`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      expect(stderrOutput.join('')).toContain('metadata/repos.yaml')
-      expect(stderrOutput.join('')).toContain('data')
-      expect(stdoutSpyGuard).not.toHaveBeenCalled()
+      const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('metadata/repos.yaml')
+      expect(result.stderr).toContain('data')
+      expect(result.stderr.endsWith('\n')).toBe(true)
     } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
       cleanup()
-      if (originalEventPath === undefined) {
-        delete process.env.GITHUB_EVENT_PATH
-      } else {
-        process.env.GITHUB_EVENT_PATH = originalEventPath
-      }
     }
   })
 
-  it('main() blocks a Fro Bot data-branch PR whose head repo is a fork of the base repo', async () => {
-    const result = await runMainAsFroBot({
+  it('blocks a Fro Bot data-branch PR whose head repo is a fork of the base repo', async () => {
+    const result = await runAsFroBot({
       suffix: 'fork-data',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
       mockedGh: ['metadata/repos.yaml\n'],
     })
-    expect(result.exited).toBe(true)
+    expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
     expect(result.stdout).toBe('')
   })
 
-  it('main() blocks a Fro Bot data-branch PR whose head repo was deleted (null head.repo)', async () => {
-    const result = await runMainAsFroBot({
+  it('blocks a Fro Bot data-branch PR whose head repo was deleted (null head.repo)', async () => {
+    const result = await runAsFroBot({
       suffix: 'null-head-repo',
       headRepo: null,
       base: {repo: {full_name: 'fro-bot/.github'}},
       mockedGh: ['metadata/repos.yaml\n'],
     })
-    expect(result.exited).toBe(true)
+    expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
   })
 
-  it("main() allows this repository's own data-branch promotion PR", async () => {
-    const result = await runMainAsFroBot({
+  it("allows this repository's own data-branch promotion PR", async () => {
+    const result = await runAsFroBot({
       suffix: 'own-data',
       headRepo: {full_name: 'fro-bot/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
       mockedGh: ['metadata/repos.yaml\nknowledge/index.md\n'],
     })
-    expect(result.exited).toBe(false)
+    expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('check-wiki-authority: ok (author=fro-bot[bot], files_checked=2)')
   })
 
-  it('main() compares the head repo against the gh-resolved base repo when the payload omits base.repo', async () => {
-    const same = await runMainAsFroBot({
+  it('compares the head repo against the gh-resolved base repo when the payload omits base.repo', async () => {
+    const same = await runAsFroBot({
       suffix: 'fallback-same',
       headRepo: {full_name: 'fro-bot/.github'},
       base: undefined,
       mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
     })
-    expect(same.exited).toBe(false)
+    expect(same.exitCode).toBe(0)
     expect(same.stdout).toContain('check-wiki-authority: ok')
 
-    const different = await runMainAsFroBot({
+    const different = await runAsFroBot({
       suffix: 'fallback-different',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: undefined,
       mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
     })
-    expect(different.exited).toBe(true)
+    expect(different.exitCode).toBe(1)
     expect(different.stderr).toContain('metadata/repos.yaml')
   })
 
   it('falls back to `gh repo view` for fullName, trimmed, when the event payload omits base.repo.full_name', async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-    const originalEventPath = process.env.GITHUB_EVENT_PATH
-
-    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-fallback-', {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-fallback-', {
       pull_request: {
         number: 99,
         user: {login: 'marcusrbrown'},
         head: {ref: 'feature/x'},
       },
     })
-
-    const stdoutOutput: string[] = []
-    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
-      stdoutOutput.push(String(msg))
-      return true
-    })
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
     mockExecFileSync.mockReset()
     // Untrimmed, to prove `.trim()` actually runs on the fallback lookup's output.
     mockExecFileSync.mockReturnValueOnce('  fro-bot/.github  \n')
     mockExecFileSync.mockReturnValueOnce('README.md\n')
-
-    process.env.GITHUB_EVENT_PATH = eventPath
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
     try {
-      await import(`${modulePath.href}?guard-test-main-fallback`)
-      expect(exitSpy).not.toHaveBeenCalled()
+      const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+      expect(result.exitCode).toBe(0)
       expect(mockExecFileSync).toHaveBeenNthCalledWith(
         1,
         'gh',
@@ -1565,36 +1425,20 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
         ['api', '--paginate', '/repos/fro-bot/.github/pulls/99/files', '--jq', '.[].filename'],
         {encoding: 'utf8'},
       )
-      expect(stdoutOutput.join('')).toContain('check-wiki-authority: ok')
+      expect(result.stdout).toContain('check-wiki-authority: ok')
     } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
       cleanup()
-      if (originalEventPath === undefined) {
-        delete process.env.GITHUB_EVENT_PATH
-      } else {
-        process.env.GITHUB_EVENT_PATH = originalEventPath
-      }
     }
   })
 
-  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
-    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
+  it('rejects when the event payload is malformed', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-malformed-', {pull_request: {}})
     try {
-      await import(`${modulePath.href}?guard-test-noop`)
-      expect(exitSpy).not.toHaveBeenCalled()
+      await expect(runWikiAuthority({GITHUB_EVENT_PATH: eventPath})).rejects.toThrow(
+        'check-wiki-authority: event payload missing pull_request.number or pull_request.user.login',
+      )
     } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
+      cleanup()
     }
   })
 })

@@ -38,6 +38,7 @@
       },
       "devDependencies": {
         "@fro-bot/test-kit": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
       },
     },
     "packages/privacy": {

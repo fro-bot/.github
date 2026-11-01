@@ -35,7 +35,7 @@ A mutation score is a claim about which mutants your tests killed. It is silent 
 
 Stryker imports a module once per worker process, so a module-level `const` initializer runs once and never again. Data computed there is shared across every test in that worker, and a mutant inside it is fixed for the worker's lifetime — no test can observe a difference, so none can kill it.
 
-`scripts/check-wiki-authority.ts` held its identity set and guarded-path regex array as top-level `const`s: the whole decision table was frozen before any test ran, and the baseline was 0 killed. Converting both to functions took it to 146 killed **with no new tests written**. The assertions had always been adequate; the mutants had never been reachable.
+`packages/core/src/wiki-authority.ts` held its identity set and guarded-path regex array as top-level `const`s: the whole decision table was frozen before any test ran, and the baseline was 0 killed. Converting both to functions took it to 146 killed **with no new tests written**. The assertions had always been adequate; the mutants had never been reachable.
 
 Read a 0-killed baseline as an instrumentation problem first. Writing tests against a frozen constant produces more passing tests and the same zero.
 
@@ -73,7 +73,7 @@ The second mechanism is worse than the first, because a static mutant reports 0 
 
 The conversion that unfroze the decision table:
 
-<!-- verify: guardedPatterns from scripts/check-wiki-authority.ts -->
+<!-- verify: guardedPatterns from packages/core/src/wiki-authority.ts -->
 ```ts
 // Before: evaluated once per Stryker worker; every mutant inside is static.
 const GUARDED_PATTERNS = [/^knowledge\/wiki\/[^/]+\/.+\.md$/, /* … */]

@@ -18,7 +18,7 @@ import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 
-import {isDataOwnedPath} from './check-wiki-authority.ts'
+import {isDataOwnedPath} from '@fro-bot/core/wiki-authority'
 import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {upsertAlertIssue} from './merge-data-pr.ts'
 

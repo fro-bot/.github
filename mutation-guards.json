@@ -163,6 +163,10 @@
     {
       "path": "scripts/check-wiki-private-presence.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/privacy/check-wiki-private-presence-cli and runs it under the entry guard. The detection and the report formats are in packages/privacy/src/check-wiki-private-presence.ts and check-wiki-private-presence-cli.ts, both mutated and reached by their own tests. The shim's surface, including the merge-data.yaml foreign-cwd shape, is pinned by scripts/privacy-entrypoints.test.ts, which spawns it."
+    },
+    {
+      "path": "scripts/check-wiki-authority.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/core/wiki-authority-cli and runs it under the entry guard. The check, the block message and the exit codes are in packages/core/src/wiki-authority.ts and wiki-authority-cli.ts, both mutated and reached by their own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     }
   ]
 }

@@ -3,7 +3,7 @@ import {appendFileSync, existsSync, readdirSync, readFileSync, rmSync} from 'nod
 import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 
-import {fetchChangedFiles, readPullRequestContext} from './check-wiki-authority.ts'
+import {fetchChangedFiles, readPullRequestContext} from '@fro-bot/core/wiki-authority'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 export const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
@@ -1529,7 +1529,7 @@ export function changedFilesIntersectTriggerSet(changedFiles: readonly string[],
 /**
  * The two functions the changed-file gate needs from a `pull_request` event: reading the
  * event payload (`readPullRequestContext`) and fetching the PR's changed files
- * (`fetchChangedFiles`) — both reused directly from `scripts/check-wiki-authority.ts`, which
+ * (`fetchChangedFiles`) — both reused directly from `@fro-bot/core/wiki-authority`, which
  * already implements this exact `pull_request`-event shape for its own PR-scoped guard, rather
  * than duplicating event-payload parsing and paginated-API fetching a second time.
  */
