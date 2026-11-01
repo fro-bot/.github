@@ -10,7 +10,7 @@
 
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
-import {chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -229,13 +229,24 @@ describe('check-private-leak (node, check-private-leak.yaml: no argv)', () => {
     expect(result.stderr).not.toContain(PRIVATE_NAME)
   })
 
-  it('exits 1 with the error as the message and no scan_result when gh itself fails', async () => {
+  it('exits 1 with the error as the message and scan_result=error when gh itself fails', async () => {
     const directory = ghFixtures()
     rmSync(join(directory, 'repo'))
     const result = await scan(directory)
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('Command failed: gh repo view')
+    expect(result.githubOutput).toBe('scan_result=error\n')
+  })
+
+  it('keeps the scan_result the scan wrote when the failure comes after it: one line, detection stays', async () => {
+    const result = await scan(
+      ghFixtures({
+        'diff.txt': `diff --git a/x.md b/x.md\n--- a/x.md\n+++ b/x.md\n@@ -1 +1 @@\n-a\n+see ${PRIVATE_NAME} here\n`,
+      }),
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.githubOutput).toBe('scan_result=detection\n')
   })
 
   it.each([['--help'], ['--bogus'], ['stray'], ['-h']])(
@@ -565,5 +576,33 @@ describe('resolve-private (bun, operator)', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('resolve-private')
+  })
+})
+
+describe('importing a shim runs nothing', () => {
+  // The entry guard compares import.meta.url with process.argv[1]; an import from another module
+  // (a test, Test Scripts Load) must not scan, print, write $GITHUB_OUTPUT or set an exit code.
+  const shims = ['check-private-leak', 'check-wiki-private-presence', 'enumerate-existing-leaks', 'resolve-private']
+
+  it.each(shims)('scripts/%s.ts imported as a library does nothing', async name => {
+    const directory = scratch('import-only')
+    const outputPath = join(directory, 'github-output')
+    const harness = join(directory, 'import-shim.ts')
+    writeFileSync(
+      harness,
+      `import {pathToFileURL} from 'node:url'
+await import(pathToFileURL(${JSON.stringify(entrypoint(name))}).href)
+process.stdout.write('imported:' + String(process.exitCode ?? 'unset'))
+`,
+    )
+    const result = await spawnEntrypoint({
+      entrypoint: harness,
+      runtime: 'node',
+      cwd: directory,
+      env: {PATH: `${binDirectory}:${process.env.PATH ?? ''}`, FAKE_GH_DIR: ghFixtures(), FRO_BOT_POLL_PAT: 'pat'},
+    })
+    expect(result).toEqual({exitCode: 0, stdout: 'imported:unset', stderr: '', githubOutput: ''})
+    expect(ghCalls(directory)).toEqual([])
+    expect(existsSync(outputPath)).toBe(false)
   })
 })
