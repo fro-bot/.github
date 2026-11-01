@@ -42,6 +42,13 @@ function hasLineBreak(value: string): boolean {
   return /[\r\n]/u.test(value)
 }
 
+/** The policy is a string at run time, so anything that is not one of the two names is a bug in the caller. */
+function assertPolicy(options: RunnerFileOptions): void {
+  if (options.onMissing !== 'skip' && options.onMissing !== 'throw') {
+    throw new TypeError(`invalid onMissing policy: ${JSON.stringify(options.onMissing)}, expected 'skip' or 'throw'`)
+  }
+}
+
 function appendToRunnerFile(variable: string, content: string, options: RunnerFileOptions): boolean {
   const path = (options.env ?? process.env)[variable]
   if (path === undefined || path === '') {
@@ -75,10 +82,12 @@ function formatOutputEntry(name: string, value: string, makeDelimiter: () => str
 
 /**
  * Appends every entry to `$GITHUB_OUTPUT` in one write, in object order. Returns whether it wrote.
- * Every entry is formatted first, so an invalid name or a colliding value throws before anything
- * is written, whatever the policy.
+ * An `onMissing` that is neither `skip` nor `throw` throws a `TypeError` first. Every entry is
+ * formatted before anything is written, so an invalid name or a colliding value throws and writes
+ * nothing, whatever the policy.
  */
 export function writeGithubOutputs(outputs: Readonly<Record<string, string>>, options: GithubOutputOptions): boolean {
+  assertPolicy(options)
   const makeDelimiter = options.delimiter ?? randomUUID
   const content = Object.entries(outputs)
     .map(([name, value]) => formatOutputEntry(name, value, makeDelimiter))
@@ -88,5 +97,6 @@ export function writeGithubOutputs(outputs: Readonly<Record<string, string>>, op
 
 /** Appends `markdown` to `$GITHUB_STEP_SUMMARY` as given. Returns whether it wrote. */
 export function appendStepSummary(markdown: string, options: RunnerFileOptions): boolean {
+  assertPolicy(options)
   return appendToRunnerFile('GITHUB_STEP_SUMMARY', markdown, options)
 }
