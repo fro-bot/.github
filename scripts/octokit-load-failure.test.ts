@@ -132,7 +132,7 @@ describe('reconcile-repos', () => {
     ['a non-constructor export', NOT_A_CONSTRUCTOR],
   ])('maps %s to OCTOKIT_LOAD_FAILED', async (_label, mocked) => {
     mockOctokitRest(mocked)
-    const {handleReconcile} = await import('./reconcile-repos.ts')
+    const {handleReconcile} = await import('@fro-bot/registry/reconcile-handler')
     const error = await rejection(handleReconcile())
     expect(error).toMatchObject({
       name: 'ReconcileError',

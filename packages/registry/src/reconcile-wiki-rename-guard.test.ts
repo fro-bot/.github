@@ -1,17 +1,17 @@
-import type {OctokitClient} from '@fro-bot/registry/commit-metadata'
+import type {OctokitClient} from './commit-metadata.ts'
 /**
  * Behavior tests for reconcile's wiki rename guard. `handleReconcile` runs end to end against one
  * in-memory fake of the `data` branch and the real `commitMetadata`, and every assertion is about
  * the decoded `metadata/repos.yaml` that ends up persisted (plus the commit message and the
  * public warning), not about internal counters.
  */
-import type {HandleReconcileParams} from './reconcile-repos.ts'
+import type {HandleReconcileParams} from './reconcile-handler.ts'
 
 import {Buffer} from 'node:buffer'
-import {commitMetadata} from '@fro-bot/registry/commit-metadata'
 import {describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
-import {handleReconcile} from './reconcile-repos.ts'
+import {commitMetadata} from './commit-metadata.ts'
+import {handleReconcile} from './reconcile-handler.ts'
 
 const NODE_ID = 'R_kgDOWIDGET'
 const OTHER_NODE_ID = 'R_kgDOGADGET'

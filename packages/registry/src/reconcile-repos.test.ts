@@ -1,43 +1,42 @@
-import type {CommitMetadataParams, CommitMetadataResult} from '@fro-bot/registry/commit-metadata'
+import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from '@fro.bot/wiki-write-core/data-branch-bootstrap'
 import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
-import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
+import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import {Buffer} from 'node:buffer'
 import {readFileSync} from 'node:fs'
 import process from 'node:process'
 
-import {addRepoEntry, computeNextEligibleAt} from '@fro-bot/registry/repos-metadata'
 import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
-  detectRenames,
-  DISPATCH_DEFAULTS,
   fetchFieldProbes,
   fetchPerRepoStatus,
-  formatCommitMessage,
-  formatFloorTelemetry,
-  formatStuckTelemetry,
-  handleReconcile,
-  isEligibleForSurvey,
+  mergeAccessChannels,
+} from './reconcile-discovery.ts'
+import {
+  DISPATCH_DEFAULTS,
   loadDispatchStaggerFromEnv,
   loadMaxDispatchesPerRunFromEnv,
-  mergeAccessChannels,
-  migrateRepoEntry,
-  ReconcileError,
-  reconcileRepos,
-  renderIssuePayload,
   syncStars,
+} from './reconcile-effects.ts'
+import {formatCommitMessage, handleReconcile, type HandleReconcileParams} from './reconcile-handler.ts'
+import {renderIssuePayload, type IssuePayload} from './reconcile-issues.ts'
+import {ReconcileError, type OctokitClient, type ReconcileLogger} from './reconcile-model.ts'
+import {
+  detectRenames,
+  formatFloorTelemetry,
+  formatStuckTelemetry,
+  isEligibleForSurvey,
+  migrateRepoEntry,
+  reconcileRepos,
   type AccessListEntry,
   type FieldProbe,
-  type HandleReconcileParams,
-  type IssuePayload,
   type IssueQueueEntry,
-  type OctokitClient,
   type ReconcileInput,
-  type ReconcileLogger,
   type RepoStatusProbe,
   type VisibilityTransitionIssue,
-} from './reconcile-repos.ts'
+} from './reconcile-plan.ts'
+import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
 
@@ -10083,7 +10082,7 @@ describe('rename detection', () => {
     it('exposes every rename counter the workflow step summary reads from the result JSON', async () => {
       const h = harness({rows: [publicRow()], collab: [renamedCollab]})
       const result = await h.run()
-      const workflow = readFileSync(new URL('../.github/workflows/reconcile-repos.yaml', import.meta.url), 'utf8')
+      const workflow = readFileSync(new URL('../../../.github/workflows/reconcile-repos.yaml', import.meta.url), 'utf8')
 
       const keys = [
         'renamesPending',
@@ -10095,6 +10094,26 @@ describe('rename detection', () => {
       for (const key of keys) {
         expect(workflow).toContain(`jq '.${key} // 0'`)
         expect(result).toHaveProperty(key)
+      }
+    })
+
+    it('exposes every field the workflow step summary reads, at the path it reads', async () => {
+      const h = harness({rows: [publicRow()], collab: [renamedCollab]})
+      const result = await h.run()
+      const workflow = readFileSync(new URL('../../../.github/workflows/reconcile-repos.yaml', import.meta.url), 'utf8')
+
+      // A missing field falls back to 0 through `// 0`, so a rename in the result type would fail silently in the summary.
+      const paths = [...workflow.matchAll(/jq '\.([A-Za-z][\w.]*) \/\/ (?:0|false)'/gu)].map(match => match[1] ?? '')
+      expect(paths).toHaveLength(27)
+      expect(new Set(paths).size).toBe(27)
+      for (const path of paths) {
+        let value: unknown = result
+        for (const segment of path.split('.')) {
+          expect(value, path).toBeTypeOf('object')
+          expect(value, path).toHaveProperty(segment)
+          value = (value as Record<string, unknown>)[segment]
+        }
+        expect(value, path).not.toBeUndefined()
       }
     })
 

@@ -236,6 +236,11 @@ describe('the Octokit-backed shims fail closed on missing input', () => {
     },
     {name: 'reset-survey-status', env: {}, stderr: 'reset-survey-status: TARGETS is required\n'},
     {
+      name: 'reconcile-repos',
+      env: {GITHUB_REPOSITORY: 'nope'},
+      stderr: 'Invalid GITHUB_REPOSITORY value: "nope"\n',
+    },
+    {
       name: 'record-survey-result',
       env: {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard', SURVEY_STATUS: 'success', REPO_NODE_ID: undefined},
       stderr: 'record-survey-result: REPO_NODE_ID is required\n',
@@ -271,6 +276,7 @@ describe('argv that matches nothing declared stops before the CLI body runs', ()
     'handle-invitation',
     'merge-back-data',
     'merge-data-pr',
+    'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
     'reset-survey-status',
@@ -301,6 +307,7 @@ describe('importing a shim runs nothing', () => {
     'handle-invitation',
     'merge-back-data',
     'merge-data-pr',
+    'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
     'reset-survey-status',

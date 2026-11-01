@@ -263,6 +263,46 @@
     {
       "path": "packages/registry/src/update-metadata.ts",
       "reason": "Refreshes metadata/renovate.yaml on data from the Renovate repos the App installation can see. The sort and dedupe in buildRenovateFile and the 404 handling in discovery are pinned by update-metadata.test.ts. It is not in the mutate list because it is a scheduled writer to data only, behind the same rulesets and gates as the other metadata writers, and it makes no privacy or promotion decision."
+    },
+    {
+      "path": "scripts/reconcile-repos.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/reconcile-cli and runs it under the entry guard. The reconcile logic is in packages/registry/src/reconcile-*.ts, pinned by reconcile-repos.test.ts and reconcile-wiki-rename-guard.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
+      "path": "packages/registry/src/reconcile-cli.ts",
+      "reason": "The goke entrypoint of the scheduled reconcile: it declares no options and no positionals, reads GITHUB_REPOSITORY, calls handleReconcile and prints the result JSON the workflow's jq paths read. A mutation run would score only the config object and the GITHUB_REPOSITORY parsing. The CLI surface (name, readOnly, the invalid-repository error, a usage error on unmatched argv) is pinned by packages/registry/src/reconcile-cli.test.ts."
+    },
+    {
+      "path": "packages/registry/src/reconcile-model.ts",
+      "reason": "The shared vocabulary of the reconcile seams: ReconcileError, the logger and client types, toApiError and the owner, repo and path defaults. It decides nothing; every behaviour that uses it is pinned by reconcile-repos.test.ts."
+    },
+    {
+      "path": "packages/registry/src/reconcile-labels.ts",
+      "reason": "The reconcile label constants, pinned against .github/settings.yml by scripts/settings-labels-effective-set.test.ts. They are data, not a gate."
+    },
+    {
+      "path": "packages/registry/src/reconcile-plan.ts",
+      "reason": "The pure reconcile engine (reconcileRepos, detectRenames, migrateRepoEntry and the merge helpers). It decides which entries change and which surveys and issues follow, and writes nothing: the plan is committed to data only after the integrity check, and reaches main only through the merge-data gates. It is pinned by decision-table tests in packages/registry/src/reconcile-repos.test.ts. It is not in the mutate list because reconcile is a scheduled writer to data behind the repository rulesets rather than a promotion or privacy gate. Re-evaluate if reconcile gains a path that writes outside data."
+    },
+    {
+      "path": "packages/registry/src/reconcile-discovery.ts",
+      "reason": "The read probes of a reconcile run (access list, status and field probes, owned and contrib enumeration). Every probe is a GET; a misrouted probe marks an entry lost-access, which the next run repairs. Pinned by packages/registry/src/reconcile-repos.test.ts with injected Octokit clients. Not in the mutate list: transport glue around the injected clients."
+    },
+    {
+      "path": "packages/registry/src/reconcile-integrity.ts",
+      "reason": "The data-branch integrity check: tip-commit author and the required data rules, with the alert issue and the DATA_BRANCH_TAMPER throw. It fails closed, and the tamper path for each variant is pinned through handleReconcile in packages/registry/src/reconcile-repos.test.ts. It is not in the mutate list because it guards a writer to data, not a promotion or privacy boundary: main is protected by the merge-data gates and the rulesets."
+    },
+    {
+      "path": "packages/registry/src/reconcile-issues.ts",
+      "reason": "Pure renderers from a queued reconcile issue to an issues.create payload; the node-ID and owner markers they embed are pinned by packages/registry/src/reconcile-repos.test.ts. They decide nothing about what is written to data or main."
+    },
+    {
+      "path": "packages/registry/src/reconcile-effects.ts",
+      "reason": "The writes of a reconcile run (star sync, survey dispatch with its stagger, the issue queue, labels, auto-close and self-heal). Every failure is non-blocking and logged. Pinned by packages/registry/src/reconcile-repos.test.ts with injected clients. Not in the mutate list: transport glue, and none of it writes to data or main."
+    },
+    {
+      "path": "packages/registry/src/reconcile-handler.ts",
+      "reason": "The I/O shell of a reconcile run: handleReconcile reads, plans, verifies the data branch, commits to data through commit-metadata, then dispatches, files issues and syncs stars. Pinned end to end by packages/registry/src/reconcile-repos.test.ts and packages/registry/src/reconcile-wiki-rename-guard.test.ts with injected clients. Not in the mutate list because it is an I/O shell around those clients and a scheduled writer to data only."
     }
   ]
 }
