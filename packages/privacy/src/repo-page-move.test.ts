@@ -1,4 +1,4 @@
-import type {RepoEntry} from './schemas.ts'
+import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {
   INDEX_PAGE,
   INDEX_PATH,
@@ -36,10 +36,10 @@ import {
   type PlanRepoPageMoveParams,
   type RepoPageMovePlan,
 } from '@fro.bot/wiki-write-core'
+import {buildPrivateTokenSet, computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 import {buildPublicSlugMap, detectPrivateWikiLeaks, type WikiPageSnapshot} from './check-wiki-private-presence.ts'
-import {buildPrivateTokenSet, computeRepoSlug} from './wiki-slug.ts'
 
 const TIMESTAMP = new Date('2026-10-10T12:34:56Z')
 

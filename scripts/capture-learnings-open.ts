@@ -21,6 +21,12 @@
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
+import {isRecord} from '@fro-bot/core/guards'
+import {
+  learningBodyHasPrivateLeak,
+  loadPrivateTokensFromDisk,
+  logDiffHasSecret,
+} from '@fro-bot/privacy/capture-learnings-privacy'
 import {
   buildMergeShaMarker,
   createOctokitFromEnv,
@@ -29,12 +35,6 @@ import {
   type CandidateDigest,
   type OctokitClient,
 } from './capture-learnings-harvest.ts'
-import {
-  isRecord,
-  learningBodyHasPrivateLeak,
-  loadPrivateTokensFromDisk,
-  logDiffHasSecret,
-} from './capture-learnings-privacy.ts'
 
 // ---------------------------------------------------------------------------
 // Types

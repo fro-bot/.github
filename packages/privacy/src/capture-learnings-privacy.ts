@@ -16,17 +16,9 @@
 
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
+import {isRecord} from '@fro-bot/core/guards'
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {parse} from 'yaml'
-
-import {buildPrivateTokenSet} from './wiki-slug.ts'
-
-// ---------------------------------------------------------------------------
-// Type guards
-// ---------------------------------------------------------------------------
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 // ---------------------------------------------------------------------------
 // Secret detection — block patterns (pure, no I/O)

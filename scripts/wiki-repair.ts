@@ -1,10 +1,10 @@
+import type {PrivateWikiLeak, WikiPageSnapshot} from '@fro-bot/privacy/check-wiki-private-presence'
 import type {
   CommitWikiChangesParams,
   CommitWikiChangesResult,
   OctokitClient,
   WikiLintFinding,
 } from '@fro.bot/wiki-write-core'
-import type {PrivateWikiLeak, WikiPageSnapshot} from './check-wiki-private-presence.ts'
 import type {RepoEntry} from './schemas.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
@@ -15,6 +15,12 @@ import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {
+  buildPublicSlugMap,
+  detectPrivateWikiLeaks,
+  loadWikiPages,
+  requireGrandfatherDir,
+} from '@fro-bot/privacy/check-wiki-private-presence'
+import {
   commitWikiChanges,
   lintWikiSnapshot,
   pageTypeFromPath,
@@ -23,12 +29,6 @@ import {
   WikiIngestError,
 } from '@fro.bot/wiki-write-core'
 import YAML from 'yaml'
-import {
-  buildPublicSlugMap,
-  detectPrivateWikiLeaks,
-  loadWikiPages,
-  requireGrandfatherDir,
-} from './check-wiki-private-presence.ts'
 import {assertReposFile} from './schemas.ts'
 
 // ---------------------------------------------------------------------------

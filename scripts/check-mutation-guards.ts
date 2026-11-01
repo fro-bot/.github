@@ -1226,8 +1226,8 @@ export function reachedModulesTransitive(
  * (static from-clause, dynamic `import(...)`, or `export ... from`) to the *source* file the
  * subpath's `package.json` `exports` map points to at build time — `<subpath>` (or `index` for
  * the bare package specifier) maps to `packages/wiki-write-core/src/<subpath>.ts`. This is the
- * relative-import extractor's blind spot: a `scripts/` file that imports the package by name
- * (e.g. `scripts/check-private-leak.ts`'s `import {checkPrivateLeak} from
+ * relative-import extractor's blind spot: a file that imports the package by name
+ * (e.g. `packages/privacy/src/check-private-leak.ts`'s `import {checkPrivateLeak} from
  * '@fro.bot/wiki-write-core/private-leak'`) has no `./`/`../` specifier for `directSpecifiers`
  * to find, so the relative-only reach computation above would never connect it to the source
  * file whose compiled output it actually depends on.

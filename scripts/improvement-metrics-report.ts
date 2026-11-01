@@ -23,7 +23,8 @@
 
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-import {isRecord} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
+import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {
   buildEdgeChecklistLine,
   buildReportVersionMarker,
@@ -34,7 +35,6 @@ import {
   recoverPriorTickState,
 } from './improvement-metrics-core.ts'
 import {isMetricsDigest, type DetectEdge, type MetricsDigest} from './improvement-metrics-detect.ts'
-import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Gate-failure contract
@@ -454,9 +454,9 @@ export async function main(): Promise<void> {
   const digestPath = process.env.IMPROVEMENT_METRICS_DIGEST_PATH
   const resultPath = process.env.IMPROVEMENT_METRICS_RESULT_PATH
 
-  const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
-  const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
-  const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+  const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
+  const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
+  const {makePublicOutputTokens} = await import('@fro-bot/privacy/status-truth-public-output')
 
   let tokens: PublicOutputTokens
   try {

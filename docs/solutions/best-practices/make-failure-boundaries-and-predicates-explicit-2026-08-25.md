@@ -51,7 +51,7 @@ implements a fail-soft `main()`, while `scripts/capture-patterns-open.ts` commen
 The second concern was predicate drift: `isRecord` was defined privately in one module while
 another module imported it from a shared privacy module. Two implementations of the same
 predicate inside one feature can diverge over time. On main today, the capture-patterns feature
-uses the shared definition in `scripts/capture-learnings-privacy.ts`; the duplication described in
+uses the shared definition in `@fro-bot/core/guards`; the duplication described in
 issue #3695 has been resolved for that feature. Other, unrelated scripts still have local guards,
 so this is not a claim that every `isRecord` in `scripts/` is globally deduplicated.
 
@@ -225,22 +225,23 @@ with configured tests and no `testFiles` map yields `instrumentation-failed`, no
 
 ### One canonical `isRecord` for capture-patterns
 
-The current shared definition is in `scripts/capture-learnings-privacy.ts`:
+The current shared definition is `isRecord` in `@fro-bot/core/guards` (`packages/core/src/guards.ts`). It
+used to be exported from `capture-learnings-privacy`; that module no longer defines it:
 
 ```ts
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return isObject(value) && !Array.isArray(value)
 }
 ```
 
-Both capture-patterns consumers import it:
+Both capture-patterns consumers import it from there:
 
 ```ts
 // scripts/capture-patterns-open.ts
-import {isRecord} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
 
 // scripts/capture-patterns-synthesis.ts
-import {isRecord} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
 ```
 
 The issue's feature-local duplication no longer exists on main. A current search across `scripts/`

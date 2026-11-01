@@ -25,6 +25,7 @@ import {rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {buildClassKey, buildEdgeFingerprint} from './improvement-metrics-core.ts'
 import {computeMetrics, recoverPriorTickState, writeImprovementMetricsDigestFile} from './improvement-metrics-detect.ts'
@@ -34,7 +35,6 @@ import {
   ReportRenderBlockedError,
   upsertReportIssue,
 } from './improvement-metrics-report.ts'
-import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 const NOW = new Date('2026-07-10T00:00:00.000Z')
 

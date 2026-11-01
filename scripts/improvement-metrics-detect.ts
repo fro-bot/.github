@@ -675,8 +675,8 @@ async function main(): Promise<void> {
   const result = emptyDetectResult()
 
   try {
-    const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
-    const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
+    const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
+    const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
 
     try {
       await Promise.all([loadPrivateTokensFromDisk(), loadRedactedCanonicalIdsFromDisk()])

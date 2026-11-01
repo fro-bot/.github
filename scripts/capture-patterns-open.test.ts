@@ -11,6 +11,7 @@
 
 import type {PatternCandidateDigest} from './capture-patterns-cluster.ts'
 
+import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it, vi} from 'vitest'
 import {
   derivePatternProposalTitle,
@@ -28,7 +29,6 @@ import {
   type ExistingPatternProposalIssue,
   type ExistingPatternProposals,
 } from './capture-patterns-synthesis.ts'
-import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Fixtures

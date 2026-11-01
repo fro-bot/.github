@@ -13,6 +13,7 @@
 
 import type {PublicOutputSurface, PublicOutputTokens} from './status-truth-public-output.ts'
 
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it} from 'vitest'
 import {learningBodyHasPrivateLeak} from './capture-learnings-privacy.ts'
 import {
@@ -23,7 +24,6 @@ import {
   makePublicOutputTokens,
   PHASE2_RESERVED_SURFACES,
 } from './status-truth-public-output.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers

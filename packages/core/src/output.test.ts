@@ -197,6 +197,27 @@ describe('writeGithubOutputs', () => {
     })
   })
 
+  describe('an unknown policy', () => {
+    // The policy is a string at run time, so a value that is neither 'skip' nor 'throw' (a typo, or
+    // a variable that was never set) must not quietly behave as one of them.
+    it.each([[''], ['Skip'], ['THROW'], ['skipp']])('%j throws, with the variable set or not', policy => {
+      const {writes, append} = recorder()
+      const options = {onMissing: policy as never, append}
+      const expected = new TypeError(`invalid onMissing policy: ${JSON.stringify(policy)}, expected 'skip' or 'throw'`)
+      expect(() => writeGithubOutputs({a: '1'}, {...options, env})).toThrow(expected)
+      expect(() => writeGithubOutputs({a: '1'}, {...options, env: {}})).toThrow(expected)
+      expect(() => appendStepSummary('x', {...options, env: {GITHUB_STEP_SUMMARY: '/s'}})).toThrow(expected)
+      expect(writes).toEqual([])
+    })
+
+    it('is rejected before a bad entry name is, so the policy is the first thing checked', () => {
+      const {append} = recorder()
+      expect(() => writeGithubOutputs({'bad name': 'v'}, {onMissing: 'nope' as never, env, append})).toThrow(
+        'invalid onMissing policy',
+      )
+    })
+  })
+
   describe('defaults', () => {
     it('reads process.env when no env is given', () => {
       vi.stubEnv('GITHUB_OUTPUT', '/from/process-env')

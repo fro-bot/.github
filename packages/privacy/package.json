@@ -1,0 +1,29 @@
+{
+  "name": "@fro-bot/privacy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The privacy gates, token loaders and operator tools of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./capture-learnings-privacy": "./src/capture-learnings-privacy.ts",
+    "./check-private-leak": "./src/check-private-leak.ts",
+    "./check-private-leak-cli": "./src/check-private-leak-cli.ts",
+    "./check-wiki-private-presence": "./src/check-wiki-private-presence.ts",
+    "./check-wiki-private-presence-cli": "./src/check-wiki-private-presence-cli.ts",
+    "./enumerate-existing-leaks": "./src/enumerate-existing-leaks.ts",
+    "./enumerate-existing-leaks-cli": "./src/enumerate-existing-leaks-cli.ts",
+    "./private-repo-resolution": "./src/private-repo-resolution.ts",
+    "./redacted-ids": "./src/redacted-ids.ts",
+    "./resolve-private": "./src/resolve-private.ts",
+    "./resolve-private-cli": "./src/resolve-private-cli.ts",
+    "./status-truth-public-output": "./src/status-truth-public-output.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

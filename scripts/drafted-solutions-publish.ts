@@ -57,8 +57,15 @@ import {tmpdir} from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-
-import {isRecord, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
+import {loadPrivateTokensFromDisk} from '@fro-bot/privacy/capture-learnings-privacy'
+import {loadRedactedCanonicalIdsFromDisk} from '@fro-bot/privacy/redacted-ids'
+import {
+  applyPublicOutputGate,
+  makePublicOutputTokens,
+  type PublicOutputSurface,
+  type PublicOutputTokens,
+} from '@fro-bot/privacy/status-truth-public-output'
 import {
   hashProposalBody,
   mergeCoverageRows,
@@ -81,13 +88,6 @@ import {
   type DraftedDigest,
   type OpenDraftedPr,
 } from './drafted-solutions-shared.ts'
-import {loadRedactedCanonicalIdsFromDisk} from './status-truth-proposals.ts'
-import {
-  applyPublicOutputGate,
-  makePublicOutputTokens,
-  type PublicOutputSurface,
-  type PublicOutputTokens,
-} from './status-truth-public-output.ts'
 import {
   DRAFTED_SOLUTIONS_HANDOFF_POLICY,
   validateAndApplyHandoff,

@@ -26,6 +26,9 @@
  *   aliases in plain objects: `__proto__` goes to the inherited setter, so its unknown-option check never
  *   sees it and the action would run, and `constructor` and the like make goke call an inherited method
  *   and throw out of `runCli`.
+ * - Help is a request whatever it is given: `--help false`, `--help=false` and `-h=false` stop at help
+ *   like a plain `--help` (goke reads them as `help: false`, so a check for `true` alone let the action
+ *   run), and a negated help flag (`--no-help`) is a usage error.
  * - Defaults are applied once, by the zod schema: goke is told not to seed them, because it would hand
  *   the schema an already-defaulted value to parse a second time.
  * - `NO_COLOR` is set for the one load of goke, which every run shares, and every sink strips ANSI as a
@@ -154,6 +157,16 @@ export interface CliConfig {
   readonly errorExitCode?: number
   /** Text written to stderr for a thrown action error, newline included. Default: the message and a newline. */
   readonly errorFormat?: (error: unknown) => string
+  /**
+   * The text usage and help print instead of goke's help, newline included. For a CLI whose usage
+   * text is part of its contract. Default: goke's help.
+   */
+  readonly usageText?: string
+  /**
+   * Called once, with the env of the run, when argv ends in usage or help and no action ran. For a CLI
+   * that must report that outcome somewhere else, such as a step output.
+   */
+  readonly onUsage?: (env: Readonly<Record<string, string | undefined>>) => void
 }
 
 export interface CliInput {
@@ -324,6 +337,15 @@ function namesInheritedProperty(flag: string): boolean {
 }
 
 /**
+ * Whether a flag negates help (`--no-help`, `--no-h`). Help is a request, never a setting, so a
+ * negation is no more meaningful than the flag it negates: it is refused, not left to goke.
+ */
+function negatesHelp(flag: string): boolean {
+  const bare = flag.slice(flag.search(/[^-]/u))
+  return bare === 'no-help' || bare === 'no-h'
+}
+
+/**
  * The usage message for the first flag, before any `--`, that goke would mishandle, or undefined. The
  * flag is named as written and without its value; a negative number is a value, not a flag, and
  * anything after `=` belongs to the value.
@@ -331,6 +353,7 @@ function namesInheritedProperty(flag: string): boolean {
  * - A dotted name: goke splits it on `.` and assigns down the path through whatever objects it finds,
  *   inherited ones included, so `--toString.call=x` reaches a built-in.
  * - A name every object has (`namesInheritedProperty`).
+ * - A negated help flag (`negatesHelp`).
  *
  * Every other name goke either handles or rejects as an unknown option; this is not an unknown-flag
  * parser. The regex lives in the function: Stryker covers a module-level constant with no test.
@@ -341,7 +364,7 @@ function findUnsupportedOption(argv: readonly string[]): string | undefined {
     if (!token.startsWith('-') || Number.isFinite(Number(token))) continue
     const flag = token.split('=')[0] ?? token
     if (flag.includes('.')) return `unsupported dotted option name \`${flag}\``
-    if (namesInheritedProperty(flag)) return `unsupported option name \`${flag}\``
+    if (namesInheritedProperty(flag) || negatesHelp(flag)) return `unsupported option name \`${flag}\``
   }
   return undefined
 }
@@ -370,7 +393,9 @@ async function resolveVerdict(
     if (error instanceof ExitSignal) return codes.usage
     throw error
   }
-  if (cli.options.help === true) return noArgvUsage ? codes.usage : codes.help
+  // goke reads `--help false`, `--help=false` and `-h=false` as `help: false`. The flag is present
+  // in every spelling, and a help flag with any value is still a request for help.
+  if (cli.options.help !== undefined) return noArgvUsage ? codes.usage : codes.help
 
   const match = session.registered.find(entry => entry.goke === cli.matchedCommand)
   if (match === undefined) return usage(`unrecognized arguments: ${argv.join(' ')}`)
@@ -483,11 +508,13 @@ export async function runCli(config: CliConfig, input: CliInput): Promise<CliRes
     return {exitCode, stdout: stripAnsi(stdout.join('')), stderr: stripAnsi(stderr.join(''))}
   }
 
+  config.onUsage?.(input.env ?? process.env)
   if (output.help === '') cli.outputHelp()
+  const usageText = config.usageText ?? output.help
   return {
     exitCode: verdict,
-    stdout: usageStream === 'stdout' ? output.help : '',
-    stderr: output.errors + (usageStream === 'stderr' ? output.help : ''),
+    stdout: usageStream === 'stdout' ? usageText : '',
+    stderr: output.errors + (usageStream === 'stderr' ? usageText : ''),
   }
 }
 

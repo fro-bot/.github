@@ -342,5 +342,5 @@ flowchart TD
 - A1 origin: [docs/brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md](../brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md)
 - Existing harvest: [scripts/capture-learnings-harvest.ts](../../scripts/capture-learnings-harvest.ts)
 - Existing opener: [scripts/capture-learnings-open.ts](../../scripts/capture-learnings-open.ts)
-- Existing privacy gate: [scripts/capture-learnings-privacy.ts](../../scripts/capture-learnings-privacy.ts)
+- Existing privacy gate: [packages/privacy/src/capture-learnings-privacy.ts](../../packages/privacy/src/capture-learnings-privacy.ts)
 - Existing workflow: [.github/workflows/capture-learnings.yaml](../../.github/workflows/capture-learnings.yaml)

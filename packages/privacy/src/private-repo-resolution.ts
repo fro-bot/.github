@@ -2,6 +2,7 @@ import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import process from 'node:process'
 
+import {isObject} from '@fro-bot/core/guards'
 import {retry} from '@fro-bot/core/retry'
 
 // ---------------------------------------------------------------------------
@@ -36,17 +37,18 @@ export const GRAPHQL_QUERY = 'query($id: ID!) { node(id: $id) { ... on Repositor
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null
-}
-
 function isRateLimitError(err: unknown): boolean {
   return err instanceof Error && /rate.?limit/i.test(err.message)
 }
 
+/** `value[key]` for any object, an array included; a missing key is `undefined`. */
+function fieldOf(value: object, key: string): unknown {
+  return Reflect.get(value, key)
+}
+
 function extractStderr(err: unknown): string | undefined {
-  if (!isRecord(err)) return undefined
-  const s = err.stderr
+  if (!isObject(err)) return undefined
+  const s = fieldOf(err, 'stderr')
   if (typeof s === 'string') return s
   if (s instanceof Buffer) return s.toString('utf8')
   return undefined
@@ -89,16 +91,17 @@ export function makeGhNodeIdResolver(
     })
 
     const parsed: unknown = JSON.parse(stdout)
-    if (!isRecord(parsed)) return {error: 'error'}
+    if (!isObject(parsed)) return {error: 'error'}
 
-    const data = parsed.data
-    if (!isRecord(data)) return {error: 'error'}
+    const data = fieldOf(parsed, 'data')
+    if (!isObject(data)) return {error: 'error'}
 
-    const node = data.node
+    const node = fieldOf(data, 'node')
     if (node === null || node === undefined) return {error: 'access-lost'}
 
-    if (isRecord(node) && typeof node.nameWithOwner === 'string') {
-      return {nameWithOwner: node.nameWithOwner}
+    const nameWithOwner = isObject(node) ? fieldOf(node, 'nameWithOwner') : undefined
+    if (typeof nameWithOwner === 'string') {
+      return {nameWithOwner}
     }
 
     // node exists but no nameWithOwner (unexpected shape)

@@ -15,6 +15,7 @@ import {rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it, vi} from 'vitest'
 import {buildEdgeChecklistLine, buildReportVersionMarker, parseReportVersionMarker} from './improvement-metrics-core.ts'
 import {isMetricsDigest} from './improvement-metrics-detect.ts'
@@ -27,7 +28,6 @@ import {
   ReportRenderBlockedError,
   upsertReportIssue,
 } from './improvement-metrics-report.ts'
-import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 const {mockCreateOctokit, mockLoadRedactedCanonicalIdsFromDisk} = vi.hoisted(() => ({
   mockCreateOctokit: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('@fro-bot/core/github', () => ({
   createOctokit: mockCreateOctokit,
 }))
 
-vi.mock('./status-truth-proposals.ts', () => ({
+vi.mock('@fro-bot/privacy/redacted-ids', () => ({
   loadRedactedCanonicalIdsFromDisk: mockLoadRedactedCanonicalIdsFromDisk,
 }))
 

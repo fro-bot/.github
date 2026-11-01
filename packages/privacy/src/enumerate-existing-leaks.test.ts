@@ -1,4 +1,4 @@
-import type {ReposFile} from './schemas.ts'
+import type {ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 import {describe, expect, it} from 'vitest'
 

@@ -24,6 +24,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 - [Scripts directory](scripts/): TypeScript entrypoints run with Bun -- no build step; `.ts` import extensions required
 - [Packages](README.md#packages): private `@fro-bot/` workspace packages that export `.ts` source with no build step, with the package dependency graph and a C4 container view
 - [Core package](packages/core/README.md): `@fro-bot/core` type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, a retry loop, the Octokit client factory, the goke CLI runner, and the required-env reader
+- [Privacy package](packages/privacy/README.md): `@fro-bot/privacy` the private-leak scan, the wiki-presence gate, the public-output gate, the private-token and redacted-ID loaders, and the operator lookup and enumeration tools
 - [Test kit](packages/test-kit/README.md): `@fro-bot/test-kit` shared test fakes and helpers, imported by tests only
 - [Wiki-write core package](packages/wiki-write-core/README.md): `@fro.bot/wiki-write-core`, the only published package
 - [Metadata README](metadata/README.md): schemas for `metadata/*.yaml` (allowlist, repos, renovate dispatch, social cooldowns) and the `data` branch commit contract

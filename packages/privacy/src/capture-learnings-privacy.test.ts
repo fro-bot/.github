@@ -11,15 +11,14 @@
  * that proves removing the check would let the content through.
  */
 
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it} from 'vitest'
-
 import {
   learningBodyHasPrivateLeak,
   loadPrivateTokensFromDisk,
   logDiffHasSecret,
   redactLogDiffSecrets,
 } from './capture-learnings-privacy.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

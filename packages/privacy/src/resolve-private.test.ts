@@ -1,5 +1,5 @@
+import type {ReposFile} from '@fro.bot/wiki-write-core/schemas'
 import type {NodeIdResolver, ResolvedEntry} from './resolve-private.ts'
-import type {ReposFile} from './schemas.ts'
 import {describe, expect, it, vi} from 'vitest'
 import {requireToken, resolvePrivateEntries} from './resolve-private.ts'
 
@@ -31,7 +31,7 @@ vi.mock('node:fs/promises', async importOriginal => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeFile(entries: Partial<import('./schemas.ts').RepoEntry>[]): ReposFile {
+function makeFile(entries: Partial<import('@fro.bot/wiki-write-core/schemas').RepoEntry>[]): ReposFile {
   return {
     version: 1,
     repos: entries.map((e, i) => ({

@@ -17,15 +17,14 @@ import {execFileSync} from 'node:child_process'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-import {parse} from 'yaml'
-
+import {isRecord} from '@fro-bot/core/guards'
 import {
-  isRecord,
   learningBodyHasPrivateLeak,
   loadPrivateTokensFromDisk,
   logDiffHasSecret,
   redactLogDiffSecrets,
-} from './capture-learnings-privacy.ts'
+} from '@fro-bot/privacy/capture-learnings-privacy'
+import {parse} from 'yaml'
 
 // ---------------------------------------------------------------------------
 // Constants

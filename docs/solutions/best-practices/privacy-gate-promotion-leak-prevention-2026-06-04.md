@@ -39,7 +39,7 @@ metadata before repaired pages ever reach the `data` branch. See "Related" for t
 
 This control plane promotes an autonomous agent's generated wiki and metadata from an
 unprotected `data` branch to the public `main` branch on a schedule. Private repository names
-must never reach `main`. An existing gate (`scripts/check-wiki-private-presence.ts`) already
+must never reach `main`. An existing gate (`packages/privacy/src/check-wiki-private-presence.ts`) already
 blocked a private repo's *own* wiki page by slug/filename — yet a private name still promoted
 cleanly to the public branch.
 
@@ -130,7 +130,7 @@ a different way the naive design leaks:
 The resolver cannot distinguish deleted from invisible:
 
 ```ts
-// scripts/private-repo-resolution.ts — node() returns null for BOTH cases
+// packages/privacy/src/private-repo-resolution.ts — node() returns null for BOTH cases
 if (node === null || node === undefined) return {error: 'access-lost'}
 ```
 
@@ -138,7 +138,7 @@ Before — promotion mode skipped `access-lost`, so a mis-scoped PAT passed ever
 any non-success resolution (including `access-lost`) and any missing `node_id` block:
 
 ```ts
-// scripts/check-private-leak.ts — runPromotionScan
+// packages/privacy/src/check-private-leak.ts — runPromotionScan
 for (const nodeId of privateNodeIds) {
   const result = await resolver(nodeId)
   if ('nameWithOwner' in result) {
@@ -169,7 +169,7 @@ if (failedNodeIds.length > 0) {
 ```
 
 ```ts
-// scripts/check-private-leak.ts — strip the broad PAT from the git diff subprocess
+// packages/privacy/src/check-private-leak.ts — strip the broad PAT from the git diff subprocess
 const gitEnv: NodeJS.ProcessEnv = {...process.env}
 delete gitEnv.FRO_BOT_POLL_PAT
 diff = gitDiffRunner(['diff', 'origin/main...origin/data'], gitEnv)

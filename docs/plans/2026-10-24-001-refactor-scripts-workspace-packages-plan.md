@@ -604,7 +604,7 @@ CLI tables follow one legend:
 - "No argv" means the caller passes none.
 - Library-only modules have no row.
 
-- [ ] **Unit 6: `@fro-bot/privacy`**
+- [x] **Unit 6: `@fro-bot/privacy`** (PR E)
 
 **Goal:** Move the privacy family into one package and break the knowledge ↔ status-truth cycle.
 
@@ -640,7 +640,7 @@ CLI tables follow one legend:
 
 **Approach:**
 
-- `check-private-leak` keeps writing `scan_result` before every exit, and keeps running on Node from both invocations (the standalone job and the `merge-data.yaml` promotion step).
+- The `check-private-leak` PR scan (no argv) writes `scan_result` before every exit, including an error it does not handle itself: the CLI writes `scan_result=error` unless the scan already wrote a `scan_result`, then rethrows, so the exit stays 1. `--promotion` gates on its exit code (`merge-data.yaml:95` reads nothing else) and writes no `scan_result`. Both keep running on Node (the standalone job and the `merge-data.yaml` promotion step).
 - `check-private-leak` declares only `--promotion`. Argv that matches nothing declared, including `--help`, is a usage error: it writes `scan_result=error`, exits 1 and does not scan. Today an unknown argv still scans. This is a change for argv no caller sends, and it fails closed.
 - `enumerate-existing-leaks` keeps its usage text on stdout, with exit 0 for `--help` and exit 1 for no args, as it does today.
 - `resolve-private` declares its optional repos-path positional, so `resolve-private metadata/repos.yaml` still runs.

@@ -1,7 +1,8 @@
-import type {RepoEntry} from './schemas.ts'
+import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 
 import {resolve} from 'node:path'
 import process from 'node:process'
+import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   buildPublicSlugMap,
@@ -15,7 +16,6 @@ import {
   runCli,
   type WikiPageSnapshot,
 } from './check-wiki-private-presence.ts'
-import {computeRepoSlug} from './wiki-slug.ts'
 
 // Hoisted mocks — vitest transforms these to the top of the module at compile time,
 // so they take effect before any imports regardless of source order.
@@ -1946,163 +1946,5 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     expect(result.stdout).toContain('no private wiki leaks detected')
     // stderr must be exactly empty on the clean normal-mode path
     expect(result.stderr).toBe('')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// CLI self-invoke guard (import.meta.url === file://<argv[1]>)
-// ---------------------------------------------------------------------------
-
-describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
-  // Every other test in this file imports the module without ever setting process.argv[1] to its
-  // own path, so the `false` branch of every mutator variant here is trivially exercised (real
-  // code and every mutant behave identically when the condition is never true) -- that is NOT
-  // sufficient to kill the mutants; a genuine discriminating test must make the condition true for
-  // the *real* code and observe main() actually run. Cache-busts the dynamic import (unique query
-  // string) so the module's top-level code re-executes with the manipulated argv/env, rather than
-  // returning the already-cached module instance from every earlier `import` in this file.
-
-  it("invokes main() and exits 0 when process.argv[1] matches the module's own path and detection finds no leaks", async () => {
-    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stdoutOutput: string[] = []
-    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
-      stdoutOutput.push(String(msg))
-      return true
-    })
-    const stderrSpyGuard = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
-    mockReaddir.mockRejectedValue(enoent)
-    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
-
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather'
-    try {
-      // #then: the guard fired, main() ran, runCli resolved 0 with a clean message, and main()'s
-      // own body wrote that message to stdout WITHOUT calling process.exit (exitCode === 0 branch).
-      await import(`${modulePath.href}?guard-test-main-clean`)
-      expect(exitSpy).not.toHaveBeenCalled()
-      expect(stdoutOutput.join('')).toContain('no private wiki leaks detected')
-      expect(stdoutSpy).toHaveBeenCalledTimes(1)
-      // result.stderr is '' on this clean path — main()'s `if (result.stderr)` must NOT fire
-      expect(stderrSpyGuard).not.toHaveBeenCalled()
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
-    }
-  })
-
-  it("invokes main() and exits 1 when process.argv[1] matches the module's own path and a leak is found", async () => {
-    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const stdoutSpyGuard = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
-    mockReaddir
-      .mockResolvedValueOnce([dirent('acme--secret.md')]) // findStructuralViolations
-      .mockResolvedValueOnce([dirent('acme--secret.md')]) // loadWikiPages
-      .mockRejectedValueOnce(enoentGrandfather) // grandfather dir ENOENT
-    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
-
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather-leak'
-    try {
-      // #then: the guard fired, main() ran, runCli resolved exitCode 1 with the redacted report on
-      // stderr, and main()'s own body called process.exit(1) (the exitCode !== 0 branch) -- the
-      // unmistakable signature that main() actually executed with a real result, not a stub.
-      await expect(import(`${modulePath.href}?guard-test-main-leak`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      expect(stderrOutput.join('')).toContain('leak-1')
-      // result.stdout is '' on this normal-mode leak path — main()'s `if (result.stdout)` must NOT fire
-      expect(stdoutSpyGuard).not.toHaveBeenCalled()
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
-    }
-  })
-
-  it('invokes main() with argv sliced past the node/script positions, not the raw argv — mutation gate proof (process.argv.slice(2))', async () => {
-    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const stdoutOutput: string[] = []
-    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
-      stdoutOutput.push(String(msg))
-      return true
-    })
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
-    mockReaddir
-      .mockResolvedValueOnce([dirent('acme--secret.md')]) // findStructuralViolations
-      .mockResolvedValueOnce([dirent('acme--secret.md')]) // loadWikiPages
-      .mockRejectedValueOnce(enoentGrandfather) // grandfather dir ENOENT
-    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
-
-    // argv[1] must equal the module path for the self-invoke guard to fire. Put the
-    // '--operator-report' flag at argv[0] (the node-binary position) instead of after argv[1]:
-    // real `process.argv.slice(2)` on this 2-element array yields [] (normal/redacted mode);
-    // the MethodExpression mutant (`process.argv` unsliced) yields the full 2-element array,
-    // which DOES include '--operator-report' (operator/unredacted mode) — the two modes produce
-    // observably different report shapes for an identical leak, discriminating the mutant.
-    process.argv = ['--operator-report', modulePath.pathname]
-    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather-slice'
-    try {
-      await expect(import(`${modulePath.href}?guard-test-main-slice`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      // Real (sliced argv is []): normal mode — redacted report on stderr, filename NOT on stdout.
-      expect(stderrOutput.join('')).toContain('leak-1')
-      expect(stdoutOutput.join('')).not.toContain('acme--secret.md')
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
-    }
-  })
-
-  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
-    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
-    try {
-      // #then: with a non-matching argv[1], the module imports cleanly — no exit call, no main() run.
-      await import(`${modulePath.href}?guard-test-noop`)
-      expect(exitSpy).not.toHaveBeenCalled()
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-    }
   })
 })

@@ -5287,108 +5287,6 @@ describe('main() — fetchPrivateNodeIds: data-absent fallback (Oracle-specified
 // isGh404Error — direct unit tests for 404-detection regex logic
 // ---------------------------------------------------------------------------
 
-describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
-  // The guard at the bottom of the module only differs from a real invocation when the module is
-  // run directly (`node check-private-leak.ts`), not imported by a test. Every other test in this
-  // file imports the module without ever setting process.argv[1] to its own path, so the `false`
-  // branch of every mutator variant here is trivially exercised (real code and every mutant behave
-  // identically when the condition is never true) -- that is NOT sufficient to kill the mutants;
-  // a genuine discriminating test must make the condition true for the *real* code and observe
-  // main()/runPromotionCli() actually run. Cache-busts the dynamic import (unique query string) so
-  // the module's top-level code re-executes with the manipulated argv, rather than returning the
-  // already-cached module instance from every earlier `import` in this file.
-  it("invokes main() when process.argv[1] matches the module's own path and --promotion is absent", async () => {
-    const modulePath = new URL('./check-private-leak.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
-    delete process.env.GITHUB_EVENT_PATH
-    try {
-      // #then: the guard fired and called main(), which fails closed on GITHUB_EVENT_PATH being
-      // unset -- the exact, unmistakable signature of main() actually running. If the guard's
-      // ConditionalExpression/EqualityOperator/StringLiteral mutants forced this branch to never
-      // fire, this import would resolve cleanly with no exit call and no stderr message.
-      await expect(import(`${modulePath.href}?guard-test-main`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      expect(stderrOutput.join('')).toContain('GITHUB_EVENT_PATH not set')
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      delete process.env.GITHUB_EVENT_PATH
-    }
-  })
-
-  it("invokes runPromotionCli() when process.argv[1] matches the module's own path and --promotion is present", async () => {
-    const modulePath = new URL('./check-private-leak.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stderrOutput: string[] = []
-    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
-      stderrOutput.push(String(msg))
-      return true
-    })
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname, '--promotion']
-    delete process.env.FRO_BOT_POLL_PAT
-    delete process.env.GITHUB_EVENT_PATH
-    try {
-      // #then: the guard fired and called runPromotionCli() specifically (not main()) -- asserted
-      // via runPromotionCli's own unmistakable message text, distinct from main()'s "GITHUB_EVENT_PATH
-      // not set" message. Discriminates the StringLiteral mutant on `'--promotion'` -> `''`: with
-      // argv containing '--promotion' but the mutant checking `.includes('')` (always false, argv
-      // never contains an empty string), the else branch would wrongly call main() instead --
-      // main() would ALSO exit(1) here (GITHUB_EVENT_PATH is also unset), so only the exact message
-      // text discriminates which function actually ran.
-      await expect(import(`${modulePath.href}?guard-test-promotion`)).rejects.toThrow('process.exit called')
-      expect(exitSpy).toHaveBeenCalledWith(1)
-      const stderrText = stderrOutput.join('')
-      expect(stderrText).toContain('FRO_BOT_POLL_PAT not set. This is required for promotion mode')
-      expect(stderrText).not.toContain('GITHUB_EVENT_PATH not set')
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-      delete process.env.FRO_BOT_POLL_PAT
-      delete process.env.GITHUB_EVENT_PATH
-    }
-  })
-
-  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
-    const modulePath = new URL('./check-private-leak.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
-    delete process.env.GITHUB_EVENT_PATH
-    try {
-      // #then: with a non-matching argv[1], the module imports cleanly — no exit call.
-      await import(`${modulePath.href}?guard-test-noop`)
-      expect(exitSpy).not.toHaveBeenCalled()
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-    }
-  })
-})
-
 describe('isGh404Error()', () => {
   it('detects HTTP 404 via stderr containing "HTTP 404"', () => {
     const error = Object.assign(new Error('gh: Not Found (HTTP 404)'), {
@@ -5515,6 +5413,39 @@ describe('writeScanResult (via main()) — GITHUB_OUTPUT', () => {
       mockAppendFileSync.mockReset()
     }
   })
+
+  it.each([['unset'], ['empty']])(
+    'fails closed with the GITHUB_EVENT_PATH message, before reading the PAT, when it is %s',
+    async state => {
+      mockAppendFileSync.mockReset()
+      const stderr: string[] = []
+      vi.spyOn(process.stderr, 'write').mockImplementation((message: unknown) => {
+        stderr.push(String(message))
+        return true
+      })
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called')
+      })
+      if (state === 'unset') delete process.env.GITHUB_EVENT_PATH
+      else process.env.GITHUB_EVENT_PATH = ''
+      // A PAT is set, so the only thing that can stop the run here is the missing event path.
+      process.env.FRO_BOT_POLL_PAT = 'pat'
+      process.env.GITHUB_OUTPUT = '/fake/output.txt'
+      try {
+        await expect(main()).rejects.toThrow('process.exit called')
+        expect(exitSpy).toHaveBeenCalledExactlyOnceWith(1)
+        expect(stderr.join('')).toContain('check-private-leak: GITHUB_EVENT_PATH not set.')
+        expect(stderr.join('')).not.toContain('FRO_BOT_POLL_PAT')
+        expect(mockAppendFileSync).toHaveBeenCalledExactlyOnceWith('/fake/output.txt', 'scan_result=error\n')
+      } finally {
+        exitSpy.mockRestore()
+        vi.restoreAllMocks()
+        delete process.env.FRO_BOT_POLL_PAT
+        delete process.env.GITHUB_OUTPUT
+        mockAppendFileSync.mockReset()
+      }
+    },
+  )
 
   it('does NOT append to GITHUB_OUTPUT when the env var is unset (undefined branch)', async () => {
     mockAppendFileSync.mockReset()

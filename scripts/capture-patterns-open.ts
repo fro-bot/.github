@@ -35,14 +35,14 @@ import type {PatternCandidateDigest} from './capture-patterns-cluster.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-import {isRecord} from './capture-learnings-privacy.ts'
+import {isRecord} from '@fro-bot/core/guards'
+import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {
   buildPatternProposalMarkers,
   PATTERN_PROPOSAL_LABEL,
   PATTERN_PROPOSAL_REQUIRED_LABELS,
   type ExistingPatternProposals,
 } from './capture-patterns-synthesis.ts'
-import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
 // Octokit client type (derived, never handwritten)
@@ -548,9 +548,9 @@ async function main(): Promise<void> {
   // Detect is fail-soft because absence of candidates is safe signal. Open is
   // intentionally fail-hard on malformed inputs or missing credentials: after the
   // live gate, ambiguity must stop before any issue mutation.
-  const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
-  const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
-  const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+  const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
+  const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
+  const {makePublicOutputTokens} = await import('@fro-bot/privacy/status-truth-public-output')
   const {fetchExistingPatternProposals} = await import('./capture-patterns-synthesis.ts')
   const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
   const bodiesPath = process.env.CAPTURE_PATTERNS_BODIES_PATH
