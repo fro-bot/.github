@@ -150,6 +150,16 @@ out.push(response.status, await response.text())`,
       handled: false,
       line: 'POST /b auth=- body={}',
     })
+    expect(parseCall('GET /search/issues?q=hello world is:open auth=tok')).toMatchObject({
+      method: 'GET',
+      target: '/search/issues?q=hello world is:open',
+    })
+    expect(parseCall('PUT /repos/o/r/contents/a b.md auth=- body={"m":"x auth=y"}')).toMatchObject({
+      method: 'PUT',
+      target: '/repos/o/r/contents/a b.md',
+    })
+    expect(parseCall('GET /no-auth-field')).toMatchObject({method: 'GET', target: '/no-auth-field'})
+    expect(parseCall('GET')).toMatchObject({method: 'GET', target: ''})
   })
 
   it('removes its directory on cleanup', () => {

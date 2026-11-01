@@ -77,7 +77,10 @@ export function route(
 export function parseCall(line: string): FakeRequest {
   const handled = !line.startsWith('UNHANDLED ')
   const text = handled ? line : line.slice('UNHANDLED '.length)
-  const [method = '', target = ''] = text.split(' ')
+  const methodEnd = text.indexOf(' ')
+  const authStart = text.indexOf(' auth=', methodEnd)
+  const method = methodEnd === -1 ? text : text.slice(0, methodEnd)
+  const target = methodEnd === -1 ? '' : text.slice(methodEnd + 1, authStart === -1 ? undefined : authStart)
   return {method, target, handled, line: text}
 }
 
