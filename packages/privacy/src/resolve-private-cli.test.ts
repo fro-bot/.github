@@ -128,6 +128,34 @@ describe('failures', () => {
   )
 })
 
+describe('help given a value', () => {
+  // goke reads `--help false` and `--help=false` as `help: false`. A help flag with any value is
+  // still a help request: no registry read, no gh call, no table.
+  it.each([
+    [['--help=false']],
+    [['--help', 'false']],
+    [['-h=false']],
+    [['-h', 'false']],
+    [['--help=true']],
+    [['--help=']],
+  ])('%j is a usage failure that reads nothing, calls gh never and prints no table', async argv => {
+    const result = await runCli(resolvePrivateCli(), {argv, env: {GH_TOKEN: 'tok'}})
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Usage:')
+    expect(result.stderr).not.toContain('node_id')
+    expect(result.stderr).not.toContain('secret-owner')
+    expect(readPaths).toEqual([])
+    expect(mockExecFileSync).not.toHaveBeenCalled()
+  })
+
+  it('prints the same usage as a plain --help', async () => {
+    const plain = await runCli(resolvePrivateCli(), {argv: ['--help'], env: {GH_TOKEN: 'tok'}})
+    const valued = await runCli(resolvePrivateCli(), {argv: ['--help=false'], env: {GH_TOKEN: 'tok'}})
+    expect(valued).toEqual(plain)
+  })
+})
+
 describe('main', () => {
   it('runs the CLI on the process argv and env and sets the exit code', async () => {
     const originalArgv = process.argv

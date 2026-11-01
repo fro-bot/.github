@@ -144,6 +144,12 @@ describe('argv that matches nothing declared', () => {
     [['--promotion', '--help']],
     [['--']],
     [['--promotion=false', '--bogus']],
+    [['--help=false']],
+    [['--help', 'false']],
+    [['-h=false']],
+    [['-h', 'false']],
+    [['--promotion', '--help=false']],
+    [['--no-help']],
   ])('%j is a usage error: exit 1, scan_result=error, nothing scanned', async argv => {
     const result = await runCli(checkPrivateLeakCli(), {argv, env: {GITHUB_OUTPUT: outputPath}})
     expect(result.exitCode).toBe(1)

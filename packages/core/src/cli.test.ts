@@ -2091,3 +2091,196 @@ describe('onUsage', () => {
     expect(result.exitCode).toBe(1)
   })
 })
+
+describe('help spelled with a value', () => {
+  // goke parses `--help false` and `--help=false` as `help: false`, so the root action used to run
+  // for what is, by any reading, an attempt to ask for help. Any use of the help flag is a help
+  // request: the action never runs and the output is the help `--help` prints.
+  const helpSpellings = [
+    ['--help=false'],
+    ['--help', 'false'],
+    ['--help=true'],
+    ['--help='],
+    ['-h=false'],
+    ['-h', 'false'],
+    ['-h=true'],
+    ['-h='],
+    ['--mode', 'x', '--help=false'],
+    ['--help=false', '--mode', 'x'],
+    ['--help', 'false', '--mode', 'x'],
+  ]
+
+  // goke reads the value of these as a positional, so its help names a different usage line than a
+  // plain --help does. They already stop; they are held to the same help code and stream.
+  const positionalLeaks = [['--help', 'foo'], ['--help=0'], ['-h=0'], ['-h', 'foo']]
+
+  const configWith = (ran: string[], extra: Partial<CliConfig> = {}): CliConfig => ({
+    name: 'tool',
+    usageStream: 'stdout',
+    helpCode: 0,
+    usageCode: 7,
+    commands: [
+      defineCommand({
+        readOnly: true,
+        options: {mode: {flag: '--mode <m>', schema: z.string().optional()}},
+        action: () => {
+          ran.push('root')
+        },
+      }),
+    ],
+    ...extra,
+  })
+
+  it.each(helpSpellings)('%j never runs the action and prints what a plain --help prints', async (...argv) => {
+    const ran: string[] = []
+    const plain = await run(configWith(ran), ['--help'])
+    const result = await run(configWith(ran), argv)
+    expect(ran).toEqual([])
+    expect(result).toEqual(plain)
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stderr).toBe('')
+  })
+
+  it.each(helpSpellings)(
+    '%j follows the CLI help code and stream, on stderr with the default stream',
+    async (...argv) => {
+      const ran: string[] = []
+      const config = configWith(ran, {usageStream: 'stderr', helpCode: 3})
+      const plain = await run(config, ['--help'])
+      const result = await run(config, argv)
+      expect(ran).toEqual([])
+      expect(result).toEqual(plain)
+      expect(result.exitCode).toBe(3)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('Usage:')
+    },
+  )
+
+  it.each(helpSpellings)('%j still runs onUsage and honours usageText', async (...argv) => {
+    const seen: unknown[] = []
+    const ran: string[] = []
+    const config = configWith(ran, {onUsage: env => seen.push(env), usageText: 'custom usage\n'})
+    const result = await runCli(config, {argv, env: {X: '1'}})
+    expect(ran).toEqual([])
+    expect(seen).toEqual([{X: '1'}])
+    expect(result).toEqual({exitCode: 0, stdout: 'custom usage\n', stderr: ''})
+  })
+
+  it.each(positionalLeaks)(
+    '%j stops at help with the help code and stream even though goke names its usage differently',
+    async (...argv) => {
+      const ran: string[] = []
+      const result = await run(configWith(ran), argv)
+      expect(ran).toEqual([])
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('Usage:')
+    },
+  )
+
+  it('treats a help value the same on a no-argv usage CLI', async () => {
+    const ran: unknown[] = []
+    const plain = await run(usageShape(ran), ['--help'])
+    const result = await run(usageShape(ran), ['--help=false'])
+    expect(ran).toEqual([])
+    expect(result).toEqual(plain)
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('prints the help of a named command for a valued help flag, as a plain --help does', async () => {
+    const ran: string[] = []
+    const plain = await run(dispatchShape(ran), ['plan', '--help'])
+    const result = await run(dispatchShape(ran), ['plan', '--help=false'])
+    expect(ran).toEqual([])
+    expect(result).toEqual(plain)
+  })
+
+  it('leaves a plain --help and -h exactly as they were', async () => {
+    const ran: string[] = []
+    const long = await run(configWith(ran), ['--help'])
+    const short = await run(configWith(ran), ['-h'])
+    expect(short).toEqual(long)
+    expect(long.stdout).toBe(
+      [
+        'tool',
+        '',
+        'Usage:',
+        '  $ tool [options]',
+        '',
+        'Commands:',
+        '  tool',
+        '',
+        'Options:',
+        '  --mode <m>',
+        '  -h, --help  Display this message',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it.each([['--no-help'], ['--no-h'], ['-no-help']])('%j is a usage error and runs nothing', async argv => {
+    const ran: string[] = []
+    const result = await run(configWith(ran), [argv])
+    expect(ran).toEqual([])
+    expect(result.exitCode).toBe(7)
+    expect(result.stderr).toMatch(/^error: unsupported option name `-+no-h(elp)?`\n/u)
+    expect(result.stdout).toContain('Usage:')
+  })
+
+  it('does not treat the value of another option, or anything after --, as a help flag', async () => {
+    const ran: string[] = []
+    const ok = await run(configWith(ran), ['--mode=--help'])
+    expect(ran).toEqual(['root'])
+    expect(ok.exitCode).toBe(0)
+    const afterDashes = await run(configWith(ran), ['--', '--help=false'])
+    expect(afterDashes.exitCode).toBe(7)
+    expect(ran).toEqual(['root'])
+  })
+
+  it("a help flag that is another option's missing value is the existing needs-a-value error", async () => {
+    const ran: string[] = []
+    const result = await run(configWith(ran), ['--mode', '--help'])
+    expect(ran).toEqual([])
+    expect(result.exitCode).toBe(7)
+    expect(result.stderr).toContain('option `--mode <m>` needs a value')
+  })
+
+  it.each([['-hx'], ['-xh'], ['-hh'], ['-hmode']])('the cluster %s cannot reach the action', async cluster => {
+    const ran: string[] = []
+    const config: CliConfig = {
+      name: 'tool',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {x: {flag: '-x', schema: z.boolean().optional()}},
+          action: () => {
+            ran.push('root')
+          },
+        }),
+      ],
+    }
+    const result = await run(config, [cluster])
+    expect(ran).toEqual([])
+    expect(result.exitCode).not.toBe(-1)
+  })
+
+  it('is not fooled by names that only contain help', async () => {
+    const ran: string[] = []
+    const config: CliConfig = {
+      name: 'tool',
+      commands: [
+        defineCommand({
+          readOnly: true,
+          options: {helper: {flag: '--helper <v>', schema: z.string().optional()}},
+          action: context => {
+            ran.push(`helper=${context.options.helper ?? ''}`)
+          },
+        }),
+      ],
+    }
+    const result = await run(config, ['--helper=false'])
+    expect(ran).toEqual(['helper=false'])
+    expect(result.exitCode).toBe(0)
+  })
+})

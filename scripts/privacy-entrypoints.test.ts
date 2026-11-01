@@ -249,7 +249,7 @@ describe('check-private-leak (node, check-private-leak.yaml: no argv)', () => {
     expect(result.githubOutput).toBe('scan_result=detection\n')
   })
 
-  it.each([['--help'], ['--bogus'], ['stray'], ['-h']])(
+  it.each([['--help'], ['--bogus'], ['stray'], ['-h'], ['--help=false'], ['-h=false'], ['--no-help']])(
     '%s is a usage error: exit 1, scan_result=error, and gh is never called',
     async argv => {
       const directory = ghFixtures()
@@ -450,14 +450,17 @@ describe('check-wiki-private-presence (bun, merge-data.yaml: --no-install --no-e
     expect(result.stderr).toContain('GRANDFATHER_WIKI_REPOS_DIR env var is required but not set.')
   })
 
-  it.each([[['--help']], [['--bogus']], [['stray']]])('%j is a usage error and runs no detection', async argv => {
-    const {cwd, grandfather} = wikiCheckout({'hidden-owner--hidden-repo.md': '---\ntype: repo\n---\nbody\n'})
-    const result = await check(cwd, {GRANDFATHER_WIKI_REPOS_DIR: grandfather}, argv)
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).toContain('check-wiki-private-presence')
-    expect(result.stderr).not.toContain('BLOCKED')
-  })
+  it.each([[['--help']], [['--help=false']], [['--help', 'false']], [['--bogus']], [['stray']]])(
+    '%j is a usage error and runs no detection',
+    async argv => {
+      const {cwd, grandfather} = wikiCheckout({'hidden-owner--hidden-repo.md': '---\ntype: repo\n---\nbody\n'})
+      const result = await check(cwd, {GRANDFATHER_WIKI_REPOS_DIR: grandfather}, argv)
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('check-wiki-private-presence')
+      expect(result.stderr).not.toContain('BLOCKED')
+    },
+  )
 })
 
 function enumerateCheckout(): string {
@@ -570,6 +573,26 @@ describe('resolve-private (bun, operator)', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain("ENOENT: no such file or directory, open 'nope.yaml'")
   })
+
+  it.each(['bun', 'node'] as const)(
+    'help given a value stops at usage under %s: no registry read, no gh call',
+    async runtime => {
+      for (const argv of [['--help=false'], ['--help', 'false'], ['-h=false'], ['-h', 'false']]) {
+        const directory = ghFixtures()
+        const result = await run('resolve-private', {
+          runtime,
+          argv,
+          cwd: resolveCheckout(),
+          env: {FAKE_GH_DIR: directory, GH_TOKEN: 'tok'},
+        })
+        expect(result.exitCode, JSON.stringify(argv)).toBe(1)
+        expect(result.stdout, JSON.stringify(argv)).toBe('')
+        expect(result.stderr, JSON.stringify(argv)).toContain('Usage:')
+        expect(result.stderr, JSON.stringify(argv)).not.toContain(PRIVATE_NODE_ID)
+        expect(ghCalls(directory), JSON.stringify(argv)).toEqual([])
+      }
+    },
+  )
 
   it.each([[['--help']], [['--bogus']], [['metadata/repos.yaml', 'extra']]])('%j is a usage error', async argv => {
     const result = await resolvePrivate(argv)
