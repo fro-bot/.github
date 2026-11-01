@@ -604,7 +604,7 @@ CLI tables follow one legend:
 - "No argv" means the caller passes none.
 - Library-only modules have no row.
 
-- [ ] **Unit 6: `@fro-bot/privacy`**
+- [x] **Unit 6: `@fro-bot/privacy`** (PR E)
 
 **Goal:** Move the privacy family into one package and break the knowledge ↔ status-truth cycle.
 
