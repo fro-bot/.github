@@ -1,7 +1,4 @@
 import {readFileSync} from 'node:fs'
-import {describe, expect, it} from 'vitest'
-import {parse} from 'yaml'
-
 import {
   assertAllowlistFile,
   assertRenovateFile,
@@ -13,7 +10,9 @@ import {
   isReposFile,
   isSocialCooldownsFile,
   SchemaValidationError,
-} from './schemas.ts'
+} from '@fro.bot/wiki-write-core/schemas'
+import {describe, expect, it} from 'vitest'
+import {parse} from 'yaml'
 
 function readMetadata(filename: string): unknown {
   return parse(readFileSync(`metadata/${filename}`, 'utf8'))

@@ -2,7 +2,7 @@ import {readdir, readFile} from 'node:fs/promises'
 import {join, relative} from 'node:path'
 import process from 'node:process'
 
-import {resolveMarkdownLinks} from './markdown-links.ts'
+import {resolveMarkdownLinks} from '@fro.bot/wiki-write-core/markdown-links'
 
 export interface MarkdownLinkFinding {
   readonly path: string

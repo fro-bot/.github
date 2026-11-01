@@ -2,8 +2,8 @@ import {mkdir, mkdtemp, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
+import {resolveMarkdownLinks} from '@fro.bot/wiki-write-core/markdown-links'
 import {describe, expect, it} from 'vitest'
-import {resolveMarkdownLinks} from './markdown-links.ts'
 
 describe('resolveMarkdownLinks', () => {
   it('resolves a valid relative link and reports that it exists', async () => {

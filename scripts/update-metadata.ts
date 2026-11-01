@@ -26,8 +26,8 @@
  * Fro Bot account is a User (current) or an Organization (future migration).
  */
 
+import type {RenovateFile} from '@fro.bot/wiki-write-core/schemas'
 import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
-import type {RenovateFile} from './schemas.ts'
 
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'

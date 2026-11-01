@@ -1,9 +1,9 @@
 import type {FakeClient, FileSpec, GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {MergeBackAlert, MergeBackOutcome} from './merge-back-data.ts'
 import process from 'node:process'
+import {isDataOwnedPath} from '@fro-bot/core/wiki-authority'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {isDataOwnedPath} from '@fro-bot/core/wiki-authority'
 import {DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {mergeBackData, MergeBackError, runCli} from './merge-back-data.ts'
 

@@ -1,12 +1,12 @@
+import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import type {DataBranchBootstrapParams, DataBranchBootstrapResult} from './data-branch-bootstrap.ts'
-import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
 import {Buffer} from 'node:buffer'
 import {readFileSync} from 'node:fs'
 import process from 'node:process'
 
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
-
 import {
   containsFroBotAgentReference,
   detectRenames,
@@ -38,7 +38,6 @@ import {
   type VisibilityTransitionIssue,
 } from './reconcile-repos.ts'
 import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
-import {assertReposFile} from './schemas.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
 

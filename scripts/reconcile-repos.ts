@@ -56,8 +56,17 @@ import {Buffer} from 'node:buffer'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
+import {
+  assertAllowlistFile,
+  assertReposFile,
+  NODE_ID_PATTERN,
+  type AllowlistFile,
+  type DiscoveryChannel,
+  type OnboardingStatus,
+  type RepoEntry,
+  type ReposFile,
+} from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
-
 import {
   commitMetadata as defaultCommitMetadata,
   type CommitMetadataParams,
@@ -81,16 +90,6 @@ import {
   JITTER_MAX_DAYS,
   normalizeRepoEntryForStorage,
 } from './repos-metadata.ts'
-import {
-  assertAllowlistFile,
-  assertReposFile,
-  NODE_ID_PATTERN,
-  type AllowlistFile,
-  type DiscoveryChannel,
-  type OnboardingStatus,
-  type RepoEntry,
-  type ReposFile,
-} from './schemas.ts'
 
 /**
  * Whether a discovery-channel + access-list combination is pre-trusted (skips the
@@ -3858,7 +3857,7 @@ function renderRenamePendingIssue(issue: RenamePendingIssue, owner: string, repo
 }
 
 function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner: string, repo: string): IssuePayload {
-  // node_id is validated against /^[\w\-+/=]+$/ at the schema layer (scripts/schemas.ts assertRepoEntry),
+  // node_id is validated against /^[\w\-+/=]+$/ at the schema layer (packages/wiki-write-core/src/schemas.ts assertRepoEntry),
   // so this template can safely interpolate without shell-quoting.
   const title = `[INTEGRITY] Visibility transition for ${issue.node_id}`
   const body = [

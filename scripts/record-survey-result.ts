@@ -1,4 +1,4 @@
-import type {ReposFile} from './schemas.ts'
+import type {ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 import process from 'node:process'
 import {commitMetadata} from './commit-metadata.ts'

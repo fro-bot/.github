@@ -1,17 +1,16 @@
 import {describe, expect, it} from 'vitest'
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiUtilsModulePromise: Promise<{
-  buildWikiTargetIndex: typeof import('./wiki-utils.js').buildWikiTargetIndex
-  collectPageTargets: typeof import('./wiki-utils.js').collectPageTargets
-  collectWikiPages: typeof import('./wiki-utils.js').collectWikiPages
-  collectWikilinks: typeof import('./wiki-utils.js').collectWikilinks
-  findWikilinkSpans: typeof import('./wiki-utils.js').findWikilinkSpans
-  parseWikiPage: typeof import('./wiki-utils.js').parseWikiPage
-  splitFrontmatter: typeof import('./wiki-utils.js').splitFrontmatter
-  truncateToBytes: typeof import('./wiki-utils.js').truncateToBytes
-  byteLength: typeof import('./wiki-utils.js').byteLength
-}> = import(`./wiki-utils${'.js'}`)
+  buildWikiTargetIndex: typeof import('@fro.bot/wiki-write-core/wiki-utils').buildWikiTargetIndex
+  collectPageTargets: typeof import('@fro.bot/wiki-write-core/wiki-utils').collectPageTargets
+  collectWikiPages: typeof import('@fro.bot/wiki-write-core/wiki-utils').collectWikiPages
+  collectWikilinks: typeof import('@fro.bot/wiki-write-core/wiki-utils').collectWikilinks
+  findWikilinkSpans: typeof import('@fro.bot/wiki-write-core/wiki-utils').findWikilinkSpans
+  parseWikiPage: typeof import('@fro.bot/wiki-write-core/wiki-utils').parseWikiPage
+  splitFrontmatter: typeof import('@fro.bot/wiki-write-core/wiki-utils').splitFrontmatter
+  truncateToBytes: typeof import('@fro.bot/wiki-write-core/wiki-utils').truncateToBytes
+  byteLength: typeof import('@fro.bot/wiki-write-core/wiki-utils').byteLength
+}> = import('@fro.bot/wiki-write-core/wiki-utils')
 const {
   buildWikiTargetIndex,
   collectPageTargets,

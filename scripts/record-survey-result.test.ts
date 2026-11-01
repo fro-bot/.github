@@ -1,4 +1,4 @@
-import type {RepoEntry, ReposFile} from './schemas.ts'
+import type {RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 import {describe, expect, it} from 'vitest'
 import YAML from 'yaml'

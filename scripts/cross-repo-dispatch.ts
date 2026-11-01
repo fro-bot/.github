@@ -2,7 +2,7 @@ import {createHash, randomBytes} from 'node:crypto'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
-import {assertReposFile} from './schemas.ts'
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -916,7 +916,7 @@ const RECEIPT_CAPABILITY_VALUE = 'coordination-issue-v1'
  * Classify a registry entry's operator-declared receipt contract. A missing entry or a
  * missing field is `legacy-best-effort`, not a stronger claim. An unrecognized non-empty
  * value fails closed with a parse/validation error rather than silently downgrading —
- * mirrors `assertReposFile`'s fail-closed posture (see `scripts/schemas.ts`).
+ * mirrors `assertReposFile`'s fail-closed posture (see `packages/wiki-write-core/src/schemas.ts`).
  */
 export function classifyReceiptCapability(entry: GateEntry | undefined): ReceiptCapability {
   if (entry === undefined) return 'legacy-best-effort'

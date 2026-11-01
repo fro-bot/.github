@@ -3,12 +3,16 @@ import {appendFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
+import {
+  assertAllowlistFile,
+  assertReposFile,
+  SchemaValidationError,
+  type ReposFile,
+} from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
-
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 import {bootstrapDataBranch, type DataBranchBootstrapParams} from './data-branch-bootstrap.ts'
 import {addRepoEntry, findNameHeldByOtherNode, findNodeNameConflict} from './repos-metadata.ts'
-import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'

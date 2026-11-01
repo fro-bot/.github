@@ -3,16 +3,15 @@ import type {OctokitClient, RepositoryInvitation} from './handle-invitation.ts'
 
 import process from 'node:process'
 
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import YAML from 'yaml'
-
 import {
   countPublicAcceptedInvitations,
   formatInvitationGithubOutput,
   handleInvitations,
   InvitationHandlingError,
 } from './handle-invitation.ts'
-import {assertReposFile} from './schemas.ts'
 
 type CommitMetadataMock = (params: CommitMetadataParams) => Promise<CommitMetadataResult>
 

@@ -18,7 +18,7 @@ import {
   type RepoEntry,
   type ReposFile,
   type SurveyStatus,
-} from './schemas.ts'
+} from '@fro.bot/wiki-write-core/schemas'
 
 const REDACTED_OWNER = '[REDACTED]'
 

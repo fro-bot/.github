@@ -1,5 +1,5 @@
 import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
-import type {RepoEntry} from './schemas.ts'
+import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'

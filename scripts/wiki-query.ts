@@ -1,7 +1,7 @@
 import {readdir, readFile, rename, unlink, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {byteLength, collectWikiPages, truncateToBytes, WIKI_ROOT} from './wiki-utils.ts'
+import {byteLength, collectWikiPages, truncateToBytes, WIKI_ROOT} from '@fro.bot/wiki-write-core/wiki-utils'
 
 const MAX_CONTEXT_BYTES = 5 * 1024
 

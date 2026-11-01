@@ -2,7 +2,7 @@
 title: Loose-then-tight schema migration pattern
 category: best-practices
 problem_type: best_practice
-module: scripts/schemas.ts
+module: packages/wiki-write-core/src/schemas.ts
 component: development_workflow
 severity: medium
 tags:
@@ -111,7 +111,7 @@ If the producer and schema land in the same PR and the data is migrated atomical
 **Before: tight from day one — broken**
 
 ```ts
-// scripts/schemas.ts
+// packages/wiki-write-core/src/schemas.ts
 export interface RepoEntry {
   owner: string
   // ... existing fields
@@ -132,7 +132,7 @@ function isRepoEntry(value: unknown): value is RepoEntry {
 **After: loose during rollout — survives mixed-shape data**
 
 ```ts
-// scripts/schemas.ts
+// packages/wiki-write-core/src/schemas.ts
 export interface RepoEntry {
   owner: string
   // ... existing fields

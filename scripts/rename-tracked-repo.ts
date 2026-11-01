@@ -40,9 +40,8 @@ import {
   type RepoPageMoveBlockReason,
   type RepoPageMovePlan,
 } from '@fro.bot/wiki-write-core'
+import {assertReposFile, NODE_ID_PATTERN, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {parse, stringify} from 'yaml'
-
-import {assertReposFile, NODE_ID_PATTERN, type RepoEntry} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
 
 // ─── Constants ──────────────────────────────────────────────────────────────

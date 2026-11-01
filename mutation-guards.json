@@ -42,7 +42,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/schemas.ts",
-      "reason": "Has a real rejection path (assertReposFile throws SchemaValidationError) a gate depends on, but its real test is scripts/schemas.test.ts, which imports the built dist/ output through the scripts/schemas.ts re-export shell (`export * from '@fro.bot/wiki-write-core/schemas'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's indirect exercise of assertReposFile. Relocating scripts/schemas.test.ts beside this module flips this entry to mutate."
+      "reason": "Has a real rejection path (assertReposFile throws SchemaValidationError) a gate depends on, but its real test is scripts/schemas.test.ts, which imports the module through the @fro.bot/wiki-write-core/schemas package name rather than this source file, so a mutation run would score only the indirect exercise from private-leak-adapter.test.ts. Relocating scripts/schemas.test.ts beside this module flips this entry to mutate."
     },
     {
       "path": "packages/wiki-write-core/src/repo-page-move.ts",

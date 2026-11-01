@@ -16,9 +16,8 @@ import process from 'node:process'
 
 import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
-import {assertBranchWritable} from '@fro.bot/wiki-write-core'
-
 import {isDataOwnedPath} from '@fro-bot/core/wiki-authority'
+import {assertBranchWritable} from '@fro.bot/wiki-write-core'
 import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 import {upsertAlertIssue} from './merge-data-pr.ts'
 
