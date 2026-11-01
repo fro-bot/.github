@@ -2,7 +2,7 @@
 title: When a platform gives no reliable correlation handle, invert poll to a worker-authored hash-bound receipt
 date: 2026-07-06
 category: best-practices
-module: scripts/cross-repo-dispatch.ts
+module: packages/dispatch/src/dispatch-receipts.ts
 problem_type: best_practice
 component: development_workflow
 severity: high

@@ -2,7 +2,7 @@
 title: A token minted for one installation cannot speak for another — mint per-owner, fail loud
 date: 2026-07-06
 category: best-practices
-module: scripts/cross-repo-dispatch.ts
+module: packages/dispatch/src/dispatch-github.ts
 problem_type: best_practice
 component: development_workflow
 severity: high

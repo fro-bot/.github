@@ -2,7 +2,7 @@
 title: Widen input tolerance in a repair layer that sits before a trust gate, never inside it
 date: 2026-07-06
 category: best-practices
-module: scripts/cross-repo-dispatch.ts
+module: packages/dispatch/src/dispatch-receipts.ts
 problem_type: best_practice
 component: development_workflow
 severity: high

@@ -3,7 +3,7 @@ name: Fro Bot
 
 # Optional correlation-id suffix lets a cross-repo-dispatch caller identify
 # this exact run by a unique token instead of coincidental epoch/actor
-# matching (see scripts/cross-repo-dispatch.ts). Empty by default — a purely
+# matching (see packages/dispatch/src/dispatch-github.ts). Empty by default — a purely
 # cosmetic, backward-compatible run-name change.
 run-name: >-
   Fro Bot${{ github.event.inputs.correlation_id && format(' ({0})', github.event.inputs.correlation_id) || '' }}
