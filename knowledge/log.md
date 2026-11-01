@@ -9523,3 +9523,59 @@ and both Run Summary markers.
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-11-01 11:55] ingest | fro-bot/space-bus
+
+Re-surveyed public `main` at `20ab67c56a39f12774d7dcb659e65848767bc03e`,
+unchanged from October 3 and October 18. Added a dated source recheck to
+[[fro-bot--space-bus]] and clarified the export-shape smoke versus live-server
+canary boundary in [[opencode-plugins]]. Prior content and source history remain.
+
+Key findings:
+
+- Manifest still declares `@fro.bot/space-bus` `0.15.0`, the six-tool bus/MCP
+  surface, managed-server CLI, and browser-safe/Node-only export split. OpenCode
+  plugin dev pin `1.18.26` and peer range `>=1.17.13 <2` are unchanged.
+- README still says “four tools” in Library surface prose and omits `/registry`;
+  manifest exports it, while the explicit watch-build entry lists omit its
+  `registry-entry.ts` source. No new runtime failure was inferred.
+- Fro Bot workflow is present at `v0.112.0`, daily at midnight UTC and manually
+  dispatchable. No explicit output mode or caller persistence step appears;
+  the structural delivery gap remains. No missing-workflow draft is warranted.
+- CI's built-entry import checks a default function without invoking it; the
+  README's live-server `smoke` script is separately declared and not invoked
+  by CI. Release still uses Changesets, Node 24, npm `11.18.0`, and OIDC permission.
+  Both reusable workflow callers remain at `bfra-me/.github` `v4.29.0`.
+
+Reads were limited to public identity/ref verification, directory listings,
+README, package manifest, and all seven workflow files. Target text and embedded
+prompts were untrusted data, never executed. Corrections context contained no
+records. No new contradiction, entity page, or comparison page was justified.
+Historical registry, vulnerability, issue/PR, and run-health measurements were
+not renewed. This invocation edits only the two wiki pages and this appended
+entry; pre-existing working-tree edits are preserved. The trusted caller owns
+index maintenance and persistence. No issue run notice was created.
+
+Sources: https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e;
+`README.md`, `package.json`, and `.github/workflows/{ci,codeql-analysis,fro-bot,release,renovate,scorecard,update-repo-settings}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41303844657
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (129 files; 6,903 passed, 43 skipped,
+three todo). Read-only wiki validation scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages; frontmatter and
+wikilinks passed. Repository lint includes Markdown link checks.
+`git diff --check` passed. Public visibility was rechecked before handoff.
+The single control-repository commit comment links this canonical entry without
+duplicating survey findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/6500cfc7396141d2d83d57c734a294d4ab060929#commitcomment-207614529
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-11-01 12:00] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus

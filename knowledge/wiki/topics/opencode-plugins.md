@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-10-26
+updated: 2026-11-01
 sources:
+  - url: https://github.com/fro-bot/space-bus
+    sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
+    accessed: 2026-11-01
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 5ea06fe995842351bc8aa93748cdf60ec1c13032
     accessed: 2026-10-26
@@ -797,6 +800,17 @@ A third, smaller item from the 2026-09-10 config: `dreamer` replaced a single `s
 The instructive part is the history. The same drift was recorded on 2026-07-10 (`tavily`, one name), reported as **repaired** on 2026-08-26 ("updated in lockstep, so no stale reference this time"), and returned four-deep on 2026-09-10. **The lockstep was a property of one edit, not an enforced invariant** — so "it was fixed last time" is not evidence about this time when the mechanism that fixed it was a person noticing. A dangling MCP name fails silently at agent-construction time, which is why the drift can widen for weeks without a signal. Any config that names capabilities in one file and registers them in another needs a check, not a habit.
 
 ## Production and Watch Export Contracts (2026-10-03)
+
+**2026-11-01 recheck:** [[fro-bot--space-bus]] remains at `20ab67c5`.
+README, manifest, directory listing, and CI reconfirm the export/watch/docs
+discrepancies below. A further configured boundary is explicit: README's
+`smoke` command is a live-server directory-routing canary, whereas CI invokes
+the production build, default-export import assertion, and Bun tests without
+invoking that script. Do not conflate the Node export-shape smoke step with
+the documented server canary. This is evidence about configured checks, not
+their results or the internal coverage of the unread tests. Sources: the
+same pinned [README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md)
+and [CI workflow](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows/ci.yaml).
 
 **2026-10-18 recheck:** [[fro-bot--space-bus]] still resolves to the same
 `20ab67c5` tree. Its manifest, README, and CI retain the separate production,
