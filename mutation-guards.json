@@ -117,6 +117,10 @@
       "reason": "Test support: a GitHub Actions if: expression evaluator for the workflow contract tests. No production module imports it, and it guards nothing itself. It has its own behavior test in packages/test-kit/src/workflow-expression.test.ts."
     },
     {
+      "path": "packages/test-kit/src/spawn-entrypoint.ts",
+      "reason": "Test support: runs a scripts/<name>.ts entrypoint in a child process so a CLI's tests can assert what a workflow step sees. No production module imports it, and it guards nothing itself. It has its own behavior test in packages/test-kit/src/spawn-entrypoint.test.ts, run under Bun and Node."
+    },
+    {
       "path": "packages/test-kit/src/repo-page-move-fixtures.ts",
       "reason": "Test support: constants and builders for the operator rename tests, no logic and no production importer. The decisions they feed live in packages/wiki-write-core/src/repo-page-move.ts and scripts/rename-tracked-repo.ts, each classified separately."
     }

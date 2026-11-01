@@ -174,7 +174,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 │   └── wiki/{repos,topics,entities,comparisons}/
 ├── metadata/               # Versioned control-plane state (YAML)
 ├── packages/               # Workspace packages (see Packages)
-│   ├── core/               # @fro-bot/core: guards, GITHUB_OUTPUT and step-summary writers, JSON output, retry, Octokit client factory (private)
+│   ├── core/               # @fro-bot/core: guards, GITHUB_OUTPUT and step-summary writers, JSON output, retry, Octokit client factory, goke CLI runner, env reader (private)
 │   ├── test-kit/           # @fro-bot/test-kit: shared test fakes and helpers (private)
 │   └── wiki-write-core/    # @fro.bot/wiki-write-core: the published wiki-write primitives
 ├── persona/                # Fro Bot voice and character definition
@@ -193,7 +193,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 | Package | Status | Purpose |
 | --- | --- | --- |
-| [`@fro-bot/core`](packages/core/README.md) | In the repository | Type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, retry, Octokit client factory. Held at 100% mutation kills. |
+| [`@fro-bot/core`](packages/core/README.md) | In the repository | Type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, retry, Octokit client factory, goke CLI runner, required-env reader. Held at 100% mutation kills. |
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
 | `@fro-bot/privacy`, `registry`, `dispatch`, `status-truth`, `wiki-ops`, `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
@@ -202,7 +202,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 ### Package dependency graph
 
-The graph below is the authoritative one: `scripts/package-layout.test.ts` checks the real graph, and this diagram is maintained by hand. Dashed nodes are planned. An arrow points from a package to what it depends on.
+The graph below is the authoritative one: `scripts/package-layout.test.ts` checks the real graph, and this diagram is maintained by hand. Dashed nodes are planned. An arrow points from a package to what it depends on; the dotted arrow is a `devDependencies` edge.
 
 ```mermaid
 flowchart BT
@@ -218,6 +218,7 @@ flowchart BT
   reports["reports (planned)"]:::planned
   cichecks["ci-checks (planned)"]:::planned
 
+  core -. "dev: spawn tests" .-> testkit
   privacy --> core & wwc
   registry --> core & wwc
   dispatch --> core & wwc
@@ -243,7 +244,7 @@ C4Container
   System_Boundary(repo, "fro-bot/.github") {
     Container(workflows, "Workflows", "GitHub Actions YAML", "Schedules and events; run scripts/<name>.ts")
     Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, and the modules not yet moved into a package")
-    Container(core, "@fro-bot/core", "Private package", "guards, output, json, retry, github")
+    Container(core, "@fro-bot/core", "Private package", "guards, output, json, retry, github, cli, env")
     Container(testkit, "@fro-bot/test-kit", "Private package", "Test fakes and helpers, tests only")
     Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, compiled dist/")
     Container(domains, "Domain packages (planned)", "Private packages", "privacy, registry, dispatch, status-truth, wiki-ops, knowledge, reports, ci-checks")
