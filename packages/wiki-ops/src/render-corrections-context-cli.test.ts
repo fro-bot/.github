@@ -1,9 +1,31 @@
+import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
-import {afterEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {main, renderCorrectionsContextCli} from './render-corrections-context-cli.ts'
 
+/**
+ * This CLI writes `.github/corrections-context.json` relative to the working directory, so every test
+ * runs in a test-owned temp checkout the process has changed into. A guard that regressed, or a mutant,
+ * would write there and never into the tracked tree.
+ */
+let originalCwd = ''
+let tempCwd = ''
+
+beforeEach(() => {
+  originalCwd = process.cwd()
+  tempCwd = mkdtempSync(join(tmpdir(), 'render-corrections-cli-'))
+  mkdirSync(join(tempCwd, '.github'), {recursive: true})
+  mkdirSync(join(tempCwd, 'knowledge'), {recursive: true})
+  writeFileSync(join(tempCwd, 'package.json'), '{"name":"fixture","private":true}\n')
+  process.chdir(tempCwd)
+})
+
 afterEach(() => {
+  process.chdir(originalCwd)
+  rmSync(tempCwd, {recursive: true, force: true})
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   process.exitCode = undefined
@@ -34,8 +56,18 @@ describe('argv that no caller sends', () => {
       expect(result.exitCode).toBe(1)
       expect(result.stdout).toBe('')
       expect(result.stderr).not.toBe('')
+      expect(process.cwd()).toBe(realpathSync(tempCwd))
+      expect(existsSync(join(tempCwd, '.github/corrections-context.json'))).toBe(false)
     },
   )
+})
+
+describe('a run in the temp checkout', () => {
+  it('writes the data file there, which proves the usage-error assertions above would see a write', async () => {
+    const result = await runCli(renderCorrectionsContextCli(), {argv: [], env: {REPO_NODE_ID: 'R_123'}})
+    expect(result.exitCode).toBe(0)
+    expect(existsSync(join(tempCwd, '.github/corrections-context.json'))).toBe(true)
+  })
 })
 
 describe('a run with its input missing', () => {

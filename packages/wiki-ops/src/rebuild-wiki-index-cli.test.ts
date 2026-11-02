@@ -1,9 +1,9 @@
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
-import {afterEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {main, rebuildWikiIndexCli} from './rebuild-wiki-index-cli.ts'
 import {runRebuildWikiIndex} from './rebuild-wiki-index.ts'
 
@@ -76,12 +76,41 @@ describe('runRebuildWikiIndex (a temp checkout)', () => {
   })
 })
 
+/**
+ * The CLI under test writes `knowledge/index.md` and `knowledge/log.md` relative to the working directory,
+ * so every run below happens in a test-owned temp checkout the process has changed into. A guard that
+ * regressed, or a mutant, would then rewrite the temp index, never a tracked file.
+ */
+const CHECKOUT_INDEX = '# Wiki Index\n\nsentinel\n'
+let originalCwd = ''
+let tempCwd = ''
+
+function enterTempCheckout(): void {
+  originalCwd = process.cwd()
+  tempCwd = checkout({'knowledge/index.md': CHECKOUT_INDEX, 'knowledge/wiki/topics/alpha.md': PAGE})
+  process.chdir(tempCwd)
+}
+
+function leaveTempCheckout(): void {
+  process.chdir(originalCwd)
+}
+
+function expectTempCheckoutUntouched(): void {
+  expect(process.cwd()).toBe(realpathSync(tempCwd))
+  expect(readFileSync(join(tempCwd, 'knowledge/index.md'), 'utf8')).toBe(CHECKOUT_INDEX)
+  expect(existsSync(join(tempCwd, 'knowledge/log.md'))).toBe(false)
+}
+
 describe('argv', () => {
+  beforeEach(enterTempCheckout)
+  afterEach(leaveTempCheckout)
+
   it('rejects log paths without --merge-logs, and writes nothing', async () => {
     const result = await runCli(rebuildWikiIndexCli(), {argv: ['extra'], env: {}})
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toBe('error: unexpected arguments: extra (log paths need --merge-logs)\n')
+    expectTempCheckoutUntouched()
   })
 
   it.each([[['--help']], [['--help=false']], [['--bogus']], [['--merge-logs']], [['a.md', '--merge-logs']]])(
@@ -91,11 +120,21 @@ describe('argv', () => {
       expect(result.exitCode).toBe(1)
       expect(result.stdout).toBe('')
       expect(result.stderr).not.toBe('')
+      expectTempCheckoutUntouched()
     },
   )
+
+  it('with no argument it rebuilds the temp checkout index, which proves the runs above would have written there', async () => {
+    const result = await runCli(rebuildWikiIndexCli(), {argv: [], env: {}})
+    expect(result).toMatchObject({exitCode: 0, stdout: 'rebuilt knowledge/index.md from 1 wiki file(s)\n'})
+    expect(readFileSync(join(tempCwd, 'knowledge/index.md'), 'utf8')).toContain('[[alpha]]')
+  })
 })
 
 describe('main', () => {
+  beforeEach(enterTempCheckout)
+  afterEach(leaveTempCheckout)
+
   it('runs the CLI against process.argv and sets the exit code without exiting the process', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
@@ -109,5 +148,6 @@ describe('main', () => {
     expect(process.exitCode).toBe(1)
     expect(String(stderr.mock.calls[0]?.[0])).toContain('unexpected arguments: extra')
     expect(exit).not.toHaveBeenCalled()
+    expectTempCheckoutUntouched()
   })
 })
