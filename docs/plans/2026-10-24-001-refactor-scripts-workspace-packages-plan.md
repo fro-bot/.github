@@ -317,7 +317,7 @@ Production dependency edges, checked against static and dynamic imports. Each li
 - registry → core, `@fro.bot/wiki-write-core`. No privacy edge.
 - dispatch → core, `@fro.bot/wiki-write-core`
 - wiki-ops → core, `@fro.bot/wiki-write-core`, privacy
-- status-truth → privacy, core, `@fro.bot/wiki-write-core`
+- status-truth → privacy, core. It imports nothing from `@fro.bot/wiki-write-core`, so it does not declare it.
 - knowledge → privacy, core, wiki-ops (`solution-docs-paths`, `wiki-handoff-core`)
 - reports → privacy, core. Reports needs neither knowledge nor status-truth: its `createOctokitFromEnv` import moves to core in Unit 4, and its status-truth imports move to privacy in Unit 6.
 - ci-checks → core (via `check-wiki-authority`), `@fro.bot/wiki-write-core` (via the markdown-links shim), external `typescript`. No privacy, registry or wiki-ops edge: none of the ci-checks modules imports them.
@@ -332,7 +332,7 @@ flowchart BT
   registry --> core & wwc
   dispatch --> core & wwc
   wikiops["wiki-ops"] --> core & wwc & privacy
-  statustruth["status-truth"] --> core & wwc & privacy
+  statustruth["status-truth"] --> core & privacy
   knowledge --> core & privacy & wikiops
   reports --> core & privacy
   cichecks["ci-checks"] --> core & wwc
@@ -782,7 +782,7 @@ CLI tables follow one legend:
 
 **Verification:** The existing dispatch tests pass from their new paths. No non-test module in `packages/dispatch/src` is 2,000 lines or longer, and no top-level declaration of the original `cross-repo-dispatch.ts` is left outside a seam.
 
-- [ ] **Unit 9: `@fro-bot/status-truth`**
+- [x] **Unit 9: `@fro-bot/status-truth`**
 
 **Goal:** Move `status-truth-detect`, `status-truth-proposals` and `status-truth-prs`, plus `rollout-tracker-snapshot`, and split detect and proposals.
 
@@ -790,7 +790,7 @@ CLI tables follow one legend:
 
 **Dependencies:** Unit 6
 
-**Files:** `packages/status-truth/src/` and tests. `scripts/` entrypoints. Repoint the source-text reads in `scripts/rollout-tracker-snapshot.test.ts` to the package file. `@fro.bot/wiki-write-core` is a declared dependency (schemas).
+**Files:** `packages/status-truth/src/` and tests. `scripts/` entrypoints. Repoint the source-text reads in `scripts/rollout-tracker-snapshot.test.ts` to the package file. The package declares `@fro-bot/core` and `@fro-bot/privacy`; it imports nothing from `@fro.bot/wiki-write-core`, so it does not declare that package.
 
 **CLIs:**
 
@@ -821,14 +821,14 @@ CLI tables follow one legend:
   - `proposals-cli`: private `runOpen`.
 - The `isApiStatus` copies map as follows: `status-truth-proposals.ts:1651` to the array-excluding core variant, and `status-truth-prs.ts:880` to the any-object variant, which keeps its `'status' in error` check. Both leave in this PR.
 - The three no-op logger copies leave in this PR, in favor of the core client's logger: `NOOP_LOGGER` (`status-truth-detect.ts:2018`), `NOOP_LOG` (`status-truth-proposals.ts:1910`) and `NOOP_LOG` (`status-truth-prs.ts:1434`). The proposals constant is exported and imported by `status-truth-proposals.test.ts`, so that importer is rewritten to core and its `NOOP_LOG` describe block moves to the core client's test.
-- The `STATUS_TRUTH_DRY_RUN` default stays dry for `status-truth-proposals` and `status-truth-prs`.
+- `STATUS_TRUTH_DRY_RUN` means a dry run only when it is exactly `true`. `status-truth.yaml` sets `'true'` for all three steps unless the dispatch input says otherwise (`github.event.inputs.dry_run || 'true'`), so the workflow defaults to a dry run. Unset in a direct invocation, and any other value, takes the live path of `status-truth-proposals` and `status-truth-prs`. The Unit 9 PR preserves this and pins both halves in `scripts/status-truth-flows.test.ts`.
 
 **Test scenarios:**
 
 - Happy path: the `rollout-tracker-snapshot` 300 KB piped output is delivered complete.
 - Happy path: the status-truth dry-run claim output matches the baseline fixture.
 - Happy path: fixtures pin the report and result-file key sets (30+ `jq` paths).
-- Edge case: unset `STATUS_TRUTH_DRY_RUN` is a dry run for proposals and prs. Only the explicit `false` path writes.
+- Edge case: `STATUS_TRUTH_DRY_RUN=true` makes no write in proposals and prs. Unset, `1` and `TRUE` take the live path; the workflow's `'true'` default is what makes a default dispatch a dry run.
 - Edge case: in the (b) shape, a failing snapshot makes the `if` false without failing the step.
 - Integration: a detect → proposals artifact round trip through `validateStatusTruthArtifact`.
 
@@ -1087,7 +1087,7 @@ The first Bun run of every other moved CLI happens after merge.
 ### Dispatches and gating
 
 - Exactly four dispatches are approved, one per operator approval:
-  - D1: status-truth with defaults. Detect holds no write credentials (`status-truth.yaml:38-40`). Before requesting D1, the Unit 9 PR confirms that the dry-run default skips every write path.
+  - D1: status-truth with defaults. Detect holds no write credentials (`status-truth.yaml:38-40`). Before requesting D1, the Unit 9 PR confirms that `STATUS_TRUTH_DRY_RUN=true`, the value the workflow passes by default, skips every write path.
   - D2: wiki-lint with `dry_run=true` set explicitly. A plain dispatch is live. With `dry_run=true` the repair job mints no write credential (`wiki-lint.yaml:184-187`), but `wiki-lint-issue-sync` (`if: always()`, `issues: write`, no dry-run gate) still runs `wiki-lint-issues`. That job syncs lint issues to the current findings, the same open, update, reopen and close the Sunday schedule performs. The only write is lint issues that match the current findings. D2 is a dry run for the repair path, not a write-free run.
   - D3: capture-patterns with defaults (`dry_run` defaults to true).
   - D4: improvement-metrics with defaults (`dry_run` defaults to true).

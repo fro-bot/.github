@@ -1,0 +1,842 @@
+import {execFileSync} from 'node:child_process'
+import {createHash} from 'node:crypto'
+import process from 'node:process'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** A single tracked issue/PR's state from the GitHub API. */
+export interface IssueState {
+  number: number
+  repo: string
+  state: 'open' | 'closed' | 'merged'
+  title: string
+  closed_at: string | null
+  labels: string[]
+}
+
+/** A single GitHub Project item with relevant fields. */
+export interface ProjectItem {
+  id: string
+  content_number: number
+  content_repo: string
+  status: string | null
+  readiness: string | null
+  gate: string | null
+}
+
+/** A normalized snapshot item — excludes volatile prose fields. */
+export interface SnapshotItem {
+  content_number: number
+  content_repo: string
+  status: string | null
+  readiness: string | null
+  gate: string | null
+  issue_state: 'open' | 'closed' | 'merged' | null
+  issue_closed_at: string | null
+  issue_labels: string[]
+}
+
+/** The latest successful run of an infra deploy workflow. */
+export interface DeployRun {
+  run_id: number
+  head_sha: string
+}
+
+/**
+ * Upstream signals that change the rollout state without touching a tracked
+ * issue: the latest agent and dashboard releases, the latest successful infra
+ * deploy run of each deploy workflow, and the dashboard health contract.
+ */
+export interface ExternalSignals {
+  agent_release: string
+  dashboard_release: string
+  deploy_gateway: DeployRun
+  deploy_dashboard: DeployRun
+  deploy_router: DeployRun
+  contract_version: string
+}
+
+/** The full rollout snapshot — only stable, gate-relevant fields. */
+export interface RolloutSnapshot {
+  items: SnapshotItem[]
+  external: ExternalSignals
+}
+
+/**
+ * The data embedded in the HTML marker comment. Only `hash` is required to parse; the snapshot is
+ * informational and `last_mention_id` is null when the marker carries no valid value.
+ */
+export interface MarkerData {
+  hash: string
+  snapshot: unknown
+  /** The highest operator `@fro-bot` comment ID the tracker has answered; null when absent or invalid. */
+  last_mention_id: number | null
+}
+
+/** The decision output from decideComment. */
+export interface CommentDecision {
+  should_comment: boolean
+  reason: string
+  hash: string
+  snapshot: RolloutSnapshot
+}
+
+/** The preflight output: the decision plus the mention state and the marker the agent writes. */
+export interface PreflightResult extends CommentDecision {
+  /** Operator `@fro-bot` comment IDs above the latest marker's `last_mention_id`, ascending. */
+  pending_mention_ids: number[]
+  /** The `last_mention_id` the next marker carries. */
+  last_mention_id: number
+  /** The complete marker string every tracker reply ends with. */
+  marker: string
+  /** The REST ID of the latest comment carrying a parseable marker; null when none exists. */
+  marker_comment_id: number | null
+}
+
+export interface TrackerComment {
+  /** The REST comment ID. */
+  id: number
+  author: {login: string}
+  body: string
+}
+
+/** The only author whose `@fro-bot` mention on the tracker issue wakes the tracker. */
+export const OPERATOR_LOGIN = 'marcusrbrown'
+
+const RELEASE_REPOS = {agent: 'fro-bot/agent', dashboard: 'fro-bot/dashboard'} as const
+const INFRA_REPO = 'marcusrbrown/infra'
+const DEPLOY_WORKFLOWS = {
+  gateway: 'deploy-gateway.yaml',
+  dashboard: 'deploy-dashboard.yaml',
+  router: 'deploy.yaml',
+} as const
+const DEFAULT_HEALTH_URL = 'https://dashboard.fro.bot/operator/health'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * HTML marker prefix embedded in tracker comments.
+ * Full marker: `<!-- gateway-rollout-tracker:{...} -->`
+ */
+export const MARKER_PREFIX = 'gateway-rollout-tracker:'
+
+/**
+ * Fro Bot identities permitted to author tracker marker comments.
+ *
+ * GitHub issues/PRs surface two distinct login values depending on how the bot
+ * authenticated: `fro-bot` (PAT / classic token) and `fro-bot[bot]` (GitHub
+ * App installation token). Both are legitimate and must be treated as equivalent.
+ *
+ * Kept symmetric with `frobotAuthors()` in `packages/core/src/wiki-authority.ts`.
+ */
+export const FROBOT_COMMENT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+
+// ─── Core functions (exported for tests) ─────────────────────────────────────
+
+/**
+ * The custom field name used by the GitHub Project for the gate column.
+ * `gh project item-list --format json` exposes it as a top-level key with
+ * this exact string (spaces included).
+ */
+export const GATE_FIELD_NAME = 'gateway Unit Gate'
+
+/**
+ * Normalise a raw `gh project item-list --format json` item into a ProjectItem.
+ *
+ * The gate value lives under the key `"gateway Unit Gate"` (with spaces), not
+ * `"gate"`. Everything else follows the standard content/repository shape.
+ */
+export function normaliseRawProjectItem(raw: Record<string, unknown>): ProjectItem {
+  const content = raw.content as Record<string, unknown> | null | undefined
+  return {
+    id: String(raw.id ?? ''),
+    content_number: Number(content?.number ?? raw.number ?? 0),
+    content_repo: String(content?.repository ?? raw.repository ?? ''),
+    status: (raw.status as string | null) ?? null,
+    readiness: (raw.readiness as string | null) ?? null,
+    gate: (raw[GATE_FIELD_NAME] as string | null) ?? null,
+  }
+}
+
+/**
+ * Normalise a raw GitHub API state string into the canonical IssueState state.
+ *
+ * GitHub returns uppercase strings: `OPEN`, `CLOSED`, `MERGED`.
+ * PRs that have been merged come back as `MERGED`, not `CLOSED`.
+ */
+export function normaliseIssueState(raw: string): 'open' | 'closed' | 'merged' {
+  if (raw === 'CLOSED') return 'closed'
+  if (raw === 'MERGED') return 'merged'
+  return 'open'
+}
+
+/**
+ * Derive a deduplicated list of `"repo#number"` ref strings from Project items.
+ *
+ * Items with an empty `content_repo` or a `content_number` of `0` are
+ * considered unsupported (e.g. draft cards, notes, or items without a linked
+ * issue/PR). Each unsupported item emits a warning to stderr and is excluded
+ * from the returned set.
+ */
+export function deriveTrackedIssueRefs(items: ProjectItem[]): string[] {
+  const seen = new Set<string>()
+  for (const item of filterSupportedProjectItems(items)) {
+    seen.add(`${item.content_repo}#${item.content_number}`)
+  }
+  return [...seen]
+}
+
+function filterSupportedProjectItems(items: ProjectItem[]): ProjectItem[] {
+  let skipped = 0
+  const supported = items.filter(item => {
+    if (item.content_repo === '' || item.content_number === 0) {
+      skipped++
+      return false
+    }
+    return true
+  })
+  if (skipped > 0) {
+    process.stderr.write(
+      `rollout-tracker-snapshot: warning — skipping ${skipped} unsupported Project item(s) (missing repo or number)\n`,
+    )
+  }
+  return supported
+}
+
+/**
+ * Build a normalized, deterministic snapshot from Project items and issue states.
+ *
+ * Volatile fields (title, body, prose) are excluded. Items are sorted by
+ * repo+number for stable ordering. Issue state is merged by matching
+ * content_repo+content_number to issue repo+number.
+ *
+ * Unsupported items (`content_repo === ''` or `content_number === 0`) are
+ * excluded from the snapshot with a stderr warning.
+ */
+export function buildSnapshot(items: ProjectItem[], issues: IssueState[], external: ExternalSignals): RolloutSnapshot {
+  // Build a lookup map: "repo#number" → IssueState
+  const issueMap = new Map<string, IssueState>()
+  for (const issue of issues) {
+    issueMap.set(`${issue.repo}#${issue.number}`, issue)
+  }
+
+  const supportedItems = filterSupportedProjectItems(items)
+
+  const snapshotItems: SnapshotItem[] = supportedItems.map(item => {
+    const key = `${item.content_repo}#${item.content_number}`
+    const issue = issueMap.get(key)
+    return {
+      content_number: item.content_number,
+      content_repo: item.content_repo,
+      status: item.status,
+      readiness: item.readiness,
+      gate: item.gate,
+      issue_state: issue?.state ?? null,
+      issue_closed_at: issue?.closed_at ?? null,
+      issue_labels: issue?.labels ?? [],
+    }
+  })
+
+  // Sort deterministically: repo ascending, then number ascending
+  snapshotItems.sort((a, b) => {
+    const repoCompare = a.content_repo.localeCompare(b.content_repo)
+    if (repoCompare !== 0) return repoCompare
+    return a.content_number - b.content_number
+  })
+
+  return {items: snapshotItems, external}
+}
+
+/**
+ * Produce a stable SHA-256 hex hash of a RolloutSnapshot.
+ *
+ * Keys are sorted recursively so insertion order does not affect the hash.
+ * No volatile fields should be present in the snapshot at this point.
+ */
+export function hashSnapshot(snapshot: RolloutSnapshot): string {
+  const stable = JSON.stringify(toGatingEvidence(snapshot), sortedReplacer)
+  return createHash('sha256').update(stable).digest('hex')
+}
+
+/**
+ * The fields that gate a wake. A field omitted here never reaches the hash, so
+ * every new wake input is copied explicitly.
+ */
+function toGatingEvidence(snapshot: RolloutSnapshot): RolloutSnapshot {
+  const {external} = snapshot
+  return {
+    items: snapshot.items.map(item => ({
+      content_number: item.content_number,
+      content_repo: item.content_repo,
+      status: null,
+      readiness: null,
+      gate: null,
+      issue_state: item.issue_state,
+      issue_closed_at: null,
+      issue_labels: [],
+    })),
+    external: {
+      agent_release: external.agent_release,
+      dashboard_release: external.dashboard_release,
+      deploy_gateway: {run_id: external.deploy_gateway.run_id, head_sha: external.deploy_gateway.head_sha},
+      deploy_dashboard: {run_id: external.deploy_dashboard.run_id, head_sha: external.deploy_dashboard.head_sha},
+      deploy_router: {run_id: external.deploy_router.run_id, head_sha: external.deploy_router.head_sha},
+      contract_version: external.contract_version,
+    },
+  }
+}
+
+/**
+ * JSON.stringify replacer that sorts object keys alphabetically.
+ * Arrays preserve their order (deterministic from buildSnapshot sort).
+ */
+function sortedReplacer(_key: string, value: unknown): unknown {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const sorted: Record<string, unknown> = {}
+    for (const k of Object.keys(value).sort()) {
+      sorted[k] = (value as Record<string, unknown>)[k]
+    }
+    return sorted
+  }
+  return value
+}
+
+/**
+ * Extract the previous MarkerData from the latest `<!-- gateway-rollout-tracker:{...} -->`
+ * HTML comment in a tracker comment body.
+ *
+ * Returns null if no marker is found or if the marker JSON is malformed.
+ * When multiple markers are present, the LAST one wins (latest state).
+ */
+export function extractPreviousMarker(body: string): MarkerData | null {
+  if (!body) return null
+
+  // Match all occurrences; take the last one.
+  // Capture everything between the prefix and the closing --> (non-greedy).
+  // A prefix after the last --> can never close, and each such prefix would rescan to the end of the
+  // body, so the search stops at the last --> and stays linear.
+  const lastClose = body.lastIndexOf('-->')
+  if (lastClose === -1) return null
+  const searchable = body.slice(0, lastClose + '-->'.length)
+  const markerRegex = /<!--\s*gateway-rollout-tracker:([\s\S]*?)-->/g
+  let lastMatch: RegExpExecArray | null = null
+
+  for (;;) {
+    const match = markerRegex.exec(searchable)
+    if (match === null) break
+    lastMatch = match
+  }
+
+  if (lastMatch === null) return null
+
+  const jsonStr = lastMatch[1]
+  if (jsonStr === undefined) return null
+
+  try {
+    const parsed: unknown = JSON.parse(jsonStr)
+    if (!isRecord(parsed) || typeof parsed.hash !== 'string') {
+      process.stderr.write('rollout-tracker-snapshot: marker JSON has unexpected shape\n')
+      return null
+    }
+    const lastMentionId = parsed.last_mention_id
+    return {
+      hash: parsed.hash,
+      snapshot: parsed.snapshot,
+      last_mention_id:
+        typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
+          ? lastMentionId
+          : null,
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`rollout-tracker-snapshot: failed to parse marker JSON: ${detail}\n`)
+    return null
+  }
+}
+
+/** Every fro-bot or fro-bot[bot] comment that carries a parseable tracker marker, oldest first. */
+function listMarkerComments(
+  comments: readonly TrackerComment[],
+): {index: number; comment: TrackerComment; marker: MarkerData}[] {
+  const found: {index: number; comment: TrackerComment; marker: MarkerData}[] = []
+  for (const [index, comment] of comments.entries()) {
+    if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) continue
+    const marker = extractPreviousMarker(comment.body)
+    if (marker !== null) found.push({index, comment, marker})
+  }
+  return found
+}
+
+/** The latest marker comment in the thread, or undefined when none parses. */
+export function findLatestMarkerComment(comments: readonly TrackerComment[]): TrackerComment | undefined {
+  return listMarkerComments(comments).at(-1)?.comment
+}
+
+export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
+  return findLatestMarkerComment(comments)?.body ?? ''
+}
+
+/**
+ * Find the operator `@fro-bot` comments the tracker has not answered.
+ *
+ * The baseline is the highest valid `last_mention_id` across every parseable marker comment, so a
+ * damaged latest marker cannot lower it. A mention is pending when its comment ID is above the
+ * baseline. Thread position does not matter once a marker carries the field: a mention that lands
+ * while a tracker run is in flight can precede that run's marker comment and is still pending.
+ *
+ * When no parseable marker carries a valid `last_mention_id` (including a thread with no marker),
+ * the baseline is the highest operator mention that precedes the latest `fro-bot` or `fro-bot[bot]`
+ * comment of any kind, because a reply without a marker still answered the mentions before it. With
+ * no such comment, every operator mention is pending.
+ *
+ * `triggerId` is the comment that dispatched the run. It is pending when it is above the baseline,
+ * even if the comment list does not contain it yet; a trigger at or below the baseline is already
+ * acknowledged and is ignored. `lastMentionId` advances only to the highest pending ID and otherwise
+ * stays at the baseline, so it never moves over a mention that is outside the answer set.
+ */
+export function scanOperatorMentions(
+  comments: readonly TrackerComment[],
+  previousMarker: MarkerData | null,
+  triggerId: number | null = null,
+): {pendingIds: number[]; lastMentionId: number} {
+  const mentionIds = comments
+    .filter(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
+    .map(comment => comment.id)
+
+  const recordedIds = [...listMarkerComments(comments).map(entry => entry.marker), previousMarker].flatMap(marker =>
+    marker?.last_mention_id == null ? [] : [marker.last_mention_id],
+  )
+
+  let baseline: number
+  if (recordedIds.length > 0) {
+    baseline = Math.max(...recordedIds)
+  } else {
+    const lastBotIndex = comments.findLastIndex(comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login))
+    baseline = Math.max(
+      0,
+      ...comments
+        .filter(
+          (comment, index) =>
+            index < lastBotIndex && comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body),
+        )
+        .map(comment => comment.id),
+    )
+  }
+
+  const pending = new Set(mentionIds.filter(id => id > baseline))
+  if (triggerId !== null && triggerId > baseline) pending.add(triggerId)
+  const pendingIds = [...pending].sort((x, y) => x - y)
+
+  return {pendingIds, lastMentionId: Math.max(baseline, ...pendingIds)}
+}
+
+/**
+ * Build the complete marker string. `<`, `>` and `&` are escaped inside the JSON so Project text or
+ * labels containing `-->` can neither close the HTML comment early nor break the parse; JSON.parse
+ * restores them.
+ */
+export function buildMarker(hash: string, snapshot: RolloutSnapshot, lastMentionId: number): string {
+  const json = JSON.stringify({hash, snapshot, last_mention_id: lastMentionId})
+    .replaceAll('<', String.raw`\u003c`)
+    .replaceAll('>', String.raw`\u003e`)
+    .replaceAll('&', String.raw`\u0026`)
+  return `<!-- ${MARKER_PREFIX}${json} -->`
+}
+
+/**
+ * Decide whether to wake the tracker.
+ *
+ * - No marker (previousMarker === null): wake to write the first marker.
+ * - Different hash: state changed, wake.
+ * - Same hash with pending operator mentions: wake to answer them. The pending IDs stay out of the
+ *   hash, so answering them never changes the next comparison.
+ * - Same hash, nothing pending: no gating transition, skip.
+ */
+export function decideComment(
+  snapshot: RolloutSnapshot,
+  hash: string,
+  previousMarker: MarkerData | null,
+  pendingMentionIds: readonly number[],
+): CommentDecision {
+  if (previousMarker === null) {
+    return {
+      should_comment: true,
+      reason: 'cold start — no prior marker found; seeding initial state',
+      hash,
+      snapshot,
+    }
+  }
+
+  const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
+
+  if (hash !== previousMarker.hash) {
+    return {
+      should_comment: true,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (pendingMentionIds.length > 0) {
+    return {
+      should_comment: true,
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID`,
+      hash,
+      snapshot,
+    }
+  }
+
+  return {
+    should_comment: false,
+    reason: 'no gating transition — snapshot hash unchanged since last comment',
+    hash,
+    snapshot,
+  }
+}
+
+// ─── External signals ─────────────────────────────────────────────────────────
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function requireNonEmptyString(value: unknown, what: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${what} is missing or empty`)
+  }
+  return value
+}
+
+/** Parse a `releases/latest` API response into its tag. */
+export function parseReleaseTag(raw: unknown, what: string): string {
+  if (!isRecord(raw)) throw new Error(`${what} response is not an object`)
+  return requireNonEmptyString(raw.tag_name, `${what} tag_name`)
+}
+
+/** Parse a workflow `runs?status=success&per_page=1` API response into its newest run. */
+export function parseDeployRun(raw: unknown, what: string): DeployRun {
+  if (!isRecord(raw) || !Array.isArray(raw.workflow_runs)) throw new Error(`${what} response has no workflow_runs`)
+  const run: unknown = raw.workflow_runs[0]
+  if (!isRecord(run)) throw new Error(`${what} has no successful run`)
+  if (typeof run.id !== 'number' || !Number.isInteger(run.id) || run.id <= 0) {
+    throw new Error(`${what} run id is missing or invalid`)
+  }
+  return {run_id: run.id, head_sha: requireNonEmptyString(run.head_sha, `${what} head_sha`)}
+}
+
+/** Parse the dashboard `/operator/health` response into its contract version. */
+export function parseContractVersion(raw: unknown): string {
+  if (!isRecord(raw)) throw new Error('health response is not an object')
+  return requireNonEmptyString(raw.contractVersion, 'health contractVersion')
+}
+
+function parseFixtureJson(name: string, value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`failed to parse ${name}: ${detail}`, {cause: error})
+  }
+}
+
+function fixtureMember(fixture: unknown, key: string, name: string): unknown {
+  if (!isRecord(fixture)) throw new Error(`${name} is not an object`)
+  return fixture[key]
+}
+
+function ghApiJson(endpoint: string): unknown {
+  const raw = execFileSync('gh', ['api', endpoint], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 30_000,
+  })
+  return JSON.parse(raw)
+}
+
+async function fetchHealth(url: string): Promise<unknown> {
+  const response = await fetch(url, {signal: AbortSignal.timeout(30_000)})
+  if (!response.ok) throw new Error(`health endpoint returned HTTP ${response.status}`)
+  return response.json()
+}
+
+/**
+ * Read the external signals. Any read failure, unparseable response or empty
+ * value throws; a failed read must never look like "nothing changed".
+ *
+ * Fixture env vars carry the API response shapes and replace the network reads:
+ *   ROLLOUT_TRACKER_RELEASES_JSON — {agent, dashboard}: `releases/latest` responses
+ *   ROLLOUT_TRACKER_DEPLOYS_JSON  — {gateway, dashboard, router}: workflow `runs` responses
+ *   ROLLOUT_TRACKER_HEALTH_JSON   — the `/operator/health` response
+ *   ROLLOUT_TRACKER_HEALTH_URL    — health endpoint override for the live read; defaults to production
+ */
+export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<ExternalSignals> {
+  const releasesFixture =
+    env.ROLLOUT_TRACKER_RELEASES_JSON === undefined
+      ? undefined
+      : parseFixtureJson('ROLLOUT_TRACKER_RELEASES_JSON', env.ROLLOUT_TRACKER_RELEASES_JSON)
+  const deploysFixture =
+    env.ROLLOUT_TRACKER_DEPLOYS_JSON === undefined
+      ? undefined
+      : parseFixtureJson('ROLLOUT_TRACKER_DEPLOYS_JSON', env.ROLLOUT_TRACKER_DEPLOYS_JSON)
+  const healthFixture =
+    env.ROLLOUT_TRACKER_HEALTH_JSON === undefined
+      ? undefined
+      : parseFixtureJson('ROLLOUT_TRACKER_HEALTH_JSON', env.ROLLOUT_TRACKER_HEALTH_JSON)
+
+  const release = (key: keyof typeof RELEASE_REPOS): string => {
+    const what = `${RELEASE_REPOS[key]} latest release`
+    const raw =
+      releasesFixture === undefined
+        ? ghApiJson(`repos/${RELEASE_REPOS[key]}/releases/latest`)
+        : fixtureMember(releasesFixture, key, 'ROLLOUT_TRACKER_RELEASES_JSON')
+    return parseReleaseTag(raw, what)
+  }
+  const deploy = (key: keyof typeof DEPLOY_WORKFLOWS): DeployRun => {
+    const what = `${INFRA_REPO} ${DEPLOY_WORKFLOWS[key]}`
+    const raw =
+      deploysFixture === undefined
+        ? ghApiJson(`repos/${INFRA_REPO}/actions/workflows/${DEPLOY_WORKFLOWS[key]}/runs?status=success&per_page=1`)
+        : fixtureMember(deploysFixture, key, 'ROLLOUT_TRACKER_DEPLOYS_JSON')
+    return parseDeployRun(raw, what)
+  }
+
+  return {
+    agent_release: release('agent'),
+    dashboard_release: release('dashboard'),
+    deploy_gateway: deploy('gateway'),
+    deploy_dashboard: deploy('dashboard'),
+    deploy_router: deploy('router'),
+    contract_version: parseContractVersion(
+      healthFixture === undefined
+        ? await fetchHealth(env.ROLLOUT_TRACKER_HEALTH_URL ?? DEFAULT_HEALTH_URL)
+        : healthFixture,
+    ),
+  }
+}
+
+/**
+ * Read every comment on the tracker issue through the REST API, which carries the numeric comment
+ * ID that `gh issue view --json comments` omits. `--jq` emits one compact JSON object per comment,
+ * so a large thread streams through as lines.
+ */
+function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment[] {
+  const raw = execFileSync(
+    'gh',
+    [
+      'api',
+      '--paginate',
+      `repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
+      '--jq',
+      '.[] | {id, login: (.user.login // ""), body: (.body // "")}',
+    ],
+    {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
+  )
+  return raw
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .map((line): TrackerComment => {
+      const parsed: unknown = JSON.parse(line)
+      if (
+        !isRecord(parsed) ||
+        typeof parsed.id !== 'number' ||
+        typeof parsed.login !== 'string' ||
+        typeof parsed.body !== 'string'
+      ) {
+        throw new TypeError('comment has an unexpected shape')
+      }
+      return {id: parsed.id, author: {login: parsed.login}, body: parsed.body}
+    })
+}
+
+// ─── CLI entrypoint ───────────────────────────────────────────────────────────
+
+/** The env a run reads: what the runner hands the action, `process.env` in production. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes. A failure message goes to `stderr`, the preflight result to `stdout`. */
+export interface SnapshotIo {
+  readonly stdout: (text: string) => void
+  readonly stderr: (text: string) => void
+}
+
+/**
+ * Runs the preflight check using `gh` to fetch live data, and returns the exit code.
+ *
+ * Outputs JSON to stdout: { should_comment, reason, hash, snapshot, pending_mention_ids, last_mention_id, marker, marker_comment_id }
+ * Returns 1 if Project #1 access fails (fail loudly, not silently).
+ *
+ * Accepts optional injected fixtures via environment variables for testing:
+ *   ROLLOUT_TRACKER_ITEMS_JSON  — JSON array of ProjectItem[]
+ *   ROLLOUT_TRACKER_ISSUES_JSON — JSON array of IssueState[]
+ *   ROLLOUT_TRACKER_COMMENT_BODY — raw body of the latest @fro-bot tracker comment
+ *   ROLLOUT_TRACKER_COMMENTS_JSON — JSON array of {id, author: {login}, body} tracker issue comments;
+ *                                   supplies both the marker body and the pending operator
+ *                                   mentions, and takes precedence over ROLLOUT_TRACKER_COMMENT_BODY
+ *   ROLLOUT_TRACKER_RELEASES_JSON / _DEPLOYS_JSON / _HEALTH_JSON — external signal API responses
+ *                                   (see loadExternalSignals)
+ *   ROLLOUT_TRACKER_COMMENT_ID  — numeric ID of the comment that dispatched the run, or empty; it is
+ *                                   pending when above the mention baseline and ignored otherwise
+ *
+ * A body fixture supplies no comment list, so it reports no pending mentions.
+ */
+export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promise<number> {
+  const trackerIssue = env.ROLLOUT_TRACKER_ISSUE ?? 'fro-bot/.github#3512'
+  const projectUrl = env.ROLLOUT_TRACKER_PROJECT ?? 'https://github.com/users/fro-bot/projects/1'
+
+  const rawTriggerId = env.ROLLOUT_TRACKER_COMMENT_ID ?? ''
+  if (!/^\d*$/.test(rawTriggerId)) {
+    io.stderr('rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_COMMENT_ID must be numeric or empty\n')
+    return 1
+  }
+  const triggerId = rawTriggerId === '' ? null : Number(rawTriggerId)
+
+  let items: ProjectItem[]
+  let issues: IssueState[]
+
+  // Allow fixture injection for tests / dry-run
+  if (env.ROLLOUT_TRACKER_ITEMS_JSON === undefined) {
+    // Fetch from GitHub Project via gh CLI
+    // Project number 1 for user fro-bot
+    const projectNumber = '1'
+    const projectOwner = 'fro-bot'
+    let rawItems: string
+    try {
+      const {execSync} = await import('node:child_process')
+      rawItems = execSync(`gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit 100`, {
+        encoding: 'utf8',
+        timeout: 60_000,
+      })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: FATAL — failed to read Project ${projectUrl}: ${detail}\n`)
+      io.stderr('rollout-tracker-snapshot: refusing to treat Project access failure as no-drift; exiting 1\n')
+      return 1
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(rawItems)
+      // gh project item-list --format json returns { items: [...] }
+      const rawArr =
+        parsed !== null && typeof parsed === 'object' && 'items' in parsed
+          ? (parsed as {items: unknown[]}).items
+          : (parsed as unknown[])
+      items = (rawArr as Record<string, unknown>[]).map(raw => normaliseRawProjectItem(raw))
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: failed to parse project items: ${detail}\n`)
+      return 1
+    }
+  } else {
+    try {
+      items = JSON.parse(env.ROLLOUT_TRACKER_ITEMS_JSON) as ProjectItem[]
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: failed to parse ROLLOUT_TRACKER_ITEMS_JSON: ${detail}\n`)
+      return 1
+    }
+  }
+
+  if (env.ROLLOUT_TRACKER_ISSUES_JSON === undefined) {
+    items = filterSupportedProjectItems(items)
+    const trackedIssues = deriveTrackedIssueRefs(items)
+    issues = []
+    for (const ref of trackedIssues) {
+      const [repo, numStr] = ref.split('#')
+      if (repo === undefined || numStr === undefined) continue
+      try {
+        const raw = execFileSync(
+          'gh',
+          ['issue', 'view', numStr, '--repo', repo, '--json', 'number,state,title,closedAt,labels'],
+          {encoding: 'utf8', timeout: 30_000},
+        )
+        const parsed = JSON.parse(raw) as {
+          number: number
+          state: string
+          title: string
+          closedAt: string | null
+          labels: {name: string}[]
+        }
+        issues.push({
+          number: parsed.number,
+          repo,
+          state: normaliseIssueState(parsed.state),
+          title: parsed.title,
+          closed_at: parsed.closedAt,
+          labels: parsed.labels.map(l => l.name),
+        })
+      } catch {
+        io.stderr(
+          'rollout-tracker-snapshot: FATAL — failed to fetch a tracked issue; refusing to treat access failure as no-drift; exiting 1\n',
+        )
+        return 1
+      }
+    }
+  } else {
+    try {
+      issues = JSON.parse(env.ROLLOUT_TRACKER_ISSUES_JSON) as IssueState[]
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: failed to parse ROLLOUT_TRACKER_ISSUES_JSON: ${detail}\n`)
+      return 1
+    }
+  }
+
+  let comments: TrackerComment[] = []
+  let latestCommentBody: string
+  if (env.ROLLOUT_TRACKER_COMMENTS_JSON !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(env.ROLLOUT_TRACKER_COMMENTS_JSON)
+      if (!Array.isArray(parsed)) throw new TypeError('not an array')
+      comments = parsed as TrackerComment[]
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: failed to parse ROLLOUT_TRACKER_COMMENTS_JSON: ${detail}\n`)
+      return 1
+    }
+    latestCommentBody = selectLatestMarkerCommentBody(comments)
+  } else if (env.ROLLOUT_TRACKER_COMMENT_BODY === undefined) {
+    const [trackerRepo, trackerNumStr] = trackerIssue.split('#')
+    if (trackerRepo === undefined || trackerNumStr === undefined) {
+      io.stderr(`rollout-tracker-snapshot: invalid ROLLOUT_TRACKER_ISSUE format: ${trackerIssue}\n`)
+      return 1
+    }
+    try {
+      comments = fetchTrackerComments(trackerRepo, trackerNumStr)
+      latestCommentBody = selectLatestMarkerCommentBody(comments)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      io.stderr(`rollout-tracker-snapshot: FATAL — failed to fetch tracker comments: ${detail}\n`)
+      io.stderr('rollout-tracker-snapshot: refusing to treat a comment-fetch failure as a cold start; exiting 1\n')
+      return 1
+    }
+  } else {
+    latestCommentBody = env.ROLLOUT_TRACKER_COMMENT_BODY
+  }
+
+  let external: ExternalSignals
+  try {
+    external = await loadExternalSignals(env)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    io.stderr(`rollout-tracker-snapshot: FATAL — failed to read external signals: ${detail}\n`)
+    io.stderr('rollout-tracker-snapshot: refusing to treat a signal read failure as no-drift; exiting 1\n')
+    return 1
+  }
+
+  const snapshot = buildSnapshot(items, issues, external)
+  const hash = hashSnapshot(snapshot)
+  const previousMarker = extractPreviousMarker(latestCommentBody)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, triggerId)
+  const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
+  const result: PreflightResult = {
+    ...decision,
+    pending_mention_ids: pendingIds,
+    last_mention_id: lastMentionId,
+    marker: buildMarker(hash, snapshot, lastMentionId),
+    marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+  }
+
+  io.stdout(`${JSON.stringify(result)}\n`)
+  return 0
+}

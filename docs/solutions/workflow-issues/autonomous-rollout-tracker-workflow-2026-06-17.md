@@ -119,7 +119,7 @@ body as `fro-bot`, and without that clause each edit would start a second, unser
 
 ### The preflight and its wake inputs
 
-The preflight runs `scripts/rollout-tracker-snapshot.ts`, which makes no model call. It hashes:
+The preflight runs `scripts/rollout-tracker-snapshot.ts` (the logic is in `packages/status-truth/src/rollout-tracker-snapshot.ts`), which makes no model call. It hashes:
 
 - each tracked Project item's identity and issue state;
 - the latest `releases/latest` tag of `fro-bot/agent` and `fro-bot/dashboard`;

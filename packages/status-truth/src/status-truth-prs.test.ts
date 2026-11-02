@@ -15,7 +15,7 @@
  */
 
 import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
-import type {StatusTruthJsonReport} from './status-truth-detect.ts'
+import type {StatusTruthJsonReport} from './report-model.ts'
 import type {
   ExecuteStatusTruthPrActionsInput,
   ExistingStatusTruthPr,
@@ -2610,7 +2610,7 @@ function assertStatusTruthWorkflow(value: unknown): asserts value is {
 }
 
 describe('workflow contract: PR job app-token permissions', () => {
-  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const workflowPath = resolve(import.meta.dirname, '../../../.github/workflows/status-truth.yaml')
   const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
   assertStatusTruthWorkflow(parsed)
   const prsJob = parsed.jobs.prs
@@ -2651,7 +2651,7 @@ describe('workflow contract: PR job app-token permissions', () => {
 })
 
 describe('workflow contract: rollout snapshot step', () => {
-  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const workflowPath = resolve(import.meta.dirname, '../../../.github/workflows/status-truth.yaml')
   const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
   assertStatusTruthWorkflow(parsed)
 
@@ -2663,7 +2663,7 @@ describe('workflow contract: rollout snapshot step', () => {
 })
 
 describe('workflow contract: separate read-only fetch token', () => {
-  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const workflowPath = resolve(import.meta.dirname, '../../../.github/workflows/status-truth.yaml')
   const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
   assertStatusTruthWorkflow(parsed)
   const prsJob = parsed.jobs.prs
@@ -2707,7 +2707,11 @@ describe('env-backed PR runner deps', () => {
       delete process.env.STATUS_TRUTH_FETCH_TOKEN
       process.env.GITHUB_TOKEN = 'write-token-only'
 
-      const deps = buildEnvBackedRunPrsCoreDeps()
+      const deps = buildEnvBackedRunPrsCoreDeps(process.env, {
+        stdout: () => undefined,
+        stderr: () => undefined,
+        setExitCode: () => undefined,
+      })
 
       await expect(deps.createFetchClient()).rejects.toThrow('required token is missing')
     } finally {

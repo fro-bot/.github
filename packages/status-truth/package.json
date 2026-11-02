@@ -1,0 +1,33 @@
+{
+  "name": "@fro-bot/status-truth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The status-truth detector, proposal opener and correction-PR executor, and the rollout tracker snapshot, of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./detect-classify": "./src/detect-classify.ts",
+    "./detect-cli": "./src/detect-cli.ts",
+    "./detect-extract": "./src/detect-extract.ts",
+    "./detect-live-state": "./src/detect-live-state.ts",
+    "./detect-plan-consistency": "./src/detect-plan-consistency.ts",
+    "./detect-rollout": "./src/detect-rollout.ts",
+    "./proposal-exec": "./src/proposal-exec.ts",
+    "./proposal-labels": "./src/proposal-labels.ts",
+    "./proposal-markers": "./src/proposal-markers.ts",
+    "./proposal-outcomes": "./src/proposal-outcomes.ts",
+    "./proposal-plan": "./src/proposal-plan.ts",
+    "./proposals-cli": "./src/proposals-cli.ts",
+    "./prs-cli": "./src/prs-cli.ts",
+    "./report-model": "./src/report-model.ts",
+    "./rollout-tracker-snapshot": "./src/rollout-tracker-snapshot.ts",
+    "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts",
+    "./status-truth-prs": "./src/status-truth-prs.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro-bot/privacy": "workspace:*"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

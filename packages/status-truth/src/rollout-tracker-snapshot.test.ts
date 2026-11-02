@@ -95,7 +95,7 @@ interface CliResult {
 }
 
 function runCliRaw(env: Record<string, string | undefined>): CliResult {
-  const scriptPath = resolve(import.meta.dirname, './rollout-tracker-snapshot.ts')
+  const scriptPath = resolve(import.meta.dirname, '../../../scripts/rollout-tracker-snapshot.ts')
   try {
     const stdout = execFileSync('node', [scriptPath], {
       encoding: 'utf8',
@@ -906,7 +906,7 @@ const execFileAsync = promisify(execFile)
 
 /** Like `runCliRaw`, but async so a server in this process can answer while the CLI runs. */
 async function runCliRawAsync(env: Record<string, string | undefined>): Promise<CliResult> {
-  const scriptPath = resolve(import.meta.dirname, './rollout-tracker-snapshot.ts')
+  const scriptPath = resolve(import.meta.dirname, '../../../scripts/rollout-tracker-snapshot.ts')
   try {
     const {stdout} = await execFileAsync('node', [scriptPath], {
       encoding: 'utf8',
@@ -1878,7 +1878,7 @@ function assertWorkflow(value: unknown): asserts value is {jobs: Record<string, 
 }
 
 describe('gateway-rollout-tracker.yaml workflow shape', () => {
-  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/gateway-rollout-tracker.yaml')
+  const workflowPath = resolve(import.meta.dirname, '../../../.github/workflows/gateway-rollout-tracker.yaml')
   const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
 
   assertWorkflow(parsed)
@@ -1956,7 +1956,7 @@ describe('gateway-rollout-tracker.yaml workflow shape', () => {
 })
 
 describe('gateway-rollout-tracker.yaml mention mode', () => {
-  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/gateway-rollout-tracker.yaml')
+  const workflowPath = resolve(import.meta.dirname, '../../../.github/workflows/gateway-rollout-tracker.yaml')
   const workflow = parse(readFileSync(workflowPath, 'utf8')) as {
     on: {workflow_dispatch?: {inputs?: Record<string, {type?: string; required?: boolean; default?: unknown}>}}
     jobs: Record<string, WorkflowJob>

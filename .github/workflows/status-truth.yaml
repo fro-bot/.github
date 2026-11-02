@@ -335,7 +335,7 @@ jobs:
   # This job only produces real PR actions when ALL of the following hold:
   # 1. The repository variable STATUS_TRUTH_PRS_ENABLED is set to 'true'.
   # 2. At least one claim kind has been added to GRADUATED_CLAIM_KINDS in
-  #    scripts/status-truth-prs.ts via a reviewed repo change.
+  #    packages/status-truth/src/status-truth-prs.ts via a reviewed repo change.
   # 3. A workflow_dispatch run explicitly sets the open_prs input to 'true'.
   #
   # Any single key alone produces zero PR actions. Scheduled runs are
@@ -343,7 +343,7 @@ jobs:
   # re-checks all three keys at startup as defense in depth — the workflow
   # if: condition below is not the only enforcement point.
   #
-  # Safety constraints (independently enforced in scripts/status-truth-prs.ts):
+  # Safety constraints (independently enforced in packages/status-truth/src/status-truth-prs.ts):
   # - Ungraduated or disarmed candidates downgrade to proposal-only (no PR actions).
   # - Forbidden paths (workflows, hooks, metadata, knowledge, persona, etc.) → proposal-only.
   # - Corrected content must re-resolve as current before any write; failure downgrades.

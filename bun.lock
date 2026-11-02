@@ -76,6 +76,17 @@
         "@fro-bot/test-kit": "workspace:*",
       },
     },
+    "packages/status-truth": {
+      "name": "@fro-bot/status-truth",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro-bot/privacy": "workspace:*",
+      },
+      "devDependencies": {
+        "@fro-bot/test-kit": "workspace:*",
+      },
+    },
     "packages/test-kit": {
       "name": "@fro-bot/test-kit",
       "version": "0.0.0",
@@ -242,6 +253,8 @@
     "@fro-bot/privacy": ["@fro-bot/privacy@workspace:packages/privacy"],
 
     "@fro-bot/registry": ["@fro-bot/registry@workspace:packages/registry"],
+
+    "@fro-bot/status-truth": ["@fro-bot/status-truth@workspace:packages/status-truth"],
 
     "@fro-bot/test-kit": ["@fro-bot/test-kit@workspace:packages/test-kit"],
 

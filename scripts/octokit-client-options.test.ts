@@ -54,12 +54,14 @@ describe('capture-learnings-harvest createOctokitFromEnv', () => {
   })
 })
 
+const silentIo = {stdout: () => undefined, stderr: () => undefined, setExitCode: () => undefined}
+
 describe('status-truth-prs env-backed clients', () => {
   it('builds the fetch client from STATUS_TRUTH_FETCH_TOKEN with a 10 s timeout and a silent logger', async () => {
     process.env.STATUS_TRUTH_FETCH_TOKEN = 'fetch-token'
     process.env.GITHUB_TOKEN = 'write-token'
-    const {buildEnvBackedRunPrsCoreDeps} = await import('./status-truth-prs.ts')
-    await buildEnvBackedRunPrsCoreDeps().createFetchClient()
+    const {buildEnvBackedRunPrsCoreDeps} = await import('@fro-bot/status-truth/status-truth-prs')
+    await buildEnvBackedRunPrsCoreDeps(process.env, silentIo).createFetchClient()
     expect(constructed).toHaveLength(1)
     expect(constructed[0]).toMatchObject({auth: 'fetch-token', request: {timeout: 10_000}})
     const log = constructed[0]?.log as Record<string, () => unknown>
@@ -70,8 +72,8 @@ describe('status-truth-prs env-backed clients', () => {
   it('builds the write client from GITHUB_TOKEN with the same timeout and a silent logger', async () => {
     process.env.STATUS_TRUTH_FETCH_TOKEN = 'fetch-token'
     process.env.GITHUB_TOKEN = 'write-token'
-    const {buildEnvBackedRunPrsCoreDeps} = await import('./status-truth-prs.ts')
-    await buildEnvBackedRunPrsCoreDeps().createWriteClient()
+    const {buildEnvBackedRunPrsCoreDeps} = await import('@fro-bot/status-truth/status-truth-prs')
+    await buildEnvBackedRunPrsCoreDeps(process.env, silentIo).createWriteClient()
     expect(constructed).toHaveLength(1)
     expect(constructed[0]).toMatchObject({auth: 'write-token', request: {timeout: 10_000}})
     expect(Object.keys(constructed[0]?.log as object).sort()).toEqual(['debug', 'error', 'info', 'warn'])

@@ -92,7 +92,7 @@ artifacts.
 
 ## Examples
 
-Shapes from the shipped implementation (`scripts/status-truth-detect.ts`):
+Shapes from the shipped implementation (`packages/status-truth/src/detect-plan-consistency.ts`):
 
 ```typescript
 parsePlanUnitCheckboxes(content)            // → {recognized, checked, unchecked}

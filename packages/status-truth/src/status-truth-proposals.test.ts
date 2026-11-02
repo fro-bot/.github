@@ -5,34 +5,23 @@
  */
 
 import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
-import type {StatusTruthJsonReport} from './status-truth-detect.ts'
-import type {
-  ExecuteStatusTruthProposalActionsInput,
-  ExistingProposalIssue,
-  IssueListItem,
-  OutcomeCounts,
-  PlanStatusTruthProposalActionsInput,
-  StatusTruthOctokitClient,
-} from './status-truth-proposals.ts'
+import type {ExecuteStatusTruthProposalActionsInput, IssueListItem, StatusTruthOctokitClient} from './proposal-exec.ts'
+import type {ExistingProposalIssue, OutcomeCounts} from './proposal-outcomes.ts'
+import type {PlanStatusTruthProposalActionsInput} from './proposal-plan.ts'
+import type {StatusTruthJsonReport} from './report-model.ts'
 import {extractRedactedCanonicalIds, loadRedactedCanonicalIdsFromDisk} from '@fro-bot/privacy/redacted-ids'
 import {applyPublicOutputGate, makePublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it} from 'vitest'
+import {executeStatusTruthProposalActions, fetchExistingProposalIssues} from './proposal-exec.ts'
+import {OUTCOME_LABELS, PROPOSAL_LABEL, REQUIRED_LABELS} from './proposal-labels.ts'
 import {
-  buildOutcomeCounts,
-  buildOutcomeCountsByKind,
-  classifyProposalOutcome,
-  executeStatusTruthProposalActions,
   extractProposalFingerprint,
   extractProposalKind,
-  fetchExistingProposalIssues,
   isWithinCooldown,
-  NOOP_LOG,
-  OUTCOME_LABELS,
-  planStatusTruthProposalActions,
-  PROPOSAL_LABEL,
   recoverProposalKind,
-  REQUIRED_LABELS,
-} from './status-truth-proposals.ts'
+} from './proposal-markers.ts'
+import {buildOutcomeCounts, buildOutcomeCountsByKind, classifyProposalOutcome} from './proposal-outcomes.ts'
+import {planStatusTruthProposalActions} from './proposal-plan.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2648,28 +2637,6 @@ describe('Fix #9: same-run duplicate proposal deduplication', () => {
     // Second occurrence is deduplicated
     expect(counts.sameRunDeduplicated).toBe(1)
     expect(counts.opened).toBe(1)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Security fix #1: Octokit no-op log handlers
-// ---------------------------------------------------------------------------
-
-describe('NOOP_LOG — Octokit default logger suppression', () => {
-  it('NOOP_LOG is exported and has all four required log handler methods', () => {
-    expect(typeof NOOP_LOG).toBe('object')
-    expect(typeof NOOP_LOG.debug).toBe('function')
-    expect(typeof NOOP_LOG.info).toBe('function')
-    expect(typeof NOOP_LOG.warn).toBe('function')
-    expect(typeof NOOP_LOG.error).toBe('function')
-  })
-
-  it('NOOP_LOG handlers are callable and return undefined (no-op)', () => {
-    // Calling them must not throw and must not produce output
-    expect(NOOP_LOG.debug()).toBeUndefined()
-    expect(NOOP_LOG.info()).toBeUndefined()
-    expect(NOOP_LOG.warn()).toBeUndefined()
-    expect(NOOP_LOG.error()).toBeUndefined()
   })
 })
 
