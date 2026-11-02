@@ -1,9 +1,9 @@
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
-import {copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile} from 'node:fs/promises'
+import {copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {dirname, join, relative, resolve, sep} from 'node:path'
+import {basename, dirname, isAbsolute, join, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
 
 import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
@@ -100,15 +100,38 @@ export function runTypeScriptBuild(outputDirectory: string, options: RunTypeScri
 }
 
 /**
- * The options a CLI invocation requests. `runBuild` never reads `process.argv` itself: a build run
- * stages and replaces directories, so what it writes to must come from the caller, never from
- * ambient process state.
+ * The roots a stage directory may sit under: the OS temp directory, and `RUNNER_TEMP` when the
+ * environment names an absolute one. A stage replaces whatever is at its target, so nothing outside
+ * these roots (the checkout, a home directory, a tool install) is ever a valid target.
  */
-export function cliOptions(argv: readonly string[] = process.argv): RunBuildOptions {
-  return {checkOnly: resolveCheckOnly(argv), stageRoot: resolveStageRoot(argv), verify: resolveVerify(argv)}
+export function stageRootAllowlist(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  tmp: string = tmpdir(),
+): string[] {
+  const runnerTemp = env.RUNNER_TEMP
+  return runnerTemp !== undefined && isAbsolute(runnerTemp) ? [tmp, runnerTemp] : [tmp]
+}
+
+/**
+ * The options a CLI invocation requests. `runBuild` never reads `process.argv` or the environment
+ * itself: a build run stages and replaces directories, so what it writes to and where it may write
+ * must come from the caller, never from ambient process state.
+ */
+export function cliOptions(
+  argv: readonly string[] = process.argv,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): RunBuildOptions {
+  return {
+    allowedStageRoots: stageRootAllowlist(env),
+    checkOnly: resolveCheckOnly(argv),
+    stageRoot: resolveStageRoot(argv),
+    verify: resolveVerify(argv),
+  }
 }
 
 export interface RunBuildOptions {
+  /** Roots a stage target must sit strictly under; defaults to the OS temp directory. */
+  allowedStageRoots?: readonly string[]
   buildConfigPath?: string
   checkOnly?: boolean
   manifestPath?: string
@@ -184,12 +207,15 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
     }
 
     let stageRoot = options.stageRoot
+    const allowedStageRoots = [...(options.allowedStageRoots ?? [tmpdir()])]
     if (stageRoot === undefined && currentVerify) {
       scratchStageRoot = await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-'))
       stageRoot = join(scratchStageRoot, 'package')
+      allowedStageRoots.push(scratchStageRoot)
     }
     if (stageRoot !== undefined) {
       await stagePackage({
+        allowedStageRoots,
         builtRoot: temporaryRoot,
         manifestPath: currentManifest,
         replaceDirectory,
@@ -216,9 +242,12 @@ function writeToStdout(message: string): void {
   process.stdout.write(message)
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function reportFatalError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error)
-  process.stderr.write(`${message}\n`)
+  process.stderr.write(`${errorMessage(error)}\n`)
   process.exitCode = 1
 }
 
@@ -351,22 +380,82 @@ export function publishedManifest(content: string, path: string): string {
 }
 
 interface StagePackageOptions {
+  /** Roots the stage target must sit strictly under, after resolving symlinks. */
+  allowedStageRoots: readonly string[]
   builtRoot: string
   manifestPath: string
   replaceDirectory?: typeof replaceDirectoryAtomically
   stageRoot: string
 }
 
+// A function, not a top-level `const`, for the Stryker reason given above `repositoryRoot`.
+export function stageMarkerName(): string {
+  return 'wiki-write-core-stage.marker'
+}
+
+export function stageMarkerContent(): string {
+  return '@fro.bot/wiki-write-core staged package\n'
+}
+
+/** `path` with every symlink resolved, including for the part of it that does not exist yet. */
+async function canonicalPath(path: string): Promise<string> {
+  const absolute = resolve(path)
+  try {
+    return await realpath(absolute)
+  } catch (error: unknown) {
+    if (!isFileNotFoundError(error)) throw error
+  }
+  // `realpath` also reports ENOENT for a symlink whose target is missing; creating anything below
+  // it would create that target, wherever it points.
+  if (await pathExists(absolute)) throw new Error(`refusing to follow a dangling symlink at ${absolute}`)
+  return join(await canonicalPath(dirname(absolute)), basename(absolute))
+}
+
+function isStrictlyInside(root: string, path: string): boolean {
+  const relation = relative(root, path)
+  return relation !== '' && relation.split(sep)[0] !== '..' && !isAbsolute(relation)
+}
+
+async function hasStageMarker(directory: string): Promise<boolean> {
+  const markerPath = join(directory, stageMarkerName())
+  try {
+    return (await lstat(markerPath)).isFile() && (await readFile(markerPath, 'utf8')) === stageMarkerContent()
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error) || isNotDirectoryError(error)) return false
+    throw error
+  }
+}
+
 /**
- * Assembles the publishable package in `stageRoot`: the built `dist/`, the rewritten manifest, and
- * the README and LICENSE that sit beside the committed manifest. The committed tree is never
- * modified; `npm pack` and `npm publish` run from `stageRoot`.
+ * The canonical stage target, or a refusal. A stage replaces whatever sits at its target, so the
+ * target must resolve (through symlinked ancestors too) to somewhere strictly under an allowed
+ * root, and an existing target is replaced only when a previous stage left its marker there.
+ * Nothing is created, moved or removed before this returns.
+ */
+async function checkedStageTarget(stageRoot: string, allowedStageRoots: readonly string[]): Promise<string> {
+  const target = await canonicalPath(stageRoot)
+  const roots = await Promise.all(allowedStageRoots.map(async root => canonicalPath(root)))
+  if (!roots.some(root => isStrictlyInside(root, target))) {
+    throw new Error(`refusing to stage into ${stageRoot}: it is outside the allowed staging roots`)
+  }
+  if ((await pathExists(target)) && !(await hasStageMarker(target))) {
+    throw new Error(`refusing to replace ${stageRoot}: it has no stage marker from a previous stage`)
+  }
+  return target
+}
+
+/**
+ * Assembles the publishable package in `stageRoot`: the built `dist/`, the rewritten manifest, the
+ * README and LICENSE that sit beside the committed manifest, and the stage marker that lets a later
+ * stage replace this one. The committed tree is never modified; `npm pack` and `npm publish` run
+ * from `stageRoot`.
  */
 export async function stagePackage(options: StagePackageOptions): Promise<void> {
   const replaceDirectory = options.replaceDirectory ?? replaceDirectoryAtomically
   const sourceDirectory = dirname(options.manifestPath)
-  await mkdir(dirname(options.stageRoot), {recursive: true})
-  const stagingRoot = await mkdtemp(join(dirname(options.stageRoot), '.wiki-write-core-stage-'))
+  const target = await checkedStageTarget(options.stageRoot, options.allowedStageRoots)
+  await mkdir(dirname(target), {recursive: true})
+  const stagingRoot = await mkdtemp(join(dirname(target), '.wiki-write-core-stage-'))
 
   try {
     await cp(options.builtRoot, join(stagingRoot, 'dist'), {recursive: true})
@@ -376,7 +465,8 @@ export async function stagePackage(options: StagePackageOptions): Promise<void> 
     )
     await copyFile(join(sourceDirectory, 'README.md'), join(stagingRoot, 'README.md'))
     await copyFile(join(sourceDirectory, 'LICENSE.md'), join(stagingRoot, 'LICENSE.md'))
-    await replaceDirectory(stagingRoot, options.stageRoot)
+    await writeFile(join(stagingRoot, stageMarkerName()), stageMarkerContent())
+    await replaceDirectory(stagingRoot, target)
   } finally {
     await rm(stagingRoot, {force: true, recursive: true})
   }
@@ -402,20 +492,22 @@ export async function replaceDirectoryAtomically(
     await renameDirectory(source, target)
   } catch (error: unknown) {
     if (targetMoved) {
-      await renameDirectory(backup, target)
-      targetMoved = false
+      try {
+        await renameDirectory(backup, target)
+      } catch (restoreError: unknown) {
+        // The backup is the only copy of the original now: keep it and say where it is.
+        throw new AggregateError(
+          [error, restoreError],
+          `could not install the replacement (${errorMessage(error)}) and could not restore the original (${errorMessage(restoreError)}); the original is kept at ${backup}`,
+        )
+      }
     }
     throw error
-  } finally {
-    // `pathExists(backup)` is redundant with `targetMoved`: backup is unconditionally removed
-    // immediately above (before targetMoved can ever become true), and the only place it is
-    // (re)created is the `targetMoved = true` assignment, which the catch block's restore
-    // unwinds back to false before this finally runs. targetMoved's value and backup's
-    // existence are therefore always equal here, so `force: true` would only ever mask a real
-    // bug in that invariant.
-    if (targetMoved) {
-      await rm(backup, {recursive: true})
-    }
+  }
+
+  // Only a replacement that is in place makes the backup disposable.
+  if (targetMoved) {
+    await rm(backup, {recursive: true})
   }
 }
 
@@ -491,6 +583,10 @@ function displayPath(path: string): string {
 
 export function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+export function isNotDirectoryError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOTDIR'
 }
 
 // Deliberately use Node's main-module check: unlike the repository's legacy scripts, it survives

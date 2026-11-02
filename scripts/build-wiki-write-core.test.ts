@@ -2,7 +2,22 @@ import type {execFileSync} from 'node:child_process'
 import {execFileSync as execFileSyncReal} from 'node:child_process'
 import {createHash, type Hash} from 'node:crypto'
 import {writeFileSync} from 'node:fs'
-import {lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, symlink, utimes, writeFile} from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {basename, dirname, join, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
@@ -16,6 +31,7 @@ import {
   computeSourceTreeHash,
   embedSourceTreeHash,
   isFileNotFoundError,
+  isNotDirectoryError,
   isRecord,
   markerDirectory,
   packageDirectory,
@@ -38,6 +54,7 @@ import {
   sourceRoot,
   stableJson,
   stagePackage,
+  stageRootAllowlist,
   updateHash,
   writeGateContractMarker,
 } from './build-wiki-write-core.ts'
@@ -432,7 +449,7 @@ describe('wiki-write-core build inputs', () => {
     expect(() => stableJson(() => {})).toThrow('package manifest contains an unsupported value')
   })
 
-  it('propagates the restore failure and still cleans up the backup when the restore rename itself fails', async () => {
+  it('keeps the backup, names it, and carries both causes when the restore rename fails too', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-atomic-restore-fails-'))
     const target = join(root, 'dist')
     const source = join(root, 'new-dist')
@@ -445,27 +462,58 @@ describe('wiki-write-core build inputs', () => {
       await writeFile(join(source, 'entry.js'), 'replacement\n')
 
       // Call 1: target -> backup (succeeds). Call 2: source -> target (fails, enters catch).
-      // Call 3: backup -> target, the catch block's own restore attempt (fails too) -- this is
-      // the path where targetMoved's `= false` reset is never reached before finally runs.
+      // Call 3: backup -> target, the catch block's own restore attempt (fails too).
       const failingRename: typeof rename = async (from, to) => {
         renameCalls++
         if (renameCalls === 1) {
           await rename(from, to)
           return
         }
-        throw new Error(`simulated failure on call ${renameCalls}`)
+        throw new Error(renameCalls === 2 ? 'simulated replacement failure' : 'simulated restore failure')
       }
 
-      await expect(replaceDirectoryAtomically(source, target, failingRename)).rejects.toThrow(
-        'simulated failure on call 3',
+      const failure = await replaceDirectoryAtomically(source, target, failingRename).then(
+        () => undefined,
+        (error: unknown) => error,
       )
 
-      // The finally block's `if (targetMoved)` cleanup must still run without throwing its own
-      // ENOENT (proving targetMoved and backup's existence stayed in agreement even though the
-      // `targetMoved = false` reset was skipped): no leftover backup directory remains.
-      const remainingEntries = await readdir(root)
-      const leftoverBackups = remainingEntries.filter(name => name.startsWith('.wiki-write-core-dist-backup-'))
-      expect(leftoverBackups).toEqual([])
+      // The original data survives, in the backup directory, and nothing was deleted.
+      const backups = (await readdir(root)).filter(name => name.startsWith('.wiki-write-core-dist-backup-'))
+      expect(backups).toHaveLength(1)
+      const backup = join(root, backups[0] ?? '')
+      await expect(readFile(join(backup, 'entry.js'), 'utf8')).resolves.toBe('original\n')
+      await expect(readFile(join(source, 'entry.js'), 'utf8')).resolves.toBe('replacement\n')
+      await expect(pathExists(target)).resolves.toBe(false)
+
+      expect(failure).toBeInstanceOf(AggregateError)
+      const aggregate = failure as AggregateError
+      expect(aggregate.message).toBe(
+        `could not install the replacement (simulated replacement failure) and could not restore the original (simulated restore failure); the original is kept at ${backup}`,
+      )
+      expect(aggregate.errors.map(error => (error as Error).message)).toEqual([
+        'simulated replacement failure',
+        'simulated restore failure',
+      ])
+    } finally {
+      await rm(root, {force: true, recursive: true})
+    }
+  })
+
+  it('does not delete the backup when removing it after a successful replacement is the step that fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-atomic-keep-'))
+    const target = join(root, 'dist')
+    const source = join(root, 'new-dist')
+
+    try {
+      await mkdir(target)
+      await writeFile(join(target, 'entry.js'), 'original\n')
+      await mkdir(source)
+      await writeFile(join(source, 'entry.js'), 'replacement\n')
+
+      await replaceDirectoryAtomically(source, target)
+
+      await expect(readFile(join(target, 'entry.js'), 'utf8')).resolves.toBe('replacement\n')
+      expect((await readdir(root)).filter(name => name.startsWith('.wiki-write-core-dist-backup-'))).toEqual([])
     } finally {
       await rm(root, {force: true, recursive: true})
     }
@@ -848,6 +896,15 @@ describe('wiki-write-core build inputs', () => {
     expect(isFileNotFoundError(undefined)).toBe(false)
   })
 
+  it('classifies not-a-directory errors precisely', () => {
+    expect(isNotDirectoryError(Object.assign(new Error('not a directory'), {code: 'ENOTDIR'}))).toBe(true)
+    expect(isNotDirectoryError(new Error('no code'))).toBe(false)
+    expect(isNotDirectoryError(Object.assign(new Error('other'), {code: 'ENOENT'}))).toBe(false)
+    expect(isNotDirectoryError({code: 'ENOTDIR'})).toBe(false)
+    expect(isNotDirectoryError('ENOTDIR')).toBe(false)
+    expect(isNotDirectoryError(undefined)).toBe(false)
+  })
+
   it('resolves the module build paths against the repository root', () => {
     expect(repositoryRoot()).toBe(resolve(import.meta.dirname, '..'))
     expect(relative(repositoryRoot(), sourceRoot())).toBe(join('packages', 'wiki-write-core', 'src'))
@@ -1219,7 +1276,16 @@ describe('runBuild', () => {
         runTypeScriptBuild: fixture.fakeBuild('a'),
       })
 
-      expect((await readdir(stageRoot)).sort()).toEqual(['LICENSE.md', 'README.md', 'dist', 'package.json'])
+      expect((await readdir(stageRoot)).sort()).toEqual([
+        'LICENSE.md',
+        'README.md',
+        'dist',
+        'package.json',
+        'wiki-write-core-stage.marker',
+      ])
+      await expect(readFile(join(stageRoot, 'wiki-write-core-stage.marker'), 'utf8')).resolves.toBe(
+        '@fro.bot/wiki-write-core staged package\n',
+      )
       await expect(readFile(join(stageRoot, 'dist', 'index.js'), 'utf8')).resolves.toContain("variant = 'a'")
       const stagedMarker = await readFile(join(stageRoot, 'dist', 'gate-contract.json'))
       const committedMarker = await readFile(join(fixture.sourceOpts.markerDirectory, 'gate-contract.json'))
@@ -1303,7 +1369,13 @@ describe('runBuild', () => {
         write: () => {},
       })
       expect(seen).toHaveLength(1)
-      expect(seen[0]?.files).toEqual(['LICENSE.md', 'README.md', 'dist', 'package.json'])
+      expect(seen[0]?.files).toEqual([
+        'LICENSE.md',
+        'README.md',
+        'dist',
+        'package.json',
+        'wiki-write-core-stage.marker',
+      ])
       expect(basename(dirname(seen[0]?.root ?? ''))).toMatch(/^wiki-write-core-stage-/u)
       await expect(pathExists(dirname(seen[0]?.root ?? ''))).resolves.toBe(false)
     } finally {
@@ -1384,33 +1456,76 @@ describe('resolveStageRoot and resolveVerify', () => {
 })
 
 describe('cliOptions', () => {
-  it('requests nothing for a bare invocation', () => {
-    expect(cliOptions(['bun', 'build.ts'])).toEqual({checkOnly: false, stageRoot: undefined, verify: false})
+  it('requests nothing for a bare invocation, and allows staging only under the OS temp directory', () => {
+    expect(cliOptions(['bun', 'build.ts'], {})).toEqual({
+      allowedStageRoots: [tmpdir()],
+      checkOnly: false,
+      stageRoot: undefined,
+      verify: false,
+    })
   })
 
   it('maps each flag to its option', () => {
-    expect(cliOptions(['bun', 'build.ts', '--check'])).toEqual({checkOnly: true, stageRoot: undefined, verify: false})
-    expect(cliOptions(['bun', 'build.ts', '--verify'])).toEqual({checkOnly: false, stageRoot: undefined, verify: true})
-    expect(cliOptions(['bun', 'build.ts', '--stage', '/abs/dir'])).toEqual({
+    expect(cliOptions(['bun', 'build.ts', '--check'], {})).toMatchObject({checkOnly: true, verify: false})
+    expect(cliOptions(['bun', 'build.ts', '--verify'], {})).toMatchObject({checkOnly: false, verify: true})
+    expect(cliOptions(['bun', 'build.ts', '--stage', '/abs/dir'], {})).toMatchObject({
       checkOnly: false,
       stageRoot: '/abs/dir',
       verify: false,
     })
-    expect(cliOptions(['bun', 'build.ts', '--check', '--verify', '--stage', '/abs/dir'])).toEqual({
+    expect(cliOptions(['bun', 'build.ts', '--check', '--verify', '--stage', '/abs/dir'], {})).toEqual({
+      allowedStageRoots: [tmpdir()],
       checkOnly: true,
       stageRoot: '/abs/dir',
       verify: true,
     })
   })
 
-  it('reads process.argv when no argv is given', () => {
+  it('also allows staging under RUNNER_TEMP', () => {
+    expect(cliOptions(['bun', 'build.ts'], {RUNNER_TEMP: '/runner/temp'}).allowedStageRoots).toEqual([
+      tmpdir(),
+      '/runner/temp',
+    ])
+  })
+
+  it('reads process.argv and process.env when none are given', () => {
     const originalArgv = process.argv
+    const originalRunnerTemp = process.env.RUNNER_TEMP
     try {
       process.argv = ['bun', 'build.ts', '--check']
-      expect(cliOptions()).toEqual({checkOnly: true, stageRoot: undefined, verify: false})
+      process.env.RUNNER_TEMP = '/runner/temp'
+      expect(cliOptions()).toEqual({
+        allowedStageRoots: [tmpdir(), '/runner/temp'],
+        checkOnly: true,
+        stageRoot: undefined,
+        verify: false,
+      })
     } finally {
       process.argv = originalArgv
+      if (originalRunnerTemp === undefined) delete process.env.RUNNER_TEMP
+      else process.env.RUNNER_TEMP = originalRunnerTemp
     }
+  })
+})
+
+describe('stageRootAllowlist', () => {
+  it('is the OS temp directory alone without RUNNER_TEMP', () => {
+    expect(stageRootAllowlist({}, '/os/tmp')).toEqual(['/os/tmp'])
+  })
+
+  it('adds an absolute RUNNER_TEMP', () => {
+    expect(stageRootAllowlist({RUNNER_TEMP: '/home/runner/work/_temp'}, '/os/tmp')).toEqual([
+      '/os/tmp',
+      '/home/runner/work/_temp',
+    ])
+  })
+
+  it.each(['', 'relative/temp', '.'])('ignores a RUNNER_TEMP that is not an absolute path: %j', runnerTemp => {
+    expect(stageRootAllowlist({RUNNER_TEMP: runnerTemp}, '/os/tmp')).toEqual(['/os/tmp'])
+  })
+
+  it('defaults to the real OS temp directory', () => {
+    expect(stageRootAllowlist({})).toEqual([tmpdir()])
   })
 })
 
@@ -1501,41 +1616,431 @@ describe('published manifest', () => {
   })
 })
 
+interface StageTargetFixture {
+  allowed: string
+  built: string
+  cleanup: () => Promise<void>
+  manifestPath: string
+  outside: string
+  root: string
+  stage: (stageRoot: string, overrides?: Partial<Parameters<typeof stagePackage>[0]>) => Promise<void>
+}
+
+/** Everything under `directory` as `path -> content` (`null` for a directory), so a test can prove nothing moved. */
+async function snapshot(directory: string): Promise<Record<string, string | null>> {
+  const result: Record<string, string | null> = {}
+  const walk = async (current: string): Promise<void> => {
+    for (const entry of await readdir(current, {withFileTypes: true})) {
+      const path = join(current, entry.name)
+      const key = relative(directory, path)
+      if (entry.isDirectory()) {
+        result[key] = null
+        await walk(path)
+      } else {
+        result[key] = entry.isSymbolicLink() ? `-> ${await readlink(path)}` : await readFile(path, 'utf8')
+      }
+    }
+  }
+  await walk(directory)
+  return result
+}
+
+// Every path in these tests is inside a directory the test owns, so a mutant that loosens a check
+// can only ever touch that directory.
+async function makeStageTargetFixture(): Promise<StageTargetFixture> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-target-')))
+  const allowed = join(root, 'allowed')
+  const outside = join(root, 'outside')
+  const built = join(root, 'built')
+  const manifestPath = join(root, 'package', 'package.json')
+  await mkdir(allowed)
+  await mkdir(outside)
+  await mkdir(built)
+  await mkdir(join(root, 'package'))
+  await writeFile(join(built, 'index.js'), 'export {}\n')
+  await writeFile(manifestPath, '{"exports":{}}\n')
+  await writeFile(join(root, 'package', 'README.md'), 'readme\n')
+  await writeFile(join(root, 'package', 'LICENSE.md'), 'license\n')
+  return {
+    allowed,
+    built,
+    manifestPath,
+    outside,
+    root,
+    cleanup: async () => rm(root, {force: true, recursive: true}),
+    stage: async (stageRoot, overrides = {}) =>
+      stagePackage({builtRoot: built, manifestPath, stageRoot, allowedStageRoots: [allowed], ...overrides}),
+  }
+}
+
+const STAGE_MARKER = 'wiki-write-core-stage.marker'
+const STAGE_MARKER_CONTENT = '@fro.bot/wiki-write-core staged package\n'
+
 describe('stagePackage', () => {
   it('cleans up its staging directory and rethrows when a source file is missing', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-missing-'))
+    const fixture = await makeStageTargetFixture()
     try {
-      const built = join(root, 'built')
-      await mkdir(built)
-      await writeFile(join(root, 'package.json'), '{"exports":{}}\n')
+      await rm(join(fixture.root, 'package', 'LICENSE.md'))
+      const target = join(fixture.allowed, 'out', 'pkg')
 
-      await expect(
-        stagePackage({builtRoot: built, manifestPath: join(root, 'package.json'), stageRoot: join(root, 'out', 'pkg')}),
-      ).rejects.toThrow(/ENOENT/u)
-      expect(await readdir(join(root, 'out'))).toEqual([])
+      await expect(fixture.stage(target)).rejects.toThrow(/ENOENT/u)
+      expect(await readdir(join(fixture.allowed, 'out'))).toEqual([])
     } finally {
-      await rm(root, {force: true, recursive: true})
+      await fixture.cleanup()
     }
   })
 
-  it('replaces a previous stage', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-replace-'))
+  it('replaces a previous stage that carries the stage marker', async () => {
+    const fixture = await makeStageTargetFixture()
     try {
-      const built = join(root, 'built')
-      await mkdir(built)
-      await writeFile(join(built, 'index.js'), 'export {}\n')
-      await writeFile(join(root, 'package.json'), '{"exports":{}}\n')
-      await writeFile(join(root, 'README.md'), 'readme\n')
-      await writeFile(join(root, 'LICENSE.md'), 'license\n')
-      const stageRoot = join(root, 'stage')
-      await mkdir(stageRoot)
-      await writeFile(join(stageRoot, 'previous.txt'), 'old\n')
+      const target = join(fixture.allowed, 'stage')
+      await mkdir(target)
+      await writeFile(join(target, STAGE_MARKER), STAGE_MARKER_CONTENT)
+      await writeFile(join(target, 'previous.txt'), 'old\n')
 
-      await stagePackage({builtRoot: built, manifestPath: join(root, 'package.json'), stageRoot})
+      await fixture.stage(target)
 
-      expect((await readdir(stageRoot)).sort()).toEqual(['LICENSE.md', 'README.md', 'dist', 'package.json'])
+      expect((await readdir(target)).sort()).toEqual(['LICENSE.md', 'README.md', 'dist', 'package.json', STAGE_MARKER])
+      expect(await readdir(fixture.allowed)).toEqual(['stage'])
     } finally {
-      await rm(root, {force: true, recursive: true})
+      await fixture.cleanup()
+    }
+  })
+
+  it('creates a missing parent inside an allowed root', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await fixture.stage(join(fixture.allowed, 'a', 'b', 'stage'))
+
+      await expect(readFile(join(fixture.allowed, 'a', 'b', 'stage', STAGE_MARKER), 'utf8')).resolves.toBe(
+        STAGE_MARKER_CONTENT,
+      )
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+})
+
+async function expectRefusal(
+  fixture: StageTargetFixture,
+  target: string,
+  message: RegExp,
+  overrides: Partial<Parameters<typeof stagePackage>[0]> = {},
+): Promise<void> {
+  const before = await snapshot(fixture.root)
+  const replaceDirectory = vi.fn()
+
+  await expect(fixture.stage(target, {replaceDirectory, ...overrides})).rejects.toThrow(message)
+
+  expect(replaceDirectory).not.toHaveBeenCalled()
+  expect(await snapshot(fixture.root)).toEqual(before)
+}
+
+describe('stagePackage refuses a destructive stage target before touching anything', () => {
+  it('refuses a target outside every allowed root, even one that carries the stage marker', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.outside, 'victim')
+      await mkdir(victim)
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(victim, STAGE_MARKER), STAGE_MARKER_CONTENT)
+
+      await expectRefusal(fixture, victim, /outside the allowed staging roots/u)
+      await expect(readFile(join(victim, 'sentinel.txt'), 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a missing target outside every allowed root without creating its parent', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await expectRefusal(fixture, join(fixture.outside, 'new', 'deep', 'stage'), /outside the allowed staging roots/u)
+      await expect(pathExists(join(fixture.outside, 'new'))).resolves.toBe(false)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses the allowed root itself', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await writeFile(join(fixture.allowed, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(fixture.allowed, STAGE_MARKER), STAGE_MARKER_CONTENT)
+
+      await expectRefusal(fixture, fixture.allowed, /outside the allowed staging roots/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses the parent of an allowed root', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await expectRefusal(fixture, fixture.root, /outside the allowed staging roots/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a sibling whose name merely starts with the allowed root name', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const sibling = `${fixture.allowed}-sibling`
+      await mkdir(sibling)
+      await writeFile(join(sibling, 'sentinel.txt'), 'keep me\n')
+
+      await expectRefusal(fixture, join(sibling, 'stage'), /outside the allowed staging roots/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a dot-dot path that climbs out of the allowed root', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.outside, 'victim')
+      await mkdir(victim)
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(victim, STAGE_MARKER), STAGE_MARKER_CONTENT)
+
+      await expectRefusal(
+        fixture,
+        `${fixture.allowed}/inside/../../outside/victim`,
+        /outside the allowed staging roots/u,
+      )
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a target under a symlinked ancestor that leads out of the allowed root', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await symlink(fixture.outside, join(fixture.allowed, 'link'))
+      await writeFile(join(fixture.outside, 'sentinel.txt'), 'keep me\n')
+
+      await expectRefusal(fixture, join(fixture.allowed, 'link', 'stage'), /outside the allowed staging roots/u)
+      await expect(pathExists(join(fixture.outside, 'stage'))).resolves.toBe(false)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a target that is itself a symlink leading out of the allowed root', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await writeFile(join(fixture.outside, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(fixture.outside, STAGE_MARKER), STAGE_MARKER_CONTENT)
+      await symlink(fixture.outside, join(fixture.allowed, 'stage'))
+
+      await expectRefusal(fixture, join(fixture.allowed, 'stage'), /outside the allowed staging roots/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a target under a dangling symlink instead of creating the directory it points at', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await symlink(join(fixture.outside, 'not-yet'), join(fixture.allowed, 'dangling'))
+
+      await expectRefusal(fixture, join(fixture.allowed, 'dangling', 'stage'), /dangling symlink/u)
+      await expect(pathExists(join(fixture.outside, 'not-yet'))).resolves.toBe(false)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('accepts a target under an allowed root reached through a symlink to it', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await symlink(fixture.allowed, join(fixture.root, 'alias'))
+
+      await fixture.stage(join(fixture.root, 'alias', 'stage'))
+
+      await expect(readFile(join(fixture.allowed, 'stage', STAGE_MARKER), 'utf8')).resolves.toBe(STAGE_MARKER_CONTENT)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('accepts a target under any one of several allowed roots', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await fixture.stage(join(fixture.outside, 'stage'), {allowedStageRoots: [fixture.allowed, fixture.outside]})
+
+      await expect(pathExists(join(fixture.outside, 'stage', STAGE_MARKER))).resolves.toBe(true)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses everything when no root is allowed', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await expectRefusal(fixture, join(fixture.allowed, 'stage'), /outside the allowed staging roots/u, {
+        allowedStageRoots: [],
+      })
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses to replace an in-bounds directory that has no stage marker, leaving its files in place', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.allowed, 'stage')
+      await mkdir(join(victim, 'nested'), {recursive: true})
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(victim, 'nested', 'deep.txt'), 'keep me too\n')
+
+      await expectRefusal(fixture, victim, /no stage marker/u)
+      await expect(readFile(join(victim, 'sentinel.txt'), 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses to replace an in-bounds directory whose marker file has other content', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.allowed, 'stage')
+      await mkdir(victim)
+      await writeFile(join(victim, STAGE_MARKER), 'something else\n')
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+
+      await expectRefusal(fixture, victim, /no stage marker/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses to replace an in-bounds directory whose marker is a symlink', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.allowed, 'stage')
+      await mkdir(victim)
+      await writeFile(join(fixture.outside, 'real-marker'), STAGE_MARKER_CONTENT)
+      await symlink(join(fixture.outside, 'real-marker'), join(victim, STAGE_MARKER))
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+
+      await expectRefusal(fixture, victim, /no stage marker/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('rethrows a failure that is not a missing path while resolving the target, rather than guessing', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await symlink('loop', join(fixture.allowed, 'loop'))
+
+      await expect(fixture.stage(join(fixture.allowed, 'loop'))).rejects.toMatchObject({code: 'ELOOP'})
+      await expect(fixture.stage(join(fixture.allowed, 'loop', 'stage'))).rejects.toMatchObject({code: 'ELOOP'})
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    'rethrows a failure reading the stage marker that is neither missing nor not-a-directory',
+    async () => {
+      const fixture = await makeStageTargetFixture()
+      const victim = join(fixture.allowed, 'stage')
+      try {
+        await mkdir(victim)
+        await writeFile(join(victim, STAGE_MARKER), STAGE_MARKER_CONTENT)
+        await chmod(victim, 0o000)
+
+        await expect(fixture.stage(victim)).rejects.toMatchObject({code: 'EACCES'})
+      } finally {
+        await chmod(victim, 0o755)
+        await fixture.cleanup()
+      }
+    },
+  )
+
+  it('refuses to replace an in-bounds file', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.allowed, 'stage')
+      await writeFile(victim, 'keep me\n')
+
+      await expectRefusal(fixture, victim, /no stage marker/u)
+      await expect(readFile(victim, 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('names the refused target in the error', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const victim = join(fixture.outside, 'victim')
+
+      await expect(fixture.stage(victim)).rejects.toThrow(
+        `refusing to stage into ${victim}: it is outside the allowed staging roots`,
+      )
+      const unmarked = join(fixture.allowed, 'unmarked')
+      await mkdir(unmarked)
+      await expect(fixture.stage(unmarked)).rejects.toThrow(
+        `refusing to replace ${unmarked}: it has no stage marker from a previous stage`,
+      )
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+})
+
+describe('runBuild stage targets', () => {
+  it('refuses a stage target outside the allowed roots and leaves it untouched', async () => {
+    const fixture = await makeRunBuildFixture()
+    try {
+      const allowed = join(fixture.root, 'allowed')
+      const victim = join(fixture.root, 'victim')
+      await mkdir(allowed)
+      await mkdir(victim)
+      await writeFile(join(victim, 'sentinel.txt'), 'keep me\n')
+      await writeFile(join(victim, STAGE_MARKER), STAGE_MARKER_CONTENT)
+
+      await expect(
+        runBuild({
+          ...fixture.sourceOpts,
+          checkOnly: false,
+          stageRoot: victim,
+          allowedStageRoots: [allowed],
+          runTypeScriptBuild: fixture.fakeBuild('a'),
+        }),
+      ).rejects.toThrow(/outside the allowed staging roots/u)
+
+      expect((await readdir(victim)).sort()).toEqual(['sentinel.txt', STAGE_MARKER])
+      await expect(readFile(join(victim, 'sentinel.txt'), 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('stages into its own scratch directory when verifying, whatever roots the caller allows', async () => {
+    const fixture = await makeRunBuildFixture()
+    const seen: string[] = []
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        checkOnly: false,
+        verify: true,
+        allowedStageRoots: [join(fixture.root, 'elsewhere')],
+        verifyPackage: async root => {
+          seen.push(...(await readdir(root)))
+          return {files: [], sourceTreeHash: 'a'.repeat(64), subpaths: []}
+        },
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+        write: () => {},
+      })
+
+      expect(seen).toContain(STAGE_MARKER)
+    } finally {
+      await fixture.cleanup()
     }
   })
 })

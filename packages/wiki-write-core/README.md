@@ -21,6 +21,8 @@ In the repository the package resolves to its TypeScript source: `exports` maps 
 
 `bun run check:wiki-write-core-package` is the local and CI check: it builds the package, fails when the committed `dist/gate-contract.json` differs from the fresh build, packs the staged package, unpacks the tarball into a scratch `node_modules`, then resolves and imports every `exports` subpath under Node and type-checks a consumer module that imports them all. `bun run build` rewrites the committed marker after a change under `src/`, `tsconfig.build.json` or the manifest's `exports` or `files`.
 
+`--stage <dir>` replaces whatever is at `<dir>`, so it refuses anything but a target that resolves (through symlinks) to somewhere strictly under the OS temp directory or `RUNNER_TEMP`, and it replaces an existing directory only when a previous stage left its `wiki-write-core-stage.marker` there. Refusals happen before anything is created, moved or removed. If a replacement fails and the original cannot be restored either, the original is kept in a `.wiki-write-core-dist-backup-*` sibling and the error names it.
+
 ## Fro Bot defaults
 
 The package targets the Fro Bot control plane and carries its coordinates as defaults. Each is overridable through the call's parameters.
@@ -62,7 +64,7 @@ Only commits that touch `packages/wiki-write-core/` are analyzed. The commit typ
 
 ### Publishing
 
-The `publish` job uses npm trusted publishing (OIDC) from `release-wiki-write-core.yaml` in the `release` environment, and publishes with provenance. There is no npm token. It publishes the package the `build` job staged: the compiled `dist/` and a manifest whose `exports` point at it. The `build` job proves the packed tarball resolves, imports and type-checks every export. The `publish` job runs no repository script: it checks that the staged manifest differs from the committed one only in `exports`, then replaces the checkout's `package.json` and `dist/` with the staged files before semantic-release runs.
+The `publish` job uses npm trusted publishing (OIDC) from `release-wiki-write-core.yaml` in the `release` environment, and publishes with provenance. There is no npm token. It publishes the package the `build` job staged: the compiled `dist/` and a manifest whose `exports` point at it. The `build` job proves the packed tarball resolves, imports and type-checks every export. The `publish` job runs no repository script. The `build` job exposes a digest of the staged tree (sha256 over the `<sha256>  <path>` listing of every file, in byte order of the path) as a job output, which comes from the runner that built the package and not from the artifact store. The `publish` job recomputes it over what it downloaded and refuses unless the two are equal, before it reads or installs anything. It then checks that the staged manifest is the committed one with `exports` rewritten (each `./src/<name>.ts` becomes `./dist/<name>.js` with `./dist/<name>.d.ts` as its types, and no target has a `.`, `..` or empty segment) and replaces the checkout's `package.json` and `dist/` with the staged files. semantic-release then changes only the manifest's `version` (`npm version`, which the digest does not cover because it is checked first), and `npm publish` packs the same files the `build` job's tarball check proved.
 
 Verify a release:
 

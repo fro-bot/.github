@@ -110,6 +110,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      package-digest: ${{ steps.digest.outputs.digest }}
     steps:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -122,6 +124,18 @@ jobs:
 
       - name: ✅ Build the package and verify its tarball
         run: bun scripts/build-wiki-write-core.ts --check --verify --stage "$RUNNER_TEMP/wiki-write-core-package"
+
+      # The digest binds the artifact to this job: it is a job output, which `publish` reads from the runner
+      # that built the package, not from the artifact store. It is sha256 over the listing `<sha256>  <path>` of
+      # every regular file, in byte order of the path, so changing, adding or removing any file changes it.
+      # `publish` defines the same function and recomputes it over what it downloads.
+      - name: 🔏 Digest the staged package
+        id: digest
+        run: |
+          package_digest() {
+            (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
+          }
+          echo "digest=$(package_digest "$RUNNER_TEMP/wiki-write-core-package")" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload staged package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -240,30 +254,53 @@ jobs:
           name: wiki-write-core-package
           path: ${{ runner.temp }}/wiki-write-core-package
 
-      # The build job's output is untrusted until checked: the artifact must hold exactly the package files, no
-      # symlinks, and a manifest that differs from the checkout's only in `exports`, every one pointing at a file
-      # in dist. Only the manifest and dist replace the checkout's.
+      # The artifact is untrusted until it matches the digest the build job computed. Its digest is recomputed
+      # here, over what was downloaded, and compared with the build job's output before anything else is read
+      # or installed. After that the artifact must hold exactly the package files, no symlinks, and a manifest
+      # that is the checkout's with `exports` rewritten and nothing else changed, every export contained in dist.
+      # Only the manifest and dist replace the checkout's, and semantic-release changes nothing but the
+      # manifest's version afterwards.
       - name: 🛡 Install staged package
         id: package
+        env:
+          EXPECTED_PACKAGE_DIGEST: ${{ needs.build.outputs.package-digest }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
+          package_digest() {
+            (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
+          }
           staged="$RUNNER_TEMP/wiki-write-core-package"
           target=packages/wiki-write-core
+          digest_re='^[0-9a-f]{64}$'
 
-          [ "$(find "$staged" -mindepth 1 -maxdepth 1 | sed "s|^$staged/||" | sort | tr '\n' ' ')" = "LICENSE.md README.md dist package.json " ] \
-            || fail "the staged package must hold exactly LICENSE.md, README.md, dist and package.json"
+          [[ ${EXPECTED_PACKAGE_DIGEST:-} =~ $digest_re ]] || fail "the build job published no package digest"
           [ -z "$(find "$staged" -type l)" ] || fail "the staged package must contain no symlink"
           [ -z "$(find "$staged" -mindepth 1 ! -type f ! -type d)" ] || fail "the staged package must contain only files and directories"
+          [ "$(package_digest "$staged")" = "$EXPECTED_PACKAGE_DIGEST" ] \
+            || fail "the downloaded package does not match the digest the build job computed"
 
-          # The staged manifest is the checkout's with `exports` rewritten and nothing else changed, and each
-          # rewritten export points at a file in dist.
+          [ "$(find "$staged" -mindepth 1 -maxdepth 1 | sed "s|^$staged/||" | LC_ALL=C sort | tr '\n' ' ')" = "LICENSE.md README.md dist package.json wiki-write-core-stage.marker " ] \
+            || fail "the staged package must hold exactly LICENSE.md, README.md, dist, package.json and the stage marker"
+
+          # The staged manifest is the checkout's with `exports` rewritten and nothing else changed. Each export
+          # is the checkout's `./src/<name>.ts` mapped to `./dist/<name>.js` with `./dist/<name>.d.ts` as its
+          # types, and every target stays inside dist: no `.`, `..` or empty path segment.
           jq -e --slurpfile committed "$target/package.json" '
+            def published:
+              if type == "string" and test("^\\./src/[^/]+\\.ts$")
+              then capture("^\\./src/(?<name>[^/]+)\\.ts$").name as $name
+                | {types: "./dist/\($name).d.ts", import: "./dist/\($name).js"}
+              else . end;
+            def contained:
+              type == "string" and startswith("./dist/")
+              and (split("/")[1:] | all(. != "" and . != "." and . != ".."));
             del(.exports) == ($committed[0] | del(.exports))
             and .name == "@fro.bot/wiki-write-core"
             and (.exports | to_entries | length > 0)
+            and .exports == ($committed[0].exports | with_entries(.value |= published))
             and (.exports | to_entries | all(
               .value == "./package.json"
-              or (.value | type == "object" and (.types | startswith("./dist/")) and (.import | startswith("./dist/")))
+              or (.value | type == "object" and (.types | contained) and (.import | contained))
             ))
           ' "$staged/package.json" > /dev/null || fail "the staged package manifest is not the checkout manifest with rewritten exports"
 
