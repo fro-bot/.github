@@ -1,6 +1,6 @@
 import process from 'node:process'
 
-import {validateAndApplyWikiHandoff, WikiHandoffValidationError} from './wiki-handoff-core.ts'
+import {validateAndApplyWikiHandoff, WikiHandoffValidationError} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 /**
  * Trusted job (fresh default-branch checkout, no agent): validates and applies the

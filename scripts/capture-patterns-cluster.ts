@@ -30,7 +30,7 @@ import {
   type PatternProposalOctokitClient,
   type PatternSourceSignals,
 } from './capture-patterns-synthesis.ts'
-import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
+import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 
 // ---------------------------------------------------------------------------
 // Constants

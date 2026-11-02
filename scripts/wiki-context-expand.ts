@@ -27,7 +27,7 @@ import {
   WIKI_ROOT,
 } from '@fro.bot/wiki-write-core/wiki-utils'
 import {parse} from 'yaml'
-import {filterSafeCandidates} from './wiki-context-safety.ts'
+import {filterSafeCandidates} from '@fro-bot/wiki-ops/wiki-context-safety'
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 /** Per-invocation hard cap on returned excerpt bytes. */

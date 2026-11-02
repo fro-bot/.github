@@ -84,7 +84,7 @@ const MUTATION_GUARDS_PATTERN = /^mutation-guards-.+\.ts$/u
 
 /**
  * Scripts matched by name convention: `check-*.ts`, `wiki-*-gates.ts`, `mutation-guards-*.ts`,
- * `wiki-context-safety.ts`, and `build-wiki-write-core.ts`. Test files (`*.test.ts`) are
+ * and `build-wiki-write-core.ts`. Test files (`*.test.ts`) are
  * excluded — they belong in `testFiles`, not the `mutate`/`not-mutated` enumeration. Matches
  * against the file's basename, not its full repo-relative path, so this still works once
  * `walkNonTestTsFiles` starts returning nested paths.
@@ -96,7 +96,6 @@ function listScriptsGateFiles(dir: string): string[] {
       CHECK_SCRIPT_PATTERN.test(name) ||
       WIKI_GATES_PATTERN.test(name) ||
       MUTATION_GUARDS_PATTERN.test(name) ||
-      name === 'wiki-context-safety.ts' ||
       name === 'build-wiki-write-core.ts'
     )
   })
@@ -377,12 +376,12 @@ describe('findMutateTestPairingViolations (pure)', () => {
     expect(violations.some(v => v.includes('packages/wiki-write-core/src/wiki-slug.ts'))).toBe(true)
   })
 
-  it('does not flag scripts/wiki-context-safety.ts, reached only via a dynamic template-literal import', () => {
-    const mutate = ['scripts/wiki-context-safety.ts']
-    const testFiles = ['scripts/wiki-context-safety.test.ts']
+  it('does not flag packages/wiki-ops/src/wiki-context-safety.ts, reached only via a dynamic template-literal import', () => {
+    const mutate = ['packages/wiki-ops/src/wiki-context-safety.ts']
+    const testFiles = ['packages/wiki-ops/src/wiki-context-safety.test.ts']
 
-    const reached = reachedModulesTransitive('scripts/wiki-context-safety.test.ts')
-    expect(reached.has('scripts/wiki-context-safety.ts')).toBe(true)
+    const reached = reachedModulesTransitive('packages/wiki-ops/src/wiki-context-safety.test.ts')
+    expect(reached.has('packages/wiki-ops/src/wiki-context-safety.ts')).toBe(true)
 
     const violations = findMutateTestPairingViolations(mutate, testFiles, reachedModulesTransitive)
     expect(violations).toEqual([])

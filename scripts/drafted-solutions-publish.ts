@@ -92,7 +92,7 @@ import {
   DRAFTED_SOLUTIONS_HANDOFF_POLICY,
   validateAndApplyHandoff,
   WikiHandoffValidationError,
-} from './wiki-handoff-core.ts'
+} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 export const DRAFTED_PR_TITLE = 'docs(solutions): drafted learnings from open proposals'
 export const DRAFTED_COMMIT_MESSAGE = 'docs(solutions): draft learnings from open proposals'

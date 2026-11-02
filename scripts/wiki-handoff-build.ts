@@ -3,7 +3,7 @@ import {appendFile} from 'node:fs/promises'
 import process from 'node:process'
 import {promisify} from 'node:util'
 
-import {buildWikiHandoff} from './wiki-handoff-core.ts'
+import {buildWikiHandoff} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 const execFileAsync = promisify(execFile)
 

@@ -14,7 +14,7 @@ import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 
 import {isRecord} from '@fro-bot/core/guards'
-import {isAllowedDraftedSolutionPath} from './wiki-handoff-core.ts'
+import {isAllowedDraftedSolutionPath} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 export const COVERAGE_OUTCOMES = ['new-doc', 'extension', 'covered', 'unverified'] as const
 export type CoverageOutcome = (typeof COVERAGE_OUTCOMES)[number]

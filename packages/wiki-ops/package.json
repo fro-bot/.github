@@ -1,0 +1,23 @@
+{
+  "name": "@fro-bot/wiki-ops",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The wiki handoff, change detection, context, query, repair, index and corrections tools of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./solution-docs-paths": "./src/solution-docs-paths.ts",
+    "./wiki-change-detect-core": "./src/wiki-change-detect-core.ts",
+    "./wiki-context-safety": "./src/wiki-context-safety.ts",
+    "./wiki-handoff-core": "./src/wiki-handoff-core.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro-bot/privacy": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

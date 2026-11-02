@@ -13,7 +13,7 @@ import {parse} from 'yaml'
 import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from './drafted-solutions-pr-body.ts'
 import {DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
 import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
-import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
+import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 
 interface WorkflowStep {
   name?: string

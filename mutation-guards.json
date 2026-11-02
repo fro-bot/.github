@@ -451,6 +451,18 @@
     {
       "path": "scripts/status-truth-prs.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/prs-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/status-truth-prs.ts, pinned by packages/status-truth/src/status-truth-prs.test.ts. The shim's surface, including a usage error on unmatched argv that does nothing even when armed and live, and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-core.ts",
+      "reason": "The wiki and drafted-solutions handoff contract between an untrusted build and a trusted apply: the git-status parse, the pre-agent baseline capture and the scoping against it, the build from working-tree paths and from git objects, the path policies (traversal, absolute paths, backslashes, scope, deletions), and the validating apply (symlinks, non-regular files, unexpected top-level entries, the size cap). Pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts, which covers every rejection class and the artifact bytes, and by scripts/wiki-handoff-sequence.test.ts, which replays baseline, build and apply through the real modules. It is not in the mutation set because its tests inject the filesystem and git seams rather than run against a real tree, so a sandbox run would measure the fakes."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-change-detect-core.ts",
+      "reason": "Content-only change detection for the wiki scope: the filesystem walk that refuses symlinks and non-regular entries, the allowlist and `git check-ignore --no-index` eligibility filters that fail closed, the sorted snapshot and its hash. Pinned by packages/wiki-ops/src/wiki-change-detect.test.ts, which runs the walk against real temp trees and real git for the symlink, ignore-rule, index-only and untracked-file cases, and checks the hash input byte for byte. Not in the mutation set: the git and filesystem seams are exercised through real processes, which the Stryker sandbox would run against mutated copies of the module under test."
+    },
+    {
+      "path": "packages/wiki-ops/src/solution-docs-paths.ts",
+      "reason": "A constant list of the canonical docs/solutions/ category directories, with no logic to mutate. Pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts (the drafted-solutions allowlist is derived from it) and by scripts/draft-solutions-workflow.test.ts, which checks that the drafting prompt names every category."
     }
   ]
 }

@@ -3,7 +3,7 @@ import {appendFile} from 'node:fs/promises'
 import process from 'node:process'
 import {promisify} from 'node:util'
 
-import {computeWikiChangeHash} from './wiki-change-detect-core.ts'
+import {computeWikiChangeHash} from '@fro-bot/wiki-ops/wiki-change-detect-core'
 
 const execFileAsync = promisify(execFile)
 

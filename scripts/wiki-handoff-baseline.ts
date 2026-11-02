@@ -2,7 +2,7 @@ import {execFile} from 'node:child_process'
 import process from 'node:process'
 import {promisify} from 'node:util'
 
-import {captureWikiBaseline} from './wiki-handoff-core.ts'
+import {captureWikiBaseline} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 const execFileAsync = promisify(execFile)
 

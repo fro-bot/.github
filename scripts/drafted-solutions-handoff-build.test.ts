@@ -14,7 +14,7 @@ import {promisify} from 'node:util'
 import {afterEach, describe, expect, it} from 'vitest'
 
 import {buildDraftedHandoff} from './drafted-solutions-handoff-build.ts'
-import {createGitRunner, DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES, type GitRunner} from './wiki-handoff-core.ts'
+import {createGitRunner, DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES, type GitRunner} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 const execFileAsync = promisify(execFile)
 

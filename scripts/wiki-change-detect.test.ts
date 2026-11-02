@@ -13,7 +13,7 @@ import {
   computeWikiChangeHash,
   hashWikiScopeSnapshot,
   type WikiChangeDetectEntry,
-} from './wiki-change-detect-core.ts'
+} from '@fro-bot/wiki-ops/wiki-change-detect-core'
 
 const scriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
 const WIKI_SCOPE_PATHS = ['knowledge/index.md', 'knowledge/log.md', 'knowledge/wiki']

@@ -25,7 +25,7 @@ import {
   DRAFTED_SOLUTIONS_HANDOFF_POLICY,
   type BuildWikiHandoffResult,
   type GitRunner,
-} from './wiki-handoff-core.ts'
+} from '@fro-bot/wiki-ops/wiki-handoff-core'
 
 export interface BuildDraftedHandoffParams {
   cwd: string
