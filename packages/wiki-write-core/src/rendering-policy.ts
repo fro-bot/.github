@@ -9,18 +9,33 @@ export interface RenderingPolicyValidationParams {
   readonly content: string
 }
 
-const UNSAFE_TAG_PATTERN =
-  /<\/?\s*(?:script|iframe|object|embed|applet|base|form|input|button|textarea|select|option|meta|link|style|template|svg|math)\b[^>]*>/iu
-const EVENT_HANDLER_PATTERN = /\s+on[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/iu
+// A tag is unsafe when its name opens it and a `>` follows anywhere after the name. The pattern stops at the
+// name and `hasUnsafeTag` looks for the `>`: a `[^>]*>` tail rescans the rest of the text from every opening
+// when there is no `>`, which is quadratic in the length of the text.
+const UNSAFE_TAG_OPENING_PATTERN =
+  /<\/?\s*(?:script|iframe|object|embed|applet|base|form|input|button|textarea|select|option|meta|link|style|template|svg|math)\b/iu
+// Both attribute patterns start at the first whitespace character of a run: a match that starts inside a run also
+// starts at the run's beginning, and without the lookbehind a long run of whitespace is rescanned from every
+// position in it.
+const EVENT_HANDLER_PATTERN = /(?<!\s)\s+on[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/iu
 const UNSAFE_URI_PATTERN =
-  /\s+(?:href|src|srcset|action|formaction|xlink:href|poster|background|cite)\s*=\s*(?:"\s*|')?(?:javascript|vbscript|data):/iu
+  /(?<!\s)\s+(?:href|src|srcset|action|formaction|xlink:href|poster|background|cite)\s*=\s*(?:"\s*|')?(?:javascript|vbscript|data):/iu
+
+/**
+ * True when `text` holds an unsafe tag: an opening `<name` or `</name` from the list, then a `>` after the name.
+ * The first opening ends before any later one, so if it has no `>` after it none does.
+ */
+function hasUnsafeTag(text: string): boolean {
+  const opening = UNSAFE_TAG_OPENING_PATTERN.exec(text)
+  return opening !== null && text.includes('>', opening.index + opening[0].length)
+}
 
 /** Return save-side findings for HTML that the render policy will strip. */
 export function validateRenderingPolicy(params: RenderingPolicyValidationParams): readonly RenderingPolicyFinding[] {
   const findings: RenderingPolicyFinding[] = []
   const renderableMarkdown = maskCodeContent(params.content)
   if (
-    UNSAFE_TAG_PATTERN.test(renderableMarkdown) ||
+    hasUnsafeTag(renderableMarkdown) ||
     EVENT_HANDLER_PATTERN.test(renderableMarkdown) ||
     UNSAFE_URI_PATTERN.test(renderableMarkdown)
   ) {
