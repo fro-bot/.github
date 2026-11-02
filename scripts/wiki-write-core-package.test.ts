@@ -203,6 +203,31 @@ describe('@fro.bot/wiki-write-core tarball', () => {
       /tarball declarations do not type-check:[\s\S]*not-packed\.js/u,
     )
   }, 120_000)
+
+  it.each([
+    [
+      'a different contract version',
+      (marker: Record<string, unknown>) => ({...marker, version: Number(marker.version) + 1}),
+    ],
+    ['a malformed hash', (marker: Record<string, unknown>) => ({...marker, sourceTreeHash: 'not-a-hash'})],
+    [
+      'a different well-formed hash',
+      (marker: Record<string, unknown>) => ({...marker, sourceTreeHash: '0'.repeat(64)}),
+    ],
+  ])(
+    'refuses a tarball whose gate contract marker carries %s',
+    async (name, mutate) => {
+      const broken = join(workRoot, `broken-marker-${name.replaceAll(' ', '-')}`)
+      await cp(stageRoot, broken, {recursive: true})
+      const markerPath = join(broken, 'dist', 'gate-contract.json')
+      await writeFile(markerPath, JSON.stringify(mutate(readJson(markerPath))))
+
+      await expect(verifyStagedPackage(broken)).rejects.toThrow(
+        'tarball gate contract marker does not match the exported GATE_SOURCE_TREE_HASH',
+      )
+    },
+    120_000,
+  )
 })
 
 // Renovate's glob semantics for the two shapes this preset uses: an exact name, or `scope/**`.
