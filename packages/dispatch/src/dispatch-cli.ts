@@ -17,8 +17,11 @@ import {
 import {mintNonce} from './dispatch-receipts.ts'
 import {runDispatch, runTrack, type LabeledEventPayload, type RepoRepository} from './dispatch-run.ts'
 
-async function createOctokitFromEnv(): Promise<CrossRepoDispatchOctokitClient> {
-  return createOctokit(process.env.GITHUB_TOKEN, {
+/** The env a run reads: what the runner hands the action, `process.env` in production. */
+type Env = Readonly<Record<string, string | undefined>>
+
+async function createOctokitFromEnv(env: Env): Promise<CrossRepoDispatchOctokitClient> {
+  return createOctokit(env.GITHUB_TOKEN, {
     timeoutMs: REQUEST_TIMEOUT_MS,
     missingToken: () => new Error('cross-repo-dispatch: GITHUB_TOKEN is required in the environment'),
   })
@@ -53,19 +56,20 @@ function parseRepository(raw: string | undefined): RepoRepository {
   return {owner, repo}
 }
 
-async function targetClientResolverFromEnv(): Promise<TargetClientResolver> {
-  const tokens = parseTargetTokens(process.env[TARGET_TOKENS_ENV_VAR])
+async function targetClientResolverFromEnv(env: Env): Promise<TargetClientResolver> {
+  const tokens = parseTargetTokens(env[TARGET_TOKENS_ENV_VAR])
   const clientsByOwner = await buildTargetClients(tokens)
   return createTargetClientResolver(clientsByOwner)
 }
 
 export async function runDispatchCli(
-  createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
-  createTargetClientResolverFn: () => Promise<TargetClientResolver> = targetClientResolverFromEnv,
+  createOctokit?: () => Promise<CrossRepoDispatchOctokitClient>,
+  createTargetClientResolverFn?: () => Promise<TargetClientResolver>,
+  env: Env = process.env,
 ): Promise<number> {
-  const eventPath = process.env.GITHUB_EVENT_PATH
-  const approveLabel = process.env.CROSS_REPO_DISPATCH_APPROVE_LABEL ?? 'dispatch-approved'
-  const resultPath = process.env.CROSS_REPO_DISPATCH_RESULT_PATH
+  const eventPath = env.GITHUB_EVENT_PATH
+  const approveLabel = env.CROSS_REPO_DISPATCH_APPROVE_LABEL ?? 'dispatch-approved'
+  const resultPath = env.CROSS_REPO_DISPATCH_RESULT_PATH
 
   if (eventPath === undefined || eventPath === '') {
     process.stderr.write('cross-repo-dispatch: GITHUB_EVENT_PATH is required for dispatch mode\n')
@@ -74,9 +78,11 @@ export async function runDispatchCli(
 
   const {readFile} = await import('node:fs/promises')
   const event = JSON.parse(await readFile(eventPath, 'utf8')) as LabeledEventPayload
-  const repo = parseRepository(process.env.GITHUB_REPOSITORY)
-  const octokit = await createOctokit()
-  const {targetClientFor, hasTargetToken} = await createTargetClientResolverFn()
+  const repo = parseRepository(env.GITHUB_REPOSITORY)
+  const octokit = await (createOctokit ?? (async () => createOctokitFromEnv(env)))()
+  const {targetClientFor, hasTargetToken} = await (
+    createTargetClientResolverFn ?? (async () => targetClientResolverFromEnv(env))
+  )()
 
   await runDispatch({
     octokit,
@@ -98,13 +104,16 @@ export async function runDispatchCli(
 }
 
 export async function runTrackCli(
-  createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
-  createTargetClientResolverFn: () => Promise<TargetClientResolver> = targetClientResolverFromEnv,
+  createOctokit?: () => Promise<CrossRepoDispatchOctokitClient>,
+  createTargetClientResolverFn?: () => Promise<TargetClientResolver>,
+  env: Env = process.env,
 ): Promise<void> {
-  const resultPath = process.env.CROSS_REPO_DISPATCH_RESULT_PATH
-  const repo = parseRepository(process.env.GITHUB_REPOSITORY)
-  const octokit = await createOctokit()
-  const {targetClientFor, hasTargetToken} = await createTargetClientResolverFn()
+  const resultPath = env.CROSS_REPO_DISPATCH_RESULT_PATH
+  const repo = parseRepository(env.GITHUB_REPOSITORY)
+  const octokit = await (createOctokit ?? (async () => createOctokitFromEnv(env)))()
+  const {targetClientFor, hasTargetToken} = await (
+    createTargetClientResolverFn ?? (async () => targetClientResolverFromEnv(env))
+  )()
 
   await runTrack({
     octokit,
@@ -131,9 +140,9 @@ export function crossRepoDispatchCli(): CliConfig {
         positionals: [{name: 'mode', kind: 'optional'}],
         action: async context => {
           const {mode} = context.positionals
-          if (mode === 'dispatch') return runDispatchCli()
+          if (mode === 'dispatch') return runDispatchCli(undefined, undefined, context.env)
           if (mode === 'track') {
-            await runTrackCli()
+            await runTrackCli(undefined, undefined, context.env)
             return 0
           }
           context.stderr(MODE_ERROR)

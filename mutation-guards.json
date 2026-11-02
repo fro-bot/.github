@@ -334,7 +334,7 @@
     },
     {
       "path": "packages/dispatch/src/dispatch-cli.ts",
-      "reason": "The production composition of cross-repo-dispatch (the registry read, the per-owner clients, the dispatch and track bodies) and its goke entrypoint. Pinned by the runDispatchCli and runTrackCli composition tests in packages/dispatch/src/cross-repo-dispatch.test.ts, by packages/dispatch/src/dispatch-cli.test.ts for the CLI surface, and by scripts/dispatch-flows.test.ts, which spawns the shim. Not in the mutate list: it is I/O wiring, and the decisions it wires are in the modules above."
+      "reason": "The production composition of cross-repo-dispatch (the registry read, the per-owner clients, the dispatch and track bodies) and its goke entrypoint. Pinned by the runDispatchCli and runTrackCli composition tests in packages/dispatch/src/cross-repo-dispatch.test.ts, by packages/dispatch/src/dispatch-cli.test.ts for the CLI surface, by packages/dispatch/src/dispatch-cli-env.test.ts for reading only the env the runner supplies, and by scripts/dispatch-flows.test.ts, which spawns the shim. Not in the mutate list: it is I/O wiring, and the decisions it wires are in the modules above."
     },
     {
       "path": "packages/dispatch/src/dispatch-renovate.ts",
