@@ -414,9 +414,9 @@ describe('linear time on adversarial bodies', () => {
   )
 
   it(
-    'a JWT whose second segment is repeated 20,000 times',
+    'a JWT whose openings all share one long second segment',
     () => {
-      const body = `eyJ.${'eyJ'.repeat(REPETITIONS)}`
+      const body = `${'eyJ'.repeat(REPETITIONS)}.${'eyJ'.repeat(REPETITIONS)}`
       expect(elapsed(() => expect(logDiffHasSecret(body)).toBe(false))).toBeLessThan(BOUND_MS)
     },
     TIMEOUT_MS,
