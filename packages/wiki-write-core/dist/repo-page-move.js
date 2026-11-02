@@ -14,6 +14,7 @@
  * - `log.md` history and `knowledge/wiki/README.md` are never rewritten.
  */
 import { parseFrontmatterDocument, renderFrontmatterDocument } from "./frontmatter.js";
+import { parseRelatedFlow } from "./line-scanners.js";
 import { appendLogEntry, rebuildWikiIndex, validateWikilinks, WikiIngestError } from "./wiki-ingest.js";
 import { buildPrivateNameTokens, computeRepoSlug } from "./wiki-slug.js";
 import { findWikilinkSpans } from "./wiki-utils.js";
@@ -22,7 +23,6 @@ const LOG_PATH = 'knowledge/log.md';
 const REPOS_DIR = 'knowledge/wiki/repos';
 const WIKI_PAGE_PATTERN = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[^/]+\.md$/u;
 const RELATED_BLOCK_KEY = /^related:\s*(?:#.*)?$/u;
-const RELATED_FLOW = /^related:\s*\[(.*)\]\s*(?:#.*)?$/u;
 /** Apply a change set to a file map, returning a new map. */
 export function applyPageChanges(files, changes) {
     const next = { ...files };
@@ -301,9 +301,9 @@ function editRelatedText(content, oldSlug, newSlug) {
     if (frontmatter === undefined)
         return undefined;
     const lines = frontmatter.split('\n');
-    const flowIndex = lines.findIndex(line => RELATED_FLOW.test(line));
+    const flowIndex = lines.findIndex(line => parseRelatedFlow(line) !== undefined);
     if (flowIndex !== -1) {
-        const inner = RELATED_FLOW.exec(lines[flowIndex] ?? '')?.[1] ?? '';
+        const inner = parseRelatedFlow(lines[flowIndex] ?? '') ?? '';
         const items = inner.split(',').map(item => item.trim());
         const mapped = dedupe(items.map(item => (stripQuotes(item) === oldSlug ? swapQuoted(item, newSlug) : item)));
         lines[flowIndex] = `related: [${mapped.join(', ')}]`;

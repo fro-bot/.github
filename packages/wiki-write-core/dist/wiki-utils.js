@@ -200,9 +200,12 @@ export function truncateToBytes(value, maxBytes) {
     if (contentBudget <= 0) {
         return '';
     }
-    const truncated = Buffer.from(value)
-        .subarray(0, contentBudget)
-        .toString('utf8')
-        .replaceAll(/\uFFFD+$/gu, '');
+    const decoded = Buffer.from(value).subarray(0, contentBudget).toString('utf8');
+    // Drop the replacement characters a cut multi-byte sequence decodes to. A trailing-run regex rescans a long run
+    // from every position in it.
+    let keep = decoded.length;
+    while (keep > 0 && decoded.charCodeAt(keep - 1) === 0xff_fd)
+        keep -= 1;
+    const truncated = decoded.slice(0, keep);
     return truncated === '' ? '' : `${truncated}${ellipsis}`;
 }

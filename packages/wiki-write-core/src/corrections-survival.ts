@@ -7,6 +7,7 @@ import {
   type CorrectionsFile,
   type CorrectionSurvivalResult,
 } from './corrections.ts'
+import {replaceLinkLabels, type LinkLabelParts} from './link-labels.ts'
 import {maskNonProseContent} from './rendering-policy.ts'
 import {collectWikiPages} from './wiki-utils.ts'
 
@@ -108,11 +109,8 @@ export function verifyCorrectionSurvival(
  * the pre-refactor reference implementation.
  */
 export function normalizeFormattingText(value: string): string {
-  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
   return (
-    value
-      .normalize('NFKC')
-      .replaceAll(markdownLinkPattern, renderVisibleLinkText)
+    replaceLinkLabels(value.normalize('NFKC'), renderVisibleLinkText)
       // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
       .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
       .trim()
@@ -121,16 +119,11 @@ export function normalizeFormattingText(value: string): string {
   )
 }
 
-function renderVisibleLinkText(
-  _match: string,
-  markdownText: string | undefined,
-  wikiTarget: string | undefined,
-  wikiLabel: string | undefined,
-): string {
-  // markdownLinkPattern's outer alternation guarantees exactly one branch matched whenever this
-  // callback runs: the markdown branch always captures markdownText (possibly '', never
-  // undefined), and the wiki branch always captures wikiTarget (required, 1+ chars). A final
-  // '' fallback covering "neither captured" is unreachable -- asserted, not defaulted.
+function renderVisibleLinkText({markdownText, wikiTarget, wikiLabel}: LinkLabelParts): string {
+  // replaceLinkLabels calls this with exactly one branch matched: the markdown branch always has
+  // markdownText (possibly '', never undefined), and the wiki branch always has wikiTarget
+  // (required, 1+ chars). A final '' fallback covering "neither captured" is unreachable --
+  // asserted, not defaulted.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see comment above
   return (markdownText ?? wikiLabel ?? wikiTarget)!
 }
@@ -139,40 +132,52 @@ function renderVisibleLinkText(
  * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
  * targets; wiki links `[[...]]` are left untouched (module docstring). A regex port was proven
  * non-equivalent by exhaustive differential testing (corrections-survival.test.ts), so this
- * scanner stays; its directived lines are deterministic hangs under mutation, not timing noise.
+ * stays a scanner.
+ *
+ * At each `]` that is followed by `(` and preceded by a `[`, the link runs from the last `[` to the
+ * `)` that closes that `(`, counting nested parentheses. A `(` with no closing `)` is not a link,
+ * and the scan goes on from the next character. After a link, the scan resumes past its `)` with no
+ * `[` open. The closing `)` of every `(` is found once, up front, so the scan is linear in the
+ * length of the content.
  */
 export function maskMarkdownLinks(content: string): string {
-  const masked = content.split('')
+  const characters = content.split('')
+  const closers = findClosingParentheses(characters)
+  const masked = [...characters]
   let open = -1
-  let index = 0
-  // Stryker disable next-line BlockStatement,EqualityOperator: BlockStatement mutation destroys mandatory loop progress (deterministic hang, not a timing artifact); EqualityOperator's >= variant hangs on empty content (0 >= 0 is true, index only grows, so it never becomes false again) and its <= variant only extends the loop to content[content.length], which is always undefined and has no side effect on open/masked/depth
-  while (index < content.length) {
-    if (content[index] === '[') open = index
-    if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
-      let close = index + 2
-      let depth = 1
-      // Split from the original `close < content.length && depth > 0` combined condition so
-      // each half's mutants land on their own line; the `depth <= 0` check below is bounded by
-      // this while's own `close < content.length`, so its mutants are not a hang, just wrong
-      // output, and are killed by the differential test like any other behavior change.
-      // Stryker disable next-line BlockStatement,EqualityOperator: BlockStatement mutation destroys mandatory loop progress (deterministic hang, not a timing artifact); EqualityOperator's >= variant hangs when close starts at or past content.length (a link's `](` at the very end of the string) for the same reason as the outer loop above, and its <= variant only extends the loop to content[content.length], which is always undefined and has no side effect on open/masked/depth
-      while (close < content.length) {
-        if (depth <= 0) break
-        if (content[close] === '(') depth += 1
-        else if (content[close] === ')') depth -= 1
-        // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
-        close += 1
-      }
-      if (depth === 0) {
-        // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
-        for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
-        index = close
+  let resumeAt = 0
+  for (const [index, character] of characters.entries()) {
+    if (index < resumeAt) continue
+    if (character === '[') open = index
+    if (character === ']' && open !== -1) {
+      // `closers` has an entry only for a `(`, so the next character is a `(` with a closer or there is no link.
+      const close = closers.get(index + 1)
+      if (close !== undefined) {
+        masked.fill(' ', open, close + 1)
+        resumeAt = close + 1
         open = -1
-        continue
       }
     }
-    // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
-    index += 1
   }
   return masked.join('')
+}
+
+/**
+ * Maps the index of each `(` to the index of the `)` that closes it, counting nested parentheses,
+ * or to `undefined` when nothing closes it. Read from the right, each `(` takes the nearest `)`
+ * that no `(` between them has taken, which pairs the same parentheses as counting depth to the
+ * right of each `(`. A `)` with no `(` before it is left unpaired and never looked up.
+ */
+function findClosingParentheses(characters: readonly string[]): Map<number, number | undefined> {
+  const closers = new Map<number, number | undefined>()
+  const unpaired: number[] = []
+  for (const [reversedIndex, character] of characters.toReversed().entries()) {
+    const index = characters.length - 1 - reversedIndex
+    if (character === ')') {
+      unpaired.push(index)
+    } else if (character === '(') {
+      closers.set(index, unpaired.pop())
+    }
+  }
+  return closers
 }

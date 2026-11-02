@@ -1,6 +1,9 @@
 import process from 'node:process'
 
 import {describe, expect, it} from 'vitest'
+import {maskMarkdownLinks} from './corrections-survival.ts'
+import {findIndexEntryLines} from './line-scanners.ts'
+import {resolveMarkdownLinks} from './markdown-links.ts'
 import {checkPrivateLeak} from './private-leak.ts'
 import {mergeWikiLogs, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
@@ -261,6 +264,65 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
     )
 
     // The exported save-path gate must retain the same linearity contract as its parser.
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
+  })
+
+  it.each([
+    {name: 'an opening-bracket run', build: (n: number) => `[${'['.repeat(n)}`},
+    {name: 'unclosed angle destinations', build: (n: number) => `[](<${'[=](<'.repeat(n)}`},
+    {name: 'unclosed bare destinations', build: (n: number) => `[](${'[!](!'.repeat(n)}`},
+    {name: 'unclosed parenthesised titles', build: (n: number) => `[](! (${'[(](! ('.repeat(n)}`},
+  ])('scales markdown link extraction linearly for $name', ({build}) => {
+    const smallContent = build(8_000)
+    const largeContent = build(16_000)
+    const measurement = expectLinearScaling(
+      size => {
+        resolveMarkdownLinks(size === 8_000 ? smallContent : largeContent, 'knowledge/wiki/topics/source.md', {
+          files: {},
+        })
+      },
+      8_000,
+      3,
+    )
+
+    // The old global regex retries the rest of the line from each opening bracket and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
+  })
+
+  it.each([
+    {name: 'an unclosed link opener repeated', build: (n: number) => '[a]('.repeat(n)},
+    {
+      name: 'unclosed openers, the first half of them closed',
+      build: (n: number) => `${'[a]('.repeat(n)}${')'.repeat(n / 2)}`,
+    },
+  ])('scales markdown link masking linearly for $name', ({build}) => {
+    const smallContent = build(8_000)
+    const largeContent = build(16_000)
+    const measurement = expectLinearScaling(
+      size => {
+        maskMarkdownLinks(size === 8_000 ? smallContent : largeContent)
+      },
+      8_000,
+      3,
+    )
+
+    // The old scanner counted parentheses to the end of the content from each unclosed `(` and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
+  })
+
+  it('scales index entry scanning linearly for openers that share one slug end and a newline-only suffix', () => {
+    const build = (n: number) => `${'- [[x\n'.repeat(n)}x]] —${'\n'.repeat(n)}`
+    const smallContent = build(8_000)
+    const largeContent = build(16_000)
+    const measurement = expectLinearScaling(
+      size => {
+        findIndexEntryLines(size === 8_000 ? smallContent : largeContent)
+      },
+      8_000,
+      3,
+    )
+
+    // The old backward scan re-read the shared suffix once per opener and fails this ratio guard.
     expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 

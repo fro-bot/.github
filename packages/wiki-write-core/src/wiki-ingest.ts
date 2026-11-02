@@ -17,6 +17,7 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {findIndexEntryLines} from './line-scanners.ts'
 import {assertReposFile} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
 import {collectWikilinks} from './wiki-utils.ts'
@@ -966,10 +967,7 @@ function parseIndexEntryLines(index: string): Map<string, string> {
   const entries = new Map<string, string>()
   // Match the full line: "- [[slug]] — description"
   // Description may contain anything except a newline (we keep the entire trailing text).
-  const pattern = /^- \[\[([^\]|]+)\]\]\s*—\s*(?:\S.*|[\t\v\f \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/gmu
-  for (const match of index.matchAll(pattern)) {
-    const [line, slug] = match
-    if (line === undefined || slug === undefined) continue
+  for (const {slug, line} of findIndexEntryLines(index)) {
     entries.set(slug.trim(), line)
   }
   return entries
