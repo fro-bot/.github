@@ -76,7 +76,7 @@ jobs:
       #      App installations, so one token can't span both — a token minted
       #      for owner X 403s ("Resource not accessible by integration") when
       #      createWorkflowDispatch targets owner Y's installation. The
-      #      eligible owner set (ELIGIBLE_OWNERS in cross-repo-dispatch.ts) is
+      #      eligible owner set (ELIGIBLE_OWNERS in packages/dispatch/src/dispatch-model.ts) is
       #      a fixed two, so two explicit mint steps here is correct and
       #      simplest — no dynamic loop over a data-driven target set.
       - name: 🔑 Mint control-plane token

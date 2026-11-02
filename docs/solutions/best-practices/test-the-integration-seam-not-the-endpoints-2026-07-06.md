@@ -3,7 +3,7 @@ title: A code path exercised only by pre-built fixtures is an untested seam — 
 date: 2026-07-06
 last_updated: 2026-07-10
 category: best-practices
-module: scripts/cross-repo-dispatch.ts
+module: packages/dispatch/src/dispatch-receipts.ts
 problem_type: best_practice
 component: testing_framework
 severity: high

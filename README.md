@@ -198,9 +198,10 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/core`](packages/core/README.md) | In the repository | Type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, retry, Octokit client factory, goke CLI runner, required-env reader, and the PR wiki-authority check. Held at 100% mutation kills. |
 | [`@fro-bot/privacy`](packages/privacy/README.md) | In the repository | The privacy family: the PR and promotion private-leak scan, the wiki-presence gate, the public-output gate, the private-token and redacted-ID loaders, and the operator lookup and enumeration tools. `scripts/` keeps one entrypoint per CLI. Four modules are held at 100% mutation kills. |
 | [`@fro-bot/registry`](packages/registry/README.md) | In the repository | The writers of `metadata/repos.yaml` and the data-branch merges: the metadata writers, `reconcile-repos` (split into nine seams), invitation polling, the survey write-back and reset, the onboarded gate, `merge-back-data`, `merge-data-pr` and `rename-tracked-repo`. `scripts/` keeps one entrypoint per CLI. `merge-back-data` is held at 100% mutation kills. |
+| [`@fro-bot/dispatch`](packages/dispatch/README.md) | In the repository | The dispatchers: `cross-repo-dispatch` (split into seven modules by responsibility) and `dispatch-renovate`. `scripts/` keeps one entrypoint per CLI. |
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
-| `@fro-bot/dispatch`, `status-truth`, `wiki-ops`, `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
+| `status-truth`, `wiki-ops`, `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
 
 `scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
 
@@ -215,7 +216,7 @@ flowchart BT
   wwc["@fro.bot/wiki-write-core<br/>(published, unchanged)"]
   privacy["@fro-bot/privacy"]
   registry["@fro-bot/registry"]
-  dispatch["dispatch (planned)"]:::planned
+  dispatch["@fro-bot/dispatch"]
   wikiops["wiki-ops (planned)"]:::planned
   statustruth["status-truth (planned)"]:::planned
   knowledge["knowledge (planned)"]:::planned
@@ -256,7 +257,8 @@ C4Container
     Container(registry, "@fro-bot/registry", "Private package", "Metadata writers, reconcile, invitations, survey results, data-branch merges")
     Container(testkit, "@fro-bot/test-kit", "Private package", "Test fakes and helpers, tests only")
     Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, compiled dist/")
-    Container(domains, "Domain packages (planned)", "Private packages", "dispatch, status-truth, wiki-ops, knowledge, reports, ci-checks")
+    Container(dispatch, "@fro-bot/dispatch", "Private package", "cross-repo-dispatch (seven modules), dispatch-renovate")
+    Container(domains, "Domain packages (planned)", "Private packages", "status-truth, wiki-ops, knowledge, reports, ci-checks")
   }
 
   System_Ext(github, "GitHub", "REST API, Git Data API, Actions runner")
@@ -271,6 +273,9 @@ C4Container
   Rel(scripts, registry, "fronts")
   Rel(registry, core, "imports")
   Rel(registry, wwc, "imports")
+  Rel(scripts, dispatch, "fronts")
+  Rel(dispatch, core, "imports")
+  Rel(dispatch, wwc, "imports")
   Rel(scripts, domains, "will front")
   Rel(domains, core, "will import")
   Rel(scripts, testkit, "tests import")
@@ -287,6 +292,9 @@ C4Container
   UpdateRelStyle(scripts, registry, $offsetX="-30", $offsetY="-50")
   UpdateRelStyle(registry, core, $offsetX="-70", $offsetY="20")
   UpdateRelStyle(registry, wwc, $offsetX="30", $offsetY="40")
+  UpdateRelStyle(scripts, dispatch, $offsetX="40", $offsetY="-60")
+  UpdateRelStyle(dispatch, core, $offsetX="-90", $offsetY="30")
+  UpdateRelStyle(dispatch, wwc, $offsetX="50", $offsetY="50")
   UpdateRelStyle(scripts, domains, $offsetX="20", $offsetY="10")
   UpdateRelStyle(domains, core, $offsetX="-20", $offsetY="-10")
   UpdateRelStyle(scripts, testkit, $offsetX="30", $offsetY="30")

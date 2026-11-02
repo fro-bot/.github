@@ -41,6 +41,16 @@
         "@fro.bot/wiki-write-core": "workspace:*",
       },
     },
+    "packages/dispatch": {
+      "name": "@fro-bot/dispatch",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
+        "@octokit/rest": "^22.0.1",
+        "yaml": "^2.6.0",
+      },
+    },
     "packages/privacy": {
       "name": "@fro-bot/privacy",
       "version": "0.0.0",
@@ -226,6 +236,8 @@
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.3", "", { "dependencies": { "@eslint/core": "1.2.1", "levn": "0.4.1" } }, "sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q=="],
 
     "@fro-bot/core": ["@fro-bot/core@workspace:packages/core"],
+
+    "@fro-bot/dispatch": ["@fro-bot/dispatch@workspace:packages/dispatch"],
 
     "@fro-bot/privacy": ["@fro-bot/privacy@workspace:packages/privacy"],
 

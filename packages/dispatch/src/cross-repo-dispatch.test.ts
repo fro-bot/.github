@@ -5,49 +5,48 @@ import type {
   DispatchTarget,
   GateEntry,
   GoalState,
-  LabeledEventPayload,
-  OpenGoalIssue,
-  RunDispatchResult,
   TrackerComment,
-} from './cross-repo-dispatch.ts'
+} from './dispatch-model.ts'
+import type {LabeledEventPayload, OpenGoalIssue, RunDispatchResult} from './dispatch-run.ts'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
+import {runDispatchCli, runTrackCli} from './dispatch-cli.ts'
 import {
-  buildMarkerComment,
-  buildResultMarker,
-  CAS_MAX_RETRIES,
-  classifyReceiptCapability,
-  computeApprovalFingerprint,
   createTargetClientResolver,
-  CROSS_REPO_GOAL_LABEL,
-  extractItemPrompts,
-  extractMarker,
   findRunByCorrelationId,
   findRunConclusion,
-  gateTarget,
-  hashNonce,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
-  MARKER_PREFIX,
-  MAX_ITEMS_PER_GOAL,
-  parseDecomposition,
-  parseResult,
   parseTargetTokens,
-  planDispatch,
-  planSnapshot,
-  RECEIPT_SLA_MS,
-  repairJsonStringEscapes,
-  REQUIRED_APPROVER,
-  resolveReceipts,
-  runDispatch,
-  runDispatchCli,
-  runTrack,
-  runTrackCli,
+} from './dispatch-github.ts'
+import {
+  buildMarkerComment,
+  computeApprovalFingerprint,
+  extractMarker,
   selectStateMarker,
   serializeMarker,
+} from './dispatch-marker.ts'
+import {
+  CAS_MAX_RETRIES,
+  CROSS_REPO_GOAL_LABEL,
+  MARKER_PREFIX,
+  MAX_ITEMS_PER_GOAL,
+  RECEIPT_SLA_MS,
+  REQUIRED_APPROVER,
   TARGET_WORKFLOW_ID,
-} from './cross-repo-dispatch.ts'
+} from './dispatch-model.ts'
+import {classifyReceiptCapability, gateTarget, planDispatch, planSnapshot} from './dispatch-plan.ts'
+import {
+  buildResultMarker,
+  extractItemPrompts,
+  hashNonce,
+  parseDecomposition,
+  parseResult,
+  repairJsonStringEscapes,
+  resolveReceipts,
+} from './dispatch-receipts.ts'
+import {runDispatch, runTrack} from './dispatch-run.ts'
 
 function makeItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
   return {
@@ -92,6 +91,116 @@ describe('marker round-trip', () => {
     const second = serializeMarker(makeState({goal: 'second'}))
     const body = `<!-- ${MARKER_PREFIX}${JSON.stringify(first)} -->\n<!-- ${MARKER_PREFIX}${JSON.stringify(second)} -->`
     expect(extractMarker(body)?.state.goal).toBe('second')
+  })
+
+  it.each([
+    ['no whitespace after the opening', (m: string) => `<!--${MARKER_PREFIX}${m}-->`, 'g'],
+    ['any whitespace after the opening', (m: string) => `<!--\n\t ${MARKER_PREFIX}${m} -->`, 'g'],
+    ['after another comment', (m: string) => `<!-- other --><!-- ${MARKER_PREFIX}${m} -->`, 'g'],
+    ['inside a stray opening', (m: string) => `<!--<!-- ${MARKER_PREFIX}${m} -->`, 'g'],
+    [
+      'followed by an unclosed marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- ${MARKER_PREFIX}{"x":1}`,
+      'g',
+    ],
+    [
+      'followed by a closed malformed marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- ${MARKER_PREFIX}{"x":1} -->`,
+      null,
+    ],
+    ['unclosed only', (m: string) => `<!-- ${MARKER_PREFIX}${m}`, null],
+    [
+      'nested openings closed by one arrow: the outer opening owns the payload, which is malformed',
+      (m: string) => `<!-- ${MARKER_PREFIX}{"x":1 <!-- ${MARKER_PREFIX}${m} -->`,
+      null,
+    ],
+    [
+      'a nested opening after a complete marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- <!-- ${MARKER_PREFIX}{"x":1}`,
+      'g',
+    ],
+    [
+      'a malformed marker before a good one',
+      (m: string) => `<!-- ${MARKER_PREFIX}{not json} --> <!-- ${MARKER_PREFIX}${m} -->`,
+      'g',
+    ],
+    [
+      'three complete markers with a malformed one in the middle',
+      (m: string) =>
+        `<!-- ${MARKER_PREFIX}${m.replace('"g"', '"first"')} --> <!-- ${MARKER_PREFIX}{oops} --> <!-- ${MARKER_PREFIX}${m} -->`,
+      'g',
+    ],
+    ['a payload that is JSON but not a marker', () => `<!-- ${MARKER_PREFIX}{"hash":1,"state":{}} -->`, null],
+    ['an empty payload', () => `<!-- ${MARKER_PREFIX}-->`, null],
+    ['prefix without its colon', (m: string) => `<!-- cross-repo-dispatch ${m} -->`, null],
+  ])('finds the last closed marker: %s', (_name, build, goal) => {
+    const body = build(JSON.stringify(serializeMarker(makeState({goal: 'g'}))))
+    expect(extractMarker(body)?.state.goal ?? null).toBe(goal)
+  })
+
+  it('matches the regex it replaced on seeded random bodies', () => {
+    const referencePayload = /<!--\s*cross-repo-dispatch:([\s\S]*?)-->/g
+    function referenceGoal(body: string): string | null {
+      let last: string | undefined
+      referencePayload.lastIndex = 0
+      for (;;) {
+        const match = referencePayload.exec(body)
+        if (match === null) break
+        last = match[1]
+      }
+      if (last === undefined) return null
+      try {
+        const parsed = JSON.parse(last) as {hash?: unknown; state?: {goal?: unknown; items?: unknown}}
+        if (typeof parsed.hash !== 'string' || parsed.state?.goal === undefined || !Array.isArray(parsed.state.items))
+          return null
+        return typeof parsed.state.goal === 'string' ? parsed.state.goal : null
+      } catch {
+        return null
+      }
+    }
+
+    const good = (goal: string) => JSON.stringify({hash: 'h', state: {goal, items: []}})
+    const tokens = [
+      `<!-- ${MARKER_PREFIX}${good('a')} -->`,
+      `<!-- ${MARKER_PREFIX}${good('b')} -->`,
+      `<!--${MARKER_PREFIX}${good('c')}-->`,
+      `<!--\n ${MARKER_PREFIX}${good('d')}\n-->`,
+      `<!-- ${MARKER_PREFIX}`,
+      `<!-- ${MARKER_PREFIX}{not json} -->`,
+      `<!-- ${MARKER_PREFIX}{"hash":1} -->`,
+      '<!--',
+      '<!-- ',
+      '-->',
+      '--',
+      '>',
+      ' ',
+      '\n',
+      'text',
+      `${MARKER_PREFIX} `,
+    ]
+    let state = 0x4087
+    const next = () => {
+      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+      return state / 4_294_967_296
+    }
+
+    let found = 0
+    for (let index = 0; index < 20_000; index++) {
+      let body = ''
+      for (let count = Math.floor(next() * 12); count > 0; count--)
+        body += tokens[Math.floor(next() * tokens.length)] ?? ''
+      const expected = referenceGoal(body)
+      if (expected !== null) found += 1
+      expect(extractMarker(body)?.state.goal ?? null, JSON.stringify(body)).toBe(expected)
+    }
+    expect(found).toBeGreaterThan(5000)
+  })
+
+  it('stays fast on many unclosed marker openings', () => {
+    const body = `<!-- ${MARKER_PREFIX}${JSON.stringify(serializeMarker(makeState()))} -->${`<!--${MARKER_PREFIX}a`.repeat(20_000)}`
+    const startedAt = performance.now()
+    expect(extractMarker(body)?.state.goal).toBe('goal-1')
+    expect(performance.now() - startedAt).toBeLessThan(500)
   })
 })
 
@@ -784,6 +893,116 @@ describe('planDispatch', () => {
     expect(result.blockedCount).toBe(0)
     expect(result.toDispatch).toHaveLength(0)
     expect(result.deferred).toHaveLength(0)
+  })
+
+  describe('a #4050-shaped goal: five report-only targets, past the receipt SLA', () => {
+    const targets = ['agent', 'dashboard', 'infra', 'gateway', 'docs'].map(name => ({owner: 'fro-bot', name}))
+    const [agent, dashboard, infra, gateway, docs] = targets as [
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+      DispatchTarget,
+    ]
+    const goal = () =>
+      makeState({
+        goal: 'issue-4050',
+        items: [
+          makeItem({id: 'item-1', target: agent, status: 'dispatched', receiptContract: 'receipt-accountable'}),
+          makeItem({id: 'item-2', target: dashboard, status: 'dispatched', receiptContract: 'receipt-accountable'}),
+          makeItem({
+            id: 'item-3',
+            target: infra,
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+            noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+          }),
+          makeItem({
+            id: 'item-4',
+            target: gateway,
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+            noReceiptDiagnostic: 'run-observed-no-receipt',
+          }),
+          makeItem({
+            id: 'item-5',
+            target: docs,
+            status: 'needs-attention',
+            needsAttentionReason: 'unparseable-receipt',
+          }),
+        ],
+      })
+
+    it('plans nothing: dispatched items are in flight and needs-attention items are never re-dispatched (#4049)', () => {
+      const result = planDispatch({state: goal(), fingerprint: 'fp', otherOpenGoalMarkers: []})
+
+      expect(result).toStrictEqual({
+        toDispatch: [],
+        deferred: [],
+        blocked: [],
+        toDispatchCount: 0,
+        deferredCount: 0,
+        blockedCount: 0,
+      })
+    })
+
+    it('stays empty when another open goal holds the same targets in flight', () => {
+      const other = makeState({
+        goal: 'other',
+        items: targets.map((target, index) => makeItem({id: `x${index}`, target, status: 'dispatched'})),
+      })
+      const result = planDispatch({state: goal(), fingerprint: 'fp', otherOpenGoalMarkers: [other]})
+
+      expect(result.toDispatchCount).toBe(0)
+      expect(result.deferredCount).toBe(0)
+      expect(result.blockedCount).toBe(0)
+    })
+
+    it('dispatches only the pending item when the goal is re-approved with one more item added', () => {
+      const state = goal()
+      const extra = makeItem({id: 'item-6', target: {owner: 'fro-bot', name: 'wiki'}, status: 'pending'})
+      const result = planDispatch({
+        state: {...state, items: [...state.items, extra]},
+        fingerprint: 'fp',
+        otherOpenGoalMarkers: [],
+      })
+
+      expect(result.toDispatch.map(item => item.id)).toStrictEqual(['item-6'])
+      expect(result.toDispatchCount).toBe(1)
+      expect(result.deferredCount).toBe(0)
+      expect(result.blockedCount).toBe(0)
+    })
+  })
+
+  describe('a goal with mixed statuses', () => {
+    it('splits pending, deferred and blocked items and leaves the rest out', () => {
+      const busy = {owner: 'fro-bot', name: 'agent'}
+      const state = makeState({
+        items: [
+          makeItem({id: 'pending-free', target: {owner: 'fro-bot', name: 'dashboard'}, status: 'pending'}),
+          makeItem({id: 'pending-busy', target: busy, status: 'pending'}),
+          makeItem({id: 'blocked', target: {owner: 'fro-bot', name: 'legacy'}, status: 'blocked'}),
+          makeItem({id: 'intent', target: {owner: 'fro-bot', name: 'infra'}, status: 'intent'}),
+          makeItem({id: 'dispatched', target: {owner: 'fro-bot', name: 'gateway'}, status: 'dispatched'}),
+          makeItem({
+            id: 'attention',
+            target: {owner: 'fro-bot', name: 'docs'},
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+          }),
+          makeItem({id: 'completed', target: {owner: 'fro-bot', name: 'wiki'}, status: 'completed'}),
+          makeItem({id: 'failed', target: {owner: 'fro-bot', name: 'tools'}, status: 'failed'}),
+        ],
+      })
+      const other = makeState({goal: 'other', items: [makeItem({id: 'x', target: busy, status: 'intent'})]})
+
+      const result = planDispatch({state, fingerprint: 'fp', otherOpenGoalMarkers: [other]})
+
+      expect(result.toDispatch.map(item => item.id)).toStrictEqual(['pending-free'])
+      expect(result.deferred.map(item => item.id)).toStrictEqual(['pending-busy'])
+      expect(result.blocked.map(item => item.id)).toStrictEqual(['blocked'])
+      expect([result.toDispatchCount, result.deferredCount, result.blockedCount]).toStrictEqual([1, 1, 1])
+    })
   })
 })
 

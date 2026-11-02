@@ -254,7 +254,7 @@ describe('cross-repo-dispatch', () => {
       'fro-bot': 'target-one',
       marcusrbrown: 'target-two',
     })
-    const {runDispatchCli} = await import('./cross-repo-dispatch.ts')
+    const {runDispatchCli} = await import('@fro-bot/dispatch/dispatch-cli')
 
     await runDispatchCli().catch(() => undefined)
 
@@ -267,7 +267,7 @@ describe('cross-repo-dispatch', () => {
 
   it('without GITHUB_TOKEN, fails with its own message before building any client', async () => {
     await writeEvent()
-    const {runDispatchCli} = await import('./cross-repo-dispatch.ts')
+    const {runDispatchCli} = await import('@fro-bot/dispatch/dispatch-cli')
 
     const failure = await runDispatchCli().then(
       () => undefined,

@@ -94,7 +94,7 @@ The contract test also needs its own tests. During review of #3974, the scan tha
           permission-actions: write
 ```
 
-The list itself is cleaned in `scripts/dispatch-renovate.ts:116-128` (trim, drop empties, dedupe) and intersected with the repositories the installation can reach in `planDispatchRepositories` (`:137-147`).
+The list itself is cleaned in `packages/dispatch/src/dispatch-renovate.ts:116-128` (trim, drop empties, dedupe) and intersected with the repositories the installation can reach in `planDispatchRepositories` (`:137-147`).
 
 **The contract test's floors** (`scripts/app-token-scope-guard.test.ts:389-392`, asserted at `:681-684`):
 
@@ -107,7 +107,7 @@ const MINT_CENSUS_FLOOR = 32
 
 The matcher is `stepOutputPattern` (`:425-434`). Its fixtures (`:36-47`) include `steps [ '${id}' ] . outputs [ "token" ]`. The binding checks (`BINDING_SPECS`, `:1057-1074`) cover the two split jobs only, `reconcile-repos` and `update-metadata`.
 
-**Consumer and entrypoint evidence.** `scripts/app-token-scope-guard.test.ts` rejects swapped bindings, missing environment variables, duplicate consumers, and additional token references. `scripts/dispatch-renovate.test.ts` exercises `runCli`: only the exact first argument `plan` selects planning; missing or empty required inputs reject without discovery or dispatch calls. The bootstrap fixtures in `packages/registry/src/update-metadata.test.ts` and `scripts/reconcile-repos.test.ts` explicitly return `Promise<DataBranchBootstrapResult>` with `created`, `ref`, and `sha`. The final #3974 review confirmed the binding and fixture issues described above were addressed before merge. Live authorization remains a separate verification obligation; the manual `manage-cache` dispatch path was not exercised.
+**Consumer and entrypoint evidence.** `scripts/app-token-scope-guard.test.ts` rejects swapped bindings, missing environment variables, duplicate consumers, and additional token references. `packages/dispatch/src/dispatch-renovate-cli.test.ts` pins that `plan` and no argument are the only accepted argv, so a typo or `--help` is a usage error that dispatches nothing, and `packages/dispatch/src/dispatch-renovate.test.ts` pins that missing or empty required inputs reject without discovery or dispatch calls. The bootstrap fixtures in `packages/registry/src/update-metadata.test.ts` and `scripts/reconcile-repos.test.ts` explicitly return `Promise<DataBranchBootstrapResult>` with `created`, `ref`, and `sha`. The final #3974 review confirmed the binding and fixture issues described above were addressed before merge. Live authorization remains a separate verification obligation; the manual `manage-cache` dispatch path was not exercised.
 
 **Run evidence after merge.** These runs executed on the merged code. None of their logs contains a `403` or "Resource not accessible by integration".
 
