@@ -40,7 +40,7 @@ function isWhitespaceCode(code: number): boolean {
 }
 
 /** For every offset `i` up to the line length plus one: the first offset at or after `i` whose character stops a run, or the line length. */
-function buildStopTable(line: string, stops: (code: number) => boolean): Int32Array {
+export function buildStopTable(line: string, stops: (code: number) => boolean): Int32Array {
   const table = new Int32Array(line.length + 2).fill(line.length)
   for (let index = line.length - 1; index >= 0; index -= 1) {
     table[index] = stops(line.charCodeAt(index)) ? index : (table[index + 1] ?? line.length)

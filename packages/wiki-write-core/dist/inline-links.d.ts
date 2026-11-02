@@ -10,6 +10,8 @@ export interface InlineLink {
     /** The destination as written: `<angle>` with its brackets, or the bare run. */
     readonly target: string;
 }
+/** For every offset `i` up to the line length plus one: the first offset at or after `i` whose character stops a run, or the line length. */
+export declare function buildStopTable(line: string, stops: (code: number) => boolean): Int32Array;
 /**
  * Builds a function that finds the inline links of one line, `[text](destination "title")`, left to right.
  * `find(from)` returns the leftmost link that starts at or after `from`, or `undefined`.

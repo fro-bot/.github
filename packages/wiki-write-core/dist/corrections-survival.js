@@ -1,5 +1,6 @@
 import { normalizeCorrectionText } from "./correction-text.js";
 import { assertCorrectionsFile, getCorrectionLifecycle, } from "./corrections.js";
+import { replaceLinkLabels } from "./link-labels.js";
 import { maskNonProseContent } from "./rendering-policy.js";
 import { collectWikiPages } from "./wiki-utils.js";
 /**
@@ -94,21 +95,18 @@ export function verifyCorrectionSurvival(files, corrections, fallbackFiles = {})
  * the pre-refactor reference implementation.
  */
 export function normalizeFormattingText(value) {
-    const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu;
-    return (value
-        .normalize('NFKC')
-        .replaceAll(markdownLinkPattern, renderVisibleLinkText)
+    return (replaceLinkLabels(value.normalize('NFKC'), renderVisibleLinkText)
         // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
         .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
         .trim()
         .replaceAll(/\s+/gu, ' ')
         .toLowerCase());
 }
-function renderVisibleLinkText(_match, markdownText, wikiTarget, wikiLabel) {
-    // markdownLinkPattern's outer alternation guarantees exactly one branch matched whenever this
-    // callback runs: the markdown branch always captures markdownText (possibly '', never
-    // undefined), and the wiki branch always captures wikiTarget (required, 1+ chars). A final
-    // '' fallback covering "neither captured" is unreachable -- asserted, not defaulted.
+function renderVisibleLinkText({ markdownText, wikiTarget, wikiLabel }) {
+    // replaceLinkLabels calls this with exactly one branch matched: the markdown branch always has
+    // markdownText (possibly '', never undefined), and the wiki branch always has wikiTarget
+    // (required, 1+ chars). A final '' fallback covering "neither captured" is unreachable --
+    // asserted, not defaulted.
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see comment above
     return (markdownText ?? wikiLabel ?? wikiTarget);
 }

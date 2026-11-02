@@ -7,6 +7,7 @@ import {
   type CorrectionsFile,
   type CorrectionSurvivalResult,
 } from './corrections.ts'
+import {replaceLinkLabels, type LinkLabelParts} from './link-labels.ts'
 import {maskNonProseContent} from './rendering-policy.ts'
 import {collectWikiPages} from './wiki-utils.ts'
 
@@ -108,11 +109,8 @@ export function verifyCorrectionSurvival(
  * the pre-refactor reference implementation.
  */
 export function normalizeFormattingText(value: string): string {
-  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
   return (
-    value
-      .normalize('NFKC')
-      .replaceAll(markdownLinkPattern, renderVisibleLinkText)
+    replaceLinkLabels(value.normalize('NFKC'), renderVisibleLinkText)
       // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
       .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
       .trim()
@@ -121,16 +119,11 @@ export function normalizeFormattingText(value: string): string {
   )
 }
 
-function renderVisibleLinkText(
-  _match: string,
-  markdownText: string | undefined,
-  wikiTarget: string | undefined,
-  wikiLabel: string | undefined,
-): string {
-  // markdownLinkPattern's outer alternation guarantees exactly one branch matched whenever this
-  // callback runs: the markdown branch always captures markdownText (possibly '', never
-  // undefined), and the wiki branch always captures wikiTarget (required, 1+ chars). A final
-  // '' fallback covering "neither captured" is unreachable -- asserted, not defaulted.
+function renderVisibleLinkText({markdownText, wikiTarget, wikiLabel}: LinkLabelParts): string {
+  // replaceLinkLabels calls this with exactly one branch matched: the markdown branch always has
+  // markdownText (possibly '', never undefined), and the wiki branch always has wikiTarget
+  // (required, 1+ chars). A final '' fallback covering "neither captured" is unreachable --
+  // asserted, not defaulted.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see comment above
   return (markdownText ?? wikiLabel ?? wikiTarget)!
 }
