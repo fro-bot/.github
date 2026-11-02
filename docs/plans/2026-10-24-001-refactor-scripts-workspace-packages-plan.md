@@ -782,7 +782,7 @@ CLI tables follow one legend:
 
 **Verification:** The existing dispatch tests pass from their new paths. No non-test module in `packages/dispatch/src` is 2,000 lines or longer, and no top-level declaration of the original `cross-repo-dispatch.ts` is left outside a seam.
 
-- [ ] **Unit 9: `@fro-bot/status-truth`**
+- [x] **Unit 9: `@fro-bot/status-truth`**
 
 **Goal:** Move `status-truth-detect`, `status-truth-proposals` and `status-truth-prs`, plus `rollout-tracker-snapshot`, and split detect and proposals.
 
