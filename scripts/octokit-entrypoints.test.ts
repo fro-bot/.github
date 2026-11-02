@@ -177,10 +177,11 @@ describe('status-truth-proposals', () => {
     await writeReport()
     process.env.GITHUB_TOKEN = 'live-token'
 
-    const failure = await runAsEntry('./status-truth-proposals.ts', async () => import('./status-truth-proposals.ts'))
+    await runAsEntry('./status-truth-proposals.ts', async () => import('./status-truth-proposals.ts'))
 
-    // The recording client cannot list issues, so the live run exits before planning.
-    expect(failure).toBeInstanceOf(ExitSignal)
+    // The recording client cannot list issues, so the live run fails before planning: exit code 1, set by the runner.
+    expect(process.exitCode).toBe(1)
+    expect(stderrText()).toContain('status-truth-proposals: existing issue fetch failed: error-class=fetch-failure\n')
     expect(constructed).toHaveLength(1)
     expect(constructed[0]).toMatchObject({auth: 'live-token', request: {timeout: 10_000}})
     expect(silentLog(constructed[0])).toEqual(['debug', 'error', 'info', 'warn'])
@@ -189,9 +190,10 @@ describe('status-truth-proposals', () => {
   it('live run: without GITHUB_TOKEN, fails with its own message and builds no client', async () => {
     await writeReport()
 
-    const failure = await runAsEntry('./status-truth-proposals.ts', async () => import('./status-truth-proposals.ts'))
+    await runAsEntry('./status-truth-proposals.ts', async () => import('./status-truth-proposals.ts'))
 
-    expect(failure).toMatchObject({message: 'status-truth-proposals: GITHUB_TOKEN is required in the environment'})
+    expect(process.exitCode).toBe(1)
+    expect(stderrText()).toContain('status-truth-proposals: GITHUB_TOKEN is required in the environment\n')
     expect(constructed).toStrictEqual([])
   })
 })

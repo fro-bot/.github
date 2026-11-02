@@ -225,7 +225,7 @@ export function recoverPriorTickState(body: string): Set<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Live-state summary encoding (mirrors status-truth-proposals.ts)
+// Live-state summary encoding (mirrors packages/status-truth/src/proposal-markers.ts)
 // ---------------------------------------------------------------------------
 
 const LIVE_STATE_SUMMARY_PATTERN = /^checked-(\d+)-unchecked-(\d+)$/u

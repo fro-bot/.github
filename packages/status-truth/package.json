@@ -11,12 +11,19 @@
     "./detect-live-state": "./src/detect-live-state.ts",
     "./detect-plan-consistency": "./src/detect-plan-consistency.ts",
     "./detect-rollout": "./src/detect-rollout.ts",
+    "./proposal-exec": "./src/proposal-exec.ts",
+    "./proposal-labels": "./src/proposal-labels.ts",
+    "./proposal-markers": "./src/proposal-markers.ts",
+    "./proposal-outcomes": "./src/proposal-outcomes.ts",
+    "./proposal-plan": "./src/proposal-plan.ts",
+    "./proposals-cli": "./src/proposals-cli.ts",
     "./report-model": "./src/report-model.ts",
     "./rollout-tracker-snapshot": "./src/rollout-tracker-snapshot.ts",
     "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts"
   },
   "dependencies": {
-    "@fro-bot/core": "workspace:*"
+    "@fro-bot/core": "workspace:*",
+    "@fro-bot/privacy": "workspace:*"
   },
   "devDependencies": {
     "@fro-bot/test-kit": "workspace:*"

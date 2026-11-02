@@ -195,7 +195,7 @@ describe('rollout-tracker-snapshot (bun; gateway-rollout-tracker.yaml and status
 })
 
 describe('the shims run nothing on import', () => {
-  it.each(['rollout-tracker-snapshot', 'status-truth-detect'])(
+  it.each(['rollout-tracker-snapshot', 'status-truth-detect', 'status-truth-proposals'])(
     'importing scripts/%s.ts reads nothing, prints nothing and sets no exit code',
     async script => {
       const harness = join(root, `import-${script}.ts`)
@@ -377,6 +377,424 @@ describe('status-truth-detect (bun, status-truth.yaml: no argv)', () => {
       expect(result.stdout).toBe('')
       expect(result.stderr).not.toBe('')
       expect(() => readFileSync(join(cwd, 'report.json'), 'utf8')).toThrow()
+    },
+  )
+})
+
+// ─── status-truth-proposals ──────────────────────────────────────────────────────────────────────
+
+const REPOS_YAML = `version: 1
+repos:
+  - owner: fro-bot
+    name: agent
+    added: 2026-06-15
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDOAGENT001
+  - owner: acme
+    name: secret-thing
+    added: 2026-06-15
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: true
+    node_id: R_kgDOSECRET001
+`
+
+function finding(kind: string, fingerprint: string, extra: Readonly<Record<string, unknown>> = {}) {
+  return {
+    kind,
+    path: 'docs/plans/example.md',
+    sourceRef: '#42',
+    verdict: 'drifted',
+    fingerprint,
+    claimedState: 'open',
+    liveState: 'merged',
+    proposalEligible: true,
+    proposedCorrection: 'PR #42 is merged',
+    ...extra,
+  }
+}
+
+function reportOf(findings: readonly unknown[], extra: Readonly<Record<string, unknown>> = {}) {
+  return {
+    schema_version: 1,
+    fingerprint_version: 1,
+    status: 'findings',
+    scan_complete: true,
+    generated_at: '2026-11-01T12:00:00.000Z',
+    failure_class: null,
+    repair_eligible: true,
+    findings,
+    counts: {
+      total: findings.length,
+      current: 0,
+      drifted: findings.length,
+      unresolved: 0,
+      unsafe: 0,
+      proposal_eligible: findings.length,
+    },
+    ...extra,
+  }
+}
+
+function proposalMarker(fingerprint: string, liveState: string, kind: string): string {
+  return [
+    `<!-- status-truth:fingerprint=${fingerprint} -->`,
+    `<!-- status-truth:live-state=${liveState} -->`,
+    `<!-- status-truth:kind=${kind} -->`,
+  ].join('\n')
+}
+
+function proposalIssue(number: number, state: 'open' | 'closed', labels: readonly string[], body: string) {
+  return {
+    number,
+    state,
+    title: '[status-truth] proposal',
+    body,
+    closed_at: state === 'closed' ? '2026-10-01T00:00:00Z' : null,
+    labels: labels.map(name => ({name})),
+  }
+}
+
+const EMPTY_LISTS: readonly FakeRoute[] = [route('GET', `${CONTROL}/issues`, {b: []})]
+const LABEL_GET = route('GET', String.raw`~^/repos/fro-bot/\.github/labels/`, {b: {name: 'x'}})
+const WRITE_ROUTES: readonly FakeRoute[] = [
+  route('POST', `${CONTROL}/issues`, {s: 201, b: {number: 900}}),
+  route('POST', String.raw`~^/repos/fro-bot/\.github/issues/\d+/comments$`, {s: 201, b: {id: 1}}),
+  route('PATCH', String.raw`~^/repos/fro-bot/\.github/issues/\d+$`, {b: {number: 1}}),
+  route('POST', String.raw`~^/repos/fro-bot/\.github/issues/\d+/labels$`, {b: []}),
+  route('DELETE', String.raw`~^/repos/fro-bot/\.github/issues/\d+/labels/`, {b: []}),
+]
+
+const FP_OPEN = 'aaaaaaaaaaaaaaaa'
+const FP_UPDATE = 'bbbbbbbbbbbbbbbb'
+const FP_REOPEN = 'cccccccccccccccc'
+const FP_SUPPRESS = 'dddddddddddddddd'
+const FP_CLEARED = 'eeeeeeeeeeeeeeee'
+
+const PROPOSAL_REPORT = reportOf([
+  finding('pr-state', FP_OPEN),
+  finding('issue-state', FP_UPDATE, {sourceRef: '#43', claimedState: 'open', liveState: 'closed'}),
+  finding('release-tag-state', FP_REOPEN, {sourceRef: '@v1', claimedState: 'published', liveState: 'draft'}),
+  finding('plan-status', FP_SUPPRESS, {sourceRef: 'docs/plans/x.md', claimedState: 'active', liveState: 'complete'}),
+])
+
+const EXISTING_OPEN = [
+  proposalIssue(301, 'open', ['status-truth'], proposalMarker(FP_UPDATE, 'open', 'issue-state')),
+  proposalIssue(303, 'open', ['status-truth'], proposalMarker(FP_CLEARED, 'open', 'pr-state')),
+]
+const EXISTING_CLOSED = [
+  proposalIssue(
+    311,
+    'closed',
+    ['status-truth', 'status-truth:resolved'],
+    proposalMarker(FP_REOPEN, 'published', 'release-tag-state'),
+  ),
+  proposalIssue(
+    312,
+    'closed',
+    ['status-truth', 'status-truth:false-positive'],
+    proposalMarker(FP_SUPPRESS, 'active', 'plan-status'),
+  ),
+]
+const LISTS: readonly FakeRoute[] = [
+  route('GET', `${CONTROL}/issues`, {q: 'state=open', b: EXISTING_OPEN}),
+  route('GET', `${CONTROL}/issues`, {q: 'state=closed', b: EXISTING_CLOSED}),
+]
+
+/** Every `jq` path of the "Write open summary" step (`status-truth.yaml:266-315`). */
+const OPEN_COUNT_KEYS = ['opened', 'updated', 'reopened', 'closed', 'suppressed', 'failed'] as const
+const OPEN_PLANNED_KEYS = [
+  'sameRunDeduplicated',
+  'versionRejected',
+  'blocked',
+  'overflowed',
+  'needsOutcomeCooldown',
+] as const
+const OUTCOME_KEYS = [
+  'proposedPending',
+  'explicitAccepted',
+  'explicitRejected',
+  'falsePositive',
+  'resolvedPositive',
+  'superseded',
+  'needsOutcome',
+  'conflictingLabels',
+  'malformedOutcome',
+] as const
+const BY_KIND_KEYS = ['opened', 'updated', 'reopened', 'closed', 'suppressed'] as const
+
+function openCheckout(report: unknown = PROPOSAL_REPORT, extra: Readonly<Record<string, string>> = {}) {
+  return checkout({'report.json': JSON.stringify(report), 'metadata/repos.yaml': REPOS_YAML, ...extra})
+}
+
+function openEnv(cwd: string, extra: Readonly<Record<string, string | undefined>> = {}) {
+  return {
+    STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json'),
+    STATUS_TRUTH_OPEN_RESULT_PATH: join(cwd, 'result.json'),
+    GITHUB_REPOSITORY: 'fro-bot/.github',
+    ...extra,
+  }
+}
+
+function mutating(): string[] {
+  return requests().filter(line => !line.startsWith('GET '))
+}
+
+describe('status-truth-proposals (bun, status-truth.yaml: no argv)', () => {
+  it('a dry run counts the planned actions, writes every key the summary step reads and mutates nothing', async () => {
+    const cwd = openCheckout()
+    const result = await runFake('status-truth-proposals', [...LISTS, ...WRITE_ROUTES, LABEL_GET], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', GITHUB_TOKEN: 'tok-read'}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    const file = readFileSync(join(cwd, 'result.json'), 'utf8')
+    expect(result.stdout).toBe(file)
+    const parsed = JSON.parse(file) as Record<string, Record<string, unknown>> & {
+      dryRun: boolean
+      labelGateFailed: boolean
+    }
+    expect(parsed.dryRun).toBe(true)
+    expect(parsed.labelGateFailed).toBe(false)
+    expect(Object.keys(parsed.counts ?? {}).sort()).toEqual([...OPEN_COUNT_KEYS, 'sameRunDeduplicated'].sort())
+    expect(Object.keys(parsed.plannedCounts ?? {}).sort()).toEqual([...OPEN_PLANNED_KEYS].sort())
+    expect(Object.keys(parsed.outcomeCounts ?? {}).sort()).toEqual([...OUTCOME_KEYS].sort())
+    // update, reopen and close come from the existing issues; one open and one suppress remain.
+    expect(parsed.counts).toMatchObject({opened: 1, updated: 1, reopened: 1, closed: 1, suppressed: 1, failed: 0})
+    // `.plannedCountsByKind | to_entries[]` then `.value.{opened,updated,reopened,closed,suppressed}`.
+    const byKind = parsed.plannedCountsByKind as Record<string, Record<string, number>>
+    expect(Object.keys(byKind).length).toBeGreaterThan(0)
+    for (const value of Object.values(byKind)) expect(Object.keys(value).sort()).toEqual([...BY_KIND_KEYS].sort())
+    const outcomeByKind = parsed.outcomeCountsByKind as Record<string, Record<string, number>>
+    expect(Object.keys(outcomeByKind).length).toBeGreaterThan(0)
+    for (const value of Object.values(outcomeByKind))
+      expect(Object.keys(value).sort()).toEqual([...OUTCOME_KEYS].sort())
+    // Zero mutating calls, and each read carried the job token.
+    expect(mutating()).toEqual([])
+    expect(unhandledMutations()).toEqual([])
+    expect(requests().length).toBeGreaterThan(0)
+    for (const line of requests()) expect(line).toContain(' auth=tok-read')
+  })
+
+  it('a dry run needs no token: no request is made and the planned opens are counted', async () => {
+    const cwd = openCheckout()
+    const result = await runFake('status-truth-proposals', [...LISTS, ...WRITE_ROUTES, LABEL_GET], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true'}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(requests()).toEqual([])
+    expect(JSON.parse(result.stdout)).toMatchObject({dryRun: true, counts: {opened: 4, failed: 0}})
+  })
+
+  it('a dry run falls back to an empty issue list when the read fails, and still mutates nothing', async () => {
+    const cwd = openCheckout()
+    const result = await runFake(
+      'status-truth-proposals',
+      [route('GET', `${CONTROL}/issues`, {s: 500, b: {message: 'boom'}}), ...WRITE_ROUTES, LABEL_GET],
+      {cwd, env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', GITHUB_TOKEN: 'tok-read'})},
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({dryRun: true, counts: {opened: 4}})
+    expect(mutating()).toEqual([])
+  })
+
+  it('STATUS_TRUTH_DRY_RUN=false confirms the labels, then opens, updates, reopens and closes', async () => {
+    const cwd = openCheckout()
+    const result = await runFake('status-truth-proposals', [...LISTS, ...WRITE_ROUTES, LABEL_GET], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', GITHUB_TOKEN: 'tok-write'}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      dryRun: false,
+      labelGateFailed: false,
+      counts: {opened: 1, updated: 1, reopened: 1, closed: 1, suppressed: 1, failed: 0},
+    })
+    expect(requests().filter(line => line.startsWith('GET /repos/fro-bot/.github/labels/'))).toHaveLength(8)
+    expect(
+      requests().filter(line => line.startsWith('POST /repos/fro-bot/.github/issues auth=tok-write')),
+    ).toHaveLength(1)
+    expect(requests().filter(line => line.startsWith('PATCH '))).toHaveLength(2)
+    expect(unhandledMutations()).toEqual([])
+    for (const line of mutating()) expect(line).toContain(' auth=tok-write')
+  })
+
+  it('fails closed without opening anything when a required label cannot be confirmed', async () => {
+    const cwd = openCheckout()
+    const result = await runFake(
+      'status-truth-proposals',
+      [
+        ...LISTS,
+        ...WRITE_ROUTES,
+        route('GET', String.raw`~^/repos/fro-bot/\.github/labels/`, {s: 404, b: {message: 'Not Found'}}),
+        route('POST', `${CONTROL}/labels`, {s: 500, b: {message: 'boom'}}),
+      ],
+      {cwd, env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', GITHUB_TOKEN: 'tok-write'})},
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({dryRun: false, labelGateFailed: true, counts: {opened: 0}})
+    expect(requests().filter(line => line.startsWith('POST /repos/fro-bot/.github/issues'))).toEqual([])
+  })
+
+  it('exits 1 before planning when the live issue read fails', async () => {
+    const cwd = openCheckout()
+    const result = await runFake(
+      'status-truth-proposals',
+      [route('GET', `${CONTROL}/issues`, {s: 500, b: {message: 'boom'}})],
+      {
+        cwd,
+        env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', GITHUB_TOKEN: 'tok-write'}),
+      },
+    )
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('status-truth-proposals: existing issue fetch failed: error-class=fetch-failure\n')
+    expect(mutating()).toEqual([])
+  })
+
+  it('exits 1 with a message-only stderr when a live run has no token', async () => {
+    const cwd = openCheckout()
+    const result = await runFake('status-truth-proposals', [], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false'}),
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('status-truth-proposals: GITHUB_TOKEN is required in the environment\n')
+    expect(requests()).toEqual([])
+  })
+
+  // The dry run is the default of status-truth.yaml (`github.event.inputs.dry_run || 'true'`), not of this script:
+  // the script treats only the exact string 'true' as a dry run. These two tests record that, so a change that
+  // makes an unset variable dry (or an unset variable write) is a visible decision.
+  it('takes the live path when STATUS_TRUTH_DRY_RUN is unset (the workflow default supplies the dry run)', async () => {
+    const cwd = openCheckout(reportOf([finding('pr-state', FP_OPEN)]))
+    const result = await runFake('status-truth-proposals', [...EMPTY_LISTS, ...WRITE_ROUTES, LABEL_GET], {
+      cwd,
+      env: openEnv(cwd, {GITHUB_TOKEN: 'tok-write'}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({dryRun: false, counts: {opened: 1}})
+    expect(
+      requests().filter(line => line.startsWith('POST /repos/fro-bot/.github/issues auth=tok-write')),
+    ).toHaveLength(1)
+  })
+
+  it.each(['TRUE', '1', ''])(
+    'takes the live path when STATUS_TRUTH_DRY_RUN=%j (only the exact string true is a dry run)',
+    async value => {
+      const cwd = openCheckout(reportOf([finding('pr-state', FP_OPEN)]))
+      const result = await runFake('status-truth-proposals', [...EMPTY_LISTS, ...WRITE_ROUTES, LABEL_GET], {
+        cwd,
+        env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: value, GITHUB_TOKEN: 'tok-write'}),
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({dryRun: false})
+    },
+  )
+
+  it('prints the result on stdout and exits 0 when the result file is unwritable', async () => {
+    const cwd = openCheckout()
+    const result = await runFake('status-truth-proposals', [], {
+      cwd,
+      env: openEnv(cwd, {
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_OPEN_RESULT_PATH: '/nonexistent-directory/for/status-truth/r.json',
+      }),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({dryRun: true})
+    expect(result.stderr).toContain('status-truth-proposals: could not write result: error-class=write-failure\n')
+  })
+
+  it.each([
+    [
+      'the report path is unset',
+      {STATUS_TRUTH_REPORT_PATH: undefined},
+      undefined,
+      'status-truth-proposals: STATUS_TRUTH_REPORT_PATH is required\n',
+    ],
+    [
+      'the report is not JSON',
+      {},
+      '{nope',
+      'status-truth-proposals: could not parse report artifact: error-class=parse-failure\n',
+    ],
+    [
+      'the artifact has an unknown version',
+      {},
+      JSON.stringify({schema_version: 2, fingerprint_version: 1}),
+      'status-truth-proposals: artifact validation failed: error-class=validation-failure\n',
+    ],
+  ])('exits 1 with a message-only stderr and mutates nothing when %s', async (_name, env, report, stderr) => {
+    const cwd = openCheckout(
+      report === undefined ? PROPOSAL_REPORT : undefined,
+      report === undefined ? {} : {'report.json': report},
+    )
+    const result = await runFake('status-truth-proposals', [...WRITE_ROUTES], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', GITHUB_TOKEN: 'tok', ...env}),
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain(stderr)
+    expect(requests()).toEqual([])
+  })
+
+  it('fails closed with a token-load failure when metadata/repos.yaml is missing', async () => {
+    const cwd = checkout({'report.json': JSON.stringify(PROPOSAL_REPORT)})
+    const result = await runFake('status-truth-proposals', [...WRITE_ROUTES], {
+      cwd,
+      env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', GITHUB_TOKEN: 'tok'}),
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain(
+      'status-truth-proposals: privacy token load failed: error-class=token-load-failure\n',
+    )
+    expect(requests()).toEqual([])
+  })
+
+  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']]])(
+    'argv %j is a usage error: exit 1, nothing read, nothing written, even on the live path',
+    async argv => {
+      const cwd = openCheckout()
+      const result = await runFake('status-truth-proposals', [...EMPTY_LISTS, ...WRITE_ROUTES, LABEL_GET], {
+        cwd,
+        argv,
+        env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', GITHUB_TOKEN: 'tok-write'}),
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).not.toBe('')
+      expect(requests()).toEqual([])
+      expect(() => readFileSync(join(cwd, 'result.json'), 'utf8')).toThrow()
     },
   )
 })

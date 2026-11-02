@@ -377,7 +377,7 @@ export async function scanPlanConsistencyFindings(params: {
     const fingerprint = computeClaimFingerprint(claim.kind, claim.path, claim.sourceRef, claim.normalizedText)
     // Word-chars-and-hyphens only (no spaces or `=`) so this value round-trips
     // through the proposal issue body's hidden live-state marker, whose pattern
-    // is `[\w-]+` (see LIVE_STATE_MARKER_PATTERN in status-truth-proposals.ts).
+    // is `[\w-]+` (see LIVE_STATE_MARKER_PATTERN in proposal-markers.ts).
     const liveState = units.recognized ? `checked-${units.checkedUnits}-unchecked-${units.uncheckedUnits}` : undefined
 
     findings.push({

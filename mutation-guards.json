@@ -411,6 +411,34 @@
     {
       "path": "scripts/status-truth-detect.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/detect-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/detect-*.ts and report-model.ts, pinned by packages/status-truth/src/status-truth-detect.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
+    },
+    {
+      "path": "packages/status-truth/src/proposal-labels.ts",
+      "reason": "The label vocabulary of the proposal lifecycle: the primary label, the outcome labels, the terminal, resolving and accuracy-signal sets derived from them, and REQUIRED_LABELS, the list the executor confirms before it opens anything. It holds data and does no I/O. Pinned by the lifecycle, terminal-suppression, reopen and label-gate tests in packages/status-truth/src/status-truth-proposals.test.ts, and by scripts/settings-labels-effective-set.test.ts, which compares REQUIRED_LABELS with .github/settings.yml. Not in the mutate list: a Stryker run would mostly score literal changes to label names that those tests already pin."
+    },
+    {
+      "path": "packages/status-truth/src/proposal-markers.ts",
+      "reason": "The hidden markers in a proposal issue body (fingerprint, live state, kind), their builders and parsers, the recovery of a claim kind from an older body, the closed vocabulary of claim kinds that keeps body text out of telemetry keys, and the cooldown after a terminal close. Pinned by the marker round-trip, malformed-marker, kind-recovery and cooldown tests in packages/status-truth/src/status-truth-proposals.test.ts. Not in the mutate list: it was never mutated, it does no I/O, and a regression in a marker pattern fails the planner tests that read the markers back."
+    },
+    {
+      "path": "packages/status-truth/src/proposal-outcomes.ts",
+      "reason": "The outcome read-model of the existing proposal issues: the classification of one issue into an outcome state and the aggregate counts, overall and per claim kind. It is counts only and never writes. Pinned by the classification table and the aggregate-count tests in packages/status-truth/src/status-truth-proposals.test.ts (every state, conflicting and malformed labels, the per-kind buckets) and by scripts/status-truth-flows.test.ts, which asserts the nine outcome keys the summary step reads. Not in the mutate list: it was never mutated, and it feeds a summary, not a write."
+    },
+    {
+      "path": "packages/status-truth/src/proposal-plan.ts",
+      "reason": "The proposal lifecycle planner (planStatusTruthProposalActions) and the title, body and comment builders: open, update, reopen, close or suppress per fingerprint, same-run deduplication, terminal-label suppression, close-on-clear only after a complete scan, an unknown report version rejected before any planning, and every rendered surface through the public-output gate. Pure: it plans and writes nothing. Pinned by the lifecycle decision tables in packages/status-truth/src/status-truth-proposals.test.ts and, through the real entrypoint, by scripts/status-truth-flows.test.ts. Not in the mutate list: it was never mutated, and the executor performs only the actions it plans, behind a label gate."
+    },
+    {
+      "path": "packages/status-truth/src/proposal-exec.ts",
+      "reason": "The proposal executor and its reads: the label gate (fail closed when any required label is missing), exhaustive pagination of the existing proposal issues, and the planned actions applied to this repository's issues, or only counted in a dry run. A failed action does not stop the rest. It writes issues and labels of one repository, never data or main. Pinned by the executor and fetch tests in packages/status-truth/src/status-truth-proposals.test.ts against injected clients (dry run makes no call, the label gate, 404 and 422 on label creation, each action's failure) and by scripts/status-truth-flows.test.ts against a fake GitHub. Not in the mutate list: its boundary is an injected client, so a Stryker run would mostly score transport glue."
+    },
+    {
+      "path": "packages/status-truth/src/proposals-cli.ts",
+      "reason": "The production composition of status-truth-proposals and its goke entrypoint: the report read and validation, the privacy-token load, the read-only fetch in a dry run and the fail-closed fetch in a live run, the plan, the execute and the counts-only result. A dry run (exactly STATUS_TRUTH_DRY_RUN=true) makes no write; any other value takes the live path, and status-truth.yaml supplies the dry run by default. Pinned by packages/status-truth/src/proposals-cli.test.ts (the config, the preconditions, the usage errors and `main`) and by scripts/status-truth-flows.test.ts, which spawns the shim: the dry run makes zero mutating calls, the live path, the unset-variable behaviour, every exit-1 path and the keys the summary step reads. Not in the mutate list: it is I/O wiring, and the decisions it wires are in the modules above."
+    },
+    {
+      "path": "scripts/status-truth-proposals.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/proposals-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/proposal-*.ts and proposals-cli.ts, pinned by packages/status-truth/src/status-truth-proposals.test.ts. The shim's surface, including a usage error on unmatched argv that writes nothing even on the live path and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
     }
   ]
 }
