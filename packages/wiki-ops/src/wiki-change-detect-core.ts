@@ -43,7 +43,7 @@ export type WikiChangeDetectHashFn = (contents: Buffer) => string
 export type WikiChangeDetectCheckIgnoreRunnerFn = (params: {
   cwd: string
   stdinInput: string
-}) => Promise<{stdout: string; exitCode: number}>
+}) => Promise<{stdout?: string; exitCode: number}>
 
 export interface CaptureWikiScopeSnapshotParams {
   cwd: string
@@ -59,13 +59,6 @@ function defaultHashContents(contents: Buffer): string {
   return createHash('sha256').update(contents).digest('hex')
 }
 
-const defaultLstat: WikiChangeDetectLstatFn = async absolutePath => fs.lstat(absolutePath)
-const defaultReadDir: WikiChangeDetectReadDirFn = async absolutePath => fs.readdir(absolutePath, {withFileTypes: true})
-const defaultReadFile: WikiChangeDetectReadFileFn = async absolutePath => fs.readFile(absolutePath)
-
-/** Generous cap: NUL-delimited paths only, never file content — a runaway wiki tree still fits comfortably. */
-const CHECK_IGNORE_MAX_BUFFER = 64 * 1024 * 1024
-
 // Synchronous on purpose: bounded, path-only input/output (never file content), so a
 // blocking call is simpler and safer here than juggling an async child's stdin stream.
 const defaultCheckIgnoreRunner: WikiChangeDetectCheckIgnoreRunnerFn = async ({cwd, stdinInput}) => {
@@ -74,15 +67,17 @@ const defaultCheckIgnoreRunner: WikiChangeDetectCheckIgnoreRunnerFn = async ({cw
       cwd,
       input: stdinInput,
       encoding: 'utf8',
-      maxBuffer: CHECK_IGNORE_MAX_BUFFER,
+      // Generous cap: NUL-delimited paths only, never file content — a runaway wiki tree still fits comfortably.
+      maxBuffer: 64 * 1024 * 1024,
     })
     return {stdout, exitCode: 0}
   } catch (error: unknown) {
-    const failure = error as {status?: unknown; stdout?: unknown}
+    const failure = error as {status?: unknown}
     // git check-ignore exits 1 (not a spawn/exec failure) when none of the given paths
-    // are ignored — that is a real, parseable result, not an error.
+    // are ignored — that is a real, parseable result, not an error. Only exit 0 carries paths
+    // on stdout, and that exit is the success path above, so a failure reports none.
     if (typeof failure.status === 'number') {
-      return {stdout: typeof failure.stdout === 'string' ? failure.stdout : '', exitCode: failure.status}
+      return {exitCode: failure.status}
     }
     throw error
   }
@@ -177,7 +172,7 @@ async function checkIgnoredPaths(
 
   const stdinInput = relativePaths.map(relativePath => `${relativePath}\0`).join('')
 
-  let result: {stdout: string; exitCode: number}
+  let result: {stdout?: string; exitCode: number}
   try {
     result = await runner({cwd, stdinInput})
   } catch (error: unknown) {
@@ -189,7 +184,7 @@ async function checkIgnoredPaths(
     throw new Error(`git check-ignore exited with unexpected status ${result.exitCode}`)
   }
 
-  const parts = result.stdout.split('\0')
+  const parts = (result.stdout ?? '').split('\0')
   if (parts.at(-1) === '') parts.pop()
 
   const candidateSet = new Set(relativePaths)
@@ -212,13 +207,14 @@ export async function captureWikiScopeSnapshot(
   params: CaptureWikiScopeSnapshotParams,
 ): Promise<WikiChangeDetectEntry[]> {
   const enumerateDeps: EnumerateDeps = {
-    lstatImpl: params.lstatImpl ?? defaultLstat,
-    readdirImpl: params.readdirImpl ?? defaultReadDir,
+    lstatImpl: params.lstatImpl ?? (async absolutePath => fs.lstat(absolutePath)),
+    readdirImpl: params.readdirImpl ?? (async absolutePath => fs.readdir(absolutePath, {withFileTypes: true})),
   }
-  const readFileImpl = params.readFileImpl ?? defaultReadFile
+  const readFileImpl = params.readFileImpl ?? (async absolutePath => fs.readFile(absolutePath))
   const hashImpl = params.hashImpl ?? defaultHashContents
   const checkIgnoreRunnerImpl = params.checkIgnoreRunnerImpl ?? defaultCheckIgnoreRunner
 
+  // Stryker disable next-line ArrayDeclaration: the one variant seeds a placeholder that the allowlist filter below drops unread
   const candidates: string[] = []
   for (const scopePath of params.scopePaths) {
     const relativeRoot = scopePath.replaceAll('\\', '/')
@@ -228,6 +224,9 @@ export async function captureWikiScopeSnapshot(
   const allowed = candidates.filter(relativePath => isAllowedWikiHandoffPath(relativePath))
   const ignored = await checkIgnoredPaths(params.cwd, allowed, checkIgnoreRunnerImpl)
   const eligible = allowed.filter(relativePath => !ignored.has(relativePath))
+
+  // The default sort compares UTF-16 code units, the order a `<` comparison gives.
+  eligible.sort()
 
   const results: WikiChangeDetectEntry[] = []
   for (const relativePath of eligible) {
@@ -240,7 +239,6 @@ export async function captureWikiScopeSnapshot(
     results.push({relativePath, hash: hashImpl(contents)})
   }
 
-  results.sort((a, b) => (a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0))
   return results
 }
 

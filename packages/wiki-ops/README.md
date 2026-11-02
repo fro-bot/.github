@@ -14,7 +14,7 @@ Nothing here holds a credential of its own. `wiki-handoff-build` runs in the unt
 | `@fro-bot/wiki-ops/wiki-handoff-baseline`, `-cli` | `runWikiHandoffBaseline`; `wikiHandoffBaselineCli`, `main` | The pre-agent baseline. Stdout `{"files":N}`. |
 | `@fro-bot/wiki-ops/wiki-handoff-build`, `-cli` | `runWikiHandoffBuild`; `wikiHandoffBuildCli`, `main` | Writes `manifest.json` and `files/`, appends `changed=` to `$GITHUB_OUTPUT`, prints `{"changed":n,"deleted":n}`. |
 | `@fro-bot/wiki-ops/wiki-handoff-apply`, `-cli` | `runWikiHandoffApply`, `formatWikiHandoffApplyError`; `wikiHandoffApplyCli`, `main` | Validates, then applies into the workspace. Stdout `{applied,deleted,skipped}`; stderr `::error::wiki-handoff-apply: <message>`. |
-| `@fro-bot/wiki-ops/wiki-change-detect-core`, `wiki-change-detect`, `-cli` | `computeWikiChangeHash`, `captureWikiScopeSnapshot`, `hashWikiScopeSnapshot`; `runWikiChangeDetect`, `formatWikiChangeDetectError`; `wikiChangeDetectCli`, `main` | The survey change detector: `hash=` for `baseline`, `changed=` for `detect`. |
+| `@fro-bot/wiki-ops/wiki-change-detect-core`, `wiki-change-detect`, `-cli` | `computeWikiChangeHash`, `captureWikiScopeSnapshot`, `hashWikiScopeSnapshot`; `runWikiChangeDetect`, `formatWikiChangeDetectError`; `wikiChangeDetectCli`, `main` | The survey change detector: `hash=` for `baseline`, `changed=` for `detect`. The core is mutated at full kills. |
 | `@fro-bot/wiki-ops/wiki-query`, `-cli` | `assembleWikiContext`, `writeSelectedPathsHandoff`, `runWikiQuery`; `wikiQueryCli`, `main` | The baseline wiki excerpt, selected paths and byte length, plus the owner-only handoff file. |
 | `@fro-bot/wiki-ops/solutions-query`, `-cli` | `assembleSolutionsContext`, `runSolutionsQuery`; `solutionsQueryCli`, `main` | The `docs/solutions` excerpt. Falls back to an empty result on any error. |
 | `@fro-bot/wiki-ops/solution-docs-paths` | `SOLUTION_SUBDIRS` | The canonical category list; a leaf. |
@@ -65,7 +65,7 @@ C4Component
     Component(solutions_query_cli, "solutions-query-cli", "TypeScript", "goke CLI; read-only")
     Component(wiki_change_detect, "wiki-change-detect", "TypeScript", "baseline and detect modes; throwing output writer")
     Component(wiki_change_detect_cli, "wiki-change-detect-cli", "TypeScript", "goke CLI; optional mode positional")
-    Component(wiki_change_detect_core, "wiki-change-detect-core", "TypeScript", "Content hash of the eligible wiki scope; fails closed")
+    Component(wiki_change_detect_core, "wiki-change-detect-core", "TypeScript", "Content hash of the eligible wiki scope; fails closed; mutated at full kills")
     Component(wiki_context_expand, "wiki-context-expand", "TypeScript", "linked and query expansion for the agent; hand-parsed; free text may start with a dash")
     Component(wiki_context_expand_cli, "wiki-context-expand-cli", "TypeScript", "Process wiring: Node readers and exit code; hand-parsed")
     Component(wiki_context_safety, "wiki-context-safety", "TypeScript", "Candidate safety filter; mutated at full kills")
