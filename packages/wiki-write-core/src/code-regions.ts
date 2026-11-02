@@ -110,7 +110,7 @@ export function findRegionAt(regions: readonly CodeRegion[], offset: number): Co
 function findInlineSpans(line: string): CodeRegion[] {
   const spans: CodeRegion[] = []
   // Where each length of backtick run starts on this line, built when the first opener needs it.
-  let runStartsByLength: Map<number, number[]> | undefined
+  let runStartsByLength: Map<number, BacktickRuns> | undefined
   let index = 0
 
   while (index < line.length) {
@@ -127,9 +127,9 @@ function findInlineSpans(line: string): CodeRegion[] {
     const openEnd = skipBackticks(line, index)
     const runLength = openEnd - index
     runStartsByLength ??= indexBacktickRuns(line)
-    // The closer is the first later run of exactly the opener's length. Looking it up in the index keeps the
-    // scan linear: an opener with no partner no longer reads every run after it again.
-    const closeStart = firstAtOrAfter(runStartsByLength.get(runLength), openEnd)
+    // The closer is the first later run of exactly the opener's length. Openers only move forward, so each
+    // length's cursor does too, and every run is passed over at most once.
+    const closeStart = nextRunAtOrAfter(runStartsByLength.get(runLength), openEnd)
 
     if (closeStart === undefined) {
       index = openEnd
@@ -143,39 +143,38 @@ function findInlineSpans(line: string): CodeRegion[] {
   return spans
 }
 
+/** The ascending start offsets of one length's backtick runs, and how far the scan has read them. */
+interface BacktickRuns {
+  readonly starts: number[]
+  next: number
+}
+
 /** The start offsets of the maximal backtick runs of `line`, grouped by the length of the run. */
-function indexBacktickRuns(line: string): Map<number, number[]> {
-  const runStartsByLength = new Map<number, number[]>()
+function indexBacktickRuns(line: string): Map<number, BacktickRuns> {
+  const runStartsByLength = new Map<number, BacktickRuns>()
   for (let start = line.indexOf('`'); start !== -1;) {
     const end = skipBackticks(line, start)
-    const starts = runStartsByLength.get(end - start)
-    if (starts === undefined) {
-      runStartsByLength.set(end - start, [start])
+    const runs = runStartsByLength.get(end - start)
+    if (runs === undefined) {
+      runStartsByLength.set(end - start, {starts: [start], next: 0})
     } else {
-      starts.push(start)
+      runs.starts.push(start)
     }
     start = line.indexOf('`', end)
   }
   return runStartsByLength
 }
 
-/** The first of the ascending `offsets` that is at least `minimum`, if any. */
-function firstAtOrAfter(offsets: readonly number[] | undefined, minimum: number): number | undefined {
-  if (offsets === undefined) {
+/** The first run start at least `minimum`. Callers ask with increasing `minimum`, so the cursor only advances. */
+function nextRunAtOrAfter(runs: BacktickRuns | undefined, minimum: number): number | undefined {
+  if (runs === undefined) {
     return undefined
   }
 
-  let low = 0
-  let high = offsets.length
-  while (low < high) {
-    const middle = (low + high) >> 1
-    if ((offsets[middle] ?? 0) < minimum) {
-      low = middle + 1
-    } else {
-      high = middle
-    }
+  while (runs.next < runs.starts.length && (runs.starts[runs.next] ?? minimum) < minimum) {
+    runs.next += 1
   }
-  return offsets[low]
+  return runs.starts[runs.next]
 }
 
 function skipBackticks(line: string, from: number): number {
