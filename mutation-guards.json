@@ -126,7 +126,7 @@
     },
     {
       "path": "packages/privacy/src/capture-learnings-privacy.ts",
-      "reason": "Fail-closed denylist for learning bodies and log diffs (secret patterns, private repo tokens). It moved from scripts/ unchanged and was outside the mutate list there; its decisions are pinned by decision-table tests in packages/privacy/src/capture-learnings-privacy.test.ts and again through the public-output gate. Promoting it to mutate needs its own mutation pass over the secret-pattern regexes, which this move does not make."
+      "reason": "Fail-closed denylist for learning bodies and log diffs (secret patterns, private repo tokens). It moved from scripts/ unchanged and was outside the mutate list there; its decisions are pinned by decision-table tests in packages/privacy/src/capture-learnings-privacy.test.ts and again through the public-output gate. The connection-string and JWT scanners and the hostname redaction are linear-time forms of the regexes they replaced; packages/privacy/src/capture-learnings-privacy-scan.test.ts keeps those regexes as the reference, compares them on 60,000 seeded bodies each, and bounds the CodeQL adversarial strings. Promoting it to mutate needs its own mutation pass over the secret-pattern regexes, which this move does not make."
     },
     {
       "path": "packages/privacy/src/status-truth-public-output.ts",
