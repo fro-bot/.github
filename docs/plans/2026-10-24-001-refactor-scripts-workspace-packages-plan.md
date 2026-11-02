@@ -834,7 +834,7 @@ CLI tables follow one legend:
 
 **Verification:** Detect and proposals are split, no non-test module in `packages/status-truth/src` is 2,000 lines or longer, no top-level declaration of the original detect or proposals file is left outside a seam or core, and the tracker preflight outputs are unchanged.
 
-- [ ] **Unit 10: `@fro-bot/wiki-ops`**
+- [x] **Unit 10: `@fro-bot/wiki-ops`**
 
 **Goal:** Move the wiki handoff, context, query, repair, index and corrections modules.
 
