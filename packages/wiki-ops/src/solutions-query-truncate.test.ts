@@ -35,7 +35,7 @@ function random(seed: number): () => number {
   }
 }
 
-const ALPHABET = ['a', 'b', ' ', '\n', '\uFFFD', '\uFFFD', 'é', '…', '日', '😀', '\u0000']
+const ALPHABET = ['a', 'b', ' ', '\n', '\uFFFD', '\uFFFD', 'é', '…', '日', '😀', '\u0000', '\uD800', '\uDC00']
 
 function document(next: () => number): string {
   const length = Math.floor(next() * 40)
@@ -77,6 +77,13 @@ describe('truncateToBytes keeps the output of the pattern it replaced', () => {
       `${'\uFFFD'.repeat(20)}a`,
       `a${'\uFFFD'.repeat(20)}`,
       '日本語のテキスト',
+      // A lone surrogate encodes as U+FFFD, so it behaves as a replacement character.
+      '\uD800',
+      'a\uD800',
+      'a\uD800\uD800b',
+      '\uDC00\uD800',
+      'ab\uDC00cd\uDC00',
+      '😀\uD800',
     ]
     for (const value of documents) {
       for (let budget = -2; budget <= byteLength(value) + 4; budget += 1) {
@@ -84,6 +91,22 @@ describe('truncateToBytes keeps the output of the pattern it replaced', () => {
           referenceTruncateToBytes(value, budget),
         )
       }
+    }
+  })
+})
+
+describe('truncateToBytes at lone surrogates and multibyte cuts', () => {
+  it('treats a lone surrogate like a replacement character it can strip', () => {
+    // 'abc' + a lone surrogate (3 bytes as U+FFFD) + 'defg': 6 content bytes end on the surrogate.
+    expect(truncateToBytes('abc\uD800defg', 9)).toBe('abc…')
+    expect(truncateToBytes('abc\uD800defg', 9)).toBe(referenceTruncateToBytes('abc\uD800defg', 9))
+  })
+
+  it('cuts a four-byte character mid-sequence and drops what the cut leaves', () => {
+    // '😀' is 4 bytes: 2 content bytes keep 'a' and one byte of the emoji, which decodes to U+FFFD.
+    expect(truncateToBytes('a😀b', 5)).toBe('a…')
+    for (let budget = 0; budget <= 12; budget += 1) {
+      expect(truncateToBytes('a😀b😀', budget), `@ ${budget}`).toBe(referenceTruncateToBytes('a😀b😀', budget))
     }
   })
 })
