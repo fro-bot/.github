@@ -82,6 +82,7 @@ describe('hasCredentialedConnectionString', () => {
     ['a host that starts with a no-break space, which is whitespace', 'mysql://u:p@\u00A0h', false],
     ['a line separator inside the password', 'mysql://u:p\u2028w@h', false],
     ['an @ directly after the colon, then another', 'mysql://u:@h:p@h2', false],
+    ['a second @ after the host', 'mysql://u:p@x@y', true],
     ['a URL without credentials', 'See https://www.postgresql.org/docs/', false],
     ['nothing', '', false],
   ] as const)('%s', (_name, body, expected) => {
@@ -130,6 +131,7 @@ describe('redactInternalHostnames', () => {
     ['.fro.bot', 'x.fro.bot', '[REDACTED]'],
     ['.fro.bot', 'é.fro.bot', 'é.fro.bot'],
     ['.fro.bot', 'xé.fro.bot', 'xé.fro.bot'],
+    ['.fro.bot', 'x.fro.boté', '[REDACTED]é'],
     ['.fro.bot', 'a.bfra.me', 'a.bfra.me'],
     ['.fro.bot', '', ''],
   ] as const)('%s: %j', (suffix, body, expected) => {
@@ -368,10 +370,15 @@ describe('the scanners decide exactly as the regexes they replaced', () => {
 
 // ─── Time: linear on the strings CodeQL reported, and on the hostname runs ───
 
+/** The fastest of three runs: a descheduled or garbage-collected run cannot fail the bound alone. */
 function elapsed(run: () => void): number {
-  const startedAt = performance.now()
-  run()
-  return performance.now() - startedAt
+  let fastest = Number.POSITIVE_INFINITY
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const startedAt = performance.now()
+    run()
+    fastest = Math.min(fastest, performance.now() - startedAt)
+  }
+  return fastest
 }
 
 describe('linear time on adversarial bodies', () => {
