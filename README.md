@@ -191,7 +191,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 ## Packages
 
-`packages/` is a Bun workspace (`"workspaces": ["packages/*"]`). Shared code lives in private `@fro-bot/` packages that export `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load them as written. `@fro.bot/wiki-write-core` stays the only published package and keeps its compiled `dist/`.
+`packages/` is a Bun workspace (`"workspaces": ["packages/*"]`). Shared code lives in private `@fro-bot/` packages that export `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load them as written. `@fro.bot/wiki-write-core` stays the only published package. It resolves to source here too; the release build compiles `dist/` and publishes a manifest whose `exports` point at it.
 
 | Package | Status | Purpose |
 | --- | --- | --- |
@@ -256,7 +256,7 @@ C4Container
     Container(privacy, "@fro-bot/privacy", "Private package", "Private-leak scan, wiki-presence gate, public-output gate, token loaders, operator tools")
     Container(registry, "@fro-bot/registry", "Private package", "Metadata writers, reconcile, invitations, survey results, data-branch merges")
     Container(testkit, "@fro-bot/test-kit", "Private package", "Test fakes and helpers, tests only")
-    Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, compiled dist/")
+    Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, source here, compiled dist/ when published")
     Container(dispatch, "@fro-bot/dispatch", "Private package", "cross-repo-dispatch (seven modules), dispatch-renovate")
     Container(domains, "Domain packages (planned)", "Private packages", "status-truth, wiki-ops, knowledge, reports, ci-checks")
   }
@@ -357,7 +357,7 @@ Fro Bot control plane:
 | **Cross-Repo Dispatch** | Decompose, dispatch, and track cross-repo goal items via worker receipts | Issue labeled/reopened, every 6 hours, dispatch |
 | **Publish Wiki** | Build the Quartz site from the wiki and deploy it to GitHub Pages | Push to main touching `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/schema.md`, or `quartz-site/**`; dispatch |
 | **Unpublish Wiki (emergency takedown)** | Replace the live wiki site with a static "unavailable" page | Manual dispatch |
-| **Release Wiki Write Core** | Publish `@fro.bot/wiki-write-core` to npm with provenance when a merge changes `packages/wiki-write-core/`: a credential-free job decides the release and a job in the `release` environment publishes the committed `dist` | Push to main; dispatch |
+| **Release Wiki Write Core** | Publish `@fro.bot/wiki-write-core` to npm with provenance when a merge changes `packages/wiki-write-core/`: a credential-free job decides the release and a job in the `release` environment publishes the package the build job compiled and verified | Push to main; dispatch |
 
 Repository management:
 

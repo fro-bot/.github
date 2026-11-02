@@ -2,7 +2,7 @@
   "not-mutated": [
     {
       "path": "packages/wiki-write-core/src/frontmatter.ts",
-      "reason": "Throws on missing/invalid frontmatter, but no mutated gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Its one production consumer is repo-page-move.ts (itself not-mutated, below), which imports parseFrontmatterDocument/renderFrontmatterDocument; the page-move tests reach it through the built dist, not a same-tree import. wiki-write-core.test.ts additionally exercises reconstructFrontmatter, and only its happy path."
+      "reason": "Throws on missing/invalid frontmatter, but no mutated gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Its one production consumer is repo-page-move.ts (itself not-mutated, below), which imports parseFrontmatterDocument/renderFrontmatterDocument; the page-move tests reach it through the package-name import, not a same-tree import. wiki-write-core.test.ts additionally exercises reconstructFrontmatter, and only its happy path."
     },
     {
       "path": "packages/wiki-write-core/src/rendering-policy.ts",
@@ -18,7 +18,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/code-regions.ts",
-      "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the built dist rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts, and by packages/wiki-write-core/src/code-regions.test.ts, which keeps the rescanning inline-span scan as the reference, compares it on 60,000 weighted bodies and bounds a 1.2 MB line of unmatched openers."
+      "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the package-name import rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts, and by packages/wiki-write-core/src/code-regions.test.ts, which keeps the rescanning inline-span scan as the reference, compares it on 60,000 weighted bodies and bounds a 1.2 MB line of unmatched openers."
     },
     {
       "path": "packages/wiki-write-core/src/inline-links.ts",
@@ -42,15 +42,15 @@
     },
     {
       "path": "packages/wiki-write-core/src/wiki-lint.ts",
-      "reason": "Its real tests are scripts/wiki-lint.test.ts, reaching it through the built dist/ output rather than a same-tree source import. Relocating those tests beside this module flips this entry to mutate."
+      "reason": "Its real tests are scripts/wiki-lint.test.ts, reaching it through the package-name import (`@fro.bot/wiki-write-core/...`) rather than a same-tree source import. Relocating those tests beside this module flips this entry to mutate."
     },
     {
       "path": "packages/wiki-write-core/src/wiki-ingest.ts",
-      "reason": "Has a real rejection path (WikiIngestError on INVALID_PAYLOAD/INVALID_FRONTMATTER/INVALID_WIKILINK/CORRECTION_ERODED/PROTECTED_BRANCH) a gate depends on, but its real test is scripts/wiki-ingest.test.ts, which imports the built dist/ output through the scripts/wiki-ingest.ts re-export shell (`export * from '@fro.bot/wiki-write-core/wiki-ingest'`) rather than this source file. A live check:mutation-guards run confirmed 1474/1474 mutants NoCoverage under same-tree pairing. Relocating scripts/wiki-ingest.test.ts beside this module flips this entry to mutate."
+      "reason": "Has a real rejection path (WikiIngestError on INVALID_PAYLOAD/INVALID_FRONTMATTER/INVALID_WIKILINK/CORRECTION_ERODED/PROTECTED_BRANCH) a gate depends on, but its real test is scripts/wiki-ingest.test.ts, which imports the package through the scripts/wiki-ingest.ts re-export shell (`export * from '@fro.bot/wiki-write-core/wiki-ingest'`) rather than this source file. A live check:mutation-guards run confirmed 1474/1474 mutants NoCoverage under same-tree pairing. Relocating scripts/wiki-ingest.test.ts beside this module flips this entry to mutate."
     },
     {
       "path": "packages/wiki-write-core/src/wiki-slug.ts",
-      "reason": "Has a real rejection path (computeRepoSlug throws on an empty sanitized segment) a gate depends on, but its real test is scripts/wiki-slug.test.ts, which imports the built dist/ output through the scripts/wiki-slug.ts re-export shell (`export * from '@fro.bot/wiki-write-core/wiki-slug'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's direct import, not this dedicated test. Relocating scripts/wiki-slug.test.ts beside this module flips this entry to mutate."
+      "reason": "Has a real rejection path (computeRepoSlug throws on an empty sanitized segment) a gate depends on, but its real test is scripts/wiki-slug.test.ts, which imports the package through the scripts/wiki-slug.ts re-export shell (`export * from '@fro.bot/wiki-write-core/wiki-slug'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's direct import, not this dedicated test. Relocating scripts/wiki-slug.test.ts beside this module flips this entry to mutate."
     },
     {
       "path": "packages/wiki-write-core/src/schemas.ts",
@@ -58,7 +58,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/repo-page-move.ts",
-      "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is packages/privacy/src/repo-page-move.test.ts, which imports the built dist/ output through the @fro.bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
+      "reason": "Has real rejection paths (every RepoPageMoveBlockReason: slug and private-name collisions, an unattributed or occupied page, unparseable pages, invalid index or wikilinks) that decide whether the operator rename may delete and recreate a wiki page. Its real test is packages/privacy/src/repo-page-move.test.ts, which imports the package through the @fro.bot/wiki-write-core root barrel rather than this source file, so a same-tree mutation run would score every mutant NoCoverage. The decision table is pinned there instead: one test per block reason and per outcome. Relocating that test beside this module flips this entry to mutate."
     },
     {
       "path": "packages/registry/src/rename-tracked-repo.ts",
@@ -66,7 +66,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/branch-safety.ts",
-      "reason": "The one branch-safety rule shared by commit-metadata.ts, wiki-ingest.ts and rename-tracked-repo.ts (never main; never a protected branch except the canonical fro-bot/.github@data). It has a real rejection path, so it is pinned by a truth table in scripts/branch-safety.test.ts (both protection flags, every one-field deviation from the canonical target, the main short-circuit, and lookup failure propagating), and each consumer's suite pins its own refusal shape. It is not in the mutate list because its tests import it through the built dist, as repo-page-move.ts's do. Re-evaluate if the rule gains another exemption."
+      "reason": "The one branch-safety rule shared by commit-metadata.ts, wiki-ingest.ts and rename-tracked-repo.ts (never main; never a protected branch except the canonical fro-bot/.github@data). It has a real rejection path, so it is pinned by a truth table in scripts/branch-safety.test.ts (both protection flags, every one-field deviation from the canonical target, the main short-circuit, and lookup failure propagating), and each consumer's suite pins its own refusal shape. It is not in the mutate list because its tests import it through the package name, as repo-page-move.ts's do. Re-evaluate if the rule gains another exemption."
     },
     {
       "path": "packages/wiki-write-core/src/correction-text.ts",
@@ -82,7 +82,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/private-leak-adapter.ts",
-      "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands. Its test stays in stryker.config.json testFiles regardless: it is private-leak.ts's only same-tree source exerciser (scripts/check-private-leak.ts imports the dist specifier), so mutate=9/testFiles=10 is intentional."
+      "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands. Its test stays in stryker.config.json testFiles regardless: it is private-leak.ts's only same-tree source exerciser (scripts/check-private-leak.ts imports the package specifier), so mutate=9/testFiles=10 is intentional."
     },
     {
       "path": "packages/registry/src/check-repo-onboarded.ts",
@@ -99,6 +99,10 @@
     {
       "path": "scripts/check-override-floors.ts",
       "reason": "Supply-chain lint failing on any high or critical advisory that `bun audit --json` reports against the installed dependency tree (see PR #3871). It is a real security-relevant gate, but its rejection paths (fail-closed on empty or unparseable audit output, malformed package entries and advisory records, unrecognized severities, and every high/critical case) are enumerated and asserted directly in scripts/check-override-floors.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here, matching scripts/check-solutions-examples.ts's precedent."
+    },
+    {
+      "path": "scripts/verify-wiki-write-core-package.ts",
+      "reason": "Release-time proof, not a gate on content: packs the staged @fro.bot/wiki-write-core package, unpacks the tarball into a scratch node_modules, and spawns npm, tar, node and tsc to resolve, import and type-check every export. Its behavior is spawned processes and the filesystem, so a mutant is only observable through a real build and pack: scripts/wiki-write-core-package.test.ts runs that for real and pins each refusal (a file outside dist/, an export target missing from the tarball, a declaration file that does not type-check) with a negative case, and scripts/verify-wiki-write-core-package.test.ts pins the pack-result parser. Mutating it would run a build, a pack and a type-check per mutant."
     },
     {
       "path": "scripts/check-renovate-ranges.ts",

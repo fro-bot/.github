@@ -1,11 +1,13 @@
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
-import {lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile} from 'node:fs/promises'
-import {dirname, join, relative, resolve, sep} from 'node:path'
+import {copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {basename, dirname, isAbsolute, join, parse, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
 
 import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
+import {verifyStagedPackage} from './verify-wiki-write-core-package.ts'
 
 // Each of these is a function, not a top-level `const`: a module-level const initializer runs
 // once per Stryker worker process (not per call), making its literal-segment mutants "static"
@@ -15,29 +17,54 @@ export function repositoryRoot(): string {
   return resolve(import.meta.dirname, '..')
 }
 
-export function sourceRoot(): string {
-  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'src')
+export function packageDirectory(): string {
+  return join(repositoryRoot(), 'packages', 'wiki-write-core')
 }
 
-export function distRoot(): string {
-  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'dist')
+export function sourceRoot(): string {
+  return join(packageDirectory(), 'src')
+}
+
+/**
+ * The one directory under the package that git tracks a file in: `gate-contract.json`, the marker
+ * fro-bot/dashboard fetches from `main` over HTTP. Everything else a build produces is staged
+ * outside the repository tree and never committed.
+ */
+export function markerDirectory(): string {
+  return join(packageDirectory(), 'dist')
 }
 
 export function buildConfig(): string {
-  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'tsconfig.build.json')
+  return join(packageDirectory(), 'tsconfig.build.json')
 }
 
 export function packageManifest(): string {
-  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'package.json')
+  return join(packageDirectory(), 'package.json')
 }
 
 export function sourceHashPlaceholder(): string {
   return '__SOURCE_TREE_HASH__'
 }
 
-/** Whether the CLI was invoked with `--check` (verify only, never write). Pure and testable in isolation. */
+/** Whether the CLI was invoked with `--check` (verify the committed marker only, never write). Pure and testable in isolation. */
 export function resolveCheckOnly(argv: readonly string[] = process.argv): boolean {
   return argv.includes('--check')
+}
+
+/** Whether the CLI was invoked with `--verify` (pack the staged package and prove its exports resolve). */
+export function resolveVerify(argv: readonly string[] = process.argv): boolean {
+  return argv.includes('--verify')
+}
+
+/** The directory following `--stage`, resolved against the working directory; `undefined` when the flag is absent. */
+export function resolveStageRoot(argv: readonly string[] = process.argv): string | undefined {
+  const index = argv.indexOf('--stage')
+  if (index === -1) return undefined
+  const value = argv[index + 1]
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error('--stage requires a directory argument')
+  }
+  return resolve(value)
 }
 
 interface RunTypeScriptBuildOptions {
@@ -72,41 +99,88 @@ export function runTypeScriptBuild(outputDirectory: string, options: RunTypeScri
   )
 }
 
+/**
+ * The roots a stage directory may sit under: the OS temp directory, and `RUNNER_TEMP` when the
+ * environment names an absolute one. A stage replaces whatever is at its target, so nothing outside
+ * these roots (the checkout, a home directory, a tool install) is ever a valid target.
+ */
+export function stageRootAllowlist(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  tmp: string = tmpdir(),
+): string[] {
+  const runnerTemp = env.RUNNER_TEMP
+  return runnerTemp !== undefined && isAbsolute(runnerTemp) ? [tmp, runnerTemp] : [tmp]
+}
+
+/**
+ * The options a CLI invocation requests. `runBuild` never reads `process.argv` or the environment
+ * itself: a build run stages and replaces directories, so what it writes to and where it may write
+ * must come from the caller, never from ambient process state.
+ */
+export function cliOptions(
+  argv: readonly string[] = process.argv,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): RunBuildOptions {
+  return {
+    allowedStageRoots: stageRootAllowlist(env),
+    checkOnly: resolveCheckOnly(argv),
+    stageRoot: resolveStageRoot(argv),
+    verify: resolveVerify(argv),
+  }
+}
+
 export interface RunBuildOptions {
+  /** Roots a stage target must sit strictly under; defaults to the OS temp directory. */
+  allowedStageRoots?: readonly string[]
   buildConfigPath?: string
   checkOnly?: boolean
-  distRoot?: string
   manifestPath?: string
+  markerDirectory?: string
   removeDirectory?: typeof rm
   replaceDirectory?: typeof replaceDirectoryAtomically
   runTypeScriptBuild?: (outputDirectory: string) => void
   sourceRoot?: string
+  stageRoot?: string
+  verify?: boolean
+  verifyPackage?: typeof verifyStagedPackage
   write?: (message: string) => void
 }
 
 /**
- * The assembled build/check flow the `import.meta.main` guard drives. All I/O boundaries that
- * would otherwise make this unreachable outside a real CLI invocation are injectable:
- * `runTypeScriptBuild` (default: `runTypeScriptBuild`, which spawns real `tsc`) and every path
- * default.
+ * The assembled build flow the `import.meta.main` guard drives. The build always runs into a
+ * temporary directory. The committed marker is then either rewritten from it or, with `checkOnly`,
+ * compared against it. With `stageRoot` (or `verify`, which stages into a scratch directory) the
+ * build is assembled into a publishable package directory, and `verify` packs that directory and
+ * resolves every export of the resulting tarball. All I/O boundaries that would otherwise make this
+ * unreachable outside a real CLI invocation are injectable: `runTypeScriptBuild` (default:
+ * `runTypeScriptBuild`, which spawns real `tsc`), `verifyPackage` (default: `verifyStagedPackage`)
+ * and every path default.
  */
 export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
   const currentSourceRoot = options.sourceRoot ?? sourceRoot()
-  const currentDistRoot = options.distRoot ?? distRoot()
+  const currentMarkerDirectory = options.markerDirectory ?? markerDirectory()
   const currentBuildConfig = options.buildConfigPath ?? buildConfig()
   const currentManifest = options.manifestPath ?? packageManifest()
-  const currentCheckOnly = options.checkOnly ?? resolveCheckOnly()
+  const currentCheckOnly = options.checkOnly ?? false
+  const currentVerify = options.verify ?? false
   const buildTypeScript = options.runTypeScriptBuild ?? runTypeScriptBuild
   const replaceDirectory = options.replaceDirectory ?? replaceDirectoryAtomically
   const removeDirectory = options.removeDirectory ?? rm
+  const verifyPackage = options.verifyPackage ?? verifyStagedPackage
   const write = options.write ?? writeToStdout
 
-  const temporaryRoot = await mkdtemp(join(dirname(currentDistRoot), '.wiki-write-core-dist-'))
-  let temporaryRootOwned = true
+  const allowedStageRoots = [...(options.allowedStageRoots ?? [tmpdir()])]
+  // A stage target the caller named is judged before anything is built or written: a refused run must
+  // not leave a build directory behind or rewrite the committed marker. `stagePackage` judges it again
+  // just before it replaces anything.
+  if (options.stageRoot !== undefined) await checkedStageTarget(options.stageRoot, allowedStageRoots)
+
+  const temporaryRoot = await mkdtemp(join(dirname(currentMarkerDirectory), '.wiki-write-core-dist-'))
+  let scratchStageRoot: string | undefined
 
   try {
-    if (await pathExists(currentDistRoot)) {
-      await collectFiles(currentDistRoot)
+    if (await pathExists(currentMarkerDirectory)) {
+      await collectFiles(currentMarkerDirectory)
     }
     await mkdir(temporaryRoot, {recursive: true})
 
@@ -123,22 +197,48 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
     await rewriteDeclarationExtensions(temporaryRoot)
     await collectFiles(temporaryRoot)
 
+    const freshMarker = await readFile(join(temporaryRoot, 'gate-contract.json'))
+    const committedMarkerPath = join(currentMarkerDirectory, 'gate-contract.json')
     if (currentCheckOnly) {
-      const differences = await compareTrees(temporaryRoot, currentDistRoot)
-      if (differences.length > 0) {
-        throw new Error(`wiki-write-core dist is stale:\n${differences.map(path => `- ${path}`).join('\n')}`)
+      const committedMarker = await readFileIfPresent(committedMarkerPath)
+      if (committedMarker === undefined || !committedMarker.equals(freshMarker)) {
+        throw new Error(
+          `wiki-write-core gate-contract marker is stale: ${displayPath(committedMarkerPath)} differs from a fresh build; run \`bun run build\` and commit it`,
+        )
       }
-      write('wiki-write-core dist is up to date\n')
+      write('wiki-write-core gate-contract marker is up to date\n')
     } else {
-      await replaceDirectory(temporaryRoot, currentDistRoot)
-      temporaryRootOwned = false
+      await mkdir(currentMarkerDirectory, {recursive: true})
+      await writeFile(committedMarkerPath, freshMarker)
+    }
+
+    let stageRoot = options.stageRoot
+    if (stageRoot === undefined && currentVerify) {
+      scratchStageRoot = await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-'))
+      stageRoot = join(scratchStageRoot, 'package')
+      allowedStageRoots.push(scratchStageRoot)
+    }
+    if (stageRoot !== undefined) {
+      await stagePackage({
+        allowedStageRoots,
+        builtRoot: temporaryRoot,
+        manifestPath: currentManifest,
+        replaceDirectory,
+        stageRoot,
+      })
+      if (currentVerify) {
+        const verification = await verifyPackage(stageRoot)
+        write(
+          `wiki-write-core package verified: ${verification.subpaths.length} export subpaths, ${verification.files.length} tarball files\n`,
+        )
+      }
     }
   } finally {
-    // `force: true` restored: replaceDirectory can consume temporaryRoot (rename it away) and
-    // then itself throw during its own cleanup, leaving temporaryRootOwned uncleared with
-    // nothing left at temporaryRoot to remove — a legitimate absence, not a bug to surface as ENOENT.
-    if (temporaryRootOwned) {
-      await removeDirectory(temporaryRoot, {force: true, recursive: true})
+    await removeDirectory(temporaryRoot, {force: true, recursive: true})
+    // `force` is deliberately omitted: `mkdtemp` just created the scratch directory and only this
+    // call removes it, so a missing one would be a bug to surface, not an absence to tolerate.
+    if (scratchStageRoot !== undefined) {
+      await removeDirectory(scratchStageRoot, {recursive: true})
     }
   }
 }
@@ -147,9 +247,12 @@ function writeToStdout(message: string): void {
   process.stdout.write(message)
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function reportFatalError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error)
-  process.stderr.write(`${message}\n`)
+  process.stderr.write(`${errorMessage(error)}\n`)
   process.exitCode = 1
 }
 
@@ -181,7 +284,7 @@ export async function computeSourceTreeHash(options: SourceTreeHashOptions = {})
   updateHash(hash, 'build-config/tsconfig.build.json', stableJson(resolvedConfig))
 
   const manifest = parsePackageManifest((await readFile(currentManifest)).toString(), currentManifest)
-  updateHash(hash, 'package/exports', stableJson(manifest.exports))
+  updateHash(hash, 'package/exports', stableJson(publishedExports(manifest.exports)))
   updateHash(hash, 'package/files', stableJson([...manifest.files].sort((left, right) => left.localeCompare(right))))
 
   return hash.digest('hex')
@@ -255,38 +358,157 @@ export async function rewriteDeclarationExtensions(outputRoot: string): Promise<
   }
 }
 
-export async function compareTrees(leftRoot: string, rightRoot: string): Promise<string[]> {
-  const [leftFiles, rightFiles] = await Promise.all([collectFiles(leftRoot), collectFilesIfPresent(rightRoot)])
-  const allPaths = new Set([
-    ...leftFiles.map(path => relative(leftRoot, path)),
-    ...rightFiles.map(path => relative(rightRoot, path)),
-  ])
-  const differences: string[] = []
+/**
+ * The `exports` map the published tarball carries. The committed manifest points every subpath at
+ * `./src/<name>.ts`; the tarball points it at the compiled `./dist/<name>.js` with its declaration
+ * file. Any other value (`./package.json`, an already-conditional entry) passes through untouched.
+ */
+export function publishedExports(exportsField: unknown): unknown {
+  if (!isRecord(exportsField)) return exportsField
+  return Object.fromEntries(
+    Object.entries(exportsField).map(([subpath, target]) => {
+      const match = typeof target === 'string' ? /^\.\/src\/([^/]+)\.ts$/u.exec(target) : null
+      if (match === null) return [subpath, target]
+      const name = match[1]
+      return [subpath, {types: `./dist/${name}.d.ts`, import: `./dist/${name}.js`}]
+    }),
+  )
+}
 
-  for (const relativePath of [...allPaths].sort((left, right) => left.localeCompare(right))) {
-    const leftPath = join(leftRoot, relativePath)
-    const rightPath = join(rightRoot, relativePath)
-    let leftContent: Buffer | undefined
-    let rightContent: Buffer | undefined
-
-    try {
-      leftContent = await readFile(leftPath)
-    } catch (error: unknown) {
-      if (!isFileNotFoundError(error)) throw error
-    }
-
-    try {
-      rightContent = await readFile(rightPath)
-    } catch (error: unknown) {
-      if (!isFileNotFoundError(error)) throw error
-    }
-
-    if (leftContent === undefined || rightContent === undefined || !leftContent.equals(rightContent)) {
-      differences.push(relativePath)
-    }
+/** The `package.json` text the tarball carries: the committed manifest with `exports` rewritten to `dist`. */
+export function publishedManifest(content: string, path: string): string {
+  const parsed: unknown = JSON.parse(content)
+  if (!isRecord(parsed) || !('exports' in parsed)) {
+    throw new Error(`package manifest must define exports: ${displayPath(path)}`)
   }
+  return `${JSON.stringify({...parsed, exports: publishedExports(parsed.exports)}, null, 2)}\n`
+}
 
-  return differences
+interface StagePackageOptions {
+  /** Roots the stage target must sit strictly under, after resolving symlinks. */
+  allowedStageRoots: readonly string[]
+  builtRoot: string
+  manifestPath: string
+  replaceDirectory?: typeof replaceDirectoryAtomically
+  stageRoot: string
+}
+
+// A function, not a top-level `const`, for the Stryker reason given above `repositoryRoot`.
+export function stageMarkerName(): string {
+  return 'wiki-write-core-stage.marker'
+}
+
+export function stageMarkerContent(): string {
+  return '@fro.bot/wiki-write-core staged package\n'
+}
+
+/** `path` with every symlink resolved, including for the part of it that does not exist yet. */
+async function canonicalPath(path: string): Promise<string> {
+  const absolute = resolve(path)
+  try {
+    return await realpath(absolute)
+  } catch (error: unknown) {
+    if (!isFileNotFoundError(error)) throw error
+  }
+  // `realpath` also reports ENOENT for a symlink whose target is missing; creating anything below
+  // it would create that target, wherever it points.
+  if (await pathExists(absolute)) throw new Error(`refusing to follow a dangling symlink at ${absolute}`)
+  return join(await canonicalPath(dirname(absolute)), basename(absolute))
+}
+
+/**
+ * An allowed root, canonicalized, or a refusal. A relative root would resolve against the working
+ * directory, and a filesystem root (`RUNNER_TEMP=/`, or a symlink to `/`) would make every absolute
+ * path count as inside it, so neither can be a root.
+ */
+async function canonicalStageRoot(root: string): Promise<string> {
+  if (!isAbsolute(root)) throw new Error(`staging root "${root}" must be an absolute path`)
+  const canonical = await canonicalPath(root)
+  if (parse(canonical).root === canonical) {
+    throw new Error(`refusing to use ${root} as a staging root: it is a filesystem root`)
+  }
+  return canonical
+}
+
+function isStrictlyInside(root: string, path: string): boolean {
+  const relation = relative(root, path)
+  return relation !== '' && relation.split(sep)[0] !== '..' && !isAbsolute(relation)
+}
+
+async function hasStageMarker(directory: string): Promise<boolean> {
+  const markerPath = join(directory, stageMarkerName())
+  try {
+    return (await lstat(markerPath)).isFile() && (await readFile(markerPath, 'utf8')) === stageMarkerContent()
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error) || isNotDirectoryError(error)) return false
+    throw error
+  }
+}
+
+/**
+ * The canonical stage target, or a refusal. A stage replaces whatever sits at its target, so the
+ * target must resolve (through symlinked ancestors too) to somewhere strictly under an allowed
+ * root, and an existing target is replaced only when a previous stage left its marker there.
+ * Nothing is created, moved or removed before this returns.
+ */
+async function checkedStageTarget(stageRoot: string, allowedStageRoots: readonly string[]): Promise<string> {
+  const roots = await Promise.all(allowedStageRoots.map(async root => canonicalStageRoot(root)))
+  const target = await canonicalPath(stageRoot)
+  if (!roots.some(root => isStrictlyInside(root, target))) {
+    throw new Error(`refusing to stage into ${stageRoot}: it is outside the allowed staging roots`)
+  }
+  if ((await pathExists(target)) && !(await hasStageMarker(target))) {
+    throw new Error(`refusing to replace ${stageRoot}: it has no stage marker from a previous stage`)
+  }
+  return target
+}
+
+/**
+ * Every dot-file and dot-directory under `directory`, as `/`-separated paths in directory order. A dot-directory
+ * is reported as itself and not descended into.
+ */
+async function hiddenEntries(directory: string, prefix: string): Promise<string[]> {
+  const found: string[] = []
+  for (const entry of await readdir(directory, {withFileTypes: true})) {
+    const path = `${prefix}${entry.name}`
+    if (entry.name.startsWith('.')) found.push(path)
+    else if (entry.isDirectory()) found.push(...(await hiddenEntries(join(directory, entry.name), `${path}/`)))
+  }
+  return found
+}
+
+/**
+ * Assembles the publishable package in `stageRoot`: the built `dist/`, the rewritten manifest, the
+ * README and LICENSE that sit beside the committed manifest, and the stage marker that lets a later
+ * stage replace this one. The committed tree is never modified; `npm pack` and `npm publish` run
+ * from `stageRoot`.
+ */
+export async function stagePackage(options: StagePackageOptions): Promise<void> {
+  const replaceDirectory = options.replaceDirectory ?? replaceDirectoryAtomically
+  const sourceDirectory = dirname(options.manifestPath)
+  const target = await checkedStageTarget(options.stageRoot, options.allowedStageRoots)
+  await mkdir(dirname(target), {recursive: true})
+  const stagingRoot = await mkdtemp(join(dirname(target), '.wiki-write-core-stage-'))
+
+  try {
+    await cp(options.builtRoot, join(stagingRoot, 'dist'), {recursive: true})
+    await writeFile(
+      join(stagingRoot, 'package.json'),
+      publishedManifest((await readFile(options.manifestPath)).toString(), options.manifestPath),
+    )
+    await copyFile(join(sourceDirectory, 'README.md'), join(stagingRoot, 'README.md'))
+    await copyFile(join(sourceDirectory, 'LICENSE.md'), join(stagingRoot, 'LICENSE.md'))
+    await writeFile(join(stagingRoot, stageMarkerName()), stageMarkerContent())
+    // The digest covers hidden files but `upload-artifact` leaves them out, so the publish job would see
+    // a different package from the one the build job verified.
+    const hidden = await hiddenEntries(stagingRoot, '')
+    if (hidden.length > 0) {
+      throw new Error(`refusing to stage hidden files, which the artifact upload drops: ${hidden.join(', ')}`)
+    }
+    await replaceDirectory(stagingRoot, target)
+  } finally {
+    await rm(stagingRoot, {force: true, recursive: true})
+  }
 }
 
 export async function replaceDirectoryAtomically(
@@ -309,20 +531,22 @@ export async function replaceDirectoryAtomically(
     await renameDirectory(source, target)
   } catch (error: unknown) {
     if (targetMoved) {
-      await renameDirectory(backup, target)
-      targetMoved = false
+      try {
+        await renameDirectory(backup, target)
+      } catch (restoreError: unknown) {
+        // The backup is the only copy of the original now: keep it and say where it is.
+        throw new AggregateError(
+          [error, restoreError],
+          `could not install the replacement (${errorMessage(error)}) and could not restore the original (${errorMessage(restoreError)}); the original is kept at ${backup}`,
+        )
+      }
     }
     throw error
-  } finally {
-    // `pathExists(backup)` is redundant with `targetMoved`: backup is unconditionally removed
-    // immediately above (before targetMoved can ever become true), and the only place it is
-    // (re)created is the `targetMoved = true` assignment, which the catch block's restore
-    // unwinds back to false before this finally runs. targetMoved's value and backup's
-    // existence are therefore always equal here, so `force: true` would only ever mask a real
-    // bug in that invariant.
-    if (targetMoved) {
-      await rm(backup, {recursive: true})
-    }
+  }
+
+  // Only a replacement that is in place makes the backup disposable.
+  if (targetMoved) {
+    await rm(backup, {recursive: true})
   }
 }
 
@@ -383,11 +607,11 @@ export async function pathExists(path: string, lstatPath: typeof lstat = lstat):
   }
 }
 
-async function collectFilesIfPresent(directory: string): Promise<string[]> {
+async function readFileIfPresent(path: string): Promise<Buffer | undefined> {
   try {
-    return await collectFiles(directory)
+    return await readFile(path)
   } catch (error: unknown) {
-    if (isFileNotFoundError(error)) return []
+    if (isFileNotFoundError(error)) return undefined
     throw error
   }
 }
@@ -400,7 +624,11 @@ export function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
+export function isNotDirectoryError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOTDIR'
+}
+
 // Deliberately use Node's main-module check: unlike the repository's legacy scripts, it survives
 // symlinks and spaces in paths without reconstructing a file URL from argv[1].
-// Stryker disable next-line ConditionalExpression,CallExpression: → true spawns a real tsc build on import; → false and removing the call are no-ops under test since no test invokes the CLI path.
-if (import.meta.main) runBuild().catch(reportFatalError)
+// Stryker disable next-line ConditionalExpression,CallExpression: → true spawns a real tsc build on import; → false and removing a call are no-ops under test since no test invokes the CLI path.
+if (import.meta.main) runBuild(cliOptions()).catch(reportFatalError)

