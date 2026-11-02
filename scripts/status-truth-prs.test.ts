@@ -15,7 +15,7 @@
  */
 
 import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
-import type {StatusTruthJsonReport} from './status-truth-detect.ts'
+import type {StatusTruthJsonReport} from '@fro-bot/status-truth/report-model'
 import type {
   ExecuteStatusTruthPrActionsInput,
   ExistingStatusTruthPr,

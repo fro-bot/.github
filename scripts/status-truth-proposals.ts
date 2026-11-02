@@ -29,7 +29,11 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
-import type {PublicStatusTruthFinding, StatusTruthFinding, StatusTruthJsonReport} from './status-truth-detect.ts'
+import type {
+  PublicStatusTruthFinding,
+  StatusTruthFinding,
+  StatusTruthJsonReport,
+} from '@fro-bot/status-truth/report-model'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit, noopLog} from '@fro-bot/core/github'
@@ -40,7 +44,11 @@ import {
   makePublicOutputTokens,
   type PublicOutputTokens,
 } from '@fro-bot/privacy/status-truth-public-output'
-import {KNOWN_FINGERPRINT_VERSION, KNOWN_SCHEMA_VERSION, validateStatusTruthArtifact} from './status-truth-detect.ts'
+import {
+  KNOWN_FINGERPRINT_VERSION,
+  KNOWN_SCHEMA_VERSION,
+  validateStatusTruthArtifact,
+} from '@fro-bot/status-truth/report-model'
 
 // ---------------------------------------------------------------------------
 // Label constants

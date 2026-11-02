@@ -5,6 +5,13 @@
   "description": "The status-truth detector, proposal opener and correction-PR executor, and the rollout tracker snapshot, of the Fro Bot control plane",
   "type": "module",
   "exports": {
+    "./detect-classify": "./src/detect-classify.ts",
+    "./detect-cli": "./src/detect-cli.ts",
+    "./detect-extract": "./src/detect-extract.ts",
+    "./detect-live-state": "./src/detect-live-state.ts",
+    "./detect-plan-consistency": "./src/detect-plan-consistency.ts",
+    "./detect-rollout": "./src/detect-rollout.ts",
+    "./report-model": "./src/report-model.ts",
     "./rollout-tracker-snapshot": "./src/rollout-tracker-snapshot.ts",
     "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts"
   },

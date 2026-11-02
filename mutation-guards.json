@@ -379,6 +379,38 @@
     {
       "path": "scripts/rollout-tracker-snapshot.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/rollout-tracker-snapshot-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/rollout-tracker-snapshot.ts, pinned by packages/status-truth/src/rollout-tracker-snapshot.test.ts, which also spawns this shim under Node. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
+    },
+    {
+      "path": "packages/status-truth/src/report-model.ts",
+      "reason": "The shared model of the status-truth loop: the claim kinds and their grammars (CLAIM_KIND_DEFINITIONS), the finding and report types, the report envelope with its schema and fingerprint versions, the claim fingerprint, and validateStatusTruthArtifact, the check the proposals and PR steps run before they plan a write. It does no I/O. Pinned by packages/status-truth/src/status-truth-detect.test.ts: the grammar table, the fingerprint, the report status and eligibility rules, and every rejection of validateStatusTruthArtifact (versions, required fields, prohibited fields, count mismatch). packages/status-truth/src/status-truth-proposals.test.ts and status-truth-prs.test.ts reject an unknown-version report through it before any planning, and scripts/status-truth-flows.test.ts pins the report keys the workflow reads. Not in the mutate list: it was never mutated, and a literal change in a grammar or a version constant fails those tests."
+    },
+    {
+      "path": "packages/status-truth/src/detect-classify.ts",
+      "reason": "Pure verdicts: classifyClaim, buildProposedCorrection and detectStatusTruthClaims decide whether a claim is current, drifted, unresolved or unsafe, and an unsafe finding carries no identity. Pinned by the classification, correction-text and ordering tests in packages/status-truth/src/status-truth-detect.test.ts, including the private and unavailable resolvers that must never read as drifted. Not in the mutate list: it was never mutated; it proposes, and the public-output gate and the proposals step decide what is written."
+    },
+    {
+      "path": "packages/status-truth/src/detect-extract.ts",
+      "reason": "Claim extraction: the bounded scan globs and exclusions, the grammars that pull claims out of one document (with the cross-repo suppression of a bare number), the file scan and the scan of current-repo issue bodies and comments that skips the loop's own proposal issues. It reads through injected listers and readers. Pinned by the extraction, exclusion, scan-error and issue-scan tests in packages/status-truth/src/status-truth-detect.test.ts. Not in the mutate list: it was never mutated, and it only produces claims that the resolvers and classifier then judge."
+    },
+    {
+      "path": "packages/status-truth/src/detect-rollout.ts",
+      "reason": "The rollout-tracker compound resolver and the snapshot loader. A claim is compared against the `issue_state` of the matching snapshot item and nothing else, and a snapshot that is absent, malformed or has an invalid item loads as null so the claims stay unresolved. Pinned by the resolver and loader tests in packages/status-truth/src/status-truth-detect.test.ts, which cover every malformed shape, and by scripts/status-truth-flows.test.ts, which passes a snapshot file through the real entrypoint. Not in the mutate list: it was never mutated, and a failed load only leaves claims unresolved."
+    },
+    {
+      "path": "packages/status-truth/src/detect-live-state.ts",
+      "reason": "Live-state resolution with a read-only client: pull requests, issues and releases of the current repository, the publicness proof that must precede any cross-repo identity, and the loop that counts resolver errors. Every request it makes is a GET. Pinned by the resolver, pagination, publicness and error-count tests in packages/status-truth/src/status-truth-detect.test.ts, and by scripts/status-truth-flows.test.ts, which asserts that a real run sends only GETs with the read-only token. Not in the mutate list: its boundary is an injected client, so a Stryker run would mostly score transport glue."
+    },
+    {
+      "path": "packages/status-truth/src/detect-plan-consistency.ts",
+      "reason": "The plan resolvers: plan-status reads a plan file's frontmatter, and plan-consistency audits docs/plans/*.md for a frontmatter status that disagrees with its unit checkboxes. Its bounded corrector and re-verifier are what status-truth-prs.ts writes with, so the drift matrix and the corrector are the contract. Pinned by the frontmatter, checkbox-grammar, drift-matrix, corrector and re-verification tests in packages/status-truth/src/status-truth-detect.test.ts, and by the corrector round trips in packages/status-truth/src/status-truth-prs.test.ts. Not in the mutate list: it was never mutated, and the PR step re-reads the live file and re-verifies the corrected content before any write."
+    },
+    {
+      "path": "packages/status-truth/src/detect-cli.ts",
+      "reason": "The production composition of status-truth-detect and its goke entrypoint: the preconditions, the scan, the report write and the counts-only summary. It makes only read-only GitHub requests. Pinned by packages/status-truth/src/detect-cli.test.ts (the config, each precondition, the unwritable report, the usage errors and `main`) and by scripts/status-truth-flows.test.ts, which spawns the shim with and without a token and asserts the report keys the summary step reads, the counts-only stdout and that every request is a GET. Not in the mutate list: it is I/O wiring, and the decisions it wires are in the modules above."
+    },
+    {
+      "path": "scripts/status-truth-detect.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/detect-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/detect-*.ts and report-model.ts, pinned by packages/status-truth/src/status-truth-detect.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
     }
   ]
 }

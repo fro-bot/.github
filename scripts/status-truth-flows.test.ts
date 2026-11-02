@@ -9,15 +9,19 @@
  * step, or as a missing field with no error. The tests pin every field a workflow reads.
  */
 
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join, resolve} from 'node:path'
+import {dirname, join, resolve} from 'node:path'
+import {createFakeGithub, route, type FakeGithub, type FakeRoute} from '@fro-bot/test-kit/fake-github'
 import {spawnEntrypoint, type SpawnEntrypointResult} from '@fro-bot/test-kit/spawn-entrypoint'
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 
+const CONTROL = '/repos/fro-bot/.github'
+
 let root = ''
+let fake: FakeGithub | undefined
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'status-truth-flows-'))
@@ -26,6 +30,55 @@ beforeAll(() => {
 afterAll(() => {
   rmSync(root, {recursive: true, force: true})
 })
+
+afterEach(() => {
+  fake?.cleanup()
+  fake = undefined
+})
+
+function checkout(files: Readonly<Record<string, string>>): string {
+  const directory = mkdtempSync(join(root, 'cwd-'))
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(directory, path)), {recursive: true})
+    writeFileSync(join(directory, path), content)
+  }
+  return directory
+}
+
+/** Runs a shim against a fake GitHub API that replaces `fetch` in the child. */
+async function runFake(
+  script: string,
+  routes: readonly FakeRoute[],
+  options: {
+    readonly argv?: readonly string[]
+    readonly env?: Readonly<Record<string, string | undefined>>
+    readonly cwd?: string
+  } = {},
+): Promise<SpawnEntrypointResult> {
+  const github = createFakeGithub(routes)
+  fake = github
+  return spawnEntrypoint({
+    entrypoint: resolve(repoRoot, 'scripts', `${script}.ts`),
+    runtime: 'bun',
+    runtimeArgs: github.runtimeArgs('bun'),
+    argv: options.argv,
+    cwd: options.cwd ?? checkout({}),
+    env: {FAKE_GH_DIR: github.directory, ...options.env},
+  })
+}
+
+/** Every request the run made, as logged (`METHOD /path?query auth=<token> body=<json>`), matched or not. */
+function requests(): string[] {
+  return (fake?.requests() ?? []).map(request => request.line)
+}
+
+function unhandledMutations(): string[] {
+  return (fake?.unhandledMutations() ?? []).map(request => request.line)
+}
+
+function readJson(path: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+}
 
 async function run(
   script: string,
@@ -142,7 +195,7 @@ describe('rollout-tracker-snapshot (bun; gateway-rollout-tracker.yaml and status
 })
 
 describe('the shims run nothing on import', () => {
-  it.each(['rollout-tracker-snapshot'])(
+  it.each(['rollout-tracker-snapshot', 'status-truth-detect'])(
     'importing scripts/%s.ts reads nothing, prints nothing and sets no exit code',
     async script => {
       const harness = join(root, `import-${script}.ts`)
@@ -157,6 +210,173 @@ describe('the shims run nothing on import', () => {
         env: {},
       })
       expect(result).toMatchObject({exitCode: 0, stdout: 'undefined', stderr: '', githubOutput: ''})
+    },
+  )
+})
+
+// ─── status-truth-detect ─────────────────────────────────────────────────────────────────────────
+
+const PLAN_DRIFTED = '---\nstatus: active\n---\n# Plan\n\n- [x] **Unit 1: a**\n- [x] **Unit 2: b**\n'
+
+const DETECT_DOCS = {
+  'README.md': 'PR #579 is open\nissue #12 is closed\nrelease v1.0.0 is published\nplan docs/plans/a.md is active\n',
+  'docs/plans/a.md': '---\nstatus: complete\n---\n# Plan\n\n- [x] **Unit 1: a**\n',
+  'docs/plans/b.md': PLAN_DRIFTED,
+}
+
+const DETECT_API: readonly FakeRoute[] = [
+  route('GET', `${CONTROL}/issues`, {b: [{number: 7, title: 'tracking', body: 'issue #7 is open', labels: []}]}),
+  route('GET', `${CONTROL}/issues/7/comments`, {b: [{id: 70, body: 'PR #580 is merged'}]}),
+  route('GET', `${CONTROL}/pulls/579`, {b: {state: 'closed', merged: true}}),
+  route('GET', `${CONTROL}/pulls/580`, {b: {state: 'open', merged: false}}),
+  route('GET', `${CONTROL}/issues/12`, {b: {state: 'closed'}}),
+  route('GET', `${CONTROL}/issues/7`, {b: {state: 'open'}}),
+  route('GET', `${CONTROL}/releases/tags/v1.0.0`, {b: {draft: false, prerelease: false}}),
+]
+
+/** The report and summary paths `status-truth.yaml` reads with `jq` (`:153-160`). */
+const DETECT_COUNT_KEYS = ['total', 'current', 'drifted', 'unresolved', 'unsafe', 'proposal_eligible'] as const
+
+function detectEnv(directory: string, extra: Readonly<Record<string, string | undefined>> = {}) {
+  return {STATUS_TRUTH_REPORT_PATH: join(directory, 'report.json'), GITHUB_REPOSITORY: 'fro-bot/.github', ...extra}
+}
+
+describe('status-truth-detect (bun, status-truth.yaml: no argv)', () => {
+  it('writes the report the summary step reads and prints counts only, with a token and the live state', async () => {
+    const cwd = checkout(DETECT_DOCS)
+    const result = await runFake('status-truth-detect', DETECT_API, {
+      cwd,
+      env: detectEnv(root, {GITHUB_TOKEN: 'tok-read', STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json')}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    const report = readJson(join(cwd, 'report.json'))
+    // `.status .scan_complete .counts.{total,current,drifted,unresolved,unsafe,proposal_eligible}`
+    expect(report.status).toBe('findings')
+    expect(report.scan_complete).toBe(true)
+    const counts = report.counts as Record<string, number>
+    expect(Object.keys(counts).sort()).toEqual([...DETECT_COUNT_KEYS].sort())
+    expect(counts.drifted).toBeGreaterThan(0)
+    expect(counts.proposal_eligible).toBeGreaterThan(0)
+    expect(counts.total).toBe((report.findings as unknown[]).length)
+    // stdout is the counts-only summary: no claim text, path, fingerprint or token.
+    expect(JSON.parse(result.stdout)).toEqual({status: report.status, scan_complete: true, counts})
+    expect(result.stdout).not.toContain('README')
+    expect(result.stdout).not.toContain('tok-read')
+    // Detect holds a read-only token: every request is a GET, and each carried that token.
+    expect(requests().length).toBeGreaterThan(0)
+    for (const line of requests()) {
+      expect(line.startsWith('GET ')).toBe(true)
+      expect(line).toContain(' auth=tok-read')
+    }
+    expect(unhandledMutations()).toEqual([])
+  })
+
+  it('resolves the claims it can without a token and makes no request', async () => {
+    const cwd = checkout(DETECT_DOCS)
+    const result = await runFake('status-truth-detect', DETECT_API, {
+      cwd,
+      env: detectEnv(root, {STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json')}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(requests()).toEqual([])
+    const report = readJson(join(cwd, 'report.json'))
+    const kinds = (report.findings as {kind: string; verdict: string}[]).map(
+      finding => `${finding.kind}:${finding.verdict}`,
+    )
+    // The file-parse kinds resolve locally; the API kinds stay unresolved rather than looking current.
+    expect(kinds).toContain('plan-consistency:drifted')
+    expect(kinds).toContain('plan-status:drifted')
+    expect(kinds).toContain('pr-state:unresolved')
+  })
+
+  it('reads the rollout snapshot named by STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH for rollout-tracker claims', async () => {
+    const cwd = checkout({
+      'README.md': 'rollout tracker #3512 is open\n',
+      'snapshot.json': JSON.stringify({
+        items: [{content_number: 3512, content_repo: 'fro-bot/.github', issue_state: 'closed', issue_labels: []}],
+      }),
+    })
+    const result = await runFake('status-truth-detect', [route('GET', `${CONTROL}/issues`, {b: []})], {
+      cwd,
+      env: detectEnv(root, {
+        GITHUB_TOKEN: 'tok-read',
+        STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json'),
+        STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH: join(cwd, 'snapshot.json'),
+      }),
+    })
+
+    expect(result.exitCode).toBe(0)
+    const findings = readJson(join(cwd, 'report.json')).findings as {
+      kind: string
+      verdict: string
+      liveState?: string
+    }[]
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({kind: 'rollout-tracker-status', verdict: 'drifted', liveState: 'closed'})
+  })
+
+  it('still writes the report, with an execution-failure status, when the issue list fails', async () => {
+    const cwd = checkout({'README.md': 'nothing\n'})
+    const result = await runFake(
+      'status-truth-detect',
+      [route('GET', `${CONTROL}/issues`, {s: 500, b: {message: 'boom'}})],
+      {
+        cwd,
+        env: detectEnv(root, {GITHUB_TOKEN: 'tok-read', STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json')}),
+      },
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(readJson(join(cwd, 'report.json'))).toMatchObject({
+      status: 'execution-failure',
+      scan_complete: false,
+      failure_class: 'api-unavailable',
+    })
+    expect(JSON.parse(result.stdout)).toMatchObject({status: 'execution-failure', scan_complete: false})
+  })
+
+  it.each([
+    [
+      'STATUS_TRUTH_REPORT_PATH is unset',
+      {STATUS_TRUTH_REPORT_PATH: undefined},
+      'status-truth-detect: STATUS_TRUTH_REPORT_PATH is required\n',
+    ],
+    [
+      'STATUS_TRUTH_REPORT_PATH is empty',
+      {STATUS_TRUTH_REPORT_PATH: ''},
+      'status-truth-detect: STATUS_TRUTH_REPORT_PATH is required\n',
+    ],
+    [
+      'GITHUB_REPOSITORY has no slash',
+      {GITHUB_REPOSITORY: 'nowhere'},
+      'status-truth-detect: GITHUB_REPOSITORY must be in owner/repo format\n',
+    ],
+    [
+      'the report path is unwritable',
+      {STATUS_TRUTH_REPORT_PATH: '/nonexistent-directory/for/status-truth/r.json'},
+      'status-truth-detect: could not write report: error-class=write-failure\n',
+    ],
+  ])('exits 1 with a message-only stderr when %s', async (_name, env, stderr) => {
+    const cwd = checkout({'README.md': 'PR #1 is open\n'})
+    const result = await runFake('status-truth-detect', [], {cwd, env: detectEnv(cwd, env)})
+
+    expect(result).toMatchObject({exitCode: 1, stdout: '', stderr})
+    expect(requests()).toEqual([])
+  })
+
+  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']]])(
+    'argv %j is a usage error: exit 1, nothing scanned, no report written',
+    async argv => {
+      const cwd = checkout({'README.md': 'PR #1 is open\n'})
+      const result = await runFake('status-truth-detect', [], {cwd, argv, env: detectEnv(cwd)})
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).not.toBe('')
+      expect(() => readFileSync(join(cwd, 'report.json'), 'utf8')).toThrow()
     },
   )
 })

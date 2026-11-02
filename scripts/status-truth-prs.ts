@@ -23,7 +23,11 @@
  */
 
 import type {PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
-import type {PublicStatusTruthFinding, StatusTruthFinding, StatusTruthJsonReport} from './status-truth-detect.ts'
+import type {
+  PublicStatusTruthFinding,
+  StatusTruthFinding,
+  StatusTruthJsonReport,
+} from '@fro-bot/status-truth/report-model'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
 import process from 'node:process'
@@ -31,10 +35,9 @@ import {createOctokit, noopLog} from '@fro-bot/core/github'
 import {applyPublicOutputGate} from '@fro-bot/privacy/status-truth-public-output'
 import {
   correctPlanConsistencyStatusLine,
-  KNOWN_FINGERPRINT_VERSION,
-  KNOWN_SCHEMA_VERSION,
   reverifyPlanConsistencyCorrection,
-} from './status-truth-detect.ts'
+} from '@fro-bot/status-truth/detect-plan-consistency'
+import {KNOWN_FINGERPRINT_VERSION, KNOWN_SCHEMA_VERSION} from '@fro-bot/status-truth/report-model'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1791,7 +1794,7 @@ export function buildEnvBackedRunPrsCoreDeps(): RunPrsCoreDeps {
       } catch {
         return {valid: false, reason: 'parse-failure'}
       }
-      const {validateStatusTruthArtifact} = await import('./status-truth-detect.ts')
+      const {validateStatusTruthArtifact} = await import('@fro-bot/status-truth/report-model')
       const validation = validateStatusTruthArtifact(rawParsed)
       if (!validation.valid) return {valid: false, reason: validation.reason}
       return {valid: true, report: validation.report}

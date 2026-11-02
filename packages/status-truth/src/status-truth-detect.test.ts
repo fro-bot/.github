@@ -1,13 +1,8 @@
-import type {SnapshotItem} from '@fro-bot/status-truth/rollout-tracker-snapshot'
+import type {FileLister, FileReader, IssueCommentFetcher, IssueLister, IssueListItem} from './detect-extract.ts'
+import type {DetectOctokitClient} from './detect-live-state.ts'
 import type {
   ClaimKind,
   ClaimVerdict,
-  DetectOctokitClient,
-  FileLister,
-  FileReader,
-  IssueCommentFetcher,
-  IssueLister,
-  IssueListItem,
   PublicStatusTruthFinding,
   ResolverResult,
   ResolverType,
@@ -15,43 +10,49 @@ import type {
   StatusTruthFinding,
   StatusTruthJsonReport,
   StatusTruthSnapshot,
-} from './status-truth-detect.ts'
+} from './report-model.ts'
+import type {SnapshotItem} from './rollout-tracker-snapshot.ts'
 
 import process from 'node:process'
 
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
+import {detectStatusTruthClaims} from './detect-classify.ts'
+import {buildDetectOctokitOptions} from './detect-cli.ts'
 import {
-  buildDetectOctokitOptions,
-  buildPlanConsistencyClaim,
-  buildStatusTruthReport,
-  CLAIM_KIND_DEFINITIONS,
-  computeClaimFingerprint,
-  correctPlanConsistencyStatusLine,
   DEFAULT_ENABLED_KINDS,
-  detectStatusTruthClaims,
   extractStatusTruthClaimsFromText,
-  isKnownReportVersion,
-  KNOWN_FINGERPRINT_VERSION,
-  KNOWN_SCHEMA_VERSION,
+  scanIssueStatusTruthClaims,
+  scanStatusTruthClaims,
+} from './detect-extract.ts'
+import {
   listCurrentRepoIssueComments,
   listCurrentRepoIssues,
-  loadRolloutSnapshot,
-  normalizeClaimText,
-  parsePlanUnitCheckboxes,
   resolveAllClaims,
   resolveClaimLiveState,
   resolveFileParseClaims,
+} from './detect-live-state.ts'
+import {
+  buildPlanConsistencyClaim,
+  correctPlanConsistencyStatusLine,
+  parsePlanUnitCheckboxes,
   resolvePlanConsistencyVerdict,
   resolvePlanStatusClaim,
-  resolveRolloutTrackerClaim,
   reverifyPlanConsistencyCorrection,
-  scanIssueStatusTruthClaims,
   scanPlanConsistencyFindings,
-  scanStatusTruthClaims,
+} from './detect-plan-consistency.ts'
+import {loadRolloutSnapshot, resolveRolloutTrackerClaim} from './detect-rollout.ts'
+import {
+  buildStatusTruthReport,
+  CLAIM_KIND_DEFINITIONS,
+  computeClaimFingerprint,
+  isKnownReportVersion,
+  KNOWN_FINGERPRINT_VERSION,
+  KNOWN_SCHEMA_VERSION,
+  normalizeClaimText,
   selectDetectFailureClass,
   validateStatusTruthArtifact,
-} from './status-truth-detect.ts'
+} from './report-model.ts'
 
 function makeClaim(overrides: Partial<StatusTruthClaim> = {}): StatusTruthClaim {
   return {
