@@ -16,13 +16,13 @@ import {mergeWikiLogs, rebuildWikiIndex} from '@fro.bot/wiki-write-core'
  *     Merge multiple log.md files chronologically into `knowledge/log.md`.
  *     Dedupes entries by `(timestamp, target)`; preserves canonical header.
  *
- * Rationale: the one-PR-per-survey flow in the current architecture serializes
- * through `knowledge/index.md` and `knowledge/log.md`. Every survey after the
- * first on the same cycle hits a merge conflict on those two files. This script
- * replaces hand-merging — regenerate the index from ground truth (the set of
- * wiki pages on disk) and merge log entries chronologically. When the `data`
- * branch flow lands (fro-bot/agent#511), this stops being load-bearing but
- * remains useful for post-incident healing.
+ * Rationale: autonomous wiki writes go to the `data` branch through `wiki-ingest`, which
+ * rebuilds `knowledge/index.md` and merges `knowledge/log.md` itself, and the Merge Data
+ * Branch workflow promotes `data` to `main`. No workflow runs this command. It is an
+ * operator tool for healing the two shared catalog files when they are out of step with the
+ * wiki pages, for example after a merge conflict on either file or an incident: it
+ * regenerates the index from ground truth (the set of wiki pages on disk) and merges log
+ * entries chronologically instead of hand-merging them.
  */
 
 const WIKI_ROOT = 'knowledge/wiki'
