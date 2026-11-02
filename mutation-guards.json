@@ -367,6 +367,18 @@
     {
       "path": "scripts/dispatch-renovate.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/dispatch/dispatch-renovate-cli and runs it under the entry guard. The behaviour is in packages/dispatch/src/dispatch-renovate.ts and dispatch-renovate-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/dispatch-flows.test.ts."
+    },
+    {
+      "path": "packages/status-truth/src/rollout-tracker-snapshot.ts",
+      "reason": "The rollout tracker preflight: the Project, tracked-issue, comment and external-signal reads, the snapshot and its hash, the marker parse and the wake decision. It writes nothing to GitHub, `data` or `main`: its only output is one JSON line on stdout that gateway-rollout-tracker.yaml and status-truth.yaml read. Pinned by packages/status-truth/src/rollout-tracker-snapshot.test.ts: the pure functions, the fixture path, the live `gh` and health reads against stub binaries and a local server, and the workflow shape. packages/status-truth/src/rollout-tracker-snapshot-cli.test.ts pins the runner wiring, and scripts/status-truth-flows.test.ts runs the real shim under Bun for the five fields the preflight job reads, a result above 300 KB delivered complete through a pipe, and the failure that makes `jq -e` fail the `if`. Not in the mutate list: it was never mutated, and it decides only whether a tracker agent run wakes."
+    },
+    {
+      "path": "packages/status-truth/src/rollout-tracker-snapshot-cli.ts",
+      "reason": "The goke entrypoint of rollout-tracker-snapshot: one read-only root command that takes no argument, runs the preflight and hands back its exit code. Any argument is a usage error and reads nothing. Pinned by packages/status-truth/src/rollout-tracker-snapshot-cli.test.ts (the config, the exit code and stderr of a run, a thrown error, the usage errors, and that `main` sets `process.exitCode` without calling `process.exit`) and, through the shim, by scripts/status-truth-flows.test.ts. Not in the mutate list: it declares one command, so a mutation run would score only the config object."
+    },
+    {
+      "path": "scripts/rollout-tracker-snapshot.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/rollout-tracker-snapshot-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/rollout-tracker-snapshot.ts, pinned by packages/status-truth/src/rollout-tracker-snapshot.test.ts, which also spawns this shim under Node. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
     }
   ]
 }

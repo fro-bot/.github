@@ -1,4 +1,4 @@
-import type {SnapshotItem} from './rollout-tracker-snapshot.ts'
+import type {SnapshotItem} from '@fro-bot/status-truth/rollout-tracker-snapshot'
 import type {
   ClaimKind,
   ClaimVerdict,

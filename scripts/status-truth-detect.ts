@@ -1,4 +1,4 @@
-import type {SnapshotItem, RolloutSnapshot as TrackerSnapshot} from './rollout-tracker-snapshot.ts'
+import type {SnapshotItem, RolloutSnapshot as TrackerSnapshot} from '@fro-bot/status-truth/rollout-tracker-snapshot'
 
 import {createHash} from 'node:crypto'
 import {readFile, writeFile} from 'node:fs/promises'

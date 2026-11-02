@@ -1,0 +1,17 @@
+{
+  "name": "@fro-bot/status-truth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The status-truth detector, proposal opener and correction-PR executor, and the rollout tracker snapshot, of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./rollout-tracker-snapshot": "./src/rollout-tracker-snapshot.ts",
+    "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}
