@@ -92,6 +92,35 @@ describe('marker round-trip', () => {
     const body = `<!-- ${MARKER_PREFIX}${JSON.stringify(first)} -->\n<!-- ${MARKER_PREFIX}${JSON.stringify(second)} -->`
     expect(extractMarker(body)?.state.goal).toBe('second')
   })
+
+  it.each([
+    ['no whitespace after the opening', (m: string) => `<!--${MARKER_PREFIX}${m}-->`, 'g'],
+    ['any whitespace after the opening', (m: string) => `<!--\n\t ${MARKER_PREFIX}${m} -->`, 'g'],
+    ['after another comment', (m: string) => `<!-- other --><!-- ${MARKER_PREFIX}${m} -->`, 'g'],
+    ['inside a stray opening', (m: string) => `<!--<!-- ${MARKER_PREFIX}${m} -->`, 'g'],
+    [
+      'followed by an unclosed marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- ${MARKER_PREFIX}{"x":1}`,
+      'g',
+    ],
+    [
+      'followed by a closed malformed marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- ${MARKER_PREFIX}{"x":1} -->`,
+      null,
+    ],
+    ['unclosed only', (m: string) => `<!-- ${MARKER_PREFIX}${m}`, null],
+    ['prefix without its colon', (m: string) => `<!-- cross-repo-dispatch ${m} -->`, null],
+  ])('finds the last closed marker: %s', (_name, build, goal) => {
+    const body = build(JSON.stringify(serializeMarker(makeState({goal: 'g'}))))
+    expect(extractMarker(body)?.state.goal ?? null).toBe(goal)
+  })
+
+  it('stays fast on many unclosed marker openings', () => {
+    const body = `<!-- ${MARKER_PREFIX}${JSON.stringify(serializeMarker(makeState()))} -->${`<!--${MARKER_PREFIX}a`.repeat(20_000)}`
+    const startedAt = performance.now()
+    expect(extractMarker(body)?.state.goal).toBe('goal-1')
+    expect(performance.now() - startedAt).toBeLessThan(500)
+  })
 })
 
 describe('selectStateMarker author filter', () => {

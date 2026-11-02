@@ -32,22 +32,38 @@ function sortedReplacer(_key: string, value: unknown): unknown {
 }
 
 /**
+ * The text between `<!--`, optional whitespace and the marker prefix, and the next `-->`, for the
+ * last such comment in the body. A linear scan: a regex here backtracks quadratically on bodies
+ * with many unclosed `<!-- cross-repo-dispatch:` openings.
+ */
+function lastMarkerPayload(body: string): string | undefined {
+  let last: string | undefined
+  let from = 0
+  for (;;) {
+    const open = body.indexOf('<!--', from)
+    if (open === -1) return last
+    let cursor = open + 4
+    while (cursor < body.length && /\s/.test(body.charAt(cursor))) cursor += 1
+    if (!body.startsWith(MARKER_PREFIX, cursor)) {
+      from = open + 1
+      continue
+    }
+    const start = cursor + MARKER_PREFIX.length
+    const close = body.indexOf('-->', start)
+    if (close === -1) return last
+    last = body.slice(start, close)
+    from = close + 3
+  }
+}
+
+/**
  * Extract the marker JSON from a comment body. Returns null if absent or malformed.
  * When multiple markers are present, the LAST one wins (latest state).
  */
 export function extractMarker(body: string): MarkerData | null {
   if (!body) return null
 
-  const markerRegex = /<!--\s*cross-repo-dispatch:([\s\S]*?)-->/g
-  let lastMatch: RegExpExecArray | null = null
-  for (;;) {
-    const match = markerRegex.exec(body)
-    if (match === null) break
-    lastMatch = match
-  }
-  if (lastMatch === null) return null
-
-  const jsonStr = lastMatch[1]
+  const jsonStr = lastMarkerPayload(body)
   if (jsonStr === undefined) return null
 
   try {
