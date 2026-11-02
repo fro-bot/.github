@@ -226,7 +226,8 @@ describe('truncateToBytes against the pattern it replaced', () => {
 
   it('returns the same string for 60,000 seeded values and budgets', () => {
     let cut = 0
-    let trimmed = 0
+    let trimmedAtBoundary = 0
+    let trimmedRunOfSeveral = 0
     let total = 0
     for (const seed of SEEDS) {
       const random = seeded(seed ^ 0x3c)
@@ -239,14 +240,31 @@ describe('truncateToBytes against the pattern it replaced', () => {
             `seed ${seed} value #${index} ${JSON.stringify(value)} budget ${maxBytes}: ${JSON.stringify(expected)} vs ${JSON.stringify(actual)}`,
           )
         }
-        if (expected !== value) cut += 1
-        if (expected.length < value.length && expected.endsWith('…') && value.includes('\uFFFD')) trimmed += 1
         total += 1
+        if (expected === value) continue
+        cut += 1
+
+        // A replacement-character run sat at the end of the decoded prefix and was removed: the prefix the
+        // cut leaves, read independently of the function, ends in U+FFFD and the result is that prefix
+        // without its trailing run, plus the ellipsis (or nothing when the run was all of it).
+        const contentBudget = maxBytes - byteLength('…')
+        if (contentBudget <= 0) continue
+        const prefix = Buffer.from(value).subarray(0, contentBudget).toString('utf8')
+        const trailing = /\uFFFD*$/u.exec(prefix)?.[0].length ?? 0
+        if (trailing > 0) {
+          const kept = prefix.slice(0, prefix.length - trailing)
+          if (actual !== (kept === '' ? '' : `${kept}…`)) {
+            expect.fail(`seed ${seed} value #${index} ${JSON.stringify(value)}: the boundary run was not removed`)
+          }
+          trimmedAtBoundary += 1
+          if (trailing > 1) trimmedRunOfSeveral += 1
+        }
       }
     }
     expect(total).toBe(60_000)
     expect(cut / total).toBeGreaterThan(0.3)
-    expect(trimmed).toBeGreaterThan(500)
+    expect(trimmedAtBoundary).toBeGreaterThan(15_000)
+    expect(trimmedRunOfSeveral).toBeGreaterThan(5000)
   })
 })
 
@@ -288,8 +306,26 @@ describe('linear time on adversarial input', () => {
       const run = 60_000
       const value = `${'\uFFFD'.repeat(run)}${'a'.repeat(100)}`
       const budget = run * 3 + 50
+      // The reference rescans the run from every position, which costs seconds here, so the large result is
+      // stated outright: the run (3 bytes each), 47 of the `a`s (the ellipsis takes 3 of the 50 spare bytes),
+      // and the ellipsis. The old-versus-new comparison runs on smaller values above.
+      const expected = `${'\uFFFD'.repeat(run)}${'a'.repeat(47)}…`
       expect(fastestOfThree(() => truncateToBytes(value, budget))).toBeLessThan(BOUND_MS)
-      expect(truncateToBytes(value, budget)).toBe(oldTruncateToBytes(value, budget))
+      expect(truncateToBytes(value, budget)).toBe(expected)
+    },
+    TIMEOUT_MS,
+  )
+
+  it(
+    'truncateToBytes: a long run of replacement characters cut at the boundary',
+    () => {
+      const run = 60_000
+      const value = `ab${'\uFFFD'.repeat(run)}tail`
+      // 2 bytes of `ab`, 30,000 whole characters, and the 3 bytes of the ellipsis: the cut falls between
+      // replacement characters, so the whole decoded run is at the end and is removed.
+      const budget = 2 + 30_000 * 3 + 3
+      expect(fastestOfThree(() => truncateToBytes(value, budget))).toBeLessThan(BOUND_MS)
+      expect(truncateToBytes(value, budget)).toBe('ab…')
     },
     TIMEOUT_MS,
   )
