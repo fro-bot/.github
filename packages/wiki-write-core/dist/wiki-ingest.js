@@ -9,6 +9,7 @@ import { assertBranchWritable } from "./branch-safety.js";
 import { verifyCorrectionSurvival } from "./corrections-survival.js";
 import { CorrectionStoreError, readCorrections } from "./corrections.js";
 import { bootstrapDataBranch as defaultBootstrapDataBranch, } from "./data-branch-bootstrap.js";
+import { findIndexEntryLines } from "./line-scanners.js";
 import { assertReposFile } from "./schemas.js";
 import { computeRepoSlug } from "./wiki-slug.js";
 import { collectWikilinks } from "./wiki-utils.js";
@@ -630,11 +631,7 @@ function parseIndexEntryLines(index) {
     const entries = new Map();
     // Match the full line: "- [[slug]] — description"
     // Description may contain anything except a newline (we keep the entire trailing text).
-    const pattern = /^- \[\[([^\]|]+)\]\]\s*—\s*(?:\S.*|[\t\v\f \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/gmu;
-    for (const match of index.matchAll(pattern)) {
-        const [line, slug] = match;
-        if (line === undefined || slug === undefined)
-            continue;
+    for (const { slug, line } of findIndexEntryLines(index)) {
         entries.set(slug.trim(), line);
     }
     return entries;

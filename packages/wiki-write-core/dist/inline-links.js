@@ -12,7 +12,7 @@ const DOUBLE_QUOTE = 0x22;
 const SINGLE_QUOTE = 0x27;
 const NEWLINE = 0x0a;
 /** The characters `\s` matches: ASCII spaces and controls, then the Unicode space separators. */
-function isWhitespaceCode(code) {
+export function isWhitespaceCode(code) {
     if (code <= 0x20)
         return code === 0x20 || (code >= 0x09 && code <= 0x0d);
     if (code < 0xa0)

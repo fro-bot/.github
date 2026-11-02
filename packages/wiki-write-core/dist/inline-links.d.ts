@@ -10,6 +10,8 @@ export interface InlineLink {
     /** The destination as written: `<angle>` with its brackets, or the bare run. */
     readonly target: string;
 }
+/** The characters `\s` matches: ASCII spaces and controls, then the Unicode space separators. */
+export declare function isWhitespaceCode(code: number): boolean;
 /** For every offset `i` up to the line length plus one: the first offset at or after `i` whose character stops a run, or the line length. */
 export declare function buildStopTable(line: string, stops: (code: number) => boolean): Int32Array;
 /**

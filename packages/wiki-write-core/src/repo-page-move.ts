@@ -15,6 +15,7 @@
  */
 
 import {parseFrontmatterDocument, renderFrontmatterDocument, type FrontmatterDocument} from './frontmatter.ts'
+import {parseRelatedFlow} from './line-scanners.ts'
 import {appendLogEntry, rebuildWikiIndex, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
 import {buildPrivateNameTokens, computeRepoSlug} from './wiki-slug.ts'
 import {findWikilinkSpans} from './wiki-utils.ts'
@@ -24,7 +25,6 @@ const LOG_PATH = 'knowledge/log.md'
 const REPOS_DIR = 'knowledge/wiki/repos'
 const WIKI_PAGE_PATTERN = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[^/]+\.md$/u
 const RELATED_BLOCK_KEY = /^related:\s*(?:#.*)?$/u
-const RELATED_FLOW = /^related:\s*\[(.*)\]\s*(?:#.*)?$/u
 
 /**
  * One file operation in a planned rename. The op says why the path is touched, so the committing
@@ -413,9 +413,9 @@ function editRelatedText(content: string, oldSlug: string, newSlug: string): str
   if (frontmatter === undefined) return undefined
   const lines = frontmatter.split('\n')
 
-  const flowIndex = lines.findIndex(line => RELATED_FLOW.test(line))
+  const flowIndex = lines.findIndex(line => parseRelatedFlow(line) !== undefined)
   if (flowIndex !== -1) {
-    const inner = RELATED_FLOW.exec(lines[flowIndex] ?? '')?.[1] ?? ''
+    const inner = parseRelatedFlow(lines[flowIndex] ?? '') ?? ''
     const items = inner.split(',').map(item => item.trim())
     const mapped = dedupe(items.map(item => (stripQuotes(item) === oldSlug ? swapQuoted(item, newSlug) : item)))
     lines[flowIndex] = `related: [${mapped.join(', ')}]`

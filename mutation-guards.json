@@ -29,6 +29,10 @@
       "reason": "The markdown-link and wiki-link scanner behind normalizeFormattingText: a linear-time form of the regex it replaced. It is internal (not in the package exports) and its only consumer, corrections-survival.ts, is mutated; the tests that kill that module's mutants reach this one through normalizeFormattingText. packages/wiki-write-core/src/link-labels.test.ts keeps the old regex as the reference, compares it on 60,000 seeded strings with the capture groups and through normalizeFormattingText, and bounds adversarial text."
     },
     {
+      "path": "packages/wiki-write-core/src/line-scanners.ts",
+      "reason": "The wiki index entry-line scanner (used by wiki-ingest.ts) and the flow-style `related:` scanner (used by repo-page-move.ts): linear-time forms of the regexes they replaced. It is internal (not in the package exports) and both consumers are not-mutated. packages/wiki-write-core/src/line-scanners.test.ts keeps the old regexes as the reference, compares them on 60,000 seeded documents and 60,000 seeded lines, and bounds adversarial input."
+    },
+    {
       "path": "packages/wiki-write-core/src/index.ts",
       "reason": "Pure re-export barrel with no logic of its own. The core logic lives in the modules it re-exports (corrections.ts, frontmatter.ts, gate-contract.ts, private-leak-adapter.ts, private-leak.ts, rendering-policy.ts, wiki-ingest.ts, wiki-lint.ts), each separately dispositioned in this list or stryker.config.json's mutate set."
     },
