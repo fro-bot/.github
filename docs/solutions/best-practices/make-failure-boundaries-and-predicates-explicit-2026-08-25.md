@@ -253,7 +253,7 @@ still finds separate local definitions in `commit-metadata.ts`, `data-branch-boo
 
 - `capture-patterns-open.ts` and `capture-patterns-synthesis.ts` from
   `capture-learnings-privacy.ts`;
-- `improvement-metrics-report.ts` and `status-truth-proposals.ts` from
+- `improvement-metrics-report.ts` and `proposals-cli.ts` (in `@fro-bot/status-truth`) from
   `capture-learnings-privacy.ts`; and
 - `check-private-leak.ts` from `private-repo-resolution.ts`.
 

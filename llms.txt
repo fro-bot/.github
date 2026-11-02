@@ -26,6 +26,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 - [Core package](packages/core/README.md): `@fro-bot/core` type guards, `$GITHUB_OUTPUT` and step-summary writers, JSON line output, a retry loop, the Octokit client factory, the goke CLI runner, the required-env reader, and the PR wiki-authority check
 - [Privacy package](packages/privacy/README.md): `@fro-bot/privacy` the private-leak scan, the wiki-presence gate, the public-output gate, the private-token and redacted-ID loaders, and the operator lookup and enumeration tools
 - [Registry package](packages/registry/README.md): `@fro-bot/registry` the metadata writers, reconcile (nine seams), invitation polling, the survey write-back, `merge-back-data`, `merge-data-pr` and the operator rename
+- [Status-truth package](packages/status-truth/README.md): `@fro-bot/status-truth` the status-truth loop (detect and proposals split into seams, plus prs) and the `rollout-tracker-snapshot` preflight
 - [Dispatch package](packages/dispatch/README.md): `@fro-bot/dispatch` `cross-repo-dispatch` (seven modules: model, marker, receipts, plan, run, github, cli) and `dispatch-renovate`
 - [Test kit](packages/test-kit/README.md): `@fro-bot/test-kit` shared test fakes and helpers, imported by tests only
 - [Wiki-write core package](packages/wiki-write-core/README.md): `@fro.bot/wiki-write-core`, the only published package
