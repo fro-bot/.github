@@ -902,3 +902,186 @@ describe('maskMarkdownLinks exhaustive differential against the pre-refactor cha
     }
   })
 })
+
+describe('maskMarkdownLinks: what a link is', () => {
+  const blank = (length: number): string => ' '.repeat(length)
+
+  // Each row is checked against the reference as well as against the stated output, so the table
+  // documents what the char-scanning algorithm did and what the linear scanner still does.
+  it.each([
+    ['a plain link', '[a](b)', blank(6)],
+    ['text around a link', 'x [a](b) y', `x ${blank(6)} y`],
+    ['two links back to back', '[a](b)[c](d)', blank(12)],
+    ['two links on separate lines', 'x[a](b)\n[c](d)y', `x${blank(6)}\n${blank(6)}y`],
+    ['nested parentheses in the url', '[a](b(c)d)e', `${blank(10)}e`],
+    ['a link whose url spans a newline', '[a](b\n)', blank(7)],
+    ['a backslash and a backtick are ordinary characters', '[a](\\`)', blank(7)],
+    ['the last `[` before the `]` opens the link', '[x[y](z)', `[x${blank(6)}`],
+    ['no `[` before the `]`', 'a](b)', 'a](b)'],
+    ['a stray `)` before the link', ')[a](b)', `)${blank(6)}`],
+    ['an unclosed `(` is not a link', '[a](', '[a]('],
+    ['a `]` with no `(` after it', '[a]', '[a]'],
+    ['a `(` at the very end after `]`', 'x[a]', 'x[a]'],
+    ['an inner `(` closed but the outer one not', '[a]((b)', '[a]((b)'],
+    ['an unclosed `(` leaves the `[` open for the next link', '[](](a)', blank(7)],
+    ['an unclosed `(` followed by a `[` that takes over', '[a]( [b](c)', `[a]( ${blank(6)}`],
+    ['a `[` just before the closing `)` does not stay open', '[a](b[)](x)', `${blank(7)}](x)`],
+    ['no `[` is open after a link', '[a](b)c](d)', `${blank(6)}c](d)`],
+    ['a `[` right after a link opens the next one', '[a](b)[c](d)e', `${blank(12)}e`],
+    ['an unclosed `(` whose `)` is taken by an inner `(`', '[a](b(c', '[a](b(c'],
+    ['two `)` closing two `(`', '[a](b(c))d', `${blank(9)}d`],
+    ['a link then a stray `)`', '[a](b))', `${blank(6)})`],
+    ['an empty string', '', ''],
+  ] as const)('%s', (_name, content, expected) => {
+    expect(maskMarkdownLinksReference(content)).toBe(expected)
+    expect(maskMarkdownLinks(content)).toBe(expected)
+  })
+})
+
+/** The maximal runs of positions where `masked` differs from `body`. */
+function maskedRuns(body: string, masked: string): string[] {
+  const runs: string[] = []
+  let current = ''
+  for (const [index, character] of [...body].entries()) {
+    if (masked[index] === character) {
+      if (current !== '') runs.push(current)
+      current = ''
+    } else {
+      current += character
+    }
+  }
+  return current === '' ? runs : [...runs, current]
+}
+
+describe('maskMarkdownLinks differential against the char-scanning reference on weighted bodies', () => {
+  // Weighted toward the characters the scanner reads, so most bodies hold several `](` with nesting,
+  // strays and unclosed parentheses. Backslash, backtick, `!`, spaces and newlines are in the alphabet
+  // because the scanner treats them as ordinary text; the differential keeps that true.
+  const TOKENS: readonly (readonly [string, number])[] = [
+    ['[', 14],
+    [']', 13],
+    ['(', 13],
+    [')', 13],
+    ['\\', 3],
+    ['`', 3],
+    ['!', 3],
+    [' ', 4],
+    ['\n', 2],
+    ['a', 5],
+    ['](', 10],
+    ['[a](', 4],
+    ['[a](b)', 3],
+    ['))', 2],
+    ['((', 2],
+  ]
+  const TOTAL_WEIGHT = TOKENS.reduce((sum, [, weight]) => sum + weight, 0)
+
+  function weightedBody(next: () => number, maxTokens: number): string {
+    let body = ''
+    for (let remaining = 1 + Math.floor(next() * maxTokens); remaining > 0; remaining -= 1) {
+      let roll = next() * TOTAL_WEIGHT
+      for (const [token, weight] of TOKENS) {
+        roll -= weight
+        if (roll < 0) {
+          body += token
+          break
+        }
+      }
+    }
+    return body
+  }
+
+  it('masks identically in 60,000 weighted bodies, and the bodies reach each shape of link', () => {
+    let total = 0
+    let changed = 0
+    let severalRuns = 0
+    let nested = 0
+    let skippedOpener = 0
+    let strayCloserFirst = 0
+    let unclosedOpener = 0
+    for (const seed of [0x1c0ffee, 0x2bad5eed, 0x3decaf11]) {
+      const next = createSeededRandom(seed)
+      for (let sample = 0; sample < 20_000; sample += 1) {
+        const body = weightedBody(next, 26)
+        const expected = maskMarkdownLinksReference(body)
+        const actual = maskMarkdownLinks(body)
+        if (actual !== expected) {
+          throw new Error(
+            `maskMarkdownLinks diverged for ${JSON.stringify(body)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+          )
+        }
+
+        total += 1
+        const runs = maskedRuns(body, expected)
+        if (runs.length > 0) changed += 1
+        if (runs.length > 1) severalRuns += 1
+        if (runs.some(run => run.includes('(('))) nested += 1
+        // A `](` that the scan passed over although a later link was masked: an unclosed `(` came first.
+        const firstOpener = body.indexOf('](')
+        if (firstOpener !== -1 && expected[firstOpener] === ']' && runs.length > 0) skippedOpener += 1
+        // A `)` ahead of everything that was masked: a stray closer the matching must ignore.
+        const firstMasked = [...body].findIndex((character, index) => expected[index] !== character)
+        if (firstMasked > 0 && body.slice(0, firstMasked).includes(')')) strayCloserFirst += 1
+        if (/\]\([^)]*$/u.test(body)) unclosedOpener += 1
+      }
+    }
+
+    expect(total).toBe(60_000)
+    // Not vacuous: these shares come from the generator, so a change to its weights that stopped
+    // reaching one of the shapes fails here instead of quietly weakening the differential.
+    expect(changed / total).toBeGreaterThan(0.4)
+    expect(changed / total).toBeLessThan(0.97)
+    expect(severalRuns).toBeGreaterThan(3000)
+    expect(nested).toBeGreaterThan(1500)
+    expect(skippedOpener).toBeGreaterThan(2000)
+    expect(strayCloserFirst).toBeGreaterThan(2000)
+    expect(unclosedOpener).toBeGreaterThan(3000)
+  })
+})
+
+/** The fastest of three `maskMarkdownLinks` runs on `content`, in milliseconds. */
+function fastestMaskOfThree(content: string): number {
+  let fastest = Number.POSITIVE_INFINITY
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const startedAt = performance.now()
+    maskMarkdownLinks(content)
+    fastest = Math.min(fastest, performance.now() - startedAt)
+  }
+  return fastest
+}
+
+describe('maskMarkdownLinks runs in linear time', () => {
+  // Fastest of three, so one scheduler stall cannot fail a linear scan. The first three inputs took
+  // the character scanner 1.4 to 3.9 s, because every unclosed `(` after a `](` sent its depth count
+  // to the end of the content again. The last input is closed all the way down: that was linear
+  // before and pins that a nesting 20,000 deep needs no recursion.
+  const BOUND_MS = 1000
+
+  it.each([
+    ['an unclosed link opener repeated 20,000 times', '[a]('.repeat(20_000)],
+    [
+      'deeply nested openers repeated 30,000 times, the first half of them closed',
+      `${'[a]('.repeat(30_000)}${')'.repeat(15_000)}`,
+    ],
+    ['five unclosed parentheses after each `](`, repeated 20,000 times', '[a]((((('.repeat(20_000)],
+    [
+      'deeply nested openers repeated 20,000 times, all of them closed',
+      `${'[a]('.repeat(20_000)}${')'.repeat(20_000)}`,
+    ],
+  ] as const)('%s', (_name, content) => {
+    expect(fastestMaskOfThree(content)).toBeLessThan(BOUND_MS)
+  })
+
+  it('still masks what it masked: the closed deep nesting is one link, the half-closed one starts partway', () => {
+    const nestedClosed = `${'[a]('.repeat(2000)}${')'.repeat(2000)}`
+    expect(maskMarkdownLinks(nestedClosed)).toBe(' '.repeat(nestedClosed.length))
+
+    const halfClosed = `${'[a]('.repeat(2000)}${')'.repeat(1000)}`
+    expect(maskMarkdownLinks(halfClosed)).toBe(maskMarkdownLinksReference(halfClosed))
+    // The outer 1,000 openers have no closer; the 1,001st `(` is the first one that does.
+    const unmaskedPrefix = '[a]('.repeat(1000)
+    expect(maskMarkdownLinks(halfClosed)).toBe(
+      `${unmaskedPrefix}${' '.repeat(halfClosed.length - unmaskedPrefix.length)}`,
+    )
+  })
+})

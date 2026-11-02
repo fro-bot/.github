@@ -1,6 +1,7 @@
 import process from 'node:process'
 
 import {describe, expect, it} from 'vitest'
+import {maskMarkdownLinks} from './corrections-survival.ts'
 import {resolveMarkdownLinks} from './markdown-links.ts'
 import {checkPrivateLeak} from './private-leak.ts'
 import {mergeWikiLogs, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
@@ -284,6 +285,27 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
     )
 
     // The old global regex retries the rest of the line from each opening bracket and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
+  })
+
+  it.each([
+    {name: 'an unclosed link opener repeated', build: (n: number) => '[a]('.repeat(n)},
+    {
+      name: 'unclosed openers, the first half of them closed',
+      build: (n: number) => `${'[a]('.repeat(n)}${')'.repeat(n / 2)}`,
+    },
+  ])('scales markdown link masking linearly for $name', ({build}) => {
+    const smallContent = build(8_000)
+    const largeContent = build(16_000)
+    const measurement = expectLinearScaling(
+      size => {
+        maskMarkdownLinks(size === 8_000 ? smallContent : largeContent)
+      },
+      8_000,
+      3,
+    )
+
+    // The old scanner counted parentheses to the end of the content from each unclosed `(` and fails this ratio guard.
     expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 

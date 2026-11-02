@@ -30,6 +30,12 @@ export declare function normalizeFormattingText(value: string): string;
  * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
  * targets; wiki links `[[...]]` are left untouched (module docstring). A regex port was proven
  * non-equivalent by exhaustive differential testing (corrections-survival.test.ts), so this
- * scanner stays; its directived lines are deterministic hangs under mutation, not timing noise.
+ * stays a scanner.
+ *
+ * At each `]` that is followed by `(` and preceded by a `[`, the link runs from the last `[` to the
+ * `)` that closes that `(`, counting nested parentheses. A `(` with no closing `)` is not a link,
+ * and the scan goes on from the next character. After a link, the scan resumes past its `)` with no
+ * `[` open. The closing `)` of every `(` is found once, up front, so the scan is linear in the
+ * length of the content.
  */
 export declare function maskMarkdownLinks(content: string): string;
