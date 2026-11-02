@@ -1,17 +1,16 @@
 import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
-import type {CommitWikiChangesParams, OctokitClient} from './wiki-ingest.ts'
+import type {CommitWikiChangesParams, OctokitClient} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {createHash} from 'node:crypto'
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
-import {fileURLToPath} from 'node:url'
 import {buildPublicSlugMap} from '@fro-bot/privacy/check-wiki-private-presence'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from './wiki-ingest.ts'
-import {lintWikiSnapshot} from './wiki-lint.ts'
+import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from '@fro.bot/wiki-write-core/wiki-ingest'
+import {lintWikiSnapshot} from '@fro.bot/wiki-write-core/wiki-lint'
 import {
   createWikiRepairTreeLoader,
   exitCodeFor,
@@ -1381,7 +1380,7 @@ describe('the CLI entry builds its client through the core factory', () => {
   ] as const
   const saved: Record<string, string | undefined> = {}
   let root = ''
-  let originalEntry: string | undefined
+  let originalArgv: string[] = []
   let stderrLines: string[] = []
   let processSpies: {mockRestore: () => void}[] = []
 
@@ -1429,9 +1428,10 @@ describe('the CLI entry builds its client through the core factory', () => {
   async function runCli(mocked: Record<string, unknown>): Promise<unknown> {
     vi.resetModules()
     vi.doMock('@octokit/rest', () => mocked)
-    process.argv[1] = fileURLToPath(new URL('./wiki-repair.ts', import.meta.url))
+    process.argv = [process.argv[0] ?? 'node', '/x/wiki-repair.ts']
     try {
-      await import('./wiki-repair.ts')
+      const {main} = await import('./wiki-repair-cli.ts')
+      await main()
       return undefined
     } catch (error: unknown) {
       return error
@@ -1443,7 +1443,7 @@ describe('the CLI entry builds its client through the core factory', () => {
       saved[name] = process.env[name]
       delete process.env[name]
     }
-    originalEntry = process.argv[1]
+    originalArgv = process.argv
     root = await mkdtemp(join(tmpdir(), 'wiki-repair-entry-'))
     processSpies = [
       vi.spyOn(process, 'cwd').mockReturnValue(root),
@@ -1462,8 +1462,7 @@ describe('the CLI entry builds its client through the core factory', () => {
       if (saved[name] === undefined) delete process.env[name]
       else process.env[name] = saved[name]
     }
-    if (originalEntry === undefined) process.argv.length = 1
-    else process.argv[1] = originalEntry
+    process.argv = originalArgv
     process.exitCode = undefined
     for (const spy of processSpies) spy.mockRestore()
     vi.doUnmock('@octokit/rest')

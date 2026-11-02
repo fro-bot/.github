@@ -27,8 +27,12 @@
     "./wiki-handoff-build": "./src/wiki-handoff-build.ts",
     "./wiki-handoff-build-cli": "./src/wiki-handoff-build-cli.ts",
     "./wiki-handoff-core": "./src/wiki-handoff-core.ts",
+    "./wiki-lint-issues": "./src/wiki-lint-issues.ts",
+    "./wiki-lint-issues-cli": "./src/wiki-lint-issues-cli.ts",
     "./wiki-query": "./src/wiki-query.ts",
-    "./wiki-query-cli": "./src/wiki-query-cli.ts"
+    "./wiki-query-cli": "./src/wiki-query-cli.ts",
+    "./wiki-repair": "./src/wiki-repair.ts",
+    "./wiki-repair-cli": "./src/wiki-repair-cli.ts"
   },
   "dependencies": {
     "@fro-bot/core": "workspace:*",

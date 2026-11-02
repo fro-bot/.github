@@ -583,6 +583,30 @@
     {
       "path": "scripts/rebuild-wiki-index.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/rebuild-wiki-index-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/rebuild-wiki-index.ts, pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-repair.ts",
+      "reason": "The wiki integrity repair: the two-field frontmatter allowlist and index regeneration (shrink-only, an unclearable page is reverted and counted), the verification and no-worse re-lint, the pre-commit private-presence gate, the conflict-aware single commit to `data`, the head re-read after a tip mismatch, and the result record whose file is written before the exit code is set. Pinned by packages/wiki-ops/src/wiki-repair.test.ts against the Git Data fake (each abort reason, each count, conflict retries, the privacy block, the tree loader and the exit-code rule) and by scripts/wiki-ops-flows.test.ts, which spawns the shim against a fake GitHub for dry-run, live and abort runs. The privacy gate it calls is in the mutation set, in check-wiki-private-presence.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-repair-cli.ts",
+      "reason": "The goke entrypoint of wiki-repair: one writing root command that takes no argument and returns the exit code the repair decides, because the runner would otherwise overwrite `process.exitCode`. Argv that matches nothing declared is a usage error and repairs nothing. Pinned by packages/wiki-ops/src/wiki-repair-cli.test.ts (the config, the usage errors, an abort that still prints the result, and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-repair.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-repair-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-repair.ts, pinned by packages/wiki-ops/src/wiki-repair.test.ts, which also runs the CLI module against a mocked Octokit constructor. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-lint-issues.ts",
+      "reason": "Syncs wiki-lint findings to GitHub issues: the report shape validation (a typed error, never a process exit), the fingerprint and failure-class markers, the pure lifecycle planner (open, update, reopen, close-on-clear, duplicate fingerprints, advisory findings ignored) and the sync with its per-call failure count, then the summary and `$GITHUB_OUTPUT` counters before the exit code. Pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts (the validator, the planner, the sync against a stubbed Octokit, the report-path and version errors, and the wiki-lint.yaml job wiring) and by scripts/wiki-ops-flows.test.ts, which spawns the shim against a fake GitHub and reads the five counters."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-lint-issues-cli.ts",
+      "reason": "The goke entrypoint of wiki-lint-issues: one writing root command with the optional report-path positional. A reported condition prints its `wiki-lint-issues:` line and exits 1, and anything unexpected prints the `unhandled error` line. A second positional, a flag and `--help` are usage errors and sync nothing. Pinned by packages/wiki-ops/src/wiki-lint-issues-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-lint-issues.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-lint-issues-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-lint-issues.ts, pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts, and scripts/octokit-entrypoints.test.ts pins that it builds its client from GITHUB_TOKEN with no timeout and no logger. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     }
   ]
 }
