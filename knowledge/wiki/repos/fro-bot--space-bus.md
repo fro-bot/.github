@@ -3,7 +3,7 @@ type: repo
 title: fro-bot/space-bus
 node_id: R_kgDOTMGFnQ
 created: 2026-07-03
-updated: 2026-10-18
+updated: 2026-11-01
 sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
@@ -26,6 +26,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-10-18
+  - url: https://github.com/fro-bot/space-bus
+    sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
+    accessed: 2026-11-01
 tags:
   - opencode
   - mcp
@@ -90,6 +93,46 @@ related:
 > **2026-07-18 survey (HEAD `8e20e01`) — the repo matured from MVP dogfood to shipped plugin.** Since the 2026-07-03 initial survey it has: (1) **converted to a published OpenCode plugin** on npm (`0.13.1`, 20 versions via changesets + npm OIDC trusted publishing — resolving the private/`0.0.0` → published contradiction flagged at 2026-07-06); (2) grown from **four tools to six** (`bus_wait` async-delegation, `bus_registry` multi-roster) — the "exactly four tools" MVP constraint is **superseded**; (3) added a **plugin-managed server lifecycle** + `space-bus` CLI + macOS **launchd** reboot-persistence; (4) exposed a **CI-enforced browser-safe library surface** (subpath exports for renderers like [[marcusrbrown--mothership]]); and (5) **grown a full Fro Bot workflow + CI/CodeQL/Scorecard/Renovate/Probot Settings** — resolving the "no automation" thread. Sections below preserve the 2026-07-03 MVP record and mark what changed.
 
 ## Overview
+
+### Bounded source recheck (2026-11-01)
+
+Public `main` remains at `20ab67c56a39f12774d7dcb659e65848767bc03e`,
+the same revision inspected on October 3 and October 18. The complete directory
+listing, root README, package manifest, and all seven workflows reconfirm the
+documented six-tool OpenCode bus, stdio MCP facade, managed-server CLI, macOS
+launchd service, and browser-safe versus Node-only library lanes.
+
+- **Package declarations remain unchanged:** `@fro.bot/space-bus` `0.15.0`,
+  MCP SDK `1.29.0`, Zod `^4.4.3`, OpenCode plugin dev pin `1.18.26`, and peer
+  range `>=1.17.13 <2`. The `./server` alias targets the plugin factory;
+  `./managed-server` targets lifecycle functions. README still omits the
+  manifest's `/registry` export and says “four tools” in its Library surface
+  prose despite listing six. The explicit development-watch entry lists still
+  omit `src/registry-entry.ts`, which exists in the tree. These remain dated
+  documentation/manifest discrepancies, not a newly demonstrated runtime fault.
+- **Fro Bot workflow is present:** SHA-pinned agent `v0.112.0`, daily midnight
+  UTC schedule, manual prompt input, and event-based review/triage. Its four-step
+  job still ends at the agent invocation with no explicit `output-mode` or
+  caller persistence step. This preserves the source-side delivery-gap finding;
+  workflow presence alone establishes neither successful runs nor delivered
+  repairs. No missing-workflow follow-up draft is warranted.
+- **CI and release retain separate evidence boundaries:** CI declares frozen
+  install, typecheck, Biome lint, production build, a Node import checking only
+  a function-valued default export, and Bun tests. It does not invoke the plugin
+  factory or the README's live-server `smoke` script. Release follows successful
+  main-branch CI or manual dispatch, with Changesets, Node 24, npm `11.18.0`,
+  and OIDC permission. Bun setup has no explicit runtime-version input;
+  reusable Renovate/settings callers remain at `bfra-me/.github` `v4.29.0`.
+
+No new contradiction to the October snapshot was found. Earlier registry,
+advisory, issue/PR, code-history, and workflow-activity observations remain
+historical: this bounded source recheck does not renew them or extend the
+measured publication drought. Related packaging boundaries: [[opencode-plugins]].
+
+Sources: [README](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/README.md),
+[manifest](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/package.json),
+[CI](https://github.com/fro-bot/space-bus/blob/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows/ci.yaml),
+and [workflow directory](https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e/.github/workflows).
 
 ### Bounded source recheck (2026-10-18)
 

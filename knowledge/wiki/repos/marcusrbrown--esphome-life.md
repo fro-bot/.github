@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/esphome.life
 created: 2026-04-18
-updated: 2026-10-14
+updated: 2026-10-30
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 32138381e60aff308ebba61b3702068fa72bd753
+    accessed: 2026-10-30
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 878b4225e448152dc63c8a41418812cb466c1fbf
     accessed: 2026-10-14
@@ -84,6 +87,49 @@ node_id: R_kgDOIZmGgg
 ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forked from the [esphome-project-template](https://github.com/esphome/esphome-project-template), it builds firmware via CI and publishes a GitHub Pages site with [ESP Web Tools](https://esphome.github.io/esp-web-tools/) for browser-based flashing.
 
 ## Overview
+
+### Current source observations (2026-10-30)
+
+The public `main` snapshot at `32138381e60aff308ebba61b3702068fa72bd753`
+retains 17 files and exactly three workflows: `ci.yaml`, `renovate.yaml`,
+and `update-repo-settings.yaml`. **No Fro Bot workflow is present**, including
+under an alternative filename. A follow-up draft PR for review/triage integration
+can be proposed separately.
+
+Both reusable-workflow callers now pin `bfra-me/.github` **v4.43.0**
+(`e6a1ab17bb68213940f63de91bd0450acdf9fff4`), superseding the October 14
+v4.38.0 observation as the current pin. The settings caller still targets
+**`renovate.yaml`** on push to `main`, daily `23 12 * * *`, and dispatch.
+The wrong-path finding in [[probot-settings]] persists; version maintenance
+has not repaired the caller's routing. Upstream workflow bodies and run
+outcomes were not inspected, so the older duplicate-run measurements remain
+historical rather than current counts.
+
+CI still builds only `olimex-bluetooth-proxy-1349f4.yaml`; the directory listing
+also contains `olimex-bluetooth-proxy-13451c.yaml`, outside its matrix.
+CI and the devcontainer manifest still pin **ESPHome 2025.12.7**, with build
+action **v7.4.0** and Pages deployment **v4.9.0**. The manifest-version defect
+also persists: `build-firmware` exports `esphome-version`, but the intervening
+`build` gate declares no outputs and `publish` reads
+`needs.build.outputs.esphome-version`. See [[esphome]] for why job ordering
+does not forward outputs. The generated manifest was not inspected.
+
+The Renovate dispatch form still exposes `log-level` (default `debug`) without
+forwarding it in the caller's `with:` block; only `print-config` is passed.
+`docs/readme.md` remains an upstream-template README referencing nonexistent
+`publish.yml` and `ci.yml` workflow paths instead of the actual `ci.yaml`.
+No package-manager manifest appears in the tree. Device YAML, static-site
+content, settings/Renovate configuration bodies, dashboards, issues, PRs,
+releases, and run history were not read. Prior approval-gate and CDN findings
+retain their earlier dates; this limited survey establishes no new root cause
+for the unchanged runtime pin and no contradiction of those dated findings.
+
+Sources: [tree](https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753),
+[CI workflow](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.github/workflows/ci.yaml),
+[Renovate caller](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.github/workflows/update-repo-settings.yaml),
+[devcontainer manifest](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/.devcontainer.json),
+[README](https://github.com/marcusrbrown/esphome.life/blob/32138381e60aff308ebba61b3702068fa72bd753/docs/readme.md).
 
 ### Current source observations (2026-10-14)
 
