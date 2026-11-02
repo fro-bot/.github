@@ -85,6 +85,10 @@ jobs:
       - name: 🧪 Run Tests
         run: bun run test
 
+  # The job name is a required status check context (.github/settings.yml). The package resolves to
+  # source in this repository, so there is no committed build to compare: the job builds the package,
+  # checks the committed gate-contract marker against the fresh build, packs the tarball and resolves
+  # every export in it under Node.
   check-wiki-write-core-dist:
     name: Check Wiki Write Core Dist
     permissions:
@@ -100,8 +104,8 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: ✅ Verify committed package build
-        run: bun run check:wiki-write-core-dist
+      - name: ✅ Build the package and verify its tarball
+        run: bun run check:wiki-write-core-package
 
   test-scripts-load:
     name: Test Scripts Load
@@ -125,11 +129,11 @@ jobs:
         # errors used to surface only on scheduled workflow runs. Importing each production
         # script here catches them at merge time instead.
         #
-        # The workspace packages (packages/*/src) export .ts source, so their modules load the
-        # same way. `find` replaces a `**` glob because default bash has no globstar and node
-        # would receive the literal pattern. @fro.bot/wiki-write-core is excluded: it ships
-        # compiled dist/, not source. `find` prints nothing when its pattern stops matching, so
-        # the loop fails when it finds no module while packages/core/src exists.
+        # The workspace packages (packages/*/src), @fro.bot/wiki-write-core included, export .ts
+        # source, so their modules load the same way. `find` replaces a `**` glob because default
+        # bash has no globstar and node would receive the literal pattern. `find` prints nothing
+        # when its pattern stops matching, so the loop fails when it finds no module while
+        # packages/core/src exists.
         #
         # The path reaches node as an argv element (process.argv[1]) and is never spliced into
         # the JavaScript source, so a file name with a quote in it cannot break or inject code.
@@ -144,7 +148,7 @@ jobs:
             echo "  ok   $f"
           done
 
-          package_files="$(find packages -path '*/src/*.ts' -not -name '*.test.ts' -not -path 'packages/wiki-write-core/*' | sort)"
+          package_files="$(find packages -path '*/src/*.ts' -not -name '*.test.ts' | sort)"
           if [ -z "$package_files" ] && [ -d packages/core/src ]; then
             echo 'FAIL: find matched no package module although packages/core/src exists' >&2
             exit 1

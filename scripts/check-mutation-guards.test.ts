@@ -1105,22 +1105,7 @@ describe('closure-based trigger set against the real config', () => {
     expect(realTriggerSet.files.has('packages/wiki-write-core/src/wiki-slug.ts')).toBe(true)
   })
 
-  // (b) A changed file under the compiled packages/wiki-write-core/dist/ directory must also
-  // proceed to run: several scripts/ mutate/testFiles entries (e.g.
-  // scripts/check-wiki-authority.ts) import the package by name
-  // (`@fro.bot/wiki-write-core/...`), which resolves against dist/ at run time — a stale or
-  // hand-edited compiled file there can change this run's outcome even with no .ts source change.
-  it('does NOT report not-applicable for a changed set of only a file under packages/wiki-write-core/dist/', async () => {
-    expect(realTriggerSet.directoryPrefixes).toContain('packages/wiki-write-core/dist/')
-    const result = await evaluateTriggerGate(
-      realConfig,
-      PULL_REQUEST_EVENT,
-      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/dist/private-leak.js']}),
-    )
-    expect(result).toBeUndefined()
-  })
-
-  // (c) A file genuinely outside the real closure, computed from the real config rather than
+  // (b) A file genuinely outside the real closure, computed from the real config rather than
   // hardcoded, and confirmed both to EXIST on disk and to be absent from the real trigger set
   // — so the premise ("this file really is unreachable from every mutate/testFiles entry") is
   // visible in the test itself, not asserted by fiat. `scripts/reconcile-repos.ts` is a large,
@@ -1183,7 +1168,7 @@ describe('closure-based trigger set against the real config', () => {
     expect(result?.verdict).toBe('not-applicable')
   })
 
-  // (d) Every not-mutated entry in mutation-guards.json that IS imported (directly or
+  // (c) Every not-mutated entry in mutation-guards.json that IS imported (directly or
   // transitively, per buildImportClosure) by a real mutate entry must be in the trigger set —
   // the table the review's discrimination case (a) generalizes to every such entry, not just
   // wiki-slug.ts.
@@ -1683,7 +1668,7 @@ const CORE_MANIFEST = JSON.stringify({
 })
 const WIKI_WRITE_CORE_MANIFEST = JSON.stringify({
   name: '@fro.bot/wiki-write-core',
-  exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
+  exports: {'.': './src/index.ts'},
 })
 
 describe('froBotPackageSourceFiles specifier scan', () => {
@@ -1847,10 +1832,9 @@ describe('import closure through @fro-bot/ package names', () => {
       ...overrides,
     })
 
-  it('adds the resolved package source file to the closure, without a dist directory trigger', () => {
+  it('adds the resolved package source file to the closure', () => {
     const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], fakeSourceReader(files))
     expect(closure.files.has('packages/core/src/guards.ts')).toBe(true)
-    expect(closure.hasWikiWriteCoreSubpathReference).toBe(false)
   })
 
   it('reports a change to the package file applicable when a mutate entry imports it only by name', async () => {
@@ -1914,13 +1898,12 @@ describe('import closure through @fro-bot/ package names', () => {
       expect(result).toBeUndefined()
     })
 
-    it('marks the dist directory a trigger when a reached file imports @fro.bot/wiki-write-core by name', () => {
+    it('adds the source file of a @fro.bot/wiki-write-core subpath a reached file imports by name', () => {
       const reader = fakeSourceReader({
         ...helperFiles,
         'scripts/check-wiki-authority.ts': `import {x} from '@fro.bot/wiki-write-core/schemas'\nexport const helper = x\n`,
       })
       const closure = buildImportClosure(['scripts/check-mutation-guards.ts'], reader)
-      expect(closure.hasWikiWriteCoreSubpathReference).toBe(true)
       expect(closure.files.has('packages/wiki-write-core/src/schemas.ts')).toBe(true)
     })
 

@@ -1000,9 +1000,8 @@ function defaultReadSource(absolutePath: string): string {
   return readFileSync(absolutePath, 'utf8')
 }
 
-/** The one internal package this repo builds, and the two directories a subpath import maps between. */
+/** The one internal package this repo builds, and the directory a subpath import resolves to. */
 const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
-const WIKI_WRITE_CORE_DIST_DIR = 'packages/wiki-write-core/dist'
 // How a module specifier is introduced: a `from '...'` clause (static import or re-export), a
 // bare side-effect `import '...'`, a dynamic `import('...')`, or a vitest module reference
 // (`vi.mock`, `vi.doMock`, `vi.importActual`, `vi.importMock`, with an optional type argument).
@@ -1322,16 +1321,6 @@ export function froBotPackageSourceFiles(
 
 export interface ImportClosure {
   readonly files: ReadonlySet<string>
-  /**
-   * True when any visited file references the `@fro.bot/wiki-write-core` package by name
-   * (any subpath, or the bare barrel) rather than only by relative path — see
-   * `wikiWriteCoreSubpathSourceFiles`. `buildTriggerSet` uses this to decide whether the
-   * compiled* `packages/wiki-write-core/dist/` directory also needs to be a trigger: a
-   * `scripts/` file importing the package resolves against `dist/` at runtime, so a change
-   * there (a stale build, a hand-edited compiled file) can change this run's outcome even
-   * though no `.ts` source file changed.
-   */
-  readonly hasWikiWriteCoreSubpathReference: boolean
 }
 
 /**
@@ -1355,7 +1344,6 @@ export function buildImportClosure(
   const visited = new Set<string>()
   const queue: string[] = [...entries]
   const scanned = new Set<string>()
-  let hasWikiWriteCoreSubpathReference = false
 
   while (queue.length > 0) {
     const current = queue.shift()
@@ -1377,7 +1365,6 @@ export function buildImportClosure(
       scanned.add(file)
 
       for (const srcFile of wikiWriteCoreSubpathSourceFiles(file, readSource)) {
-        hasWikiWriteCoreSubpathReference = true
         files.add(srcFile)
         if (!visited.has(srcFile)) queue.push(srcFile)
       }
@@ -1389,7 +1376,7 @@ export function buildImportClosure(
     }
   }
 
-  return {files, hasWikiWriteCoreSubpathReference}
+  return {files}
 }
 
 // ---------------------------------------------------------------------------
@@ -1446,17 +1433,6 @@ function listPackageManifests(): string[] {
 export interface TriggerSet {
   readonly files: ReadonlySet<string>
   /**
-   * Directory-prefix triggers: a changed file matches when its normalized path *starts with*
-   * one of these prefixes, not just on exact membership in `files`. Currently only ever
-   * `packages/wiki-write-core/dist/` (see `hasGlobEntries`'s sibling concern, `hasGlobEntries`
-   * below, for the analogous reasoning) — the compiled output of a package the trigger set's
-   * import closure references by name, per `ImportClosure.hasWikiWriteCoreSubpathReference`.
-   * Any file under it (an individual `dist/<x>.js`, its `.d.ts`, or a new file the build adds)
-   * matches, since this gate has no reliable way to map a `scripts/` file's package-by-name
-   * import to only the one compiled artifact it actually resolves to at run time.
-   */
-  readonly directoryPrefixes: readonly string[]
-  /**
    * Pattern triggers: a changed file matches when its normalized path matches one of these, whether
    * or not it is in `files`. Currently only the package-manifest pattern (see
    * `PACKAGE_MANIFEST_PATTERN`), which `files` also lists for the manifests that exist.
@@ -1508,21 +1484,18 @@ export function buildTriggerSet(config: StrykerConfigShape, readSource: SourceRe
   const closure = buildImportClosure(configEntries, readSource)
   const files = new Set([...baseFiles, ...closure.files])
   const closureSize = [...closure.files].filter(file => !baseFiles.has(file)).length
-  const directoryPrefixes = closure.hasWikiWriteCoreSubpathReference ? [`${WIKI_WRITE_CORE_DIST_DIR}/`] : []
-  return {files, directoryPrefixes, filePatterns: [PACKAGE_MANIFEST_PATTERN], hasGlobEntries, closureSize}
+  return {files, filePatterns: [PACKAGE_MANIFEST_PATTERN], hasGlobEntries, closureSize}
 }
 
 /**
  * Whether any changed file (normalized) is a member of the trigger set — an exact `files`
- * match, a match against one of `filePatterns`, or a prefix match against one of
- * `directoryPrefixes` (see `TriggerSet`'s docstring). All three live on the trigger set.
+ * match or a match against one of `filePatterns`. Both live on the trigger set.
  */
 export function changedFilesIntersectTriggerSet(changedFiles: readonly string[], triggerSet: TriggerSet): boolean {
   return changedFiles.some(file => {
     const normalized = normalizeMutatePath(file)
     if (triggerSet.files.has(normalized)) return true
-    if (triggerSet.filePatterns.some(pattern => pattern.test(normalized))) return true
-    return triggerSet.directoryPrefixes.some(prefix => normalized.startsWith(prefix))
+    return triggerSet.filePatterns.some(pattern => pattern.test(normalized))
   })
 }
 

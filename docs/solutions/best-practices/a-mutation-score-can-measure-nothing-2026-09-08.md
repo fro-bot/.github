@@ -12,7 +12,7 @@ applies_when:
   - a module reports 0 killed mutants and the instinct is to write more tests
   - a module's decision table, regex array, or allowlist is a top-level `const`
   - removing an entry from Stryker's `testFiles` while other modules remain in `mutate`
-  - a module's only tests import it through a package's `dist` output or published specifier
+  - a module's only tests import it through a package-name specifier or a package's compiled output
 tags:
   - mutation-testing
   - stryker
@@ -48,7 +48,7 @@ Before converting, confirm the move is semantics-preserving. It was here, but ea
 
 ### `mutate` and `testFiles` are independent levers
 
-A test that imports a module through its compiled `dist` output or its published package specifier exercises the built artifact. Stryker instruments the source tree, so that test contributes zero kills to the source module no matter how thoroughly it exercises the behavior.
+A test that imports a module through a package-name specifier, or through a package's compiled output, exercises the real tree, not the copy Stryker instruments: the sandbox links `node_modules` to the real tree, so the specifier resolves to the un-mutated file even when the package exports `.ts` source. That test contributes zero kills to the source module no matter how thoroughly it exercises the behavior.
 
 The consequence is that a module can sit in `mutate` with tests that read like coverage and produce no signal at all. It also makes `testFiles` edits quietly dangerous: removing one entry can orphan a module elsewhere in `mutate` whose only source-path exerciser lived in that file.
 
@@ -60,14 +60,14 @@ Scope `mutate` by materiality — does a mutant here threaten the guarantee the 
 
 Both mechanisms fail in the reassuring direction. A clean or improving score is read as evidence the guard is tested, when it can equally mean the guard was never instrumented. For modules that exist to enforce a privacy or authority boundary, that is the worst possible failure mode for a metric: it is loudest exactly when it is least informative.
 
-The second mechanism is worse than the first, because a static mutant reports 0 and draws attention, while a `dist`-imported test can leave a module reporting a plausible partial score assembled entirely from other tests.
+The second mechanism is worse than the first, because a static mutant reports 0 and draws attention, while a test that reaches the module only by package name can leave a module reporting a plausible partial score assembled entirely from other tests.
 
 ## When to Apply
 
 - A mutation baseline is 0, or implausibly low for a module with real tests
 - Any module-level `const` holding data the guard's decisions depend on
 - Editing `mutate` or `testFiles` in `stryker.config.json`
-- A package with a committed `dist/` whose tests could import either side
+- A workspace package whose tests could import either its source by relative path or its package name
 
 ## Examples
 
