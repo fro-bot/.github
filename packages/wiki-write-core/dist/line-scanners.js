@@ -12,6 +12,21 @@ function isLineTerminator(code) {
     return code === NEWLINE || code === CARRIAGE_RETURN || code === LINE_SEPARATOR || code === PARAGRAPH_SEPARATOR;
 }
 /**
+ * The offset just past the last character of `text` that is a whitespace character other than a line terminator
+ * and is followed by a line terminator or the end of the text, or -1 when there is none.
+ */
+function findLastBlankEnd(text) {
+    for (let at = text.length - 1; at >= 0; at -= 1) {
+        const code = text.charCodeAt(at);
+        if (isWhitespaceCode(code) &&
+            !isLineTerminator(code) &&
+            (at + 1 === text.length || isLineTerminator(text.charCodeAt(at + 1)))) {
+            return at + 1;
+        }
+    }
+    return -1;
+}
+/**
  * Finds the index entry lines `- [[slug]] — description` of an index document, left to right, as
  * `/^- \[\[([^\]|]+)\]\]\s*—\s*(?:\S.*|[\t\v\f \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/gmu`
  * does:
@@ -33,6 +48,8 @@ export function findIndexEntryLines(index) {
     const slugStop = buildStopTable(index, code => code === CLOSE_BRACKET || code === PIPE);
     const nonSpace = buildStopTable(index, code => !isWhitespaceCode(code));
     const lineEnd = buildStopTable(index, isLineTerminator);
+    let lastBlankEnd;
+    const trailingBlankEnd = () => (lastBlankEnd ??= findLastBlankEnd(index));
     const entryEndAt = (slugEnd) => {
         const dash = nonSpace[slugEnd + 2] ?? index.length;
         if (index.charCodeAt(dash) !== EM_DASH)
@@ -40,17 +57,10 @@ export function findIndexEntryLines(index) {
         const textStart = nonSpace[dash + 1] ?? index.length;
         if (textStart < index.length)
             return lineEnd[textStart + 1] ?? index.length;
-        // Only whitespace follows the dash: the last character before a line end, at the end of the text, must be
-        // a whitespace character that is not itself a line terminator.
-        for (let at = index.length - 1; at > dash; at -= 1) {
-            const code = index.charCodeAt(at);
-            if (isWhitespaceCode(code) &&
-                !isLineTerminator(code) &&
-                (at + 1 === index.length || isLineTerminator(index.charCodeAt(at + 1)))) {
-                return at + 1;
-            }
-        }
-        return -1;
+        // Only whitespace follows the dash: the entry ends at the last character of the text that is a whitespace
+        // character, not a line terminator, and the last in its line. That character does not depend on the dash,
+        // so it is found once, and an entry exists when it lies after the dash.
+        return trailingBlankEnd() > dash + 1 ? trailingBlankEnd() : -1;
     };
     for (let start = index.indexOf(opener); start !== -1;) {
         const atLineStart = start === 0 || isLineTerminator(index.charCodeAt(start - 1));

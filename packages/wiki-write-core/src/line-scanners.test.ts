@@ -72,6 +72,23 @@ describe('findIndexEntryLines', () => {
     ['an astral character in the description', '- [[a]] — 😀', [{slug: 'a', line: '- [[a]] — 😀'}]],
     ['a first entry that fails, then a good one', '- [[a]] x\n- [[b]] — y', [{slug: 'b', line: '- [[b]] — y'}]],
     ['an unclosed slug, then a good entry', '- [[a\n- [[b]] — y', [{slug: 'a\n- [[b', line: '- [[a\n- [[b]] — y'}]],
+    ['openers that share one slug end and a newline-only suffix', '- [[x\n- [[x\nx]] —\n\n', []],
+    [
+      'openers that share one slug end and a suffix ending in a space',
+      '- [[x\n- [[x\nx]] —\n \n ',
+      [{slug: 'x\n- [[x\nx', line: '- [[x\n- [[x\nx]] —\n \n '}],
+    ],
+    [
+      'openers that share one slug end and a suffix ending in a tab before a newline',
+      '- [[x\nx]] —\n\t\n',
+      [{slug: 'x\nx', line: '- [[x\nx]] —\n\t'}],
+    ],
+    ['openers that share one slug end and a last character that is a carriage return', '- [[x\n- [[x\nx]] —\n\r', []],
+    [
+      'openers that share one slug end and a last character that is a no-break space',
+      '- [[x\n- [[x\nx]] —\n\u00A0',
+      [{slug: 'x\n- [[x\nx', line: '- [[x\n- [[x\nx]] —\n\u00A0'}],
+    ],
     ['nothing', '', []],
   ] as const)('%s', (_name, index, expected) => {
     expect(oldIndexEntries(index)).toStrictEqual(expected)
@@ -227,6 +244,50 @@ describe('findIndexEntryLines against the regex it replaced', () => {
   })
 })
 
+describe('findIndexEntryLines against the regex on openers that share one suffix', () => {
+  // Several unclosed openers, one slug end, a dash, then a whitespace-only suffix: every opener reaches the same
+  // dash and the same suffix, so they all get the same answer.
+  const SUFFIX_UNITS = ['\n', ' ', '\t', '\r', '\r\n', '\u00A0', '\u2028', '\u2029', '\u3000', '\f', '\u000B', '']
+
+  it('finds the same entries in 60,000 seeded documents', () => {
+    let total = 0
+    let noEntries = 0
+    let withEntry = 0
+    let severalOpeners = 0
+    for (const seed of SEEDS) {
+      const next = seeded(seed ^ 0x77)
+      const pick = <T>(items: readonly T[]): T => items[Math.floor(next() * items.length)] as T
+      for (let sample = 0; sample < PER_SEED; sample += 1) {
+        const openers = 1 + Math.floor(next() * 6)
+        const prefix = next() < 0.3 ? pick(['', '# Index\n\n', 'x\n', 'x ']) : ''
+        const dash = pick(['—', ' —', '—  ', '\n—', '—\n', ' – '])
+        let suffix = ''
+        for (let units = Math.floor(next() * 7); units > 0; units -= 1) suffix += pick(SUFFIX_UNITS)
+        const tail = next() < 0.15 ? pick(['x', 'x\n', '\n- [[y]] — z']) : ''
+        const index = `${prefix}${'- [[x\n'.repeat(openers)}x]]${dash}${suffix}${tail}`
+
+        const expected = oldIndexEntries(index)
+        const actual = findIndexEntryLines(index)
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          expect.fail(
+            `seed ${seed} document #${sample} ${JSON.stringify(index)}: ${JSON.stringify(expected)} vs ${JSON.stringify(actual)}`,
+          )
+        }
+
+        total += 1
+        if (expected.length === 0) noEntries += 1
+        else withEntry += 1
+        if (openers > 1) severalOpeners += 1
+      }
+    }
+    expect(total).toBe(60_000)
+    // The shared-suffix shape is reached both ways: the openers fail to match, and the first of them matches.
+    expect(noEntries / total).toBeGreaterThan(0.2)
+    expect(withEntry / total).toBeGreaterThan(0.2)
+    expect(severalOpeners / total).toBeGreaterThan(0.7)
+  })
+})
+
 describe('parseRelatedFlow against the regex it replaced', () => {
   it('returns the same inside for 60,000 seeded lines', () => {
     let total = 0
@@ -284,6 +345,16 @@ describe('linear time on adversarial input', () => {
     () => {
       const index = '- [[a]] x\n'.repeat(100_000)
       expect(fastestOfThree(() => findIndexEntryLines(index))).toBeLessThan(BOUND_MS)
+    },
+    TIMEOUT_MS,
+  )
+
+  it(
+    'findIndexEntryLines: 20,000 unclosed openers that share one slug end and a newline-only suffix',
+    () => {
+      const index = `${'- [[x\n'.repeat(20_000)}x]] —${'\n'.repeat(20_000)}`
+      expect(fastestOfThree(() => findIndexEntryLines(index))).toBeLessThan(BOUND_MS)
+      expect(findIndexEntryLines(index)).toStrictEqual([])
     },
     TIMEOUT_MS,
   )
