@@ -439,6 +439,18 @@
     {
       "path": "scripts/status-truth-proposals.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/proposals-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/proposal-*.ts and proposals-cli.ts, pinned by packages/status-truth/src/status-truth-proposals.test.ts. The shim's surface, including a usage error on unmatched argv that writes nothing even on the live path and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
+    },
+    {
+      "path": "packages/status-truth/src/status-truth-prs.ts",
+      "reason": "The bounded correction-PR planner and executor, and its env-backed dependencies. The planner is pure: three independent arming keys, the path allowlist and forbidden prefixes, opaque branch and title digests, one PR per run, the terminal-fingerprint and rediscovery rules, and the public-output gate. The executor opens one branch, one file update and one pull request on `main`, or closes a stale one, and never merges, approves or force-pushes; STATUS_TRUTH_DRY_RUN=true makes no call. Pinned by packages/status-truth/src/status-truth-prs.test.ts (the planner tables, the executor against injected clients, `runPrsCore` and `runPrs` through injected dependencies, and the workflow shape) and, through the real entrypoint against a fake GitHub, by scripts/status-truth-flows.test.ts: the disarmed result, the dry run with zero mutating calls, the live open with its exact three writes and tokens, the early-failure results and the usage errors. Not in the mutate list: it was never mutated, and the run is gated by the arming keys, a manual dispatch input and a re-verification of the corrected file."
+    },
+    {
+      "path": "packages/status-truth/src/prs-cli.ts",
+      "reason": "The goke entrypoint of status-truth-prs: one writing root command that takes no argument, collects the exit code the step sets through its dependencies and returns it to the runner. Any argument is a usage error and does nothing. Pinned by packages/status-truth/src/prs-cli.test.ts (the config, a disarmed run, an armed early failure, the usage errors and `main`) and, through the shim, by scripts/status-truth-flows.test.ts. Not in the mutate list: it declares one command, so a mutation run would score only the config object."
+    },
+    {
+      "path": "scripts/status-truth-prs.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/prs-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/status-truth-prs.ts, pinned by packages/status-truth/src/status-truth-prs.test.ts. The shim's surface, including a usage error on unmatched argv that does nothing even when armed and live, and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
     }
   ]
 }

@@ -17,9 +17,11 @@
     "./proposal-outcomes": "./src/proposal-outcomes.ts",
     "./proposal-plan": "./src/proposal-plan.ts",
     "./proposals-cli": "./src/proposals-cli.ts",
+    "./prs-cli": "./src/prs-cli.ts",
     "./report-model": "./src/report-model.ts",
     "./rollout-tracker-snapshot": "./src/rollout-tracker-snapshot.ts",
-    "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts"
+    "./rollout-tracker-snapshot-cli": "./src/rollout-tracker-snapshot-cli.ts",
+    "./status-truth-prs": "./src/status-truth-prs.ts"
   },
   "dependencies": {
     "@fro-bot/core": "workspace:*",

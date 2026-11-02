@@ -9,6 +9,7 @@
  * step, or as a missing field with no error. The tests pin every field a workflow reads.
  */
 
+import {Buffer} from 'node:buffer'
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
@@ -195,7 +196,7 @@ describe('rollout-tracker-snapshot (bun; gateway-rollout-tracker.yaml and status
 })
 
 describe('the shims run nothing on import', () => {
-  it.each(['rollout-tracker-snapshot', 'status-truth-detect', 'status-truth-proposals'])(
+  it.each(['rollout-tracker-snapshot', 'status-truth-detect', 'status-truth-proposals', 'status-truth-prs'])(
     'importing scripts/%s.ts reads nothing, prints nothing and sets no exit code',
     async script => {
       const harness = join(root, `import-${script}.ts`)
@@ -788,6 +789,240 @@ describe('status-truth-proposals (bun, status-truth.yaml: no argv)', () => {
         cwd,
         argv,
         env: openEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', GITHUB_TOKEN: 'tok-write'}),
+      })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).not.toBe('')
+      expect(requests()).toEqual([])
+      expect(() => readFileSync(join(cwd, 'result.json'), 'utf8')).toThrow()
+    },
+  )
+})
+
+// ─── status-truth-prs ────────────────────────────────────────────────────────────────────────────
+
+const PLAN_B_LIVE = '---\nstatus: active\n---\n# Plan\n\n- [x] **Unit 1: thing**\n- [x] **Unit 2: thing**\n'
+const PLAN_B_CORRECTED = PLAN_B_LIVE.replace('status: active', 'status: complete')
+const FP_PLAN_B = '229e16b3ce7e4e6b'
+// sha256("status-truth-pr:" + fingerprint), first 16 hex digits: the opaque digest in the branch name and title.
+const BRANCH_B = 'status-truth/correction-07c2afe4f3322f80'
+
+const PLAN_REPORT = reportOf([
+  {
+    kind: 'plan-consistency',
+    path: 'docs/plans/b.md',
+    sourceRef: 'docs/plans/b.md',
+    verdict: 'drifted',
+    fingerprint: FP_PLAN_B,
+    claimedState: 'active',
+    liveState: 'checked-2-unchecked-0',
+    proposalEligible: true,
+    proposedCorrection: 'status: complete',
+  },
+])
+
+const b64 = (text: string) => Buffer.from(text).toString('base64')
+const NO_PRS = route('GET', `${CONTROL}/pulls`, {b: []})
+const NO_TERMINAL_ISSUES = route('GET', `${CONTROL}/issues`, {b: []})
+const OPEN_PATH: readonly FakeRoute[] = [
+  NO_PRS,
+  NO_TERMINAL_ISSUES,
+  route('GET', `${CONTROL}/contents/docs/plans/b.md`, {
+    b: {content: b64(PLAN_B_LIVE), encoding: 'base64', sha: 'base-sha'},
+  }),
+  route('GET', `${CONTROL}/git/ref/heads/main`, {b: {object: {sha: 'head-sha'}}}),
+  route('POST', `${CONTROL}/git/refs`, {s: 201, b: {ref: 'refs/heads/x'}}),
+  route('PUT', `${CONTROL}/contents/docs/plans/b.md`, {b: {commit: {sha: 'c1'}}}),
+  route('POST', `${CONTROL}/pulls`, {s: 201, b: {number: 700}}),
+]
+
+const ARMED_ENV = {STATUS_TRUTH_PRS_ENABLED: 'true', STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true'}
+const TOKENS = {GITHUB_TOKEN: 'tok-write', STATUS_TRUTH_FETCH_TOKEN: 'tok-fetch'}
+
+/** Every `jq` path of the "Write PR execution summary" step (`status-truth.yaml:448-468`). */
+const PLANNED_KEYS = [
+  'prActionsPlanned',
+  'downgradedToProposalOnly',
+  'pathForbidden',
+  'privacyGateBlocked',
+  'overflow',
+  'versionRejected',
+]
+const EXECUTED_KEYS = [
+  'opened',
+  'closed',
+  'downgraded',
+  'safetyRefused',
+  'failed',
+  'branchDeleteFailed',
+  'rediscovered',
+  'wouldOpen',
+  'wouldClose',
+  'wouldRediscover',
+]
+
+function prsEnv(cwd: string, extra: Readonly<Record<string, string | undefined>> = {}) {
+  return {
+    STATUS_TRUTH_REPORT_PATH: join(cwd, 'report.json'),
+    STATUS_TRUTH_PRS_RESULT_PATH: join(cwd, 'result.json'),
+    GITHUB_REPOSITORY: 'fro-bot/.github',
+    ...extra,
+  }
+}
+
+function prsCheckout(report: unknown = PLAN_REPORT, extra: Readonly<Record<string, string>> = {}) {
+  return checkout({'report.json': JSON.stringify(report), 'metadata/repos.yaml': REPOS_YAML, ...extra})
+}
+
+describe('status-truth-prs (bun, status-truth.yaml: no argv)', () => {
+  it('a disarmed run prints a counts-only result, writes the result file, reads nothing and exits 0', async () => {
+    const cwd = checkout({})
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', STATUS_TRUTH_PRS_DISPATCH_INPUT: 'false'}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(readFileSync(join(cwd, 'result.json'), 'utf8')).toBe(result.stdout)
+    const parsed = JSON.parse(result.stdout) as Record<string, Record<string, number> | boolean>
+    expect(parsed.armed).toBe(false)
+    expect(parsed.dryRun).toBe(true)
+    expect(Object.keys(parsed.plannedCounts as object).sort()).toEqual([...PLANNED_KEYS].sort())
+    expect(Object.keys(parsed.executedCounts as object).sort()).toEqual([...EXECUTED_KEYS].sort())
+    expect(requests()).toEqual([])
+  })
+
+  it('an armed dry run (the workflow default) plans the open, reports wouldOpen and makes no mutating call', async () => {
+    const cwd = prsCheckout()
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', ...ARMED_ENV, ...TOKENS}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    const parsed = JSON.parse(result.stdout) as Record<string, unknown>
+    expect(parsed).toMatchObject({
+      armed: true,
+      dryRun: true,
+      plannedCounts: {prActionsPlanned: 1},
+      executedCounts: {wouldOpen: 1, opened: 0, failed: 0},
+      terminalFingerprintsSkipped: 0,
+      terminalFingerprintDuplicates: 0,
+    })
+    expect(parsed.error).toBeUndefined()
+    expect(readFileSync(join(cwd, 'result.json'), 'utf8')).toBe(result.stdout)
+    // Dry run reads only: the open-PR list and the terminal proposals, with the read-only token, and no write.
+    expect(requests().every(line => line.startsWith('GET '))).toBe(true)
+    expect(requests().every(line => line.includes(' auth=tok-fetch'))).toBe(true)
+    expect(unhandledMutations()).toEqual([])
+  })
+
+  it('an armed dry run needs no token and makes no request', async () => {
+    const cwd = prsCheckout()
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', ...ARMED_ENV}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({armed: true, dryRun: true, executedCounts: {wouldOpen: 1}})
+    expect(requests()).toEqual([])
+  })
+
+  it('STATUS_TRUTH_DRY_RUN=false opens one correction PR: branch, file update and pull request, with the write token', async () => {
+    const cwd = prsCheckout()
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', ...ARMED_ENV, ...TOKENS}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      armed: true,
+      dryRun: false,
+      plannedCounts: {prActionsPlanned: 1},
+      executedCounts: {opened: 1, failed: 0},
+    })
+    const writes = mutating()
+    expect(writes).toHaveLength(3)
+    for (const line of writes) expect(line).toContain(' auth=tok-write')
+    expect(writes[0]).toContain(
+      `POST /repos/fro-bot/.github/git/refs auth=tok-write body={"ref":"refs/heads/${BRANCH_B}"`,
+    )
+    expect(writes[1]).toContain(`PUT /repos/fro-bot/.github/contents/docs/plans/b.md`)
+    expect(writes[1]).toContain(JSON.stringify(PLAN_B_CORRECTED).slice(1, -1))
+    expect(writes[2]).toContain(`"head":"${BRANCH_B}"`)
+    expect(writes[2]).toContain('"base":"main"')
+    expect(unhandledMutations()).toEqual([])
+  })
+
+  it('exits 1 with a closed-vocabulary error and a result when the report is missing, unreadable or invalid', async () => {
+    const cwd = prsCheckout(undefined, {'report.json': '{nope'})
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'true', ...ARMED_ENV, ...TOKENS}),
+    })
+
+    expect(result.exitCode).toBe(1)
+    expect(JSON.parse(result.stdout)).toMatchObject({armed: true, dryRun: true, error: 'report-failure'})
+    expect(readFileSync(join(cwd, 'result.json'), 'utf8')).toBe(result.stdout)
+    expect(requests()).toEqual([])
+  })
+
+  it('exits 1 with error=fetch-failure before any write when a live fetch fails', async () => {
+    const cwd = prsCheckout()
+    const result = await runFake(
+      'status-truth-prs',
+      [route('GET', `${CONTROL}/pulls`, {s: 500, b: {message: 'boom'}}), NO_TERMINAL_ISSUES],
+      {
+        cwd,
+        env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', ...ARMED_ENV, ...TOKENS}),
+      },
+    )
+
+    expect(result.exitCode).toBe(1)
+    expect(JSON.parse(result.stdout)).toMatchObject({armed: true, dryRun: false, error: 'fetch-failure'})
+    expect(mutating()).toEqual([])
+  })
+
+  // Only the exact string 'true' is a dry run in the script; the workflow supplies it by default
+  // (`github.event.inputs.dry_run || 'true'`). A disarmed run writes nothing whatever the value is.
+  it.each([[undefined], ['1'], ['TRUE']])(
+    'STATUS_TRUTH_DRY_RUN=%j is not a dry run once armed (the workflow default supplies it)',
+    async value => {
+      const cwd = prsCheckout()
+      const result = await runFake('status-truth-prs', OPEN_PATH, {
+        cwd,
+        env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: value, ...ARMED_ENV, ...TOKENS}),
+      })
+
+      expect(result.exitCode).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({armed: true, dryRun: false, executedCounts: {opened: 1}})
+    },
+  )
+
+  it('stays disarmed, and writes nothing, without both arming keys even on the live path', async () => {
+    const cwd = prsCheckout()
+    const result = await runFake('status-truth-prs', OPEN_PATH, {
+      cwd,
+      env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', STATUS_TRUTH_PRS_ENABLED: 'true', ...TOKENS}),
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({armed: false, dryRun: false})
+    expect(requests()).toEqual([])
+  })
+
+  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']]])(
+    'argv %j is a usage error: exit 1, nothing read, nothing written, even when armed and live',
+    async argv => {
+      const cwd = prsCheckout()
+      const result = await runFake('status-truth-prs', OPEN_PATH, {
+        cwd,
+        argv,
+        env: prsEnv(cwd, {STATUS_TRUTH_DRY_RUN: 'false', ...ARMED_ENV, ...TOKENS}),
       })
 
       expect(result.exitCode).toBe(1)
