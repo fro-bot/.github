@@ -19,7 +19,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {basename, dirname, join, relative, resolve, sep} from 'node:path'
+import {basename, dirname, join, parse, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
@@ -1876,6 +1876,109 @@ describe('stagePackage refuses a destructive stage target before touching anythi
     }
   })
 
+  it('refuses a filesystem root as a staging root, so RUNNER_TEMP=/ cannot admit every path', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await expectRefusal(
+        fixture,
+        join(fixture.outside, 'stage'),
+        /refusing to use .* as a staging root: it is a filesystem root/u,
+        {allowedStageRoots: [fixture.allowed, parse(fixture.root).root]},
+      )
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('canonicalizes a root before judging it: a symlink to the filesystem root is refused too', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const alias = join(fixture.root, 'rootlink')
+      await symlink(parse(fixture.root).root, alias)
+
+      await expectRefusal(fixture, join(fixture.outside, 'stage'), /it is a filesystem root/u, {
+        allowedStageRoots: [alias],
+      })
+      await expectRefusal(
+        fixture,
+        join(alias, relative(parse(fixture.root).root, fixture.outside), 'stage'),
+        /it is a filesystem root/u,
+        {
+          allowedStageRoots: [fixture.allowed, alias],
+        },
+      )
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a relative staging root rather than resolving it against the working directory', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await expectRefusal(
+        fixture,
+        join(fixture.outside, 'stage'),
+        /staging root "relative\/root" must be an absolute path/u,
+        {allowedStageRoots: [fixture.allowed, 'relative/root']},
+      )
+      await expectRefusal(fixture, join(fixture.outside, 'stage'), /staging root "" must be an absolute path/u, {
+        allowedStageRoots: [''],
+      })
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('refuses a stage that contains a hidden file or directory, which the artifact upload would drop', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      await mkdir(join(fixture.built, 'nested', '.cache'), {recursive: true})
+      await mkdir(join(fixture.built, '.hidden-dir'))
+      await writeFile(join(fixture.built, '.env'), 'secret\n')
+      await writeFile(join(fixture.built, '.hidden-dir', 'inside.js'), 'export {}\n')
+      await writeFile(join(fixture.built, 'nested', '.cache', 'deep.js'), 'export {}\n')
+      await writeFile(join(fixture.built, 'nested', '.npmignore'), '\n')
+      await writeFile(join(fixture.built, 'nested', 'visible.js'), 'export {}\n')
+      const target = join(fixture.allowed, 'stage')
+
+      const before = await snapshot(fixture.root)
+
+      const failure = await fixture.stage(target).then(
+        () => undefined,
+        (error: unknown) => error as Error,
+      )
+
+      const prefix = 'refusing to stage hidden files, which the artifact upload drops: '
+      expect(failure?.message.startsWith(prefix)).toBe(true)
+      expect(failure?.message.slice(prefix.length).split(', ').sort()).toEqual([
+        'dist/.env',
+        'dist/.hidden-dir',
+        'dist/nested/.cache',
+        'dist/nested/.npmignore',
+      ])
+      expect(await snapshot(fixture.root)).toEqual(before)
+      await expect(pathExists(target)).resolves.toBe(false)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('leaves the previous stage in place when the new one is refused for a hidden file', async () => {
+    const fixture = await makeStageTargetFixture()
+    try {
+      const target = join(fixture.allowed, 'stage')
+      await mkdir(target)
+      await writeFile(join(target, STAGE_MARKER), STAGE_MARKER_CONTENT)
+      await writeFile(join(target, 'previous.txt'), 'keep me\n')
+      await writeFile(join(fixture.built, '.env'), 'secret\n')
+
+      await expectRefusal(fixture, target, /hidden files/u)
+      await expect(readFile(join(target, 'previous.txt'), 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
   it('refuses everything when no root is allowed', async () => {
     const fixture = await makeStageTargetFixture()
     try {
@@ -2016,6 +2119,100 @@ describe('runBuild stage targets', () => {
 
       expect((await readdir(victim)).sort()).toEqual(['sentinel.txt', STAGE_MARKER])
       await expect(readFile(join(victim, 'sentinel.txt'), 'utf8')).resolves.toBe('keep me\n')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it.each([
+    [
+      'outside the allowed roots',
+      async (root: string) => ({stageRoot: join(root, 'victim'), allowedStageRoots: [join(root, 'allowed')]}),
+      /outside the allowed staging roots/u,
+    ],
+    [
+      'an in-bounds directory without a stage marker',
+      async (root: string) => ({stageRoot: join(root, 'victim'), allowedStageRoots: [root]}),
+      /no stage marker/u,
+    ],
+    [
+      'under a filesystem root that was allowed',
+      async (root: string) => ({stageRoot: join(root, 'victim'), allowedStageRoots: [parse(root).root]}),
+      /it is a filesystem root/u,
+    ],
+  ])(
+    'validates an explicit stage target %s before building, so a refused run touches nothing',
+    async (_label, options, message) => {
+      const fixture = await makeRunBuildFixture()
+      try {
+        await mkdir(join(fixture.root, 'allowed'))
+        await mkdir(join(fixture.root, 'victim'))
+        await writeFile(join(fixture.root, 'victim', 'sentinel.txt'), 'keep me\n')
+        await mkdir(fixture.sourceOpts.markerDirectory)
+        await writeFile(
+          join(fixture.sourceOpts.markerDirectory, 'gate-contract.json'),
+          '{"version":1,"sourceTreeHash":"committed"}\n',
+        )
+        const before = await snapshot(fixture.root)
+        const build = vi.fn(fixture.fakeBuild('a'))
+
+        await expect(
+          runBuild({
+            ...fixture.sourceOpts,
+            ...(await options(fixture.root)),
+            checkOnly: false,
+            runTypeScriptBuild: build,
+          }),
+        ).rejects.toThrow(message)
+
+        expect(build).not.toHaveBeenCalled()
+        expect(await snapshot(fixture.root)).toEqual(before)
+        await expect(readFile(join(fixture.sourceOpts.markerDirectory, 'gate-contract.json'), 'utf8')).resolves.toBe(
+          '{"version":1,"sourceTreeHash":"committed"}\n',
+        )
+      } finally {
+        await fixture.cleanup()
+      }
+    },
+  )
+
+  it('refuses RUNNER_TEMP=/ from the CLI options before building, with a test-owned target', async () => {
+    const fixture = await makeRunBuildFixture()
+    try {
+      const target = join(fixture.root, 'stage')
+      const before = await snapshot(fixture.root)
+      const build = vi.fn(fixture.fakeBuild('a'))
+
+      await expect(
+        runBuild({
+          ...fixture.sourceOpts,
+          ...cliOptions(['bun', 'build.ts', '--stage', target], {RUNNER_TEMP: '/'}),
+          runTypeScriptBuild: build,
+        }),
+      ).rejects.toThrow(/it is a filesystem root/u)
+
+      expect(build).not.toHaveBeenCalled()
+      expect(await snapshot(fixture.root)).toEqual(before)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('still builds and stages when the explicit target is valid, and checks it again before replacing', async () => {
+    const fixture = await makeRunBuildFixture()
+    try {
+      const target = join(fixture.root, 'stage')
+      const build = vi.fn(fixture.fakeBuild('a'))
+      await runBuild({...fixture.sourceOpts, checkOnly: false, stageRoot: target, runTypeScriptBuild: build})
+      expect(build).toHaveBeenCalledTimes(1)
+      await expect(pathExists(join(target, STAGE_MARKER))).resolves.toBe(true)
+
+      // A target that stopped carrying its marker between the early check and the replacement is refused
+      // by the check inside stagePackage.
+      await rm(join(target, STAGE_MARKER))
+      await expect(
+        runBuild({...fixture.sourceOpts, checkOnly: false, stageRoot: target, runTypeScriptBuild: build}),
+      ).rejects.toThrow(/no stage marker/u)
     } finally {
       await fixture.cleanup()
     }

@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import {copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {basename, dirname, isAbsolute, join, relative, resolve, sep} from 'node:path'
+import {basename, dirname, isAbsolute, join, parse, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
 
 import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
@@ -169,6 +169,12 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
   const verifyPackage = options.verifyPackage ?? verifyStagedPackage
   const write = options.write ?? writeToStdout
 
+  const allowedStageRoots = [...(options.allowedStageRoots ?? [tmpdir()])]
+  // A stage target the caller named is judged before anything is built or written: a refused run must
+  // not leave a build directory behind or rewrite the committed marker. `stagePackage` judges it again
+  // just before it replaces anything.
+  if (options.stageRoot !== undefined) await checkedStageTarget(options.stageRoot, allowedStageRoots)
+
   const temporaryRoot = await mkdtemp(join(dirname(currentMarkerDirectory), '.wiki-write-core-dist-'))
   let scratchStageRoot: string | undefined
 
@@ -207,7 +213,6 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
     }
 
     let stageRoot = options.stageRoot
-    const allowedStageRoots = [...(options.allowedStageRoots ?? [tmpdir()])]
     if (stageRoot === undefined && currentVerify) {
       scratchStageRoot = await mkdtemp(join(tmpdir(), 'wiki-write-core-stage-'))
       stageRoot = join(scratchStageRoot, 'package')
@@ -411,6 +416,20 @@ async function canonicalPath(path: string): Promise<string> {
   return join(await canonicalPath(dirname(absolute)), basename(absolute))
 }
 
+/**
+ * An allowed root, canonicalized, or a refusal. A relative root would resolve against the working
+ * directory, and a filesystem root (`RUNNER_TEMP=/`, or a symlink to `/`) would make every absolute
+ * path count as inside it, so neither can be a root.
+ */
+async function canonicalStageRoot(root: string): Promise<string> {
+  if (!isAbsolute(root)) throw new Error(`staging root "${root}" must be an absolute path`)
+  const canonical = await canonicalPath(root)
+  if (parse(canonical).root === canonical) {
+    throw new Error(`refusing to use ${root} as a staging root: it is a filesystem root`)
+  }
+  return canonical
+}
+
 function isStrictlyInside(root: string, path: string): boolean {
   const relation = relative(root, path)
   return relation !== '' && relation.split(sep)[0] !== '..' && !isAbsolute(relation)
@@ -433,8 +452,8 @@ async function hasStageMarker(directory: string): Promise<boolean> {
  * Nothing is created, moved or removed before this returns.
  */
 async function checkedStageTarget(stageRoot: string, allowedStageRoots: readonly string[]): Promise<string> {
+  const roots = await Promise.all(allowedStageRoots.map(async root => canonicalStageRoot(root)))
   const target = await canonicalPath(stageRoot)
-  const roots = await Promise.all(allowedStageRoots.map(async root => canonicalPath(root)))
   if (!roots.some(root => isStrictlyInside(root, target))) {
     throw new Error(`refusing to stage into ${stageRoot}: it is outside the allowed staging roots`)
   }
@@ -442,6 +461,20 @@ async function checkedStageTarget(stageRoot: string, allowedStageRoots: readonly
     throw new Error(`refusing to replace ${stageRoot}: it has no stage marker from a previous stage`)
   }
   return target
+}
+
+/**
+ * Every dot-file and dot-directory under `directory`, as `/`-separated paths in directory order. A dot-directory
+ * is reported as itself and not descended into.
+ */
+async function hiddenEntries(directory: string, prefix: string): Promise<string[]> {
+  const found: string[] = []
+  for (const entry of await readdir(directory, {withFileTypes: true})) {
+    const path = `${prefix}${entry.name}`
+    if (entry.name.startsWith('.')) found.push(path)
+    else if (entry.isDirectory()) found.push(...(await hiddenEntries(join(directory, entry.name), `${path}/`)))
+  }
+  return found
 }
 
 /**
@@ -466,6 +499,12 @@ export async function stagePackage(options: StagePackageOptions): Promise<void> 
     await copyFile(join(sourceDirectory, 'README.md'), join(stagingRoot, 'README.md'))
     await copyFile(join(sourceDirectory, 'LICENSE.md'), join(stagingRoot, 'LICENSE.md'))
     await writeFile(join(stagingRoot, stageMarkerName()), stageMarkerContent())
+    // The digest covers hidden files but `upload-artifact` leaves them out, so the publish job would see
+    // a different package from the one the build job verified.
+    const hidden = await hiddenEntries(stagingRoot, '')
+    if (hidden.length > 0) {
+      throw new Error(`refusing to stage hidden files, which the artifact upload drops: ${hidden.join(', ')}`)
+    }
     await replaceDirectory(stagingRoot, target)
   } finally {
     await rm(stagingRoot, {force: true, recursive: true})

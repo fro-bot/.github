@@ -711,6 +711,59 @@ describe('package digest binding between the build and publish jobs', () => {
   })
 })
 
+describe('build: digest step refuses a package that has hidden files', () => {
+  it.each([
+    ['a hidden file in dist', ['dist', '.env']],
+    ['a hidden file at the top level', ['.npmrc']],
+    ['a hidden directory', ['dist', '.cache', 'inside.js']],
+    ['a hidden file below a visible directory', ['dist', 'nested', '.keep']],
+  ])('fails loudly on %s, before writing a digest or reaching the upload', (_label, segments) => {
+    const dir = mkdtempSync(join(tmpdir(), 'release-build-hidden-'))
+    try {
+      const staged = join(dir, 'wiki-write-core-package')
+      mkdirSync(join(staged, 'dist', 'nested'), {recursive: true})
+      writeFileSync(join(staged, 'package.json'), '{}\n')
+      writeFileSync(join(staged, 'dist', 'index.js'), 'export {}\n')
+      mkdirSync(join(staged, ...segments.slice(0, -1)), {recursive: true})
+      writeFileSync(join(staged, ...segments), 'x\n')
+      const output = join(dir, 'github-output')
+      writeFileSync(output, '')
+
+      const result = runShell(runOf(stepById(buildJob, 'digest')), dir, {RUNNER_TEMP: dir, GITHUB_OUTPUT: output})
+
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain(
+        '::error::the staged package contains hidden files, which the artifact upload drops:',
+      )
+      expect(result.stdout).toContain(
+        `drops: ${segments.slice(0, segments.findIndex(segment => segment.startsWith('.')) + 1).join('/')}\n`,
+      )
+      expect(readFileSync(output, 'utf8')).toBe('')
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('does not mistake a dot inside a file name or the visible stage marker for a hidden entry', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'release-build-visible-'))
+    try {
+      const staged = join(dir, 'wiki-write-core-package')
+      mkdirSync(join(staged, 'dist'), {recursive: true})
+      writeFileSync(join(staged, 'dist', 'gate-contract.json'), '{}\n')
+      writeFileSync(join(staged, 'dist', 'a.b.d.ts'), 'export {}\n')
+      writeFileSync(join(staged, 'wiki-write-core-stage.marker'), 'm\n')
+      const output = join(dir, 'github-output')
+      writeFileSync(output, '')
+
+      expect(
+        runShell(runOf(stepById(buildJob, 'digest')), dir, {RUNNER_TEMP: dir, GITHUB_OUTPUT: output}),
+      ).toMatchObject({status: 0})
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+})
+
 describe('publish: install staged package (run under bash)', () => {
   const script = runOf(stepById(publishJob, 'package'))
   const markerName = 'wiki-write-core-stage.marker'

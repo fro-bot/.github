@@ -128,14 +128,23 @@ jobs:
       # The digest binds the artifact to this job: it is a job output, which `publish` reads from the runner
       # that built the package, not from the artifact store. It is sha256 over the listing `<sha256>  <path>` of
       # every regular file, in byte order of the path, so changing, adding or removing any file changes it.
-      # `publish` defines the same function and recomputes it over what it downloads.
+      # `publish` defines the same function and recomputes it over what it downloads. A package with a hidden
+      # entry is refused here, since the upload would drop it.
       - name: 🔏 Digest the staged package
         id: digest
         run: |
           package_digest() {
             (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
           }
-          echo "digest=$(package_digest "$RUNNER_TEMP/wiki-write-core-package")" >> "$GITHUB_OUTPUT"
+          staged="$RUNNER_TEMP/wiki-write-core-package"
+          # `upload-artifact` leaves dot-files and dot-directories out, but the digest covers every file, so a
+          # hidden one would make `publish` see a different package from the one verified here.
+          hidden=$(find "$staged" -mindepth 1 -name '.*' | sed "s|^$staged/||" | LC_ALL=C sort | paste -sd, -)
+          if [ -n "$hidden" ]; then
+            echo "::error::the staged package contains hidden files, which the artifact upload drops: $hidden"
+            exit 1
+          fi
+          echo "digest=$(package_digest "$staged")" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload staged package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
