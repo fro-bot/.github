@@ -13,6 +13,7 @@
  * long enough to read.
  */
 
+import {Buffer} from 'node:buffer'
 import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {assembleSolutionsContext} from './solutions-query.ts'
@@ -133,34 +134,54 @@ describe('the query token and whitespace patterns scale linearly', {timeout: SUI
   })
 })
 
-describe('the solution page patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
-  const solutions = (text: string) => {
-    assembleSolutionsContext({
-      files: {
-        'docs/solutions/best-practices/a.md': `---\ntitle: T\n---\n\n${text}`,
-        'docs/solutions/best-practices/b.md': text,
-      },
-      event: {eventName: 'x', title: 'monorepo', body: text},
-      privateNames: ['o/r'],
-      now: new Date('2026-11-01T00:00:00.000Z'),
-      maxBytes: 1024,
-    })
-  }
-  it.each([
-    {name: 'a frontmatter fence with no close', make: (size: number) => `---\n${repeat('a\n')(size)}`},
-    {
-      name: 'a frontmatter fence and repeated fence-like lines',
-      make: (size: number) => `---\n${repeat('\n---x')(size)}`,
-    },
-    {name: 'a whitespace run then x', make: (size: number) => `${' '.repeat(size)}x`},
-    {
-      name: 'a run of replacement characters then a',
-      make: (size: number) => `${'\uFFFD'.repeat(Math.ceil(size / 3))}a`,
-    },
-    {name: 'replacement characters alternating with a', make: repeat('\uFFFDa')},
-  ])('solutions-query: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, solutions)).toBeLessThan(CEILING)
+/**
+ * A solution document that the event selects (its title and body hold the event token) and whose body is
+ * `text`, with a byte budget just under the section, so `assembleSolutionsContext` truncates it: the
+ * truncation strips trailing replacement characters with a pattern, and that pattern only runs on the
+ * truncated section. The extra `x` tail keeps the cut inside the document, after `text`.
+ */
+const SOLUTION_PATH = 'docs/solutions/best-practices/a.md'
+const SOLUTION_TAIL = 'x'.repeat(2000)
+
+function solutionsContext(text: string, withFrontmatter = true) {
+  const body = `monorepo ${text}${SOLUTION_TAIL}`
+  const content = withFrontmatter ? `---\ntitle: monorepo\nproblem_type: build_error\n---\n\n${body}` : body
+  return assembleSolutionsContext({
+    files: {[SOLUTION_PATH]: content, 'docs/solutions/best-practices/b.md': text},
+    event: {eventName: 'x', title: 'monorepo', body: 'monorepo'},
+    privateNames: ['o/r'],
+    now: new Date('2026-11-01T00:00:00.000Z'),
+    // The section is about 130 bytes longer than the body; this budget cuts it inside the `x` tail.
+    maxBytes: Buffer.byteLength(body, 'utf8') + 60,
   })
+}
+
+const SOLUTION_CASES = [
+  {name: 'a frontmatter fence with no close', make: (size: number) => `---\n${repeat('a\n')(size)}`},
+  {name: 'a frontmatter fence and repeated fence-like lines', make: (size: number) => `---\n${repeat('\n---x')(size)}`},
+  {name: 'a whitespace run then x', make: (size: number) => `${' '.repeat(size)}x`},
+  {name: 'a run of replacement characters then a', make: (size: number) => `${'\uFFFD'.repeat(size)}a`},
+  {name: 'replacement characters alternating with a', make: repeat('\uFFFDa')},
+  {name: 'a replacement run of 50 then a, repeated', make: repeat(`${'\uFFFD'.repeat(50)}a`)},
+]
+
+describe('the solution page patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
+  it.each(SOLUTION_CASES)('solutions-query: $name', ({make}) => {
+    expect(growthRatio(make, SMALL, text => solutionsContext(text))).toBeLessThan(CEILING)
+  })
+
+  // The documents must reach the truncation, or the replacement-character cases measure nothing. A
+  // truncated section ends in the ellipsis, keeps the replacement run it was cut inside, and is selected.
+  it.each(SOLUTION_CASES.filter(({name}) => name.includes('replacement')))(
+    'solutions-query: $name reaches the truncation that strips trailing replacement characters',
+    ({make}) => {
+      const result = solutionsContext(make(SMALL))
+      expect(result.selectedPaths).toEqual([SOLUTION_PATH])
+      expect(result.excerpt.endsWith('\u2026')).toBe(true)
+      expect(result.excerpt.split('\uFFFD').length - 1).toBeGreaterThan(SMALL / 4)
+      expect(result.excerpt).not.toContain(SOLUTION_TAIL)
+    },
+  )
 })
 
 describe('git status parsing scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {

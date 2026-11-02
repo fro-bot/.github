@@ -302,7 +302,7 @@ function byteLength(value: string): number {
   return Buffer.byteLength(value, 'utf8')
 }
 
-function truncateToBytes(value: string, maxBytes: number): string {
+export function truncateToBytes(value: string, maxBytes: number): string {
   if (byteLength(value) <= maxBytes) {
     return value
   }
@@ -314,11 +314,13 @@ function truncateToBytes(value: string, maxBytes: number): string {
   }
 
   // Slice at the byte boundary then strip any trailing replacement chars that
-  // result from splitting a multi-byte codepoint mid-sequence.
-  const truncated = Buffer.from(value)
-    .subarray(0, contentBudget)
-    .toString('utf8')
-    .replaceAll(/\uFFFD+$/gu, '')
+  // result from splitting a multi-byte codepoint mid-sequence. A backward scan, not
+  // `/\uFFFD+$/`: that pattern retries from every replacement character of a long run that
+  // is followed by another character, which is quadratic.
+  const sliced = Buffer.from(value).subarray(0, contentBudget).toString('utf8')
+  let end = sliced.length
+  while (end > 0 && sliced.charCodeAt(end - 1) === 0xfffd) end -= 1
+  const truncated = sliced.slice(0, end)
 
   return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
