@@ -219,6 +219,48 @@ function generate(random: () => number, maxFragments: number): string {
 
 const asRows = (matches: Iterable<RegExpMatchArray>) => [...matches].map(match => [match.index, ...match])
 
+/** Lines that repeat well: valid claims, claims the matchers pass over, and runs that only look like claims. */
+const BLOCK_LINES = [
+  'docs/plans/a.md is active',
+  'plan docs/plans/a.md is active',
+  'plan  docs/plans/a/b-c.md is draft',
+  'a.md is active',
+  'a/b.md is draft',
+  'a//b.md is complete',
+  'docs/plans//a.md is active',
+  'docs/plans/a//b.md is active',
+  'docs/plans/a/.md is active',
+  'x docs/plans/a.md is active docs/plans/b.md is draft',
+  'xdocs/plans/a.md is active',
+  '-docs/plans/a.md is active',
+  'docs/plans/a.md is activated',
+  'owner/repo#12 is open',
+  'issue a/b#3 is closed',
+  'release a/b@v1 is draft',
+  'a/b#1.c/d#2',
+  'a.a.a.a/b#1',
+  'issue',
+  'release',
+  'plan',
+  '.md is active',
+  '\u017F/\u212A#1 is open',
+]
+
+/** A document of many lines, most of them a claim of one grammar or a near miss of it. */
+function claimDocument(random: () => number): string {
+  const lines = 20 + Math.floor(random() * 130)
+  const glue = pick(random, ['\n', '\n', ' ', '\r\n', '  ', '\n\n'])
+  const dominant = pick(random, BLOCK_LINES)
+  let text = ''
+  for (let index = 0; index < lines; index += 1) {
+    const line = corrupt(random, clause(random))
+    // Most lines run in a block of one shape, so runs of the same kind sit next to each other.
+    text += random() < 0.4 ? line : random() < 0.7 ? dominant : pick(random, BLOCK_LINES)
+    text += glue
+  }
+  return text
+}
+
 describe('the linear matchers equal the original patterns', () => {
   const SEEDS = 12
   const PER_SEED = 1_500
@@ -304,6 +346,34 @@ describe('the linear matchers equal the original patterns', () => {
       expect(asRows(linear(text)), JSON.stringify(text)).toEqual(
         asRows(text.matchAll(new RegExp(reference.source, reference.flags))),
       )
+    }
+  })
+
+  it.each(subjects)('%s: documents with many claims, index, groups and order', (_name, reference, linear) => {
+    let documents = 0
+    let withManyMatches = 0
+    for (let seed = 1; seed <= 8; seed += 1) {
+      const random = mulberry32(seed + 5_000)
+      for (let round = 0; round < 150; round += 1) {
+        const text = claimDocument(random)
+        const expected = asRows(text.matchAll(new RegExp(reference.source, reference.flags)))
+        expect(asRows(linear(text)), `seed ${seed} round ${round}: ${JSON.stringify(text)}`).toEqual(expected)
+        documents += 1
+        if (expected.length >= 10) withManyMatches += 1
+      }
+    }
+    // The generator has to reach the grammar in bulk, or the comparison above proves little.
+    expect(withManyMatches).toBeGreaterThan(documents / 40)
+  })
+
+  it.each(subjects)('%s: repeated blocks of one shape', (_name, reference, linear) => {
+    for (const block of BLOCK_LINES) {
+      for (const separator of ['', '\n', ' ', '\n\n']) {
+        const text = (block + separator).repeat(400)
+        expect(asRows(linear(text)), JSON.stringify(block + separator)).toEqual(
+          asRows(text.matchAll(new RegExp(reference.source, reference.flags))),
+        )
+      }
     }
   })
 

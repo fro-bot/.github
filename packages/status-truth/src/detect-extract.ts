@@ -189,20 +189,21 @@ const PLAN_STATUS_TAIL = /\.md\s+is\s+(?:active|complete|draft|cancelled|superse
  * run whose end is not followed by the tail, or that ends in `/`, has no match; and a path cannot contain
  * `//`, so no start at or before the last one in the run can match. The starts left are the `docs/plans/`
  * occurrences after it, and the `plan ` prefix is a run that ends in `plan` and is followed by whitespace.
+ *
+ * Both searches read the run and nothing past it, so the work over a document is the sum of its runs.
  */
 export function matchPlanStatusClaims(text: string, pattern: RegExp): RegExpExecArray[] {
+  const occurrences = new RegExp(PLAN_PATH_PREFIX.source, PLAN_PATH_PREFIX.flags)
   return scanRuns(text, pattern, PLAN_PATH_RUN, function* (runStart, runEnd) {
     const prefixStart = runEnd - PLAN_WORD_LENGTH
     if (prefixStart >= runStart) yield prefixStart
     PLAN_STATUS_TAIL.lastIndex = runEnd
     if (!PLAN_STATUS_TAIL.test(text) || text.charAt(runEnd - 1) === '/') return
-    const doubleSlash = text.lastIndexOf('//', runEnd - 2)
-    const earliest = doubleSlash >= runStart ? doubleSlash + 2 : runStart
-    const occurrences = new RegExp(PLAN_PATH_PREFIX.source, PLAN_PATH_PREFIX.flags)
-    occurrences.lastIndex = earliest
-    for (let occurrence = occurrences.exec(text); occurrence !== null; occurrence = occurrences.exec(text)) {
-      if (occurrence.index >= runEnd) return
-      yield occurrence.index
+    const run = text.slice(runStart, runEnd)
+    const doubleSlash = run.lastIndexOf('//')
+    occurrences.lastIndex = doubleSlash === -1 ? 0 : doubleSlash + 2
+    for (let occurrence = occurrences.exec(run); occurrence !== null; occurrence = occurrences.exec(run)) {
+      yield runStart + occurrence.index
     }
   })
 }
