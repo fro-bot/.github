@@ -2,8 +2,9 @@
  * Scaling guards for every regex that GitHub-controlled text reaches through an exported function.
  *
  * Each case builds an input that made a pattern, or a matcher that replaces one, quadratic and asserts
- * that doubling it does not quadruple the time. A quadratic operation costs about 4x per doubling and
- * a linear one about 2x, so the ceiling sits between them with room on both sides.
+ * that quadrupling it does not multiply the time by sixteen. A quadratic operation costs about 16x per
+ * quadrupling and a linear one about 4x, so the ceiling of 8x leaves a factor of two on both sides; a
+ * single doubling (2x against 4x) left too little room for allocation and collection noise on CI.
  *
  * The time at each size is the best of three timings, taken adjacent in time. Contention only adds
  * time, so the best run is the one least disturbed, and the ratio of two best runs holds under a loaded
@@ -20,7 +21,8 @@ import {extractPreviousMarker} from './rollout-tracker-snapshot.ts'
 const BEST_OF = 3
 const READABLE_MILLISECONDS = 25
 const MAXIMUM_REPETITIONS = 1024
-const CEILING = 3
+const GROWTH = 4
+const CEILING = 8
 // A quadratic operation on the largest input here takes a few seconds, three times at each size.
 const SUITE_TIMEOUT_MILLISECONDS = 120_000
 
@@ -43,10 +45,10 @@ function repetitionsToRead(operation: () => void): number {
   return repetitions
 }
 
-/** Time at twice the size over time at the size, each the best of three. */
-function doublingRatio(make: (size: number) => string, size: number, run: (input: string) => void): number {
+/** Time at four times the size over time at the size, each the best of three. */
+function growthRatio(make: (size: number) => string, size: number, run: (input: string) => void): number {
   const small = make(size)
-  const large = make(size * 2)
+  const large = make(size * GROWTH)
   const runSmall = () => {
     run(small)
   }
@@ -130,7 +132,7 @@ const CLAIM_CASES: readonly ScalingCase[] = [
 
 describe('extractStatusTruthClaimsFromText scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
   it.each(CLAIM_CASES)('$name', ({make, size}) => {
-    expect(doublingRatio(make, size, claims)).toBeLessThan(CEILING)
+    expect(growthRatio(make, size, claims)).toBeLessThan(CEILING)
   })
 })
 
@@ -146,6 +148,6 @@ describe('extractPreviousMarker scales linearly', {timeout: SUITE_TIMEOUT_MILLIS
       make: (size: number) => `<!-- gateway-rollout-tracker:${'x'.repeat(size)}`,
     },
   ])('$name', ({make}) => {
-    expect(doublingRatio(make, SMALL, input => extractPreviousMarker(input))).toBeLessThan(CEILING)
+    expect(growthRatio(make, SMALL, input => extractPreviousMarker(input))).toBeLessThan(CEILING)
   })
 })
