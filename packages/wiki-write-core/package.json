@@ -14,62 +14,20 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./wiki-lint": {
-      "types": "./dist/wiki-lint.d.ts",
-      "import": "./dist/wiki-lint.js"
-    },
-    "./wiki-ingest": {
-      "types": "./dist/wiki-ingest.d.ts",
-      "import": "./dist/wiki-ingest.js"
-    },
-    "./private-leak": {
-      "types": "./dist/private-leak.d.ts",
-      "import": "./dist/private-leak.js"
-    },
-    "./private-leak-adapter": {
-      "types": "./dist/private-leak-adapter.d.ts",
-      "import": "./dist/private-leak-adapter.js"
-    },
-    "./schemas": {
-      "types": "./dist/schemas.d.ts",
-      "import": "./dist/schemas.js"
-    },
-    "./wiki-slug": {
-      "types": "./dist/wiki-slug.d.ts",
-      "import": "./dist/wiki-slug.js"
-    },
-    "./markdown-links": {
-      "types": "./dist/markdown-links.d.ts",
-      "import": "./dist/markdown-links.js"
-    },
-    "./wiki-utils": {
-      "types": "./dist/wiki-utils.d.ts",
-      "import": "./dist/wiki-utils.js"
-    },
-    "./data-branch-bootstrap": {
-      "types": "./dist/data-branch-bootstrap.d.ts",
-      "import": "./dist/data-branch-bootstrap.js"
-    },
-    "./rendering-policy": {
-      "types": "./dist/rendering-policy.d.ts",
-      "import": "./dist/rendering-policy.js"
-    },
-    "./frontmatter": {
-      "types": "./dist/frontmatter.d.ts",
-      "import": "./dist/frontmatter.js"
-    },
-    "./corrections": {
-      "types": "./dist/corrections.d.ts",
-      "import": "./dist/corrections.js"
-    },
-    "./corrections-survival": {
-      "types": "./dist/corrections-survival.d.ts",
-      "import": "./dist/corrections-survival.js"
-    },
+    ".": "./src/index.ts",
+    "./wiki-lint": "./src/wiki-lint.ts",
+    "./wiki-ingest": "./src/wiki-ingest.ts",
+    "./private-leak": "./src/private-leak.ts",
+    "./private-leak-adapter": "./src/private-leak-adapter.ts",
+    "./schemas": "./src/schemas.ts",
+    "./wiki-slug": "./src/wiki-slug.ts",
+    "./markdown-links": "./src/markdown-links.ts",
+    "./wiki-utils": "./src/wiki-utils.ts",
+    "./data-branch-bootstrap": "./src/data-branch-bootstrap.ts",
+    "./rendering-policy": "./src/rendering-policy.ts",
+    "./frontmatter": "./src/frontmatter.ts",
+    "./corrections": "./src/corrections.ts",
+    "./corrections-survival": "./src/corrections-survival.ts",
     "./package.json": "./package.json"
   },
   "files": [

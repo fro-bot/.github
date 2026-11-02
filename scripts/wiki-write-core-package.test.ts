@@ -1,13 +1,17 @@
 /**
  * Contract tests for the publishable shape of packages/wiki-write-core: manifest fields, the
- * LICENSE copy npm bundles, the exact tarball file list, and the Renovate automerge rule that
- * lets consumers take its minor and patch releases.
+ * LICENSE copy npm bundles, the tarball a real build and `npm pack` produce, and the Renovate
+ * automerge rule that lets consumers take its minor and patch releases.
  */
 
-import {execFileSync} from 'node:child_process'
 import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
-import {describe, expect, it} from 'vitest'
+import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
+import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+
+import {runBuild} from './build-wiki-write-core.ts'
+import {verifyStagedPackage} from './verify-wiki-write-core-package.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const packageDirectory = resolve(repositoryRoot, 'packages/wiki-write-core')
@@ -42,7 +46,15 @@ const EXPECTED_SUBPATHS = [
   'corrections-survival',
 ]
 
+// The repository resolves every subpath to its TypeScript source.
 const EXPECTED_EXPORTS: Record<string, unknown> = {
+  '.': './src/index.ts',
+  ...Object.fromEntries(EXPECTED_SUBPATHS.map(subpath => [`./${subpath}`, `./src/${subpath}.ts`])),
+  './package.json': './package.json',
+}
+
+// The published tarball resolves every subpath to compiled JavaScript with its declaration file.
+const EXPECTED_PUBLISHED_EXPORTS: Record<string, unknown> = {
   '.': {types: './dist/index.d.ts', import: './dist/index.js'},
   ...Object.fromEntries(
     EXPECTED_SUBPATHS.map(subpath => [
@@ -91,7 +103,7 @@ describe('@fro.bot/wiki-write-core manifest', () => {
     expect(dependencies.yaml).toBe('^2.8.3')
   })
 
-  it('keeps the export map and the files allowlist unchanged', () => {
+  it('resolves every subpath to source in the repository and keeps the published files allowlist', () => {
     expect(manifest.exports).toEqual(EXPECTED_EXPORTS)
     expect(manifest.files).toEqual(['README.md', 'dist', 'package.json'])
   })
@@ -105,44 +117,92 @@ describe('@fro.bot/wiki-write-core LICENSE', () => {
   })
 })
 
-function packedFiles(): string[] {
-  const output = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
-    cwd: packageDirectory,
-    encoding: 'utf8',
-  })
-  const parsed: unknown = JSON.parse(output)
-  // npm <=11 prints an array of pack results; npm 12 prints an object keyed by package name.
-  const result: unknown = Array.isArray(parsed) ? parsed[0] : isRecord(parsed) ? Object.values(parsed)[0] : undefined
-  if (!isRecord(result) || !Array.isArray(result.files)) {
-    throw new Error('unexpected npm pack --json output')
-  }
-  return result.files.map((file: unknown) => {
-    if (!isRecord(file) || typeof file.path !== 'string') throw new Error('unexpected npm pack file entry')
-    return file.path
-  })
-}
-
 describe('@fro.bot/wiki-write-core tarball', () => {
-  it('lists the license, readme, manifest and every dist file reachable from exports, and nothing from src', () => {
-    const files = packedFiles()
+  let workRoot = ''
+  let stageRoot = ''
 
-    expect(files).toContain('LICENSE.md')
-    expect(files).toContain('README.md')
-    expect(files).toContain('package.json')
+  // One real build, pack and unpack: the build writes nothing into the repository tree because
+  // `checkOnly` verifies the committed marker instead of rewriting it.
+  beforeAll(async () => {
+    workRoot = await mkdtemp(join(tmpdir(), 'wiki-write-core-package-test-'))
+    stageRoot = join(workRoot, 'package')
+    await runBuild({checkOnly: true, stageRoot, verify: false, write: () => {}})
+  }, 120_000)
 
-    const exportTargets = Object.values(EXPECTED_EXPORTS).flatMap(value =>
-      isRecord(value) ? Object.values(value) : [],
-    )
-    expect(exportTargets.length).toBeGreaterThan(0)
-    for (const target of exportTargets) {
-      expect(files, String(target)).toContain(String(target).replace(/^\.\//u, ''))
-    }
-
-    expect(files.filter(file => file.startsWith('src/'))).toEqual([])
-    expect(
-      files.every(file => ['LICENSE.md', 'README.md', 'package.json'].includes(file) || file.startsWith('dist/')),
-    ).toBe(true)
+  afterAll(async () => {
+    await rm(workRoot, {force: true, recursive: true})
   })
+
+  it('carries the manifest with exports rewritten to dist, and every other manifest field unchanged', async () => {
+    const staged = readJson(join(stageRoot, 'package.json'))
+    expect(staged.exports).toEqual(EXPECTED_PUBLISHED_EXPORTS)
+    expect(staged.files).toEqual(['README.md', 'dist', 'package.json'])
+    const withoutExports = (value: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'exports'))
+    expect(withoutExports(staged)).toEqual(withoutExports(manifest))
+    expect(Object.keys(staged)).toEqual(Object.keys(manifest))
+  })
+
+  it('packs, unpacks and resolves, imports and type-checks every exports subpath under Node', async () => {
+    const verification = await verifyStagedPackage(stageRoot)
+
+    expect(verification.subpaths).toEqual([
+      '@fro.bot/wiki-write-core',
+      ...EXPECTED_SUBPATHS.map(subpath => `@fro.bot/wiki-write-core/${subpath}`),
+      '@fro.bot/wiki-write-core/package.json',
+    ])
+    expect(verification.files).toContain('LICENSE.md')
+    expect(verification.files).toContain('README.md')
+    expect(verification.files).toContain('package.json')
+    expect(verification.files.filter(file => file.startsWith('src/'))).toEqual([])
+    for (const target of Object.values(EXPECTED_PUBLISHED_EXPORTS).flatMap(value =>
+      isRecord(value) ? Object.values(value) : [],
+    )) {
+      expect(verification.files, String(target)).toContain(String(target).replace(/^\.\//u, ''))
+    }
+    expect(verification.files).toContain('dist/gate-contract.json')
+    expect(verification.sourceTreeHash).toMatch(/^[0-9a-f]{64}$/u)
+  }, 120_000)
+
+  it('embeds the same source-tree hash in the exported constant and the committed marker', async () => {
+    const committed = readJson(resolve(packageDirectory, 'dist', 'gate-contract.json'))
+    const verification = await verifyStagedPackage(stageRoot)
+    expect(committed.sourceTreeHash).toBe(verification.sourceTreeHash)
+  }, 120_000)
+
+  it('refuses a tarball that ships a file outside dist/', async () => {
+    const broken = join(workRoot, 'broken-extra-file')
+    await cp(stageRoot, broken, {recursive: true})
+    await cp(join(packageDirectory, 'src', 'index.ts'), join(broken, 'src', 'index.ts'))
+    const stagedManifest = readJson(join(broken, 'package.json'))
+    await writeFile(
+      join(broken, 'package.json'),
+      JSON.stringify({...stagedManifest, files: ['README.md', 'dist', 'package.json', 'src']}),
+    )
+
+    await expect(verifyStagedPackage(broken)).rejects.toThrow('tarball contains files outside dist/: src/index.ts')
+  }, 120_000)
+
+  it('refuses a tarball whose export targets a file that was not packed', async () => {
+    const broken = join(workRoot, 'broken-missing-target')
+    await cp(stageRoot, broken, {recursive: true})
+    await rm(join(broken, 'dist', 'wiki-slug.d.ts'))
+
+    await expect(verifyStagedPackage(broken)).rejects.toThrow(
+      'tarball export ./wiki-slug targets ./dist/wiki-slug.d.ts, which is not a packed dist file',
+    )
+  }, 120_000)
+
+  it('refuses a tarball whose declaration file imports something that does not exist', async () => {
+    const broken = join(workRoot, 'broken-declaration')
+    await cp(stageRoot, broken, {recursive: true})
+    const declaration = join(broken, 'dist', 'wiki-slug.d.ts')
+    await writeFile(declaration, `import type {Missing} from './not-packed.js'\n${await readFile(declaration, 'utf8')}`)
+
+    await expect(verifyStagedPackage(broken)).rejects.toThrow(
+      /tarball declarations do not type-check:[\s\S]*not-packed\.js/u,
+    )
+  }, 120_000)
 })
 
 // Renovate's glob semantics for the two shapes this preset uses: an exact name, or `scope/**`.

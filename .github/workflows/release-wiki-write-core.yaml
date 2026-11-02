@@ -3,11 +3,13 @@
 # Three jobs, split by what they may hold:
 #   decide  (contents: read)  runs repository code: picks the commits that touch the package and computes
 #                             the release type, version and notes. Holds no credential.
-#   build   (contents: read)  proves the committed packages/wiki-write-core/dist equals a fresh build.
+#   build   (contents: read)  builds the package, checks the committed gate-contract marker, proves the packed
+#                             tarball resolves every export, and uploads the staged package: the built dist
+#                             and a manifest whose exports point at it.
 #   publish (contents: write, id-token: write, environment: release) runs NO repository code: it validates
-#                             decide's outputs against fixed patterns, writes a pure-data semantic-release
-#                             config from the template below, and publishes the committed dist from its own
-#                             checkout.
+#                             decide's outputs against fixed patterns, checks and installs the staged package
+#                             as data, writes a pure-data semantic-release config from the template below,
+#                             and publishes from its own checkout.
 #
 # The npm trusted publisher is bound to this workflow's filename. Rename it only together with that binding.
 name: Release Wiki Write Core
@@ -96,8 +98,10 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Build job: credential-free. Proves the committed dist is what a fresh build produces; nothing it
-  # builds is published.
+  # Build job: credential-free. The repository resolves the package to TypeScript source, so the publishable
+  # package is built here: dist/ from tsc and a package.json whose exports point at it. The job proves the
+  # tarball `npm pack` produces resolves, imports and type-checks every export, then hands the staged
+  # package to `publish` as an artifact. The committed manifest is never rewritten.
   # ---------------------------------------------------------------------------
   build:
     name: Verify package build
@@ -116,12 +120,21 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: ✅ Verify committed package build
-        run: bun run check:wiki-write-core-dist
+      - name: ✅ Build the package and verify its tarball
+        run: bun scripts/build-wiki-write-core.ts --check --verify --stage "$RUNNER_TEMP/wiki-write-core-package"
+
+      - name: 📤 Upload staged package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wiki-write-core-package
+          path: ${{ runner.temp }}/wiki-write-core-package
+          if-no-files-found: error
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # Publish job: the only job with write scopes and the release environment. It runs no repository script and
-  # executes no command taken from another job's output.
+  # executes no command taken from another job's output. The staged package it publishes is data: a manifest
+  # and compiled files, checked below before they replace the checkout's manifest and dist.
   # ---------------------------------------------------------------------------
   publish:
     name: Publish package
@@ -219,6 +232,49 @@ jobs:
         with:
           name: release-notes
           path: ${{ runner.temp }}/release-notes
+
+      - name: 📥 Download staged package
+        id: package-download
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wiki-write-core-package
+          path: ${{ runner.temp }}/wiki-write-core-package
+
+      # The build job's output is untrusted until checked: the artifact must hold exactly the package files, no
+      # symlinks, and a manifest that differs from the checkout's only in `exports`, every one pointing at a file
+      # in dist. Only the manifest and dist replace the checkout's.
+      - name: 🛡 Install staged package
+        id: package
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          staged="$RUNNER_TEMP/wiki-write-core-package"
+          target=packages/wiki-write-core
+
+          [ "$(find "$staged" -mindepth 1 -maxdepth 1 | sed "s|^$staged/||" | sort | tr '\n' ' ')" = "LICENSE.md README.md dist package.json " ] \
+            || fail "the staged package must hold exactly LICENSE.md, README.md, dist and package.json"
+          [ -z "$(find "$staged" -type l)" ] || fail "the staged package must contain no symlink"
+          [ -z "$(find "$staged" -mindepth 1 ! -type f ! -type d)" ] || fail "the staged package must contain only files and directories"
+
+          # The staged manifest is the checkout's with `exports` rewritten and nothing else changed, and each
+          # rewritten export points at a file in dist.
+          jq -e --slurpfile committed "$target/package.json" '
+            del(.exports) == ($committed[0] | del(.exports))
+            and .name == "@fro.bot/wiki-write-core"
+            and (.exports | to_entries | length > 0)
+            and (.exports | to_entries | all(
+              .value == "./package.json"
+              or (.value | type == "object" and (.types | startswith("./dist/")) and (.import | startswith("./dist/")))
+            ))
+          ' "$staged/package.json" > /dev/null || fail "the staged package manifest is not the checkout manifest with rewritten exports"
+
+          # Every export target must exist in the staged dist.
+          while IFS= read -r file; do
+            [ -f "$staged/${file#./}" ] || fail "the staged package is missing $file"
+          done < <(jq -r '.exports[] | select(type == "object") | .types, .import' "$staged/package.json")
+
+          rm -rf "$target/dist"
+          cp -R "$staged/dist" "$target/dist"
+          cp "$staged/package.json" "$target/package.json"
 
       # The package's own .releaserc.yaml is deleted so the config below is the only one semantic-release can
       # find. It is pure data: the notes file is only ever `cat`, and the version assertion compares strings.

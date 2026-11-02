@@ -15,7 +15,11 @@ pnpm add @fro.bot/wiki-write-core
 - Node `>=24`.
 - **ESM-only.** The exports declare `import` and `types` conditions, with no `require` condition and no CommonJS build. CommonJS consumers fail at package resolution by design.
 
-The package ships unbundled ESM JavaScript with declaration files from the committed `dist/` directory. No install-time build step is required. CI rebuilds `dist/` in a temporary directory and fails when the committed output differs from `src/`.
+The published package ships unbundled ESM JavaScript with declaration files in `dist/`. No install-time build step is required.
+
+In the repository the package resolves to its TypeScript source: `exports` maps every subpath to `./src/<name>.ts`, and the only file committed under `dist/` is `gate-contract.json`. The release build compiles `dist/` and stages a manifest that differs from the committed one in `exports` alone, pointing each subpath at `./dist/<name>.js` with `./dist/<name>.d.ts` as its types. `npm pack` and `npm publish` run from that staged directory, so the committed manifest is never rewritten.
+
+`bun run check:wiki-write-core-package` is the local and CI check: it builds the package, fails when the committed `dist/gate-contract.json` differs from the fresh build, packs the staged package, unpacks the tarball into a scratch `node_modules`, then resolves and imports every `exports` subpath under Node and type-checks a consumer module that imports them all. `bun run build` rewrites the committed marker after a change under `src/`, `tsconfig.build.json` or the manifest's `exports` or `files`.
 
 ## Fro Bot defaults
 
@@ -27,9 +31,9 @@ The package targets the Fro Bot control plane and carries its coordinates as def
 
 When a call receives no Octokit client (`params.octokit`), it reads `GITHUB_TOKEN` from the environment and fails with a remediation message if the variable is unset.
 
-The build also emits `dist/gate-contract.json` with `version` from `GATE_CONTRACT_VERSION` and `sourceTreeHash` from the same computed source hash embedded in `gate-contract.js`. Downstream writers can fetch this marker through the repository contents API; the same distribution drift check verifies the committed marker. `version` is the gate criterion: a mismatch means a deliberate contract break and refuses writes. `sourceTreeHash` is diagnostic only: it moves with ordinary source changes and reports drift in the pinned copy, but must never block writes.
+The build also emits `dist/gate-contract.json` with `version` from `GATE_CONTRACT_VERSION` and `sourceTreeHash` from the same computed source hash embedded in `gate-contract.js`. This is the one file committed under `dist/`: downstream writers fetch it from `main`, so it stays at that path. `bun run check:wiki-write-core-package` verifies the committed marker against a fresh build, and the same marker ships in the tarball. `version` is the gate criterion: a mismatch means a deliberate contract break and refuses writes. `sourceTreeHash` is diagnostic only: it moves with ordinary source changes and reports drift in the pinned copy, but must never block writes.
 
-The package exports `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` from its root entrypoint. The build embeds a deterministic hash covering every non-test TypeScript file under `src/`, the resolved `tsconfig.build.json` configuration including inherited settings, and canonicalized `exports` and `files` values from `package.json`. Object-key order and `files` array order do not affect the hash. The hash does not cover tests, this README, other manifest fields such as dependencies or version, or runtime dependencies. Because it hashes the _resolved_ compiler configuration, a TypeScript upgrade that changes an inherited default or the `--showConfig` serialization moves the hash with no semantic change to the shipped code; a hash that shifts across a compiler bump is expected and does not by itself indicate gate drift.
+The package exports `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` from its root entrypoint. In the repository that entrypoint is source, so `GATE_SOURCE_TREE_HASH` is the placeholder `__SOURCE_TREE_HASH__`; only the built `dist/gate-contract.js` in the tarball carries the hash. The build embeds a deterministic hash covering every non-test TypeScript file under `src/`, the resolved `tsconfig.build.json` configuration including inherited settings, and canonicalized `exports` and `files` values of the published manifest (`exports` in its `dist` form). Object-key order and `files` array order do not affect the hash. The hash does not cover tests, this README, other manifest fields such as dependencies or version, or runtime dependencies. Because it hashes the _resolved_ compiler configuration, a TypeScript upgrade that changes an inherited default or the `--showConfig` serialization moves the hash with no semantic change to the shipped code; a hash that shifts across a compiler bump is expected and does not by itself indicate gate drift.
 
 `GATE_SOURCE_TREE_HASH` is the automatic drift detector: compare it when you need to know whether the shipped gate inputs changed. `GATE_CONTRACT_VERSION` is a deliberate, human-set marker for an intentional consumer-visible contract break; it is not expected to change for every source edit. Neither value proves that dependencies or the runtime behave identically. Consumers should compare the source hash for ordinary gate-input drift and the contract version when deciding whether an intentional contract migration is required.
 
@@ -58,7 +62,7 @@ Only commits that touch `packages/wiki-write-core/` are analyzed. The commit typ
 
 ### Publishing
 
-The `publish` job uses npm trusted publishing (OIDC) from `release-wiki-write-core.yaml` in the `release` environment, and publishes with provenance. There is no npm token. It publishes the committed `dist/`, which the `build` job proves equals a fresh build.
+The `publish` job uses npm trusted publishing (OIDC) from `release-wiki-write-core.yaml` in the `release` environment, and publishes with provenance. There is no npm token. It publishes the package the `build` job staged: the compiled `dist/` and a manifest whose `exports` point at it. The `build` job proves the packed tarball resolves, imports and type-checks every export. The `publish` job runs no repository script: it checks that the staged manifest differs from the committed one only in `exports`, then replaces the checkout's `package.json` and `dist/` with the staged files before semantic-release runs.
 
 Verify a release:
 
