@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-11-01
+updated: 2026-11-02
 sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: b3c99bcd4b32614b10111bf84477d5a6dac8dfb9
+    accessed: 2026-11-02
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 9702a13da360d9bc7e21f24cb95d8d04aa9c0294
     accessed: 2026-11-01
@@ -89,6 +92,25 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Generated route growth is not a registry measurement (2026-11-02)
+
+At `b3c99bcd`, [[fro-bot--systematic]] adds `guides/search/` and
+`reference/skills/pr-attachments/`, plus a matching `components/pr-attachments/`
+subtree, relative to its October 19 snapshot. Immediate guide, skill-reference,
+and component directory counts rise from 14/32/71 to 15/33/72. The complete
+directory comparison finds no removals; agent-reference and schema-version
+directory inventories persist.
+
+These are changes to rendered paths, not measured registry records or runtime
+capabilities. In particular, neither attachment behavior nor search semantics
+can be inferred from route names. Generated JSON and HTML bodies were outside
+the permitted reads, so version equality, schema equivalence, release timing,
+and live availability remain unmeasured. The target still has no `.github/`
+directory or committed workflow; that repo-local absence does not refresh the
+historically recorded upstream deployment contract.
+
+Source: [pinned output tree](https://github.com/fro-bot/systematic/tree/b3c99bcd4b32614b10111bf84477d5a6dac8dfb9).
 
 ## Printed build size is not a performance gate (2026-11-01)
 

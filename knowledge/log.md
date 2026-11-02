@@ -9640,3 +9640,52 @@ and both Run Summary markers.
 Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-11-02 13:37] ingest | fro-bot/systematic
+
+Surveyed public `gh-pages` at `b3c99bcd4b32614b10111bf84477d5a6dac8dfb9`.
+Updated [[fro-bot--systematic]] and [[github-pages]] additively, retaining
+historical findings, sources, and corrections. The corrections context contained
+no records. `knowledge/index.md` was left to the trusted writer.
+
+Compared complete, non-truncated directory listings against the October 19
+snapshot (`6b0398e4bf614a1dd504997140bc8d85e572e5c7`). Guide directories grow
+14 → 15 with `search/`; skill-reference directories grow 32 → 33 with
+`pr-attachments/`; immediate component directories grow 71 → 72 with a matching
+`pr-attachments/` subtree, including `skills/pr-attachments/scripts/`. No
+directories were removed. Root entries (17), getting-started directories (3),
+agent-reference directories (38, including the rendered README route), and
+schema-version directories (`latest/`, `v3/`) persist.
+
+No source README, dependency manifest, `.github/` directory, or committed
+workflow is present. Recorded the absence of a repo-local Fro Bot workflow
+for a separately proposed follow-up draft PR, with the generated-output and
+historical upstream-deployment caveats. No draft was opened. Route growth
+does not establish registry membership, attachment/search behavior, package
+version, schema equivalence, release timing, or live-site health. The September
+21 withdrawal of the publish/deploy-race diagnosis remains applicable.
+
+Target reads were limited to public identity/default-ref resolution and directory
+listings; generated HTML/JSON and bundled code bodies were not read or executed.
+Only the two wiki pages and this append were changed. The caller owns diff
+detection, commit, push, PR delivery, and index maintenance.
+
+Verification: both edited pages passed YAML parsing, required-frontmatter,
+current source-SHA, wikilink-target, and `related`-target checks.
+`bun run check:md-links` and `git diff --check` passed. No code changed; application
+tests were not run. A single marked control-repository commit comment carries
+delivery/check status and points here; no issue run notice was created.
+
+Sources: https://github.com/fro-bot/systematic/tree/b3c99bcd4b32614b10111bf84477d5a6dac8dfb9;
+https://github.com/fro-bot/systematic/tree/6b0398e4bf614a1dd504997140bc8d85e572e5c7.
+Run: https://github.com/fro-bot/.github/actions/runs/41454257314
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/8634c8ad46baef9ab7f5135e61e9a5d159206ec0#commitcomment-207750386
+Exactly one comment was posted; its returned body confirmed the bot marker and
+both Run Summary markers.
+
+## [2026-11-02 13:40] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic
