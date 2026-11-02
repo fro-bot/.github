@@ -21,6 +21,10 @@
       "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the built dist rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts."
     },
     {
+      "path": "packages/wiki-write-core/src/inline-links.ts",
+      "reason": "The inline-link scanner behind resolveMarkdownLinks: a linear-time form of the regex it replaced. It is internal (not in the package exports) and its only consumer, markdown-links.ts, is not-mutated. packages/wiki-write-core/src/inline-links.test.ts keeps the old regex and the old resolveMarkdownLinks loop as the reference and compares them on 60,000 seeded lines, 60,000 seeded bodies and every UTF-16 code unit in 16 templates, and bounds the strings CodeQL reported for alerts 46 and 47."
+    },
+    {
       "path": "packages/wiki-write-core/src/index.ts",
       "reason": "Pure re-export barrel with no logic of its own. The core logic lives in the modules it re-exports (corrections.ts, frontmatter.ts, gate-contract.ts, private-leak-adapter.ts, private-leak.ts, rendering-policy.ts, wiki-ingest.ts, wiki-lint.ts), each separately dispositioned in this list or stryker.config.json's mutate set."
     },

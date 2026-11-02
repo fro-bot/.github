@@ -1,6 +1,7 @@
 import process from 'node:process'
 
 import {describe, expect, it} from 'vitest'
+import {resolveMarkdownLinks} from './markdown-links.ts'
 import {checkPrivateLeak} from './private-leak.ts'
 import {mergeWikiLogs, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
@@ -261,6 +262,28 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
     )
 
     // The exported save-path gate must retain the same linearity contract as its parser.
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
+  })
+
+  it.each([
+    {name: 'an opening-bracket run', build: (n: number) => `[${'['.repeat(n)}`},
+    {name: 'unclosed angle destinations', build: (n: number) => `[](<${'[=](<'.repeat(n)}`},
+    {name: 'unclosed bare destinations', build: (n: number) => `[](${'[!](!'.repeat(n)}`},
+    {name: 'unclosed parenthesised titles', build: (n: number) => `[](! (${'[(](! ('.repeat(n)}`},
+  ])('scales markdown link extraction linearly for $name', ({build}) => {
+    const smallContent = build(8_000)
+    const largeContent = build(16_000)
+    const measurement = expectLinearScaling(
+      size => {
+        resolveMarkdownLinks(size === 8_000 ? smallContent : largeContent, 'knowledge/wiki/topics/source.md', {
+          files: {},
+        })
+      },
+      8_000,
+      3,
+    )
+
+    // The old global regex retries the rest of the line from each opening bracket and fails this ratio guard.
     expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 

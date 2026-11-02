@@ -3,8 +3,7 @@ import {dirname, join, normalize} from 'node:path'
 import process from 'node:process'
 
 import {findCodeRegions, findRegionAt} from './code-regions.ts'
-
-const MARKDOWN_LINK_PATTERN = /\[[^\]\n]+\]\(\s*(<[^>\n]+>|[^)\s]+)(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)/gu
+import {createInlineLinkFinder} from './inline-links.ts'
 
 export interface MarkdownLink {
   readonly target: string
@@ -32,12 +31,14 @@ export function resolveMarkdownLinks(
     const currentLineOffset = lineOffset
     lineOffset += line.length + 1
 
-    // The shared global pattern is stateful; every line restarts it and the loop runs it to exhaustion.
-    MARKDOWN_LINK_PATTERN.lastIndex = 0
-    for (let match = MARKDOWN_LINK_PATTERN.exec(line); match !== null; match = MARKDOWN_LINK_PATTERN.exec(line)) {
-      const target = match[1]
+    // Each line gets its own finder; the loop asks it for the next link at or after `from`.
+    const findLink = createInlineLinkFinder(line)
+    let from = 0
+    for (let match = findLink(from); match !== undefined; match = findLink(from)) {
+      const {target} = match
       const matchIndex = match.index
-      if (target === undefined || (matchIndex > 0 && line[matchIndex - 1] === '!')) {
+      from = matchIndex + match.length
+      if (matchIndex > 0 && line[matchIndex - 1] === '!') {
         continue
       }
 
@@ -46,14 +47,14 @@ export function resolveMarkdownLinks(
       // after an unclosed bracket in code. Resume after the region the match opened in, or just
       // past its first character when it only closes inside one.
       const matchStart = currentLineOffset + matchIndex
-      const matchLast = matchStart + match[0].length - 1
+      const matchLast = matchStart + match.length - 1
       const openingRegion = findRegionAt(regions, matchStart)
       if (openingRegion !== undefined) {
-        MARKDOWN_LINK_PATTERN.lastIndex = Math.max(openingRegion.end - currentLineOffset, matchIndex + 1)
+        from = Math.max(openingRegion.end - currentLineOffset, matchIndex + 1)
         continue
       }
       if (findRegionAt(regions, matchLast) !== undefined) {
-        MARKDOWN_LINK_PATTERN.lastIndex = matchIndex + 1
+        from = matchIndex + 1
         continue
       }
 
