@@ -202,7 +202,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
 | [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. |
-| `wiki-ops`, `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
+| [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild and the corrections lifecycle and context. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety` is held at 100% mutation kills. |
+| `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
 
 `scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
 
@@ -219,7 +220,7 @@ flowchart BT
   registry["@fro-bot/registry"]
   dispatch["@fro-bot/dispatch"]
   statustruth["@fro-bot/status-truth"]
-  wikiops["wiki-ops (planned)"]:::planned
+  wikiops["@fro-bot/wiki-ops"]
   knowledge["knowledge (planned)"]:::planned
   reports["reports (planned)"]:::planned
   cichecks["ci-checks (planned)"]:::planned
@@ -228,6 +229,7 @@ flowchart BT
   core -. "dev: authority test" .-> wwc
   privacy -. "dev: fixtures" .-> testkit
   statustruth -. "dev: fixtures" .-> testkit
+  wikiops -. "dev: fixtures" .-> testkit
   registry -. "dev: fixtures" .-> testkit
   privacy --> core & wwc
   registry --> core & wwc
@@ -261,7 +263,8 @@ C4Container
     Container(wwc, "@fro.bot/wiki-write-core", "Published npm package", "Wiki-write primitives, source here, compiled dist/ when published")
     Container(dispatch, "@fro-bot/dispatch", "Private package", "cross-repo-dispatch (seven modules), dispatch-renovate")
     Container(statustruth, "@fro-bot/status-truth", "Private package", "status-truth detect, proposals and prs, rollout-tracker-snapshot")
-    Container(domains, "Domain packages (planned)", "Private packages", "wiki-ops, knowledge, reports, ci-checks")
+    Container(wikiops, "@fro-bot/wiki-ops", "Private package", "Wiki handoff, change detection, queries, context expansion, repair, lint-issue sync, index rebuild, corrections")
+    Container(domains, "Domain packages (planned)", "Private packages", "knowledge, reports, ci-checks")
   }
 
   System_Ext(github, "GitHub", "REST API, Git Data API, Actions runner")
@@ -282,6 +285,10 @@ C4Container
   Rel(scripts, statustruth, "fronts")
   Rel(statustruth, core, "imports")
   Rel(statustruth, privacy, "imports")
+  Rel(scripts, wikiops, "fronts")
+  Rel(wikiops, core, "imports")
+  Rel(wikiops, wwc, "imports")
+  Rel(wikiops, privacy, "imports")
   Rel(scripts, domains, "will front")
   Rel(domains, core, "will import")
   Rel(scripts, testkit, "tests import")

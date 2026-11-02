@@ -1,7 +1,7 @@
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {wikiHandoffApplyCli, main} from './wiki-handoff-apply-cli.ts'
+import {main, wikiHandoffApplyCli} from './wiki-handoff-apply-cli.ts'
 
 afterEach(() => {
   vi.unstubAllEnvs()

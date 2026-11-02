@@ -23,7 +23,7 @@ export function rebuildWikiIndexCli(): CliConfig {
         // goke reads the first path after the flag as its value; the rest are positionals.
         options: {mergeLogs: {flag: '--merge-logs <path>', schema: z.string().optional()}},
         action: async context => {
-          const rest = Array.isArray(context.positionals.paths) ? context.positionals.paths : []
+          const rest = Array.isArray(context.positionals.paths) ? context.positionals.paths.map(String) : []
           const first = context.options.mergeLogs
           if (first === undefined) {
             if (rest.length > 0) {

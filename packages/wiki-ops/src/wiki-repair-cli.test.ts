@@ -26,12 +26,15 @@ describe('the config', () => {
 })
 
 describe('argv that no caller sends', () => {
-  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']], [['x', '--y']]])('%j is a usage error: exit 1, usage on stderr, nothing runs', async argv => {
-    const result = await runCli(wikiRepairCli(), {argv, env: {WIKI_REPAIR_DRY_RUN: 'true'}})
-    expect(result.exitCode).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).not.toBe('')
-  })
+  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']], [['x', '--y']]])(
+    '%j is a usage error: exit 1, usage on stderr, nothing runs',
+    async argv => {
+      const result = await runCli(wikiRepairCli(), {argv, env: {WIKI_REPAIR_DRY_RUN: 'true'}})
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).not.toBe('')
+    },
+  )
 })
 
 describe('a run that cannot start', () => {

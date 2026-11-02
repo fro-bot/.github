@@ -17,7 +17,10 @@ async function runMain(args: string[]): Promise<{stdout: string; stderr: string}
   } finally {
     process.argv = argv
   }
-  return {stdout: stdout.mock.calls.map(call => String(call[0])).join(''), stderr: stderr.mock.calls.map(call => String(call[0])).join('')}
+  return {
+    stdout: stdout.mock.calls.map(call => String(call[0])).join(''),
+    stderr: stderr.mock.calls.map(call => String(call[0])).join(''),
+  }
 }
 
 // Hand-parsed: `record ... --text --help` must be a value error, which a goke flag parse cannot tell from a help request.
@@ -31,7 +34,11 @@ describe('main', () => {
 
   it('prints the per-command help for `record --help`', async () => {
     const out = await runMain(['record', '--help'])
-    expect(JSON.parse(out.stdout)).toMatchObject({ok: true, command: 'record', required: ['--id', '--node-id', '--text']})
+    expect(JSON.parse(out.stdout)).toMatchObject({
+      ok: true,
+      command: 'record',
+      required: ['--id', '--node-id', '--text'],
+    })
     expect(process.exitCode).toBe(0)
   })
 

@@ -1,9 +1,10 @@
-import type {ExistingIssue, OctokitClient, PlanInput} from './wiki-lint-issues.ts'
 import type {WikiLintJsonFinding, WikiLintJsonReport} from '@fro.bot/wiki-write-core/wiki-lint'
+import type {ExistingIssue, OctokitClient, PlanInput} from './wiki-lint-issues.ts'
 
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import process from 'node:process'
 
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parse as parseYaml} from 'yaml'
@@ -498,6 +499,12 @@ describe('validateWikiLintJsonReport', () => {
 // CLI main() tests (via temp file + GITHUB_OUTPUT)
 // ---------------------------------------------------------------------------
 
+async function run(env: Record<string, string>, argument?: string): Promise<{code: number; stderr: string}> {
+  const lines: string[] = []
+  const code = await runWikiLintIssues(env, {stderr: text => lines.push(text)}, argument)
+  return {code, stderr: lines.join('')}
+}
+
 describe('runWikiLintIssues (a temp report)', () => {
   const roots: string[] = []
 
@@ -516,12 +523,6 @@ describe('runWikiLintIssues (a temp report)', () => {
     return path
   }
 
-  async function run(env: Record<string, string>, argument?: string): Promise<{code: number; stderr: string}> {
-    const lines: string[] = []
-    const code = await runWikiLintIssues(env, {stderr: text => lines.push(text)}, argument)
-    return {code, stderr: lines.join('')}
-  }
-
   it('reports a missing path and exits 1, before reading anything', async () => {
     expect(await run({})).toEqual({
       code: 1,
@@ -536,7 +537,9 @@ describe('runWikiLintIssues (a temp report)', () => {
   it('reports an unreadable or unparseable report with the path', async () => {
     const missing = await run({WIKI_LINT_JSON_PATH: '/nonexistent/wiki-lint-report.json'})
     expect(missing.code).toBe(1)
-    expect(missing.stderr).toContain('wiki-lint-issues: failed to read /nonexistent/wiki-lint-report.json: Error: ENOENT')
+    expect(missing.stderr).toContain(
+      'wiki-lint-issues: failed to read /nonexistent/wiki-lint-report.json: Error: ENOENT',
+    )
     const path = writeReport('{nope')
     const bad = await run({}, path)
     expect(bad.code).toBe(1)

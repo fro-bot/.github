@@ -22,45 +22,48 @@ describe('render-corrections-context', () => {
 
   it('filters lifecycle and node identity in the executable context assembly', async () => {
     let writtenContent = ''
-    await renderCorrectionsContext({}, {
-      nodeId: 'R_123',
-      readCorrections: async () => ({
-        corrections: {
-          version: 1,
-          corrections: [
-            {
-              id: 'active-target',
-              page_node_id: 'R_123',
-              span: {text: 'Active target.'},
-              state: 'active',
-            },
-            {
-              id: 'reconfirmation-target',
-              page_node_id: 'R_123',
-              span: {text: 'Reconfirm target.'},
-              state: 'needs-reconfirmation',
-              reason: 'Upstream changed',
-            },
-            {
-              id: 'retired-target',
-              page_node_id: 'R_123',
-              span: {text: 'Retired target.'},
-              state: 'retired',
-            },
-            {
-              id: 'other-page',
-              page_node_id: 'R_456',
-              span: {text: 'Other page.'},
-              state: 'active',
-            },
-          ],
+    await renderCorrectionsContext(
+      {},
+      {
+        nodeId: 'R_123',
+        readCorrections: async () => ({
+          corrections: {
+            version: 1,
+            corrections: [
+              {
+                id: 'active-target',
+                page_node_id: 'R_123',
+                span: {text: 'Active target.'},
+                state: 'active',
+              },
+              {
+                id: 'reconfirmation-target',
+                page_node_id: 'R_123',
+                span: {text: 'Reconfirm target.'},
+                state: 'needs-reconfirmation',
+                reason: 'Upstream changed',
+              },
+              {
+                id: 'retired-target',
+                page_node_id: 'R_123',
+                span: {text: 'Retired target.'},
+                state: 'retired',
+              },
+              {
+                id: 'other-page',
+                page_node_id: 'R_456',
+                span: {text: 'Other page.'},
+                state: 'active',
+              },
+            ],
+          },
+          warnings: [],
+        }),
+        writeFile: async (_path, content) => {
+          writtenContent = content
         },
-        warnings: [],
-      }),
-      writeFile: async (_path, content) => {
-        writtenContent = content
       },
-    })
+    )
 
     expect(writtenContent).toContain('active-target')
     expect(writtenContent).toContain('reconfirmation-target')

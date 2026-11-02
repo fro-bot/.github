@@ -4,8 +4,8 @@ import {join} from 'node:path'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {runRebuildWikiIndex} from './rebuild-wiki-index.ts'
 import {main, rebuildWikiIndexCli} from './rebuild-wiki-index-cli.ts'
+import {runRebuildWikiIndex} from './rebuild-wiki-index.ts'
 
 const roots: string[] = []
 

@@ -11,14 +11,14 @@ import {dirname, join} from 'node:path'
 import process from 'node:process'
 
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
-import {afterEach, beforeEach, describe, expect, it, vi, type Mock} from 'vitest'
+import {validateAndApplyWikiHandoff} from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {
   appendLogEntry,
   commitWikiChanges,
   rebuildWikiIndex,
   runWikiIngestCli,
 } from '@fro.bot/wiki-write-core/wiki-ingest'
-import {validateAndApplyWikiHandoff} from '@fro-bot/wiki-ops/wiki-handoff-core'
+import {afterEach, beforeEach, describe, expect, it, vi, type Mock} from 'vitest'
 // The built package behind the entry script: the one path that maps a page conflict to exit code 3.
 import * as shipped from './wiki-ingest.ts'
 

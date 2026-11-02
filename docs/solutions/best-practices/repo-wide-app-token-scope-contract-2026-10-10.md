@@ -66,7 +66,7 @@ The contract test also needs its own tests. During review of #3974, the scan tha
 **A repository-scoped writer** (`.github/workflows/wiki-lint.yaml:124-132`):
 
 ```yaml
-      # issues: write covers the issues.* calls in wiki-lint-issues.ts; it makes no contents calls.
+      # issues: write covers the issues.* calls in packages/wiki-ops/src/wiki-lint-issues.ts; it makes no contents calls.
       - name: Mint App token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0

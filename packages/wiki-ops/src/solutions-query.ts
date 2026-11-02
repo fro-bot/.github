@@ -412,7 +412,10 @@ async function loadPrivateNamesFromDisk(): Promise<string[]> {
 // GITHUB_OUTPUT writer
 // ---------------------------------------------------------------------------
 
-function writeGithubOutput(result: AssembleSolutionsContextResult, env: Readonly<Record<string, string | undefined>>): void {
+function writeGithubOutput(
+  result: AssembleSolutionsContextResult,
+  env: Readonly<Record<string, string | undefined>>,
+): void {
   writeGithubOutputs(
     {
       excerpt: result.excerpt,

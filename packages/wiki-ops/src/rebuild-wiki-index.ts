@@ -40,7 +40,10 @@ export interface RebuildWikiIndexOptions {
   readonly cwd?: string
 }
 
-export async function runRebuildWikiIndex(io: RebuildWikiIndexIo, options: RebuildWikiIndexOptions = {}): Promise<void> {
+export async function runRebuildWikiIndex(
+  io: RebuildWikiIndexIo,
+  options: RebuildWikiIndexOptions = {},
+): Promise<void> {
   const cwd = options.cwd
   if (options.mergeLogs !== undefined) {
     await runMergeLogs(options.mergeLogs, io, cwd)

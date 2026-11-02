@@ -239,7 +239,7 @@ jobs:
       # Deterministic, non-agent step: builds manifest.json + files/ from the docs/solutions
       # changes against the checked-out base. The agent had a shell on this runner, so this
       # artifact is untrusted until the publish job validates it under the drafted-solutions
-      # path policy (see scripts/wiki-handoff-core.ts). Fails on any out-of-scope path or deletion.
+      # path policy (see packages/wiki-ops/src/wiki-handoff-core.ts). Fails on any out-of-scope path or deletion.
       - name: 📦 Build handoff
         id: handoff
         if: steps.agent.outcome == 'success'

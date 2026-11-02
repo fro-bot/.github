@@ -8,9 +8,9 @@ import {dirname, join} from 'node:path'
 import process from 'node:process'
 import {buildPublicSlugMap} from '@fro-bot/privacy/check-wiki-private-presence'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {lintWikiSnapshot} from '@fro.bot/wiki-write-core/wiki-lint'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   createWikiRepairTreeLoader,
   exitCodeFor,

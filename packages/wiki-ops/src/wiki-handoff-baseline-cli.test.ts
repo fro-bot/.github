@@ -1,7 +1,7 @@
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, describe, expect, it, vi} from 'vitest'
-import {wikiHandoffBaselineCli, main} from './wiki-handoff-baseline-cli.ts'
+import {main, wikiHandoffBaselineCli} from './wiki-handoff-baseline-cli.ts'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -38,7 +38,10 @@ describe('argv that no caller sends', () => {
   it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']], [['x', '--y']]])(
     '%j is a usage error: exit 1, usage on stderr, nothing runs',
     async argv => {
-      const result = await runCli(wikiHandoffBaselineCli(), {argv, env: {WIKI_HANDOFF_BASELINE_PATH: '/nonexistent/baseline.json'}})
+      const result = await runCli(wikiHandoffBaselineCli(), {
+        argv,
+        env: {WIKI_HANDOFF_BASELINE_PATH: '/nonexistent/baseline.json'},
+      })
       expect(result.exitCode).toBe(1)
       expect(result.stdout).toBe('')
       expect(result.stderr).not.toBe('')

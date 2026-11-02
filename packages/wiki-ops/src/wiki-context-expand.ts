@@ -15,6 +15,7 @@
  * written to stdout or stderr.
  */
 
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {
   buildWikiTargetIndex,
   byteLength,
@@ -23,7 +24,6 @@ import {
   truncateToBytes,
   WIKI_ROOT,
 } from '@fro.bot/wiki-write-core/wiki-utils'
-import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {parse} from 'yaml'
 import {filterSafeCandidates} from './wiki-context-safety.ts'
 

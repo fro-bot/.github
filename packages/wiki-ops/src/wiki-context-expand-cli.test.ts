@@ -18,7 +18,10 @@ async function runMain(args: string[]): Promise<{stdout: string; stderr: string}
   } finally {
     process.argv = argv
   }
-  return {stdout: stdout.mock.calls.map(call => String(call[0])).join(''), stderr: stderr.mock.calls.map(call => String(call[0])).join('')}
+  return {
+    stdout: stdout.mock.calls.map(call => String(call[0])).join(''),
+    stderr: stderr.mock.calls.map(call => String(call[0])).join(''),
+  }
 }
 
 describe('main (hand-parsed: the goke runner would read free text that starts with - as a flag)', () => {
