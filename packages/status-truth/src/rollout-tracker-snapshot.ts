@@ -313,11 +313,16 @@ export function extractPreviousMarker(body: string): MarkerData | null {
 
   // Match all occurrences; take the last one.
   // Capture everything between the prefix and the closing --> (non-greedy).
+  // A prefix after the last --> can never close, and each such prefix would rescan to the end of the
+  // body, so the search stops at the last --> and stays linear.
+  const lastClose = body.lastIndexOf('-->')
+  if (lastClose === -1) return null
+  const searchable = body.slice(0, lastClose + '-->'.length)
   const markerRegex = /<!--\s*gateway-rollout-tracker:([\s\S]*?)-->/g
   let lastMatch: RegExpExecArray | null = null
 
   for (;;) {
-    const match = markerRegex.exec(body)
+    const match = markerRegex.exec(searchable)
     if (match === null) break
     lastMatch = match
   }

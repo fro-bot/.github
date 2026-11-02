@@ -60,6 +60,153 @@ const CROSS_REPO_PR_ISSUE_PATTERN = /\b(?:(issue)\s+)?([\w.-]+)\/([\w.-]+)#(\d+)
 const CROSS_REPO_RELEASE_PATTERN =
   /\brelease\s+([\w.-]+)\/([\w.-]+)@([\w.-]+)\s+is\s+(published|draft|unpublished)\b/giu
 
+// ---------------------------------------------------------------------------
+// Linear-time matchers
+// ---------------------------------------------------------------------------
+//
+// A pattern that opens with `\b[\w.-]+` and needs a literal after the run is quadratic on the
+// engine's own scan: a run of N word characters and dots with no `/` after it is re-read from each
+// of its N positions. These text sources are GitHub-controlled (issue bodies and comments), so the
+// matchers below return exactly what `text.matchAll(pattern)` returns, in linear time.
+//
+// Two facts make that possible. Every start of these patterns is a character of a run, and the
+// outcome of a match from a start inside a run depends on that start only through the `\b` before
+// it (plus the one literal-led variant noted per matcher), so only the first `\b`-valid start of
+// each run is attempted and the rest of the run is skipped. Each attempt is the original pattern
+// run sticky at that start, so the groups and the match text are the engine's own.
+
+/** Asks the engine whether a word boundary sits at an index, with the flags of the pattern it stands in for. */
+type BoundaryProbe = (index: number) => boolean
+
+function boundaryProbe(text: string, flags: string): BoundaryProbe {
+  const probe = new RegExp(String.raw`\b`, `${flags.replaceAll('g', '')}y`)
+  return index => {
+    probe.lastIndex = index
+    return probe.test(text)
+  }
+}
+
+/** The first position in `[start, end)` with a word boundary before it, or -1. */
+function firstWordBoundary(isBoundary: BoundaryProbe, start: number, end: number): number {
+  for (let index = start; index < end; index += 1) {
+    if (isBoundary(index)) return index
+  }
+  return -1
+}
+
+/**
+ * Every match of `pattern`, left to right and without overlap, trying only the starts that
+ * `startsInRun` yields for each maximal run of `runClass`. `pattern` is the original pattern.
+ */
+function scanRuns(
+  text: string,
+  pattern: RegExp,
+  runClass: RegExp,
+  startsInRun: (runStart: number, runEnd: number, isBoundary: BoundaryProbe) => Iterable<number>,
+): RegExpExecArray[] {
+  const flags = pattern.flags.replaceAll('g', '')
+  const sticky = new RegExp(pattern.source, `${flags}y`)
+  const runs = new RegExp(runClass.source, `${flags}g`)
+  const isBoundary = boundaryProbe(text, flags)
+  const matches: RegExpExecArray[] = []
+  let from = 0
+  while (from < text.length) {
+    runs.lastIndex = from
+    const run = runs.exec(text)
+    if (run === null) break
+    const runStart = run.index
+    const runEnd = runStart + run[0].length
+    let found: RegExpExecArray | null = null
+    for (const start of startsInRun(runStart, runEnd, isBoundary)) {
+      sticky.lastIndex = start
+      found = sticky.exec(text)
+      if (found !== null) break
+    }
+    if (found === null) {
+      from = runEnd
+    } else {
+      matches.push(found)
+      from = found.index + found[0].length
+    }
+  }
+  return matches
+}
+
+const REF_RUN = /[\w.-]+/u
+
+/**
+ * The first boundary-valid start of a `[\w.-]` run, then the start of a literal that ends the run when the
+ * pattern has a literal-led variant (`literalLength` is 0 when it has none).
+ */
+function* referenceStarts(
+  isBoundary: BoundaryProbe,
+  runStart: number,
+  runEnd: number,
+  literalLength: number,
+): Generator<number> {
+  const first = firstWordBoundary(isBoundary, runStart, runEnd)
+  if (first !== -1) yield first
+  // The literal ends the run because whitespace follows it.
+  const literalStart = runEnd - literalLength
+  if (literalLength > 0 && literalStart >= runStart && literalStart !== first) yield literalStart
+}
+
+const ISSUE_LENGTH = 'issue'.length
+const RELEASE_LENGTH = 'release'.length
+
+/** Every match of `CROSS_REPO_REF_PATTERN`, as `text.matchAll(CROSS_REPO_REF_PATTERN)` returns them. */
+export function matchCrossRepoRefs(text: string): RegExpExecArray[] {
+  return scanRuns(text, CROSS_REPO_REF_PATTERN, REF_RUN, (runStart, runEnd, isBoundary) =>
+    referenceStarts(isBoundary, runStart, runEnd, 0),
+  )
+}
+
+/**
+ * Every match of `CROSS_REPO_PR_ISSUE_PATTERN`. The optional `issue ` prefix adds one start per run: the
+ * five characters before the run's end.
+ */
+export function matchCrossRepoPrIssueClaims(text: string): RegExpExecArray[] {
+  return scanRuns(text, CROSS_REPO_PR_ISSUE_PATTERN, REF_RUN, (runStart, runEnd, isBoundary) =>
+    referenceStarts(isBoundary, runStart, runEnd, ISSUE_LENGTH),
+  )
+}
+
+/** Every match of `CROSS_REPO_RELEASE_PATTERN`. Its only start in a run is the seven characters before the run's end. */
+export function matchCrossRepoReleaseClaims(text: string): RegExpExecArray[] {
+  return scanRuns(text, CROSS_REPO_RELEASE_PATTERN, REF_RUN, function* (runStart, runEnd) {
+    const start = runEnd - RELEASE_LENGTH
+    if (start >= runStart) yield start
+  })
+}
+
+const PLAN_PATH_RUN = /[\w/-]+/u
+const PLAN_PATH_PREFIX = /docs\/plans\//giu
+const PLAN_WORD_LENGTH = 'plan'.length
+const PLAN_STATUS_TAIL = /\.md\s+is\s+(?:active|complete|draft|cancelled|superseded)\b/iuy
+
+/**
+ * Every match of the `plan-status` pattern. A path is a run of `[\w/-]` that ends where `.md` begins, so a
+ * run whose end is not followed by the tail, or that ends in `/`, has no match; and a path cannot contain
+ * `//`, so no start at or before the last one in the run can match. The starts left are the `docs/plans/`
+ * occurrences after it, and the `plan ` prefix is a run that ends in `plan` and is followed by whitespace.
+ */
+export function matchPlanStatusClaims(text: string, pattern: RegExp): RegExpExecArray[] {
+  return scanRuns(text, pattern, PLAN_PATH_RUN, function* (runStart, runEnd) {
+    const prefixStart = runEnd - PLAN_WORD_LENGTH
+    if (prefixStart >= runStart) yield prefixStart
+    PLAN_STATUS_TAIL.lastIndex = runEnd
+    if (!PLAN_STATUS_TAIL.test(text) || text.charAt(runEnd - 1) === '/') return
+    const doubleSlash = text.lastIndexOf('//', runEnd - 2)
+    const earliest = doubleSlash >= runStart ? doubleSlash + 2 : runStart
+    const occurrences = new RegExp(PLAN_PATH_PREFIX.source, PLAN_PATH_PREFIX.flags)
+    occurrences.lastIndex = earliest
+    for (let occurrence = occurrences.exec(text); occurrence !== null; occurrence = occurrences.exec(text)) {
+      if (occurrence.index >= runEnd) return
+      yield occurrence.index
+    }
+  })
+}
+
 /**
  * Build a set of issue/PR numbers that appear in cross-repo references
  * within the given text. These numbers must not be extracted as bare #N
@@ -69,7 +216,7 @@ const CROSS_REPO_RELEASE_PATTERN =
  */
 function extractCrossRepoNumbers(text: string): Set<string> {
   const crossRepoNumbers = new Set<string>()
-  for (const match of text.matchAll(CROSS_REPO_REF_PATTERN)) {
+  for (const match of matchCrossRepoRefs(text)) {
     const num = match[1]
     if (num !== undefined) crossRepoNumbers.add(num)
   }
@@ -110,7 +257,8 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
       def.pattern.flags.includes('g') ? def.pattern.flags : `${def.pattern.flags}g`,
     )
 
-    for (const match of text.matchAll(globalPattern)) {
+    const matches = def.kind === 'plan-status' ? matchPlanStatusClaims(text, def.pattern) : text.matchAll(globalPattern)
+    for (const match of matches) {
       const fullMatch = match[0]
       if (fullMatch === undefined) continue
 
@@ -160,7 +308,7 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
   // ---------------------------------------------------------------------------
 
   // Extract cross-repo PR/issue claims: `[issue] owner/repo#N is merged|open|closed`
-  for (const match of text.matchAll(CROSS_REPO_PR_ISSUE_PATTERN)) {
+  for (const match of matchCrossRepoPrIssueClaims(text)) {
     const issuePrefix = match[1] // 'issue' or undefined
     const owner = match[2]
     const repo = match[3]
@@ -202,7 +350,7 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
   }
 
   // Extract cross-repo release claims: `release owner/repo@tag is published|draft|unpublished`
-  for (const match of text.matchAll(CROSS_REPO_RELEASE_PATTERN)) {
+  for (const match of matchCrossRepoReleaseClaims(text)) {
     const owner = match[1]
     const repo = match[2]
     const tag = match[3]
