@@ -6,8 +6,16 @@
   "type": "module",
   "exports": {
     "./solution-docs-paths": "./src/solution-docs-paths.ts",
+    "./wiki-change-detect": "./src/wiki-change-detect.ts",
+    "./wiki-change-detect-cli": "./src/wiki-change-detect-cli.ts",
     "./wiki-change-detect-core": "./src/wiki-change-detect-core.ts",
     "./wiki-context-safety": "./src/wiki-context-safety.ts",
+    "./wiki-handoff-apply": "./src/wiki-handoff-apply.ts",
+    "./wiki-handoff-apply-cli": "./src/wiki-handoff-apply-cli.ts",
+    "./wiki-handoff-baseline": "./src/wiki-handoff-baseline.ts",
+    "./wiki-handoff-baseline-cli": "./src/wiki-handoff-baseline-cli.ts",
+    "./wiki-handoff-build": "./src/wiki-handoff-build.ts",
+    "./wiki-handoff-build-cli": "./src/wiki-handoff-build-cli.ts",
     "./wiki-handoff-core": "./src/wiki-handoff-core.ts"
   },
   "dependencies": {

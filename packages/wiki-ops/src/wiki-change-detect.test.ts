@@ -13,9 +13,9 @@ import {
   computeWikiChangeHash,
   hashWikiScopeSnapshot,
   type WikiChangeDetectEntry,
-} from '@fro-bot/wiki-ops/wiki-change-detect-core'
+} from './wiki-change-detect-core.ts'
 
-const scriptPath = resolve(import.meta.dirname, 'wiki-change-detect.ts')
+const scriptPath = resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'wiki-change-detect.ts')
 const WIKI_SCOPE_PATHS = ['knowledge/index.md', 'knowledge/log.md', 'knowledge/wiki']
 
 /** Reproduces this repo's own `.gitignore` rules for the noise the detector must exclude. */

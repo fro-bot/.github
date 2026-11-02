@@ -463,6 +463,54 @@
     {
       "path": "packages/wiki-ops/src/solution-docs-paths.ts",
       "reason": "A constant list of the canonical docs/solutions/ category directories, with no logic to mutate. Pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts (the drafted-solutions allowlist is derived from it) and by scripts/draft-solutions-workflow.test.ts, which checks that the drafting prompt names every category."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-change-detect.ts",
+      "reason": "The `baseline` and `detect` modes of the survey change detector: the mode check, the `$GITHUB_OUTPUT` requirement that is checked before any work, the baseline-hash format check, the inside-a-git-work-tree check and the `hash=` and `changed=` writes through the throwing output writer. It fails closed, so nothing is written on a partial failure. Pinned by packages/wiki-ops/src/wiki-change-detect.test.ts, which runs the real shim against real git repos for each mode, each error and the written output lines, and by packages/wiki-ops/src/wiki-change-detect-cli.test.ts, which pins the error text and the order of the checks."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-change-detect-cli.ts",
+      "reason": "The goke entrypoint of wiki-change-detect: one read-only root command with an optional mode positional, so a bad mode reaches the command and prints the `::error::wiki-change-detect:` line. A second positional, a flag and `--help` are usage errors. Pinned by packages/wiki-ops/src/wiki-change-detect-cli.test.ts (the config, the mode errors, the missing-input errors, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-change-detect.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-change-detect-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-change-detect.ts, pinned by packages/wiki-ops/src/wiki-change-detect.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-baseline.ts",
+      "reason": "The pre-agent baseline step: it reads `WIKI_HANDOFF_BASELINE_PATH`, runs `git status` over the three wiki paths, hashes what differs and writes the baseline file, then prints `{\"files\":N}`. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-baseline-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-baseline-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-baseline: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-baseline-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-baseline.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-baseline-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-baseline.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-build.ts",
+      "reason": "The agent-job build step: it reads `WIKI_HANDOFF_DIR` and the optional baseline path, builds manifest.json and files/ with `buildWikiHandoff`, prints `{\"changed\":n,\"deleted\":n}` and appends `changed=` to `$GITHUB_OUTPUT` when that is set. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-build-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-build-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-build: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-build-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-build.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-build-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-build.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-apply.ts",
+      "reason": "The trusted-job apply step: it reads `WIKI_HANDOFF_DIR` and the optional workspace, validates and applies the artifact with `validateAndApplyWikiHandoff`, and prints `{applied,deleted,skipped}`; every failure prints `::error::wiki-handoff-apply: <message>` and exits 1. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-apply-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-apply-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-apply: one writing root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-apply-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-apply.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-apply-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-apply.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     }
   ]
 }
