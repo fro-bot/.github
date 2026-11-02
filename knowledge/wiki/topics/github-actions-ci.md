@@ -2,8 +2,44 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-25
+updated: 2026-10-31
 sources:
+  - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/docs/package.json
+    sha: c4513522011cf0cc0adaef695381b4761157ce43
+    accessed: 2026-10-31
+  - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/.github/workflows/main.yaml
+    sha: c4513522011cf0cc0adaef695381b4761157ce43
+    accessed: 2026-10-31
+  - url: https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/action.yaml
+    sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
+    accessed: 2026-10-31
+  - url: https://github.com/bfra-me/renovate-action/blob/84e87ebc21d81854708f8aabacd45e211deec6d9/.github/workflows/main.yaml
+    sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
+    accessed: 2026-10-31
+  - url: https://github.com/marcusrbrown/sparkle/blob/b6116202d97cef5c6a535ffa9555f745729772e8/.github/workflows/regenerate-docs.yaml
+    sha: b6116202d97cef5c6a535ffa9555f745729772e8
+    accessed: 2026-10-29
+  - url: https://github.com/marcusrbrown/sparkle/blob/b6116202d97cef5c6a535ffa9555f745729772e8/.github/workflows/fro-bot.yaml
+    sha: b6116202d97cef5c6a535ffa9555f745729772e8
+    accessed: 2026-10-29
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/renovate.yaml
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-10-28
+  - url: https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows/site.yaml
+    sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
+    accessed: 2026-10-28
+  - url: https://github.com/marcusrbrown/dev-like/blob/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd/.github/workflows/fro-bot.yaml
+    sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
+    accessed: 2026-10-28
+  - url: https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows/main.yaml
+    sha: 7386008aa74020dc7773cff96a92c82746b4530a
+    accessed: 2026-10-27
+  - url: https://github.com/marcusrbrown/renovate-config/blob/7386008aa74020dc7773cff96a92c82746b4530a/.github/workflows/fro-bot.yaml
+    sha: 7386008aa74020dc7773cff96a92c82746b4530a
+    accessed: 2026-10-27
+  - url: https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows
+    sha: 9556db85d5d9f648db8f07f0eb0269b900cf0dbc
+    accessed: 2026-10-26
   - url: https://github.com/fro-bot/dashboard/blob/cde24ab780cd2dd0d069e6be4061266f7488e085/.github/workflows/main.yaml
     sha: cde24ab780cd2dd0d069e6be4061266f7488e085
     accessed: 2026-10-25
@@ -355,6 +391,46 @@ related:
 
 # GitHub Actions CI
 
+## Parallel checks need individual exit-status aggregation (2026-10-31)
+
+At `c4513522`, [[bfra-me--works]]'s private docs manifest declares
+`pnpm run type-check & pnpm run lint & pnpm run test & wait && pnpm run build`.
+The checks launch asynchronously; bare `wait` waits for them but returns zero
+rather than aggregating their failures. A successful final build can therefore
+mask a failed background check. Parallel execution requires retaining each PID
+and checking each wait status, or a runner with explicit failure aggregation.
+
+Keep this scoped to the actual entrypoint: root `validate` instead uses `&&`
+throughout, and Main invokes explicit root lint/type/test/build jobs rather
+than docs `validate`. The manifest establishes a latent local-command failure
+mode, not an observed CI escape. It complements the October 18 semantic-release
+fallback finding below: both hide failures, but one discards background statuses
+and the other explicitly replaces a non-zero result with success. Those older
+fallback and advisory-analysis declarations were rechecked and remain present.
+
+Sources: the pinned docs manifest and Main workflow above, plus the
+[root manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/package.json)
+and [semantic-release manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/packages/semantic-release/package.json).
+
+## Queue writers at job scope; isolate dry runs (2026-10-28)
+
+At `737d27ff`, [[bfra-me--github]]'s `renovate.yaml` places concurrency
+on the Renovate job. Write-capable runs share a repository/workflow group
+ending in `write`, with `cancel-in-progress: false` and `queue: max`.
+Non-default-branch pushes are configured as dry runs and use `github.run_id`
+instead, giving each such run its own group. The workflow comments name
+three intended properties: skipped jobs do not occupy the group, writers
+do not race to create the same branch/PR, and a newly arriving run does not
+replace the already waiting one.
+
+The durable distinction is **serialize active writers versus retain pending
+writers**: turning off cancellation of the active run does not itself
+express a policy to preserve the entire waiting queue. The extra queue
+declaration makes that intent explicit here. Keeping independent dry runs
+outside the write group also avoids making validation wait for publishing.
+This observation is limited to workflow source; scheduler acceptance,
+actual queue retention, and successful Renovate delivery were not checked.
+
 ## 2026-10-25 — design-gate completeness includes paths, payloads, and exit semantics
 
 [[fro-bot--dashboard]] at `cde24ab7` configures Impeccable **4.7.0** to scan
@@ -494,6 +570,17 @@ Source: [Fro Bot workflow](https://github.com/bfra-me/renovate-action/blob/1fedb
 
 ## An event alternative must not bypass feature opt-in (2026-10-18)
 
+**2026-10-31 reconfirmation and dry-run scope:** the same ungrouped push
+alternative remains at `84e87ebc`. Main invokes the local action on eligible
+default-branch pushes with `dry-run: true`, which the manifest maps to
+`RENOVATE_DRY_RUN=extract`. Neither cache finalization nor save tests dry-run,
+so engine dry-run does not establish a side-effect-free outer action. Audit
+token creation, cache writes/deletions, and other surrounding steps separately
+from the engine's branch/PR mode. These are static eligibility findings, not
+an observed cache mutation or a claim that Renovate ignored extract mode.
+The current pinned manifest and Main workflow are listed in frontmatter;
+the October 18 expression analysis below remains applicable.
+
 [[bfra-me--renovate-action]]'s action manifest at `1fedb47e` gates cache
 restore/prepare on `enable-cache == 'true'`, but cache finalization and save
 both end their conditions with an ungrouped `|| github.event_name == 'push'`:
@@ -550,6 +637,34 @@ Between releases at or after the `v0.118.2` migration, the documented rollback
 is a paired pin reversal. Preserve earlier dated cutover observations as
 history; do not apply their volume-recovery requirement to every version pair.
 
+## Generated-output selection is a separate delivery gate (2026-10-29)
+
+At `b6116202`, [[marcusrbrown--sparkle]] retains the documentation input-path
+mismatches recorded below, and its regeneration workflow exposes a second
+selection boundary after generation. The cache restores `api/**`,
+`components/**`, and `generated/**`, but the change-check step stages only
+`api/` and `generated/`. PR creation is conditional on a nonempty staged diff.
+Thus a components-only output change can be omitted from the decision to
+create a PR even if generation ran. This does not prove that such an output
+occurred: source generators and run artifacts were outside this survey.
+
+Check the whole chain: trigger paths, detected packages, generated paths,
+staged paths, and delivery condition. Valid input selection alone cannot prove
+that every generated artifact reaches delivery. Likewise, this workflow's
+directory-existence acceptance check can accept a directory restored from
+cache; existence is weaker than evidence of fresh or correct generation.
+The finding extends the earlier three-way input-path contract without
+changing its historical evidence.
+
+The same snapshot advances Fro Bot to **v0.129.0** while retaining the shared
+delivery-mode/credential gate and the boolean-losing fork guard below. Neither
+an agent version bump nor a source-level delivery declaration establishes a
+successful production run. The pnpm-major and class-policy prompt
+contradictions recorded on the repo page also remain visible.
+
+Sources: the pinned regeneration and Fro Bot workflows in frontmatter; see
+[[marcusrbrown--sparkle]] for the permitted-read boundary and manifest context.
+
 ## Fail-closed guards must preserve an allowed false value (2026-10-13)
 
 At `6182bcce`, [[marcusrbrown--sparkle]]'s comment-triggered PR preflight
@@ -583,6 +698,24 @@ Sources: the pinned Fro Bot and regeneration workflows above; see
 
 ## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
 
+**2026-10-28 static reconfirmation:** at `dc32f43d`,
+[[marcusrbrown--dev-like]] advances to Fro Bot **v0.128.0** while retaining
+the same caller shape: token supplied, no explicit `output-mode`, and only a
+failure/cancellation notifier after the agent. The delivery and successful
+no-op-reporting distinctions below remain applicable; no run outcome or action
+implementation was inspected.
+
+**Workspace dependency changes need their own site routing:** at this same
+snapshot, Site installs from the workspace root but its push paths select only
+`docs/**`, `registry/**`, and `.github/workflows/site.yaml`. Root
+`package.json` and `bun.lock` changes alone do not select the docs test/build
+lane. Root CI runs validation and root tests, not the docs suite. Consequently,
+a green root-only dependency update would not establish docs acceptance even
+though Site has strong checks when selected. Manual dispatch is available but
+does not supply automatic dependency-change coverage. This extends the earlier
+root-CI-versus-Site boundary; it is source-level routing evidence, not an
+observed failed deployment. See the repo page for pinned manifests and sources.
+
 At `34141048`, [[marcusrbrown--dev-like]] configures Fro Bot v0.121.0
 with a `github-token`, credential-less checkout persistence, and no explicit
 `output-mode`. Its sole post-agent step reports failures/cancellations to the
@@ -610,6 +743,16 @@ Sources: `fro-bot.yaml`, `ci.yaml`, `site.yaml`, root `package.json`, and
 and September workflow observations remain dated snapshots, not live results.
 
 ## A dispatch dry-run default can be overridden before execution (2026-10-11)
+
+**2026-10-27 static reconfirmation:** at `7386008`, the same repository still
+overrides requested dry-run on the default branch before invoking
+semantic-release. `INPUT_DRY_RUN` remains unused by the shell condition.
+The manifest and `main.yaml` still declare lint followed by release, without
+a separate test/schema-validation gate. Fro Bot has advanced to **v0.126.0**
+but its caller still ends at the agent call without explicit `output-mode`
+or a subsequent delivery step. These are persistent wiring observations,
+not evidence of an unintended release, a delivered repair, or a failing run.
+The bounded README/manifest/workflow survey cannot establish live outcomes.
 
 At `4d13f58`, [[marcusrbrown--renovate-config]]'s `main.yaml` declares a
 boolean `workflow_dispatch` input `dry-run` with default `true`. Its release
@@ -1024,6 +1167,28 @@ runs `cargo test --locked`; the desktop lane stops at fmt/clippy, so the two
 native lanes have different behavioral-test coverage. Renovate and settings
 sync delegate to correctly pathed `bfra-me/.github` workflows at **v4.37.0**.
 Source: [workflow directory](https://github.com/marcusrbrown/panthea/tree/c74fe32b46ecdf332b916295a18c1c2a8d11d008/.github/workflows).
+
+**Panthea refresh (2026-10-26, `9556db8`).** The older row and source contract
+above remain dated history. [[marcusrbrown--panthea]] still has four workflows
+and three CI jobs. **Coverage change:** both macOS Rust lanes now build their
+sidecar, check formatting, run locked clippy with warnings denied, and run
+`cargo test --locked`; the desktop lane no longer stops at fmt/clippy. Ubuntu
+retains the frozen Bun install and type/lint/test gate with `prlimit --core=1:1`.
+All inspected Bun setup steps now select **1.4.3**.
+
+Fro Bot is SHA-pinned at **v0.122.3** (`7d273ac`), with `branch-pr` still
+selected only for schedule/default-prompt dispatch and `auto` for custom
+dispatch/content events. Checkout still disables credential persistence;
+same-repository PR-comment head resolution feeds `trusted-head-sha`, and
+brokered extra paths remain `apps,content,tools`. These are declared capability
+boundaries, not evidence of a delivered change or a successful run. Renovate
+and settings sync now call the correctly routed reusable workflows at
+**v4.39.0** (`e62de41`). Renovate's `workflow_run` path requires successful
+`CI`; settings sync declares the daily `17 5 * * *` schedule as well as a
+settings-path-filtered main push. Callee behavior and applied repository
+settings were not read.
+
+Source: [workflow directory at the surveyed SHA](https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 

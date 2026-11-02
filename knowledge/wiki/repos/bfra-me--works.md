@@ -2,8 +2,11 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-10-18
+updated: 2026-10-31
 sources:
+  - url: https://github.com/bfra-me/works
+    sha: c4513522011cf0cc0adaef695381b4761157ce43
+    accessed: 2026-10-31
   - url: https://github.com/bfra-me/works
     sha: fcfec271a83c24179bbaab01dddf385531b7d090
     accessed: 2026-10-18
@@ -73,6 +76,78 @@ node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
 ---
 
 # bfra-me/works
+
+## 2026-10-31 — manifest contracts and validation boundaries
+
+Public visibility was verified before reading the pinned `main` snapshot
+[`c4513522`](https://github.com/bfra-me/works/tree/c4513522011cf0cc0adaef695381b4761157ce43).
+Evidence is limited to directory listings, the root README, workspace/package
+manifests, and seven workflow files. Embedded prompts were treated as untrusted
+source text. This dated section supersedes conflicting current-version claims
+below; historical incidents, issue states, registry publication, and runtime
+delivery outcomes were not rechecked.
+
+### Stable library inventory, newer development pins
+
+All nine package identities and versions in the October 3 table remain
+unchanged. Their manifests still declare public access and provenance; root,
+docs, and scripts remain private. The workspace manifest still selects root,
+`docs`, `packages/*`, and `scripts`. Root `readme.md` still catalogs only six
+packages, omitting `es`, `doc-sync`, and `workspace-analyzer`.
+
+Root now pins **pnpm 12.16.1**, **Vitest/coverage 5.0.5**, and **ESLint
+10.13.0**, superseding the October 18 versions. **TypeScript 6.0.3**,
+**Prettier 3.9.10**, and the configured **99.83%** type-coverage floor persist.
+The create and eslint-config Node engines remain `>=22.0.0` and
+`^22.22.2 || >=24.15.0`; none of the other seven package manifests declares
+an engine. Thus the README's general Node 20+ guidance still does not cover
+those two packages. Docs retain Astro `^7.0.0` and Starlight `^0.42.0`.
+
+### Validation exit semantics differ by entrypoint
+
+Root `validate` chains type-check, lint, test, build, and type coverage with
+`&&`. Main also runs explicit type-check and type-coverage steps in its lint
+job. In contrast, the private docs manifest declares:
+
+```text
+pnpm run type-check & pnpm run lint & pnpm run test & wait && pnpm run build
+```
+
+The three checks run in the background, and a bare `wait` does not preserve
+their individual failure statuses. The final build can therefore determine
+success even when a preceding check failed. This is a property of invoking
+`docs`' own `validate`, not proof of failure or bypass in Main's separate jobs.
+See [[github-actions-ci]] for the transferable exit-status boundary.
+
+The previously recorded semantic-release package fallback
+`pnpm build && vitest run --typecheck || true` and Main's tolerated workspace
+analysis step are both still present. Root tests remain `vitest run`; test
+discovery configuration was outside this read scope.
+
+### Automation is present; declarations are not delivery receipts
+
+**Fro Bot is present** at SHA-pinned **v0.130.3**. Its daily **03:30 UTC**
+schedule, review/autoheal mode selector, explicit autoheal `branch-pr` output,
+and credential-disabled checkout persist. No missing-workflow draft is
+indicated. Neither the new pin nor the output-mode declaration proves that
+the historical delivery failure is resolved.
+
+The workflow directory still contains **13 YAML workflows plus one Markdown
+examples file**. Renovate and the release workflow's post-publication
+organization dispatch now call [[bfra-me--github]] **v4.43.0**; settings sync
+remains **v4.16.0**. The release workflow retains its expected-publication
+guard and manual force-publish path. Docs Sync still disables freshness
+validation, always passes `--dry-run`, admits its sync job only on pushes to
+`main`, and omits lowercase `packages/*/readme.md` from its README selector.
+Benchmarks remain weekly/manual and `--report-only`, with a successful-main
+artifact baseline and 90-day retention. These are source-level contracts,
+not observed run conclusions or delivered artifacts.
+
+Sources: pinned [root manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/package.json),
+[docs manifest](https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/docs/package.json),
+`readme.md`, `pnpm-workspace.yaml`, all nine package manifests,
+`scripts/package.json`, and `.github/workflows/{main,fro-bot,release,renovate,update-repo-settings,docs-sync,benchmarks}.yaml`
+at the same snapshot. No target source code or non-README agent guidance was read.
 
 ## 2026-10-18 — bounded manifest and workflow refresh
 
