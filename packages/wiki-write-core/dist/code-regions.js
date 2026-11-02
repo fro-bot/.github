@@ -88,6 +88,8 @@ export function findRegionAt(regions, offset) {
 }
 function findInlineSpans(line) {
     const spans = [];
+    // Where each length of backtick run starts on this line, built when the first opener needs it.
+    let runStartsByLength;
     let index = 0;
     while (index < line.length) {
         const character = line[index];
@@ -101,29 +103,54 @@ function findInlineSpans(line) {
         }
         const openEnd = skipBackticks(line, index);
         const runLength = openEnd - index;
-        let searchFrom = openEnd;
-        let closeEnd = -1;
-        while (searchFrom < line.length) {
-            const closeStart = line.indexOf('`', searchFrom);
-            if (closeStart === -1) {
-                break;
-            }
-            const candidateEnd = skipBackticks(line, closeStart);
-            if (candidateEnd - closeStart === runLength) {
-                closeEnd = candidateEnd;
-                break;
-            }
-            searchFrom = candidateEnd;
-        }
-        if (closeEnd === -1) {
+        runStartsByLength ??= indexBacktickRuns(line);
+        // The closer is the first later run of exactly the opener's length. Looking it up in the index keeps the
+        // scan linear: an opener with no partner no longer reads every run after it again.
+        const closeStart = firstAtOrAfter(runStartsByLength.get(runLength), openEnd);
+        if (closeStart === undefined) {
             index = openEnd;
         }
         else {
+            const closeEnd = closeStart + runLength;
             spans.push({ start: index, end: closeEnd });
             index = closeEnd;
         }
     }
     return spans;
+}
+/** The start offsets of the maximal backtick runs of `line`, grouped by the length of the run. */
+function indexBacktickRuns(line) {
+    const runStartsByLength = new Map();
+    for (let start = line.indexOf('`'); start !== -1;) {
+        const end = skipBackticks(line, start);
+        const starts = runStartsByLength.get(end - start);
+        if (starts === undefined) {
+            runStartsByLength.set(end - start, [start]);
+        }
+        else {
+            starts.push(start);
+        }
+        start = line.indexOf('`', end);
+    }
+    return runStartsByLength;
+}
+/** The first of the ascending `offsets` that is at least `minimum`, if any. */
+function firstAtOrAfter(offsets, minimum) {
+    if (offsets === undefined) {
+        return undefined;
+    }
+    let low = 0;
+    let high = offsets.length;
+    while (low < high) {
+        const middle = (low + high) >> 1;
+        if ((offsets[middle] ?? 0) < minimum) {
+            low = middle + 1;
+        }
+        else {
+            high = middle;
+        }
+    }
+    return offsets[low];
 }
 function skipBackticks(line, from) {
     let index = from;

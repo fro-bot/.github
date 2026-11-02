@@ -18,7 +18,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/code-regions.ts",
-      "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the built dist rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts."
+      "reason": "Pure locator for fenced code blocks and inline code spans, with no rejection path of its own: it returns offsets and never throws. Its consumers (markdown-links.ts and wiki-utils.ts) are themselves not-mutated, and their tests reach it through the built dist rather than a same-tree import. Pinned behaviorally by scripts/markdown-links.test.ts and scripts/wiki-utils.test.ts, and by packages/wiki-write-core/src/code-regions.test.ts, which keeps the rescanning inline-span scan as the reference, compares it on 60,000 weighted bodies and bounds a 1.2 MB line of unmatched openers."
     },
     {
       "path": "packages/wiki-write-core/src/inline-links.ts",
