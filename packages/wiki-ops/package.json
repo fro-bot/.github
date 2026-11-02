@@ -5,10 +5,20 @@
   "description": "The wiki handoff, change detection, context, query, repair, index and corrections tools of the Fro Bot control plane",
   "type": "module",
   "exports": {
+    "./correction-lifecycle": "./src/correction-lifecycle.ts",
+    "./correction-lifecycle-cli": "./src/correction-lifecycle-cli.ts",
+    "./rebuild-wiki-index": "./src/rebuild-wiki-index.ts",
+    "./rebuild-wiki-index-cli": "./src/rebuild-wiki-index-cli.ts",
+    "./render-corrections-context": "./src/render-corrections-context.ts",
+    "./render-corrections-context-cli": "./src/render-corrections-context-cli.ts",
     "./solution-docs-paths": "./src/solution-docs-paths.ts",
+    "./solutions-query": "./src/solutions-query.ts",
+    "./solutions-query-cli": "./src/solutions-query-cli.ts",
     "./wiki-change-detect": "./src/wiki-change-detect.ts",
     "./wiki-change-detect-cli": "./src/wiki-change-detect-cli.ts",
     "./wiki-change-detect-core": "./src/wiki-change-detect-core.ts",
+    "./wiki-context-expand": "./src/wiki-context-expand.ts",
+    "./wiki-context-expand-cli": "./src/wiki-context-expand-cli.ts",
     "./wiki-context-safety": "./src/wiki-context-safety.ts",
     "./wiki-handoff-apply": "./src/wiki-handoff-apply.ts",
     "./wiki-handoff-apply-cli": "./src/wiki-handoff-apply-cli.ts",
@@ -16,7 +26,9 @@
     "./wiki-handoff-baseline-cli": "./src/wiki-handoff-baseline-cli.ts",
     "./wiki-handoff-build": "./src/wiki-handoff-build.ts",
     "./wiki-handoff-build-cli": "./src/wiki-handoff-build-cli.ts",
-    "./wiki-handoff-core": "./src/wiki-handoff-core.ts"
+    "./wiki-handoff-core": "./src/wiki-handoff-core.ts",
+    "./wiki-query": "./src/wiki-query.ts",
+    "./wiki-query-cli": "./src/wiki-query-cli.ts"
   },
   "dependencies": {
     "@fro-bot/core": "workspace:*",

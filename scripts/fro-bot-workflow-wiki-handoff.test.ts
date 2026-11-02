@@ -7,7 +7,7 @@ import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-import {writeSelectedPathsHandoff} from './wiki-query.ts'
+import {writeSelectedPathsHandoff} from '@fro-bot/wiki-ops/wiki-query'
 
 // Regression guard: the baseline wiki-query step must write the run-local handoff
 // file, and the agent must be able to REACH it. The Action scrubs the OpenCode

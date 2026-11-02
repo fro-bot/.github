@@ -1623,11 +1623,19 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
     expect(sourceFilesFor(`import {x} from '@froxbot/wiki-write-core/wiki-slug'`)).toEqual([])
   })
 
-  it('finds package references in the real scripts tree, so a scan that matches nothing cannot pass', () => {
-    const scriptsDirectory = join(resolve(import.meta.dirname, '..'), 'scripts')
-    const referencingFiles = readdirSync(scriptsDirectory)
-      .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-      .map(name => ({name, sources: wikiWriteCoreSubpathSourceFiles(`scripts/${name}`)}))
+  it('finds package references in the real scripts and package trees, so a scan that matches nothing cannot pass', () => {
+    const repositoryRoot = resolve(import.meta.dirname, '..')
+    const sourceDirectories = ['scripts']
+    for (const entry of readdirSync(join(repositoryRoot, 'packages'), {withFileTypes: true})) {
+      if (entry.isDirectory() && entry.name !== 'wiki-write-core') sourceDirectories.push(`packages/${entry.name}/src`)
+    }
+    const referencingFiles = sourceDirectories
+      .flatMap(directory =>
+        readdirSync(join(repositoryRoot, directory))
+          .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+          .map(name => `${directory}/${name}`),
+      )
+      .map(name => ({name, sources: wikiWriteCoreSubpathSourceFiles(name)}))
       .filter(({sources}) => sources.length > 0)
 
     expect(referencingFiles.length).toBeGreaterThanOrEqual(10)

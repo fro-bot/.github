@@ -334,7 +334,7 @@ describe('wiki-query CLI shell behavior', () => {
       await chmod(badPath, 0o000)
 
       // #when the real CLI script runs
-      const result = spawnSync('node', [join(import.meta.dirname, 'wiki-query.ts')], {
+      const result = spawnSync('node', [join(import.meta.dirname, '..', '..', '..', 'scripts', 'wiki-query.ts')], {
         cwd: dir,
         encoding: 'utf8',
         env: {
@@ -368,7 +368,7 @@ describe('wiki-query CLI shell behavior', () => {
       await writeFile(join(wikiDir, 'broken.md'), '---\ntags: [unterminated\ntitle: Broken\n---\n\nBody.\n')
 
       // #when the real CLI script runs from that working directory
-      const result = spawnSync('node', [join(import.meta.dirname, 'wiki-query.ts')], {
+      const result = spawnSync('node', [join(import.meta.dirname, '..', '..', '..', 'scripts', 'wiki-query.ts')], {
         cwd: dir,
         encoding: 'utf8',
         env: {

@@ -17,7 +17,7 @@ import {isAllowedWikiHandoffPath} from './wiki-handoff-core.ts'
  *
  * Two eligibility filters narrow the raw filesystem walk down to what the wiki handoff can
  * actually carry, so a positive detection always corresponds to a real transferable delta:
- *   1. `isAllowedWikiHandoffPath` (shared with `scripts/wiki-handoff-core.ts`, unmodified —
+ *   1. `isAllowedWikiHandoffPath` (shared with `wiki-handoff-core.ts`, unmodified —
  *      this coupling is intentional so the eligibility rule lives in exactly one place).
  *   2. `git check-ignore --no-index`, so editor swap files, `.DS_Store`, and anything else
  *      `.gitignore` excludes never register, matching what `wiki-handoff-build.ts`'s

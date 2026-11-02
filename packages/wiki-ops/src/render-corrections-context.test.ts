@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {formatCorrectionsContext, main} from './render-corrections-context.ts'
+import {formatCorrectionsContext, renderCorrectionsContext} from './render-corrections-context.ts'
 
 describe('render-corrections-context', () => {
   it('keeps delimiter-like correction text inside a data file payload', () => {
@@ -22,7 +22,7 @@ describe('render-corrections-context', () => {
 
   it('filters lifecycle and node identity in the executable context assembly', async () => {
     let writtenContent = ''
-    await main({
+    await renderCorrectionsContext({}, {
       nodeId: 'R_123',
       readCorrections: async () => ({
         corrections: {

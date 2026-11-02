@@ -1,11 +1,5 @@
+import {mergeWikiLogs, rebuildWikiIndex} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {describe, expect, it} from 'vitest'
-
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-const wikiIngestModulePromise: Promise<{
-  mergeWikiLogs: typeof import('./wiki-ingest.js').mergeWikiLogs
-  rebuildWikiIndex: typeof import('./wiki-ingest.js').rebuildWikiIndex
-}> = import(`./wiki-ingest${'.js'}`)
-const {mergeWikiLogs, rebuildWikiIndex} = await wikiIngestModulePromise
 
 function wikiPage(params: {
   path: string
