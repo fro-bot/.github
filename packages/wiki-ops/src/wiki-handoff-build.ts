@@ -35,16 +35,20 @@ export async function runWikiHandoffBuild(
     outDir,
     ...(baselinePath === undefined ? {} : {baselinePath}),
     runGitStatus: async () => {
-      const {stdout} = await execFileAsync('git', [
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-        '--',
-        'knowledge/wiki',
-        'knowledge/index.md',
-        'knowledge/log.md',
-      ])
+      const {stdout} = await execFileAsync(
+        'git',
+        [
+          'status',
+          '--porcelain=v1',
+          '-z',
+          '--untracked-files=all',
+          '--',
+          'knowledge/wiki',
+          'knowledge/index.md',
+          'knowledge/log.md',
+        ],
+        {cwd},
+      )
       return stdout
     },
   })
