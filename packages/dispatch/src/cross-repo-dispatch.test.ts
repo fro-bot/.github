@@ -109,10 +109,91 @@ describe('marker round-trip', () => {
       null,
     ],
     ['unclosed only', (m: string) => `<!-- ${MARKER_PREFIX}${m}`, null],
+    [
+      'nested openings closed by one arrow: the outer opening owns the payload, which is malformed',
+      (m: string) => `<!-- ${MARKER_PREFIX}{"x":1 <!-- ${MARKER_PREFIX}${m} -->`,
+      null,
+    ],
+    [
+      'a nested opening after a complete marker',
+      (m: string) => `<!-- ${MARKER_PREFIX}${m} --> <!-- <!-- ${MARKER_PREFIX}{"x":1}`,
+      'g',
+    ],
+    [
+      'a malformed marker before a good one',
+      (m: string) => `<!-- ${MARKER_PREFIX}{not json} --> <!-- ${MARKER_PREFIX}${m} -->`,
+      'g',
+    ],
+    [
+      'three complete markers with a malformed one in the middle',
+      (m: string) =>
+        `<!-- ${MARKER_PREFIX}${m.replace('"g"', '"first"')} --> <!-- ${MARKER_PREFIX}{oops} --> <!-- ${MARKER_PREFIX}${m} -->`,
+      'g',
+    ],
+    ['a payload that is JSON but not a marker', () => `<!-- ${MARKER_PREFIX}{"hash":1,"state":{}} -->`, null],
+    ['an empty payload', () => `<!-- ${MARKER_PREFIX}-->`, null],
     ['prefix without its colon', (m: string) => `<!-- cross-repo-dispatch ${m} -->`, null],
   ])('finds the last closed marker: %s', (_name, build, goal) => {
     const body = build(JSON.stringify(serializeMarker(makeState({goal: 'g'}))))
     expect(extractMarker(body)?.state.goal ?? null).toBe(goal)
+  })
+
+  it('matches the regex it replaced on seeded random bodies', () => {
+    const referencePayload = /<!--\s*cross-repo-dispatch:([\s\S]*?)-->/g
+    function referenceGoal(body: string): string | null {
+      let last: string | undefined
+      referencePayload.lastIndex = 0
+      for (;;) {
+        const match = referencePayload.exec(body)
+        if (match === null) break
+        last = match[1]
+      }
+      if (last === undefined) return null
+      try {
+        const parsed = JSON.parse(last) as {hash?: unknown; state?: {goal?: unknown; items?: unknown}}
+        if (typeof parsed.hash !== 'string' || parsed.state?.goal === undefined || !Array.isArray(parsed.state.items))
+          return null
+        return typeof parsed.state.goal === 'string' ? parsed.state.goal : null
+      } catch {
+        return null
+      }
+    }
+
+    const good = (goal: string) => JSON.stringify({hash: 'h', state: {goal, items: []}})
+    const tokens = [
+      `<!-- ${MARKER_PREFIX}${good('a')} -->`,
+      `<!-- ${MARKER_PREFIX}${good('b')} -->`,
+      `<!--${MARKER_PREFIX}${good('c')}-->`,
+      `<!--\n ${MARKER_PREFIX}${good('d')}\n-->`,
+      `<!-- ${MARKER_PREFIX}`,
+      `<!-- ${MARKER_PREFIX}{not json} -->`,
+      `<!-- ${MARKER_PREFIX}{"hash":1} -->`,
+      '<!--',
+      '<!-- ',
+      '-->',
+      '--',
+      '>',
+      ' ',
+      '\n',
+      'text',
+      `${MARKER_PREFIX} `,
+    ]
+    let state = 0x4087
+    const next = () => {
+      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+      return state / 4_294_967_296
+    }
+
+    let found = 0
+    for (let index = 0; index < 20_000; index++) {
+      let body = ''
+      for (let count = Math.floor(next() * 12); count > 0; count--)
+        body += tokens[Math.floor(next() * tokens.length)] ?? ''
+      const expected = referenceGoal(body)
+      if (expected !== null) found += 1
+      expect(extractMarker(body)?.state.goal ?? null, JSON.stringify(body)).toBe(expected)
+    }
+    expect(found).toBeGreaterThan(5000)
   })
 
   it('stays fast on many unclosed marker openings', () => {

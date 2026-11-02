@@ -318,7 +318,7 @@
     },
     {
       "path": "packages/dispatch/src/dispatch-receipts.ts",
-      "reason": "Text parsing of coordination comments (the planner checklist, the worker receipt with its escape repair) and the three-gate receipt resolver (Fro Bot author, correlation id maps to an item, hash(nonce) equals the stored hash), plus the nonce primitives. Pinned by decision-table tests in packages/dispatch/src/cross-repo-dispatch.test.ts: the checklist grammar, the receipt region and bare-marker forms, escape repair, earliest-receipt-wins, forged-nonce and non-bot receipts, and early receipts. Not in the mutate list: it never writes; the executors that act on its verdicts are in dispatch-run.ts and write only to the coordination issue's marker comment."
+      "reason": "Text parsing of coordination comments (the planner checklist, the worker receipt with its escape repair) and the three-gate receipt resolver (Fro Bot author, correlation id maps to an item, hash(nonce) equals the stored hash), plus the nonce primitives. Pinned by decision-table tests in packages/dispatch/src/cross-repo-dispatch.test.ts: the checklist grammar, the receipt region and bare-marker forms, escape repair, earliest-receipt-wins, forged-nonce and non-bot receipts, and early receipts. packages/dispatch/src/dispatch-receipts.test.ts pins the receipt-marker scan against the forward walk it replaced on 60,000 seeded bodies and bounds it at 20,000 prefixes. Not in the mutate list: it never writes; the executors that act on its verdicts are in dispatch-run.ts and write only to the coordination issue's marker comment."
     },
     {
       "path": "packages/dispatch/src/dispatch-plan.ts",

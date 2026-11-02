@@ -211,58 +211,82 @@ export function buildResultMarker(receipt: CrossRepoResult): string {
  * arrow) does not close the marker — only an out-of-string `-->` does. This
  * mirrors `repairJsonStringEscapes`'s string-scope discipline: a string is
  * entered on `"`, exited on an unescaped `"`, and `\"`/`\\` inside a string
- * do not toggle scope. If an occurrence's prefix is found but no
- * out-of-string `-->` follows before the end of `scope`, that occurrence is
- * treated as an incomplete marker (skipped), matching how the old
- * non-greedy regex would simply fail to match it.
+ * do not toggle scope. If an occurrence's prefix is found but no `-->`
+ * follows before the end of `scope`, that occurrence is an incomplete
+ * marker and is skipped. The last complete marker wins.
  */
 const MARKER_PREFIX_REGEX = /<!--\s*fro-bot:cross-repo-result\s/g
 
-function findMarkerTerminator(scope: string, payloadStart: number): number | null {
-  let inString = false
-  // Fallback for genuinely malformed JSON (e.g. an unterminated string that
-  // never closes before EOF): if no out-of-string `-->` is ever found, fall
-  // back to the first literal `-->` regardless of string state, mirroring
-  // the old non-greedy-regex behavior so such payloads still reach
-  // JSON.parse and surface as `malformed` rather than vanishing into
-  // `absent`. A marker with no `-->` anywhere remains a true `absent`.
-  let naiveFallback: number | null = null
+/**
+ * Where a payload that starts at each index of `scope` ends: the first `-->` outside a JSON string, or
+ * else the first `-->` the scan visits, or `null` when there is none. The scan walks forward from the
+ * payload start in two states, outside and inside a string. Outside, `"` enters a string and a `-->`
+ * ends the payload. Inside, `"` leaves the string, and a backslash skips the next character, so an
+ * escaped `"` or `\\` neither toggles the state nor shows an arrow that character would start. If no
+ * out-of-string `-->` ever appears (an unterminated string), the first visited `-->` is the answer, so
+ * such a payload still reaches `JSON.parse` and surfaces as `malformed` rather than vanishing into
+ * `absent`.
+ *
+ * Walking forward from each prefix is quadratic on a body with many prefixes, so one right-to-left pass
+ * fills, for every index and state, the end the forward walk from there would produce. Each prefix is then
+ * answered with one lookup, and the answers are exactly the forward walk's.
+ */
+function buildTerminatorLookup(scope: string): (payloadStart: number) => number | null {
+  const size = scope.length + 2
+  // For an index and a state: `-1` when there is none. `end*` is the first out-of-string arrow; `first*`
+  // is the first arrow visited, string or not.
+  const endOutside = new Int32Array(size).fill(-1)
+  const firstOutside = new Int32Array(size).fill(-1)
+  const endInside = new Int32Array(size).fill(-1)
+  const firstInside = new Int32Array(size).fill(-1)
 
-  for (let i = payloadStart; i < scope.length; i++) {
+  for (let i = scope.length - 1; i >= 0; i--) {
     const ch = scope[i]
     const atArrow = ch === '-' && scope.startsWith('-->', i)
 
-    if (atArrow && naiveFallback === null) naiveFallback = i
-
-    if (inString) {
-      if (ch === '\\') {
-        // Skip the escaped character so `\"` and `\\` don't toggle/confuse scope.
-        i += 1
-        continue
-      }
-      if (ch === '"') inString = false
-      continue
+    if (ch === '\\') {
+      // Inside a string the escaped character is skipped, so the walk resumes two on.
+      endInside[i] = endInside[i + 2] ?? -1
+      firstInside[i] = firstInside[i + 2] ?? -1
+    } else if (ch === '"') {
+      endInside[i] = endOutside[i + 1] ?? -1
+      firstInside[i] = firstOutside[i + 1] ?? -1
+    } else {
+      endInside[i] = endInside[i + 1] ?? -1
+      firstInside[i] = atArrow ? i : (firstInside[i + 1] ?? -1)
     }
 
     if (ch === '"') {
-      inString = true
-      continue
+      endOutside[i] = endInside[i + 1] ?? -1
+      firstOutside[i] = firstInside[i + 1] ?? -1
+    } else if (atArrow) {
+      endOutside[i] = i
+      firstOutside[i] = i
+    } else {
+      endOutside[i] = endOutside[i + 1] ?? -1
+      firstOutside[i] = firstOutside[i + 1] ?? -1
     }
-
-    if (atArrow) return i
   }
-  return naiveFallback
+
+  return payloadStart => {
+    const end = endOutside[payloadStart] ?? -1
+    if (end !== -1) return end
+    const first = firstOutside[payloadStart] ?? -1
+    return first === -1 ? null : first
+  }
 }
 
-function extractResultMarkerJson(scope: string): string | null {
+export function extractResultMarkerJson(scope: string): string | null {
   let lastPayload: string | null = null
+  let terminatorFrom: ((payloadStart: number) => number | null) | undefined
   MARKER_PREFIX_REGEX.lastIndex = 0
   for (;;) {
     const match = MARKER_PREFIX_REGEX.exec(scope)
     if (match === null) break
 
     const payloadStart = match.index + match[0].length
-    const terminatorIndex = findMarkerTerminator(scope, payloadStart)
+    terminatorFrom ??= buildTerminatorLookup(scope)
+    const terminatorIndex = terminatorFrom(payloadStart)
     if (terminatorIndex === null) continue
 
     lastPayload = scope.slice(payloadStart, terminatorIndex)
