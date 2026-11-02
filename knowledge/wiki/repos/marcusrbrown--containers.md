@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/containers
 created: 2026-04-18
-updated: 2026-10-11
+updated: 2026-10-27
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -40,6 +40,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 008a0d383c457c0f4b05b3db5e3b5d41e3787ed5
     accessed: 2026-10-11
+  - url: https://github.com/marcusrbrown/containers
+    sha: be4082462cf3f401dc33b1a9a6a90ca2addf2451
+    accessed: 2026-10-27
 tags:
   - docker
   - containers
@@ -302,6 +305,74 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-06-07 | `8aeadf73` | Incremental re-survey. **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR lands first-class `containers ai config --init/--validate` CLI subcommand, `ai_config.example.yaml`, and three doc files (`AI_CONFIGURATION.md`, `AI_CLI_GUIDE.md`, `AI_VERIFICATION_REPORT.md`). **Security fix** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, idna 3.17 patched in Express and Python template deps. **Fro Bot agent jumped v0.44.0 → v0.55.0** (#630). **dorny/paths-filter bumped v3 → v4** (#607). **pnpm 10.34.1** (#622). **Node.js 24.16.0** (mise.toml). **openai >=2.41.0** (#628). Continuous Node.js/Debian base image digest rotation cadence. Open issues: 6 (Dep Dashboard #415, Daily Autohealing #533, Tech Debt test coverage #555, Copilot pytest PR #583, two Renovate dev-dependency pin PRs #611/#612). |
 | 2026-06-28 | `289d8009` | Incremental re-survey. **pnpm crossed v10 → v11 major boundary** (security PRs #670/#671, 2026-06-27) — `mise.toml` now pins pnpm `11.9.0`. **Fro Bot agent jumped v0.65.0 → v0.79.1** (SHA `720b7216...`) across the daily Renovate cadence (#653 v0.72.0 → #669 v0.78.0 → v0.79.1). **`openai` bumped to >=2.44.0,<2.45.0**; **Node.js to 24.18.0**. Continuous Node.js/Debian base image digest rotation. PR #647 (non-major bundle) merged. Open PRs: 4 — #673 (fro-bot, actions/cache v5→v6 in setup action), #655 (fro-bot, GitHub Actions major bumps), #646 (fro-bot, FastAPI template python-multipart/pydantic-settings security), #611 (mrbro-bot pin deps). Open issues: 2 (#533 Daily Autohealing, #415 Dependency Dashboard). No structural changes. |
 | 2026-06-17 | `569a6c8c` | Incremental re-survey. **Pytest coverage merged** (PR #583, 2026-06-14): the long-pending Copilot SWE-agent test PR finally lands; `pyproject.toml` gains a `--cov-fail-under=35` gate and branch-coverage config over `ai_core`, `template_engine`, `containers_cli`, `predictive_maintenance`. **Security fix** (PR #643, 2026-06-14): express → 4.22.2 in `node/release` (Dependabot #35). **Fro Bot agent jumped v0.55.0 → v0.65.0** across the daily Renovate cadence (#632 v0.56.1 → #644 v0.65.0). **Open Fro-Bot-authored security PR #646:** python-multipart 0.0.22 → 0.0.32 in the FastAPI template, closing six Dependabot alerts (#29/#30/#36/#37/#38/#39). Toolchain unchanged (Node 24.16.0, pnpm 10.34.1, Python 3.13, openai >=2.41.0). Renovate preset still `#5.2.0`. Open issues down to 2 (Daily Autohealing #533, Dependency Dashboard #415); tech-debt issue #555 now closed by the merged coverage work. Open PRs: 3 (#647 mrbro-bot non-major bundle, #646 fro-bot python-multipart, #611 mrbro-bot pin deps). |
+
+## Current Evidence — 2026-10-27
+
+Public `main` resolves to `be4082462cf3f401dc33b1a9a6a90ca2addf2451`.
+Reads were limited to directory listings, READMEs, manifests, and all ten
+workflow files at that SHA. Target text was treated as untrusted evidence;
+no target commands were executed. The older observations below remain dated
+history, not current claims about images, alerts, PR queues, or run outcomes.
+
+### Routing and delivery corrections
+
+- **The application-path trigger gap recorded October 11 is addressed in
+  workflow source.** `build-publish.yaml` now includes `node/**` for pushes
+  and PRs. Both publication and test workflows call the new shared
+  `scripts/detect_changed_containers.py`, passing event, base SHA, and head SHA
+  through environment variables. The workflow comments declare any file in
+  an image context relevant, full selection on dispatch, and failure on Git
+  errors. The tree includes `tests/test_detect_changed_containers.py`;
+  detector implementation and test contents were outside this survey's scope.
+  This establishes shared wiring and declared intent, not proof of correct
+  selection for every diff, including scripts-only changes. See [[docker-containers]].
+- **Container dispatch no longer depends on skipped `prepare`.**
+  `detect-containers` now has no `needs: prepare`; container builds and security
+  scans depend directly on it. Both aggregate checks now inspect detector
+  failure/cancellation as well as the matrix result, so detector failure
+  cannot be hidden by a skipped matrix. They still accept skipped results.
+  Python tests and linting retain `needs: prepare` and their event-only `if`;
+  the manual-dispatch skip caveat remains for those jobs.
+- **The missing agent delivery declaration recorded October 11 is corrected.**
+  `fro-bot.yaml` explicitly selects `output-mode: branch-pr` for schedule and
+  dispatch events, and an empty value otherwise. Its prompt now requires PRs
+  against `main`, deduplication against existing Fro Bot PRs, and diagnosis
+  rather than pushes to other bots' branches. The workflow is present at
+  agent **v0.126.0**, with its daily 14:30 UTC schedule intact; no
+  missing-workflow follow-up draft is indicated. This repairs the declared
+  delivery contract without proving any historical remediation landed or
+  establishing current runtime success.
+
+### Inventory and remaining boundaries
+
+The tree lists fifteen Python implementation files under `scripts/` and eight
+`test_*.py` modules, plus `conftest.py` and `__init__.py`; the added detector
+and two test paths expand October 11's inventory. Seven template manifests
+still match the documentation's seven-template/five-category inventory.
+Poetry retains Python `>=3.13,<3.14`, ten entry points, and the 35% coverage
+floor, now covering **five** modules including `scripts.detect_changed_containers`.
+The manifest raises urllib3's minimum from 2.7.0 to **2.8.0**; OpenAI and
+Anthropic constraints remain unchanged. Both Node application manifests now
+declare Express **4.22.3** (previously 4.22.2), but retain placeholder failing
+`test` commands. The root Node manifest remains formatting-only.
+
+Renovate and settings callers now pin `bfra-me/.github` **v4.43.0**, and Renovate
+also receives completed `Automated Testing` runs on `main`. Publication retains
+AMD64/ARM64 defaults, Buildx/QEMU v4.4.0 and build-push v7.4.0; login is v4.7.0.
+Publication and testing set `cancel-in-progress` only for PR events.
+This states cancellation intent; no run or queue
+behavior was inspected.
+
+The shell-only, non-blocking image smoke check remains; it does not start
+Express or probe the documented endpoints. `release.yaml` still only generates
+tags. `node/README.md` still names Node 22 bases and ARM alongside AMD64/ARM64;
+actual Dockerfile/runtime versions remain unverified in this bounded survey.
+
+Sources: [build/publish](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/.github/workflows/build-publish.yaml),
+[testing](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/.github/workflows/test.yaml),
+[Fro Bot](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/.github/workflows/fro-bot.yaml),
+[Python manifest](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/pyproject.toml),
+[Node manifest](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/node/alpine/package.json).
 
 ## Current Evidence — 2026-10-11
 

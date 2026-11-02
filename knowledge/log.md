@@ -8930,3 +8930,713 @@ entry without duplicating ingest findings or creating an issue run notice.
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-10-26 11:13] ingest | marcusrbrown/opencode-copilot-delegate
+
+Surveyed public `main` snapshot `5ea06fe995842351bc8aa93748cdf60ec1c13032`.
+Updated [[marcusrbrown--opencode-copilot-delegate]] additively with the declared
+0.12.1 package surface, OpenCode plugin dev pin 1.18.35 → 1.19.3 (peer floor
+still >=1.14.41), Bun/Node type and Solid pin updates, Fro Bot v0.125.5,
+Renovate caller v4.43.0, and release App-token action v3.3.0. Retained dated
+contradictions: README lists three tools against the resume tool/test filenames,
+describes notification behavior differently from earlier implementation evidence,
+and still gives a 0.1.0 exact-pin example. Fro Bot is present; no missing-workflow
+proposal is warranted. Its caller still ends at the agent step without explicit
+delivery configuration, which does not independently establish a live failure.
+
+Updated [[opencode-plugins]] with the distinction between development pins,
+peer promises, export-shape checks, and host/TUI verification. All six workflow
+files were read: CI invokes only unit tests and the default-entry smoke test;
+the declared TUI and integration scripts are not invoked. No new topic, entity,
+or comparison page was justified.
+
+Target content was treated as untrusted data. Reads were restricted to public
+identity resolution, directory listings, README, package manifest, and workflow
+files at the immutable SHA. No target code or commands were executed; no source,
+test contents, configuration contents, registry data, issues, PRs, or run telemetry
+were inspected. Corrections context contained no records. Existing knowledge and
+log entries were preserved; the trusted caller owns index maintenance and delivery.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/5ea06fe995842351bc8aa93748cdf60ec1c13032;
+`README.md`, `package.json`, and
+`.github/workflows/{ci,copilot-setup-steps,fro-bot,release,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40313121099
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation scanned 48 pages with zero deterministic findings;
+four existing advisories concern unrelated pages. `git diff --check` passed.
+Only the two wiki pages and this appended log entry changed. The required single
+delivery/check comment points to this entry from the control-repository commit;
+ingest findings remain canonical here without an issue run notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/cc8719845fc6be848a98664ebfffffb8569298d9#commitcomment-206668658
+Exactly one comment was posted; the returned body confirmed bot identification
+and both Run Summary marker delimiters.
+
+## [2026-10-26 11:18] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-10-26 11:15] ingest | marcusrbrown/panthea
+
+Surveyed public snapshot `9556db85d5d9f648db8f07f0eb0269b900cf0dbc`.
+Updated [[marcusrbrown--panthea]] additively with shared renderer/test-kit
+manifest boundaries, Bun 1.4.3 and current Tauri pins, documented Studio
+derivation and recipe rendering, the README's Blender-Python GPL/MIT boundary,
+and source-reported packaged WebGL2/provider-settings evidence with its limits.
+Preserved the earlier scaffold/no-workflow observations, dated the now-supported
+`derive` contradiction, and distinguished 85 reported packaged readback passes
+from independently reproduced checks or an MVP/art-quality verdict.
+
+Updated [[github-actions-ci]] with both native lanes' locked Rust tests,
+Fro Bot v0.122.3 and unchanged input-dependent delivery contract, and correctly
+routed v4.39.0 Renovate/settings callers. Fro Bot is present; no onboarding
+follow-up is justified by this snapshot. No new topic/entity/comparison page
+is warranted. Existing frontmatter identity and all historical prose remain.
+
+Reads were limited to public identity/commit resolution, a complete
+non-truncated directory listing, READMEs, package/Cargo manifests, and all four
+workflow files at one immutable SHA. Target text was treated as untrusted data;
+no target commands, source implementations, configuration contents, workflow
+runs, issues, or PRs were inspected or executed. Corrections context contained
+no records. Only the two wiki pages and this appended log entry were changed;
+index maintenance and code delivery belong to the trusted caller workflow.
+
+Sources: https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc;
+`README.md`, root/client/desktop/Studio/renderer/test-kit manifests, both shell
+`Cargo.toml` files, `tools/{studio,render}/README.md`,
+`tools/scenarios/studio-zeus-scene/README.md`,
+`docs/evidence/{asset-studio/unit8,asset-studio/unit9,provider-settings}/README.md`,
+and `.github/workflows/{ci,fro-bot,renovate,update-repo-settings}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40313317235
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/cc8719845fc6be848a98664ebfffffb8569298d9#commitcomment-206669004
+Exactly one comment was posted on the control-repository commit; its returned
+body contains bot identification and both Run Summary marker delimiters. It
+points to this canonical log entry without duplicating findings or creating an
+issue run notice.
+
+## [2026-10-26 11:21] ingest | repo:marcusrbrown/panthea
+
+Surveyed marcusrbrown/panthea and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthea
+
+## [2026-10-27 10:42] ingest | marcusrbrown/containers
+
+Surveyed public snapshot `be4082462cf3f401dc33b1a9a6a90ca2addf2451`.
+Updated [[marcusrbrown--containers]] additively with context-wide workflow
+routing declarations, shared detector wiring, detector-aware aggregate checks,
+and the explicit schedule/dispatch `branch-pr` agent delivery contract. These
+supersede the October 11 trigger omission, container-dispatch dependency, and
+missing output-mode observations; prior evidence is preserved. Recorded agent
+v0.126.0, reusable workflows v4.43.0, Express 4.22.3, urllib3's 2.8.0 floor,
+five-module coverage scope, and the expanded script/test inventory. Fro Bot is
+present; a missing-workflow onboarding draft is not warranted.
+
+Updated [[docker-containers]] with the repaired routing and detector-failure
+aggregation boundaries. Remaining shell-only smoke checks, accepted skips, and
+Python/lint dispatch dependencies are explicitly distinguished from those
+repairs. No new topic/entity/comparison page was justified.
+
+Reads were limited to public identity/revision resolution, a non-truncated
+directory listing, READMEs, manifests, and all ten workflows at one immutable
+SHA. Target text was untrusted data; no target code or commands, Dockerfiles,
+lockfile contents, issue/PR bodies, runs, or registry artifacts were inspected
+or executed. Corrections context contained no records. Existing working-tree
+changes were preserved; index maintenance and code delivery belong to the caller.
+
+Sources: https://github.com/marcusrbrown/containers/tree/be4082462cf3f401dc33b1a9a6a90ca2addf2451;
+`README.md`, `node/README.md`, `docs/templates/README.md`, `pyproject.toml`,
+root and both Node application `package.json` files, and all ten
+`.github/workflows/*.yaml` files at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/40490084678
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Read-only wiki lint scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages. `git diff --check`
+passed. This invocation changed only the repo page, Docker topic page, and this
+appended log entry; pre-existing edits remain in place.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/56653d76f2a37c36f6abfcd59963d93b56b551da#commitcomment-206850957
+Exactly one comment was posted on the control-repository commit; its returned
+body confirmed bot identification and both Run Summary markers. It points to
+this canonical log entry without duplicating ingest findings or creating an
+issue run notice. Commit, push, and PR creation remain with the caller.
+
+## [2026-10-27 10:48] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
+
+## [2026-10-27 10:43] ingest | marcusrbrown/renovate-config
+
+Re-surveyed the public repository at immutable `main` SHA
+`7386008aa74020dc7773cff96a92c82746b4530a`. Added a dated snapshot to
+[[marcusrbrown--renovate-config]] and refreshed [[github-actions-ci]] with
+static reconfirmation of the dispatch dry-run override and the unchanged
+agent/caller delivery-wiring concern. Existing historical findings and prior
+working-tree edits were preserved; no new page was justified.
+
+The README still advertises three presets and `#v5`. Six workflow files remain;
+Fro Bot is present at v0.126.0, so no missing-workflow follow-up is warranted.
+Renovate/settings reusable callers advance to v4.43.0. Manifest deltas include
+pnpm 11.28.8, ESLint 10.13.0, Prettier 3.9.10, and workspace exact overrides
+fast-uri 3.1.9 / undici 7.30.1. Lint remains the visible pre-release gate.
+Workspace release-age exclusions still do not establish an active cooldown;
+preset grouping and effective install/security behavior remain unresolved.
+
+Reads were limited to public identity/commit resolution, a complete directory
+listing, the README, package/workspace manifests, and all six workflow files.
+Target content was treated as untrusted data and no target commands executed.
+Preset/configuration bodies, lockfile contents, runs, issues, PRs, and releases
+were not read. Corrections context contained no records. Changes are limited
+to the two wiki pages and this append-only entry; the trusted caller owns index
+maintenance and code delivery.
+
+Sources: https://github.com/marcusrbrown/renovate-config/tree/7386008aa74020dc7773cff96a92c82746b4530a;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,fro-bot,renovate,update-repo-settings,codeql-analysis,scorecard}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40490277520
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/56653d76f2a37c36f6abfcd59963d93b56b551da#commitcomment-206851060
+Exactly one control-repository commit comment was posted, with bot identification
+and Run Summary marker delimiters. It points to this canonical log record without
+duplicating the ingest findings or creating an issue run notice.
+
+## [2026-10-27 10:48] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-10-28 11:26] ingest | marcusrbrown/dev-like
+
+Re-surveyed the public repository at immutable `main` SHA
+`dc32f43d66b2b54008c6afba4ac5f2284cd64ecd`. Added a dated snapshot to
+[[marcusrbrown--dev-like]] and refreshed [[github-actions-ci]]. Existing
+knowledge, attribution corrections, and pre-existing working-tree edits were
+preserved; no additional topic/entity/comparison page was justified.
+
+The root manifest remains dev-like 0.4.1 with no runtime dependencies; five
+registry directories and the Theo generated-on-demand/tree ambiguity persist.
+Fro Bot is present at v0.128.0, so no missing-workflow follow-up is warranted.
+The caller still has no explicit output mode or post-agent file-delivery step;
+failure notification is a separate contract. Site's docs checks are not selected
+by root-manifest/lockfile-only pushes despite a root workspace install, and root
+CI does not run those docs checks. Recorded this as a static coverage boundary,
+not an observed regression. Other pin deltas: Playwright 1.64.1, release npm
+11.21.1, and reusable Renovate/settings workflows v4.43.0.
+
+Reads were limited to identity/commit resolution, a complete directory listing,
+the root README, root/docs package manifests, and all seven workflows. Target
+content was untrusted evidence; no target commands or inline prompts were
+executed. Registry records, validators, settings/configuration bodies, lockfile
+contents, runs, issues, PRs, publication results, and eval results were not read.
+Corrections context contained no records. Only the two wiki pages and this
+append-only log entry were edited; the caller owns index maintenance and code
+delivery.
+
+Sources: https://github.com/marcusrbrown/dev-like/tree/dc32f43d66b2b54008c6afba4ac5f2284cd64ecd;
+`README.md`, `package.json`, `docs/package.json`, and
+`.github/workflows/{ci,fro-bot,link-check,release,renovate,site,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40679552441
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207032592
+Exactly one control-repository commit comment was posted; the returned body
+confirmed bot identification and both Run Summary markers. It points to this
+canonical log entry without duplicating ingest findings or creating an issue
+run notice. Public visibility was rechecked before the handoff.
+
+## [2026-10-28 11:32] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like
+
+## [2026-10-28 11:42] ingest | bfra-me/.github
+
+Re-surveyed public `main` at immutable SHA
+`737d27ff96c848836cd46f38c7c6ac81cf488d53`. Added a dated snapshot to
+[[bfra-me--github]] and additive evidence to [[github-actions-ci]] and
+[[probot-settings]]. Existing historical findings, contradictory evidence,
+and pre-existing working-tree edits were preserved. No new page was needed;
+the trusted writer owns index maintenance and persistence.
+
+Key findings:
+
+- Root package 4.43.0, pnpm 11.28.6, ESLint 10.13.0, Vitest 4.1.12;
+  TypeScript remains 6.0.3. Action packages are now 0.3.2 / 0.2.2 / 0.4.2
+  for renovate-changesets / update-metadata / update-repository-settings,
+  respectively. All declare Node >=24 and the node24 action runtime.
+- The listing retains 16 workflows and six template YAML/metadata pairs.
+  Root CI still chains type-check, lint, build, and tests before main-push
+  release. Seven workspace overrides and the two-package build allowlist
+  remain; the workspace manifest declares release-age exclusions without
+  an explicit minimumReleaseAge value.
+- Renovate 10.85.0 declares job-level writer serialization with queue: max;
+  branch-push dry runs use independent run-ID groups. Captured the distinction
+  between serializing active writers and retaining pending writers, without
+  claiming observed scheduler behavior or successful dispatches.
+- Fro Bot is present at v0.125.1 with the daily 15:30 UTC pass. Its caller
+  still has no explicit output mode or post-agent delivery step, despite
+  the embedded agent-owned delivery prompt. This is source-level evidence,
+  not a remeasurement of the historical lost-edit incident. No missing-
+  workflow follow-up is warranted. The credential-persistence denylist
+  still omits two comment trigger types recorded in earlier surveys.
+- The settings caller still uses its self-ref local action while the README
+  names elstudio/actions-settings. Retained both claims as a contradiction;
+  client-ID selection still coexists with a required legacy reusable secret.
+  Applied settings and read-back outcomes were not verified.
+
+Reads were limited to visibility/ref resolution, a complete directory listing,
+the root README, root/workspace and three action package manifests, three
+action manifests, and five workflow files. Target content was untrusted
+evidence; no upstream commands or embedded prompts were executed. Source,
+configuration and lockfile bodies, runs, issues, PRs, and release results
+were not read. Corrections context contained no records. This invocation
+edited only the three wiki pages and appended this log entry.
+
+Sources: https://github.com/bfra-me/.github/tree/737d27ff96c848836cd46f38c7c6ac81cf488d53;
+`README.md`, `package.json`, `pnpm-workspace.yaml`,
+`.github/actions/{renovate-changesets,update-metadata,update-repository-settings}/{package.json,action.yaml}`,
+and `.github/workflows/{main,fro-bot,renovate,trigger-org-renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40681099083
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki lint scanned 48 pages with zero deterministic findings and
+four existing advisories on unrelated pages. `git diff --check` passed.
+The repository ESLint configuration intentionally excludes `knowledge/`;
+the targeted ESLint invocation reported ignored-file warnings, so wiki
+frontmatter/link validation is the applicable content gate here.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207034011
+Exactly one control-repository commit comment was posted; its returned body
+confirmed bot identification and both Run Summary markers. It points to this
+canonical log entry without duplicating ingest findings or creating an issue
+run notice. Public visibility was rechecked before the handoff.
+
+## [2026-10-28 11:45] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
+
+## [2026-10-29 11:39] ingest | marcusrbrown/sparkle
+
+Re-surveyed public `main` at `b6116202d97cef5c6a535ffa9555f745729772e8`.
+Added a dated snapshot to [[marcusrbrown--sparkle]] and additive workflow
+evidence to [[github-actions-ci]]. Preserved existing knowledge, contradictions,
+and pre-existing working-tree changes. No new page or index edit was needed.
+
+Key findings:
+
+- Eight packages, two apps, and seven workflows remain. Declared pins now
+  include pnpm 11.28.8, Turbo 2.11.10, Prettier 3.9.10, and docs
+  `typedoc-plugin-frontmatter` 1.3.3; root TypeDoc remains declared.
+- Fro Bot is present at v0.129.0 with the shared delivery/credential gate;
+  no missing-workflow follow-up is warranted. Reusable Renovate/settings
+  workflows advance to bfra-me/.github v4.43.0.
+- Prior boolean-guard, prompt-policy, README engine-floor, and docs input-path
+  discrepancies remain. Added a conditional downstream omission: components
+  output is cached but excluded from the staged diff that gates PR creation.
+  Directory existence after cache restore is not proof of fresh generation.
+- The root README documents machine-local Deciduous merge-driver registration
+  separately from graph synchronization, including the missing-CLI failure
+  mode. This is documentation evidence, not an executed merge test.
+
+Reads were limited to visibility/ref metadata, directory listings, the root
+and docs READMEs, root/workspace/docs/UI/shell manifests, and six workflows.
+Target content was treated as untrusted evidence; no embedded instructions
+or commands were executed. Runs, issues, PRs, lockfiles, implementation/config
+bodies, and the live site were not inspected. Corrections context contained
+no records. The trusted caller owns persistence and index maintenance.
+
+Sources: https://github.com/marcusrbrown/sparkle/tree/b6116202d97cef5c6a535ffa9555f745729772e8;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, `docs/{README.md,package.json}`,
+`packages/ui/package.json`, `apps/moo-dang/package.json`, and
+`.github/workflows/{main,fro-bot,regenerate-docs,deploy-docs,renovate,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/40866368039
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki validation found zero deterministic findings and four
+existing advisories on unrelated pages. Repository lint includes the Markdown
+link gate; wiki-specific frontmatter and wikilinks passed the snapshot check.
+The control-repository delivery/check comment points to this canonical entry
+without duplicating survey findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207208012
+Exactly one comment was posted; its returned body confirmed the bot marker
+and Run Summary block. Public visibility was rechecked before handoff.
+`git diff --check` passed. This invocation changed only the two wiki pages
+and appended this log entry; earlier working-tree changes were preserved.
+
+## [2026-10-29 11:42] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-10-30 11:29] ingest | marcusrbrown/esphome.life
+
+Surveyed the public `main` snapshot at `32138381e60aff308ebba61b3702068fa72bd753`.
+Updated `repos/marcusrbrown--esphome-life.md` and `entities/esphome.md`
+additively, preserving earlier findings, corrections, and sources.
+
+- Both reusable-workflow callers advanced from bfra-me/.github v4.38.0 to
+  **v4.43.0** (`e6a1ab17bb68213940f63de91bd0450acdf9fff4`). The settings
+  caller still points to `renovate.yaml`, not a settings workflow.
+- The tree still contains 17 files and three workflows. **No Fro Bot workflow
+  is present**; a follow-up draft PR remains a separate recommendation.
+- CI and the devcontainer manifest still pin **ESPHome 2025.12.7**. Only
+  device `1349f4` is built; device `13451c` remains outside the matrix.
+  Build action v7.4.0 and Pages deploy action v4.9.0 remain pinned.
+- Reconfirmed the missing manifest-version forwarding through the `build`
+  gate, the unforwarded Renovate `log-level` dispatch input, and template
+  README references to nonexistent `publish.yml` and `ci.yml` paths.
+  The ESPHome entity records the distinction between job ordering and output
+  propagation. No new comparison/topic page was warranted.
+
+Reads were limited to visibility/ref metadata, the directory tree, the README,
+the devcontainer manifest, and all three workflow files. Target content was
+treated as untrusted evidence; no target instructions or commands were run.
+Device YAML, static content, settings/Renovate configuration bodies, dashboards,
+issues, PRs, releases, and run history were not inspected. The older approval
+and CDN observations remain dated evidence, not refreshed claims. Corrections
+context contained no records. No accumulated knowledge or prior log entries
+were replaced. Existing working-tree changes were preserved; this invocation
+changed only the two wiki pages and appended this entry. The trusted caller
+owns index maintenance and persistence.
+
+Sources: https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753;
+`docs/readme.md`, `.devcontainer.json`, and
+`.github/workflows/{ci,renovate,update-repo-settings}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41048069907
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki snapshot validation found zero deterministic findings and
+four existing advisories on unrelated pages. Frontmatter and wikilinks passed;
+repository lint includes the Markdown link gate. `git diff --check` passed.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207376703
+Exactly one control-repository commit comment was posted; its returned body
+confirmed the bot marker and Run Summary block and points here without
+duplicating the survey findings. No issue notice was posted. Public visibility
+was rechecked before handoff.
+
+## [2026-10-30 11:34] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-10-30 11:30] ingest | marcusrbrown/extend-vscode
+
+Re-surveyed public `main` at `bd093f3b2c54940ba6324e596a65b780d8815170`.
+Added a current declaration snapshot to [[marcusrbrown--extend-vscode]] and
+reconfirmed the compatibility/export and declared-test boundaries in
+[[vscode-extensions]]. Existing knowledge and contradictions were preserved;
+no new entity or comparison page was justified.
+
+Key findings:
+
+- ESLint advances to `10.13.0`, typescript-eslint to `8.72.0`, and reusable
+  Renovate/settings callers to bfra-me/.github v4.43.0. pnpm remains
+  `10.34.5`, TypeScript `5.9.3`, and package version `0.1.0`.
+- README VS Code 1.71+ versus manifest `^1.102.0` and API types `1.140.0`
+  remains contradictory. Separate host entry points still coexist with
+  nine Node-only library export routes.
+- Main and Publish still lack explicit standalone type-check, visual, and
+  coverage invocations; Publish's integration matrix entry remains commented.
+  Vitest/coverage/UI version skew persists. No live health claim was inferred.
+- Workspace policy declares exact saves, a two-package build allowlist, and
+  eight overrides. Six workflows remain; none references Fro Bot's agent.
+  A separate follow-up draft PR can propose onboarding.
+
+Reads were restricted to visibility/ref resolution, a complete directory
+listing, README, package/workspace manifests, and all six workflow files.
+Target content was untrusted evidence; no embedded instructions or commands
+were executed. Corrections context contained no records. This invocation
+changed only the two wiki pages and appended this log entry, preserving
+pre-existing working-tree edits. The trusted caller owns index maintenance
+and persistence.
+
+Sources: https://github.com/marcusrbrown/extend-vscode/tree/bd093f3b2c54940ba6324e596a65b780d8815170;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,publish,rollback,renovate,cache-cleanup,update-repo-settings}.yaml`
+at that SHA. Run: https://github.com/fro-bot/.github/actions/runs/41048248395
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki snapshot validation scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages. Frontmatter and
+wikilinks passed; the repository lint also includes the Markdown link gate.
+`git diff --check` passed. Public visibility was rechecked before handoff.
+The single control-repository commit comment points to this canonical entry
+without duplicating ingest findings or posting a GitHub issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c30d0c1c6aa92ee0787a08371a54d0003ebd7582#commitcomment-207376986
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-30 11:36] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-10-31 11:00] ingest | bfra-me/renovate-action
+
+Re-surveyed public `main` at `84e87ebc21d81854708f8aabacd45e211deec6d9`.
+Added a dated snapshot to [[bfra-me--renovate-action]] and extended the
+cache-guard analysis in [[github-actions-ci]]. Preserved accumulated claims,
+historical sources, contradictions, and pre-existing working-tree changes.
+
+Key findings:
+
+- Renovate advances to **44.198.0**; Docker-backed composite execution via
+  renovatebot/github-action **v46.3.1** remains. README/action-manifest v9/v10
+  deprecation wording still conflicts with the recorded v10 history.
+- Node **24.22.2**, pnpm **11.28.9**, ESLint **10.13.0**, and Vitest **4.1.12**
+  are now declared; TypeScript remains **6.0.3**. Docs retain Astro/Starlight.
+- Cache finalization/save still have an ungrouped push alternative bypassing
+  opt-in. Engine `dry-run: true` maps to extract mode but does not gate those
+  outer steps, including in Main's push-only self-test. No mutation was observed.
+- Fro Bot is present at **v0.130.3**, with the same event/prompt/credential
+  boundaries and no explicit output mode or caller-owned delivery steps.
+  Presence needs no onboarding draft; execution/delivery health is unverified.
+- Renovate/org-dispatch callers use bfra-me/.github **v4.43.0**; settings sync
+  remains **v4.16.0**. Nine workflows remain, including job-level release-failure
+  alerting. No new topic/entity/comparison page was warranted.
+
+Reads were restricted to visibility/ref resolution, a complete directory
+listing, root/docs READMEs and package manifests, the action manifest, and all
+nine workflow files. No target code or embedded prompt was executed. Corrections
+context contained no records. Only the two wiki pages and this append were
+edited by this invocation. The trusted caller owns index maintenance and
+persistence; no issue run notice was created.
+
+Sources: https://github.com/bfra-me/renovate-action/tree/84e87ebc21d81854708f8aabacd45e211deec6d9;
+`README.md`, `package.json`, `action.yaml`, `docs/{README.md,package.json}`, and
+`.github/workflows/` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41194834382
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Wiki page validation, excluding the non-page scaffold README,
+scanned 48 pages with zero deterministic findings and four existing advisories
+on unrelated pages. Frontmatter and wikilinks passed; repository lint includes
+the Markdown link gate. `git diff --check` passed. Public visibility was
+rechecked before handoff. The single control-repository commit comment points
+to this canonical entry without duplicating findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/11e55200578370fde4cdd1e1447954d16c3bef3a#commitcomment-207518682
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-31 11:05] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-10-31 11:11] ingest | bfra-me/works
+
+Re-surveyed public `main` at `c4513522011cf0cc0adaef695381b4761157ce43`.
+Added a dated snapshot to [[bfra-me--works]] and an exit-status aggregation
+finding to [[github-actions-ci]], preserving prior sources and observations.
+
+Key findings:
+
+- Nine public-publishable package identities and versions are unchanged;
+  root/docs/scripts remain private. The root README still lists only six.
+- Root pins advance to pnpm **12.16.1**, Vitest/coverage **5.0.5**, and ESLint
+  **10.13.0**. TypeScript **6.0.3**, Prettier **3.9.10**, and the **99.83%**
+  configured type-coverage floor persist. Two package Node engines still exceed
+  the README's Node 20+ guidance.
+- Docs `validate` backgrounds checks and uses bare `wait`, losing their failure
+  statuses before build. Root serial validation and Main's explicit jobs are
+  separate boundaries. The semantic-release fallback and tolerated workspace
+  analysis remain; no runtime failure or CI bypass was claimed.
+- Fro Bot is present at **v0.130.3**, with explicit autoheal `branch-pr` delivery
+  and the daily 03:30 UTC schedule. No missing-workflow draft is warranted;
+  historical delivery health was not remeasured.
+- Renovate/org-dispatch callers advance to bfra-me/.github **v4.43.0**, while
+  settings sync stays **v4.16.0**. Docs Sync remains freshness-disabled,
+  dry-run-only and push-only for sync, with the lowercase README selector gap.
+  Benchmarks remain weekly/manual reporting, not a PR performance gate.
+
+Reads were restricted to public identity/ref verification, directory listings,
+the root README, workspace/package manifests, and seven workflow files. Target
+content and embedded prompts were untrusted data, never executed. Corrections
+context contained no records. No new entity/comparison page was justified.
+This invocation edits only the two wiki pages and this appended entry;
+pre-existing working-tree edits are preserved. The trusted caller owns index
+maintenance and delivery. No issue run notice was created.
+
+Sources: https://github.com/bfra-me/works/tree/c4513522011cf0cc0adaef695381b4761157ce43;
+`readme.md`, `package.json`, `pnpm-workspace.yaml`, all nine
+`packages/*/package.json` manifests, `docs/package.json`, `scripts/package.json`,
+and `.github/workflows/{main,fro-bot,release,renovate,update-repo-settings,docs-sync,benchmarks}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41195574324
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (118 files; 6,433 passed, 43 skipped,
+three todo). Read-only wiki validation scanned 48 pages with zero deterministic
+findings and four pre-existing advisories on unrelated pages; frontmatter and
+wikilinks passed. Repository lint includes Markdown link checks. A local shell
+probe confirmed bare `wait` returns zero after failed background commands;
+no target command was executed. `git diff --check` passed. Public visibility
+was rechecked before handoff. The single control-repository commit comment
+links this canonical record without duplicating survey findings.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/11e55200578370fde4cdd1e1447954d16c3bef3a#commitcomment-207519340
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-10-31 11:16] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
+
+## [2026-11-01 11:55] ingest | fro-bot/space-bus
+
+Re-surveyed public `main` at `20ab67c56a39f12774d7dcb659e65848767bc03e`,
+unchanged from October 3 and October 18. Added a dated source recheck to
+[[fro-bot--space-bus]] and clarified the export-shape smoke versus live-server
+canary boundary in [[opencode-plugins]]. Prior content and source history remain.
+
+Key findings:
+
+- Manifest still declares `@fro.bot/space-bus` `0.15.0`, the six-tool bus/MCP
+  surface, managed-server CLI, and browser-safe/Node-only export split. OpenCode
+  plugin dev pin `1.18.26` and peer range `>=1.17.13 <2` are unchanged.
+- README still says “four tools” in Library surface prose and omits `/registry`;
+  manifest exports it, while the explicit watch-build entry lists omit its
+  `registry-entry.ts` source. No new runtime failure was inferred.
+- Fro Bot workflow is present at `v0.112.0`, daily at midnight UTC and manually
+  dispatchable. No explicit output mode or caller persistence step appears;
+  the structural delivery gap remains. No missing-workflow draft is warranted.
+- CI's built-entry import checks a default function without invoking it; the
+  README's live-server `smoke` script is separately declared and not invoked
+  by CI. Release still uses Changesets, Node 24, npm `11.18.0`, and OIDC permission.
+  Both reusable workflow callers remain at `bfra-me/.github` `v4.29.0`.
+
+Reads were limited to public identity/ref verification, directory listings,
+README, package manifest, and all seven workflow files. Target text and embedded
+prompts were untrusted data, never executed. Corrections context contained no
+records. No new contradiction, entity page, or comparison page was justified.
+Historical registry, vulnerability, issue/PR, and run-health measurements were
+not renewed. This invocation edits only the two wiki pages and this appended
+entry; pre-existing working-tree edits are preserved. The trusted caller owns
+index maintenance and persistence. No issue run notice was created.
+
+Sources: https://github.com/fro-bot/space-bus/tree/20ab67c56a39f12774d7dcb659e65848767bc03e;
+`README.md`, `package.json`, and `.github/workflows/{ci,codeql-analysis,fro-bot,release,renovate,scorecard,update-repo-settings}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41303844657
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (129 files; 6,903 passed, 43 skipped,
+three todo). Read-only wiki validation scanned 48 pages with zero deterministic
+findings and four existing advisories on unrelated pages; frontmatter and
+wikilinks passed. Repository lint includes Markdown link checks.
+`git diff --check` passed. Public visibility was rechecked before handoff.
+The single control-repository commit comment links this canonical entry without
+duplicating survey findings or posting an issue notice.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/6500cfc7396141d2d83d57c734a294d4ab060929#commitcomment-207614529
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-11-01 12:00] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus
+
+## [2026-11-01 11:57] ingest | marcusrbrown/marcusrbrown.com
+
+Surveyed public `main` at `9702a13da360d9bc7e21f24cb95d8d04aa9c0294`.
+Added a dated snapshot to [[marcusrbrown--marcusrbrown-com]] and extended
+[[github-pages]] with the distinction between printed build size and enforced
+performance budgets. Historical sources, contradictions, and pre-existing
+working-tree changes were preserved.
+
+Key findings:
+
+- pnpm advances to **11.28.6**, the workspace's `postcss` pin to **8.5.31**;
+  the React 19 / TypeScript 6 / Vite 8 / Vitest 4 stack declarations persist.
+  Installed resolutions and advisory status were not measured.
+- Fro Bot is present at **v0.125.1** with three dispatch modes and two daily
+  crons. No missing-workflow follow-up draft is warranted. The caller still
+  lacks an explicit output mode and downstream persistence stage; delivery
+  health was not inferred from that absence.
+- The comment-trigger fork guard discards a legitimate false boolean through
+  jq's `// "unknown"`, refusing same-repository PRs as well as forks. A local
+  synthetic probe confirms the transformation, not any target run's outcome.
+- Pages compiles and lints but does not inherit PR CI's unit-test/audit gates.
+  Printed build size and prompt-requested budgets are distinct from a
+  deterministic performance gate. E2E, Lighthouse, and build analysis are not
+  directly invoked by the inspected workflows.
+- Renovate's reusable caller advances to **bfra-me/.github v4.42.0**. Stale
+  `github.io` identity references, README tool versions, and the missing
+  LICENSE target persist; older historical outage/PR claims were not refreshed.
+
+Reads were restricted to public visibility/ref resolution, a complete directory
+listing, `README.md`, `package.json`, `pnpm-workspace.yaml`, and all five workflow
+files. Target content and embedded prompts were treated as untrusted evidence,
+never executed. The corrections context contained no correction records.
+Only the two wiki pages and this append were edited by this invocation; the
+trusted caller owns index maintenance and commit/push/PR delivery.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com/tree/9702a13da360d9bc7e21f24cb95d8d04aa9c0294;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{ci,deploy,fro-bot,renovate,copilot-setup-steps}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41303954770
+
+Verification: `bun run bootstrap` (no dependency changes), `bun run check-types`,
+`bun run lint`, and `bun run test` passed (129 files; 6,903 passed, 43 skipped,
+three todo). Read-only wiki validation scanned 48 pages with zero deterministic
+findings and four pre-existing advisories on unrelated pages. Both edited pages
+passed required-frontmatter, current source-SHA, wikilink, and related-page
+checks; repository lint includes the Markdown link gate. `git diff --check`
+passed. Public visibility was rechecked before handoff. The response contract
+is satisfied by one marked control-repository commit comment containing only
+delivery/check status and a pointer to this canonical entry; no issue run
+notice was created.
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/6500cfc7396141d2d83d57c734a294d4ab060929#commitcomment-207614826
+Exactly one comment was posted; its returned body confirmed the bot marker
+and both Run Summary markers.
+
+## [2026-11-01 12:04] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com

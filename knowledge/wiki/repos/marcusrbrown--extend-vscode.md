@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/extend-vscode
 created: 2026-04-18
-updated: 2026-10-15
+updated: 2026-10-30
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -55,6 +55,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 3c1dafe6d45f9772cbadc02c9f09fe99de26810f
     accessed: 2026-10-15
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: bd093f3b2c54940ba6324e596a65b780d8815170
+    accessed: 2026-10-30
 tags:
   - vscode
   - vscode-extension
@@ -78,7 +81,55 @@ node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
 
 Modular toolkit for building VS Code extensions. Provides typed abstractions for commands, webviews, tree views, status bar, tasks, telemetry, configuration, and logging — targeting both Node.js and Web (browser) extension hosts.
 
-## Current declared contracts (2026-10-15)
+## Current declared contracts (2026-10-30)
+
+Public `main` was surveyed at `bd093f3b2c54940ba6324e596a65b780d8815170`.
+Evidence comprises the complete, non-truncated directory listing, root README,
+`package.json`, `pnpm-workspace.yaml`, and all six workflow files. Source and
+configuration implementations, lockfiles, issues, PRs, releases, and workflow
+run results were outside scope. The dated findings below remain historical;
+this snapshot establishes declarations, not operational health.
+
+- **Dependency movement:** ESLint is now `10.13.0` (previous snapshot `10.12.0`)
+  and `typescript-eslint` is `8.72.0` (previously `8.71.0`). Other current pins
+  include `@types/node` `24.19.0`, `type-fest` `5.10.0`, and
+  `eslint-plugin-node-dependencies` `2.3.0`. Version `0.1.0`, pnpm `10.34.5`,
+  TypeScript `5.9.3`, tsup `8.5.1`, and Playwright `1.64.0` remain declared.
+- **Compatibility contradictions persist:** the README advertises VS Code
+  **1.71+**, but `engines.vscode` remains **`^1.102.0`** and API types remain
+  **`1.140.0`**. The README's conditional-export description still exceeds
+  the manifest: `main` and `browser` select distinct extension entry points,
+  while all nine library exports route `types` and `default` into `out/node/`
+  without a `browser` condition. See [[vscode-extensions]].
+- **Declared checks remain narrower than the script inventory:** Main calls
+  lint, unit tests, web tests, and build. Publish retains eight validation legs
+  with `fail-fast: true`; integration is commented out of the matrix. Neither
+  workflow explicitly calls `type-check`, visual tests, or coverage scripts.
+  Vitest remains `4.1.11` while its coverage/UI packages remain `4.1.0`.
+  Indirect checking and test selection cannot be established without reading
+  the implementations/configurations; existing run-health claims were not
+  revalidated.
+- **Reusable workflow pins advance:** both callers now use `bfra-me/.github`
+  `e6a1ab17bb68213940f63de91bd0450acdf9fff4` (v4.43.0), up from v4.39.0
+  in the October 15 snapshot. Renovate calls upstream `renovate.yaml`, and
+  settings sync calls upstream `update-repo-settings.yaml`. Renovate still
+  has no schedule declaration; settings sync retains `23 0 * * *`.
+- **Install policy is explicit:** the workspace manifest declares
+  `saveExact: true`, `autoInstallPeers: false`, `shamefullyHoist: true`, and
+  `onlyBuiltDependencies` for `esbuild` and `eslint-plugin-node-dependencies`.
+  Its eight override entries cover form-data, glob, js-yaml, koa, on-headers,
+  tar-fs, tmp, and Vite. Their presence does not establish vulnerability status.
+- **Fro Bot workflow remains absent:** the complete listing still contains
+  only Main, Publish, Emergency Rollback, Renovate, Cache Cleanup, and Update
+  Repo Settings; none references `fro-bot/agent`. A separate follow-up draft
+  PR can propose onboarding.
+
+Sources: [README](https://github.com/marcusrbrown/extend-vscode/blob/bd093f3b2c54940ba6324e596a65b780d8815170/README.md),
+[package manifest](https://github.com/marcusrbrown/extend-vscode/blob/bd093f3b2c54940ba6324e596a65b780d8815170/package.json),
+[workspace manifest](https://github.com/marcusrbrown/extend-vscode/blob/bd093f3b2c54940ba6324e596a65b780d8815170/pnpm-workspace.yaml),
+and [workflows](https://github.com/marcusrbrown/extend-vscode/tree/bd093f3b2c54940ba6324e596a65b780d8815170/.github/workflows).
+
+## Declared contracts (2026-10-15)
 
 Evidence is limited to the directory listing, README, package manifest, and all
 six workflow files at commit `3c1dafe6d45f9772cbadc02c9f09fe99de26810f`.

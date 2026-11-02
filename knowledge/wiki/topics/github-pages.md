@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-10-23
+updated: 2026-11-01
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 9702a13da360d9bc7e21f24cb95d8d04aa9c0294
+    accessed: 2026-11-01
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
     accessed: 2026-10-23
@@ -72,6 +75,7 @@ tags:
     https-enforcement,
   ]
 related:
+  - marcusrbrown--marcusrbrown-com
   - marcusrbrown--vbs
   - marcusrbrown--gpt
   - marcusrbrown--marcusrbrown-github-io
@@ -85,6 +89,28 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Printed build size is not a performance gate (2026-11-01)
+
+At `9702a13d`, [[marcusrbrown--marcusrbrown-com]] retains the October
+compilation-versus-full-CI distinction: Deploy runs lint and `tsc && vite build`,
+then publishes `dist` with `needs: build`. Unit tests and the moderate audit
+remain in a separate PR workflow. The PR build checks that `dist/index.html`
+exists and prints `du -sh dist`; those steps do not compare output size against
+a threshold. No inspected workflow invokes the manifest's `analyze-build` or
+`test:e2e` scripts, or Lighthouse.
+
+The Fro Bot autoheal prompt requests bundle analysis and names size budgets.
+That is a requested agent task, not evidence that the analysis ran or a
+deterministic deployment prerequisite. Keep artifact existence, size reporting,
+budget enforcement, and agent observations separate when describing a Pages
+pipeline. This adds a source-contract distinction without claiming a measured
+budget violation or revisiting the site's runtime health.
+
+Sources: [CI](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/.github/workflows/ci.yaml),
+[Deploy](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/.github/workflows/deploy.yaml),
+[manifest](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/package.json),
+[agent workflow](https://github.com/marcusrbrown/marcusrbrown.com/blob/9702a13da360d9bc7e21f24cb95d8d04aa9c0294/.github/workflows/fro-bot.yaml).
 
 ## Portfolio browser fixtures and deployed content are separate evidence (2026-10-23)
 

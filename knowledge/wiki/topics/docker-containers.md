@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-10-14
+updated: 2026-10-27
 sources:
+  - url: https://github.com/marcusrbrown/containers
+    sha: be4082462cf3f401dc33b1a9a6a90ca2addf2451
+    accessed: 2026-10-27
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-10-14
@@ -166,6 +169,28 @@ security jobs accept skipped work as well as success. Consequently a green
 aggregate does not by itself establish either application startup or scan
 execution; distinguish legitimate no-change skips from work expected for a
 manual full check. These are source-contract findings, not observed failures.
+
+#### Shared routing repairs need bounded verification (2026-10-27)
+
+At `be408246`, [[marcusrbrown--containers]]'s
+[publication workflow](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/.github/workflows/build-publish.yaml)
+adds `node/**` to both push and PR triggers. It and the
+[test workflow](https://github.com/marcusrbrown/containers/blob/be4082462cf3f401dc33b1a9a6a90ca2addf2451/.github/workflows/test.yaml)
+now invoke one Python detector with event/base/head arguments. Their comments
+declare context-wide change routing, full selection on dispatch, and Git errors
+as failures. This supersedes the October 11 trigger omission and the previous
+Dockerfile-only inline detection. The script and its listed test file were not
+read, so shared wiring does not prove selection correctness or resolution of
+the September scripts-only case.
+
+The test detector also no longer needs the dispatch-skipped `prepare` job.
+Build/security aggregators now check the detector result alongside the matrix
+result, rejecting failure/cancellation rather than treating a downstream skip
+after detector failure as clean. They still accept skips, and the shell-only
+image smoke check remains non-blocking. Python-test/lint dispatch dependencies
+are unchanged. These are distinct guarantees: repaired image selection wiring
+does not establish application health, executed scans, or full-suite dispatch
+coverage. No workflow runs or registry artifacts were inspected.
 
 ### Security Scanning
 

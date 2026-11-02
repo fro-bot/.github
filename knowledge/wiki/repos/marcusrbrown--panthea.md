@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/panthea
 created: 2026-09-26
-updated: 2026-10-10
+updated: 2026-10-26
 sources:
   - url: https://github.com/marcusrbrown/panthe.ai
     sha: e5022aaa6e9970e66b41ad68334f2fb7781658e7
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/panthea
     sha: c74fe32b46ecdf332b916295a18c1c2a8d11d008
     accessed: 2026-10-10
+  - url: https://github.com/marcusrbrown/panthea
+    sha: 9556db85d5d9f648db8f07f0eb0269b900cf0dbc
+    accessed: 2026-10-26
 tags:
   - repository-stub
   - no-workflow
@@ -26,6 +29,91 @@ node_id: R_kgDOJt6i0Q
 ---
 
 # marcusrbrown/panthea
+
+## 2026-10-26 — Shared rendering and bounded packaged evidence
+
+At `9556db8`, the repository is public and the complete, non-truncated tree
+still lists four workflows, including **Fro Bot**. The historical
+`repository-stub` and `no-workflow` tags describe the founding snapshot below,
+not this one. Reads remain restricted to listings, READMEs, manifests, and
+workflow files; no target code or commands were executed.
+
+### Workspace and dependency changes
+
+The tree now has ten package directories: the earlier eight plus `renderer`
+and `testkit`. The renderer manifest exports TypeScript source and depends on
+assets, Three.js, and Three Flatland; both client and Studio declare it as a
+workspace dependency. The test kit exports `./world` and `./renderer`, and the
+client lists it as a development dependency. These manifests establish shared
+boundaries, not implementation correctness.
+
+Bun advances from **1.4.2 to 1.4.3** in `packageManager` and the inspected
+workflows; the root engine floor stays `>=1.4.2`. TypeScript **5.9.3**, Biome
+**2.5.15**, React **19.3.0**, Three.js **0.185.1**, and Three Flatland
+**0.1.0-alpha.10** remain. Client/Studio Vite is **7.3.7**. Both Rust shells
+pin Tauri **2.12.4**, both JS APIs **2.12.3**, and both CLIs **2.12.2**:
+patches differ but minor **2.12** agrees. The desktop Cargo comment still
+describes older pins; it is not the current manifest declaration.
+
+### Authoring advances and explicit limits
+
+**Dated contradiction:** the October 10 observation that `derive` is
+unsupported is superseded by the current Studio CLI README. It now documents
+mirror, palette-swap, and idle-bob derivation from published revisions, with
+recomputation at publication and explicit refusal of asymmetric mirroring or
+mixed new derived/generated slots. Approval/publication still require the
+reviewed revision and refuse `--yes`.
+
+The Unit 9 evidence README reports in-process derive/pack/approve/publish tests
+in temporary registries, and a packaged macOS Studio sitting that exercised
+Derive and Pack plus Zeus's asymmetry refusal. It explicitly does **not** prove
+derived publication through the packaged game or a real GPU repair run.
+Reference conditioning remains unwired after a reported NO-GO probe; CLI
+`--reference` returns `unavailable` before acquiring the writer lock. These
+are source-authored reports, not experiments repeated by this survey.
+
+The CLI also documents a Blender **5.2.2** recipe-render engine, with pinned
+executable validation, one engine running at a time, and offline publication
+audit from stored raw frames. `tools/render/README.md` describes a separate
+licence boundary: Blender-importing Python is **GPL-3.0-or-later**, other
+repository code remains MIT, and rendered output is not covered by that GPL.
+This qualifies the root README's blanket MIT wording; it is not a legal audit.
+The retro Zeus render is explicitly **not published**.
+
+### Packaged evidence versus project status
+
+The root README still calls implementation “in progress from M0.” Unit 8 now
+reports **85 readback checks passed, zero failed** in a packaged game on one
+Apple M1 Pro/macOS **15.7.9** host, with a bundled registry and reported
+**WebGL2** backend. Checks cover the published Zeus idle-south sprite, six
+portrait expressions, and labelled seated/act placeholders. The README
+excludes packaged device-loss recovery, packaged positive controls, WebGPU,
+other hosts, and an art-quality verdict. It records that inspection captures
+predate a later CSS fix. Preserve this as bounded packaged evidence, not a
+claim that the MVP or seven-god art roster is complete.
+
+The provider-settings evidence README separately reports dummy-key persistence
+across restart/deletion in macOS Keychain, offline exclusion of a hosted
+endpoint, and a client-bundle scan for named AI-provider strings. No real
+credential was used. This does not independently establish credential safety
+for every path.
+
+CI retains three jobs, but **both** macOS Rust lanes now run
+`cargo test --locked` after sidecar build, fmt, and clippy. This supersedes the
+October 10 cross-topic observation that desktop stopped at fmt/clippy.
+Fro Bot advances to **v0.122.3**, retains the 03:30 UTC schedule and
+input-dependent delivery mode; reusable Renovate/settings callers advance to
+**v4.39.0**. Workflow presence is not a live-run result. See
+[[github-actions-ci]] and the Tauri sibling [[marcusrbrown--mothership]].
+
+Sources at `9556db85d5d9f648db8f07f0eb0269b900cf0dbc`:
+[workspace manifest](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/package.json),
+[Studio CLI README](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/tools/studio/README.md),
+[Unit 8 evidence](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/docs/evidence/asset-studio/unit8/README.md),
+[Unit 9 evidence](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/docs/evidence/asset-studio/unit9/README.md),
+[provider settings evidence](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/docs/evidence/provider-settings/README.md),
+[render README](https://github.com/marcusrbrown/panthea/blob/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/tools/render/README.md),
+[workflow directory](https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows).
 
 ## 2026-10-10 — Studio and repository automation
 
@@ -122,3 +210,4 @@ The automation status at both snapshots is recorded in [[github-actions-ci]].
 | 2026-09-26 | `f0c4ff0` | Initial survey; README heading only, three root files, no workflows or manifests. |
 | 2026-09-26 | `e5022aa` | New Bun/Tauri workspace scaffold and two-job CI; still no Fro Bot workflow.       |
 | 2026-10-10 | `c74fe32` | Studio app/CLI, three CI jobs, four workflows including Fro Bot; bounded source survey. |
+| 2026-10-26 | `9556db8` | Shared renderer/test kit, documented derivation and bounded packaged WebGL2 evidence; both Rust lanes test. |
