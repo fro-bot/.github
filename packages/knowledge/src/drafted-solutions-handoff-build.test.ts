@@ -17,7 +17,7 @@ import {
   type GitRunner,
 } from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {afterEach, describe, expect, it} from 'vitest'
-import {buildDraftedHandoff} from './drafted-solutions-handoff-build.ts'
+import {buildDraftedHandoff, runDraftedSolutionsHandoffBuild} from './drafted-solutions-handoff-build.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -282,5 +282,66 @@ describe('buildDraftedHandoff: rejected changes (nothing is produced)', () => {
 
     await expect(buildDraftedHandoff({cwd: root, outDir: path.join(root, 'out')})).rejects.toThrow(/git add failed/)
     await expect(access(path.join(root, 'out'))).rejects.toThrow()
+  })
+})
+
+describe('runDraftedSolutionsHandoffBuild: the working directory', () => {
+  // The checkout below is not the process's working directory (which is this repository), so a run that
+  // read `process.cwd()` anywhere, including in a git call, would stage this repository instead.
+  it('builds from the checkout it is given: every git call runs there, and this repository is not touched', async () => {
+    const arranged = await arrange()
+    await writeIn(arranged.cwd, 'docs/solutions/security-issues/only-in-temp.md', '# only here\n')
+    const stdout: string[] = []
+    const outputPath = path.join(arranged.root, 'github-output')
+    await writeFile(outputPath, '')
+
+    await runDraftedSolutionsHandoffBuild(
+      {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, GITHUB_OUTPUT: outputPath},
+      {stdout: text => stdout.push(text)},
+      arranged.cwd,
+    )
+
+    expect(stdout).toStrictEqual(['{"changed":1}\n'])
+    expect(await readFile(outputPath, 'utf8')).toBe('changed=true\n')
+    expect(JSON.parse(await readFile(path.join(arranged.outDir, 'manifest.json'), 'utf8'))).toStrictEqual({
+      changed: ['docs/solutions/security-issues/only-in-temp.md'],
+      deleted: [],
+    })
+    // Positive control: the file is in the temp checkout's handoff, and not in this repository.
+    await expect(
+      access(path.join(arranged.outDir, 'files/docs/solutions/security-issues/only-in-temp.md')),
+    ).resolves.toBeUndefined()
+    await expect(
+      access(path.resolve(import.meta.dirname, '../../../docs/solutions/security-issues/only-in-temp.md')),
+    ).rejects.toThrow()
+  })
+
+  it('appends changed=false and prints a zero count when nothing under docs/solutions changed', async () => {
+    const arranged = await arrange()
+    const stdout: string[] = []
+    const outputPath = path.join(arranged.root, 'github-output')
+    await writeFile(outputPath, '')
+
+    await runDraftedSolutionsHandoffBuild(
+      {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, GITHUB_OUTPUT: outputPath},
+      {stdout: text => stdout.push(text)},
+      arranged.cwd,
+    )
+
+    expect(stdout).toStrictEqual(['{"changed":0}\n'])
+    expect(await readFile(outputPath, 'utf8')).toBe('changed=false\n')
+  })
+
+  it('writes no output file line when $GITHUB_OUTPUT is unset or empty', async () => {
+    const arranged = await arrange()
+    const stdout: string[] = []
+    for (const env of [{}, {GITHUB_OUTPUT: ''}]) {
+      await runDraftedSolutionsHandoffBuild(
+        {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, ...env},
+        {stdout: text => stdout.push(text)},
+        arranged.cwd,
+      )
+    }
+    expect(stdout).toStrictEqual(['{"changed":0}\n', '{"changed":0}\n'])
   })
 })
