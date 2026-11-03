@@ -91,6 +91,20 @@
       "name": "@fro-bot/test-kit",
       "version": "0.0.0",
     },
+    "packages/wiki-ops": {
+      "name": "@fro-bot/wiki-ops",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro-bot/privacy": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
+        "@octokit/rest": "^22.0.1",
+        "yaml": "^2.6.0",
+      },
+      "devDependencies": {
+        "@fro-bot/test-kit": "workspace:*",
+      },
+    },
     "packages/wiki-write-core": {
       "name": "@fro.bot/wiki-write-core",
       "version": "0.0.0-semantic-release",
@@ -257,6 +271,8 @@
     "@fro-bot/status-truth": ["@fro-bot/status-truth@workspace:packages/status-truth"],
 
     "@fro-bot/test-kit": ["@fro-bot/test-kit@workspace:packages/test-kit"],
+
+    "@fro-bot/wiki-ops": ["@fro-bot/wiki-ops@workspace:packages/wiki-ops"],
 
     "@fro.bot/wiki-write-core": ["@fro.bot/wiki-write-core@workspace:packages/wiki-write-core"],
 

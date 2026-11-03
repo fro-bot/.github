@@ -41,7 +41,7 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
 
    The step that builds the handoff runs inside `draft`, so it is not a trust boundary. `publish` re-validates everything.
 
-2. **Validate the artifact as data at the boundary.** Reject any mode other than `100644`, symlinks, backslash paths and traversal (`scripts/wiki-handoff-core.ts:436`, `:256`, `:526`). Build the handoff from staged git blobs rather than working-tree paths, so nothing on the runner can swap a file between check and copy (`:376-388`).
+2. **Validate the artifact as data at the boundary.** Reject any mode other than `100644`, symlinks, backslash paths and traversal (`packages/wiki-ops/src/wiki-handoff-core.ts:436`, `:256`, `:526`). Build the handoff from staged git blobs rather than working-tree paths, so nothing on the runner can swap a file between check and copy (`:376-388`).
 
 3. **Separate "absent" from "probe failed".** The metadata overlay uses the `case "$status"` form (`draft-solutions.yaml:309-323`). The contract is documented in [Agent credential preflights make checkout persistence a workflow contract](../workflow-issues/agent-credential-preflights-are-workflow-contracts-2026-10-09.md), which also lists every site that follows it. This document does not restate it.
 

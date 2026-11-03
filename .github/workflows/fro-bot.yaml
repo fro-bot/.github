@@ -551,7 +551,7 @@ jobs:
       # Content-hash snapshot of every wiki-scoped path as it stands right after
       # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
       # the handoff only carries what the agent actually changed — not every path
-      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      # `data` differs from `main` on. See packages/wiki-ops/src/wiki-handoff-core.ts.
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-fro-bot.json
@@ -695,7 +695,7 @@ jobs:
       # any file in the checkout (including this script). The artifact carries only
       # manifest.json + changed files, no ingest metadata: WIKI_OPERATION/WIKI_TARGET/etc.
       # are set from trusted github.* context directly in the trusted job below, never
-      # from anything this job could have produced. See scripts/wiki-handoff-core.ts.
+      # from anything this job could have produced. See packages/wiki-ops/src/wiki-handoff-core.ts.
       - name: Build wiki handoff artifact
         id: wiki-handoff-build
         if: >-
@@ -722,7 +722,7 @@ jobs:
   # ── Trusted writer: applies the fro-bot job's wiki handoff artifact to `data` ────────
   # Fresh default-branch checkout, no agent step — the only job in this workflow allowed
   # to run wiki-ingest.ts with an App write token. See fro-bot.yaml's Group 1 migration
-  # note in docs/plans and scripts/wiki-handoff-core.ts.
+  # note in docs/plans and packages/wiki-ops/src/wiki-handoff-core.ts.
   fro-bot-wiki-ingest:
     name: Fro Bot — Ingest wiki insight
     needs: fro-bot
@@ -983,7 +983,7 @@ jobs:
       # Content-hash snapshot of every wiki-scoped path as it stands right after
       # sync-wiki, before the agent runs. wiki-handoff-build.ts diffs against this so
       # the handoff only carries what the agent actually changed — not every path
-      # `data` differs from `main` on. See scripts/wiki-handoff-core.ts.
+      # `data` differs from `main` on. See packages/wiki-ops/src/wiki-handoff-core.ts.
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-observe.json
@@ -1132,7 +1132,7 @@ jobs:
       # Build a data-only handoff artifact instead of writing `data` from this job
       # directly — the artifact carries only manifest.json + changed files, no ingest
       # metadata. WIKI_OPERATION/WIKI_TARGET/etc. are set from trusted github.* context
-      # directly in the trusted job below. See scripts/wiki-handoff-core.ts.
+      # directly in the trusted job below. See packages/wiki-ops/src/wiki-handoff-core.ts.
       - name: Build wiki handoff artifact
         id: wiki-handoff-build
         if: >-

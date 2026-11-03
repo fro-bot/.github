@@ -4,21 +4,21 @@ import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
  * agent's checkout, the trusted apply, and the ingest CLI committing through the Git Data fake.
  * Two agents sync before either writer persists, so the second writer's handoff is stale.
  */
-import type {CommitWikiChangesParams, OctokitClient} from '../packages/wiki-write-core/src/wiki-ingest.ts'
+import type {CommitWikiChangesParams, OctokitClient} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
 
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
-import {afterEach, beforeEach, describe, expect, it, vi, type Mock} from 'vitest'
+import {validateAndApplyWikiHandoff} from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {
   appendLogEntry,
   commitWikiChanges,
   rebuildWikiIndex,
   runWikiIngestCli,
-} from '../packages/wiki-write-core/src/wiki-ingest.ts'
-import {validateAndApplyWikiHandoff} from './wiki-handoff-core.ts'
+} from '@fro.bot/wiki-write-core/wiki-ingest'
+import {afterEach, beforeEach, describe, expect, it, vi, type Mock} from 'vitest'
 // The built package behind the entry script: the one path that maps a page conflict to exit code 3.
 import * as shipped from './wiki-ingest.ts'
 

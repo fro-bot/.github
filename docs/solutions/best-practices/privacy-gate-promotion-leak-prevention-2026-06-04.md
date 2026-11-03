@@ -31,7 +31,7 @@ tags:
 # Privacy Gate Design for Data→Main Promotion Leak Prevention
 
 This doc covers the promotion chokepoint specifically — the `data → main` gate below. It is
-no longer the earliest gate a wiki write passes through: `scripts/wiki-repair.ts` now runs
+no longer the earliest gate a wiki write passes through: `packages/wiki-ops/src/wiki-repair.ts` now runs
 `detectPrivateWikiLeaks` as a pre-commit gate (`gateWikiRepairs`) against current-tip authority
 metadata before repaired pages ever reach the `data` branch. See "Related" for that gate's doc.
 

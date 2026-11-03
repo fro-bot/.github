@@ -11,10 +11,13 @@ import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {promisify} from 'node:util'
 
+import {
+  createGitRunner,
+  DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
+  type GitRunner,
+} from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {afterEach, describe, expect, it} from 'vitest'
-
 import {buildDraftedHandoff} from './drafted-solutions-handoff-build.ts'
-import {createGitRunner, DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES, type GitRunner} from './wiki-handoff-core.ts'
 
 const execFileAsync = promisify(execFile)
 

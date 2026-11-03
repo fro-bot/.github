@@ -451,6 +451,158 @@
     {
       "path": "scripts/status-truth-prs.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/status-truth/prs-cli and runs it under the entry guard. The behaviour is in packages/status-truth/src/status-truth-prs.ts, pinned by packages/status-truth/src/status-truth-prs.test.ts. The shim's surface, including a usage error on unmatched argv that does nothing even when armed and live, and that importing it runs nothing, is pinned by scripts/status-truth-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-core.ts",
+      "reason": "The wiki and drafted-solutions handoff contract between an untrusted build and a trusted apply: the git-status parse, the pre-agent baseline capture and the scoping against it, the build from working-tree paths and from git objects, the path policies (traversal, absolute paths, backslashes, scope, deletions), and the validating apply (symlinks, non-regular files, unexpected top-level entries, the size cap). Pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts, which covers every rejection class and the artifact bytes, and by scripts/wiki-handoff-sequence.test.ts, which replays baseline, build and apply through the real modules. It is not in the mutation set because a targeted Stryker run over it scored 69.60% (556 mutants: 384 killed, 3 timed out, 135 survived, 34 with no coverage), well short of the 100% gate. Its tests import it by relative path and inject the filesystem and git seams, and every path in them is under one test-owned temp directory, so the run is safe and measures the real decisions; the survivors are in buildHandoffFromGitIndex, assertBaselineShape, assertSafeHandoffPath, validateAndApplyHandoff, parseGitStatusPorcelainZ, assertManifestShape and parseRawDiffZ, and the no-coverage mutants are the real-filesystem and real-git defaults (createGitRunner, defaultExists, defaultHashContents)."
+    },
+    {
+      "path": "packages/wiki-ops/src/solution-docs-paths.ts",
+      "reason": "A constant list of the canonical docs/solutions/ category directories, with no logic to mutate. Pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts (the drafted-solutions allowlist is derived from it) and by scripts/draft-solutions-workflow.test.ts, which checks that the drafting prompt names every category."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-change-detect.ts",
+      "reason": "The `baseline` and `detect` modes of the survey change detector: the mode check, the `$GITHUB_OUTPUT` requirement that is checked before any work, the baseline-hash format check, the inside-a-git-work-tree check and the `hash=` and `changed=` writes through the throwing output writer. It fails closed, so nothing is written on a partial failure. Pinned by packages/wiki-ops/src/wiki-change-detect.test.ts, which runs the real shim against real git repos for each mode, each error and the written output lines, and by packages/wiki-ops/src/wiki-change-detect-cli.test.ts, which pins the error text and the order of the checks."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-change-detect-cli.ts",
+      "reason": "The goke entrypoint of wiki-change-detect: one read-only root command with an optional mode positional, so a bad mode reaches the command and prints the `::error::wiki-change-detect:` line. A second positional, a flag and `--help` are usage errors. Pinned by packages/wiki-ops/src/wiki-change-detect-cli.test.ts (the config, the mode errors, the missing-input errors, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-change-detect.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-change-detect-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-change-detect.ts, pinned by packages/wiki-ops/src/wiki-change-detect.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-baseline.ts",
+      "reason": "The pre-agent baseline step: it reads `WIKI_HANDOFF_BASELINE_PATH`, runs `git status` over the three wiki paths, hashes what differs and writes the baseline file, then prints `{\"files\":N}`. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-baseline-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-baseline-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-baseline: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-baseline-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-baseline.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-baseline-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-baseline.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-build.ts",
+      "reason": "The agent-job build step: it reads `WIKI_HANDOFF_DIR` and the optional baseline path, builds manifest.json and files/ with `buildWikiHandoff`, prints `{\"changed\":n,\"deleted\":n}` and appends `changed=` to `$GITHUB_OUTPUT` when that is set. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-build-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-build-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-build: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-build-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-build.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-build-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-build.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-apply.ts",
+      "reason": "The trusted-job apply step: it reads `WIKI_HANDOFF_DIR` and the optional workspace, validates and applies the artifact with `validateAndApplyWikiHandoff`, and prints `{applied,deleted,skipped}`; every failure prints `::error::wiki-handoff-apply: <message>` and exits 1. The validation and the artifact bytes are in wiki-handoff-core.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts; this module is the env and output wiring around it, pinned by packages/wiki-ops/src/wiki-handoff-apply-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which runs the real chain baseline, build and apply over a fixture workspace and reads the outputs the workflows read."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-handoff-apply-cli.ts",
+      "reason": "The goke entrypoint of wiki-handoff-apply: one writing root command that takes no argument. Argv that matches nothing declared is a usage error and does nothing. Pinned by packages/wiki-ops/src/wiki-handoff-apply-cli.test.ts (the config, the missing-input error, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-handoff-apply.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-apply-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-apply.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-query.ts",
+      "reason": "The baseline wiki context query: it scores the wiki pages against the event, trims the excerpt to the byte budget on a character boundary, appends `excerpt`, `selected-paths` and `byte-length` to `$GITHUB_OUTPUT`, writes the owner-only selected-path handoff, and fails soft on a corpus or handoff-write error. Pinned by packages/wiki-ops/src/wiki-query.test.ts (scoring, budget, multi-byte truncation, the handoff mode and write failure, and the real shim run against a malformed or unreadable corpus) and by scripts/fro-bot-workflow-wiki-handoff.test.ts, which feeds the handoff file to wiki-context-expand. It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-query-cli.ts",
+      "reason": "The goke entrypoint of wiki-query: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and runs no query. Pinned by packages/wiki-ops/src/wiki-query-cli.test.ts (the config, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "packages/wiki-ops/src/solutions-query.ts",
+      "reason": "The baseline docs/solutions retrieval: the frontmatter parse that skips a malformed doc with a closed-vocabulary stderr line, the fail-closed private-name scan, the scorer, the staleness note and the byte budget. Best-effort by design: any error becomes an empty result on stdout and exit 0. Pinned by packages/wiki-ops/src/solutions-query.test.ts, including the privacy exclusion and the malformed-frontmatter skip, and by scripts/wiki-ops-flows.test.ts. It is not in the mutation set: it only ranks context for a prompt and gates no write."
+    },
+    {
+      "path": "packages/wiki-ops/src/solutions-query-cli.ts",
+      "reason": "The goke entrypoint of solutions-query: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and runs no query. Pinned by packages/wiki-ops/src/solutions-query-cli.test.ts (the config, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-context-expand.ts",
+      "reason": "The agent-invoked wiki context expansion with its hand-written argv parser: query validation (length, path-like, delimiter-shaped, shell-metacharacter and prompt-injection-shaped text), the handoff parse, the private-token load that fails closed, linked and query candidate collection, the byte and page budget, and the closed-vocabulary result and stderr lines. Every empty case returns the same shape so query mode cannot become a corpus oracle. The safety filter it runs is wiki-context-safety.ts, which is in the mutation set at full kills. Pinned by packages/wiki-ops/src/wiki-context-expand.test.ts. It is not in the mutation set because a targeted Stryker run over it scored 56.81% (609 mutants: 346 killed, 224 survived, 39 with no coverage), well short of the 100% gate. Its tests import it by relative path and run on test-owned temp paths, so the run is safe and measures the real decisions. The non-killed mutants are in assembleExpandedContext (38), parsePrivateTokensFromReposYaml (32), the STOPWORDS set (26), PROMPT_INJECTION_PATTERNS (21), runWikiContextExpandCli (19), formatCandidates (16), validateQuery (15), parseHandoffContent (14), loadHandoff (13), collectLinkedCandidates (11), collectQueryCandidates (11) and OVERBROAD_QUERIES (9), with the rest spread over smaller helpers."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-context-expand-cli.ts",
+      "reason": "The process wiring of wiki-context-expand: the Node fs readers and the exit code from the outcome. It keeps the hand-written parser, because the goke runner reads free text that starts with `-` as a flag. Pinned by packages/wiki-ops/src/wiki-context-expand-cli.test.ts (--help, query text that starts with a dash, bad arguments, and that it sets the exit code without exiting) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "packages/wiki-ops/src/correction-lifecycle.ts",
+      "reason": "The corrections lifecycle CLI with its hand-written argv parser: record, retire, reconfirm and supersede against knowledge/corrections.yaml, with server-derived attribution from GITHUB_ACTOR and a repository-root check, and the machine-readable help and failure codes. Pinned by packages/wiki-ops/src/correction-lifecycle.test.ts, which covers each command, each failure code, the help forms and `record ... --text --help` as a value error, against injected fs. The store rules it enforces are in @fro.bot/wiki-write-core/corrections, which is in the mutation set. Not mutated itself: it writes a tracked file, so a sandbox run would need a throwaway checkout."
+    },
+    {
+      "path": "packages/wiki-ops/src/correction-lifecycle-cli.ts",
+      "reason": "The process wiring of correction-lifecycle: it passes the exit code of the lifecycle `main` to `process.exitCode`. It keeps the hand-written parser, because an option value such as `--text --help` must stay a value error. Pinned by packages/wiki-ops/src/correction-lifecycle-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "packages/wiki-ops/src/render-corrections-context.ts",
+      "reason": "Renders the active and needs-reconfirmation corrections for one page into .github/corrections-context.json, as data the survey agent must not obey, and prints `corrections:warning:` lines before it rethrows a store error. Pinned by packages/wiki-ops/src/render-corrections-context.test.ts (the lifecycle and node filter, and that delimiter-like correction text stays inside the data file) and by scripts/wiki-ops-flows.test.ts, which runs the real shim under the survey workflow's `if bun ... 2>file` shape. The store parse it relies on is in the mutation set, in @fro.bot/wiki-write-core/corrections."
+    },
+    {
+      "path": "packages/wiki-ops/src/render-corrections-context-cli.ts",
+      "reason": "The goke entrypoint of render-corrections-context: one writing root command that takes no argument; a failure keeps exit 1 and prints its message after any warning lines. Pinned by packages/wiki-ops/src/render-corrections-context-cli.test.ts (the config, the missing node id, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "packages/wiki-ops/src/rebuild-wiki-index.ts",
+      "reason": "Heals knowledge/index.md from the wiki pages on disk, or merges log.md files chronologically into knowledge/log.md. No workflow runs it. The index and log rules are @fro.bot/wiki-write-core's rebuildWikiIndex and mergeWikiLogs, pinned by packages/wiki-ops/src/rebuild-wiki-index.test.ts and by the mutation set in wiki-write-core; this module is the disk loader around them, pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts against a temp checkout and by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/rebuild-wiki-index-cli.ts",
+      "reason": "The goke entrypoint of rebuild-wiki-index: one writing root command with a `--merge-logs <path>` option and variadic paths. Log paths without the option, a missing option value, a flag it does not declare and `--help` are usage errors and write nothing. Pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-query.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-query.ts, pinned by packages/wiki-ops/src/wiki-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/solutions-query.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/solutions-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/solutions-query.ts, pinned by packages/wiki-ops/src/solutions-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/wiki-context-expand.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-context-expand-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-context-expand.ts, pinned by packages/wiki-ops/src/wiki-context-expand.test.ts and scripts/fro-bot-workflow-wiki-handoff.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/correction-lifecycle.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/correction-lifecycle-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/correction-lifecycle.ts, pinned by packages/wiki-ops/src/correction-lifecycle.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/render-corrections-context.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/render-corrections-context-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/render-corrections-context.ts, pinned by packages/wiki-ops/src/render-corrections-context.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/rebuild-wiki-index.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/rebuild-wiki-index-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/rebuild-wiki-index.ts, pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-repair.ts",
+      "reason": "The wiki integrity repair: the two-field frontmatter allowlist and index regeneration (shrink-only, an unclearable page is reverted and counted), the verification and no-worse re-lint, the pre-commit private-presence gate, the conflict-aware single commit to `data`, the head re-read after a tip mismatch, and the result record whose file is written before the exit code is set. Pinned by packages/wiki-ops/src/wiki-repair.test.ts against the Git Data fake (each abort reason, each count, conflict retries, the privacy block, the tree loader and the exit-code rule) and by scripts/wiki-ops-flows.test.ts, which spawns the shim against a fake GitHub for dry-run, live and abort runs. The privacy gate it calls is in the mutation set, in check-wiki-private-presence.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-repair-cli.ts",
+      "reason": "The goke entrypoint of wiki-repair: one writing root command that takes no argument and returns the exit code the repair decides, because the runner would otherwise overwrite `process.exitCode`. Argv that matches nothing declared is a usage error and repairs nothing. Pinned by packages/wiki-ops/src/wiki-repair-cli.test.ts (the config, the usage errors, an abort that still prints the result, and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-repair.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-repair-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-repair.ts, pinned by packages/wiki-ops/src/wiki-repair.test.ts, which also runs the CLI module against a mocked Octokit constructor. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-lint-issues.ts",
+      "reason": "Syncs wiki-lint findings to GitHub issues: the report shape validation (a typed error, never a process exit), the fingerprint and failure-class markers, the pure lifecycle planner (open, update, reopen, close-on-clear, duplicate fingerprints, advisory findings ignored) and the sync with its per-call failure count, then the summary and `$GITHUB_OUTPUT` counters before the exit code. Pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts (the validator, the planner, the sync against a stubbed Octokit, the report-path and version errors, and the wiki-lint.yaml job wiring) and by scripts/wiki-ops-flows.test.ts, which spawns the shim against a fake GitHub and reads the five counters."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-lint-issues-cli.ts",
+      "reason": "The goke entrypoint of wiki-lint-issues: one writing root command with the optional report-path positional. A reported condition prints its `wiki-lint-issues:` line and exits 1, and anything unexpected prints the `unhandled error` line. A second positional, a flag and `--help` are usage errors and sync nothing. Pinned by packages/wiki-ops/src/wiki-lint-issues-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
+      "path": "scripts/wiki-lint-issues.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-lint-issues-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-lint-issues.ts, pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts, and scripts/octokit-entrypoints.test.ts pins that it builds its client from GITHUB_TOKEN with no timeout and no logger. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     }
   ]
 }

@@ -16,12 +16,13 @@
     "packages/privacy/src/check-wiki-private-presence.ts",
     "packages/registry/src/merge-back-data-cli.ts",
     "packages/registry/src/merge-back-data.ts",
+    "packages/wiki-ops/src/wiki-change-detect-core.ts",
+    "packages/wiki-ops/src/wiki-context-safety.ts",
     "packages/wiki-write-core/src/corrections-survival.ts",
     "packages/wiki-write-core/src/corrections.ts",
     "packages/wiki-write-core/src/private-leak.ts",
     "scripts/build-wiki-write-core.ts",
     "scripts/mutation-guards-reach.ts",
-    "scripts/wiki-context-safety.ts",
     "scripts/wiki-lockfile-gates.ts"
   ],
   "testFiles": [
@@ -41,6 +42,9 @@
     "packages/privacy/src/check-wiki-private-presence.test.ts",
     "packages/registry/src/merge-back-data-cli.test.ts",
     "packages/registry/src/merge-back-data.test.ts",
+    "packages/wiki-ops/src/wiki-change-detect-core.test.ts",
+    "packages/wiki-ops/src/wiki-change-detect.test.ts",
+    "packages/wiki-ops/src/wiki-context-safety.test.ts",
     "packages/wiki-write-core/src/corrections-survival.test.ts",
     "packages/wiki-write-core/src/corrections.test.ts",
     "packages/wiki-write-core/src/private-leak-adapter.test.ts",
@@ -48,7 +52,6 @@
     "packages/wiki-write-core/src/wiki-write-core.test.ts",
     "scripts/build-wiki-write-core.test.ts",
     "scripts/mutation-guards-reach.test.ts",
-    "scripts/wiki-context-safety.test.ts",
     "scripts/wiki-lockfile-gates.test.ts"
   ],
   "plugins": ["@stryker-mutator/vitest-runner"],

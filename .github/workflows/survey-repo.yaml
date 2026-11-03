@@ -243,9 +243,9 @@ jobs:
       # Hashes the actual filesystem content of eligible scoped paths (not `git diff`/
       # `git status` output), so an index-only operation can never flip `changed` and an
       # untracked file (e.g. a first survey's brand-new repo page) still registers.
-      # Eligible means allowlisted (scripts/wiki-handoff-core.ts's own path rule) and not
+      # Eligible means allowlisted (packages/wiki-ops/src/wiki-handoff-core.ts's own path rule) and not
       # git-ignored, so a positive detection always corresponds to a real transferable
-      # delta. See scripts/wiki-change-detect-core.ts.
+      # delta. See packages/wiki-ops/src/wiki-change-detect-core.ts.
       - name: Capture wiki baseline
         id: wiki-baseline
         run: bun scripts/wiki-change-detect.ts baseline
@@ -254,7 +254,7 @@ jobs:
       # before the agent runs — not every wiki-scoped path (captureWikiBaseline is
       # git-status-driven, sparse by design). wiki-handoff-build.ts diffs against this so
       # the handoff only carries what the agent actually changed — not every path `data`
-      # differs from `main` on. See scripts/wiki-handoff-core.ts.
+      # differs from `main` on. See packages/wiki-ops/src/wiki-handoff-core.ts.
       - name: Capture wiki content baseline
         env:
           WIKI_HANDOFF_BASELINE_PATH: ${{ runner.temp }}/wiki-content-baseline-survey.json
@@ -503,7 +503,7 @@ jobs:
       # manifest.json + changed files, never ingest metadata: WIKI_OPERATION/WIKI_TARGET/
       # etc. are set from trusted needs.*/inputs.* values directly in survey-persist, and
       # the privacy recheck itself also runs there — this job mints no App token after
-      # any agent step. See scripts/wiki-handoff-core.ts for the artifact's guarantees.
+      # any agent step. See packages/wiki-ops/src/wiki-handoff-core.ts for the artifact's guarantees.
       - name: Build wiki handoff artifact
         id: wiki-handoff-build
         if: steps.final-attempt.outputs.conclusion == 'success' && steps.final-attempt.outputs.changed == 'true' && steps.onboarded.outputs.onboarded == 'true'

@@ -7,8 +7,8 @@
  */
 
 import {isRecord} from '@fro-bot/core/guards'
+import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {parse} from 'yaml'
-import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------
 // Constants

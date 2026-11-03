@@ -1,8 +1,11 @@
 import type {promises as fs} from 'node:fs'
 
 import {Buffer} from 'node:buffer'
+import {rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {afterAll, describe, expect, it, vi} from 'vitest'
 
 import {
   assertSafeHandoffPath,
@@ -23,6 +26,18 @@ import {
   type GitRunner,
 } from './wiki-handoff-core.ts'
 
+/**
+ * Every path below lives under one test-owned temp directory. All filesystem access in this file goes
+ * through injected seams, so nothing is written; if a seam were ever left to its real default (a
+ * regression, or a Stryker mutant on the `??` fallback), the call would land inside this directory and
+ * never on a path outside it. The directory is removed when the file finishes.
+ */
+const T = `${tmpdir()}/wiki-handoff-core-test-${process.pid}`
+
+afterAll(() => {
+  rmSync(T, {recursive: true, force: true})
+})
+
 /** Join porcelain -z records with NUL separators, plus a trailing NUL (git's actual output shape). */
 function nulRecords(...records: string[]): string {
   return records.length === 0 ? '' : `${records.join('\0')}\0`
@@ -40,16 +55,16 @@ function makeBaselineMocks(params: {
 } {
   const readFileImplMock = vi.fn(async (target: unknown, encoding?: unknown) => {
     const key = String(target)
-    if (key === '/baseline.json') {
+    if (key === `${T}/baseline.json`) {
       return JSON.stringify({files: params.baselineFiles, deleted: params.baselineDeleted ?? []})
     }
-    const relative = key.replace('/repo/', '')
+    const relative = key.replace(`${T}/repo/`, '')
     const content = params.currentContents[relative]
     if (content === undefined) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
     return encoding === 'utf8' ? content : Buffer.from(content)
   })
   const existsImpl = vi.fn(async (target: string) => {
-    const relative = target.replace('/repo/', '')
+    const relative = target.replace(`${T}/repo/`, '')
     return params.existingPaths.has(relative)
   })
   const hashImpl = (contents: Buffer) => contents.toString('utf8')
@@ -154,8 +169,8 @@ describe('buildWikiHandoff', () => {
     const writes: Record<string, string> = {}
     const copies: [string, string][] = []
     const result = await buildWikiHandoff({
-      cwd: '/repo',
-      outDir: '/tmp/handoff',
+      cwd: `${T}/repo`,
+      outDir: `${T}/tmp/handoff`,
       runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/new.md', ' D knowledge/log.md'),
       mkdirImpl: vi.fn(async () => undefined),
       copyFileImpl: vi.fn(async (src: unknown, dest: unknown) => {
@@ -168,21 +183,21 @@ describe('buildWikiHandoff', () => {
 
     expect(result).toStrictEqual({changed: ['knowledge/wiki/repos/new.md'], deleted: ['knowledge/log.md']})
     expect(copies).toStrictEqual([
-      ['/repo/knowledge/wiki/repos/new.md', '/tmp/handoff/files/knowledge/wiki/repos/new.md'],
+      [`${T}/repo/knowledge/wiki/repos/new.md`, `${T}/tmp/handoff/files/knowledge/wiki/repos/new.md`],
     ])
-    expect(JSON.parse(writes['/tmp/handoff/manifest.json'] ?? '')).toStrictEqual({
+    expect(JSON.parse(writes[`${T}/tmp/handoff/manifest.json`] ?? '')).toStrictEqual({
       changed: ['knowledge/wiki/repos/new.md'],
       deleted: ['knowledge/log.md'],
     })
     // The build side must never write anything else — no metadata.json, no other file.
-    expect(Object.keys(writes)).toStrictEqual(['/tmp/handoff/manifest.json'])
+    expect(Object.keys(writes)).toStrictEqual([`${T}/tmp/handoff/manifest.json`])
   })
 
   it('throws when git reports a path outside the wiki scope (defense in depth)', async () => {
     await expect(
       buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
         runGitStatus: async () => nulRecords('?? metadata/repos.yaml'),
       }),
     ).rejects.toThrow('out-of-scope paths')
@@ -199,9 +214,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/untouched.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -222,9 +237,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/edited.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -245,9 +260,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/newcat/created.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -269,9 +284,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords(), // nothing reported — the untracked file just vanished
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -294,9 +309,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords(' D knowledge/wiki/repos/sync-caused-gone.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -318,9 +333,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords(' D knowledge/wiki/repos/tracked-present.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -341,9 +356,9 @@ describe('buildWikiHandoff', () => {
       })
 
       const result = await buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
-        baselinePath: '/baseline.json',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
+        baselinePath: `${T}/baseline.json`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/untouched.md'),
         readFileImpl: mocks.readFileImpl,
         existsImpl: mocks.existsImpl,
@@ -362,14 +377,14 @@ describe('captureWikiBaseline', () => {
   it('hashes every changed (added/modified/untracked) candidate path, and records deletions separately in `deleted`', async () => {
     const written: Record<string, string> = {}
     const manifest = await captureWikiBaseline({
-      cwd: '/repo',
-      baselinePath: '/baseline.json',
+      cwd: `${T}/repo`,
+      baselinePath: `${T}/baseline.json`,
       runGitStatus: async () =>
         nulRecords('?? knowledge/wiki/repos/a.md', ' M knowledge/index.md', ' D knowledge/log.md'),
       readFileImpl: vi.fn(async (target: unknown) => {
         const key = String(target)
-        if (key === '/repo/knowledge/wiki/repos/a.md') return Buffer.from('content-a')
-        if (key === '/repo/knowledge/index.md') return Buffer.from('content-index')
+        if (key === `${T}/repo/knowledge/wiki/repos/a.md`) return Buffer.from('content-a')
+        if (key === `${T}/repo/knowledge/index.md`) return Buffer.from('content-index')
         throw new Error(`unexpected read: ${key}`)
       }) as unknown as typeof fs.readFile,
       writeFileImpl: vi.fn(async (target: unknown, data: unknown) => {
@@ -385,13 +400,13 @@ describe('captureWikiBaseline', () => {
       },
       deleted: ['knowledge/log.md'],
     })
-    expect(JSON.parse(written['/baseline.json'] ?? '')).toStrictEqual(manifest)
+    expect(JSON.parse(written[`${T}/baseline.json`] ?? '')).toStrictEqual(manifest)
   })
 
   it('skips any candidate path outside the wiki allowlist defensively', async () => {
     const manifest = await captureWikiBaseline({
-      cwd: '/repo',
-      baselinePath: '/baseline.json',
+      cwd: `${T}/repo`,
+      baselinePath: `${T}/baseline.json`,
       runGitStatus: async () => nulRecords('?? metadata/repos.yaml', '?? knowledge/wiki/repos/a.md'),
       readFileImpl: vi.fn(async () => Buffer.from('content')) as unknown as typeof fs.readFile,
       writeFileImpl: vi.fn(async () => undefined),
@@ -403,8 +418,8 @@ describe('captureWikiBaseline', () => {
 
   it('skips any deleted candidate path outside the wiki allowlist defensively', async () => {
     const manifest = await captureWikiBaseline({
-      cwd: '/repo',
-      baselinePath: '/baseline.json',
+      cwd: `${T}/repo`,
+      baselinePath: `${T}/baseline.json`,
       runGitStatus: async () => nulRecords(' D metadata/repos.yaml', ' D knowledge/wiki/repos/gone.md'),
       readFileImpl: vi.fn(async () => Buffer.from('content')) as unknown as typeof fs.readFile,
       writeFileImpl: vi.fn(async () => undefined),
@@ -477,14 +492,14 @@ function makeFsMocks(
 
 describe('validateAndApplyWikiHandoff', () => {
   it('applies a happy-path manifest: writes changed files and removes deleted files', async () => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 10}})
     mocks.setManifest(
       JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/wiki/repos/old.md']}),
     )
 
     const result = await validateAndApplyWikiHandoff({
-      handoffDir: '/handoff',
-      workspaceDir: '/workspace',
+      handoffDir: `${T}/handoff`,
+      workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
       readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
@@ -498,15 +513,15 @@ describe('validateAndApplyWikiHandoff', () => {
       deleted: ['knowledge/wiki/repos/old.md'],
       skipped: [],
     })
-    expect(Object.keys(mocks.written)).toStrictEqual(['/workspace/knowledge/wiki/repos/foo.md'])
-    expect(mocks.removed).toStrictEqual(['/workspace/knowledge/wiki/repos/old.md'])
+    expect(Object.keys(mocks.written)).toStrictEqual([`${T}/workspace/knowledge/wiki/repos/foo.md`])
+    expect(mocks.removed).toStrictEqual([`${T}/workspace/knowledge/wiki/repos/old.md`])
   })
 
   it('validates but never writes knowledge/log.md or knowledge/index.md, so the workspace copies stay', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/knowledge/wiki/repos/foo.md': {size: 10},
-      '/handoff/files/knowledge/log.md': {size: 10},
-      '/handoff/files/knowledge/index.md': {size: 10},
+      [`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 10},
+      [`${T}/handoff/files/knowledge/log.md`]: {size: 10},
+      [`${T}/handoff/files/knowledge/index.md`]: {size: 10},
     })
     mocks.setManifest(
       JSON.stringify({
@@ -516,8 +531,8 @@ describe('validateAndApplyWikiHandoff', () => {
     )
 
     const result = await validateAndApplyWikiHandoff({
-      handoffDir: '/handoff',
-      workspaceDir: '/workspace',
+      handoffDir: `${T}/handoff`,
+      workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
       readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
@@ -528,11 +543,11 @@ describe('validateAndApplyWikiHandoff', () => {
 
     expect(result.applied).toStrictEqual(['knowledge/wiki/repos/foo.md'])
     expect(result.skipped).toStrictEqual(['knowledge/log.md', 'knowledge/index.md'])
-    expect(Object.keys(mocks.written)).toStrictEqual(['/workspace/knowledge/wiki/repos/foo.md'])
+    expect(Object.keys(mocks.written)).toStrictEqual([`${T}/workspace/knowledge/wiki/repos/foo.md`])
   })
 
   it('does not delete knowledge/log.md or knowledge/index.md when the manifest lists them as deleted', async () => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 10}})
     mocks.setManifest(
       JSON.stringify({
         changed: ['knowledge/wiki/repos/foo.md'],
@@ -541,8 +556,8 @@ describe('validateAndApplyWikiHandoff', () => {
     )
 
     const result = await validateAndApplyWikiHandoff({
-      handoffDir: '/handoff',
-      workspaceDir: '/workspace',
+      handoffDir: `${T}/handoff`,
+      workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
       readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
@@ -551,22 +566,22 @@ describe('validateAndApplyWikiHandoff', () => {
       rmImpl: mocks.rmImpl,
     })
 
-    expect(mocks.removed).toStrictEqual(['/workspace/knowledge/wiki/repos/old.md'])
+    expect(mocks.removed).toStrictEqual([`${T}/workspace/knowledge/wiki/repos/old.md`])
     expect(result.deleted).toStrictEqual(['knowledge/wiki/repos/old.md'])
     expect(result.skipped).toStrictEqual(['knowledge/log.md', 'knowledge/index.md'])
   })
 
   it('still rejects a symlinked knowledge/log.md before applying anything', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/knowledge/wiki/repos/foo.md': {size: 10},
-      '/handoff/files/knowledge/log.md': {size: 10, symlink: true},
+      [`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 10},
+      [`${T}/handoff/files/knowledge/log.md`]: {size: 10, symlink: true},
     })
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md', 'knowledge/log.md'], deleted: []}))
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         mkdirImpl: mocks.mkdirImpl,
         readdirImpl: mocks.readdirImpl,
         lstatImpl: mocks.lstatImpl,
@@ -583,8 +598,8 @@ describe('validateAndApplyWikiHandoff', () => {
     mocks.setManifest('{"changed":[],"deleted":[]}')
 
     const result = await validateAndApplyWikiHandoff({
-      handoffDir: '/handoff',
-      workspaceDir: '/workspace',
+      handoffDir: `${T}/handoff`,
+      workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
       readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
@@ -601,8 +616,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -618,8 +633,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -633,7 +648,7 @@ describe('validateAndApplyWikiHandoff', () => {
   it('never reads a metadata.json even if one is present alongside a valid manifest (defense in depth)', async () => {
     // Simulate a compromised build script that both resurrects metadata.json AND keeps a
     // valid manifest — the top-level allowlist check must fire before manifest reading.
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 1}}, [
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 1}}, [
       'manifest.json',
       'files',
       'metadata.json',
@@ -642,8 +657,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -661,8 +676,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -679,8 +694,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -697,8 +712,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -715,8 +730,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -733,8 +748,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -751,8 +766,8 @@ describe('validateAndApplyWikiHandoff', () => {
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -764,13 +779,13 @@ describe('validateAndApplyWikiHandoff', () => {
   })
 
   it('rejects a symlink entry', async () => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 1, symlink: true}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 1, symlink: true}})
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: []}))
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -783,14 +798,14 @@ describe('validateAndApplyWikiHandoff', () => {
 
   it('rejects a manifest whose total size exceeds the cap', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/knowledge/wiki/repos/foo.md': {size: WIKI_HANDOFF_MAX_TOTAL_BYTES + 1},
+      [`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: WIKI_HANDOFF_MAX_TOTAL_BYTES + 1},
     })
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: []}))
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -802,13 +817,13 @@ describe('validateAndApplyWikiHandoff', () => {
   })
 
   it('writes nothing when validation fails partway through a multi-entry manifest', async () => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/ok.md': {size: 1}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/ok.md`]: {size: 1}})
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/ok.md', 'metadata/repos.yaml'], deleted: []}))
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         readdirImpl: mocks.readdirImpl,
         readFileImpl: mocks.readFileImpl,
         lstatImpl: mocks.lstatImpl,
@@ -860,15 +875,15 @@ describe('assertSafeHandoffPath', () => {
 
 describe('validateAndApplyHandoff with the wiki policy', () => {
   it('still applies deletions and uses the wiki size cap', async () => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/foo.md': {size: 10}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: 10}})
     mocks.setManifest(
       JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: ['knowledge/wiki/repos/old.md']}),
     )
 
     const result = await validateAndApplyHandoff({
       policy: WIKI_HANDOFF_POLICY,
-      handoffDir: '/handoff',
-      workspaceDir: '/workspace',
+      handoffDir: `${T}/handoff`,
+      workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
       readdirImpl: mocks.readdirImpl,
       lstatImpl: mocks.lstatImpl,
@@ -890,8 +905,8 @@ describe('validateAndApplyHandoff with the wiki policy', () => {
 async function applyDrafted(mocks: ReturnType<typeof makeFsMocks>) {
   return validateAndApplyHandoff({
     policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
-    handoffDir: '/handoff',
-    workspaceDir: '/workspace',
+    handoffDir: `${T}/handoff`,
+    workspaceDir: `${T}/workspace`,
     mkdirImpl: mocks.mkdirImpl,
     readdirImpl: mocks.readdirImpl,
     lstatImpl: mocks.lstatImpl,
@@ -904,8 +919,8 @@ async function applyDrafted(mocks: ReturnType<typeof makeFsMocks>) {
 describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
   it('accepts a new doc and a modified doc under solutions categories', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/docs/solutions/best-practices/new-doc.md': {size: 100},
-      '/handoff/files/docs/solutions/workflow-issues/existing-doc.md': {size: 200},
+      [`${T}/handoff/files/docs/solutions/best-practices/new-doc.md`]: {size: 100},
+      [`${T}/handoff/files/docs/solutions/workflow-issues/existing-doc.md`]: {size: 200},
     })
     mocks.setManifest(
       JSON.stringify({
@@ -922,8 +937,8 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
       skipped: [],
     })
     expect(Object.keys(mocks.written)).toStrictEqual([
-      '/workspace/docs/solutions/best-practices/new-doc.md',
-      '/workspace/docs/solutions/workflow-issues/existing-doc.md',
+      `${T}/workspace/docs/solutions/best-practices/new-doc.md`,
+      `${T}/workspace/docs/solutions/workflow-issues/existing-doc.md`,
     ])
   })
 
@@ -935,7 +950,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
     ['docs/solutions/best-practices/../../../etc/passwd', 'traversal'],
     ['/etc/passwd', 'absolute path'],
   ])('rejects %s (%s) and writes nothing', async (rejected: string) => {
-    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/docs/solutions/best-practices/ok.md`]: {size: 1}})
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/ok.md', rejected], deleted: []}))
 
     await expect(applyDrafted(mocks)).rejects.toThrow(WikiHandoffValidationError)
@@ -945,8 +960,8 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
 
   it('rejects a symlink entry and writes nothing', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/docs/solutions/best-practices/ok.md': {size: 1},
-      '/handoff/files/docs/solutions/best-practices/link.md': {size: 1, symlink: true},
+      [`${T}/handoff/files/docs/solutions/best-practices/ok.md`]: {size: 1},
+      [`${T}/handoff/files/docs/solutions/best-practices/link.md`]: {size: 1, symlink: true},
     })
     mocks.setManifest(
       JSON.stringify({
@@ -961,7 +976,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
   })
 
   it('rejects a non-empty deleted list, even for an in-scope path, and writes nothing', async () => {
-    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/docs/solutions/best-practices/ok.md`]: {size: 1}})
     mocks.setManifest(
       JSON.stringify({
         changed: ['docs/solutions/best-practices/ok.md'],
@@ -976,7 +991,9 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
 
   it('rejects a bundle over the drafted size cap and writes nothing', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/docs/solutions/best-practices/big.md': {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES + 1},
+      [`${T}/handoff/files/docs/solutions/best-practices/big.md`]: {
+        size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES + 1,
+      },
     })
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/big.md'], deleted: []}))
 
@@ -986,7 +1003,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
 
   it('accepts a bundle that is exactly at the size cap', async () => {
     const mocks = makeFsMocks({
-      '/handoff/files/docs/solutions/best-practices/edge.md': {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES},
+      [`${T}/handoff/files/docs/solutions/best-practices/edge.md`]: {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES},
     })
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/edge.md'], deleted: []}))
 
@@ -1022,8 +1039,8 @@ describe('buildWikiHandoff source checks', () => {
 
     await expect(
       buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/ok.md', '?? knowledge/wiki/repos/leak.md'),
         ...mocks,
       }),
@@ -1038,8 +1055,8 @@ describe('buildWikiHandoff source checks', () => {
 
     await expect(
       buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
         runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/dir.md'),
         ...mocks,
       }),
@@ -1051,8 +1068,8 @@ describe('buildWikiHandoff source checks', () => {
     const mocks = sourceMocks({})
 
     const result = await buildWikiHandoff({
-      cwd: '/repo',
-      outDir: '/tmp/handoff',
+      cwd: `${T}/repo`,
+      outDir: `${T}/tmp/handoff`,
       runGitStatus: async () => nulRecords('?? knowledge/wiki/repos/ok.md'),
       ...mocks,
     })
@@ -1081,7 +1098,7 @@ describe('backslash handoff paths', () => {
   })
 
   it.each(draftedPaths)('apply rejects %s under the drafted policy with nothing written', async (rejected: string) => {
-    const mocks = makeFsMocks({'/handoff/files/docs/solutions/best-practices/ok.md': {size: 1}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/docs/solutions/best-practices/ok.md`]: {size: 1}})
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/ok.md', rejected], deleted: []}))
 
     await expect(applyDrafted(mocks)).rejects.toThrow(/backslash/)
@@ -1090,13 +1107,13 @@ describe('backslash handoff paths', () => {
   })
 
   it.each(wikiPaths)('apply rejects %s under the wiki policy with nothing written', async (rejected: string) => {
-    const mocks = makeFsMocks({'/handoff/files/knowledge/wiki/repos/ok.md': {size: 1}})
+    const mocks = makeFsMocks({[`${T}/handoff/files/knowledge/wiki/repos/ok.md`]: {size: 1}})
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/ok.md'], deleted: [rejected]}))
 
     await expect(
       validateAndApplyWikiHandoff({
-        handoffDir: '/handoff',
-        workspaceDir: '/workspace',
+        handoffDir: `${T}/handoff`,
+        workspaceDir: `${T}/workspace`,
         mkdirImpl: mocks.mkdirImpl,
         readdirImpl: mocks.readdirImpl,
         lstatImpl: mocks.lstatImpl,
@@ -1114,8 +1131,8 @@ describe('backslash handoff paths', () => {
 
     await expect(
       buildWikiHandoff({
-        cwd: '/repo',
-        outDir: '/tmp/handoff',
+        cwd: `${T}/repo`,
+        outDir: `${T}/tmp/handoff`,
         runGitStatus: async () => nulRecords(String.raw`?? knowledge\wiki\repos\x.md`),
         copyFileImpl,
         mkdirImpl: vi.fn(async () => undefined),
@@ -1162,8 +1179,8 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
     const io = writers()
 
     const result = await buildHandoffFromGitIndex({
-      cwd: '/repo',
-      outDir: '/out',
+      cwd: `${T}/repo`,
+      outDir: `${T}/out`,
       pathspec: 'knowledge',
       policy: WIKI_HANDOFF_POLICY,
       runGit,
@@ -1176,7 +1193,7 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
       ['diff', '--cached', '--raw', '-z', '--no-renames', '--no-abbrev', '--', 'knowledge'],
       ['cat-file', 'blob', SHA_A],
     ])
-    expect(io.written['/out/files/knowledge/wiki/repos/new.md']).toBe('blob content')
+    expect(io.written[`${T}/out/files/knowledge/wiki/repos/new.md`]).toBe('blob content')
   })
 
   it('under a policy that allows deletions, reports them in the manifest', async () => {
@@ -1184,8 +1201,8 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
     const io = writers()
 
     const result = await buildHandoffFromGitIndex({
-      cwd: '/repo',
-      outDir: '/out',
+      cwd: `${T}/repo`,
+      outDir: `${T}/out`,
       pathspec: 'knowledge',
       policy: WIKI_HANDOFF_POLICY,
       runGit,
@@ -1210,8 +1227,8 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
 
     await expect(
       buildHandoffFromGitIndex({
-        cwd: '/repo',
-        outDir: '/out',
+        cwd: `${T}/repo`,
+        outDir: `${T}/out`,
         pathspec: 'docs/solutions',
         policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
         runGit,
@@ -1229,8 +1246,8 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
 
     await expect(
       buildHandoffFromGitIndex({
-        cwd: '/repo',
-        outDir: '/out',
+        cwd: `${T}/repo`,
+        outDir: `${T}/out`,
         pathspec: 'docs/solutions',
         policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
         runGit,

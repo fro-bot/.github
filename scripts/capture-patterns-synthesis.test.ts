@@ -9,8 +9,8 @@
  * - fetchExistingPatternProposals I/O shell tests (mocked Octokit)
  */
 
+import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {describe, expect, it} from 'vitest'
-
 import {
   buildLearningProposalLink,
   buildPatternProposalMarkers,
@@ -29,7 +29,6 @@ import {
   type LearningProposalIssueInput,
   type PatternProposalOctokitClient,
 } from './capture-patterns-synthesis.ts'
-import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------
 // Marker helpers

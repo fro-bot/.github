@@ -1,12 +1,21 @@
+import type {WikiLintJsonFinding, WikiLintJsonReport} from '@fro.bot/wiki-write-core/wiki-lint'
 import type {ExistingIssue, OctokitClient, PlanInput} from './wiki-lint-issues.ts'
-import type {WikiLintJsonFinding, WikiLintJsonReport} from './wiki-lint.ts'
 
-import {readFileSync} from 'node:fs'
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parse as parseYaml} from 'yaml'
-import {planIssueLifecycle, syncWikiLintIssues, validateWikiLintJsonReport} from './wiki-lint-issues.ts'
+import {
+  formatWikiLintIssuesError,
+  planIssueLifecycle,
+  runWikiLintIssues,
+  syncWikiLintIssues,
+  validateWikiLintJsonReport,
+  WikiLintIssuesExit,
+} from './wiki-lint-issues.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -443,50 +452,45 @@ describe('validateWikiLintJsonReport', () => {
 
   it('24. execution-failure report with null failure_class is rejected as invalid', () => {
     const raw = makeReport({status: 'execution-failure', failure_class: null})
-    // validateWikiLintJsonReport calls process.exit(1) — we need to intercept it
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number | string | null) => {
-      throw new Error('process.exit called')
-    })
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-
-    try {
-      expect(() => validateWikiLintJsonReport(raw)).toThrow('process.exit called')
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('execution-failure report missing failure_class'))
-    } finally {
-      exitSpy.mockRestore()
-      stderrSpy.mockRestore()
-    }
+    expect(() => validateWikiLintJsonReport(raw)).toThrow(
+      new WikiLintIssuesExit('wiki-lint-issues: execution-failure report missing failure_class'),
+    )
   })
 
   it('25. report with invalid status is rejected', () => {
     const raw = {...makeReport(), status: 'unknown-status'}
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number | string | null) => {
-      throw new Error('process.exit called')
-    })
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-
-    try {
-      expect(() => validateWikiLintJsonReport(raw)).toThrow('process.exit called')
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('invalid report shape'))
-    } finally {
-      exitSpy.mockRestore()
-      stderrSpy.mockRestore()
-    }
+    expect(() => validateWikiLintJsonReport(raw)).toThrow(
+      new WikiLintIssuesExit('wiki-lint-issues: invalid report shape: status "unknown-status" is not valid'),
+    )
   })
 
   it('26. report with non-array findings is rejected', () => {
     const raw = {...makeReport(), findings: 'not-an-array'}
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((_code?: number | string | null) => {
-      throw new Error('process.exit called')
-    })
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    expect(() => validateWikiLintJsonReport(raw)).toThrow(
+      new WikiLintIssuesExit('wiki-lint-issues: invalid report shape: findings is not an array'),
+    )
+  })
 
+  it('rejects a root that is not an object, a finding that is not an object and counts that are not an object', () => {
+    expect(() => validateWikiLintJsonReport([])).toThrow('invalid report shape: root is not an object')
+    expect(() => validateWikiLintJsonReport({...makeReport(), findings: [1]})).toThrow(
+      'invalid report shape: findings[0] is not an object',
+    )
+    expect(() => validateWikiLintJsonReport({...makeReport(), counts: 5})).toThrow(
+      'invalid report shape: counts is not an object',
+    )
+  })
+
+  it('never calls process.exit or writes to stderr itself', () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     try {
-      expect(() => validateWikiLintJsonReport(raw)).toThrow('process.exit called')
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('findings is not an array'))
+      expect(() => validateWikiLintJsonReport({...makeReport(), status: 'weird'})).toThrow(WikiLintIssuesExit)
+      expect(exit).not.toHaveBeenCalled()
+      expect(stderr).not.toHaveBeenCalled()
     } finally {
-      exitSpy.mockRestore()
-      stderrSpy.mockRestore()
+      exit.mockRestore()
+      stderr.mockRestore()
     }
   })
 })
@@ -495,17 +499,101 @@ describe('validateWikiLintJsonReport', () => {
 // CLI main() tests (via temp file + GITHUB_OUTPUT)
 // ---------------------------------------------------------------------------
 
-describe('main() CLI via temp files', () => {
-  it.todo('schema_version mismatch → exit 1, no octokit calls (requires testable main() extraction)')
-  it.todo('fingerprint_version mismatch → exit 1, no octokit calls (requires testable main() extraction)')
-  it.todo('CLI main() counters output — GITHUB_OUTPUT contains opened=1 (requires testable main() extraction)')
+async function run(env: Record<string, string>, argument?: string): Promise<{code: number; stderr: string}> {
+  const lines: string[] = []
+  const code = await runWikiLintIssues(env, {stderr: text => lines.push(text)}, argument)
+  return {code, stderr: lines.join('')}
+}
+
+describe('runWikiLintIssues (a temp report)', () => {
+  const roots: string[] = []
+
+  afterEach(() => {
+    while (roots.length > 0) {
+      const root = roots.pop()
+      if (root !== undefined) rmSync(root, {recursive: true, force: true})
+    }
+  })
+
+  function writeReport(content: string): string {
+    const root = mkdtempSync(join(tmpdir(), 'wiki-lint-issues-'))
+    roots.push(root)
+    const path = join(root, 'report.json')
+    writeFileSync(path, content)
+    return path
+  }
+
+  it('reports a missing path and exits 1, before reading anything', async () => {
+    expect(await run({})).toEqual({
+      code: 1,
+      stderr: 'wiki-lint-issues: WIKI_LINT_JSON_PATH or first argument is required\n',
+    })
+    expect(await run({WIKI_LINT_JSON_PATH: ''}, 'x.json')).toEqual({
+      code: 1,
+      stderr: 'wiki-lint-issues: WIKI_LINT_JSON_PATH or first argument is required\n',
+    })
+  })
+
+  it('reports an unreadable or unparseable report with the path', async () => {
+    const missing = await run({WIKI_LINT_JSON_PATH: '/nonexistent/wiki-lint-report.json'})
+    expect(missing.code).toBe(1)
+    expect(missing.stderr).toContain(
+      'wiki-lint-issues: failed to read /nonexistent/wiki-lint-report.json: Error: ENOENT',
+    )
+    const path = writeReport('{nope')
+    const bad = await run({}, path)
+    expect(bad.code).toBe(1)
+    expect(bad.stderr).toContain(`wiki-lint-issues: failed to read ${path}: SyntaxError`)
+  })
+
+  it('takes the path from the argument when the variable is unset, and the variable wins when both are set', async () => {
+    const good = writeReport(JSON.stringify({...makeReport(), schema_version: 2}))
+    const other = writeReport('{nope')
+    expect((await run({}, good)).stderr).toBe('wiki-lint-issues: unknown schema_version 2, expected 1\n')
+    expect((await run({WIKI_LINT_JSON_PATH: good}, other)).stderr).toBe(
+      'wiki-lint-issues: unknown schema_version 2, expected 1\n',
+    )
+  })
+
+  it('stops on an unknown schema_version or fingerprint_version before any API call', async () => {
+    const schema = writeReport(JSON.stringify({...makeReport(), schema_version: 2}))
+    expect(await run({WIKI_LINT_JSON_PATH: schema})).toEqual({
+      code: 1,
+      stderr: 'wiki-lint-issues: unknown schema_version 2, expected 1\n',
+    })
+    const fingerprint = writeReport(JSON.stringify({...makeReport(), fingerprint_version: 3}))
+    expect(await run({WIKI_LINT_JSON_PATH: fingerprint})).toEqual({
+      code: 1,
+      stderr: 'wiki-lint-issues: unknown fingerprint_version 3, expected 1\n',
+    })
+  })
+
+  it('reports a malformed report with the validation message', async () => {
+    const path = writeReport(JSON.stringify({...makeReport(), status: 'weird'}))
+    expect(await run({WIKI_LINT_JSON_PATH: path})).toEqual({
+      code: 1,
+      stderr: 'wiki-lint-issues: invalid report shape: status "weird" is not valid\n',
+    })
+  })
+
+  it('rethrows an unexpected error for the entrypoint to format', async () => {
+    const path = writeReport(JSON.stringify(makeReport()))
+    await expect(run({WIKI_LINT_JSON_PATH: path})).rejects.toThrow('GITHUB_TOKEN is not set')
+  })
+})
+
+describe('formatWikiLintIssuesError', () => {
+  it('prefixes an unexpected error with the step name and the error as String() shows it', () => {
+    expect(formatWikiLintIssuesError(new Error('boom'))).toBe('wiki-lint-issues: unhandled error: Error: boom\n')
+    expect(formatWikiLintIssuesError('plain')).toBe('wiki-lint-issues: unhandled error: plain\n')
+  })
 })
 
 // ---------------------------------------------------------------------------
 // Workflow YAML integration tests
 // ---------------------------------------------------------------------------
 
-const workflowPath = new URL('../.github/workflows/wiki-lint.yaml', import.meta.url).pathname
+const workflowPath = new URL('../../../.github/workflows/wiki-lint.yaml', import.meta.url).pathname
 
 describe('wiki-lint.yaml workflow', () => {
   const workflowContent = readFileSync(workflowPath, 'utf8')
@@ -548,7 +636,7 @@ describe('wiki-lint.yaml workflow', () => {
     expect(appTokenStep).toBeDefined()
     const withBlock = appTokenStep?.with as Record<string, unknown> | undefined
     expect(withBlock).toBeDefined()
-    // wiki-lint-issues.ts makes issues.* calls only; no contents permission is needed.
+    // wiki-lint-issues makes issues.* calls only; no contents permission is needed.
     const permissions = Object.keys(withBlock ?? {}).filter(name => name.startsWith('permission-'))
     expect(permissions).toStrictEqual(['permission-issues'])
     expect(withBlock?.['permission-issues']).toBe('write')

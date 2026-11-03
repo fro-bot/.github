@@ -145,7 +145,7 @@ It retries after re-bootstrapping on a recoverable 404 during the write loop (`w
 
 `scripts/data-branch-bootstrap.ts`'s `bootstrapDataBranch()` is the single shared primitive both
 writers call — it owns the `createRef` 422 race handling (re-read `data`; return the existing tip if
-present, otherwise raise) at `data-branch-bootstrap.ts` ~51-139. `scripts/wiki-repair.ts` also writes
+present, otherwise raise) at `data-branch-bootstrap.ts` ~51-139. `packages/wiki-ops/src/wiki-repair.ts` also writes
 through `commitWikiChanges()`, so it inherits this bootstrap-then-retry behavior with no separate
 implementation.
 

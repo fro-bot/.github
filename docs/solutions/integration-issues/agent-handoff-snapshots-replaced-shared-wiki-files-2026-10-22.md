@@ -62,7 +62,7 @@ The agent jobs overlap. The persist jobs never do.
 
 Fixed in #4040.
 
-**Apply never writes or deletes the shared files.** `WIKI_HANDOFF_POLICY` in `scripts/wiki-handoff-core.ts` marks them unapplied:
+**Apply never writes or deletes the shared files.** `WIKI_HANDOFF_POLICY` in `packages/wiki-ops/src/wiki-handoff-core.ts` marks them unapplied:
 
 ```ts
 export const WIKI_HANDOFF_POLICY: HandoffPolicy = {

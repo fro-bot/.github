@@ -18,6 +18,7 @@ import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
 import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
+import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {
   classifyPatternProposalOutcome,
   collectLearningProposalSources,
@@ -30,7 +31,6 @@ import {
   type PatternProposalOctokitClient,
   type PatternSourceSignals,
 } from './capture-patterns-synthesis.ts'
-import {SOLUTION_SUBDIRS} from './solution-docs-paths.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
