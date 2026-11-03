@@ -679,8 +679,12 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
  *
  * When `scanAvailable` is false (private token load failed), all enriched evidence
  * is cleared so no unscanned content reaches the digest. For ReviewCandidate, this
- * clears `reviewExcerpts`. For CiFixCandidate, this clears `diffExcerpt` and
- * `logExcerpt`. When `scanAvailable` is true, candidates are returned unchanged.
+ * clears `reviewExcerpts` and, when ci-fix evidence is attached, its `diffExcerpt` and
+ * `logExcerpt`. For CiFixCandidate, this clears `diffExcerpt` and `logExcerpt`. Check
+ * names are cleared too, in both variants: a check name is free text that can carry a
+ * private identifier, and the token set that would catch it is the one that failed to
+ * load, so each is replaced with the same fixed `[REDACTED]` marker the scanned path
+ * writes. When `scanAvailable` is true, candidates are returned unchanged.
  *
  * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
  * composition can be tested independently of the I/O shell.
@@ -689,19 +693,19 @@ export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAva
   if (scanAvailable) return candidates
   return candidates.map(c => {
     if (c.trigger === 'review-heavy') {
-      // Clear reviewExcerpts (existing) and also clear any attached ciFix evidence.
+      // Clear reviewExcerpts and any attached ciFix evidence, check name included.
       // No unscanned evidence of any type reaches the digest when the scan is unavailable.
       if (c.ciFix !== undefined) {
         return {
           ...c,
           reviewExcerpts: [] as string[],
-          ciFix: {failingCheckName: c.ciFix.failingCheckName, diffExcerpt: '', logExcerpt: undefined},
+          ciFix: {failingCheckName: '[REDACTED]', diffExcerpt: '', logExcerpt: undefined},
         }
       }
       return {...c, reviewExcerpts: [] as string[]}
     }
     if (c.trigger === 'ci-fail-then-pass') {
-      return {...c, diffExcerpt: '', logExcerpt: undefined}
+      return {...c, failingCheckName: '[REDACTED]', diffExcerpt: '', logExcerpt: undefined}
     }
     return c
   })

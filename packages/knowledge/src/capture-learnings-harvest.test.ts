@@ -2311,6 +2311,65 @@ describe('applyEnrichmentScanAvailability', () => {
   })
 })
 
+describe('applyEnrichmentScanAvailability — check names', () => {
+  const PRIVATE_NAME = 'synthetic-private-name'
+
+  it('scanAvailable=false replaces the failing check name of a ci-fail-then-pass candidate with the fixed marker', () => {
+    // #given a ci-fix candidate whose check name could carry a private identifier
+    const candidates: CiFixCandidate[] = [makeCiFixCandidate({failingCheckName: PRIVATE_NAME})]
+
+    // #when the private-token scan is unavailable
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then the name is the same marker the scanned path writes, and the other fields are kept
+    const r0 = result[0]
+    expect(r0?.trigger).toBe('ci-fail-then-pass')
+    if (r0?.trigger === 'ci-fail-then-pass') {
+      expect(r0.failingCheckName).toBe('[REDACTED]')
+      expect(r0.lastFailingSha).toBe(candidates[0]?.lastFailingSha)
+      expect(r0.firstPassingSha).toBe(candidates[0]?.firstPassingSha)
+      expect(r0.diffExcerpt).toBe('')
+      expect(r0.logExcerpt).toBeUndefined()
+    }
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_NAME)
+  })
+
+  it('scanAvailable=false replaces the attached ciFix check name of a review-heavy candidate with the fixed marker', () => {
+    // #given a review-heavy candidate with attached ci-fix evidence
+    const candidates: ReviewCandidate[] = [
+      makeCandidate({
+        reviewExcerpts: ['Fix the null check.'],
+        ciFix: {failingCheckName: PRIVATE_NAME, diffExcerpt: '-bad\n+good', logExcerpt: 'Error: x'},
+      }),
+    ]
+
+    // #when the private-token scan is unavailable
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then the excerpts are cleared and the attached name is the marker
+    const r0 = result[0]
+    expect(r0?.trigger).toBe('review-heavy')
+    if (r0?.trigger === 'review-heavy') {
+      expect(r0.reviewExcerpts).toEqual([])
+      expect(r0.ciFix).toStrictEqual({failingCheckName: '[REDACTED]', diffExcerpt: '', logExcerpt: undefined})
+    }
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_NAME)
+  })
+
+  it('scanAvailable=true leaves check names alone', () => {
+    const candidates: Candidate[] = [
+      makeCiFixCandidate({failingCheckName: PRIVATE_NAME}),
+      makeCandidate({ciFix: {failingCheckName: PRIVATE_NAME, diffExcerpt: 'd'}}),
+    ]
+    expect(applyEnrichmentScanAvailability(candidates, true)).toBe(candidates)
+  })
+
+  it('a review-heavy candidate without ciFix gains none', () => {
+    const result = applyEnrichmentScanAvailability([makeCandidate({reviewExcerpts: ['x']})], false)
+    expect(result[0]).not.toHaveProperty('ciFix')
+  })
+})
+
 // ---------------------------------------------------------------------------
 // I/O shell: harvestCandidates — enrichment fetch
 // ---------------------------------------------------------------------------

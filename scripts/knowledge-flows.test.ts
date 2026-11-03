@@ -21,6 +21,7 @@ import {createHash} from 'node:crypto'
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, relative, resolve} from 'node:path'
+import process from 'node:process'
 import {createFakeGithub, route, type FakeGithub, type FakeRoute} from '@fro-bot/test-kit/fake-github'
 import {spawnEntrypoint, type SpawnEntrypointResult} from '@fro-bot/test-kit/spawn-entrypoint'
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest'
@@ -204,6 +205,120 @@ describe('capture-learnings-harvest through scripts/capture-learnings-harvest.ts
     expect(readFileSync(digestPath, 'utf8')).toBe(result.stdout)
     expect(result.stderr).toContain('capture-learnings-privacy: loaded private token set')
     expect(unhandledMutations()).toEqual([])
+  })
+
+  describe('when the private-token load fails', () => {
+    // A CI-fix candidate: PR 102 merged after its check "CHECK" failed and then passed. Its check name could
+    // carry a private identifier, and the scan that would catch it needs the very file that failed to load.
+    const CHECK = 'synthetic-private-name-lint'
+    const FAILING = 'f1'.repeat(20)
+    const PASSING = 'e5'.repeat(20)
+
+    /** A `gh` on PATH that answers the GraphQL rollup query: the fake GitHub fetch never sees a child process. */
+    function fakeGh(directory: string): string {
+      const bin = join(directory, 'bin')
+      mkdirSync(bin)
+      const rollup = {
+        data: {
+          repository: {
+            pullRequest: {
+              commits: {
+                pageInfo: {hasNextPage: false, endCursor: null},
+                nodes: [
+                  {
+                    commit: {
+                      oid: FAILING,
+                      statusCheckRollup: {
+                        contexts: {nodes: [{__typename: 'CheckRun', name: CHECK, conclusion: 'FAILURE'}]},
+                      },
+                    },
+                  },
+                  {
+                    commit: {
+                      oid: PASSING,
+                      statusCheckRollup: {
+                        contexts: {nodes: [{__typename: 'CheckRun', name: CHECK, conclusion: 'SUCCESS'}]},
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }
+      writeFileSync(
+        join(bin, 'gh'),
+        `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(rollup))})\n`,
+        {mode: 0o755},
+      )
+      return bin
+    }
+
+    const ciFixRoutes = [
+      route('GET', `${BASE}/pulls`, {
+        b: [
+          {
+            number: 102,
+            title: 'Fix flaky lint step',
+            merged_at: '2026-10-22T10:00:00Z',
+            merge_commit_sha: SHA_B,
+            labels: [],
+            user: {login: 'marcusrbrown'},
+            state: 'closed',
+          },
+        ],
+      }),
+      route('GET', `${BASE}/pulls/102/reviews`, {b: []}),
+      route('GET', `${BASE}/issues`, {b: []}),
+      route('GET', `${BASE}/branches/main/protection`, {s: 404, b: {message: 'Not Found'}}),
+      route('GET', `~^${BASE}/compare/`, {b: {files: [{filename: 'src/lint.ts', patch: '@@ -1 +1 @@\n-a\n+b\n'}]}}),
+    ]
+
+    async function harvest(files: Record<string, string>) {
+      const cwd = checkout(files)
+      const digestPath = join(cwd, 'out', 'capture-learnings-digest.json')
+      mkdirSync(dirname(digestPath))
+      const result = await run('capture-learnings-harvest', {
+        cwd,
+        routes: ciFixRoutes,
+        env: {
+          GITHUB_TOKEN: 'tok',
+          CAPTURE_LEARNINGS_DIGEST_PATH: digestPath,
+          PATH: `${fakeGh(cwd)}:${process.env.PATH ?? ''}`,
+        },
+      })
+      return {result, digest: readFileSync(digestPath, 'utf8')}
+    }
+
+    it('positive control: with the token set loaded, the CI-fix candidate carries its check name', async () => {
+      const {result, digest} = await harvest({'metadata/repos.yaml': REPOS_YAML})
+      expect(result.exitCode).toBe(0)
+      const candidates = (JSON.parse(result.stdout) as {candidates: {trigger: string; failingCheckName?: string}[]})
+        .candidates
+      expect(candidates.map(candidate => candidate.trigger)).toEqual(['ci-fail-then-pass'])
+      expect(candidates[0]?.failingCheckName).toBe(CHECK)
+      expect(digest).toBe(result.stdout)
+    })
+
+    it('the digest file and stdout carry the fixed marker and never the check name', async () => {
+      const {result, digest} = await harvest({})
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toContain('private token load failed')
+      const candidates = (
+        JSON.parse(result.stdout) as {candidates: {trigger: string; failingCheckName?: string; diffExcerpt?: string}[]}
+      ).candidates
+      // The candidate is still emitted (title-only), so the check above could have failed on the name alone.
+      expect(candidates).toHaveLength(1)
+      expect(candidates[0]).toMatchObject({
+        trigger: 'ci-fail-then-pass',
+        failingCheckName: '[REDACTED]',
+        diffExcerpt: '',
+      })
+      expect(result.stdout).not.toContain(CHECK)
+      expect(digest).not.toContain(CHECK)
+      expect(digest).toBe(result.stdout)
+    })
   })
 
   it('without a token still exits 0 with an empty digest, so the workflow summary has something to read', async () => {
