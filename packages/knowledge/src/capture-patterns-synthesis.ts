@@ -71,7 +71,6 @@ export const PATTERN_PROPOSAL_REQUIRED_LABELS: readonly PatternProposalLabelDesc
 // ---------------------------------------------------------------------------
 
 const FINGERPRINT_MARKER_PATTERN = /<!-- pattern-proposal:fingerprint=([a-f0-9]{64}) -->/u
-const SOURCE_IDS_MARKER_PATTERN = /<!-- pattern-proposal:source-ids=([^\n]+?) -->/u
 const SUPERSEDES_MARKER_PATTERN = /<!-- pattern-proposal:supersedes=([a-f0-9]{64}) -->/u
 
 /**
@@ -126,12 +125,40 @@ export function parsePatternProposalFingerprint(body: string): string | null {
 }
 
 /**
+ * The text between the first `<!-- pattern-proposal:source-ids=` prefix that closes on its own line
+ * and the first ` -->` after at least one character; undefined when no prefix does. A body is
+ * issue text, so it can hold thousands of unclosed prefixes: the pattern this replaces
+ * (`/<!-- pattern-proposal:source-ids=([^\n]+?) -->/u`) rescanned the rest of the line from every
+ * one of them and took quadratic time. Here the next close and the next line break are each searched
+ * once, because the prefixes come in increasing order, so a search that already found its answer
+ * for an earlier prefix still holds for a later one.
+ */
+function findSourceIdsMarker(body: string): string | undefined {
+  const prefix = '<!-- pattern-proposal:source-ids='
+  const close = ' -->'
+  // The first close at or after the position last searched from, or -1 when there is none.
+  let closeAt = -2
+  // The first line break at or after the position last searched from, or -1 when there is none.
+  let lineBreakAt = -2
+  for (let prefixAt = body.indexOf(prefix); prefixAt !== -1; prefixAt = body.indexOf(prefix, prefixAt + 1)) {
+    const start = prefixAt + prefix.length
+    // The captured text is at least one character, so the close starts after `start`.
+    if (closeAt !== -1 && closeAt < start + 1) closeAt = body.indexOf(close, start + 1)
+    // No close left for this prefix means none for any later one.
+    if (closeAt === -1) return undefined
+    if (lineBreakAt !== -1 && lineBreakAt < start) lineBreakAt = body.indexOf('\n', start)
+    // The close sits on the prefix's line when no line break comes before it.
+    if (lineBreakAt === -1 || lineBreakAt > closeAt) return body.slice(start, closeAt)
+  }
+  return undefined
+}
+
+/**
  * Parse the sorted source-IDs marker from a pattern-proposal body.
  * Returns the IDs split on commas, or null if the marker is absent or empty.
  */
 export function parsePatternProposalSourceIds(body: string): string[] | null {
-  const match = SOURCE_IDS_MARKER_PATTERN.exec(body)
-  const raw = match?.[1]
+  const raw = findSourceIdsMarker(body)
   if (raw === undefined || raw.trim() === '') return null
   return raw.split(',').map(id => id.trim())
 }
