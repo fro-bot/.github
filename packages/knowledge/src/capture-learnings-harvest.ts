@@ -18,6 +18,7 @@ import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
 import {isRecord} from '@fro-bot/core/guards'
+import {formatJsonLine} from '@fro-bot/core/json'
 import {
   learningBodyHasPrivateLeak,
   loadPrivateTokensFromDisk,
@@ -104,6 +105,14 @@ const SOLUTIONS_SUBDIRS = [
 // ---------------------------------------------------------------------------
 
 export type OctokitClient = Octokit
+
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface HarvestIo {
+  readonly stdout: (text: string) => void
+}
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -844,10 +853,10 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
  * specified by CAPTURE_LEARNINGS_DIGEST_PATH. This eliminates the shell-injection vector
  * that existed when the digest was echoed via GITHUB_OUTPUT multiline syntax.
  */
-async function writeDigestFile(digest: CandidateDigest): Promise<void> {
-  const digestPath = process.env.CAPTURE_LEARNINGS_DIGEST_PATH
+async function writeDigestFile(digest: CandidateDigest, env: Env): Promise<void> {
+  const digestPath = env.CAPTURE_LEARNINGS_DIGEST_PATH
   if (digestPath !== undefined && digestPath !== '') {
-    await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
+    await writeFile(digestPath, formatJsonLine(digest), {flag: 'w'})
   }
 }
 
@@ -855,8 +864,8 @@ async function writeDigestFile(digest: CandidateDigest): Promise<void> {
 // Octokit constructor helpers
 // ---------------------------------------------------------------------------
 
-export async function createOctokitFromEnv(): Promise<OctokitClient> {
-  return createOctokit(process.env.GITHUB_TOKEN, {
+export async function createOctokitFromEnv(env: Env = process.env): Promise<OctokitClient> {
+  return createOctokit(env.GITHUB_TOKEN, {
     missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
   })
 }
@@ -1131,8 +1140,9 @@ export function fetchPrCommitCheckRollup(
   prNumber: number,
   token: string | undefined,
   ghExec: GhExecFn = defaultGhExec,
+  baseEnv: Env = process.env,
 ): CommitCheckEntry[] | null {
-  const env: NodeJS.ProcessEnv = {...process.env}
+  const env: NodeJS.ProcessEnv = {...baseEnv}
   if (token !== undefined && token !== '') {
     env.GH_TOKEN = token
     delete env.GITHUB_TOKEN
@@ -1372,8 +1382,9 @@ export async function harvestCiFixCandidates(
   }[],
   requiredCheckNames: Set<string>,
   ghExec: GhExecFn = defaultGhExec,
+  env: Env = process.env,
 ): Promise<{candidates: CiFixCandidate[]; ciFixPrsExamined: number; ciFixCandidates: number}> {
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  const token = env.GITHUB_TOKEN ?? env.GH_TOKEN
 
   let ciFixPrsExamined = 0
   let ciFixCandidatesCount = 0
@@ -1383,7 +1394,7 @@ export async function harvestCiFixCandidates(
     ciFixPrsExamined++
 
     // Step 1: fetch per-commit per-check conclusions via GraphQL
-    const entries = fetchPrCommitCheckRollup(owner, repo, pr.number, token, ghExec)
+    const entries = fetchPrCommitCheckRollup(owner, repo, pr.number, token, ghExec, env)
     if (entries === null) {
       // GraphQL error — degrade this PR, continue
       process.stderr.write(`capture-learnings-harvest: ci-fix GraphQL failed (pr=${ciFixPrsExamined})\n`)
@@ -1771,12 +1782,12 @@ export async function fetchMergedPrsInWindow(
 // Entry point
 // ---------------------------------------------------------------------------
 
-export async function main(): Promise<void> {
+export async function runCaptureLearningsHarvest(env: Env, io: HarvestIo): Promise<void> {
   const owner = 'fro-bot'
   const repo = '.github'
 
   try {
-    const octokit = await createOctokitFromEnv()
+    const octokit = await createOctokitFromEnv(env)
     // Use Date.now() — UTC ms — as the reference point for the lookback cutoff.
     const now = new Date(Date.now())
 
@@ -1816,7 +1827,16 @@ export async function main(): Promise<void> {
       candidates: ciFixCandidates,
       ciFixPrsExamined,
       ciFixCandidates: ciFixCandidatesCount,
-    } = await harvestCiFixCandidates(octokit, owner, repo, now, mergedPrsForCiFix, requiredCheckNames)
+    } = await harvestCiFixCandidates(
+      octokit,
+      owner,
+      repo,
+      now,
+      mergedPrsForCiFix,
+      requiredCheckNames,
+      defaultGhExec,
+      env,
+    )
 
     // Concatenate both candidate sources.
     const allCandidates: Candidate[] = [...reviewCandidates, ...ciFixCandidates]
@@ -1862,8 +1882,8 @@ export async function main(): Promise<void> {
       privateTokens,
     })
 
-    await writeDigestFile(digest)
-    process.stdout.write(`${JSON.stringify(digest)}\n`)
+    await writeDigestFile(digest, env)
+    io.stdout(formatJsonLine(digest))
   } catch (error: unknown) {
     // Best-effort: any error → empty digest, exit 0 — harvest must never fail the workflow step.
     // Log error class only — no message that could leak content.
@@ -1887,10 +1907,10 @@ export async function main(): Promise<void> {
       },
     }
     try {
-      await writeDigestFile(empty)
+      await writeDigestFile(empty, env)
     } catch {
       // ignore
     }
-    process.stdout.write(`${JSON.stringify(empty)}\n`)
+    io.stdout(formatJsonLine(empty))
   }
 }

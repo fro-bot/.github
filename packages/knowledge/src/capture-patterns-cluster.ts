@@ -17,6 +17,7 @@ import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
+import {formatJsonLine} from '@fro-bot/core/json'
 import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {
@@ -701,6 +702,14 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): PatternC
 // Entry point (detect/digest step: collect sources, plan candidates, write digest)
 // ---------------------------------------------------------------------------
 
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface ClusterIo {
+  readonly stdout: (text: string) => void
+}
+
 /** Counts-only run summary written to stdout and CAPTURE_PATTERNS_RESULT_PATH. */
 export interface PatternDetectResult {
   sourcesLoaded: number
@@ -806,12 +815,12 @@ async function fetchLearningProposalIssuesFromRepo(
  * reflects a scan failure rather than reporting emitted candidates that were never
  * written anywhere.
  */
-async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[]): Promise<void> {
-  const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
+async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[], env: Env): Promise<void> {
+  const digestPath = env.CAPTURE_PATTERNS_DIGEST_PATH
   if (digestPath === undefined || digestPath === '') {
     throw new Error('capture-patterns-cluster: CAPTURE_PATTERNS_DIGEST_PATH is required to persist the digest')
   }
-  await writeFile(digestPath, `${JSON.stringify(digestCandidates)}\n`, {flag: 'w'})
+  await writeFile(digestPath, formatJsonLine(digestCandidates), {flag: 'w'})
 }
 
 /**
@@ -828,7 +837,7 @@ async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[]
  * data it was supposed to redact) and the run writes an empty digest/counts with
  * `tokenLoadFailure: true`.
  */
-export async function main(): Promise<void> {
+export async function runCapturePatternsCluster(env: Env, io: ClusterIo): Promise<void> {
   const owner = 'fro-bot'
   const repo = '.github'
 
@@ -866,15 +875,15 @@ export async function main(): Promise<void> {
       // Token load failed before any GitHub API call was made: skip all API calls and
       // write an empty digest/counts. Logs stay counts-only.
       result.tokenLoadFailure = true
-      await writePatternDigestFile([])
-      process.stdout.write(`${JSON.stringify(result)}\n`)
+      await writePatternDigestFile([], env)
+      io.stdout(formatJsonLine(result))
       return
     }
 
-    const octokit = (await createOctokit(process.env.GITHUB_TOKEN, {
+    const octokit = (await createOctokit(env.GITHUB_TOKEN, {
       missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
     })) as unknown as PatternDetectOctokitClient
-    const headSha = process.env.GITHUB_SHA ?? ''
+    const headSha = env.GITHUB_SHA ?? ''
 
     const [solutionDocs, learningProposalIssues, existing] = await Promise.all([
       loadSolutionDocFilesFromDisk(),
@@ -916,18 +925,18 @@ export async function main(): Promise<void> {
       buildCandidateDigest({candidate, runCount: 1, publicOutputTokens}),
     )
 
-    await writePatternDigestFile(digestCandidates)
+    await writePatternDigestFile(digestCandidates, env)
   } catch (error: unknown) {
     const errorName = error instanceof Error ? error.name : 'unknown'
     process.stderr.write(`capture-patterns-cluster: unexpected error (${errorName}), falling back to empty digest\n`)
     result.scanFailure = true
     digestCandidates = []
     try {
-      await writePatternDigestFile(digestCandidates)
+      await writePatternDigestFile(digestCandidates, env)
     } catch {
       // ignore
     }
   }
 
-  process.stdout.write(`${JSON.stringify(result)}\n`)
+  io.stdout(formatJsonLine(result))
 }

@@ -21,7 +21,9 @@
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {isRecord} from '@fro-bot/core/guards'
+import {requiredEnv} from '@fro-bot/core/env'
+import {isApiStatus, isRecord} from '@fro-bot/core/guards'
+import {formatJsonLine} from '@fro-bot/core/json'
 import {
   learningBodyHasPrivateLeak,
   loadPrivateTokensFromDisk,
@@ -89,14 +91,6 @@ export interface OpenLearningsCounts {
   blockedOnPrivacy: number
   skippedDuplicate: number
   skippedLabelUnavailable: number
-}
-
-// ---------------------------------------------------------------------------
-// Type guards (local — used by ensureLabelsExist / openLearningIssues)
-// ---------------------------------------------------------------------------
-
-function isApiStatus(error: unknown, status: number): boolean {
-  return isRecord(error) && typeof error.status === 'number' && error.status === status
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +330,14 @@ export async function openLearningIssues(
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface OpenIo {
+  readonly stdout: (text: string) => void
+}
+
 /** Counts-only result written to stdout and CAPTURE_LEARNINGS_RESULT_PATH. */
 interface OpenResult {
   examined: number
@@ -361,17 +363,11 @@ async function readJsonFile<T>(path: string, label: string): Promise<T> {
   }
 }
 
-export async function main(): Promise<void> {
-  const digestPath = process.env.CAPTURE_LEARNINGS_DIGEST_PATH
-  const bodiesPath = process.env.CAPTURE_LEARNINGS_BODIES_PATH
-  const resultPath = process.env.CAPTURE_LEARNINGS_RESULT_PATH
-
-  if (digestPath === undefined || digestPath === '') {
-    throw new Error('capture-learnings-open: CAPTURE_LEARNINGS_DIGEST_PATH is required')
-  }
-  if (bodiesPath === undefined || bodiesPath === '') {
-    throw new Error('capture-learnings-open: CAPTURE_LEARNINGS_BODIES_PATH is required')
-  }
+export async function runCaptureLearningsOpen(env: Env, io: OpenIo): Promise<void> {
+  const resultPath = env.CAPTURE_LEARNINGS_RESULT_PATH
+  const missing = (name: string): Error => new Error(`capture-learnings-open: ${name} is required`)
+  const digestPath = requiredEnv(env, 'CAPTURE_LEARNINGS_DIGEST_PATH', {missing})
+  const bodiesPath = requiredEnv(env, 'CAPTURE_LEARNINGS_BODIES_PATH', {missing})
 
   // Read the harvest digest (written by the harvest step)
   const digest = await readJsonFile<CandidateDigest>(digestPath, 'harvest digest')
@@ -383,7 +379,7 @@ export async function main(): Promise<void> {
   // Fail-closed: load private tokens — throws if metadata/repos.yaml is unreadable
   const privateTokens = await loadPrivateTokensFromDisk()
 
-  const octokit = await createOctokitFromEnv()
+  const octokit = await createOctokitFromEnv(env)
   const owner = 'fro-bot'
   const repo = '.github'
 
@@ -410,8 +406,8 @@ export async function main(): Promise<void> {
     failed,
   }
 
-  const resultJson = `${JSON.stringify(result)}\n`
-  process.stdout.write(resultJson)
+  const resultJson = formatJsonLine(result)
+  io.stdout(resultJson)
 
   if (resultPath !== undefined && resultPath !== '') {
     try {

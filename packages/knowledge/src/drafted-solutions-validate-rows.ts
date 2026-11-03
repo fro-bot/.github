@@ -17,7 +17,6 @@
  */
 
 import {readFile} from 'node:fs/promises'
-import process from 'node:process'
 
 import {checkAgentRows, DraftedSolutionsError, parseDigest, type DraftedDigest} from './drafted-solutions-shared.ts'
 
@@ -56,19 +55,29 @@ function nonEmpty(value: string | undefined, fallback: string): string {
   return value === undefined || value === '' ? fallback : value
 }
 
-export async function main(): Promise<number> {
-  const rowsPath = nonEmpty(process.env.DRAFTED_SOLUTIONS_ROWS_PATH, DEFAULT_ROWS_PATH)
-  const digestPath = nonEmpty(process.env.DRAFTED_SOLUTIONS_DIGEST_PATH, DEFAULT_DIGEST_PATH)
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes. The agent reads both streams, so the strings are a contract. */
+export interface ValidateRowsIo {
+  readonly stdout: (text: string) => void
+  readonly stderr: (text: string) => void
+}
+
+/** Returns the exit code: 0 when the rows are valid, 1 when they are not. An unreadable file throws. */
+export async function runDraftedSolutionsValidateRows(env: Env, io: ValidateRowsIo): Promise<number> {
+  const rowsPath = nonEmpty(env.DRAFTED_SOLUTIONS_ROWS_PATH, DEFAULT_ROWS_PATH)
+  const digestPath = nonEmpty(env.DRAFTED_SOLUTIONS_DIGEST_PATH, DEFAULT_DIGEST_PATH)
 
   const digest = parseDigest(await readJson(digestPath, 'digest'))
   const rows = await readJson(rowsPath, 'rows file')
 
   const result = validateDraftedRows(rows, digest)
   if (!result.ok) {
-    for (const error of result.errors) process.stderr.write(`${error}\n`)
-    process.stderr.write(`${result.errors.length} error(s): fix rows.json and run this again.\n`)
+    for (const error of result.errors) io.stderr(`${error}\n`)
+    io.stderr(`${result.errors.length} error(s): fix rows.json and run this again.\n`)
     return 1
   }
-  process.stdout.write(`rows valid: ${result.count} row(s), one per digest proposal\n`)
+  io.stdout(`rows valid: ${result.count} row(s), one per digest proposal\n`)
   return 0
 }

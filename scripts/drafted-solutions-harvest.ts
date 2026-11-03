@@ -1,13 +1,6 @@
 import process from 'node:process'
-import {main} from '@fro-bot/knowledge/drafted-solutions-harvest'
+import {main} from '@fro-bot/knowledge/drafted-solutions-harvest-cli'
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    await main()
-  } catch (error: unknown) {
-    process.stderr.write(
-      `::error::drafted-solutions-harvest: ${error instanceof Error ? error.message : String(error)}\n`,
-    )
-    process.exit(1)
-  }
+  await main()
 }

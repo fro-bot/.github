@@ -56,8 +56,10 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import {requiredEnv} from '@fro-bot/core/env'
 import {createOctokit} from '@fro-bot/core/github'
 import {isRecord} from '@fro-bot/core/guards'
+import {formatJsonLine} from '@fro-bot/core/json'
 import {loadPrivateTokensFromDisk} from '@fro-bot/privacy/capture-learnings-privacy'
 import {loadRedactedCanonicalIdsFromDisk} from '@fro-bot/privacy/redacted-ids'
 import {
@@ -87,6 +89,7 @@ import {
   DraftedSolutionsError,
   findOpenDraftedPr,
   isLearningProposalIssue,
+  missingDraftedEnv,
   parseDigest,
   readRefSha,
   reauthorizeRows,
@@ -673,11 +676,7 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
   const stdout = deps.stdout ?? ((text: string) => process.stdout.write(text))
   const stderr = deps.stderr ?? ((text: string) => process.stderr.write(text))
 
-  const required = (name: string): string => {
-    const value = env[name]
-    if (value === undefined || value === '') throw new DraftedSolutionsError(`${name} is required`)
-    return value
-  }
+  const required = (name: string): string => requiredEnv(env, name, {missing: missingDraftedEnv})
 
   try {
     const [owner, repo, ...rest] = required('GITHUB_REPOSITORY').split('/')
@@ -695,7 +694,7 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
       rowsPath: required('DRAFTED_SOLUTIONS_ROWS_PATH'),
     })
 
-    const line = `${JSON.stringify(result)}\n`
+    const line = formatJsonLine(result)
     stdout(line)
     const resultPath = env.DRAFTED_SOLUTIONS_RESULT_PATH
     if (resultPath !== undefined && resultPath !== '') await writeFile(resultPath, line, {flag: 'w'})

@@ -34,8 +34,10 @@
 import type {PatternCandidateDigest} from './capture-patterns-cluster.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
+import {requiredEnv} from '@fro-bot/core/env'
 import {createOctokit} from '@fro-bot/core/github'
-import {isRecord} from '@fro-bot/core/guards'
+import {isApiStatus, isRecord} from '@fro-bot/core/guards'
+import {formatJsonLine} from '@fro-bot/core/json'
 import {applyPublicOutputGate, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {
   buildPatternProposalMarkers,
@@ -376,10 +378,6 @@ export function planPatternProposalOpens(input: PlanPatternProposalOpensInput): 
 // Label preflight
 // ---------------------------------------------------------------------------
 
-function isApiStatus(error: unknown, status: number): boolean {
-  return isRecord(error) && typeof error.status === 'number' && error.status === status
-}
-
 /**
  * Ensure the pattern-proposal labels exist in the repo, mirroring
  * `capture-learnings-open.ts`'s `ensureLabelsExist`. Returns the set of confirmed
@@ -512,6 +510,14 @@ export async function openPatternProposalIssues(
 // Entry point (deterministic open step reads digest + agent body file)
 // ---------------------------------------------------------------------------
 
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface OpenIo {
+  readonly stdout: (text: string) => void
+}
+
 /** Counts-only result written to stdout and CAPTURE_PATTERNS_RESULT_PATH. */
 interface PatternProposalOpenResult {
   candidatesExamined: number
@@ -544,7 +550,7 @@ async function readJsonFile<T>(path: string, label: string): Promise<T> {
   }
 }
 
-export async function main(): Promise<void> {
+export async function runCapturePatternsOpen(env: Env, io: OpenIo): Promise<void> {
   // Detect is fail-soft because absence of candidates is safe signal. Open is
   // intentionally fail-hard on malformed inputs or missing credentials: after the
   // live gate, ambiguity must stop before any issue mutation.
@@ -552,16 +558,10 @@ export async function main(): Promise<void> {
   const {loadRedactedCanonicalIdsFromDisk} = await import('@fro-bot/privacy/redacted-ids')
   const {makePublicOutputTokens} = await import('@fro-bot/privacy/status-truth-public-output')
   const {fetchExistingPatternProposals} = await import('./capture-patterns-synthesis.ts')
-  const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
-  const bodiesPath = process.env.CAPTURE_PATTERNS_BODIES_PATH
-  const resultPath = process.env.CAPTURE_PATTERNS_RESULT_PATH
-
-  if (digestPath === undefined || digestPath === '') {
-    throw new Error('capture-patterns-open: CAPTURE_PATTERNS_DIGEST_PATH is required')
-  }
-  if (bodiesPath === undefined || bodiesPath === '') {
-    throw new Error('capture-patterns-open: CAPTURE_PATTERNS_BODIES_PATH is required')
-  }
+  const resultPath = env.CAPTURE_PATTERNS_RESULT_PATH
+  const missing = (name: string): Error => new Error(`capture-patterns-open: ${name} is required`)
+  const digestPath = requiredEnv(env, 'CAPTURE_PATTERNS_DIGEST_PATH', {missing})
+  const bodiesPath = requiredEnv(env, 'CAPTURE_PATTERNS_BODIES_PATH', {missing})
 
   const digestCandidates = await readJsonFile<PatternCandidateDigest[]>(digestPath, 'candidate digest')
 
@@ -590,7 +590,7 @@ export async function main(): Promise<void> {
     publicOutputTokens = {loaded: false, error: 'token load failed'}
   }
 
-  const octokit = await createOctokit(process.env.GITHUB_TOKEN, {
+  const octokit = await createOctokit(env.GITHUB_TOKEN, {
     missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
   })
   const existing = tokenLoadFailed
@@ -628,8 +628,8 @@ export async function main(): Promise<void> {
     bodyFileReadFailed,
   }
 
-  const resultJson = `${JSON.stringify(result)}\n`
-  process.stdout.write(resultJson)
+  const resultJson = formatJsonLine(result)
+  io.stdout(resultJson)
 
   if (resultPath !== undefined && resultPath !== '') {
     try {

@@ -647,6 +647,38 @@
     {
       "path": "packages/knowledge/src/drafted-solutions-validate-rows.ts",
       "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-harvest-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-open-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-cluster-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-open-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-handoff-build-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-harvest-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-publish-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-validate-rows-cli.ts",
+      "reason": "Provisional: measured in a later commit of this PR."
     }
   ]
 }

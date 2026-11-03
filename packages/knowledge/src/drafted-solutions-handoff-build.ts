@@ -17,9 +17,10 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
-import {appendFile} from 'node:fs/promises'
 import process from 'node:process'
-
+import {requiredEnv} from '@fro-bot/core/env'
+import {formatJsonLine} from '@fro-bot/core/json'
+import {writeGithubOutputs} from '@fro-bot/core/output'
 import {
   buildHandoffFromGitIndex,
   DRAFTED_SOLUTIONS_HANDOFF_POLICY,
@@ -44,21 +45,22 @@ export async function buildDraftedHandoff(params: BuildDraftedHandoffParams): Pr
   })
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]
-  if (value === undefined || value === '') throw new Error(`${name} is required`)
-  return value
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface HandoffBuildIo {
+  readonly stdout: (text: string) => void
 }
 
-export async function main(): Promise<void> {
-  const result = await buildDraftedHandoff({
-    cwd: process.cwd(),
-    outDir: requiredEnv('DRAFTED_SOLUTIONS_HANDOFF_DIR'),
-  })
+/** `cwd` is the checkout the agent edited; the default is the process's, which is the runner's workspace. */
+export async function runDraftedSolutionsHandoffBuild(
+  env: Env,
+  io: HandoffBuildIo,
+  cwd: string = process.cwd(),
+): Promise<void> {
+  const result = await buildDraftedHandoff({cwd, outDir: requiredEnv(env, 'DRAFTED_SOLUTIONS_HANDOFF_DIR')})
 
-  process.stdout.write(`${JSON.stringify({changed: result.changed.length})}\n`)
-  const githubOutput = process.env.GITHUB_OUTPUT
-  if (githubOutput !== undefined && githubOutput !== '') {
-    await appendFile(githubOutput, `changed=${String(result.changed.length > 0)}\n`)
-  }
+  io.stdout(formatJsonLine({changed: result.changed.length}))
+  writeGithubOutputs({changed: String(result.changed.length > 0)}, {onMissing: 'skip', env})
 }

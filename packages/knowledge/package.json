@@ -6,16 +6,24 @@
   "type": "module",
   "exports": {
     "./capture-learnings-harvest": "./src/capture-learnings-harvest.ts",
+    "./capture-learnings-harvest-cli": "./src/capture-learnings-harvest-cli.ts",
     "./capture-learnings-open": "./src/capture-learnings-open.ts",
+    "./capture-learnings-open-cli": "./src/capture-learnings-open-cli.ts",
     "./capture-patterns-cluster": "./src/capture-patterns-cluster.ts",
+    "./capture-patterns-cluster-cli": "./src/capture-patterns-cluster-cli.ts",
     "./capture-patterns-open": "./src/capture-patterns-open.ts",
+    "./capture-patterns-open-cli": "./src/capture-patterns-open-cli.ts",
     "./capture-patterns-synthesis": "./src/capture-patterns-synthesis.ts",
     "./drafted-solutions-handoff-build": "./src/drafted-solutions-handoff-build.ts",
+    "./drafted-solutions-handoff-build-cli": "./src/drafted-solutions-handoff-build-cli.ts",
     "./drafted-solutions-harvest": "./src/drafted-solutions-harvest.ts",
+    "./drafted-solutions-harvest-cli": "./src/drafted-solutions-harvest-cli.ts",
     "./drafted-solutions-pr-body": "./src/drafted-solutions-pr-body.ts",
     "./drafted-solutions-publish": "./src/drafted-solutions-publish.ts",
+    "./drafted-solutions-publish-cli": "./src/drafted-solutions-publish-cli.ts",
     "./drafted-solutions-shared": "./src/drafted-solutions-shared.ts",
-    "./drafted-solutions-validate-rows": "./src/drafted-solutions-validate-rows.ts"
+    "./drafted-solutions-validate-rows": "./src/drafted-solutions-validate-rows.ts",
+    "./drafted-solutions-validate-rows-cli": "./src/drafted-solutions-validate-rows-cli.ts"
   },
   "dependencies": {
     "@fro-bot/core": "workspace:*",

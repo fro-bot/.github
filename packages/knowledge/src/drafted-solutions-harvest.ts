@@ -20,9 +20,11 @@
  */
 
 import type {OctokitClient} from './capture-learnings-harvest.ts'
-import {appendFile, writeFile} from 'node:fs/promises'
-import process from 'node:process'
+import {writeFile} from 'node:fs/promises'
+import {requiredEnv} from '@fro-bot/core/env'
 import {createOctokit} from '@fro-bot/core/github'
+import {formatJsonLine} from '@fro-bot/core/json'
+import {writeGithubOutputs} from '@fro-bot/core/output'
 
 import {LEARNING_PROPOSAL_LABEL, parseMergeShaMarker} from './capture-learnings-harvest.ts'
 import {hashProposalBody, parseCoverageBlock} from './drafted-solutions-pr-body.ts'
@@ -34,6 +36,7 @@ import {
   findOpenDraftedPr,
   isLearningProposalIssue,
   MAX_PROPOSALS_PER_RUN,
+  missingDraftedEnv,
   readRefSha,
   reauthorizeRows,
   type DraftedDigest,
@@ -118,30 +121,30 @@ export async function harvestDraftedProposals(params: HarvestParams): Promise<Ha
   }
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]
-  if (value === undefined || value === '') throw new DraftedSolutionsError(`${name} is required`)
-  return value
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
+/** Where a run writes its one stdout line. */
+export interface HarvestIo {
+  readonly stdout: (text: string) => void
 }
 
-export async function main(): Promise<void> {
-  const digestPath = requiredEnv('DRAFTED_SOLUTIONS_DIGEST_PATH')
-  const [owner, repo, ...rest] = requiredEnv('GITHUB_REPOSITORY').split('/')
+export async function runDraftedSolutionsHarvest(env: Env, io: HarvestIo): Promise<void> {
+  const required = (name: string): string => requiredEnv(env, name, {missing: missingDraftedEnv})
+  const digestPath = required('DRAFTED_SOLUTIONS_DIGEST_PATH')
+  const [owner, repo, ...rest] = required('GITHUB_REPOSITORY').split('/')
   if (owner === undefined || repo === undefined || owner === '' || repo === '' || rest.length > 0) {
     throw new DraftedSolutionsError('GITHUB_REPOSITORY must be "owner/repo"')
   }
 
-  const octokit = await createOctokit(requiredEnv('GITHUB_TOKEN'))
+  const octokit = await createOctokit(required('GITHUB_TOKEN'))
 
   const {digest, hasWork} = await harvestDraftedProposals({octokit, owner, repo})
 
-  await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
-  const outputPath = process.env.GITHUB_OUTPUT
-  if (outputPath !== undefined && outputPath !== '') {
-    await appendFile(
-      outputPath,
-      `has_work=${hasWork}\ndraft_base_sha=${digest.draftBaseSha}\nmain_sha=${digest.mainSha}\n`,
-    )
-  }
-  process.stdout.write(`${JSON.stringify({hasWork, proposals: digest.proposals.length, prState: digest.pr.state})}\n`)
+  await writeFile(digestPath, formatJsonLine(digest), {flag: 'w'})
+  writeGithubOutputs(
+    {has_work: String(hasWork), draft_base_sha: digest.draftBaseSha, main_sha: digest.mainSha},
+    {onMissing: 'skip', env},
+  )
+  io.stdout(formatJsonLine({hasWork, proposals: digest.proposals.length, prState: digest.pr.state}))
 }

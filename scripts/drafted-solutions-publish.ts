@@ -1,6 +1,6 @@
 import process from 'node:process'
-import {runCli} from '@fro-bot/knowledge/drafted-solutions-publish'
+import {main} from '@fro-bot/knowledge/drafted-solutions-publish-cli'
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  process.exitCode = await runCli(process.env)
+  await main()
 }
