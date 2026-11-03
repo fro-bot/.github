@@ -1112,9 +1112,12 @@ describe('importing a shim runs nothing', () => {
     'drafted-solutions-validate-rows',
   ])('%s', async script => {
     const cwd = checkout()
-    const shim = resolve(repoRoot, 'scripts', `${script}.ts`)
+    const runner = join(root, 'import-shim.ts')
+    // The shim path is data: it arrives as argv and is never interpolated into code.
+    writeFileSync(runner, "await import(process.argv[2] ?? '')\nprocess.stdout.write('imported')\n")
     const result = await spawnEntrypoint({
-      entrypoint: `--eval=await import(${JSON.stringify(shim)}); process.stdout.write('imported')`,
+      entrypoint: runner,
+      argv: [resolve(repoRoot, 'scripts', `${script}.ts`)],
       runtime: 'bun',
       runtimeArgs: ['--no-install', '--no-env-file'],
       cwd,
@@ -1130,17 +1133,25 @@ describe('importing a shim runs nothing', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // The callers' `| tee` pipelines
 // ---------------------------------------------------------------------------------------------------------------
-/** Runs `bun <shim> | tee <file>` the way a GitHub step does, under the shell the workflow declares. */
-async function runPipeline(shell: readonly string[], script: string, env: Record<string, string | undefined> = {}) {
-  const cwd = checkout()
+/**
+ * Runs `bun <shim> | tee <file>` the way a GitHub step does, under the shell the workflow declares. The shim and
+ * the tee file are positional arguments of the shell script, quoted as "$1" and "$2", so no path is ever
+ * interpolated into the command text.
+ */
+async function runPipeline(
+  shell: readonly string[],
+  script: string,
+  options: {readonly env?: Record<string, string | undefined>; readonly cwd?: string} = {},
+) {
+  const cwd = options.cwd ?? checkout()
   const teeFile = join(cwd, 'tee.json')
-  const shim = resolve(repoRoot, 'scripts', `${script}.ts`)
   const result = await spawnEntrypoint({
-    entrypoint: `bun --no-install --no-env-file ${shim} | tee ${teeFile}`,
+    entrypoint: 'bun --no-install --no-env-file "$1" | tee "$2"',
+    argv: ['_', resolve(repoRoot, 'scripts', `${script}.ts`), teeFile],
     executable: 'bash',
     runtimeArgs: [...shell, '-c'],
     cwd,
-    env,
+    env: options.env ?? {},
   })
   return {...result, tee: existsSync(teeFile) ? readFileSync(teeFile, 'utf8') : undefined}
 }
@@ -1176,18 +1187,13 @@ describe('a | tee pipeline returns the CLI exit code under pipefail', () => {
     async (_name, shell) => {
       const cwd = checkout({'metadata/repos.yaml': REPOS_YAML})
       const digestPath = join(cwd, 'digest.json')
-      const teeFile = join(cwd, 'tee.json')
-      const shim = resolve(repoRoot, 'scripts', 'capture-learnings-harvest.ts')
       // No token: the harvest falls back to an empty digest and exits 0 without a network call.
-      const result = await spawnEntrypoint({
-        entrypoint: `bun --no-install --no-env-file ${shim} | tee ${teeFile}`,
-        executable: 'bash',
-        runtimeArgs: [...shell, '-c'],
+      const result = await runPipeline(shell, 'capture-learnings-harvest', {
         cwd,
         env: {CAPTURE_LEARNINGS_DIGEST_PATH: digestPath},
       })
       expect(result.exitCode).toBe(0)
-      expect(readFileSync(teeFile, 'utf8')).toBe(result.stdout)
+      expect(result.tee).toBe(result.stdout)
       expect(readFileSync(digestPath, 'utf8')).toBe(result.stdout)
     },
   )

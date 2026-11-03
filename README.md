@@ -232,6 +232,7 @@ flowchart BT
   statustruth -. "dev: fixtures" .-> testkit
   wikiops -. "dev: fixtures" .-> testkit
   registry -. "dev: fixtures" .-> testkit
+  knowledge -. "dev: fixtures" .-> testkit
   knowledge -. "dev: fixtures" .-> wwc
   privacy --> core & wwc
   registry --> core & wwc

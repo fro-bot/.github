@@ -9,15 +9,17 @@ import {execFile} from 'node:child_process'
 import {access, chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
+import {pathToFileURL} from 'node:url'
 import {promisify} from 'node:util'
 
+import {spawnEntrypoint, type SpawnEntrypointResult} from '@fro-bot/test-kit/spawn-entrypoint'
 import {
   createGitRunner,
   DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
   type GitRunner,
 } from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {afterEach, describe, expect, it} from 'vitest'
-import {buildDraftedHandoff, runDraftedSolutionsHandoffBuild} from './drafted-solutions-handoff-build.ts'
+import {buildDraftedHandoff} from './drafted-solutions-handoff-build.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -285,63 +287,129 @@ describe('buildDraftedHandoff: rejected changes (nothing is produced)', () => {
   })
 })
 
+/** The repository this test file lives in: the checkout a cwd bug would stage. */
+const REAL_CHECKOUT = path.resolve(import.meta.dirname, '../../..')
+
+/** The real checkout's index and worktree state, as git reports it. */
+async function realCheckoutState(): Promise<string> {
+  const status = await execFileAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+    cwd: REAL_CHECKOUT,
+    maxBuffer: 1 << 26,
+  })
+  const staged = await execFileAsync('git', ['diff', '--cached', '--raw', '-z'], {cwd: REAL_CHECKOUT})
+  return `${status.stdout}\n--\n${staged.stdout}`
+}
+
 describe('runDraftedSolutionsHandoffBuild: the working directory', () => {
-  // The checkout below is not the process's working directory (which is this repository), so a run that
-  // read `process.cwd()` anywhere, including in a git call, would stage this repository instead.
-  it('builds from the checkout it is given: every git call runs there, and this repository is not touched', async () => {
+  // Each run is a child process whose working directory is a decoy: a test-owned git checkout holding a
+  // doc that is not in the target. The target checkout is passed as an argument. A run that read
+  // `process.cwd()` anywhere, including in a git call, would stage the decoy, and the real repository is
+  // checked before and after so a stray `git add` there would show too.
+  const DECOY_ONLY = 'docs/solutions/runtime-errors/decoy-only.md'
+  const TARGET_ONLY = 'docs/solutions/security-issues/only-in-target.md'
+
+  async function arrangeChild() {
     const arranged = await arrange()
-    await writeIn(arranged.cwd, 'docs/solutions/security-issues/only-in-temp.md', '# only here\n')
-    const stdout: string[] = []
+    const decoy = path.join(arranged.root, 'decoy')
+    await mkdir(decoy, {recursive: true})
+    await git(decoy, 'init', '-q', '-b', 'main')
+    await git(decoy, 'config', 'user.email', 'test@example.test')
+    await git(decoy, 'config', 'user.name', 'Test')
+    await git(decoy, 'config', 'commit.gpgsign', 'false')
+    await writeIn(decoy, EXISTING, '# existing\n')
+    await git(decoy, 'add', '-A')
+    await git(decoy, 'commit', '-q', '-m', 'seed')
+    await writeIn(decoy, DECOY_ONLY, '# decoy\n')
+
+    const runner = path.join(arranged.root, 'runner.ts')
+    await writeFile(
+      runner,
+      [
+        `import {runDraftedSolutionsHandoffBuild} from ${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, 'drafted-solutions-handoff-build.ts')).href)}`,
+        'const target = process.argv[2]',
+        "if (target === undefined) throw new Error('target checkout argument is required')",
+        'await runDraftedSolutionsHandoffBuild(process.env, {stdout: text => process.stdout.write(text)}, target)',
+        '',
+      ].join('\n'),
+    )
     const outputPath = path.join(arranged.root, 'github-output')
     await writeFile(outputPath, '')
 
-    await runDraftedSolutionsHandoffBuild(
-      {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, GITHUB_OUTPUT: outputPath},
-      {stdout: text => stdout.push(text)},
-      arranged.cwd,
-    )
+    async function run(
+      env: Record<string, string | undefined>,
+      githubOutput?: 'file' | 'unset' | 'empty',
+    ): Promise<SpawnEntrypointResult> {
+      return spawnEntrypoint({
+        entrypoint: runner,
+        runtime: 'bun',
+        runtimeArgs: ['--no-install', '--no-env-file'],
+        argv: [arranged.cwd],
+        cwd: decoy,
+        env,
+        githubOutput,
+      })
+    }
+    return {...arranged, decoy, run, outputPath}
+  }
 
-    expect(stdout).toStrictEqual(['{"changed":1}\n'])
-    expect(await readFile(outputPath, 'utf8')).toBe('changed=true\n')
-    expect(JSON.parse(await readFile(path.join(arranged.outDir, 'manifest.json'), 'utf8'))).toStrictEqual({
-      changed: ['docs/solutions/security-issues/only-in-temp.md'],
+  it('builds from the checkout it is given: every git call runs there, not in the process cwd or the real repository', async () => {
+    const child = await arrangeChild()
+    await writeIn(child.cwd, TARGET_ONLY, '# only here\n')
+    const decoyBefore = (await execFileAsync('git', ['status', '--porcelain=v1', '-uall'], {cwd: child.decoy})).stdout
+    const realBefore = await realCheckoutState()
+
+    const result = await child.run({DRAFTED_SOLUTIONS_HANDOFF_DIR: child.outDir})
+
+    expect(result).toMatchObject({exitCode: 0, stderr: '', stdout: '{"changed":1}\n', githubOutput: 'changed=true\n'})
+    expect(JSON.parse(await readFile(path.join(child.outDir, 'manifest.json'), 'utf8'))).toStrictEqual({
+      changed: [TARGET_ONLY],
       deleted: [],
     })
-    // Positive control: the file is in the temp checkout's handoff, and not in this repository.
-    await expect(
-      access(path.join(arranged.outDir, 'files/docs/solutions/security-issues/only-in-temp.md')),
-    ).resolves.toBeUndefined()
-    await expect(
-      access(path.resolve(import.meta.dirname, '../../../docs/solutions/security-issues/only-in-temp.md')),
-    ).rejects.toThrow()
+    await expect(access(path.join(child.outDir, 'files', DECOY_ONLY))).rejects.toThrow()
+    // The decoy, the process's working directory, is exactly as it was: nothing was staged in it.
+    expect((await execFileAsync('git', ['status', '--porcelain=v1', '-uall'], {cwd: child.decoy})).stdout).toBe(
+      decoyBefore,
+    )
+    expect(decoyBefore).toContain(DECOY_ONLY)
+    // And so is the real checkout's index and worktree.
+    expect(await realCheckoutState()).toBe(realBefore)
+  })
+
+  it('positive control: a run whose target is the decoy hands off the decoy doc, so the state checks can see a stage', async () => {
+    const child = await arrangeChild()
+    const decoyBefore = (await execFileAsync('git', ['status', '--porcelain=v1', '-uall'], {cwd: child.decoy})).stdout
+    const result = await spawnEntrypoint({
+      entrypoint: path.join(child.root, 'runner.ts'),
+      runtime: 'bun',
+      runtimeArgs: ['--no-install', '--no-env-file'],
+      argv: [child.decoy],
+      cwd: child.cwd,
+      env: {DRAFTED_SOLUTIONS_HANDOFF_DIR: child.outDir},
+    })
+    expect(result).toMatchObject({exitCode: 0, stdout: '{"changed":1}\n'})
+    expect(JSON.parse(await readFile(path.join(child.outDir, 'manifest.json'), 'utf8'))).toStrictEqual({
+      changed: [DECOY_ONLY],
+      deleted: [],
+    })
+    // Building stages the target's changes, so the decoy's status differs from before.
+    expect((await execFileAsync('git', ['status', '--porcelain=v1', '-uall'], {cwd: child.decoy})).stdout).not.toBe(
+      decoyBefore,
+    )
   })
 
   it('appends changed=false and prints a zero count when nothing under docs/solutions changed', async () => {
-    const arranged = await arrange()
-    const stdout: string[] = []
-    const outputPath = path.join(arranged.root, 'github-output')
-    await writeFile(outputPath, '')
+    const child = await arrangeChild()
 
-    await runDraftedSolutionsHandoffBuild(
-      {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, GITHUB_OUTPUT: outputPath},
-      {stdout: text => stdout.push(text)},
-      arranged.cwd,
-    )
+    const result = await child.run({DRAFTED_SOLUTIONS_HANDOFF_DIR: child.outDir})
 
-    expect(stdout).toStrictEqual(['{"changed":0}\n'])
-    expect(await readFile(outputPath, 'utf8')).toBe('changed=false\n')
+    expect(result).toMatchObject({exitCode: 0, stderr: '', stdout: '{"changed":0}\n', githubOutput: 'changed=false\n'})
   })
 
   it('writes no output file line when $GITHUB_OUTPUT is unset or empty', async () => {
-    const arranged = await arrange()
-    const stdout: string[] = []
-    for (const env of [{}, {GITHUB_OUTPUT: ''}]) {
-      await runDraftedSolutionsHandoffBuild(
-        {DRAFTED_SOLUTIONS_HANDOFF_DIR: arranged.outDir, ...env},
-        {stdout: text => stdout.push(text)},
-        arranged.cwd,
-      )
+    const child = await arrangeChild()
+    for (const githubOutput of ['unset', 'empty'] as const) {
+      const result = await child.run({DRAFTED_SOLUTIONS_HANDOFF_DIR: child.outDir}, githubOutput)
+      expect(result).toMatchObject({exitCode: 0, stderr: '', stdout: '{"changed":0}\n', githubOutput: ''})
     }
-    expect(stdout).toStrictEqual(['{"changed":0}\n', '{"changed":0}\n'])
   })
 })
