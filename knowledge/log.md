@@ -9715,3 +9715,57 @@ Exactly one comment was posted; its returned body confirmed the bot marker and b
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-11-03 12:55] ingest | marcusrbrown/ha-config
+
+Surveyed public `main` at `06f4a9db6d1993ae51c21ec5cdbd3143d82b9105`.
+Updated `knowledge/wiki/repos/marcusrbrown--ha-config.md` additively with a
+dated snapshot and all ten integration manifests; updated
+`knowledge/wiki/topics/home-assistant.md` to distinguish HA integration
+dependencies from Python requirements. Preserved accumulated findings and
+corrections, explicitly separating historical runtime claims from this static
+snapshot. The corrections context contained no records.
+
+The complete listing retains 2,200 blobs, 74 trees, one gitlink, eleven package
+filenames, ten integration directories, and three workflow files. Shared
+workflows advance v4.42.0 → v4.43.0 at
+`e6a1ab17bb68213940f63de91bd0450acdf9fff4`; the ESPHome gitlink changes to
+`32138381e60aff308ebba61b3702068fa72bd753`. Prettier remains 3.9.10 and root
+requirements remain `esphome==2025.12.7` / `yamllint==1.38.0`. Confirmed the
+malformed HA version-output write and advisory Remark step persist. Six
+integration manifests declare Python requirements; four declare empty arrays,
+which does not exclude dependencies on other HA integrations.
+
+No Fro Bot workflow is present; the repo page retains a recommendation for a
+separately proposed follow-up draft PR. None was opened. The README declares
+MIT and links ESPHome configurations using the historical `esphome.life` URL.
+The current submodule remote, HA core pin, deployment, branch protection,
+Renovate rules, PR queues, and workflow execution health were not inspected.
+
+Target reads were limited to public identity/default-ref resolution, directory
+listings, one README, dependency/integration manifests, and three workflows.
+No target content was executed. Only the two wiki pages and this append were
+changed by this invocation; pre-existing working-tree edits were preserved.
+`knowledge/index.md` is unchanged. The caller owns persistence and delivery.
+
+Verification: YAML frontmatter, required fields, source SHA, wikilinks, related
+targets, append-only history, and edit scope were checked; Markdown link checks
+and `git diff --check` passed. No application behavior changed, so application
+tests were not run. A single marked control-repository commit comment reports
+delivery/check status and points here; no issue run notice was created.
+
+Sources: https://github.com/marcusrbrown/ha-config/tree/06f4a9db6d1993ae51c21ec5cdbd3143d82b9105;
+`docs/readme.md`, `requirements.txt`, `custom_components/*/manifest.json`,
+`.github/workflows/{ci,renovate,update-repo-settings}.yaml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41639447996
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/60d57c30840e299acda4cdb136060f02caae1711#commitcomment-207925999
+Exactly one comment was created; its body was corrected in place after the CLI
+initially treated the file argument literally. The returned final body confirms
+the bot identification marker and both Run Summary markers.
+
+## [2026-11-03 12:58] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config

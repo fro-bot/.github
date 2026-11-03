@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/ha-config
 created: 2025-06-18
-updated: 2026-10-20
+updated: 2026-11-03
 node_id: R_kgDOJ_bMaQ
 sources:
   - url: https://github.com/marcusrbrown/ha-config
@@ -44,6 +44,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: ef7ba24f126f6cca8dd6c8c7969056e3b529a600
     accessed: 2026-10-20
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 06f4a9db6d1993ae51c21ec5cdbd3143d82b9105
+    accessed: 2026-11-03
 tags:
   - home-assistant
   - home-assistant-config
@@ -74,6 +77,71 @@ related:
 Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-controlled Home Assistant setup with CI validation, custom components, and ESPHome device management via git submodule.
 
 ## Overview
+
+### 2026-11-03 source snapshot
+
+Public `main` resolves to `06f4a9db6d1993ae51c21ec5cdbd3143d82b9105`.
+This snapshot supersedes October's shared-workflow and submodule pins, not
+the historical incident evidence below. Reads were limited to directory
+listings, `docs/readme.md`, `requirements.txt`, the ten integration manifests,
+and the three workflow files; no target content was executed.
+
+- The complete, non-truncated recursive listing contains **2,200 blobs,
+  74 trees, and one gitlink**. The same 11 package filenames and ten
+  custom-component directories remain. These are layout observations, not a
+  claim that implementation bytes or deployed devices are unchanged.
+- The `esphome` gitlink now records
+  `32138381e60aff308ebba61b3702068fa72bd753`, replacing October's
+  `381a4d1694ac2f5d0c3fa639d3bff9dd440830ac`. The README still links
+  `marcusrbrown/esphome.life`; neither `.gitmodules` nor the submodule's target
+  was read, so the current configured remote was not independently verified.
+- Both reusable workflows now pin **bfra-me/.github v4.43.0** at
+  `e6a1ab17bb68213940f63de91bd0450acdf9fff4`, up from October's v4.42.0.
+  Each still calls its correctly named upstream workflow. Settings sync retains
+  daily **03:00 UTC** scheduling; Renovate retains its event-driven triggers
+  and successful-CI guard for `workflow_run`.
+- CI still declares **Prettier 3.9.10**, checkout **v6.1.0** at four call
+  sites, YAML lint **v1.5.0**, Prettier action **v4.3**, HA config action
+  **v1.4.1**, and the October Remark image digest (`078de899…`). Remark remains
+  advisory through `continue-on-error: true`.
+- The version-output write is still `echo '{value}={$HA_VERSION}' >> $GITHUB_OUTPUT`.
+  It neither expands the variable nor writes the `value` key consumed by
+  `steps.ha_version.outputs.value`. This confirms the caller defect persists;
+  it does not reverify the upstream fallback, `.HA_VERSION`, or execution health.
+- `requirements.txt` still declares `esphome==2025.12.7` and
+  `yamllint==1.38.0`. These are dependency declarations, not installed versions
+  or the Home Assistant core pin.
+
+The complete integration-manifest inventory now provides a source-bounded
+baseline rather than extrapolating from the older Dependency Dashboard:
+
+| Integration directory | Declared version | Declared Python requirements |
+| --- | --- | --- |
+| `bermuda` | `0.8.4` | None |
+| `bhyve` | `3.2.5` | None |
+| `ble_monitor` | `13.7.0` | `pycryptodomex>=3.23.0`, `janus>=2.0.0`, `aioblescan>=0.2.14`, `btsocket>=0.3.0`, `pyric>=0.1.6.3` |
+| `browser_mod` | `2.3.0` | None |
+| `hacs` | `2.0.5` | `aiogithubapi>=22.10.1` |
+| `mail_and_packages` | `0.4.3-b14` | `beautifulsoup4`, `Pillow>=9.0`, `dateparser` |
+| `remote_homeassistant` | `4.5` | None |
+| `sengledng` | `0.4.2` | `asyncio-mqtt==0.16.2` |
+| `solaredge_modbus_multi` | `3.1.4` | `pymodbus>=3.8.3` |
+| `toyota_na` | `2.5.2` | `toyota-na==2.1.1` |
+
+Six manifests declare nonempty requirements and four declare empty arrays.
+An empty requirements array does not mean an integration has no Home Assistant
+dependencies: Bermuda and Browser mod, for example, name HA integrations in
+their separate `dependencies` fields. See [[home-assistant]] for the distinction.
+These files establish vendored declarations only, not installed integration
+versions, Renovate tracking, package compatibility, or current HACS ownership.
+
+**Fro Bot is still absent:** the full listing contains only `ci.yaml`,
+`renovate.yaml`, and `update-repo-settings.yaml`, and none calls the agent.
+A separate follow-up draft PR can propose onboarding; this survey does not
+create one. Earlier PR queues, workflow health, authorship, settings inheritance,
+and Renovate-rule findings remain dated evidence, not November measurements.
+The October documentation/license clarification remains applicable: the root
+has neither file, while `docs/readme.md` supplies documentation and declares MIT.
 
 ### 2026-10-20 source snapshot
 
