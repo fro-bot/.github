@@ -261,7 +261,8 @@ describe('capture-learnings-harvest through scripts/capture-learnings-harvest.ts
           {
             number: 102,
             title: 'Fix flaky lint step',
-            merged_at: '2026-10-22T10:00:00Z',
+            // The harvester runs in a child process on the real clock with a 30-day lookback.
+            merged_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
             merge_commit_sha: SHA_B,
             labels: [],
             user: {login: 'marcusrbrown'},
