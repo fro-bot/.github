@@ -36,6 +36,9 @@ function median(values: readonly number[]): number {
 const CALIBRATION_TARGET_MILLISECONDS = 50
 const CALIBRATION_PROBES = 3
 
+// The factor between the small and the large size every case measures; see LINEAR_RATIO_CEILING.
+const SIZE_STEP = 4
+
 // The variance this test used to leak in under CPU contention lived here, not in the downstream
 // sample count. A single process.cpuUsage() delta at a given repetitions count is a noisy probe:
 // under contention it can spuriously read high enough to satisfy the 50ms target early, locking
@@ -55,14 +58,14 @@ const CALIBRATION_PROBES = 3
 // time; 23/23 held at 8x oversubscription on the 4-core box. When reproducing any of these,
 // interleave the arms: a blocked design confounds the comparison with frequency drift, in either
 // direction depending on which arm runs first.
-function calibrateRepetitions(operation: () => void): number {
+function calibrateRepetitions(operation: () => void, targetMilliseconds: number): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
 
   let repetitions = 1
   let smallMilliseconds = probe(repetitions)
 
-  while (smallMilliseconds < CALIBRATION_TARGET_MILLISECONDS && repetitions < 65_536) {
+  while (smallMilliseconds < targetMilliseconds && repetitions < 65_536) {
     repetitions *= 2
     smallMilliseconds = probe(repetitions)
   }
@@ -70,7 +73,12 @@ function calibrateRepetitions(operation: () => void): number {
   return repetitions
 }
 
-function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
+function measureScalingRatio(
+  operation: (size: number) => void,
+  size: number,
+  samples = 1,
+  calibrationTargetMilliseconds = CALIBRATION_TARGET_MILLISECONDS,
+): ScalingMeasurement {
   // Reject a bad count here, where the diagnostic names the parameter and arrives before any
   // measurement work, rather than letting `median` throw about its own input two seconds later.
   // Even counts are rejected for the reason given at `median`; the rest (`0`, `1.5`, `-1`, `NaN`,
@@ -79,10 +87,10 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
     throw new RangeError(`measureScalingRatio needs a positive odd integer sample count, received ${samples}`)
   }
   const smallOperation = (): void => operation(size)
-  const largeOperation = (): void => operation(size * 2)
+  const largeOperation = (): void => operation(size * SIZE_STEP)
   smallOperation()
   largeOperation()
-  const repetitions = calibrateRepetitions(smallOperation)
+  const repetitions = calibrateRepetitions(smallOperation, calibrationTargetMilliseconds)
 
   const ratios: number[] = []
   for (let sample = 0; sample < samples; sample += 1) {
@@ -99,10 +107,28 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   return {ratio: median(ratios)}
 }
 
-// Named so these two bounds stay visually distinct from the unrelated sample count of 3 passed to
+// Every case measures its operation at a base size and at SIZE_STEP times that size. A linear
+// operation then costs about 4x as much and a quadratic one about 16x, so the 8x bounds below leave
+// a factor of two of headroom on each side for allocation and collection noise.
+//
+// Named so the two bounds stay visually distinct from the unrelated sample count of 3 passed to
 // measureScalingRatio at the call sites below.
-const LINEAR_RATIO_CEILING = 3
-const QUADRATIC_RATIO_FLOOR = 3
+const LINEAR_RATIO_CEILING = 8
+const QUADRATIC_RATIO_FLOOR = 8
+
+const BASE_SIZE = 8_000
+const LARGE_SIZE = BASE_SIZE * SIZE_STEP
+
+// Base sizes for the meta-test's two controls, which are loops rather than parsers. The quadratic
+// control calibrates to a shorter target than the parsers do. Calibration pins the base-size cost
+// at its target whatever the base size, so a base size cannot shrink the run; the target does. A
+// quadratic operation's large term costs 16 times the target per repetition and a sample 17 times,
+// so the 50ms parser target would put the meta-test at ~6s unloaded and 25-27s at 30 busy loops,
+// within 3s of its 30s timeout. At 20ms it takes ~2.5s unloaded and ~10s at 30 busy loops, and a
+// quadratic ratio of 16 against a floor of 8 has the margin to take the coarser calibration.
+const QUADRATIC_CONTROL_SIZE = 2_000
+const LINEAR_CONTROL_SIZE = 10_000
+const QUADRATIC_CONTROL_CALIBRATION_MILLISECONDS = 20
 
 function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
   const measurement = measureScalingRatio(operation, size, samples)
@@ -121,15 +147,15 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
 // not assertion failures. The whole suite therefore runs under one describe-scoped timeout rather
 // than the global default -- the correctness tests here finish in milliseconds and gain nothing
-// from it, but the timing guards need it, and one scope beats per-test literals: measured under
-// 12-process CPU contention the meta-test ran 4.8s-14.3s across repeated runs, while the costliest
-// production guard below -- malformed wiki log header parsing -- ran 1.7s-8.7s (8.5s at 8x
-// oversubscription, 85% of the 10s global ceiling) and the two wikilink guards less again. Both
-// windows are wide because contention level varies run to run and neither figure is portable
-// across machines, but the ordering held in every run measured: the log header guard is the one
-// to check first if a timing test ever does time out. Those are worst-case figures from imposed
-// busy loops; inside the full suite under Vitest's own file parallelism this file measured ~6s
-// total, with the meta-test at ~3.6s and the log header guard at ~1.7s -- about 12% of the budget.
+// from it, but the timing guards need it, and one scope beats per-test literals. Measured on a
+// 10-core box with the 4x step: unloaded, the meta-test takes ~2.5s and the costliest production
+// guards -- the markdown link masking and extraction cases -- ~1.3s-2.0s each. Under 12 busy loops
+// the meta-test took ~4.3s and those guards ~3.3s-3.8s; under 30 busy loops (3x oversubscription)
+// the meta-test took ~10s and the guards ~6.6s-8.0s, a third of the 30s budget at most. None of
+// these figures is portable across machines, and contention varies run to run, but the order held:
+// check the meta-test and the masking and extraction guards first if a timing test ever does time
+// out. These are worst-case figures from imposed busy loops, so the full suite under Vitest's own
+// file parallelism sits well inside them.
 const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
 
 // The separation check below was previously a relative multiplier (quadratic ratio >=
@@ -137,11 +163,10 @@ const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
 // instead of bounding either one. That noise's actual source was measureScalingRatio's
 // repetitions calibration (see calibrateRepetitions), not this test's sample count -- with
 // calibration now robust to a single noisy probe, independent absolute floors/ceilings anchored
-// to each control's own theory (quadratic ~4, linear ~2) no longer need to compound to catch a
-// regression: QUADRATIC_RATIO_FLOOR sits comfortably below every contended sample measured
-// (worst observed ~3.88 under 12-process contention, ~3.89 under 30-process contention) while
-// LINEAR_RATIO_CEILING is the same bound expectLinearScaling already used for the production
-// guards below, now shared by name instead of by coincidence of both being the literal 3.
+// to each control's own theory (quadratic ~16, linear ~4) no longer need to compound to catch a
+// regression: QUADRATIC_RATIO_FLOOR and LINEAR_RATIO_CEILING both sit at 8, a factor of two from
+// each theoretical value, and LINEAR_RATIO_CEILING is the same bound expectLinearScaling uses for
+// the production guards below, shared by name instead of by coincidence of both being the literal 8.
 describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECONDS}, () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
@@ -160,20 +185,25 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
     }
 
     // Warm both sizes before measuring so JIT compilation cannot deflate the first ratio.
-    quadratic(4_000)
-    quadratic(8_000)
-    linear(20_000)
-    linear(40_000)
+    quadratic(QUADRATIC_CONTROL_SIZE)
+    quadratic(QUADRATIC_CONTROL_SIZE * SIZE_STEP)
+    linear(LINEAR_CONTROL_SIZE)
+    linear(LINEAR_CONTROL_SIZE * SIZE_STEP)
 
     // Keep both checks independent rather than multiplying one ratio by the other: each control
-    // is bounded against its own theoretical value (quadratic ~4, linear ~2) with headroom drawn
-    // from measured contended distributions, so noise in one measurement cannot erode the other's
-    // margin. Three samples, reverted from seven: the noise that used to erode this test's
-    // margin lived in measureScalingRatio's repetitions calibration, not in this sample count --
-    // with the calibration fixed, three samples already holds the quadratic ratio comfortably
-    // above its floor under contention (see calibrateRepetitions for the measured evidence).
-    const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 3)
-    const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
+    // is bounded against its own theoretical value (quadratic ~16, linear ~4) with a factor of two
+    // of headroom on each side, so noise in one measurement cannot erode the other's margin.
+    // Three samples, reverted from seven: the noise that used to erode this test's margin lived
+    // in measureScalingRatio's repetitions calibration, not in this sample count -- with the
+    // calibration fixed, three samples already holds the quadratic ratio comfortably above its
+    // floor under contention (see calibrateRepetitions for the measured evidence).
+    const quadraticMeasurement = measureScalingRatio(
+      quadratic,
+      QUADRATIC_CONTROL_SIZE,
+      3,
+      QUADRATIC_CONTROL_CALIBRATION_MILLISECONDS,
+    )
+    const linearMeasurement = measureScalingRatio(linear, LINEAR_CONTROL_SIZE, 3)
     expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(QUADRATIC_RATIO_FLOOR)
     expect(linearMeasurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
@@ -229,13 +259,13 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
   })
 
   it('scales wikilink parsing linearly for an unterminated opening-bracket run', () => {
-    const smallContent = '[['.repeat(8_000)
-    const largeContent = '[['.repeat(16_000)
+    const smallContent = '[['.repeat(BASE_SIZE)
+    const largeContent = '[['.repeat(LARGE_SIZE)
     const measurement = expectLinearScaling(
       size => {
-        collectWikilinks(size === 8_000 ? smallContent : largeContent)
+        collectWikilinks(size === BASE_SIZE ? smallContent : largeContent)
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
@@ -253,13 +283,13 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
       '---',
       '',
     ].join('\n')
-    const smallFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(8_000)}`}
-    const largeFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(16_000)}`}
+    const smallFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(BASE_SIZE)}`}
+    const largeFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(LARGE_SIZE)}`}
     const measurement = expectLinearScaling(
       size => {
-        validateWikilinks(size === 8_000 ? smallFiles : largeFiles)
+        validateWikilinks(size === BASE_SIZE ? smallFiles : largeFiles)
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
@@ -273,15 +303,15 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
     {name: 'unclosed bare destinations', build: (n: number) => `[](${'[!](!'.repeat(n)}`},
     {name: 'unclosed parenthesised titles', build: (n: number) => `[](! (${'[(](! ('.repeat(n)}`},
   ])('scales markdown link extraction linearly for $name', ({build}) => {
-    const smallContent = build(8_000)
-    const largeContent = build(16_000)
+    const smallContent = build(BASE_SIZE)
+    const largeContent = build(LARGE_SIZE)
     const measurement = expectLinearScaling(
       size => {
-        resolveMarkdownLinks(size === 8_000 ? smallContent : largeContent, 'knowledge/wiki/topics/source.md', {
+        resolveMarkdownLinks(size === BASE_SIZE ? smallContent : largeContent, 'knowledge/wiki/topics/source.md', {
           files: {},
         })
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
@@ -296,13 +326,13 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
       build: (n: number) => `${'[a]('.repeat(n)}${')'.repeat(n / 2)}`,
     },
   ])('scales markdown link masking linearly for $name', ({build}) => {
-    const smallContent = build(8_000)
-    const largeContent = build(16_000)
+    const smallContent = build(BASE_SIZE)
+    const largeContent = build(LARGE_SIZE)
     const measurement = expectLinearScaling(
       size => {
-        maskMarkdownLinks(size === 8_000 ? smallContent : largeContent)
+        maskMarkdownLinks(size === BASE_SIZE ? smallContent : largeContent)
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
@@ -312,13 +342,13 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
 
   it('scales index entry scanning linearly for openers that share one slug end and a newline-only suffix', () => {
     const build = (n: number) => `${'- [[x\n'.repeat(n)}x]] —${'\n'.repeat(n)}`
-    const smallContent = build(8_000)
-    const largeContent = build(16_000)
+    const smallContent = build(BASE_SIZE)
+    const largeContent = build(LARGE_SIZE)
     const measurement = expectLinearScaling(
       size => {
-        findIndexEntryLines(size === 8_000 ? smallContent : largeContent)
+        findIndexEntryLines(size === BASE_SIZE ? smallContent : largeContent)
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
@@ -349,13 +379,13 @@ describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECOND
   })
 
   it('scales malformed wiki log header parsing linearly', () => {
-    const smallLog = Array.from({length: 8_000}, () => '\n## [unterminated').join('')
-    const largeLog = Array.from({length: 16_000}, () => '\n## [unterminated').join('')
+    const smallLog = Array.from({length: BASE_SIZE}, () => '\n## [unterminated').join('')
+    const largeLog = Array.from({length: LARGE_SIZE}, () => '\n## [unterminated').join('')
     const measurement = expectLinearScaling(
       size => {
-        mergeWikiLogs([size === 8_000 ? smallLog : largeLog])
+        mergeWikiLogs([size === BASE_SIZE ? smallLog : largeLog])
       },
-      8_000,
+      BASE_SIZE,
       3,
     )
 
