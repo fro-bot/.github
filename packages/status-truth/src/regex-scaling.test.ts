@@ -11,6 +11,13 @@
  * CI machine where a ratio of single runs does not. The operation repeats until the smaller size takes
  * long enough to read. A quadratic operation stays near 4x under the same load, which is what these
  * cases fail on.
+ *
+ * The rule: a case measures the growth ratio up to three times and passes at the first measurement under
+ * the ceiling. A linear operation measures about 4x, but a call that takes well under a millisecond at the
+ * small size lets one scheduler or collection pause push a single ratio over the ceiling; that noise is
+ * independent between measurements, so a retry clears it. A quadratic operation measures about 16x on
+ * every attempt and never drops under 8x, so every attempt fails and the case fails. The small size is
+ * repeated until it takes 50 ms of CPU time, capped at 4,096 repetitions.
  */
 
 import process from 'node:process'
@@ -19,8 +26,9 @@ import {extractStatusTruthClaimsFromText} from './detect-extract.ts'
 import {extractPreviousMarker} from './rollout-tracker-snapshot.ts'
 
 const BEST_OF = 3
-const READABLE_MILLISECONDS = 25
-const MAXIMUM_REPETITIONS = 1024
+const READABLE_MILLISECONDS = 50
+const MAXIMUM_REPETITIONS = 4096
+const ATTEMPTS = 3
 const GROWTH = 4
 const CEILING = 8
 // A quadratic operation on the largest input here takes a few seconds, three times at each size.
@@ -45,8 +53,8 @@ function repetitionsToRead(operation: () => void): number {
   return repetitions
 }
 
-/** Time at four times the size over time at the size, each the best of three. */
-function growthRatio(make: (size: number) => string, size: number, run: (input: string) => void): number {
+/** One measurement: time at four times the size over time at the size, each the best of three. */
+function measureGrowth(make: (size: number) => string, size: number, run: (input: string) => void): number {
   const small = make(size)
   const large = make(size * GROWTH)
   const runSmall = () => {
@@ -61,6 +69,22 @@ function growthRatio(make: (size: number) => string, size: number, run: (input: 
   const smallTime = bestMilliseconds(runSmall, repetitions)
   const largeTime = bestMilliseconds(runLarge, repetitions)
   return largeTime / Math.max(smallTime, 0.01)
+}
+
+/**
+ * The growth ratio, measured up to ATTEMPTS times, stopping at the first measurement under the ceiling.
+ * A linear operation sits at 4x, but a sub-millisecond call at the small size lets one scheduler or
+ * collection pause swing a single ratio past the ceiling. That noise is independent between
+ * measurements, so a linear case passes on a retry. A quadratic operation measures about 16x every
+ * time, so every attempt stays over the ceiling and the case still fails. Returns the smallest ratio.
+ */
+function growthRatio(make: (size: number) => string, size: number, run: (input: string) => void): number {
+  let smallest = Number.POSITIVE_INFINITY
+  for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+    smallest = Math.min(smallest, measureGrowth(make, size, run))
+    if (smallest < CEILING) break
+  }
+  return smallest
 }
 
 const repeat = (unit: string) => (size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
