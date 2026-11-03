@@ -892,7 +892,7 @@ CLI tables follow one legend:
 
 **Verification:** The handoff sequence replay tests pass, including `wiki-handoff-sequence.test.ts` from `scripts/`.
 
-- [ ] **Unit 11: `@fro-bot/knowledge`**
+- [x] **Unit 11: `@fro-bot/knowledge`**
 
 **Goal:** Move capture-learnings, capture-patterns and drafted-solutions.
 

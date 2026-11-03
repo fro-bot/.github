@@ -603,6 +603,82 @@
     {
       "path": "scripts/wiki-lint-issues.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-lint-issues-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-lint-issues.ts, pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts, and scripts/octokit-entrypoints.test.ts pins that it builds its client from GITHUB_TOKEN with no timeout and no logger. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-harvest.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 56.84% (1,082 mutants: 613 killed, 2 timed out, 276 survived, 191 with no coverage), short of the 100% gate. The survivors are mostly the I/O shell and its defaults: fetchPrCommitCheckRollup (116, the `gh` argv and GraphQL paging), harvestCandidates (46), collectSolutionDocs (34), harvestCiFixCandidates (33), buildLogExcerpt (31) and runCaptureLearningsHarvest (23). The spawned flow tests in scripts/knowledge-flows.test.ts pin the digest and telemetry surface but run unmutated shims, so they do not count. Promoting it needs mocked-gh tests for the rollup walk and the log-excerpt windows."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-open.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 51.08% (139 mutants: 71 killed, 34 survived, 34 with no coverage). Survivors: runCaptureLearningsOpen (21, the env and result-file wiring), ensureLabelsExist (19), openLearningIssues (14) and readJsonFile (10). The decision tables (privacy gate, duplicate skip, label fallback) are pinned by packages/knowledge/src/capture-learnings-open.test.ts; the missing-input messages and the result file by capture-learnings-open-cli.test.ts and scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-cluster.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 55.22% (623 mutants: 339 killed, 5 timed out, 206 survived, 73 with no coverage). Survivors: planPatternCandidates (41), rankCandidates (37), runCapturePatternsCluster (32), scoreBucketFor (21), fetchLearningProposalIssuesFromRepo (20) and computeSourceOverlapScore (18): the scoring thresholds and the ranking tie-breaks, which the tests pin with representative fixtures and not with every boundary."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-open.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 51.79% (336 mutants: 174 killed, 81 survived, 81 with no coverage). Survivors: validatePatternProposalBody (50, the field limits), runCapturePatternsOpen (44), ensurePatternProposalLabelsExist (14), renderPatternProposalIssueBody (12), readJsonFile (10) and derivePatternProposalTitle (8)."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-synthesis.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 63.22% on the final code (348 valid mutants: 217 killed, 3 timed out, 113 survived, 15 with no coverage). Survivors: the TITLE_STOPWORDS set (33), collectSolutionDocSources (28), PATTERN_PROPOSAL_REQUIRED_LABELS descriptions (16), fetchExistingPatternProposals (14) and splitFrontmatter (9). findSourceIdsMarker, the linear replacement of the source-ids pattern, has no survivor, and packages/knowledge/src/capture-patterns-synthesis-linear.test.ts compares it with the original pattern on 60,000 seeded bodies."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-handoff-build.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 77.78% (18 mutants: 14 killed, 4 survived), all four in buildDraftedHandoff: the optional runGit spread and the policy and pathspec constants that the real-git tests exercise but do not distinguish. The run function and the CLI are covered."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-harvest.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 84.38% (96 mutants: 81 killed, 7 survived, 8 with no coverage). Survivors: runDraftedSolutionsHarvest (11, the GITHUB_REPOSITORY split and the output writes), listOpenProposals (2) and harvestDraftedProposals (2)."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-pr-body.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 75.78% (446 mutants: 338 killed, 104 survived, 4 with no coverage). Survivors: renderPrBody (27), parseRow (16), parseEvidence (11), renderRow (11), ROW_KEYS (9) and parseCoverageBlock (6): table-cell escapes and the exact key lists of the hidden coverage block."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-publish.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 79.50% (517 mutants: 411 killed, 95 survived, 11 with no coverage). Survivors: publishCore (25), runCli (16), blobShaAt (6), closingComment (6), stageHandoff (5) and commitFiles (5), the Git Data write sequence and the comment text."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-shared.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 64.69% (320 mutants: 207 killed, 80 survived, 33 with no coverage). Survivors: parseDigest (43) and parseProposalEntry (32), the digest shape checks; checkAgentRows (17); findOpenDraftedPr (6)."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-validate-rows.ts",
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 88.57% (35 mutants: 31 killed, 4 survived), the default path constants, readJson and nonEmpty. The agent-visible strings and exit codes are pinned by packages/knowledge/src/drafted-solutions-validate-rows-cli.test.ts and by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/capture-learnings-harvest.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/capture-learnings-harvest-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/capture-learnings-harvest.ts and capture-learnings-harvest-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/capture-learnings-open.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/capture-learnings-open-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/capture-learnings-open.ts and capture-learnings-open-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/capture-patterns-cluster.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/capture-patterns-cluster-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/capture-patterns-cluster.ts and capture-patterns-cluster-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/capture-patterns-open.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/capture-patterns-open-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/capture-patterns-open.ts and capture-patterns-open-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/drafted-solutions-handoff-build.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/drafted-solutions-handoff-build-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/drafted-solutions-handoff-build.ts and drafted-solutions-handoff-build-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/drafted-solutions-harvest.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/drafted-solutions-harvest-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/drafted-solutions-harvest.ts and drafted-solutions-harvest-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/drafted-solutions-publish.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/drafted-solutions-publish-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/drafted-solutions-publish.ts and drafted-solutions-publish-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
+    },
+    {
+      "path": "scripts/drafted-solutions-validate-rows.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/knowledge/drafted-solutions-validate-rows-cli and runs it under the entry guard. The behaviour is in packages/knowledge/src/drafted-solutions-validate-rows.ts and drafted-solutions-validate-rows-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/knowledge-flows.test.ts."
     }
   ]
 }

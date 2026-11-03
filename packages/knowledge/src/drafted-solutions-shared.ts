@@ -11,7 +11,7 @@
 
 import type {OctokitClient} from './capture-learnings-harvest.ts'
 
-import {isRecord} from '@fro-bot/core/guards'
+import {isApiStatus, isRecord} from '@fro-bot/core/guards'
 import {LEARNING_PROPOSAL_LABEL} from './capture-learnings-harvest.ts'
 import {validateCoverageRows, type CoverageRow} from './drafted-solutions-pr-body.ts'
 
@@ -29,6 +29,11 @@ export class DraftedSolutionsError extends Error {
     super(message)
     this.name = 'DraftedSolutionsError'
   }
+}
+
+/** The error for a required variable that is unset or empty: both drafted-solutions CLIs that read the environment throw it. */
+export function missingDraftedEnv(name: string): DraftedSolutionsError {
+  return new DraftedSolutionsError(`${name} is required`)
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +188,7 @@ export async function readRefSha(
   try {
     return (await octokit.rest.git.getRef({owner, repo, ref})).data.object.sha
   } catch (error: unknown) {
-    if (isRecord(error) && error.status === 404) return null
+    if (isApiStatus(error, 404)) return null
     throw error
   }
 }

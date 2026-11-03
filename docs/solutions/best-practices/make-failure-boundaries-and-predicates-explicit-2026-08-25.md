@@ -44,9 +44,9 @@ constructing the API client; under `bash -Eeuo pipefail`, that failure propagate
 step. That behavior was safe because it failed closed before partial writes, but the intent was
 implicit. An undocumented asymmetry reads like a bug.
 
-The current code makes the boundary explicit. `scripts/capture-patterns-cluster.ts` documents and
-implements a fail-soft `main()`, while `scripts/capture-patterns-open.ts` comments that its
-`main()` is intentionally fail-hard before loading the digest and creating the client.
+The current code makes the boundary explicit. `packages/knowledge/src/capture-patterns-cluster.ts` documents and
+implements a fail-soft `runCapturePatternsCluster`, while `packages/knowledge/src/capture-patterns-open.ts` comments that its
+`runCapturePatternsOpen` is intentionally fail-hard before loading the digest and creating the client.
 
 The second concern was predicate drift: `isRecord` was defined privately in one module while
 another module imported it from a shared privacy module. Two implementations of the same
@@ -111,7 +111,7 @@ handles authored or persisted data. One canonical implementation keeps the type 
 
 ### Explicit fail-soft detect entry point
 
-Current `scripts/capture-patterns-cluster.ts` documents the detect contract next to `main()`:
+Current `packages/knowledge/src/capture-patterns-cluster.ts` documents the detect contract next to `runCapturePatternsCluster`:
 
 ```ts
 /**
@@ -123,7 +123,7 @@ Current `scripts/capture-patterns-cluster.ts` documents the detect contract next
  * never fail the workflow. Errors are logged as counts-only, never with message text
  * that could leak content.
  */
-async function main(): Promise<void> {
+export async function runCapturePatternsCluster(env: Env, io: ClusterIo): Promise<void> {
   // ...
 }
 ```
@@ -132,7 +132,7 @@ The implementation then catches unexpected errors, records `scanFailure`, writes
 when possible, and emits counts-only output:
 
 ```ts
-async function main(): Promise<void> {
+export async function runCapturePatternsCluster(env: Env, io: ClusterIo): Promise<void> {
   try {
     // ...
   } catch (error: unknown) {
@@ -141,25 +141,29 @@ async function main(): Promise<void> {
     result.scanFailure = true
     digestCandidates = []
     try {
-      await writePatternDigestFile(digestCandidates)
+      await writePatternDigestFile(digestCandidates, env)
     } catch {
       // ignore
     }
   }
+
+  io.stdout(formatJsonLine(result))
 }
 ```
 
+`env` is the runner's environment and `io.stdout` its one stdout line; `scripts/capture-patterns-cluster.ts` reaches this function through the `capture-patterns-cluster-cli` module.
+
 ### Explicit fail-hard open entry point
 
-Current `scripts/capture-patterns-open.ts` states the contrasting contract before its imports and
-before it reads the digest or constructs the client:
+Current `packages/knowledge/src/capture-patterns-open.ts` states the contrasting contract first in
+`runCapturePatternsOpen`, before it reads the digest or constructs the client:
 
 ```ts
-async function main(): Promise<void> {
+export async function runCapturePatternsOpen(env: Env, io: OpenIo): Promise<void> {
   // Detect is fail-soft because absence of candidates is safe signal. Open is
   // intentionally fail-hard on malformed inputs or missing credentials: after the
   // live gate, ambiguity must stop before any issue mutation.
-  const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
+  const {loadPrivateTokensFromDisk} = await import('@fro-bot/privacy/capture-learnings-privacy')
   // ...
 }
 ```
@@ -167,9 +171,12 @@ async function main(): Promise<void> {
 The digest read and client construction remain outside a top-level catch:
 
 ```ts
+const digestPath = requiredEnv(env, 'CAPTURE_PATTERNS_DIGEST_PATH', {missing})
 const digestCandidates = await readJsonFile<PatternCandidateDigest[]>(digestPath, 'candidate digest')
 // ...
-const octokit = await createOctokitFromEnv()
+const octokit = await createOctokit(env.GITHUB_TOKEN, {
+  missingToken: () => new Error('capture-learnings-harvest requires GITHUB_TOKEN in the environment'),
+})
 ```
 
 That is intentional fail-closed behavior: malformed input or an unavailable client stops the open
@@ -237,10 +244,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 Both capture-patterns consumers import it from there:
 
 ```ts
-// scripts/capture-patterns-open.ts
+// packages/knowledge/src/capture-patterns-open.ts
 import {isRecord} from '@fro-bot/core/guards'
 
-// scripts/capture-patterns-synthesis.ts
+// packages/knowledge/src/capture-patterns-synthesis.ts
 import {isRecord} from '@fro-bot/core/guards'
 ```
 

@@ -51,14 +51,14 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
 
    Before building plumbing so an agent reviews a PR, confirm the agent accepts that PR's author and trigger. If a bot exception is ever needed, make it an exact predicate (author, branch and repository all matched), because a loose one widens a required check's silent pass.
 
-5. **Never write what nobody verified.** Unverified proposals are rejected from the coverage table (`scripts/drafted-solutions-pr-body.ts:255-262`) and closed directly with a comment. They never appear in the PR body, because a `Closes #N` line there would close them as completed when the PR merges (`:340` renders those lines). `closeProposal` closes only a `covered` row as completed and everything else as `not_planned` (`scripts/drafted-solutions-publish.ts:543`).
+5. **Never write what nobody verified.** Unverified proposals are rejected from the coverage table (`packages/knowledge/src/drafted-solutions-pr-body.ts:255-262`) and closed directly with a comment. They never appear in the PR body, because a `Closes #N` line there would close them as completed when the PR merges (`:340` renders those lines). `closeProposal` closes only a `covered` row as completed and everything else as `not_planned` (`packages/knowledge/src/drafted-solutions-publish.ts:547`).
 
 6. **Guard against lost updates.**
    - Pin `draft_base_sha` at harvest.
-   - At publish, compare each handoff path's blob at the live base against its blob at the draft base, and refuse on any difference (`checkDraftBaseUnmoved`, `:273-289`).
-   - Update refs with `force: false` (`:489`). Create the branch with `createRef`, which fails if the ref exists (`:503`), after a last check for an open PR (`:499-500`).
+   - At publish, compare each handoff path's blob at the live base against its blob at the draft base, and refuse on any difference (`checkDraftBaseUnmoved`, `:277-297`).
+   - Update refs with `force: false` (`:493`). Create the branch with `createRef`, which fails if the ref exists (`:507`), after a last check for an open PR (`:504`).
 
-7. **Fail closed on stale branches.** Never reuse a branch left behind by a PR that was closed without merging (`:568-570`):
+7. **Fail closed on stale branches.** Never reuse a branch left behind by a PR that was closed without merging (`:573-575`):
 
    ```ts fragment
    if (openPr === null && files.length > 0 && (await readRefSha(octokit, owner, repo, DRAFTED_UPDATE_REF)) !== null) {
@@ -66,13 +66,13 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
    }
    ```
 
-8. **Bound the rendered body before any write.** GitHub rejects an oversize PR body after the branch writes have landed, so the check comes first (`:599`; `PR_BODY_MAX_LENGTH = 65_536` at `scripts/drafted-solutions-pr-body.ts:63`):
+8. **Bound the rendered body before any write.** GitHub rejects an oversize PR body after the branch writes have landed, so the check comes first (`:603`; `PR_BODY_MAX_LENGTH = 65_536` at `packages/knowledge/src/drafted-solutions-pr-body.ts:63`):
 
    ```ts fragment
    if (body.length > PR_BODY_MAX_LENGTH) throw new DraftedSolutionsError(PR_BODY_TOO_LONG_MESSAGE)
    ```
 
-9. **Key idempotency on the decision, not the issue.** A changed body or outcome is a new decision and gets its own comment (`:358-360`):
+9. **Key idempotency on the decision, not the issue.** A changed body or outcome is a new decision and gets its own comment (`:361-363`):
 
    ```ts fragment
    return `<!-- fro-bot:drafted-solutions-closure v2 issue=${row.issue} outcome=${row.outcome} body=${row.bodyHash} -->`

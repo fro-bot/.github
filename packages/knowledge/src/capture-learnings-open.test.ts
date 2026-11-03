@@ -10,6 +10,7 @@
  */
 
 import {learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from '@fro-bot/privacy/capture-learnings-privacy'
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it, vi} from 'vitest'
 import {
   buildMergeShaMarker,
@@ -26,7 +27,6 @@ import {
   type LearningToOpen,
   type PlanLearningsInput,
 } from './capture-learnings-open.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

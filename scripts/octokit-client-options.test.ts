@@ -35,13 +35,13 @@ afterEach(() => {
 describe('capture-learnings-harvest createOctokitFromEnv', () => {
   it('reads GITHUB_TOKEN and sets neither a timeout nor a logger', async () => {
     process.env.GITHUB_TOKEN = 'harvest-token'
-    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
+    const {createOctokitFromEnv} = await import('@fro-bot/knowledge/capture-learnings-harvest')
     await createOctokitFromEnv()
     expect(constructed).toStrictEqual([{auth: 'harvest-token'}])
   })
 
   it('throws its own message when GITHUB_TOKEN is unset or empty', async () => {
-    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
+    const {createOctokitFromEnv} = await import('@fro-bot/knowledge/capture-learnings-harvest')
     delete process.env.GITHUB_TOKEN
     await expect(createOctokitFromEnv()).rejects.toThrow(
       'capture-learnings-harvest requires GITHUB_TOKEN in the environment',

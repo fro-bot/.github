@@ -71,7 +71,6 @@ export const PATTERN_PROPOSAL_REQUIRED_LABELS: readonly PatternProposalLabelDesc
 // ---------------------------------------------------------------------------
 
 const FINGERPRINT_MARKER_PATTERN = /<!-- pattern-proposal:fingerprint=([a-f0-9]{64}) -->/u
-const SOURCE_IDS_MARKER_PATTERN = /<!-- pattern-proposal:source-ids=([^\n]+?) -->/u
 const SUPERSEDES_MARKER_PATTERN = /<!-- pattern-proposal:supersedes=([a-f0-9]{64}) -->/u
 
 /**
@@ -126,12 +125,33 @@ export function parsePatternProposalFingerprint(body: string): string | null {
 }
 
 /**
+ * The text between the first `<!-- pattern-proposal:source-ids=` prefix that closes on its own line
+ * and the first ` -->` after at least one character; undefined when no line does. A body is issue
+ * text, so it can hold thousands of unclosed prefixes: the pattern this replaces
+ * (`/<!-- pattern-proposal:source-ids=([^\n]+?) -->/u`) rescanned the rest of the line from every
+ * one of them and took quadratic time. A match never spans a line break, and a later prefix on a
+ * line closes only if the first one does (its close must come after an even later start), so each
+ * line needs one prefix search and one close search.
+ */
+function findSourceIdsMarker(body: string): string | undefined {
+  const prefix = '<!-- pattern-proposal:source-ids='
+  for (const line of body.split('\n')) {
+    const prefixAt = line.indexOf(prefix)
+    if (prefixAt === -1) continue
+    const start = prefixAt + prefix.length
+    // The captured text is at least one character, so the close starts after `start`.
+    const closeAt = line.indexOf(' -->', start + 1)
+    if (closeAt !== -1) return line.slice(start, closeAt)
+  }
+  return undefined
+}
+
+/**
  * Parse the sorted source-IDs marker from a pattern-proposal body.
  * Returns the IDs split on commas, or null if the marker is absent or empty.
  */
 export function parsePatternProposalSourceIds(body: string): string[] | null {
-  const match = SOURCE_IDS_MARKER_PATTERN.exec(body)
-  const raw = match?.[1]
+  const raw = findSourceIdsMarker(body)
   if (raw === undefined || raw.trim() === '') return null
   return raw.split(',').map(id => id.trim())
 }

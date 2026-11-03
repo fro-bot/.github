@@ -256,7 +256,7 @@ function isApiStatus(error: unknown, status: number): boolean {
 
 /**
  * Ensure the improvement-metrics report label exists, mirroring
- * `capture-patterns-open.ts`'s `ensurePatternProposalLabelsExist`: getLabel 404 ->
+ * `packages/knowledge/src/capture-patterns-open.ts`'s `ensurePatternProposalLabelsExist`: getLabel 404 ->
  * createLabel, 422 idempotent. Returns whether the label is confirmed available.
  */
 export async function ensureReportLabelExists(
