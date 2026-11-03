@@ -114,7 +114,7 @@ describe('the stat of a scope root and of a walked entry', () => {
 
   it('writes a scope path given with backslashes as a forward-slash relative path', async () => {
     const snapshot = await captureWikiScopeSnapshot(seams(['a.md'], {scopePaths: [String.raw`knowledge\wiki`]}))
-    expect(snapshot.map(entry => entry.relativePath)).toEqual([String.raw`knowledge\wiki/a.md`.replace('\\', '/')])
+    expect(snapshot.map(entry => entry.relativePath)).toEqual(['knowledge/wiki/a.md'])
   })
 })
 
