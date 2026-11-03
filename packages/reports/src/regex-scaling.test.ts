@@ -104,6 +104,8 @@ function growthRatio(make: (size: number) => string, size: number, run: (input: 
 const repeat = (unit: string) => (size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
 
 const SMALL = 20_000
+// A 300-digit run is still a finite number, so a reach check can read it back through the parser.
+const REACH_DIGITS = 300
 const FINGERPRINT = 'a'.repeat(64)
 
 afterEach(() => {
@@ -140,6 +142,78 @@ const CHECKLIST_CASES = [
   {name: 'a long line with no marker', make: (size: number) => `- [ ] ${' '.repeat(size)}`},
 ]
 
+/**
+ * The live-state pattern is anchored, so a scan is one attempt per input. The input has to get the digit runs
+ * and the `-unchecked-` separator past the pattern and fail only at the end: a valid prefix, a long digit run,
+ * then a suffix that breaks the `$`.
+ */
+const LIVE_STATE_CASES = [
+  {
+    name: 'a long first digit run, a valid rest and a failing suffix',
+    make: (size: number) => `checked-${'1'.repeat(size)}-unchecked-1x`,
+  },
+  {
+    name: 'a valid prefix, a long second digit run and a failing suffix',
+    make: (size: number) => `checked-1-unchecked-${'1'.repeat(size)}x`,
+  },
+]
+
+/** The input is rejected, and only by its last character: without it the summary parses with finite numbers. */
+function liveStateReachesTheEnd(input: string): boolean {
+  const accepted = parseLiveStateSummary(input.slice(0, -1))
+  return (
+    parseLiveStateSummary(input) === null &&
+    accepted !== null &&
+    Number.isFinite(accepted.checked) &&
+    Number.isFinite(accepted.unchecked)
+  )
+}
+
+/** Inputs of the shapes this suite used before: each is turned away before the scan has done any work. */
+const OLD_LIVE_STATE_INPUTS = [
+  {name: 'a digit run and a bare separator', input: `checked-${'1'.repeat(REACH_DIGITS)}-unchecked-`},
+  {name: 'repeated bare summaries', input: repeat('checked-1-unchecked-')(REACH_DIGITS)},
+]
+
+/**
+ * A frontmatter document of `prefix0: 1`, `prefix1: 1`, ... lines, which is valid YAML with distinct keys, so
+ * the parsed mapping counts the lines the scan went past. The document has no closing fence.
+ */
+const keyed = (prefix: string) => (size: number) => {
+  let text = '---\n'
+  for (let index = 0; text.length < size; index += 1) text += `${prefix}${String(index)}: 1\n`
+  return text
+}
+
+const FRONTMATTER_CASES = [
+  {name: 'a fence and a long value', make: (size: number) => `---\na: ${'a'.repeat(size)}\n`},
+  {name: 'a fence and many keyed lines', make: keyed('k')},
+  {name: 'a fence and many lines that begin with two dashes', make: keyed('--')},
+  {name: 'a fence and many lines that begin with one dash', make: keyed('-')},
+]
+
+/** Number of `key: value` lines between the opening fence and the end of `input`. */
+const bodyLines = (input: string) => input.split('\n').length - 2
+
+/**
+ * The document never closes, so the lazy scan runs to its end: with a closing fence appended, the whole body
+ * parses to a mapping that holds every line. A long value is one key.
+ */
+function frontmatterScanReachesTheEnd(input: string): boolean {
+  if (Object.keys(splitFrontmatter(input)).length > 0) return false
+  const closed = splitFrontmatter(`${input}---\n`)
+  const expected = input.includes(': aaa') ? 1 : bodyLines(input)
+  return expected > 0 && Object.keys(closed).length === expected
+}
+
+/** Inputs of the shapes this suite used before: the first fence-like line closed them, or no fence began them. */
+const OLD_FRONTMATTER_INPUTS = [
+  {name: 'repeated fence-like lines, which close at the first one', input: `---\n${repeat('\n---')(1000)}x`},
+  {name: 'repeated near-closing lines that are not a mapping', input: `---\n${repeat('\n--x')(1000)}`},
+  {name: 'a repeated duplicate key', input: `---\n${repeat('a: b\n')(1000)}`},
+  {name: 'no fence at all', input: 'a'.repeat(1000)},
+]
+
 describe('the report issue body patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
   it.each(MARKER_CASES)('version marker: $name', ({make}) => {
     expect(
@@ -172,10 +246,7 @@ describe('the report issue body patterns scale linearly', {timeout: SUITE_TIMEOU
     ).toBeLessThan(CEILING)
   })
 
-  it.each([
-    {name: 'a long digit run', make: (size: number) => `checked-${'1'.repeat(size)}-unchecked-`},
-    {name: 'many separate summaries', make: repeat('checked-1-unchecked-')},
-  ])('live-state summary: $name', ({make}) => {
+  it.each(LIVE_STATE_CASES)('live-state summary: $name', ({make}) => {
     expect(
       growthRatio(make, SMALL, text => {
         parseLiveStateSummary(text)
@@ -223,13 +294,7 @@ describe('the tokenizer and frontmatter patterns scale linearly', {timeout: SUIT
     ).toBeLessThan(CEILING)
   })
 
-  it.each([
-    {name: 'a fence with no close', make: (size: number) => `---\n${'a'.repeat(size)}`},
-    {name: 'a fence and many lines', make: (size: number) => `---\n${repeat('a: b\n')(size)}`},
-    {name: 'a fence and repeated near-closing lines', make: (size: number) => `---\n${repeat('\n--x')(size)}`},
-    {name: 'a fence and repeated dashes', make: (size: number) => `---\n${repeat('\n---')(size)}x`},
-    {name: 'no fence', make: (size: number) => 'a'.repeat(size)},
-  ])('splitFrontmatter: $name', ({make}) => {
+  it.each(FRONTMATTER_CASES)('splitFrontmatter: $name', ({make}) => {
     expect(
       growthRatio(make, SMALL, text => {
         splitFrontmatter(text)
@@ -323,10 +388,25 @@ describe('reach: each scaling input reaches the pattern it measures', () => {
     expect(recoverPriorTickState(`- [x] <!-- improvement-metrics:edge=${'a'.repeat(63)} -->\n`).size).toBe(0)
   })
 
-  it('live-state summary: the digit run is parsed as a number, and a complete summary is found', () => {
+  it('live-state summary: a complete summary is found', () => {
     expect(parseLiveStateSummary('checked-3-unchecked-4')).toEqual({checked: 3, unchecked: 4})
-    expect(parseLiveStateSummary(`checked-${'1'.repeat(40)}-unchecked-`)).toBeNull()
   })
+
+  it.each(LIVE_STATE_CASES)(
+    'live-state summary: $name gets past both digit runs and fails only at the end',
+    ({make}) => {
+      expect(liveStateReachesTheEnd(make(REACH_DIGITS))).toBe(true)
+      // The same shape at the scaling size, so the case measured is the case checked.
+      expect(parseLiveStateSummary(make(SMALL))).toBeNull()
+    },
+  )
+
+  it.each(OLD_LIVE_STATE_INPUTS)(
+    'live-state summary: the old input $name is not reaching, so the check discriminates',
+    ({input}) => {
+      expect(liveStateReachesTheEnd(input)).toBe(false)
+    },
+  )
 
   it('class key and fingerprint: the long fields are accepted, so the guards scanned them', () => {
     const field = 'a/b.c-d_e '.repeat(50)
@@ -341,12 +421,24 @@ describe('reach: each scaling input reaches the pattern it measures', () => {
     expect(tokenizeText('!a'.repeat(5))).toEqual([])
   })
 
-  it('splitFrontmatter: a closed fence yields its mapping and the cases above stop at or before the close', () => {
+  it('splitFrontmatter: a closed fence yields its mapping', () => {
     expect(splitFrontmatter('---\ntitle: T\n---\nbody')).toEqual({title: 'T'})
-    expect(splitFrontmatter(`---\n${'a'.repeat(100)}`)).toEqual({})
-    expect(splitFrontmatter(`---\n${'a: b\n'.repeat(20)}`)).toEqual({})
-    expect(splitFrontmatter('a'.repeat(100))).toEqual({})
   })
+
+  it.each(FRONTMATTER_CASES)(
+    'splitFrontmatter: $name never closes, so the scan runs to the end of the body',
+    ({make}) => {
+      expect(frontmatterScanReachesTheEnd(make(SMALL))).toBe(true)
+      expect(frontmatterScanReachesTheEnd(make(REACH_DIGITS))).toBe(true)
+    },
+  )
+
+  it.each(OLD_FRONTMATTER_INPUTS)(
+    'splitFrontmatter: the old input $name is not reaching, so the check discriminates',
+    ({input}) => {
+      expect(frontmatterScanReachesTheEnd(input)).toBe(false)
+    },
+  )
 
   it.each([
     ['a slash run then x', `${'/'.repeat(30)}x`, `${'/'.repeat(30)}x`],

@@ -998,6 +998,66 @@ describe('detect feeds report through the digest file', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
+// The four shims, imported as a library
+// ---------------------------------------------------------------------------------------------------------------
+describe('a shim imported as a library does nothing', () => {
+  const SHIMS = ['daily-digest-counts', 'gateway-announce', 'improvement-metrics-detect', 'improvement-metrics-report']
+
+  // The entry guard compares `import.meta.url` with `process.argv[1]`, which is the harness here, so no `main` runs.
+  // The shim path is an argument of the harness, never interpolated into its source.
+  const HARNESS = `import {pathToFileURL} from 'node:url'
+await import(pathToFileURL(process.argv[2]).href)
+process.stdout.write('imported:' + String(process.exitCode ?? 'unset'))
+`
+
+  it.each(SHIMS.flatMap(name => (['bun', 'node'] as const).map(runtime => [name, runtime] as const)))(
+    'scripts/%s.ts under %s: no output, no exit code, no POST, no file and no API call',
+    async (name, runtime) => {
+      await withGateway([200], async gateway => {
+        const cwd = checkout({'metadata/repos.yaml': REPOS_YAML})
+        const harness = join(cwd, 'import-shim.ts')
+        writeFileSync(harness, HARNESS)
+        const before = readdirSync(cwd).toSorted()
+        const github = createFakeGithub([])
+        fakes.push(github)
+        const result = await spawnEntrypoint({
+          entrypoint: harness,
+          argv: [resolve(repoRoot, 'scripts', `${name}.ts`)],
+          runtime,
+          runtimeArgs: runtime === 'bun' ? ['--no-install', '--no-env-file', ...github.runtimeArgs('bun')] : [],
+          cwd,
+          env: {
+            ...announceEnv(gateway),
+            FAKE_GH_DIR: github.directory,
+            GITHUB_TOKEN: 'import-token',
+            IMPROVEMENT_METRICS_DIGEST_PATH: join(cwd, 'digest.json'),
+            IMPROVEMENT_METRICS_RESULT_PATH: join(cwd, 'result.json'),
+          },
+        })
+        expect(result).toEqual({exitCode: 0, stdout: 'imported:unset', stderr: '', githubOutput: ''})
+        expect(gateway.received).toEqual([])
+        expect(readdirSync(cwd).toSorted()).toEqual(before)
+        expect(github.requests()).toEqual([])
+      })
+    },
+    30_000,
+  )
+
+  it('positive control: the same harness shape runs a shim that is the entrypoint', async () => {
+    await withGateway([200], async gateway => {
+      const cwd = checkout()
+      const result = await spawnEntrypoint({
+        entrypoint: resolve(repoRoot, 'scripts', 'gateway-announce.ts'),
+        cwd,
+        env: announceEnv(gateway),
+      })
+      expect(result.stdout).toBe('{"posted":true,"status":200}\n')
+      expect(gateway.received).toHaveLength(1)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
 // The real checkout
 // ---------------------------------------------------------------------------------------------------------------
 describe('the real checkout', () => {
