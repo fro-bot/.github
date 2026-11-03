@@ -7,13 +7,13 @@
 
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
+import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from '@fro-bot/knowledge/drafted-solutions-pr-body'
+import {DIGEST_VERSION, type DraftedDigest} from '@fro-bot/knowledge/drafted-solutions-shared'
+import {validateDraftedRows} from '@fro-bot/knowledge/drafted-solutions-validate-rows'
 import {overlayWasAttempted, runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
-import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from './drafted-solutions-pr-body.ts'
-import {DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
-import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
 
 interface WorkflowStep {
   name?: string
@@ -329,9 +329,12 @@ describe('draft-solutions.yaml handoff plumbing', () => {
   })
 
   it('the workflow env names are the ones the scripts actually read', () => {
-    const harvestSource = readFileSync(resolve(repoRoot, 'scripts/drafted-solutions-harvest.ts'), 'utf8')
-    const publishSource = readFileSync(resolve(repoRoot, 'scripts/drafted-solutions-publish.ts'), 'utf8')
-    const buildSource = readFileSync(resolve(repoRoot, 'scripts/drafted-solutions-handoff-build.ts'), 'utf8')
+    const harvestSource = readFileSync(resolve(repoRoot, 'packages/knowledge/src/drafted-solutions-harvest.ts'), 'utf8')
+    const publishSource = readFileSync(resolve(repoRoot, 'packages/knowledge/src/drafted-solutions-publish.ts'), 'utf8')
+    const buildSource = readFileSync(
+      resolve(repoRoot, 'packages/knowledge/src/drafted-solutions-handoff-build.ts'),
+      'utf8',
+    )
 
     const envKeys = (id: string, job: WorkflowJob | undefined) =>
       Object.keys(job?.steps.find(step => step.id === id)?.env ?? {})

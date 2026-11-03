@@ -313,7 +313,7 @@ describe('sourceReachTransitive against reachedModulesTransitive on barrel-free 
   const entries = [
     'scripts/mutation-guards-reach.test.ts',
     'scripts/mutation-guards-config.test.ts',
-    'scripts/drafted-solutions-harvest.test.ts',
+    'packages/knowledge/src/drafted-solutions-harvest.test.ts',
   ]
 
   it.each(entries)('%s has no pure barrel in its closure', entry => {

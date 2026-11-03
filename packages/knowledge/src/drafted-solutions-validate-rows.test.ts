@@ -10,7 +10,7 @@ import {FIELD_LIMITS, hashProposalBody} from './drafted-solutions-pr-body.ts'
 import {checkAgentRows, DIGEST_VERSION, type DraftedDigest} from './drafted-solutions-shared.ts'
 import {validateDraftedRows} from './drafted-solutions-validate-rows.ts'
 
-const SCRIPT = path.resolve(import.meta.dirname, 'drafted-solutions-validate-rows.ts')
+const SCRIPT = path.resolve(import.meta.dirname, '../../../scripts/drafted-solutions-validate-rows.ts')
 const SHA = 'a'.repeat(40)
 const DOC = 'docs/solutions/best-practices/example-2026-10-09.md'
 

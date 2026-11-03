@@ -603,6 +603,50 @@
     {
       "path": "scripts/wiki-lint-issues.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-lint-issues-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-lint-issues.ts, pinned by packages/wiki-ops/src/wiki-lint-issues.test.ts, and scripts/octokit-entrypoints.test.ts pins that it builds its client from GITHUB_TOKEN with no timeout and no logger. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-harvest.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-learnings-open.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-cluster.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-open.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/capture-patterns-synthesis.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-handoff-build.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-harvest.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-pr-body.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-publish.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-shared.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
+    },
+    {
+      "path": "packages/knowledge/src/drafted-solutions-validate-rows.ts",
+      "reason": "Provisional: moved unchanged from scripts/; measured in a later commit of this PR."
     }
   ]
 }

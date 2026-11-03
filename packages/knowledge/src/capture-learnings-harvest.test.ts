@@ -7,8 +7,8 @@
  * - I/O shell tests: `harvestCandidates` and `fetchOpenedLearningShas` with mocked Octokit
  */
 
+import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it, vi} from 'vitest'
-
 import {
   applyEnrichmentScanAvailability,
   buildCandidateDigest,
@@ -37,7 +37,6 @@ import {
   type ReviewCandidate,
   type SolutionDoc,
 } from './capture-learnings-harvest.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

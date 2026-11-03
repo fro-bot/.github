@@ -1,0 +1,31 @@
+{
+  "name": "@fro-bot/knowledge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The learning capture, pattern synthesis and drafted solution docs tools of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./capture-learnings-harvest": "./src/capture-learnings-harvest.ts",
+    "./capture-learnings-open": "./src/capture-learnings-open.ts",
+    "./capture-patterns-cluster": "./src/capture-patterns-cluster.ts",
+    "./capture-patterns-open": "./src/capture-patterns-open.ts",
+    "./capture-patterns-synthesis": "./src/capture-patterns-synthesis.ts",
+    "./drafted-solutions-handoff-build": "./src/drafted-solutions-handoff-build.ts",
+    "./drafted-solutions-harvest": "./src/drafted-solutions-harvest.ts",
+    "./drafted-solutions-pr-body": "./src/drafted-solutions-pr-body.ts",
+    "./drafted-solutions-publish": "./src/drafted-solutions-publish.ts",
+    "./drafted-solutions-shared": "./src/drafted-solutions-shared.ts",
+    "./drafted-solutions-validate-rows": "./src/drafted-solutions-validate-rows.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro-bot/privacy": "workspace:*",
+    "@fro-bot/wiki-ops": "workspace:*",
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*"
+  }
+}

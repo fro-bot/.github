@@ -51,6 +51,21 @@
         "yaml": "^2.6.0",
       },
     },
+    "packages/knowledge": {
+      "name": "@fro-bot/knowledge",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro-bot/privacy": "workspace:*",
+        "@fro-bot/wiki-ops": "workspace:*",
+        "@octokit/rest": "^22.0.1",
+        "yaml": "^2.6.0",
+      },
+      "devDependencies": {
+        "@fro-bot/test-kit": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
+      },
+    },
     "packages/privacy": {
       "name": "@fro-bot/privacy",
       "version": "0.0.0",
@@ -263,6 +278,8 @@
     "@fro-bot/core": ["@fro-bot/core@workspace:packages/core"],
 
     "@fro-bot/dispatch": ["@fro-bot/dispatch@workspace:packages/dispatch"],
+
+    "@fro-bot/knowledge": ["@fro-bot/knowledge@workspace:packages/knowledge"],
 
     "@fro-bot/privacy": ["@fro-bot/privacy@workspace:packages/privacy"],
 
