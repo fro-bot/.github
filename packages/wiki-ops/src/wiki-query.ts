@@ -156,12 +156,18 @@ function collectTokens(event: WikiQueryEvent): Set<string> {
   return new Set(tokens)
 }
 
-function slugify(value: string): string {
+export function slugify(value: string): string {
   const lower = value.toLowerCase()
   // eslint-disable-next-line unicorn/prefer-string-replace-all
   const dashed = lower.replace(/[^a-z0-9]+/g, '-')
-  // eslint-disable-next-line unicorn/prefer-string-replace-all
-  return dashed.replace(/^-+|-+$/g, '')
+  // Trim leading and trailing dashes with an index scan: `/^-+|-+$/g` rescans a long run of dashes
+  // from every start once a non-dash follows it, which is quadratic. After the replacement above a
+  // run of dashes is a single dash, so the scan is short either way.
+  let start = 0
+  let end = dashed.length
+  while (start < end && dashed.charCodeAt(start) === 0x2d) start += 1
+  while (end > start && dashed.charCodeAt(end - 1) === 0x2d) end -= 1
+  return dashed.slice(start, end)
 }
 
 async function loadWikiFilesFromDisk(): Promise<Record<string, string>> {

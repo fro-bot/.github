@@ -134,6 +134,23 @@ describe('the query token and whitespace patterns scale linearly', {timeout: SUI
   })
 })
 
+describe('the repository slug trim scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
+  // `slugify` runs on the event's owner and repo, so the text goes in as both.
+  const slug = (text: string) => {
+    assembleWikiContext({files: {}, event: {eventName: 'issues', owner: text, repo: text}})
+  }
+  it.each([
+    {name: 'a dash run then x', make: (size: number) => `${'-'.repeat(size)}x`},
+    {name: 'alternating dash and x', make: repeat('-x')},
+    {name: 'x then a dash run', make: (size: number) => `x${'-'.repeat(size)}`},
+    {name: 'a dash run between two x', make: (size: number) => `x${'-'.repeat(size)}x`},
+    {name: 'alternating underscore and dash', make: repeat('_-')},
+    {name: 'a dash run and nothing else', make: (size: number) => '-'.repeat(size)},
+  ])('slugify: $name', ({make}) => {
+    expect(growthRatio(make, SMALL, slug)).toBeLessThan(CEILING)
+  })
+})
+
 /**
  * A solution document that the event selects (its title and body hold the event token) and whose body is
  * `text`, with a byte budget just under the section, so `assembleSolutionsContext` truncates it: the
