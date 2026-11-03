@@ -32,7 +32,7 @@ The improvement-metrics loop asks a human to confirm that a proposal recurred ag
 
 Encode the edge, then confirm the encoded edge:
 
-- Derive a stable edge key from immutable inputs: `buildEdgeFingerprint(classKey, eventId)` = `sha256(classKey + '\u0001' + eventId)` (`scripts/improvement-metrics-core.ts`). It survives body rewrites, line reordering, and class-name spelling; a line index or username would not.
+- Derive a stable edge key from immutable inputs: `buildEdgeFingerprint(classKey, eventId)` = `sha256(classKey + '\u0001' + eventId)` (`packages/reports/src/improvement-metrics-core.ts`). It survives body rewrites, line reordering, and class-name spelling; a line index or username would not.
 - Render each candidate as its own checklist line carrying a hidden marker: `- [ ] <!-- improvement-metrics:edge=<fp> -->` (`buildEdgeChecklistLine`). Ticking *that* line confirms *that* edge.
 - Recover confirmations by fingerprint, not position: `recoverPriorTickState(body)` returns the set of ticked fingerprints; a `[x]` without the hidden marker is uncounted by construction.
 - Preserve tick-state across rewrites: on upsert, `ticked: edge.ticked || priorTickState.has(edge.fingerprint)` — the operator's confirmation is never clobbered by a regeneration, and an edge that drops out of the new run simply disappears (close-on-clear), it does not resurrect.

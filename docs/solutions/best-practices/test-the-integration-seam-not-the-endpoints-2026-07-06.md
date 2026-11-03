@@ -124,7 +124,7 @@ A near-miss variant worth distinguishing: in the wiki publish pipeline's gate-mo
   completion half, verified with the same golden-path discipline
 - Fourth recurrence (file-mediated step boundary): PR #3672, `fix(improvement-metrics): stop tee from
   clobbering the detect digest file` — regression guards in
-  `scripts/improvement-metrics-integration.test.ts` (real-file round-trip) and
+  `packages/reports/src/improvement-metrics-integration.test.ts` (real-file round-trip) and
   `scripts/improvement-metrics-workflow.test.ts` (detect step does not tee over its own digest path)
 - `docs/solutions/best-practices/edge-keyed-confirmation-markers-2026-07-10.md` and
   `docs/solutions/best-practices/immutable-history-keys-for-trend-recompute-2026-07-10.md` — sibling

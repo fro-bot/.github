@@ -86,10 +86,10 @@ The downstream cast compounds the problem. A runtime shape guard would have turn
 The detect script deliberately wrote the structured file and separately emitted a flatter result:
 
 ```ts
-// scripts/improvement-metrics-detect.ts
+// packages/reports/src/improvement-metrics-detect.ts
 await writeImprovementMetricsDigestFile(digest, edges)
 // Later, after the file write:
-process.stdout.write(`${JSON.stringify(result)}\n`)
+io.stdout(formatJsonLine(result))
 ```
 
 The broken workflow connected that stdout to the same artifact path:
@@ -151,7 +151,7 @@ That site is LATENT rather than currently broken because the script's stdout and
 The report reader currently parses arbitrary file contents and applies a compile-time cast:
 
 ```ts
-// scripts/improvement-metrics-report.ts
+// packages/reports/src/improvement-metrics-report.ts
 export async function readDigestFile(path: string): Promise<DigestFile> {
   const {readFile} = await import('node:fs/promises')
   const raw = await readFile(path, 'utf8')
