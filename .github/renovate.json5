@@ -5,9 +5,19 @@
   vulnerabilityAlerts: {minimumReleaseAge: '3 days'},
   packageRules: [
     {
-      description: 'Disable patch updates except for select dependencies.',
+      // The own-project exclusions mirror the automerge rule in default.json; this file is applied after that
+      // preset, so a patch rule here would otherwise override it.
+      description: 'Disable patch updates except for bfra-me and fro-bot packages, python and typescript.',
       matchUpdateTypes: ['patch'],
-      matchPackageNames: ['!bfra-me/renovate-config', '!python', '!typescript'],
+      matchPackageNames: [
+        '!@bfra.me/**',
+        '!@fro-bot/**',
+        '!@fro.bot/wiki-write-core',
+        '!bfra-me/**',
+        '!fro-bot/**',
+        '!python',
+        '!typescript',
+      ],
       enabled: false,
     },
     {
