@@ -932,7 +932,7 @@ CLI tables follow one legend:
 
 **Verification:** The knowledge package doesn't import status-truth.
 
-- [ ] **Unit 12: `@fro-bot/reports`**
+- [x] **Unit 12: `@fro-bot/reports`**
 
 **Goal:** Move improvement-metrics, the daily digest and gateway-announce.
 
