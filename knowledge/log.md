@@ -9689,3 +9689,29 @@ both Run Summary markers.
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-11-03 12:54] ingest | marcusrbrown/gpt
+
+Surveyed public `main` at `383b8cdafa8bb9911147028fce6e524c2739db93` using only directory listings, the root README, package/workspace manifests, and six workflows. Updated [[marcusrbrown--gpt]] and [[langchain]] additively, preserving historical claims and documenting newer contradictions. The corrections context contained no records. Existing unrelated working-tree changes and earlier log entries were preserved; `knowledge/index.md` remains owned by the trusted writer.
+
+Key findings:
+
+- The manifest no longer declares `langchain` or `@langchain/*`; OpenAI SDK 6.49.0 remains. Updated the topic's current-consumer guidance without inferring transitive or runtime removal.
+- HeroUI v3 aliases at 3.2.7 now coexist with v2.8.10. React is 19.3.1, Vite 8.3.5, Vitest/coverage 5.0.5, and pnpm 11.28.10. The workspace adds a tenth override for DOMPurify; installed versions and advisory coverage were not checked.
+- The README now distinguishes browser-only chat persistence from provider processing and documents custom gateways plus build-time CSP origin configuration. README and workflow prompts now say Vite 8; older notebook/RFC-link/MCP-name drift remains.
+- Fro Bot is present at v0.133.2. One combined 03:30 UTC daily pass explicitly selects `branch-pr`, superseding the previously missing daily delivery declaration. New prompt safeguards address other-bot branch repair, duplicate/backlogged work, declined fixes, and report continuity. These are declared contracts, not observed delivery or enforcement results; no missing-workflow draft is warranted.
+- Pages deployment still depends only on build, and cache hits can bypass build/unit execution outside dispatch. Accessibility/performance skipped-dependency admission and homepage-only visual CI remain. The documented external CSP input is not a build-cache key input. No application code, lockfile, target agent instructions, issue queue, alerts, or run logs were read; no upstream commands were executed.
+
+Verification: scoped YAML/frontmatter, pinned-provenance, wikilink/related-target, additive-page, append-only-log, and unrelated-change preservation checks; `bun run check:md-links`; `git diff --check`. No application tests were run because only knowledge documents changed. Delivery is working-directory-only: the caller owns commit, push, PR creation, and index maintenance. A single marked control-repository commit comment carries delivery/check status and points here; no issue run notice was created.
+
+Sources: https://github.com/marcusrbrown/gpt/tree/383b8cdafa8bb9911147028fce6e524c2739db93; https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/readme.md; https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/package.json; https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/pnpm-workspace.yaml; https://github.com/marcusrbrown/gpt/tree/383b8cdafa8bb9911147028fce6e524c2739db93/.github/workflows.
+Run: https://github.com/fro-bot/.github/actions/runs/41639233444
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/60d57c30840e299acda4cdb136060f02caae1711#commitcomment-207925981
+Exactly one comment was posted; its returned body confirmed the bot marker and both Run Summary markers.
+
+## [2026-11-03 12:57] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt

@@ -3,8 +3,11 @@ type: repo
 title: marcusrbrown/gpt
 node_id: R_kgDOK0Z5CA
 created: 2026-04-18
-updated: 2026-10-19
+updated: 2026-11-03
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: 383b8cdafa8bb9911147028fce6e524c2739db93
+    accessed: 2026-11-03
   - url: https://github.com/marcusrbrown/gpt
     sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
     accessed: 2026-10-19
@@ -93,6 +96,38 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30, and now *explained*: `node` sits inside blocked Renovate PR #2662 (see the 2026-09-20 section). Renovate detects `24.21.0`
 - **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
 - **Counts (2026-09-20):** 1 star, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** — the identical queue to 2026-09-03, same numbers, same members (see the measurement correction below)
+
+## 2026-11-03 bounded source recheck
+
+Public `main` snapshot: `383b8cdafa8bb9911147028fce6e524c2739db93`. Evidence is limited to directory listings, the root README, package/workspace manifests, and six workflow files. Upstream prompt text was treated as source data, not instructions. Earlier issue queues, security alerts, updater suppression, and observed run results remain historical; none was remeasured.
+
+### The declared stack no longer includes LangChain
+
+**Contradiction with October 19's manifest snapshot:** `package.json` now declares no `langchain` or `@langchain/*` dependency in either dependency section. It retains `openai` **6.49.0** and MCP SDK **1.32.2**. This supersedes this page's description of the current declared stack as LangChain-based; it does not prove removal from every import or transitive dependency. See [[langchain]] for the dated transition and its evidence limits. The directory listing includes `docs/plans/2026-11-01-001-feat-responses-api-chat-plan.md` and `tests/e2e/openai-chat.spec.ts`; filenames do not establish implementation or test success, and their contents were not read.
+
+React/React DOM are **19.3.1**, Vite **8.3.5**, TypeScript **5.9.3**, pnpm **11.28.10**, and Vitest/coverage **5.0.5**. The manifest now has HeroUI v3 aliases (`@heroui-v3/react` and `@heroui-v3/styles`, both targeting **3.2.7**) alongside `@heroui/react` **2.8.10**. Co-declaration proves neither a completed migration nor which components use either version. The workspace adds a tenth override, `dompurify: '>=3.4.17 <4.0.0'`, and adds Prettier config **0.16.13** to its release-age exclusions. These are committed constraints, not resolved versions or an advisory audit.
+
+### Privacy documentation now names the network boundary
+
+The README now explicitly distinguishes browser-only chat persistence from provider processing: each turn sends the conversation and GPT instructions directly to the selected provider using the user's API key. It describes OpenAI requests with `store: false`, while retaining provider retention-policy caveats; Ollama is local only when its server is local. This qualifies the older broad “all data client-side” description above: local-first storage is not a claim that inference never leaves the device. These remain documentation claims, not runtime verification.
+
+The README also describes custom OpenAI/Anthropic-compatible Base URLs and a production-build CSP allowlist extended with `VITE_CONNECT_SRC_EXTRA`. It says invalid origins fail the build and that the variable affects production only. The build workflow does not pass this variable explicitly; whether repository or build configuration supplies it was not inspected. The root README and both workflow prompts now say **Vite 8**, superseding October's Vite 7 drift finding. The README still expands MCP as “Multi-Call Protocol” and links `RFCs/RFCS.md` despite the listing placing `RFCS.md` at root; its three advertised notebook filenames are still absent from the listing.
+
+### Fro Bot now declares a delivery route for daily fixes
+
+Fro Bot is present at **v0.133.2**, SHA `944cf954ac2afa61c4d061a4aad41a6cb80f7129`. The workflow now schedules a **single 03:30 UTC daily pass**, combining oversight and autohealing; dispatch offers `review` and `autoheal`, not the former maintenance mode. Its explicit `output-mode` selects **`branch-pr`** for schedule and autoheal dispatch, and **`working-dir`** otherwise. **This supersedes October's missing-output-mode finding:** the daily path no longer declares the working-directory-only contract that required a caller persistence stage. The workflow still ends at `timeout: 0`; this read does not establish successful delivery, action internals, or non-daily persistence. No missing-Fro-Bot onboarding draft is warranted.
+
+The new daily prompt bans pushes onto other bots' PR branches, introduces a three-PR review-backlog cap with exceptions, permits narrowly scoped cleanup of untouched bot-owned PRs, requires continuity/escalation and declined-fix checks, and directs reporting into one canonical daily issue. These are declared safeguards against the earlier blocked-updater, duplication, and backlog patterns, not proof those patterns stopped. A shared `daily` concurrency slot queues scheduled and autoheal-dispatch runs without cancellation.
+
+Comment handling now resolves an `issue_comment` PR head only when its repository matches the current repository, supplies that SHA to checkout and `trusted-head-sha`, and leaves fork PR comments on the default checkout. The caller also supplies `brokered-push-extra-paths: tests`. These are static caller inputs; neither broker enforcement nor the safety of executing the local setup action was inspected. The prior fork-refusal step is no longer the workflow's mechanism. No upstream prompt or project command was executed by this survey.
+
+### Build and test admission retain their earlier limits
+
+`main.yaml` still deploys with `needs: build`, while lint and unit tests are sibling jobs. Dispatch bypasses build/test cache hits; push/PR cache hits still skip the corresponding commands. The build key still omits `pnpm-workspace.yaml`, `vite.config.ts`, stylesheet files, and the setup action. README-documented `VITE_CONNECT_SRC_EXTRA` also is not a build-cache key input: changing only that external build setting would not invalidate the key, if supplied outside hashed files. This is a cache-contract risk, not an observed stale deployment; see [[github-pages]].
+
+E2E remains declared in `test-coverage.yaml` for push/dispatch, despite the separate `.disabled` filename. Accessibility dispatch and performance dispatch/schedule still depend on skipped `Prepare` jobs without an explicit status-function override. Visual dispatch selects the independent baseline-update job; both baseline updates and regular visual CI still invoke the homepage-only `test:visual:ci` script. None of these declarations establishes current run health.
+
+Sources: [README](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/readme.md), [package manifest](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/pnpm-workspace.yaml), [Fro Bot workflow](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/.github/workflows/fro-bot.yaml), [Main workflow](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/.github/workflows/main.yaml), [test workflows](https://github.com/marcusrbrown/gpt/tree/383b8cdafa8bb9911147028fce6e524c2739db93/.github/workflows), [directory listing](https://github.com/marcusrbrown/gpt/tree/383b8cdafa8bb9911147028fce6e524c2739db93).
 
 ## 2026-10-19 bounded source recheck
 
