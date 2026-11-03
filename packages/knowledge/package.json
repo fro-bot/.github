@@ -33,7 +33,6 @@
     "yaml": "^2.6.0"
   },
   "devDependencies": {
-    "@fro-bot/test-kit": "workspace:*",
     "@fro.bot/wiki-write-core": "workspace:*"
   }
 }

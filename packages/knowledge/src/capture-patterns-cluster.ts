@@ -15,6 +15,7 @@
 import type {Dirent} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
+import {join} from 'node:path'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
 import {formatJsonLine} from '@fro-bot/core/json'
@@ -742,6 +743,7 @@ export interface LoadSolutionDocFilesResult {
  */
 export async function loadSolutionDocFilesFromDisk(
   writeStderr: (message: string) => void = message => process.stderr.write(message),
+  cwd: string = process.cwd(),
 ): Promise<LoadSolutionDocFilesResult> {
   const files: Record<string, string> = {}
   let readFailures = 0
@@ -751,7 +753,7 @@ export async function loadSolutionDocFilesFromDisk(
     let entries: Dirent[]
 
     try {
-      entries = await readdir(dirPath, {withFileTypes: true})
+      entries = await readdir(join(cwd, dirPath), {withFileTypes: true})
     } catch {
       continue
     }
@@ -760,7 +762,7 @@ export async function loadSolutionDocFilesFromDisk(
       if (!entry.isFile() || !entry.name.endsWith('.md')) continue
       const path = `${dirPath}/${entry.name}`
       try {
-        files[path] = await readFile(path, 'utf8')
+        files[path] = await readFile(join(cwd, path), 'utf8')
       } catch {
         readFailures += 1
         writeStderr(`capture-patterns-cluster: could not read file (path: ${path})\n`)

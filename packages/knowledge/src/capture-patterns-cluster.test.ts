@@ -12,7 +12,6 @@
 import {chmod, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import process from 'node:process'
 import {makePublicOutputTokens, type PublicOutputTokens} from '@fro-bot/privacy/status-truth-public-output'
 import {describe, expect, it} from 'vitest'
 import {
@@ -950,7 +949,6 @@ describe('buildCandidateDigest', () => {
 describe('loadSolutionDocFilesFromDisk', () => {
   it('error path: reports a file that is listed but fails to read via readFailures, not a silent drop', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'capture-patterns-cluster-'))
-    const originalCwd = process.cwd()
     try {
       const subdirPath = join(dir, 'docs', 'solutions', 'best-practices')
       await mkdir(subdirPath, {recursive: true})
@@ -960,13 +958,12 @@ describe('loadSolutionDocFilesFromDisk', () => {
       // Remove read permission so readFile fails while readdir still lists the file.
       await chmod(unreadablePath, 0o000)
 
-      process.chdir(dir)
-      const result = await loadSolutionDocFilesFromDisk(() => undefined)
+      // The checkout is passed in; the process's own working directory (this repository) is never read.
+      const result = await loadSolutionDocFilesFromDisk(() => undefined, dir)
 
       expect(Object.keys(result.files)).toContain('docs/solutions/best-practices/readable.md')
       expect(result.readFailures).toBe(1)
     } finally {
-      process.chdir(originalCwd)
       await rm(dir, {recursive: true, force: true})
     }
   })

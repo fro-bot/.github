@@ -12,7 +12,7 @@
  * frontmatter), while a codified class carries title + tags + module. It matches
  * proposal title/label tokens against the class's title/tag/module tokens. It does
  * NOT import the private, symmetric `computeSourceOverlapScore` from
- * capture-patterns-cluster.ts, which assumes both sides carry the same structured
+ * packages/knowledge/src/capture-patterns-cluster.ts, which assumes both sides carry the same structured
  * frontmatter.
  *
  * Strip-only safe: no enums, namespaces, parameter properties, or `any`.
@@ -66,7 +66,7 @@ export const STALE_AGE_DAYS = 14
 export const SCORE_THRESHOLD = 20
 
 // ---------------------------------------------------------------------------
-// Tokenizer (mirrors capture-patterns-synthesis.ts tokenizeTitle)
+// Tokenizer (mirrors packages/knowledge/src/capture-patterns-synthesis.ts tokenizeTitle)
 // ---------------------------------------------------------------------------
 
 const TITLE_STOPWORDS = new Set([

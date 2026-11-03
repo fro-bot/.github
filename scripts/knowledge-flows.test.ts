@@ -983,6 +983,36 @@ describe('drafted-solutions-publish through scripts/drafted-solutions-publish.ts
 })
 
 // ---------------------------------------------------------------------------------------------------------------
+// The shims
+// ---------------------------------------------------------------------------------------------------------------
+describe('importing a shim runs nothing', () => {
+  it.each([
+    'capture-learnings-harvest',
+    'capture-learnings-open',
+    'capture-patterns-cluster',
+    'capture-patterns-open',
+    'drafted-solutions-handoff-build',
+    'drafted-solutions-harvest',
+    'drafted-solutions-publish',
+    'drafted-solutions-validate-rows',
+  ])('%s', async script => {
+    const cwd = checkout()
+    const shim = resolve(repoRoot, 'scripts', `${script}.ts`)
+    const result = await spawnEntrypoint({
+      entrypoint: `--eval=await import(${JSON.stringify(shim)}); process.stdout.write('imported')`,
+      runtime: 'bun',
+      runtimeArgs: ['--no-install', '--no-env-file'],
+      cwd,
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toBe('imported')
+    expect(result.stderr).toBe('')
+    expect(result.githubOutput).toBe('')
+    expect(readdirSync(cwd)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
 // The callers' `| tee` pipelines
 // ---------------------------------------------------------------------------------------------------------------
 /** Runs `bun <shim> | tee <file>` the way a GitHub step does, under the shell the workflow declares. */

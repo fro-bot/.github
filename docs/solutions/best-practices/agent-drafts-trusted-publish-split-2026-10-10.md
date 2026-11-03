@@ -51,7 +51,7 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
 
    Before building plumbing so an agent reviews a PR, confirm the agent accepts that PR's author and trigger. If a bot exception is ever needed, make it an exact predicate (author, branch and repository all matched), because a loose one widens a required check's silent pass.
 
-5. **Never write what nobody verified.** Unverified proposals are rejected from the coverage table (`scripts/drafted-solutions-pr-body.ts:255-262`) and closed directly with a comment. They never appear in the PR body, because a `Closes #N` line there would close them as completed when the PR merges (`:340` renders those lines). `closeProposal` closes only a `covered` row as completed and everything else as `not_planned` (`scripts/drafted-solutions-publish.ts:543`).
+5. **Never write what nobody verified.** Unverified proposals are rejected from the coverage table (`packages/knowledge/src/drafted-solutions-pr-body.ts:255-262`) and closed directly with a comment. They never appear in the PR body, because a `Closes #N` line there would close them as completed when the PR merges (`:340` renders those lines). `closeProposal` closes only a `covered` row as completed and everything else as `not_planned` (`packages/knowledge/src/drafted-solutions-publish.ts:543`).
 
 6. **Guard against lost updates.**
    - Pin `draft_base_sha` at harvest.
@@ -66,7 +66,7 @@ The defects were never in what the agent wrote. Each was a fail-open gap between
    }
    ```
 
-8. **Bound the rendered body before any write.** GitHub rejects an oversize PR body after the branch writes have landed, so the check comes first (`:599`; `PR_BODY_MAX_LENGTH = 65_536` at `scripts/drafted-solutions-pr-body.ts:63`):
+8. **Bound the rendered body before any write.** GitHub rejects an oversize PR body after the branch writes have landed, so the check comes first (`:599`; `PR_BODY_MAX_LENGTH = 65_536` at `packages/knowledge/src/drafted-solutions-pr-body.ts:63`):
 
    ```ts fragment
    if (body.length > PR_BODY_MAX_LENGTH) throw new DraftedSolutionsError(PR_BODY_TOO_LONG_MESSAGE)

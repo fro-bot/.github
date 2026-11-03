@@ -203,7 +203,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
 | [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. |
 | [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild and the corrections lifecycle and context. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety` and `wiki-change-detect-core` are held at 100% mutation kills. |
-| `knowledge`, `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
+| [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It does not import `@fro-bot/status-truth`. |
+| `reports`, `ci-checks` | Planned | The domain packages that `scripts/` modules move into. |
 
 `scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
 
@@ -221,7 +222,7 @@ flowchart BT
   dispatch["@fro-bot/dispatch"]
   statustruth["@fro-bot/status-truth"]
   wikiops["@fro-bot/wiki-ops"]
-  knowledge["knowledge (planned)"]:::planned
+  knowledge["@fro-bot/knowledge"]
   reports["reports (planned)"]:::planned
   cichecks["ci-checks (planned)"]:::planned
 
@@ -231,6 +232,7 @@ flowchart BT
   statustruth -. "dev: fixtures" .-> testkit
   wikiops -. "dev: fixtures" .-> testkit
   registry -. "dev: fixtures" .-> testkit
+  knowledge -. "dev: fixtures" .-> wwc
   privacy --> core & wwc
   registry --> core & wwc
   dispatch --> core & wwc
@@ -264,7 +266,8 @@ C4Container
     Container(dispatch, "@fro-bot/dispatch", "Private package", "cross-repo-dispatch (seven modules), dispatch-renovate")
     Container(statustruth, "@fro-bot/status-truth", "Private package", "status-truth detect, proposals and prs, rollout-tracker-snapshot")
     Container(wikiops, "@fro-bot/wiki-ops", "Private package", "Wiki handoff, change detection, queries, context expansion, repair, lint-issue sync, index rebuild, corrections")
-    Container(domains, "Domain packages (planned)", "Private packages", "knowledge, reports, ci-checks")
+    Container(knowledge, "@fro-bot/knowledge", "Private package", "Learning capture, pattern synthesis, drafted solution docs")
+    Container(domains, "Domain packages (planned)", "Private packages", "reports, ci-checks")
   }
 
   System_Ext(github, "GitHub", "REST API, Git Data API, Actions runner")
@@ -289,6 +292,10 @@ C4Container
   Rel(wikiops, core, "imports")
   Rel(wikiops, wwc, "imports")
   Rel(wikiops, privacy, "imports")
+  Rel(scripts, knowledge, "fronts")
+  Rel(knowledge, core, "imports")
+  Rel(knowledge, privacy, "imports")
+  Rel(knowledge, wikiops, "imports")
   Rel(scripts, domains, "will front")
   Rel(domains, core, "will import")
   Rel(scripts, testkit, "tests import")
@@ -311,6 +318,10 @@ C4Container
   UpdateRelStyle(scripts, statustruth, $offsetX="-40", $offsetY="-70")
   UpdateRelStyle(statustruth, core, $offsetX="60", $offsetY="20")
   UpdateRelStyle(statustruth, privacy, $offsetX="-60", $offsetY="40")
+  UpdateRelStyle(scripts, knowledge, $offsetX="60", $offsetY="-40")
+  UpdateRelStyle(knowledge, core, $offsetX="-30", $offsetY="30")
+  UpdateRelStyle(knowledge, privacy, $offsetX="40", $offsetY="-20")
+  UpdateRelStyle(knowledge, wikiops, $offsetX="-50", $offsetY="20")
   UpdateRelStyle(scripts, domains, $offsetX="20", $offsetY="10")
   UpdateRelStyle(domains, core, $offsetX="-20", $offsetY="-10")
   UpdateRelStyle(scripts, testkit, $offsetX="30", $offsetY="30")

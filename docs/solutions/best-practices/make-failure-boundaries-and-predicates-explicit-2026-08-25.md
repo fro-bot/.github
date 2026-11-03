@@ -44,9 +44,9 @@ constructing the API client; under `bash -Eeuo pipefail`, that failure propagate
 step. That behavior was safe because it failed closed before partial writes, but the intent was
 implicit. An undocumented asymmetry reads like a bug.
 
-The current code makes the boundary explicit. `scripts/capture-patterns-cluster.ts` documents and
-implements a fail-soft `main()`, while `scripts/capture-patterns-open.ts` comments that its
-`main()` is intentionally fail-hard before loading the digest and creating the client.
+The current code makes the boundary explicit. `packages/knowledge/src/capture-patterns-cluster.ts` documents and
+implements a fail-soft `runCapturePatternsCluster`, while `packages/knowledge/src/capture-patterns-open.ts` comments that its
+`runCapturePatternsOpen` is intentionally fail-hard before loading the digest and creating the client.
 
 The second concern was predicate drift: `isRecord` was defined privately in one module while
 another module imported it from a shared privacy module. Two implementations of the same
@@ -111,7 +111,7 @@ handles authored or persisted data. One canonical implementation keeps the type 
 
 ### Explicit fail-soft detect entry point
 
-Current `scripts/capture-patterns-cluster.ts` documents the detect contract next to `main()`:
+Current `packages/knowledge/src/capture-patterns-cluster.ts` documents the detect contract next to `runCapturePatternsCluster`:
 
 ```ts
 /**
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
 
 ### Explicit fail-hard open entry point
 
-Current `scripts/capture-patterns-open.ts` states the contrasting contract before its imports and
+Current `packages/knowledge/src/capture-patterns-open.ts` states the contrasting contract before its imports and
 before it reads the digest or constructs the client:
 
 ```ts
@@ -237,10 +237,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 Both capture-patterns consumers import it from there:
 
 ```ts
-// scripts/capture-patterns-open.ts
+// packages/knowledge/src/capture-patterns-open.ts
 import {isRecord} from '@fro-bot/core/guards'
 
-// scripts/capture-patterns-synthesis.ts
+// packages/knowledge/src/capture-patterns-synthesis.ts
 import {isRecord} from '@fro-bot/core/guards'
 ```
 

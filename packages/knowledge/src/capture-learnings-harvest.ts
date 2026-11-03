@@ -3,7 +3,7 @@
  * dedup against existing learning-proposal issues and docs/solutions/ docs,
  * cap the result, and emit an opaque candidate digest to $GITHUB_OUTPUT.
  *
- * Architecture: pure core (`buildCandidateDigest`) + I/O shell (`harvestCandidates` / `main`).
+ * Architecture: pure core (`buildCandidateDigest`) + I/O shell (`harvestCandidates` / `runCaptureLearningsHarvest`).
  * The pure core takes all data as injected inputs and is fully unit-testable.
  * The I/O shell constructs Octokit, fetches data, and calls the pure core.
  *
@@ -308,11 +308,11 @@ export interface BuildCandidateDigestInput {
   maxLearnings: number
   /**
    * Private identifier token set for the upstream enrichment scan.
-   * Loaded from metadata/repos.yaml by main() before calling buildCandidateDigest.
-   * If loadPrivateTokensFromDisk threw, main() passes an empty Set and clears all
+   * Loaded from metadata/repos.yaml by runCaptureLearningsHarvest before calling buildCandidateDigest.
+   * If loadPrivateTokensFromDisk threw, the run passes an empty Set and clears all
    * reviewExcerpts before calling — so the pure core always receives a valid Set.
    * An empty Set means no tokens to match (no private repos configured), which is
-   * distinct from "scan unavailable" — the latter is handled in main().
+   * distinct from "scan unavailable" — the latter is handled in runCaptureLearningsHarvest.
    */
   privateTokens: Set<string>
 }
@@ -1521,7 +1521,7 @@ export async function harvestCandidates(
   repo: string,
   now: Date,
 ): Promise<HarvestResult> {
-  // Use now.getTime() — the injected `now` is already UTC ms (Date.now() in main).
+  // Use now.getTime() — the injected `now` is already UTC ms (Date.now() in runCaptureLearningsHarvest).
   // Both sides of the comparison are UTC ms, so timezone drift cannot occur.
   const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
 
@@ -1704,7 +1704,7 @@ export async function fetchOpenedLearningShas(
 }
 
 // ---------------------------------------------------------------------------
-// Shared merged-PR fetch (for harvestCiFixCandidates in main)
+// Shared merged-PR fetch (for harvestCiFixCandidates in runCaptureLearningsHarvest)
 // ---------------------------------------------------------------------------
 
 /**
