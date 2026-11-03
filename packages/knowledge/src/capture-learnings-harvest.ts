@@ -675,19 +675,9 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
 }
 
 /**
- * Apply fail-closed enrichment scan availability to a list of candidates.
- *
- * When `scanAvailable` is false (private token load failed), all enriched evidence
- * is cleared so no unscanned content reaches the digest. For ReviewCandidate, this
- * clears `reviewExcerpts` and, when ci-fix evidence is attached, its `diffExcerpt` and
- * `logExcerpt`. For CiFixCandidate, this clears `diffExcerpt` and `logExcerpt`. Check
- * names are cleared too, in both variants: a check name is free text that can carry a
- * private identifier, and the token set that would catch it is the one that failed to
- * load, so each is replaced with the same fixed `[REDACTED]` marker the scanned path
- * writes. When `scanAvailable` is true, candidates are returned unchanged.
- *
- * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
- * composition can be tested independently of the I/O shell.
+ * Fail-closed enrichment when the private-token scan is unavailable: clears every excerpt
+ * (review, diff, log) and replaces every check name with `[REDACTED]`, since nothing can
+ * scan them. Returns the candidates unchanged when `scanAvailable` is true. Pure.
  */
 export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAvailable: boolean): Candidate[] {
   if (scanAvailable) return candidates
