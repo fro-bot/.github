@@ -148,42 +148,25 @@ That site is LATENT rather than currently broken because the script's stdout and
 
 ### Unvalidated: a TypeScript cast is not a runtime guard
 
-The report reader currently parses arbitrary file contents and applies a compile-time cast:
+A file read across a job boundary is data, not a typed value. `JSON.parse(raw) as DigestFile` compiles, and it lets a stdout-shaped or truncated file through as a `DigestFile` whose `digest` or `edges` are `undefined`. The report reader parses as `unknown`, validates the wrapper and the whole `MetricsDigest`, and fails with a logged reason before any issue write:
 
 ```ts
 // packages/reports/src/improvement-metrics-report.ts
 export async function readDigestFile(path: string): Promise<DigestFile> {
   const {readFile} = await import('node:fs/promises')
   const raw = await readFile(path, 'utf8')
-  return JSON.parse(raw) as DigestFile
-}
-```
-
-A boundary guard should parse as `unknown`, validate the wrapper before returning it, and throw a useful error rather than allowing `digestFile.digest` or `digestFile.edges` to become `undefined`:
-
-```ts
-export async function readDigestFile(path: string): Promise<DigestFile> {
-  const {readFile} = await import('node:fs/promises')
-  const raw = await readFile(path, 'utf8')
   const parsed: unknown = JSON.parse(raw)
-
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    !('digest' in parsed) ||
-    !('edges' in parsed) ||
-    typeof parsed.digest !== 'object' ||
-    parsed.digest === null ||
-    !Array.isArray(parsed.edges)
-  ) {
-    throw new Error(`invalid improvement-metrics digest artifact: ${path}`)
+  if (!isRecord(parsed) || !isMetricsDigest(parsed.digest) || !Array.isArray(parsed.edges)) {
+    writeReportLog('improvement-metrics-report: digest file has invalid shape\n')
+    throw new TypeError('improvement-metrics-report: invalid digest file shape')
   }
 
-  return parsed as DigestFile
+  // DetectEdge elements are trusted from detect's writer; this boundary validates only the array container.
+  return {digest: parsed.digest, edges: parsed.edges as DetectEdge[]}
 }
 ```
 
-The real guard should validate the complete `MetricsDigest` and `DetectEdge` shapes, not only the wrapper. The example shows the important boundary: parse unknown data, check the expected structure, then narrow.
+`isMetricsDigest` checks every field of the digest, so the flat detect stdout shape (no `digest` or `edges` wrapper) is rejected as an invalid shape. The edge elements are not validated one by one: a `null` edge gets past the container check and throws a `TypeError` when the report renders it, which still fails closed before a write.
 
 ## Related
 
