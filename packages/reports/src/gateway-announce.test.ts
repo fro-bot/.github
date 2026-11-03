@@ -1177,3 +1177,100 @@ describe('stderr never carries what a thrown error says', () => {
     expect(stderr).toBe('gateway-announce: malformed EVENT_CONTEXT_JSON: context must be a JSON object\n')
   })
 })
+
+// ─── Boundaries and fixed lines that the mutation pass pinned ───────────────
+
+describe('announce status floor, fixed stderr lines and the real wait', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  /** A response-like object, because `new Response` refuses a status under 200. */
+  const respond = (status: number) => ({status}) as unknown as Response
+
+  it.each([199, 100])('status %i is not a success: posted false with failure http and no retry', async status => {
+    const fetchImpl = vi.fn(async () => respond(status)) as unknown as typeof globalThis.fetch
+    const sleep = vi.fn(noSleep)
+    const {result, stderr} = await captureStderr(async () =>
+      announce({
+        eventType: TEST_EVENT_TYPE,
+        context: TEST_CONTEXT,
+        now: () => TEST_TS,
+        secret: TEST_SECRET,
+        url: TEST_URL,
+        fetchImpl,
+        sleep,
+      }),
+    )
+    expect(result).toEqual({posted: false, failure: 'http', status})
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(sleep).not.toHaveBeenCalled()
+    expect(stderr).toBe(`gateway-announce: event_type=survey_completed status=${String(status)} posted=false\n`)
+  })
+
+  it('a retry that answers 199 is not a success either', async () => {
+    const responses = [respond(503), respond(199)]
+    const fetchImpl = vi.fn(async () => responses.shift() as Response) as unknown as typeof globalThis.fetch
+    const {result, stderr} = await captureStderr(async () =>
+      announce({
+        eventType: TEST_EVENT_TYPE,
+        context: TEST_CONTEXT,
+        now: () => TEST_TS,
+        secret: TEST_SECRET,
+        url: TEST_URL,
+        fetchImpl,
+        sleep: noSleep,
+      }),
+    )
+    expect(result).toEqual({posted: false, failure: 'http', status: 199})
+    expect(stderr).toBe('gateway-announce: event_type=survey_completed status=199 posted=false\n')
+  })
+
+  it.each([
+    ['secret', {secret: '', url: TEST_URL}, 'GATEWAY_WEBHOOK_SECRET'],
+    ['URL', {secret: TEST_SECRET, url: ''}, 'GATEWAY_PRESENCE_URL'],
+  ])('a missing %s names exactly that variable on stderr', async (_name, settings, variable) => {
+    const {result, stderr} = await captureStderr(async () =>
+      announce({eventType: TEST_EVENT_TYPE, context: TEST_CONTEXT, killSwitch: '', ...settings}),
+    )
+    expect(result).toEqual({posted: false, skipped: 'missing-config'})
+    expect(stderr).toBe(`gateway-announce: missing config (${variable} not set); skipping POST\n`)
+  })
+
+  it('a secret that is absent, not just empty, is named the same way', async () => {
+    vi.stubEnv('GATEWAY_WEBHOOK_SECRET', undefined)
+    vi.stubEnv('GATEWAY_PRESENCE_URL', undefined)
+    const {result, stderr} = await captureStderr(async () =>
+      announce({eventType: TEST_EVENT_TYPE, context: TEST_CONTEXT, killSwitch: '', url: TEST_URL}),
+    )
+    vi.unstubAllEnvs()
+    expect(result).toEqual({posted: false, skipped: 'missing-config'})
+    expect(stderr).toBe('gateway-announce: missing config (GATEWAY_WEBHOOK_SECRET not set); skipping POST\n')
+  })
+
+  it('runCli prints a fixed line for an invalid EVENT_TYPE and for a missing EVENT_CONTEXT_JSON', async () => {
+    const invalid = await captureStderr(async () => runCli({EVENT_TYPE: 'bogus'}))
+    expect(invalid.stderr).toBe('gateway-announce: EVENT_TYPE is not a valid event type class\n')
+    const missing = await captureStderr(async () => runCli({EVENT_TYPE: 'daily_digest'}))
+    expect(missing.stderr).toBe('gateway-announce: EVENT_CONTEXT_JSON not set\n')
+  })
+
+  it('without a sleep override the retry waits the real 5000 ms between the two POSTs', async () => {
+    vi.useFakeTimers()
+    const fetchImpl = makeStatusFetch(503, 200)
+    const pending = announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+    })
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await pending).toEqual({posted: true, status: 200})
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+})
