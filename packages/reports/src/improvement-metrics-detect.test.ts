@@ -1,5 +1,5 @@
 /**
- * Tests for scripts/improvement-metrics-detect.ts
+ * Tests for packages/reports/src/improvement-metrics-detect.ts
  *
  * Structure:
  * - scoreCandidateLink (O8-native asymmetric scorer)

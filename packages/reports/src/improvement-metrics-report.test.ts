@@ -1,5 +1,5 @@
 /**
- * Tests for scripts/improvement-metrics-report.ts
+ * Tests for packages/reports/src/improvement-metrics-report.ts
  *
  * Structure:
  * - renderReportBody: happy path, insufficient-signal suppression, tick-state
@@ -21,11 +21,12 @@ import {buildEdgeChecklistLine, buildReportVersionMarker, parseReportVersionMark
 import {isMetricsDigest} from './improvement-metrics-detect.ts'
 import {
   IMPROVEMENT_METRICS_REPORT_TITLE,
-  main,
   readDigestFile,
   renderReportBody,
   renderRunSummary,
   ReportRenderBlockedError,
+  runImprovementMetricsReport,
+  trimTrailingSlashes,
   upsertReportIssue,
 } from './improvement-metrics-report.ts'
 
@@ -470,12 +471,12 @@ async function runMainWithDigestPath(
   mockCreateOctokit.mockResolvedValue({rest: mock.octokit})
   process.env.IMPROVEMENT_METRICS_DIGEST_PATH = digestPath
   process.env.IMPROVEMENT_METRICS_RESULT_PATH = resultPath
-  const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+  const stdoutChunks: string[] = []
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
   try {
-    await main()
-    const output = String(stdoutSpy.mock.calls.at(-1)?.[0] ?? '')
+    await runImprovementMetricsReport(process.env, {stdout: text => stdoutChunks.push(text)})
+    const output = stdoutChunks.at(-1) ?? ''
     const errorOutput = stderrSpy.mock.calls.map(call => String(call[0])).join('')
     return {
       result: JSON.parse(output) as ReportResultFixture,
@@ -485,7 +486,6 @@ async function runMainWithDigestPath(
       update: mock.update,
     }
   } finally {
-    stdoutSpy.mockRestore()
     stderrSpy.mockRestore()
     delete process.env.IMPROVEMENT_METRICS_DIGEST_PATH
     delete process.env.IMPROVEMENT_METRICS_RESULT_PATH
@@ -737,4 +737,40 @@ describe('upsertReportIssue', () => {
     expect(second.outcome).not.toBe('created')
     expect(create).toHaveBeenCalledTimes(1)
   })
+})
+
+/** A small seeded generator (mulberry32), so a failure reproduces from the printed seed. */
+function generator(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d_2b_79_f5) >>> 0
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296
+  }
+}
+
+describe('differential: trimTrailingSlashes equals the pattern it replaced', () => {
+  // Slashes dominate, so long trailing runs and runs in the middle are both common. The rest covers a
+  // multibyte character, an astral character, a lone high and a lone low surrogate, whitespace and a newline.
+  const ALPHABET = ['/', '/', '/', '/', 'a', '\u00E9', '\u{1F600}', '\uD800', '\uDC00', ' ', '\n', '%'] as const
+
+  it.each([1, 7, 42, 2026])('agrees with the replaced pattern on 4,000 seeded strings (seed %i)', seed => {
+    const next = generator(seed)
+    for (let index = 0; index < 4_000; index += 1) {
+      const length = Math.floor(next() * 41)
+      let text = ''
+      for (let position = 0; position < length; position += 1) {
+        text += ALPHABET[Math.floor(next() * ALPHABET.length)]
+      }
+      expect(trimTrailingSlashes(text), JSON.stringify({seed, index, text})).toBe(text.replace(/\/+$/u, ''))
+    }
+  })
+
+  it.each(['', '/', '//', 'a', 'a/', '/a', '/a/', '//a//', 'a///b///', '\uD800/', '/\uDC00/', '\u{1F600}//'])(
+    'agrees on the edge case %j',
+    text => {
+      expect(trimTrailingSlashes(text)).toBe(text.replace(/\/+$/u, ''))
+    },
+  )
 })

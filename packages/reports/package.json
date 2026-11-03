@@ -1,0 +1,26 @@
+{
+  "name": "@fro-bot/reports",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The improvement-metrics loop, the daily digest counts and the gateway announcer of the Fro Bot control plane",
+  "type": "module",
+  "exports": {
+    "./daily-digest-counts": "./src/daily-digest-counts.ts",
+    "./daily-digest-counts-cli": "./src/daily-digest-counts-cli.ts",
+    "./gateway-announce": "./src/gateway-announce.ts",
+    "./gateway-announce-cli": "./src/gateway-announce-cli.ts",
+    "./improvement-metrics-core": "./src/improvement-metrics-core.ts",
+    "./improvement-metrics-detect": "./src/improvement-metrics-detect.ts",
+    "./improvement-metrics-detect-cli": "./src/improvement-metrics-detect-cli.ts",
+    "./improvement-metrics-report": "./src/improvement-metrics-report.ts",
+    "./improvement-metrics-report-cli": "./src/improvement-metrics-report-cli.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro-bot/privacy": "workspace:*",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

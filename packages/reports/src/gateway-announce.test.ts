@@ -374,7 +374,87 @@ describe('announce', () => {
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
 
+  // ─── Status boundaries ─────────────────────────────────────────────────────
+
+  it.each([
+    [200, true],
+    [299, true],
+    [300, false],
+    [499, false],
+  ])('status %i: posted is %s and the POST is not repeated', async (status, posted) => {
+    const fetchImpl = makeStatusFetch(status)
+    const sleep = vi.fn(noSleep)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep,
+    })
+
+    expect(result).toEqual(posted ? {posted: true, status} : {posted: false, failure: 'http', status})
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [500, 200, true],
+    [500, 299, true],
+    [500, 300, false],
+    [500, 500, false],
+  ])('status 500 then %i: waits once, posts again and posted is %s', async (first, second, posted) => {
+    const fetchImpl = makeStatusFetch(first, second)
+    const sleep = vi.fn(noSleep)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep,
+    })
+
+    expect(result).toEqual(posted ? {posted: true, status: second} : {posted: false, failure: 'http', status: second})
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
   // ─── Kill switch ──────────────────────────────────────────────────────────
+
+  it.each(['true', '1', 'TRUE', ' yes ', 'on'])('kill switch spelling %j is active', async spelling => {
+    const fetchImpl = vi.fn() as unknown as typeof globalThis.fetch
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      killSwitch: spelling,
+      fetchImpl,
+      sleep: noSleep,
+    })
+    expect(result).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it.each(['false', 'FALSE', ' False ', '0', ' 0 ', '', ' '])('kill switch spelling %j is inactive', async spelling => {
+    const fetchImpl = makeOkFetch()
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      killSwitch: spelling,
+      fetchImpl,
+      sleep: noSleep,
+    })
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchImpl).toHaveBeenCalledOnce()
+  })
 
   it('kill switch: no fetch, no HMAC, returns skipped:kill-switch, stderr line present', async () => {
     const fetchImpl = vi.fn() as unknown as typeof globalThis.fetch

@@ -1,0 +1,117 @@
+import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
+import {runCli} from '@fro-bot/core/cli'
+import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest'
+import {improvementMetricsDetectCli, main} from './improvement-metrics-detect-cli.ts'
+
+let root = ''
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), 'improvement-metrics-detect-cli-'))
+})
+afterAll(() => {
+  rmSync(root, {recursive: true, force: true})
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+  process.exitCode = undefined
+})
+
+const EMPTY_DIGEST =
+  '{"digest":{"windowDays":90,"anchors":0,"discovery":0,"priorDiscovery":0,"confirmedRecidivism":0,"backlogCount":0,"oldestPendingAgeDays":null,"state":"insufficient-signal"},"edges":[]}\n'
+
+describe('the config', () => {
+  it('is one read-only root command that takes no argument and no option', () => {
+    const config = improvementMetricsDetectCli()
+    expect(config.name).toBe('improvement-metrics-detect')
+    expect(config.commands).toHaveLength(1)
+    expect(config.commands[0]?.name).toBe('')
+    expect(config.commands[0]?.readOnly).toBe(true)
+    expect(config.commands[0]?.positionals).toEqual([])
+    expect(config.commands[0]?.options).toEqual({})
+  })
+
+  it('builds a fresh object on every call', () => {
+    expect(improvementMetricsDetectCli()).not.toBe(improvementMetricsDetectCli())
+  })
+})
+
+describe('argv that no caller sends', () => {
+  const digestPath = () => join(root, 'usage-digest.json')
+  // Before the runner, any argument was ignored and the step ran.
+  it.each([[['--help']], [['--help=false']], [['--bogus']], [['extra']], [['x', '--y']]])(
+    '%j is a usage error: exit 1, usage on stderr, nothing runs',
+    async argv => {
+      const result = await runCli(improvementMetricsDetectCli(), {
+        argv,
+        env: {IMPROVEMENT_METRICS_DIGEST_PATH: digestPath()},
+      })
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('Usage')
+      // Detection writes an empty digest even when it fails; a usage error writes nothing.
+      expect(existsSync(digestPath())).toBe(false)
+    },
+  )
+})
+
+describe('a run', () => {
+  it('without a token falls back to an empty digest, flags the failure on stdout and exits 0', async () => {
+    const digestPath = join(root, 'fallback-digest.json')
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const result = await runCli(improvementMetricsDetectCli(), {
+      argv: [],
+      env: {IMPROVEMENT_METRICS_DIGEST_PATH: digestPath},
+    })
+    expect(result.exitCode).toBe(0)
+    const summary = JSON.parse(result.stdout) as Record<string, unknown>
+    expect(Object.keys(summary)).toEqual([
+      'windowDays',
+      'anchors',
+      'discovery',
+      'priorDiscovery',
+      'confirmedRecidivism',
+      'backlogCount',
+      'oldestPendingAgeDays',
+      'state',
+      'edgeCount',
+      'tokenLoadFailure',
+      'scanFailure',
+      'gitHistoryUnavailable',
+    ])
+    // Either the token load or the client construction failed, and the workflow summary reads the digest file.
+    expect(summary.tokenLoadFailure === true || summary.scanFailure === true).toBe(true)
+    expect(readFileSync(digestPath, 'utf8')).toBe(EMPTY_DIGEST)
+  })
+
+  it('reports a scan failure on stdout when the digest path is unset', async () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const result = await runCli(improvementMetricsDetectCli(), {argv: [], env: {}})
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toMatchObject({state: null, edgeCount: 0})
+  })
+})
+
+describe('main', () => {
+  it('runs the CLI against process.argv and sets the exit code without exiting the process', async () => {
+    vi.stubEnv('GITHUB_TOKEN', '')
+    vi.stubEnv('IMPROVEMENT_METRICS_DIGEST_PATH', join(root, 'main-digest.json'))
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const argv = process.argv
+    process.argv = [argv[0] ?? 'node', '/x/improvement-metrics-detect.ts']
+    try {
+      await main()
+    } finally {
+      process.argv = argv
+    }
+    expect(process.exitCode).toBe(0)
+    expect(String(stdout.mock.calls[0]?.[0])).toMatch(/^\{"windowDays":90,/u)
+    expect(exit).not.toHaveBeenCalled()
+    stdout.mockRestore()
+    stderr.mockRestore()
+  })
+})
