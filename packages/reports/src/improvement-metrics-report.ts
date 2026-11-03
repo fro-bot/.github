@@ -64,8 +64,13 @@ export const REPORT_BODY_VERSION = 1
 // Report body rendering
 // ---------------------------------------------------------------------------
 
+/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
+type Env = Readonly<Record<string, string | undefined>>
+
 export interface ReportRenderOptions {
   readonly generatedAt?: Date
+  /** The env the run stamp reads `GITHUB_SERVER_URL`, `GITHUB_REPOSITORY` and `GITHUB_RUN_ID` from. Defaults to `process.env`. */
+  readonly env?: Env
 }
 
 /**
@@ -78,10 +83,10 @@ export function trimTrailingSlashes(value: string): string {
   return value.slice(0, end)
 }
 
-function buildWorkflowRunUrl(): string | null {
-  const serverUrl = process.env.GITHUB_SERVER_URL?.trim()
-  const repository = process.env.GITHUB_REPOSITORY?.trim()
-  const runId = process.env.GITHUB_RUN_ID?.trim()
+function buildWorkflowRunUrl(env: Env): string | null {
+  const serverUrl = env.GITHUB_SERVER_URL?.trim()
+  const repository = env.GITHUB_REPOSITORY?.trim()
+  const runId = env.GITHUB_RUN_ID?.trim()
 
   if (serverUrl === undefined || serverUrl === '') return null
   if (repository === undefined || repository === '') return null
@@ -90,9 +95,9 @@ function buildWorkflowRunUrl(): string | null {
   return `${trimTrailingSlashes(serverUrl)}/${repository}/actions/runs/${runId}`
 }
 
-function buildGenerationStamp(generatedAt: Date): string {
+function buildGenerationStamp(generatedAt: Date, env: Env): string {
   const timestamp = generatedAt.toISOString()
-  const workflowRunUrl = buildWorkflowRunUrl()
+  const workflowRunUrl = buildWorkflowRunUrl(env)
 
   return workflowRunUrl === null
     ? `Generated: ${timestamp}`
@@ -136,7 +141,7 @@ export function renderReportBody(
   lines.push('# Improvement Metrics')
   lines.push('')
   lines.push(`Report state: **${digest.state}**`)
-  lines.push(buildGenerationStamp(generatedAt))
+  lines.push(buildGenerationStamp(generatedAt, options.env ?? process.env))
   lines.push('')
   lines.push(`Window: ${digest.windowDays} days`)
   lines.push(`Codified anchors in window: ${digest.anchors}`)
@@ -316,6 +321,8 @@ export interface UpsertReportIssueParams {
   tokens: PublicOutputTokens
   /** Timestamp shared by all body renders in one report run. */
   generatedAt?: Date
+  /** The env the run stamp reads. Defaults to `process.env`. */
+  env?: Env
   /** In-memory guard against a same-run create-then-relist staleness duplicate. */
   createdIssueNumbers?: Set<number>
   writeLog?: ReportLogSink
@@ -361,7 +368,7 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
 
     let renderedBody: string
     try {
-      renderedBody = renderReportBody(digest, edgesWithPriorTicks, tokens, {generatedAt})
+      renderedBody = renderReportBody(digest, edgesWithPriorTicks, tokens, {generatedAt, env: params.env})
     } catch (error: unknown) {
       if (error instanceof ReportRenderBlockedError) {
         writeLog(`improvement-metrics-report: blocked rendering surface "${error.surface}"; no update performed\n`)
@@ -383,7 +390,7 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
 
   let createdBody: string
   try {
-    createdBody = renderReportBody(digest, edges, tokens, {generatedAt})
+    createdBody = renderReportBody(digest, edges, tokens, {generatedAt, env: params.env})
   } catch (error: unknown) {
     if (error instanceof ReportRenderBlockedError) {
       writeLog(`improvement-metrics-report: blocked rendering surface "${error.surface}"; no create performed\n`)
@@ -418,9 +425,6 @@ interface DigestFile {
   digest: MetricsDigest
   edges: DetectEdge[]
 }
-
-/** The environment a run reads: `process.env` in production, the runner's env in the CLI. */
-type Env = Readonly<Record<string, string | undefined>>
 
 /** Counts-only result JSON written to stdout and IMPROVEMENT_METRICS_RESULT_PATH. */
 interface ReportResult {
@@ -503,6 +507,7 @@ export async function runImprovementMetricsReport(
         digest: digestFile.digest,
         edges: digestFile.edges,
         tokens,
+        env,
       })
       result.outcome = upsertResult.outcome
     }

@@ -349,7 +349,7 @@ describe('announce', () => {
     // The second POST never happens: the wait failed first.
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(stderr).toContain('error=network-error')
-    expect(stderr).toContain('timer unavailable')
+    expect(stderr).not.toContain('timer unavailable')
     expect(stderr).not.toContain(TEST_SECRET)
   })
 
@@ -832,6 +832,9 @@ describe('runCli', () => {
     expect(spy).toHaveBeenCalledWith({
       eventType: 'daily_digest',
       context: {repos_tracked: 3, surveys_today: 2, report_url: 'https://github.com/fro-bot/.github/issues/1'},
+      killSwitch: '',
+      secret: '',
+      url: '',
     })
   })
 
@@ -920,7 +923,13 @@ describe('runCli', () => {
 
     expect(result).toEqual(expectedResult)
     expect(spy).toHaveBeenCalledOnce()
-    expect(spy).toHaveBeenCalledWith({eventType: 'survey_completed', context: ctx})
+    expect(spy).toHaveBeenCalledWith({
+      eventType: 'survey_completed',
+      context: ctx,
+      killSwitch: '',
+      secret: '',
+      url: '',
+    })
   })
 
   it('valid env with invitation_accepted: announceImpl called with correct eventType', async () => {
@@ -934,7 +943,13 @@ describe('runCli', () => {
     )
 
     expect(result).toEqual(expectedResult)
-    expect(spy).toHaveBeenCalledWith({eventType: 'invitation_accepted', context: ctx})
+    expect(spy).toHaveBeenCalledWith({
+      eventType: 'invitation_accepted',
+      context: ctx,
+      killSwitch: '',
+      secret: '',
+      url: '',
+    })
   })
 
   // ─── Redaction: secret-shaped env values never leak to stderr ────────────
@@ -956,5 +971,209 @@ describe('runCli', () => {
 
     expect(stderr).not.toContain(secretShapedValue)
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+// ─── The supplied env decides, not process.env ──────────────────────────────
+
+describe('runCli reads the gateway settings from the env it is given', () => {
+  const AMBIENT_SECRET = 'ambient-secret-from-process-env'
+  const SUPPLIED_SECRET = 'supplied-secret'
+  const SUPPLIED_URL = 'https://supplied.example.com/presence'
+  const BASE_ENV = {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: '{"repos_tracked":3}'}
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  function stubAmbient(): void {
+    vi.stubEnv('GATEWAY_ANNOUNCE_DISABLED', 'true')
+    vi.stubEnv('GATEWAY_WEBHOOK_SECRET', AMBIENT_SECRET)
+    vi.stubEnv('GATEWAY_PRESENCE_URL', 'https://ambient.example.com/presence')
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+  }
+
+  it('signs with the supplied secret and posts to the supplied URL while process.env holds a kill switch, another secret and another URL', async () => {
+    stubAmbient()
+    // The supplied env has its own, inactive kill switch.
+    const fetchSpy = vi.fn(async () => new Response('ok', {status: 200}))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await runCli({
+      ...BASE_ENV,
+      GATEWAY_ANNOUNCE_DISABLED: 'false',
+      GATEWAY_WEBHOOK_SECRET: SUPPLIED_SECRET,
+      GATEWAY_PRESENCE_URL: SUPPLIED_URL,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchSpy).toHaveBeenCalledOnce()
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, {headers: Record<string, string>; body: string}]
+    expect(url).toBe(SUPPLIED_URL)
+    const timestamp = init.headers['X-Gateway-Timestamp'] ?? ''
+    expect(init.headers['X-Gateway-Signature']).toBe(
+      createHmac('sha256', SUPPLIED_SECRET).update(`${timestamp}.${init.body}`).digest('hex'),
+    )
+    expect(init.headers['X-Gateway-Signature']).not.toBe(
+      createHmac('sha256', AMBIENT_SECRET).update(`${timestamp}.${init.body}`).digest('hex'),
+    )
+  })
+
+  it('treats a kill switch missing from the supplied env as inactive when process.env has one', async () => {
+    stubAmbient()
+    const fetchSpy = vi.fn(async () => new Response('ok', {status: 200}))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await runCli({
+      ...BASE_ENV,
+      GATEWAY_WEBHOOK_SECRET: SUPPLIED_SECRET,
+      GATEWAY_PRESENCE_URL: SUPPLIED_URL,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchSpy).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['secret', {GATEWAY_PRESENCE_URL: SUPPLIED_URL}, 'GATEWAY_WEBHOOK_SECRET'],
+    ['URL', {GATEWAY_WEBHOOK_SECRET: SUPPLIED_SECRET}, 'GATEWAY_PRESENCE_URL'],
+  ])(
+    'does not borrow the %s from process.env: it skips as missing-config and posts nothing',
+    async (_name, supplied, variable) => {
+      vi.stubEnv('GATEWAY_WEBHOOK_SECRET', AMBIENT_SECRET)
+      vi.stubEnv('GATEWAY_PRESENCE_URL', 'https://ambient.example.com/presence')
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      const fetchSpy = vi.fn(async () => new Response('ok', {status: 200}))
+      vi.stubGlobal('fetch', fetchSpy)
+
+      const result = await runCli({...BASE_ENV, ...supplied})
+
+      expect(result).toEqual({posted: false, skipped: 'missing-config'})
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(stderr).toHaveBeenCalledWith(`gateway-announce: missing config (${variable} not set); skipping POST\n`)
+    },
+  )
+
+  it('still honours the supplied kill switch over a process.env that has none', async () => {
+    const fetchSpy = vi.fn(async () => new Response('ok', {status: 200}))
+    vi.stubGlobal('fetch', fetchSpy)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    expect(
+      await runCli({
+        ...BASE_ENV,
+        GATEWAY_ANNOUNCE_DISABLED: 'true',
+        GATEWAY_WEBHOOK_SECRET: 's',
+        GATEWAY_PRESENCE_URL: 'https://x.example.com',
+      }),
+    ).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('hands announce the three gateway settings from the supplied env', async () => {
+    const spy = vi.fn().mockResolvedValue({posted: true, status: 200})
+    await runCli(
+      {
+        ...BASE_ENV,
+        GATEWAY_ANNOUNCE_DISABLED: '0',
+        GATEWAY_WEBHOOK_SECRET: SUPPLIED_SECRET,
+        GATEWAY_PRESENCE_URL: SUPPLIED_URL,
+      },
+      {announceImpl: spy as unknown as typeof announce},
+    )
+    expect(spy).toHaveBeenCalledWith({
+      eventType: 'daily_digest',
+      context: {repos_tracked: 3},
+      killSwitch: '0',
+      secret: SUPPLIED_SECRET,
+      url: SUPPLIED_URL,
+    })
+  })
+})
+
+// ─── Fetch errors and JSON parse errors never reach stderr verbatim ─────────
+
+describe('stderr never carries what a thrown error says', () => {
+  const SECRET = 'redaction-secret-value'
+  const CONTEXT = {repos: ['acme/private-widget'], note: 'context-marker-8841'}
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** A fetch whose error message echoes the request: its headers (the signature), its body and the secret. */
+  function leakyFetch(failOn: (call: number) => boolean, okStatus = 503): typeof globalThis.fetch {
+    let call = 0
+    return vi.fn(async (_url: unknown, init?: RequestInit) => {
+      call += 1
+      if (failOn(call)) {
+        throw new Error(
+          `request failed: headers=${JSON.stringify(init?.headers)} body=${String(init?.body)} secret=${SECRET}`,
+        )
+      }
+      return new Response('', {status: okStatus})
+    })
+  }
+
+  async function announceWith(fetchImpl: typeof globalThis.fetch) {
+    return captureStderr(async () =>
+      announce({
+        eventType: 'daily_digest',
+        context: CONTEXT,
+        now: () => TEST_TS,
+        secret: SECRET,
+        url: TEST_URL,
+        fetchImpl,
+        sleep: noSleep,
+      }),
+    )
+  }
+
+  function expectNoLeak(stderr: string, fetchImpl: typeof globalThis.fetch): void {
+    const init = (fetchImpl as unknown as {mock: {calls: [unknown, RequestInit][]}}).mock.calls[0]?.[1]
+    const signature = (init?.headers as Record<string, string>)['X-Gateway-Signature'] ?? ''
+    expect(signature).toMatch(/^[a-f0-9]{64}$/u)
+    for (const secretValue of [SECRET, signature, 'context-marker-8841', 'acme/private-widget', TEST_TS]) {
+      expect(stderr).not.toContain(secretValue)
+    }
+  }
+
+  it('first POST throws on both attempts: only the fixed classification is logged', async () => {
+    const fetchImpl = leakyFetch(() => true)
+    const {result, stderr} = await announceWith(fetchImpl)
+    expect(result).toEqual({posted: false, failure: 'network'})
+    expect(stderr).toBe('gateway-announce: event_type=daily_digest error=network-error\n')
+    expectNoLeak(stderr, fetchImpl)
+  })
+
+  it('a 5xx whose retry throws: only the fixed classification and the status are logged', async () => {
+    const fetchImpl = leakyFetch(call => call === 2, 503)
+    const {result, stderr} = await announceWith(fetchImpl)
+    expect(result).toEqual({posted: false, failure: 'network'})
+    expect(stderr).toBe('gateway-announce: event_type=daily_digest status=503 retry=network-error\n')
+    expectNoLeak(stderr, fetchImpl)
+  })
+
+  it('a malformed EVENT_CONTEXT_JSON that quotes a secret: stderr is a fixed line', async () => {
+    const spy = vi.fn()
+    const {result, stderr} = await captureStderr(async () =>
+      runCli(
+        {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: '{"token": "hunter2-leaky-value" oops}'},
+        {announceImpl: spy as unknown as typeof announce},
+      ),
+    )
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(stderr).toBe('gateway-announce: malformed EVENT_CONTEXT_JSON\n')
+    expect(stderr).not.toContain('hunter2')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('a context that is valid JSON but not an object keeps its own fixed message', async () => {
+    const {result, stderr} = await captureStderr(async () =>
+      runCli({EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: '[1]'}),
+    )
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(stderr).toBe('gateway-announce: malformed EVENT_CONTEXT_JSON: context must be a JSON object\n')
   })
 })

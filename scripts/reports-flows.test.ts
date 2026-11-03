@@ -359,7 +359,7 @@ describe('gateway-announce through scripts/gateway-announce.ts', () => {
       const result = await run('gateway-announce', {env: announceEnv(gateway, {EVENT_CONTEXT_JSON: '{'})})
       expect(result.exitCode).toBe(0)
       expect(JSON.parse(result.stdout)).toEqual({posted: false, failure: 'malformed-context'})
-      expect(result.stderr).toMatch(/^gateway-announce: malformed EVENT_CONTEXT_JSON: /u)
+      expect(result.stderr).toBe('gateway-announce: malformed EVENT_CONTEXT_JSON\n')
       expect(gateway.received).toEqual([])
     })
   })

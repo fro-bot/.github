@@ -584,11 +584,13 @@ export function splitFrontmatter(content: string): Record<string, unknown> {
 export function loadGitAddDates(
   paths: readonly string[],
   execFileSyncFn: typeof execFileSync = execFileSync,
+  env: Env = process.env,
 ): Map<string, string> {
   const addDates = new Map<string, string>()
   for (const path of paths) {
     const stdout = execFileSyncFn('git', ['log', '--diff-filter=A', '--follow', '--format=%aI', '--', path], {
       encoding: 'utf8',
+      env: {...env},
     })
     const lines = stdout
       .toString()
@@ -704,7 +706,7 @@ export async function runImprovementMetricsDetect(
 
     let gitAddDates: Map<string, string>
     try {
-      gitAddDates = loadGitAddDates(Object.keys(solutionDocFiles.files))
+      gitAddDates = loadGitAddDates(Object.keys(solutionDocFiles.files), execFileSync, env)
     } catch {
       result.gitHistoryUnavailable = true
       await writeImprovementMetricsDigestFile(EMPTY_DIGEST, [], env).catch(() => undefined)

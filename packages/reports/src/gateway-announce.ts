@@ -121,12 +121,10 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   let res: Response
   try {
     res = await retry(doPost, {attempts: 2, delayMs: () => RETRY_DELAY_MS, shouldRetry: () => true, sleep})
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error)
-    // Redact: log only event type + error class, never secret/sig/body/context.repos.
-    process.stderr.write(
-      `gateway-announce: event_type=${params.eventType} error=network-error detail=${errMsg.slice(0, 80)}\n`,
-    )
+  } catch {
+    // Redact: log only the event type and a fixed class. A fetch error's message can echo the request's
+    // headers (the signature) or its body (the context), so it is never printed.
+    process.stderr.write(`gateway-announce: event_type=${params.eventType} error=network-error\n`)
     return {posted: false, failure: 'network'}
   }
 
@@ -141,10 +139,10 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
     let retryRes: Response
     try {
       retryRes = await doPost()
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : String(error)
+    } catch {
+      // The retry's error message is not printed, for the reason given at the first POST.
       process.stderr.write(
-        `gateway-announce: event_type=${params.eventType} status=${firstStatus} retry=network-error detail=${errMsg.slice(0, 80)}\n`,
+        `gateway-announce: event_type=${params.eventType} status=${firstStatus} retry=network-error\n`,
       )
       return {posted: false, failure: 'network'}
     }
@@ -202,22 +200,27 @@ export async function runCli(
     return {posted: false, failure: 'missing-context'}
   }
 
-  let context: Record<string, unknown>
+  let parsed: unknown
   try {
-    const parsed: unknown = JSON.parse(contextJson)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new TypeError('context must be a JSON object')
-    }
-    context = parsed as Record<string, unknown>
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`gateway-announce: malformed EVENT_CONTEXT_JSON: ${detail}\n`)
+    parsed = JSON.parse(contextJson)
+  } catch {
+    // A parse error's message can quote the input, which is the event context, so it is never printed.
+    process.stderr.write('gateway-announce: malformed EVENT_CONTEXT_JSON\n')
+    return {posted: false, failure: 'malformed-context'}
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    process.stderr.write('gateway-announce: malformed EVENT_CONTEXT_JSON: context must be a JSON object\n')
     return {posted: false, failure: 'malformed-context'}
   }
 
+  // The supplied env decides, and a variable it lacks is empty rather than borrowed from process.env:
+  // `announce` falls back to process.env only for a field that is undefined.
   return announceImpl({
     eventType,
-    context,
+    context: parsed as Record<string, unknown>,
+    killSwitch: env.GATEWAY_ANNOUNCE_DISABLED ?? '',
+    secret: env.GATEWAY_WEBHOOK_SECRET ?? '',
+    url: env.GATEWAY_PRESENCE_URL ?? '',
   })
 }
 

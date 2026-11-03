@@ -104,14 +104,16 @@ describe('a run', () => {
   })
 
   it('exits 0 on a non-2xx and prints the status', async () => {
-    vi.stubEnv('GATEWAY_PRESENCE_URL', 'http://127.0.0.1:1/presence')
-    vi.stubEnv('GATEWAY_WEBHOOK_SECRET', 'secret')
-    vi.stubEnv('GATEWAY_ANNOUNCE_DISABLED', '')
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const fetchSpy = stubFetch(404)
     const result = await runCli(gatewayAnnounceCli(), {
       argv: [],
-      env: {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: '{"a":1}'},
+      env: {
+        EVENT_TYPE: 'daily_digest',
+        EVENT_CONTEXT_JSON: '{"a":1}',
+        GATEWAY_PRESENCE_URL: 'http://127.0.0.1:1/presence',
+        GATEWAY_WEBHOOK_SECRET: 'secret',
+      },
     })
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toBe('{"posted":false,"failure":"http","status":404}\n')
