@@ -253,15 +253,15 @@ import {isRecord} from '@fro-bot/core/guards'
 
 The issue's feature-local duplication no longer exists on main. A current search across `scripts/`
 still finds separate local definitions in `commit-metadata.ts`, `data-branch-bootstrap.ts`,
-`handle-invitation.ts`, `improvement-metrics-detect.ts`, `merge-data-pr.ts`, `reconcile-repos.ts`,
+`handle-invitation.ts`, `merge-data-pr.ts`, `reconcile-repos.ts`,
 `schemas.ts`, `solutions-query.ts`, `wiki-ingest.ts`, `wiki-lint-issues.ts`, `wiki-lint.ts`, and
 `wiki-utils.ts`, plus the shared definitions in `capture-learnings-privacy.ts` and
 `private-repo-resolution.ts`. The current imports are:
 
 - `capture-patterns-open.ts` and `capture-patterns-synthesis.ts` from
   `capture-learnings-privacy.ts`;
-- `improvement-metrics-report.ts` and `proposals-cli.ts` (in `@fro-bot/status-truth`) from
-  `capture-learnings-privacy.ts`; and
+- `improvement-metrics-report.ts` (in `@fro-bot/reports`) from `@fro-bot/core/guards`;
+- `proposals-cli.ts` (in `@fro-bot/status-truth`) from `capture-learnings-privacy.ts`; and
 - `check-private-leak.ts` from `private-repo-resolution.ts`.
 
 Those remaining local definitions belong to separate script boundaries. Consolidate them only when

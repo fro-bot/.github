@@ -932,7 +932,7 @@ CLI tables follow one legend:
 
 **Verification:** The knowledge package doesn't import status-truth.
 
-- [ ] **Unit 12: `@fro-bot/reports`**
+- [x] **Unit 12: `@fro-bot/reports`**
 
 **Goal:** Move improvement-metrics, the daily digest and gateway-announce.
 
@@ -954,7 +954,7 @@ CLI tables follow one legend:
 **Approach:**
 
 - The `isApiStatus` copy in `improvement-metrics-report` maps to the array-excluding core variant.
-- `improvement-metrics-report` with an empty token means dry run, and keeps that meaning.
+- `improvement-metrics-report` has no dry-run mode of its own: the workflow skips the report job on a dry run, so the script never runs then. With an empty or unset `GITHUB_TOKEN` and a readable digest, it throws the missing-token error and exits 1 with no API call and no result file. That behavior is kept.
 - `daily-digest-counts` reads argv[2], argv[3] and `TODAY_UTC`, with argv taking precedence. The runner keeps that precedence.
 - `gateway-announce` keeps exit 0 on every error. The runner's error-catch path uses the CLI's configured exit code.
 
@@ -963,7 +963,7 @@ CLI tables follow one legend:
 - Happy path: `daily-digest-counts` keeps `should_post` behavior. Argv beats env. `count_status` is one of the values the workflow branches on. A malformed `repos[]` element yields a stderr line, not a throw.
 - Happy path: the `gateway-announce` HMAC payload is byte-identical for a fixed input.
 - Edge case: `gateway-announce` exits 0 on the kill switch, on a missing `EVENT_TYPE`, on malformed context JSON and on a non-2xx.
-- Edge case: `improvement-metrics-report` with an empty token behaves as dry run.
+- Edge case: `improvement-metrics-report` with an empty or unset `GITHUB_TOKEN` and a readable digest exits 1 with the missing-token message on stderr, writes no result file and makes no API call. An unreadable digest or a failed token-set load is reported in the result file instead and exits 0.
 - Integration: a `bash -Eeuo pipefail` invocation of the report CLIs propagates the CLI's exit code.
 
 **Verification:** The workflow-invoked report CLIs match the surface table.

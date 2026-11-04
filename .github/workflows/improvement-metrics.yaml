@@ -3,7 +3,8 @@ name: Improvement Metrics
 
 on:
   # Deliberately after Sunday's data-promotion sequence (wiki-lint 20:00,
-  # merge-data 22:00, reconcile 22:30) so metrics use freshly promoted metadata.
+  # merge-data 22:00, capture-learnings 22:30) so metrics use freshly promoted
+  # metadata. Reconcile is not part of it: it runs daily at 05:17.
   schedule:
     - cron: '0 23 * * 0'
   workflow_dispatch:

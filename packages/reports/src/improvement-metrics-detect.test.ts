@@ -1,5 +1,5 @@
 /**
- * Tests for scripts/improvement-metrics-detect.ts
+ * Tests for packages/reports/src/improvement-metrics-detect.ts
  *
  * Structure:
  * - scoreCandidateLink (O8-native asymmetric scorer)
@@ -8,11 +8,12 @@
  *   loadGitAddDates fail-closed path
  */
 
-import {mkdtemp, rm} from 'node:fs/promises'
+import {execFileSync} from 'node:child_process'
+import {mkdtemp, rm, writeFile as writeTextFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
-import {describe, expect, it} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {buildClassKey, buildEdgeFingerprint} from './improvement-metrics-core.ts'
 import {
   computeMetrics,
@@ -738,5 +739,82 @@ describe('loadGitAddDates', () => {
   it('throws (fail-closed) when a path has no resolvable git add-date', () => {
     const fakeExec = (() => '') as unknown as typeof import('node:child_process').execFileSync
     expect(() => loadGitAddDates(['docs/solutions/best-practices/missing.md'], fakeExec)).toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// loadGitAddDates runs git with the env it is given
+// ---------------------------------------------------------------------------
+
+describe('loadGitAddDates runs git with the env it is given', () => {
+  const ADDED_AT = '2020-01-02T03:04:05Z'
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  /** A test-owned repository with one commit that adds `x.md`. Returns its `.git`. */
+  async function makeHistory(): Promise<{dir: string; gitDir: string}> {
+    const dir = await mkdtemp(join(tmpdir(), 'add-dates-'))
+    const env = {
+      PATH: process.env.PATH,
+      HOME: dir,
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_AUTHOR_DATE: ADDED_AT,
+      GIT_COMMITTER_DATE: ADDED_AT,
+    }
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {cwd: dir, env, stdio: 'ignore'})
+    git('init', '-q', '-b', 'main', '.')
+    await writeTextFile(join(dir, 'x.md'), 'x\n')
+    git('add', 'x.md')
+    git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'add x')
+    return {dir, gitDir: join(dir, '.git')}
+  }
+
+  it('hands execFileSync the env as its env option', () => {
+    const seen: unknown[] = []
+    const fakeExec = ((_command: string, _args: readonly string[], options: {env?: unknown}) => {
+      seen.push(options.env)
+      return '2026-05-01T00:00:00+00:00\n'
+    }) as unknown as typeof execFileSync
+    const env = {PATH: '/usr/bin', MARKER: 'supplied'}
+    loadGitAddDates(['docs/solutions/best-practices/x.md'], fakeExec, env)
+    expect(seen).toEqual([env])
+  })
+
+  it('reads history from the GIT_DIR in the supplied env while process.env names a repository that does not exist', async () => {
+    const {dir, gitDir} = await makeHistory()
+    try {
+      vi.stubEnv('GIT_DIR', join(dir, 'no-such-git-dir'))
+      const result = loadGitAddDates(['x.md'], execFileSync, {
+        PATH: process.env.PATH,
+        GIT_DIR: gitDir,
+        GIT_WORK_TREE: process.cwd(),
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_SYSTEM: '/dev/null',
+      })
+      expect(result.get('x.md')).toBe(ADDED_AT)
+    } finally {
+      await rm(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('does not pick up a GIT_DIR that only process.env has', async () => {
+    const {dir, gitDir} = await makeHistory()
+    try {
+      vi.stubEnv('GIT_DIR', gitDir)
+      vi.stubEnv('GIT_WORK_TREE', process.cwd())
+      expect(() =>
+        loadGitAddDates(['x.md'], execFileSync, {
+          PATH: process.env.PATH,
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_SYSTEM: '/dev/null',
+        }),
+      ).toThrow(/no git add-date resolvable for x\.md/u)
+    } finally {
+      await rm(dir, {recursive: true, force: true})
+    }
   })
 })
