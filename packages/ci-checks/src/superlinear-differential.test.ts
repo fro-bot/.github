@@ -6,9 +6,8 @@
  */
 
 import {describe, expect, it} from 'vitest'
-import {markVitestTypeArguments, wikiWriteCoreSubpathSourceFiles} from './check-mutation-guards.ts'
+import {markVitestTypeArguments, stripBarrelExports, wikiWriteCoreSubpathSourceFiles} from './check-mutation-guards.ts'
 import {findCommentSpans} from './check-solutions-examples.ts'
-import {stripBarrelExports} from './mutation-guards-reach.ts'
 
 /** mulberry32: a small seeded generator. */
 function generator(seed: number): () => number {

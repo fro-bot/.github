@@ -30,10 +30,11 @@ import {
   froBotPackageSourceFiles,
   markVitestTypeArguments,
   scanDirectiveViolations,
+  stripBarrelExports,
   wikiWriteCoreSubpathSourceFiles,
 } from './check-mutation-guards.ts'
 import {extractCodeBlocks, findCommentSpans} from './check-solutions-examples.ts'
-import {isPureReexportBarrel, stripBarrelExports} from './mutation-guards-reach.ts'
+import {isPureReexportBarrel} from './mutation-guards-reach.ts'
 
 const BEST_OF = 3
 const READABLE_MILLISECONDS = 50

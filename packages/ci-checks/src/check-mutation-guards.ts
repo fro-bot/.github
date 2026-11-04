@@ -1066,6 +1066,65 @@ export function markVitestTypeArguments(source: string): string {
   return result + content.slice(copied)
 }
 
+// Every alternative form a pure re-export statement can take. Deliberately mirrors what
+// `directSpecifiers` (./check-mutation-guards.ts) already recognizes as a re-export, so a
+// module this pattern fails to strip is exactly a module `directSpecifiers` would also treat
+// as carrying no reach-worthy specifier of its own (has none of the forms it looks for).
+// The two brace forms match only their opening here: `stripBarrelExports` finds the closing
+// brace and the `from` clause itself, because `\{[^}]*\}` rescans to the same `}` from every
+// `{` and is quadratic on a file of unclosed braces.
+// A function rather than a module-level const, so its regex mutants are covered by the barrel
+// tests alone instead of being static mutants that run every test file.
+function barrelExportHeadPattern(): RegExp {
+  return /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{|export\s*\{/gu
+}
+
+/** What must follow the closing brace of a `export {...}` or `export type {...}` statement. */
+function barrelFromClausePattern(): RegExp {
+  return /\s*from\s+['"][^'"]+['"]\s*;?/uy
+}
+
+/**
+ * `content` with every barrel export statement removed, in time linear in `content`. It returns what
+ * `content.replaceAll(/<the three forms>/gu, '')` returns, where a brace form is
+ * `export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?` or `export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?`.
+ * A brace head whose list or `from` clause does not complete is skipped one character on, as the engine
+ * would retry from the next start; the `}` that closes a list is looked up in the ordered list of every `}`, so it
+ * costs nothing per head.
+ */
+export function stripBarrelExports(content: string): string {
+  const head = barrelExportHeadPattern()
+  const fromClause = barrelFromClausePattern()
+  // Every `}`, in order. Heads end further right each time, so one pointer walks the list once.
+  const closes: number[] = []
+  for (let index = content.indexOf('}'); index !== -1; index = content.indexOf('}', index + 1)) closes.push(index)
+  let result = ''
+  let copied = 0
+  let next = 0
+  for (let match = head.exec(content); match !== null; match = head.exec(content)) {
+    let end = match.index + match[0].length
+    if (match[0].endsWith('{')) {
+      while (next < closes.length && (closes[next] ?? 0) < end) next += 1
+      const listClose = closes[next]
+      if (listClose === undefined) {
+        head.lastIndex = match.index + 1
+        continue
+      }
+      fromClause.lastIndex = listClose + 1
+      const clause = fromClause.exec(content)
+      if (clause === null) {
+        head.lastIndex = match.index + 1
+        continue
+      }
+      end = listClose + 1 + clause[0].length
+    }
+    result += content.slice(copied, match.index)
+    copied = end
+    head.lastIndex = end
+  }
+  return result + content.slice(copied)
+}
+
 /**
  * Resolves a dynamic-import template literal's raw content (e.g. `./x${'.js'}`) by inlining
  * every literal-only `${'...'}`/`${"..."}` interpolation. Returns `undefined` if the result

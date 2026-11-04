@@ -31,8 +31,8 @@ Everything in this package that reads text a pull request controls is linear in 
 
 | Subpath | Exports | Notes |
 | --- | --- | --- |
-| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
-| `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `stripBarrelExports`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
+| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `stripBarrelExports`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
+| `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
 | `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md` and `docs/**/*.md` of the working directory. |
 | `@fro-bot/ci-checks/check-override-floors`, `-cli` | `checkOverrideFloors`, `parseAuditOutput`, `runBunAudit`, `formatProblem`, `runCheckOverrideFloors`; `checkOverrideFloorsCli`, `main` | `bun audit --json`; anything it cannot interpret is a failure. |

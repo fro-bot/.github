@@ -25,8 +25,14 @@ import {isRecord} from '@fro-bot/core/guards'
  * the failure signal — unparseable output is. Records below `high` are skipped.
  */
 
-const BLOCKING_SEVERITIES: readonly string[] = ['high', 'critical']
-const SKIPPED_SEVERITIES: readonly string[] = ['info', 'low', 'moderate']
+// Functions rather than module-level constants, so the mutants of the severity vocabulary are covered by the tests.
+function blockingSeverities(): readonly string[] {
+  return ['high', 'critical']
+}
+
+function skippedSeverities(): readonly string[] {
+  return ['info', 'low', 'moderate']
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -175,7 +181,7 @@ export function checkOverrideFloors(options: CheckOverrideFloorsOptions = {}): C
         continue
       }
 
-      if (BLOCKING_SEVERITIES.includes(advisory.severity)) {
+      if (blockingSeverities().includes(advisory.severity)) {
         problems.push({
           kind: 'blocking-advisory',
           packageName,
@@ -184,7 +190,7 @@ export function checkOverrideFloors(options: CheckOverrideFloorsOptions = {}): C
           vulnerableVersions: advisory.vulnerableVersions,
           url: advisory.url,
         })
-      } else if (!SKIPPED_SEVERITIES.includes(advisory.severity)) {
+      } else if (!skippedSeverities().includes(advisory.severity)) {
         problems.push({
           kind: 'unrecognized-severity',
           packageName,
