@@ -22,6 +22,7 @@
  * repeated until it takes 50 ms of CPU time, capped at 4,096 repetitions.
  */
 
+import {spawnSync} from 'node:child_process'
 import process from 'node:process'
 import {resolveMarkdownLinks} from '@fro.bot/wiki-write-core/markdown-links'
 import {describe, expect, it} from 'vitest'
@@ -148,15 +149,63 @@ describe('the import-closure scans scale linearly in a source file', {timeout: S
   })
 })
 
+/**
+ * Runs `code` as an ES module in a child process, with the module path of this package's `check-mutation-guards.ts` in
+ * `argv[1]` and `args` after it. The child is killed when `timeoutMs` passes, so an operation that stops returning fails the
+ * test by timeout instead of hanging the worker. Bun runs the production scripts; Node loads the same modules in CI, and its
+ * regex engine is the one that backtracks without limit (Bun's gives up after about 0.7 s and returns no match).
+ */
+function runInChild(runtime: 'bun' | 'node', code: string, args: readonly string[], timeoutMs: number) {
+  const gate = new URL('check-mutation-guards.ts', import.meta.url).pathname
+  const flags = runtime === 'bun' ? ['--no-install', '--no-env-file', '--eval'] : ['--input-type=module', '--eval']
+  return spawnSync(runtime, [...flags, code, gate, ...args], {
+    encoding: 'utf8',
+    killSignal: 'SIGKILL',
+    timeout: timeoutMs,
+  })
+}
+
+// The lookup `${'...'}` had two ways to consume a backslash, so a run of them without the closing quote took exponential
+// time: about 1.5x per added backslash, hours at 200. The ratio test cannot measure that, because the old code never
+// returns at the larger size, so the operation runs in a child process that is killed on a deadline.
+const TEMPLATE_LOOKUP_CHILD = `
+const {directSpecifiers} = await import(process.argv[1])
+const results = process.argv.slice(2).map(count => {
+  const source = 'import(\`./x\${' + "'" + '\\\\'.repeat(Number(count)) + '\`)'
+  return [count, directSpecifiers('packages/ci-checks/src/x.ts', () => source)]
+})
+console.log(JSON.stringify(results))
+`
+
 describe('the template literal lookup does not backtrack exponentially', () => {
-  // The lookup `${'...'}` had two ways to consume a backslash, so a run of them without the closing quote took
-  // exponential time: about 1.5x per added backslash, hours at 200. The ratio test cannot measure that, because the old
-  // code never returns at the larger size, so the case is a fixed worst input and a time bound.
-  it.each([200, 2000, 20_000])('%i backslashes inside an interpolation that never closes', count => {
-    const source = `import(\`./x\${'${'\\'.repeat(count)}\`)`
+  it.each(['bun', 'node'] as const)(
+    'under %s, returns at once for runs of 200, 2,000 and 20,000 backslashes inside an interpolation that never closes',
+    runtime => {
+      const run = runInChild(runtime, TEMPLATE_LOOKUP_CHILD, ['200', '2000', '20000'], 20_000)
+      expect(run.signal).toBeNull()
+      expect(run.status).toBe(0)
+      expect(JSON.parse(run.stdout)).toEqual([
+        ['200', []],
+        ['2000', []],
+        ['20000', []],
+      ])
+    },
+  )
+
+  // The harness must fail by timeout, not hang: the pattern this lookup replaced, on a run it cannot finish in the deadline.
+  it('kills a Node child that runs the old pattern on 60 backslashes, so a reintroduced exponential fails by timeout', () => {
+    // The old pattern, as a literal here and as source text in the child.
+    const oldPattern = /\$\{\s*(['"])((?:\\.|(?!\1).)*)\1\s*\}/gu
+    const oldPatternChild = `
+const old = new RegExp(process.argv[2], process.argv[3])
+const source = "\${'" + '\\\\'.repeat(60)
+console.log(source.replaceAll(old, '').length)
+`
     const startedAt = performance.now()
-    expect(directSpecifiers('packages/ci-checks/src/x.ts', () => source)).toEqual([])
-    expect(performance.now() - startedAt).toBeLessThan(1000)
+    const run = runInChild('node', oldPatternChild, [oldPattern.source, oldPattern.flags], 1500)
+    expect(run.signal).toBe('SIGKILL')
+    expect(run.stdout).toBe('')
+    expect(performance.now() - startedAt).toBeLessThan(10_000)
   })
 })
 
@@ -214,6 +263,11 @@ describe('the barrel check scales linearly in a source file', {timeout: SUITE_TI
   })
 })
 
+/** A document of one indented, never-closed fence followed by `line` repeated up to `size` characters. */
+function indentedFenceBody(line: string): (size: number) => string {
+  return size => `  \`\`\`ts\n${repeat(line)(size)}`
+}
+
 describe(
   'the solutions example scan scales linearly in a markdown document',
   {timeout: SUITE_TIMEOUT_MILLISECONDS},
@@ -251,7 +305,17 @@ describe(
         make: (size: number) => `\`\`\`ts ${'a '.repeat(size / 2)}\n\`\`\`\n`,
       },
       {name: 'a fence info string of spaces', make: (size: number) => `\`\`\`ts${' '.repeat(size)}x\n\`\`\`\n`},
-      {name: 'an indented fence with a long body of unindented lines', make: repeat('x\n')},
+      // The fence is indented two spaces and never closes, so every following line is a body line that goes through dedent:
+      // a line with less indent than the fence takes the leading-whitespace branch.
+      {
+        name: 'an indented fence with a long body of lines indented less than the fence',
+        make: indentedFenceBody(' x\n'),
+      },
+      {name: 'an indented fence with a long body of unindented lines', make: indentedFenceBody('x\n')},
+      {
+        name: 'an indented fence with a long body of lines indented more than the fence',
+        make: indentedFenceBody('    x\n'),
+      },
     ])('$name', ({make}) => {
       expect(growthRatio(make, SMALL, scan)).toBeLessThan(CEILING)
     })
@@ -322,6 +386,21 @@ describe('the worst-case inputs reach the scans they measure', () => {
     expect(closed.spans.at(-1)?.startLine).toBe(Math.floor(size / 11))
   })
 
+  it('an indented fence reaches the body and dedent loop: one block whose lines are the body lines, dedented', () => {
+    const lines = 300
+    for (const [line, dedented] of [
+      [' x', 'x'],
+      ['x', 'x'],
+      ['    x', '  x'],
+    ] as const) {
+      const result = extractCodeBlocks(`  \`\`\`ts\n${`${line}\n`.repeat(lines)}`, 'docs/solutions/x.md')
+      expect(result.blocks).toHaveLength(1)
+      const block = result.blocks[0]
+      expect(block?.line).toBe(1)
+      expect(block?.code.split('\n')).toEqual([...Array.from({length: lines}, () => dedented), ''])
+    }
+  })
+
   it('a document of fences reaches the block extractor', () => {
     const result = extractCodeBlocks(
       '<!-- verify: a from b.ts -->\n```ts fragment\n```\n'.repeat(size / 45),
@@ -336,11 +415,11 @@ describe('the worst-case inputs reach the scans they measure', () => {
     expect(violations).toHaveLength(size / 16)
   })
 
-  it('backslashes inside an interpolation reach the template literal lookup', () => {
-    const source = `import(\`./x\${'${'\\'.repeat(size)}\`)`
-    expect(directSpecifiers('packages/ci-checks/src/x.ts', () => source)).toEqual([])
+  it('an interpolation reaches the template literal lookup: a closed one is inlined, an unclosed one is not', () => {
+    // Short on purpose: the long runs belong to the child-process cases above, because a regression would hang this worker.
     expect(directSpecifiers('packages/ci-checks/src/x.ts', () => "import(`./x${'.js'}`)")).toEqual([
       'packages/ci-checks/src/x.ts',
     ])
+    expect(directSpecifiers('packages/ci-checks/src/x.ts', () => "import(`./x${'\\\\\\`)")).toEqual([])
   })
 })

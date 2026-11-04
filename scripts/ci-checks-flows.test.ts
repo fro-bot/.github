@@ -158,6 +158,16 @@ async function shell(
 
 const PIPEFAIL = ['-Eeuo', 'pipefail']
 
+/**
+ * A package script with its `scripts/` paths pointed at the real scripts directory. The directory is never interpolated into the
+ * shell text: the script names `"$SCRIPTS_DIR"` in double quotes and the child gets the path in its environment, so a path
+ * with a space, a `$` or a quote cannot split or expand.
+ */
+function pointAtScriptsDirectory(packageScript: string): string {
+  return packageScript.replaceAll('scripts/', '"$SCRIPTS_DIR"/')
+}
+const SCRIPTS_DIRECTORY_ENV = {SCRIPTS_DIR: resolve(repoRoot, 'scripts')}
+
 /** A map of every file under `paths` (relative to `base`) to its digest. A missing path contributes nothing. */
 function snapshotTree(base: string, paths: readonly string[]): Map<string, string> {
   const files = new Map<string, string>()
@@ -362,12 +372,11 @@ describe('the package.json lint chain', () => {
   /** A package.json whose scripts are the real ones with `scripts/` made absolute; `eslint`, the last link, is a marker. */
   function chainCheckout(files: Readonly<Record<string, string>>): string {
     const cwd = checkout(files)
-    const rewrite = (text: string): string => text.replaceAll('scripts/', `${join(repoRoot, 'scripts')}/`)
     const manifest = {
       scripts: Object.fromEntries(
         ['check:md-links', 'check:override-floors', 'check:solutions-examples', 'lint'].map(name => [
           name,
-          rewrite(scripts[name] ?? '').replace(/&& eslint$/u, '&& echo reached-eslint'),
+          pointAtScriptsDirectory(scripts[name] ?? '').replace(/&& eslint$/u, '&& echo reached-eslint'),
         ]),
       ),
     }
@@ -382,7 +391,7 @@ describe('the package.json lint chain', () => {
       executable: realBun,
       runtimeArgs: ['--no-install', '--no-env-file'],
       cwd,
-      env: childEnv(env),
+      env: childEnv({...SCRIPTS_DIRECTORY_ENV, ...env}),
     })
   }
 
@@ -526,8 +535,7 @@ describe('the Renovate entrypoints under Node', () => {
 
   it('the check:renovate-config chain stops at a failed install: the check never runs', async () => {
     const cwd = checkout(withPin({'default.json': '{}', '.github/renovate.json5': '{}'}))
-    const rewrite = (text: string): string => text.replaceAll('scripts/', `${join(repoRoot, 'scripts')}/`)
-    const chain = rewrite(
+    const chain = pointAtScriptsDirectory(
       (JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {scripts: Record<string, string>}).scripts[
         'check:renovate-config'
       ] ?? '',
@@ -539,7 +547,7 @@ describe('the Renovate entrypoints under Node', () => {
       executable: realBun,
       runtimeArgs: ['--no-install', '--no-env-file'],
       cwd,
-      env: childEnv({RENOVATE_PREFIX: join(root, 'prefix-d'), FAKE_INSTALL_EXIT: '1'}),
+      env: childEnv({...SCRIPTS_DIRECTORY_ENV, RENOVATE_PREFIX: join(root, 'prefix-d'), FAKE_INSTALL_EXIT: '1'}),
     })
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain('install-renovate: bun install renovate@44.198.0 exited 1')
@@ -806,6 +814,61 @@ describe('scripts/check-mutation-guards.ts run from a copy of the package: the r
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('Usage')
+  })
+})
+
+describe('a package script whose scripts directory has a space, a dollar and quotes in its path', () => {
+  /** The gate entrypoint copied under a directory named `with space $HOME "q"`, with `node_modules` linked so its imports resolve. */
+  function oddScriptsDirectory(): string {
+    checkoutCount += 1
+    const base = join(root, `with space $HOME "q" 's ${String(checkoutCount)}`)
+    mkdirSync(join(base, 'scripts'), {recursive: true})
+    cpSync(join(repoRoot, 'scripts', 'check-mutation-guards.ts'), join(base, 'scripts', 'check-mutation-guards.ts'))
+    symlinkSync(join(repoRoot, 'node_modules'), join(base, 'node_modules'))
+    return join(base, 'scripts')
+  }
+
+  async function runPackageScript(script: string, scriptsDirectory: string): Promise<SpawnEntrypointResult> {
+    const cwd = checkout()
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({scripts: {gate: script}}))
+    const event = join(root, `odd-event-${String(checkoutCount)}.json`)
+    writeFileSync(
+      event,
+      JSON.stringify({
+        pull_request: {number: 4, user: {login: 'u'}, head: {ref: 'r'}, base: {repo: {full_name: 'o/r'}}},
+      }),
+    )
+    return spawnEntrypoint({
+      entrypoint: 'run',
+      argv: ['gate'],
+      executable: realBun,
+      runtimeArgs: ['--no-install', '--no-env-file'],
+      cwd,
+      env: childEnv({
+        SCRIPTS_DIR: scriptsDirectory,
+        GITHUB_EVENT_NAME: 'pull_request',
+        GITHUB_EVENT_PATH: event,
+        FAKE_GH_FILES: 'README.md\n',
+      }),
+    })
+  }
+
+  const gateScript = (
+    JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {scripts: Record<string, string>}
+  ).scripts['check:mutation-guards']
+
+  it('runs the entrypoint named by the quoted variable', async () => {
+    const result = await runPackageScript(pointAtScriptsDirectory(gateScript ?? ''), oddScriptsDirectory())
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toMatch(/not-applicable\n$/u)
+  })
+
+  it('would not have, with the path pasted into the shell text (the control)', async () => {
+    const directory = oddScriptsDirectory()
+    const pasted = (gateScript ?? '').replaceAll('scripts/', `${directory}/`)
+    const result = await runPackageScript(pasted, directory)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stdout).not.toMatch(/not-applicable\n$/u)
   })
 })
 
