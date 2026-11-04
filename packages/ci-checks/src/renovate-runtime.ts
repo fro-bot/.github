@@ -8,6 +8,7 @@ import {join} from 'node:path'
 import process from 'node:process'
 import {pathToFileURL} from 'node:url'
 
+import {isRecord} from '@fro-bot/core/guards'
 import {parse as parseYaml} from 'yaml'
 
 /**
@@ -32,10 +33,6 @@ export const VERSION_KEY = 'RENOVATE_VERSION'
 export const PREFIX_ENV = 'RENOVATE_PREFIX'
 
 const EXACT_VERSION = /^\d+\.\d+\.\d+$/
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

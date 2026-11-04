@@ -190,7 +190,7 @@ jobs:
         # install the previous step left in RENOVATE_PREFIX.
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
-        run: bunx --no-install vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
+        run: bunx --no-install vitest run packages/ci-checks/src/check-renovate-config.test.ts packages/ci-checks/src/check-renovate-ranges.test.ts packages/ci-checks/src/renovate-runtime.test.ts
 
       - name: 📦 Install Release Tools
         # The semantic-release tool set pinned in release-wiki-write-core.yaml goes into a scratch prefix

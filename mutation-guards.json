@@ -77,10 +77,6 @@
       "reason": "GitHub API infra-recovery helper (branch existence check/restore). Its throw paths are network/API failure handling, not content-validation logic a gate depends on."
     },
     {
-      "path": "scripts/check-mutation-guards.ts",
-      "reason": "A directive scanner cannot describe its own grammar in comments without matching it; the classifier and scanner are covered by their fixture tests, not by mutation."
-    },
-    {
       "path": "packages/wiki-write-core/src/private-leak-adapter.ts",
       "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands. Its test stays in stryker.config.json testFiles regardless: it is private-leak.ts's only same-tree source exerciser (scripts/check-private-leak.ts imports the package specifier), so mutate=9/testFiles=10 is intentional."
     },
@@ -89,36 +85,8 @@
       "reason": "Survey routing predicate, not an independent write or promotion authority. runCheck fails closed (onboarded:false) on every error path -- missing env, ENOENT, malformed YAML, and schema failure all resolve to false, never true. The deciding predicate, publicRepoEntryExists in packages/registry/src/repos-metadata.ts, is not itself in the mutated set, so mutating this wrapper would not exercise the real decision."
     },
     {
-      "path": "scripts/check-md-links.ts",
-      "reason": "Documentation-quality lint for broken relative links. It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests."
-    },
-    {
-      "path": "scripts/check-solutions-examples.ts",
-      "reason": "Documentation-quality lint for docs/solutions code examples (parse validity, opt-in symbol/arity checks). It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
-    },
-    {
-      "path": "scripts/check-override-floors.ts",
-      "reason": "Supply-chain lint failing on any high or critical advisory that `bun audit --json` reports against the installed dependency tree (see PR #3871). It is a real security-relevant gate, but its rejection paths (fail-closed on empty or unparseable audit output, malformed package entries and advisory records, unrecognized severities, and every high/critical case) are enumerated and asserted directly in scripts/check-override-floors.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here, matching scripts/check-solutions-examples.ts's precedent."
-    },
-    {
       "path": "scripts/verify-wiki-write-core-package.ts",
       "reason": "Release-time proof, not a gate on content: packs the staged @fro.bot/wiki-write-core package, unpacks the tarball into a scratch node_modules, and spawns npm, tar, node and tsc to resolve, import and type-check every export. Its behavior is spawned processes and the filesystem, so a mutant is only observable through a real build and pack: scripts/wiki-write-core-package.test.ts runs that for real and pins each refusal (a file outside dist/, an export target missing from the tarball, a declaration file that does not type-check) with a negative case, and scripts/verify-wiki-write-core-package.test.ts pins the pack-result parser. Mutating it would run a build, a pack and a type-check per mutant."
-    },
-    {
-      "path": "scripts/check-renovate-ranges.ts",
-      "reason": "CI lint that parses allowedVersions values with Renovate's own versioning API (renovate/dist/modules/versioning, util/string-match) and fails on anything Renovate would reject at lookup time. It protects the published default.json preset from a config-breaking edit, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Every verdict branch (npm range, regex form, rule-declared non-npm versioning, semver fallback, unknown versioning, non-string, templated skip) and the failing rule naming are asserted directly in scripts/check-renovate-ranges.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
-    },
-    {
-      "path": "scripts/renovate-runtime.ts",
-      "reason": "Locates, installs and loads the pinned scratch Renovate for the preset gate (pin parsing, prefix resolution, install-command shape, fail-loud version check). CI tooling, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Pin parsing, prefix resolution, install flags and the missing/mismatched-install failures are asserted in scripts/renovate-runtime.test.ts; the real module loading is exercised by its RENOVATE_PREFIX integration test."
-    },
-    {
-      "path": "scripts/install-renovate.ts",
-      "reason": "Thin CLI over installRenovate in scripts/renovate-runtime.ts: reads the pin, resolves the prefix, installs, prints the prefix. The logic it delegates to is tested there; this file holds no decision of its own."
-    },
-    {
-      "path": "scripts/check-renovate-config.ts",
-      "reason": "CI lint orchestrating renovate-config-validator (--strict --no-global) over default.json, .github/renovate.json5 and the version-pinned github> presets they extend, then the allowedVersions range check. It protects the published default.json preset, not a security boundary, autonomous write, persisted trust state, or generated executable artifact. Fetch retry/404 fall-through, floating/unsupported preset classification, fail-closed fetch errors, and the real validator's exit-code contract are asserted directly in scripts/check-renovate-config.test.ts. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
     },
     {
       "path": "packages/test-kit/src/git-data-fake.ts",
@@ -711,6 +679,66 @@
     {
       "path": "scripts/improvement-metrics-report.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/reports/improvement-metrics-report-cli and runs it under the entry guard. The behaviour is in packages/reports/src/improvement-metrics-report.ts and improvement-metrics-report-cli.ts, the CLI at 100% mutation kills and the module measured as its own entry says. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/reports-flows.test.ts."
+    },
+    {
+      "path": "scripts/check-md-links.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/check-mutation-guards.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/check-override-floors.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/check-renovate-config.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/check-renovate-ranges.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/check-solutions-examples.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "scripts/install-renovate.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-md-links.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-mutation-guards.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-override-floors.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-renovate-config.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-renovate-ranges.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/check-solutions-examples.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/install-renovate.ts",
+      "reason": "TBD"
+    },
+    {
+      "path": "packages/ci-checks/src/renovate-runtime.ts",
+      "reason": "TBD"
     }
   ]
 }

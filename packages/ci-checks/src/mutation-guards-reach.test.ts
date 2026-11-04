@@ -1,5 +1,5 @@
 import {readFileSync} from 'node:fs'
-import {relative, resolve} from 'node:path'
+import {relative} from 'node:path'
 
 import {describe, expect, it} from 'vitest'
 import {
@@ -16,12 +16,13 @@ import {
   sourceReachTransitive,
   treeOf,
 } from './mutation-guards-reach.ts'
+import {findRepositoryRoot} from './repository-root.ts'
 
 // Every fixture below lives in memory. Source text names modules like `./fixture-a.ts`, which
 // resolve to `scripts/fixture-a.ts` — a path that never exists on disk — and the traversal is
 // handed an injected `exists`, so nothing here touches the filesystem under `scripts/`.
 
-const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryRoot = findRepositoryRoot()
 
 function toRepoRelative(absolutePath: string): string {
   return relative(repositoryRoot, absolutePath).replaceAll('\\', '/')
@@ -311,8 +312,8 @@ describe('sourceReachTransitive (in memory)', () => {
 describe('sourceReachTransitive against reachedModulesTransitive on barrel-free real closures', () => {
   const readReal: SourceReader = path => readFileSync(path, 'utf8')
   const entries = [
-    'scripts/mutation-guards-reach.test.ts',
-    'scripts/mutation-guards-config.test.ts',
+    'packages/ci-checks/src/mutation-guards-reach.test.ts',
+    'packages/ci-checks/src/mutation-guards-config.test.ts',
     'packages/knowledge/src/drafted-solutions-harvest.test.ts',
   ]
 

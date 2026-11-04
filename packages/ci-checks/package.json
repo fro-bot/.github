@@ -1,0 +1,35 @@
+{
+  "name": "@fro-bot/ci-checks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The repository checks of the Fro Bot control plane: the mutation gate, the lints and the Renovate tooling",
+  "type": "module",
+  "exports": {
+    "./check-md-links": "./src/check-md-links.ts",
+    "./check-md-links-cli": "./src/check-md-links-cli.ts",
+    "./check-mutation-guards": "./src/check-mutation-guards.ts",
+    "./check-mutation-guards-cli": "./src/check-mutation-guards-cli.ts",
+    "./check-override-floors": "./src/check-override-floors.ts",
+    "./check-override-floors-cli": "./src/check-override-floors-cli.ts",
+    "./check-renovate-config": "./src/check-renovate-config.ts",
+    "./check-renovate-config-cli": "./src/check-renovate-config-cli.ts",
+    "./check-renovate-ranges": "./src/check-renovate-ranges.ts",
+    "./check-renovate-ranges-cli": "./src/check-renovate-ranges-cli.ts",
+    "./check-solutions-examples": "./src/check-solutions-examples.ts",
+    "./check-solutions-examples-cli": "./src/check-solutions-examples-cli.ts",
+    "./install-renovate": "./src/install-renovate.ts",
+    "./install-renovate-cli": "./src/install-renovate-cli.ts",
+    "./mutation-guards-reach": "./src/mutation-guards-reach.ts",
+    "./renovate-runtime": "./src/renovate-runtime.ts",
+    "./repository-root": "./src/repository-root.ts"
+  },
+  "dependencies": {
+    "@fro-bot/core": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "typescript": "6.0.3",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@fro-bot/test-kit": "workspace:*"
+  }
+}

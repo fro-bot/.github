@@ -1,6 +1,15 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
+    "packages/ci-checks/src/check-md-links-cli.ts",
+    "packages/ci-checks/src/check-mutation-guards-cli.ts",
+    "packages/ci-checks/src/check-override-floors-cli.ts",
+    "packages/ci-checks/src/check-renovate-config-cli.ts",
+    "packages/ci-checks/src/check-renovate-ranges-cli.ts",
+    "packages/ci-checks/src/check-solutions-examples-cli.ts",
+    "packages/ci-checks/src/install-renovate-cli.ts",
+    "packages/ci-checks/src/mutation-guards-reach.ts",
+    "packages/ci-checks/src/repository-root.ts",
     "packages/core/src/cli.ts",
     "packages/core/src/env.ts",
     "packages/core/src/github.ts",
@@ -35,10 +44,18 @@
     "packages/wiki-write-core/src/corrections.ts",
     "packages/wiki-write-core/src/private-leak.ts",
     "scripts/build-wiki-write-core.ts",
-    "scripts/mutation-guards-reach.ts",
     "scripts/wiki-lockfile-gates.ts"
   ],
   "testFiles": [
+    "packages/ci-checks/src/check-md-links-cli.test.ts",
+    "packages/ci-checks/src/check-mutation-guards-cli.test.ts",
+    "packages/ci-checks/src/check-override-floors-cli.test.ts",
+    "packages/ci-checks/src/check-renovate-config-cli.test.ts",
+    "packages/ci-checks/src/check-renovate-ranges-cli.test.ts",
+    "packages/ci-checks/src/check-solutions-examples-cli.test.ts",
+    "packages/ci-checks/src/install-renovate-cli.test.ts",
+    "packages/ci-checks/src/mutation-guards-reach.test.ts",
+    "packages/ci-checks/src/repository-root.test.ts",
     "packages/core/src/cli.test.ts",
     "packages/core/src/env.test.ts",
     "packages/core/src/github-loader.test.ts",
@@ -77,7 +94,6 @@
     "packages/wiki-write-core/src/private-leak.test.ts",
     "packages/wiki-write-core/src/wiki-write-core.test.ts",
     "scripts/build-wiki-write-core.test.ts",
-    "scripts/mutation-guards-reach.test.ts",
     "scripts/wiki-lockfile-gates.test.ts"
   ],
   "plugins": ["@stryker-mutator/vitest-runner"],

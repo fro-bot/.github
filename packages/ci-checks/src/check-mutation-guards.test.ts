@@ -1,6 +1,6 @@
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {dirname, join, relative, resolve} from 'node:path'
+import {dirname, join, relative} from 'node:path'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
@@ -31,6 +31,7 @@ import {
   type ReporterConfig,
   type StrykerConfigShape,
 } from './check-mutation-guards.ts'
+import {findRepositoryRoot} from './repository-root.ts'
 
 // vi.mock calls are hoisted above all imports by Vitest's transform regardless of their
 // physical position in the file, so `main()` cannot actually spawn anything here if the
@@ -51,6 +52,14 @@ vi.mock('node:child_process', () => ({
 // `node:child_process` mock does not even provide `execFileSync` for). Every pre-existing
 // `runMutationGuardCheck` call below passes this explicitly so its behavior is identical
 // whether run locally or inside any CI event type.
+// The published package is `@fro.bot/wiki-write-core`; the dashed spelling is the name no workspace package has.
+// It is interpolated into the fixtures so that package-layout.test.ts, which counts an import-shaped string as an
+// import, does not read these fixtures as dependencies of this package.
+const DASHED_PUBLISHED_NAME = ['@fro-bot', 'wiki-write-core'].join('/')
+
+// A workspace package that does not exist, interpolated for the same reason.
+const ABSENT_PACKAGE = ['@fro-bot', 'absent'].join('/')
+
 const NOT_A_PULL_REQUEST_ENV = {eventName: undefined, eventPath: undefined} as const
 
 // ---------------------------------------------------------------------------
@@ -677,7 +686,7 @@ describe('scanDirectiveViolations', () => {
 
 describe('readMutateFileContents (documented policy decisions)', () => {
   // The repo root itself always exists and contains predictable fixtures for this test.
-  const root = resolve(import.meta.dirname, '..')
+  const root = findRepositoryRoot()
 
   it('silently skips reading a glob entry rather than throwing, and never reports it as missing', () => {
     const result = readMutateFileContents(['scripts/*.ts'], root)
@@ -795,7 +804,7 @@ function writeScratchConfig(dir: string, configBody: Record<string, unknown>): s
 }
 
 describe('resolveReporterConfig (default reporterConfig resolution)', () => {
-  const realConfigPath = resolve(import.meta.dirname, '..', 'stryker.config.json')
+  const realConfigPath = join(findRepositoryRoot(), 'stryker.config.json')
 
   it('reads the same config file the production run reads', () => {
     expect(realConfigPath).toBe(strykerConfigPath)
@@ -904,7 +913,10 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('bun.lock')).toBe(true)
     expect(triggerSet.files.has('bunfig.toml')).toBe(true)
     expect(triggerSet.files.has('scripts/check-mutation-guards.ts')).toBe(true)
-    expect(triggerSet.files.has('scripts/mutation-guards-config.test.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards-cli.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/mutation-guards-config.test.ts')).toBe(true)
     expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
     expect(triggerSet.files.has('packages/wiki-write-core/package.json')).toBe(true)
     expect(triggerSet.files.has('tsconfig.json')).toBe(true)
@@ -1108,17 +1120,15 @@ describe('closure-based trigger set against the real config', () => {
   // (b) A file genuinely outside the real closure, computed from the real config rather than
   // hardcoded, and confirmed both to EXIST on disk and to be absent from the real trigger set
   // — so the premise ("this file really is unreachable from every mutate/testFiles entry") is
-  // visible in the test itself, not asserted by fiat. `scripts/reconcile-repos.ts` is a large,
-  // wholly separate control-plane module (repo reconciliation/star-sync) with no import path
-  // — direct, transitive, or via a `@fro.bot/wiki-write-core` package-name reference — from any
-  // `mutate` or `testFiles` entry in `stryker.config.json`; it does not itself import, or get
-  // imported by, anything in the mutation set. (`markdown-links.ts`, this test's previous
-  // subject, no longer qualifies: the transitive-import fix now correctly reaches it through
-  // `wiki-lint.ts`, which is itself reached from the mutated `corrections-survival.ts`'s
-  // `import type {WikiLintFinding} from './wiki-lint.ts'`.)
-  it('reports not-applicable for a real file confirmed outside the real import closure (scripts/reconcile-repos.ts)', async () => {
-    const outsideClosureFile = 'scripts/reconcile-repos.ts'
-    expect(existsSync(join(resolve(import.meta.dirname, '..'), outsideClosureFile))).toBe(true)
+  // visible in the test itself, not asserted by fiat. `packages/registry/src/reconcile-plan.ts` is the
+  // pure planning seam of the repository reconciler (repo reconciliation/star-sync): no import path —
+  // direct, transitive, or via a package-name reference — leads to it from any `mutate` or
+  // `testFiles` entry in `stryker.config.json`, and it does not itself import, or get imported by,
+  // anything in the mutation set. It exists at the repository root the gate resolves, which is the
+  // point of naming it: a root resolved one level too deep would not find it.
+  it('reports not-applicable for a real file confirmed outside the real import closure (packages/registry/src/reconcile-plan.ts)', async () => {
+    const outsideClosureFile = 'packages/registry/src/reconcile-plan.ts'
+    expect(existsSync(join(findRepositoryRoot(), outsideClosureFile))).toBe(true)
     expect(realTriggerSet.files.has(outsideClosureFile)).toBe(false)
 
     const result = await evaluateTriggerGate(
@@ -1174,7 +1184,7 @@ describe('closure-based trigger set against the real config', () => {
   // wiki-slug.ts.
   it('includes every not-mutated entry that is imported by a mutate entry in the trigger set', () => {
     const notMutated: {readonly path: string; readonly reason: string}[] = (
-      JSON.parse(readFileSync(join(resolve(import.meta.dirname, '..'), 'mutation-guards.json'), 'utf8')) as {
+      JSON.parse(readFileSync(join(findRepositoryRoot(), 'mutation-guards.json'), 'utf8')) as {
         'not-mutated': {readonly path: string; readonly reason: string}[]
       }
     )['not-mutated']
@@ -1613,8 +1623,8 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
   // The `@fro-bot/` scope names the private workspace packages. It is resolved through each
   // package's exports map by `froBotPackageSourceFiles`, never by this published-package scan.
   it('leaves the @fro-bot scope to the workspace-package resolver', () => {
-    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core'`)).toEqual([])
-    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core/wiki-slug'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '${DASHED_PUBLISHED_NAME}'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '${DASHED_PUBLISHED_NAME}/wiki-slug'`)).toEqual([])
     expect(sourceFilesFor(`import {x} from '@fro-bot/core/guards'`)).toEqual([])
   })
 
@@ -1624,7 +1634,7 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
   })
 
   it('finds package references in the real scripts and package trees, so a scan that matches nothing cannot pass', () => {
-    const repositoryRoot = resolve(import.meta.dirname, '..')
+    const repositoryRoot = findRepositoryRoot()
     const sourceDirectories = ['scripts']
     for (const entry of readdirSync(join(repositoryRoot, 'packages'), {withFileTypes: true})) {
       if (entry.isDirectory() && entry.name !== 'wiki-write-core') sourceDirectories.push(`packages/${entry.name}/src`)
@@ -1641,7 +1651,7 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
     expect(referencingFiles.length).toBeGreaterThanOrEqual(10)
     for (const {sources} of referencingFiles) {
       for (const source of sources) {
-        expect(existsSync(join(resolve(import.meta.dirname, '..'), source)), source).toBe(true)
+        expect(existsSync(join(findRepositoryRoot(), source)), source).toBe(true)
       }
     }
   })
@@ -1653,7 +1663,7 @@ describe('wikiWriteCoreSubpathSourceFiles specifier scan', () => {
 // so these tests do not depend on which packages exist on disk.
 // ---------------------------------------------------------------------------
 
-const repositoryRootForFakes = resolve(import.meta.dirname, '..')
+const repositoryRootForFakes = findRepositoryRoot()
 
 /**
  * A `SourceReader` backed by a repo-relative path map. A `.ts` path missing from the map reads as
@@ -1723,11 +1733,11 @@ describe('froBotPackageSourceFiles specifier scan', () => {
   })
 
   it('does not resolve a package whose manifest does not exist', () => {
-    expect(sourceFilesFor(`import {x} from '@fro-bot/absent/guards'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '${ABSENT_PACKAGE}/guards'`)).toEqual([])
   })
 
   it('does not resolve @fro-bot/wiki-write-core: the published package is @fro.bot/wiki-write-core', () => {
-    expect(sourceFilesFor(`import {x} from '@fro-bot/wiki-write-core'`)).toEqual([])
+    expect(sourceFilesFor(`import {x} from '${DASHED_PUBLISHED_NAME}'`)).toEqual([])
     expect(sourceFilesFor(`import {x} from '@fro.bot/wiki-write-core'`)).toEqual([])
   })
 

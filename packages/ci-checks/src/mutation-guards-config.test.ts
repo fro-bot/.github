@@ -1,6 +1,6 @@
 import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join, relative, resolve} from 'node:path'
+import {join, relative} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 import {
@@ -10,8 +10,9 @@ import {
   readStrykerConfig,
 } from './check-mutation-guards.ts'
 import {normalizePath, treeOf} from './mutation-guards-reach.ts'
+import {findRepositoryRoot} from './repository-root.ts'
 
-const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryRoot = findRepositoryRoot()
 const packagesRoot = join(repositoryRoot, 'packages')
 const scriptsDir = join(repositoryRoot, 'scripts')
 const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
@@ -283,12 +284,26 @@ describe('mutation guard enumeration', () => {
     ).toEqual([])
   })
 
-  it('Test 2b: the gate-file convention enumerates mutation-guards-*.ts modules and skips their tests', () => {
+  it('Test 2b: the gate-file convention enumerates the check-*.ts entrypoints and skips tests', () => {
     const files = listScriptsGateFiles(scriptsDir)
 
-    expect(files).toContain('scripts/mutation-guards-reach.ts')
-    expect(files).not.toContain('scripts/mutation-guards-reach.test.ts')
-    expect(files).not.toContain('scripts/mutation-guards-config.test.ts')
+    // The seven entrypoints of @fro-bot/ci-checks stay in scripts/ under their old names, so the convention still
+    // finds them; the modules they front live in packages/ci-checks/src and are Test 1's.
+    for (const name of [
+      'check-md-links',
+      'check-mutation-guards',
+      'check-override-floors',
+      'check-renovate-config',
+      'check-renovate-ranges',
+      'check-solutions-examples',
+    ]) {
+      expect(files).toContain(`scripts/${name}.ts`)
+    }
+    expect(files).toContain('scripts/wiki-lockfile-gates.ts')
+    expect(files).toContain('scripts/build-wiki-write-core.ts')
+    expect(files.filter(path => path.endsWith('.test.ts'))).toEqual([])
+    // The modules moved out: nothing in scripts/ is a mutation-guards-* module any more.
+    expect(files.filter(path => /^scripts\/mutation-guards-.+\.ts$/u.test(path))).toEqual([])
   })
 
   it('Test 3: every mutate entry is reached by a same-tree test, and no pairing crosses the packages/scripts tree boundary', () => {
@@ -494,9 +509,11 @@ describe('reachedByPackageName (real tree)', () => {
   })
 
   it('does not count a relative import as a name import', () => {
-    expect(reachedByPackageName('scripts/check-mutation-guards.test.ts').has('scripts/check-mutation-guards.ts')).toBe(
-      false,
-    )
+    expect(
+      reachedByPackageName('packages/ci-checks/src/check-mutation-guards.test.ts').has(
+        'packages/ci-checks/src/check-mutation-guards.ts',
+      ),
+    ).toBe(false)
   })
 })
 

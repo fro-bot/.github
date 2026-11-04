@@ -30,7 +30,7 @@ Unit 5A-1 of the counterexample-proven-guards plan drove `packages/wiki-write-co
 to a clean mutation run. The first pass shipped ten `// Stryker disable next-line <Mutator>: <reason>`
 directives. Review caught three that were wrong, and a follow-up caught two more — five directives
 total across two review passes, out of ten shipped. `evaluateDirectiveLine` in
-`scripts/check-mutation-guards.ts` only validates that a directive is `next-line` scoped and carries a
+`packages/ci-checks/src/check-mutation-guards.ts` only validates that a directive is `next-line` scoped and carries a
 non-empty reason; it cannot see whether the reason is *true*. That gap is structural, not a bug to fix
 in the scanner — the discipline has to live in how directives get written.
 
