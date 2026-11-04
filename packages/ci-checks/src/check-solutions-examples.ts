@@ -136,13 +136,23 @@ interface CommentSpan {
   readonly inner: string
 }
 
-/** 1-based line number containing byte offset `index` into `content`. */
-function lineNumberAt(content: string, index: number): number {
-  let line = 1
-  for (let i = 0; i < index; i++) {
-    if (content[i] === '\n') line += 1
+/** The offset at which each line of `content` starts, in order: 0, then one past each newline. */
+function lineStartOffsets(content: string): number[] {
+  const starts = [0]
+  for (let index = content.indexOf('\n'); index !== -1; index = content.indexOf('\n', index + 1)) starts.push(index + 1)
+  return starts
+}
+
+/** 1-based line number containing `index`, by binary search over `lineStartOffsets`. */
+function lineNumberAt(lineStarts: readonly number[], index: number): number {
+  let low = 0
+  let high = lineStarts.length - 1
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    if ((lineStarts[middle] ?? 0) <= index) low = middle
+    else high = middle - 1
   }
-  return line
+  return low + 1
 }
 
 /**
@@ -156,29 +166,37 @@ interface UnterminatedComment {
   readonly index: number
 }
 
-function findCommentSpans(content: string): {
+export function findCommentSpans(content: string): {
   readonly spans: readonly CommentSpan[]
   readonly unterminated: readonly UnterminatedComment[]
 } {
   const spans: CommentSpan[] = []
   const consumedRanges: {readonly start: number; readonly end: number}[] = []
+  const lineStarts = lineStartOffsets(content)
 
-  for (const match of content.matchAll(COMMENT_SPAN_PATTERN)) {
+  // A `<!--` with no `-->` after it matches nothing, and the lazy scan from each such opener would read to the end of the
+  // document, so the scan stops at the last `-->`: every comment it can match ends there or earlier.
+  const lastClose = content.lastIndexOf('-->')
+  const scanned = lastClose === -1 ? '' : content.slice(0, lastClose + 3)
+  for (const match of scanned.matchAll(COMMENT_SPAN_PATTERN)) {
     const start = match.index
     const end = start + match[0].length
     consumedRanges.push({start, end})
     spans.push({
-      startLine: lineNumberAt(content, start),
-      endLine: lineNumberAt(content, end - 1),
+      startLine: lineNumberAt(lineStarts, start),
+      endLine: lineNumberAt(lineStarts, end - 1),
       inner: match[1] ?? '',
     })
   }
 
+  // Openers and consumed ranges are both in increasing order, so one forward pass pairs them.
   const unterminated: UnterminatedComment[] = []
+  let range = 0
   for (const openMatch of content.matchAll(COMMENT_OPEN_PATTERN)) {
     const index = openMatch.index
-    const covered = consumedRanges.some(range => index >= range.start && index < range.end)
-    if (!covered) unterminated.push({line: lineNumberAt(content, index), index})
+    while (range < consumedRanges.length && (consumedRanges[range]?.end ?? 0) <= index) range += 1
+    const covered = range < consumedRanges.length && (consumedRanges[range]?.start ?? 0) <= index
+    if (!covered) unterminated.push({line: lineNumberAt(lineStarts, index), index})
   }
 
   return {spans, unterminated}

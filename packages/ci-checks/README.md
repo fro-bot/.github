@@ -18,16 +18,25 @@ The gate fails closed in these ways, each pinned by a test:
 
 `mutation-guards-config.test.ts` enumerates `packages/*/src` and the `scripts/` entrypoints against `stryker.config.json` and `mutation-guards.json`, so a module nobody classified fails the build. Deleting `mutation-guards.json` fails that test; deleting `stryker.config.json` fails the gate.
 
+## Regexes and scans
+
+Everything in this package that reads text a pull request controls is linear in that text, and `src/regex-scaling.test.ts` times it: the source of a `mutate` or `testFiles` entry and of every file it imports (the import-closure scans and the directive scanner), the barrel check, and the markdown of `docs/solutions` (comment, fence and `verify:` marker scans) and of the repository. Four scans were not, and are rewritten to give exactly the output they gave before, held to it by a seeded differential in `src/superlinear-differential.test.ts` and `src/inline-literal-interpolations.test.ts`:
+
+- the template-literal lookup `${'...'}` (exponential on a run of backslashes) is `inlineLiteralInterpolations`;
+- the `vi.mock<...>(` type-argument introducer (a rescan to the same `>` from every `<`) is `markVitestTypeArguments`;
+- the brace forms of the barrel export pattern (a rescan to the same `}`) are `stripBarrelExports`;
+- the HTML comment scan of a solution document (a rescan to the end of the document from every unclosed `<!--`, and a line count from the start for every comment) is `findCommentSpans`.
+
 ## Modules
 
 | Subpath | Exports | Notes |
 | --- | --- | --- |
-| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
-| `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
+| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
+| `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `stripBarrelExports`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
 | `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md` and `docs/**/*.md` of the working directory. |
 | `@fro-bot/ci-checks/check-override-floors`, `-cli` | `checkOverrideFloors`, `parseAuditOutput`, `runBunAudit`, `formatProblem`, `runCheckOverrideFloors`; `checkOverrideFloorsCli`, `main` | `bun audit --json`; anything it cannot interpret is a failure. |
-| `@fro-bot/ci-checks/check-solutions-examples`, `-cli` | `checkSolutionsExamples`, `extractCodeBlocks`, `runCheckSolutionsExamples`, ...; `checkSolutionsExamplesCli`, `main` | Imports `typescript`, so no barrel re-exports it. |
+| `@fro-bot/ci-checks/check-solutions-examples`, `-cli` | `checkSolutionsExamples`, `extractCodeBlocks`, `findCommentSpans`, `runCheckSolutionsExamples`, ...; `checkSolutionsExamplesCli`, `main` | Imports `typescript`, so no barrel re-exports it. |
 | `@fro-bot/ci-checks/install-renovate`, `-cli` | `runInstallRenovate`; `installRenovateCli`, `main` | Runs under Node. |
 | `@fro-bot/ci-checks/renovate-runtime` | `readPinnedVersion`, `resolvePrefix`, `installRenovate`, `loadRenovateRuntime`, `assertRenovateInstalled`, ... | The pin lives in `env.RENOVATE_VERSION` of `main.yaml`. |
 | `@fro-bot/ci-checks/check-renovate-config`, `-cli` | `checkRenovateConfig`, `classifyExtends`, `fetchPinnedPreset`, `runRenovateValidator`, `runCheckRenovateConfig`; `checkRenovateConfigCli`, `main` | Runs under Node. |

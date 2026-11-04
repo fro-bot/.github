@@ -23,10 +23,56 @@ export function treeOf(path: string): 'packages' | 'scripts' | undefined {
 // `directSpecifiers` (./check-mutation-guards.ts) already recognizes as a re-export, so a
 // module this pattern fails to strip is exactly a module `directSpecifiers` would also treat
 // as carrying no reach-worthy specifier of its own (has none of the forms it looks for).
+// The two brace forms match only their opening here: `stripBarrelExports` finds the closing
+// brace and the `from` clause itself, because `\{[^}]*\}` rescans to the same `}` from every
+// `{` and is quadratic on a file of unclosed braces.
 // A function rather than a module-level const, so its regex mutants are covered by the barrel
 // tests alone instead of being static mutants that run every test file.
-function barrelExportStatementPattern(): RegExp {
-  return /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?|export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?/gu
+function barrelExportHeadPattern(): RegExp {
+  return /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{|export\s*\{/gu
+}
+
+/** What must follow the closing brace of a `export {...}` or `export type {...}` statement. */
+function barrelFromClausePattern(): RegExp {
+  return /\s*from\s+['"][^'"]+['"]\s*;?/uy
+}
+
+/**
+ * `content` with every barrel export statement removed, in time linear in `content`. It returns what
+ * `content.replaceAll(/<the three forms>/gu, '')` returns, where a brace form is
+ * `export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?` or `export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?`.
+ * A brace head whose list or `from` clause does not complete is skipped one character on, as the engine
+ * would retry from the next start; the first `}` after a head is found once and reused by the heads inside the same
+ * list.
+ */
+export function stripBarrelExports(content: string): string {
+  const head = barrelExportHeadPattern()
+  const fromClause = barrelFromClausePattern()
+  let result = ''
+  let copied = 0
+  let listFrom = -1
+  let listClose = -1
+  for (let match = head.exec(content); match !== null; match = head.exec(content)) {
+    let end = match.index + match[0].length
+    if (match[0].endsWith('{')) {
+      const reusable = listFrom !== -1 && listFrom <= end && (listClose === -1 || end <= listClose)
+      if (!reusable) {
+        listFrom = end
+        listClose = content.indexOf('}', end)
+      }
+      fromClause.lastIndex = listClose + 1
+      const clause = listClose === -1 ? null : fromClause.exec(content)
+      if (clause === null) {
+        head.lastIndex = match.index + 1
+        continue
+      }
+      end = listClose + 1 + clause[0].length
+    }
+    result += content.slice(copied, match.index)
+    copied = end
+    head.lastIndex = end
+  }
+  return result + content.slice(copied)
 }
 
 /**
@@ -52,7 +98,7 @@ function barrelExportStatementPattern(): RegExp {
  */
 export function isPureReexportBarrel(repoRelativeFilePath: string, readSource: SourceReader): boolean {
   const content = stripComments(readSource(join(findRepositoryRoot(), repoRelativeFilePath)))
-  const withoutBarrelStatements = content.replaceAll(barrelExportStatementPattern(), '')
+  const withoutBarrelStatements = stripBarrelExports(content)
   return withoutBarrelStatements.trim().length === 0
 }
 

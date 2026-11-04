@@ -19,7 +19,7 @@ All six are test support. None is in the mutated set; `mutation-guards.json` lis
 
 ## Mutated code and name imports
 
-A test that kills mutants must import the mutated module by relative path. The Stryker sandbox links `node_modules` to the real tree, so a name import loads the un-mutated file and every mutant survives. A package-name import kills none of a module's mutants; a relative import kills all of them. `scripts/mutation-guards-config.test.ts` rejects a `mutate` entry whose tests reach it only through an `@fro-bot/` name.
+A test that kills mutants must import the mutated module by relative path. The Stryker sandbox links `node_modules` to the real tree, so a name import loads the un-mutated file and every mutant survives. A package-name import kills none of a module's mutants; a relative import kills all of them. `packages/ci-checks/src/mutation-guards-config.test.ts` rejects a `mutate` entry whose tests reach it only through an `@fro-bot/` name.
 
 The helpers here are not mutated, so importing them by name is safe: a mutated module's tests may use them.
 
@@ -67,5 +67,5 @@ No CLI runs on this package.
 ## Adding a helper
 
 1. Add `src/<name>.ts` and its subpath to `exports` in `package.json`. Use erasable TypeScript syntax only (Node strip-only loads it).
-2. List the module in `mutation-guards.json` under `not-mutated` with a reason. `mutation-guards-config.test.ts` fails an unlisted module.
+2. List the module in `mutation-guards.json` under `not-mutated` with a reason. `packages/ci-checks/src/mutation-guards-config.test.ts` fails an unlisted module.
 3. Put a test beside it when the helper has logic of its own (`src/workflow-expression.test.ts` is the pattern).

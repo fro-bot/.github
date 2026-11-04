@@ -2013,3 +2013,146 @@ describe('package manifests are fixed triggers', () => {
     ).toBe(true)
   })
 })
+
+describe(
+  'the gate names every path from the repository root, three levels above the package',
+  {timeout: 60_000},
+  () => {
+    const root = findRepositoryRoot()
+
+    it('reads stryker.config.json and writes the report under the root, never under packages/ci-checks', () => {
+      expect(strykerConfigPath).toBe(join(root, 'stryker.config.json'))
+      expect(mutationReportPath).toBe(join(root, 'reports', 'mutation', 'mutation.json'))
+      expect(existsSync(strykerConfigPath)).toBe(true)
+      expect(strykerConfigPath).not.toContain(join('packages', 'ci-checks'))
+      expect(mutationReportPath).not.toContain(join('packages', 'ci-checks'))
+    })
+
+    it("reads the config's report path from the same root: the config names reports/mutation/mutation.json", () => {
+      const reporter = resolveReporterConfig(strykerConfigPath)
+      expect(reporter.resolvedJsonReportPath).toBe(mutationReportPath)
+      expect(reporter.reporters).toContain('json')
+    })
+
+    it('spawns Stryker with the root as its working directory and the root config as its argument', () => {
+      mockSpawnSync.mockReturnValue({error: undefined, status: 0})
+      try {
+        defaultStrykerSpawner()
+        const call = mockSpawnSync.mock.calls.at(-1) as [string, string[], {cwd?: string}] | undefined
+        expect(call?.[0]).toBe('bunx')
+        expect(call?.[1]).toEqual(['--no-install', 'stryker', 'run', join(root, 'stryker.config.json')])
+        expect(call?.[2].cwd).toBe(root)
+      } finally {
+        mockSpawnSync.mockReset()
+      }
+    })
+
+    it('lists the manifest of every package that exists under the root, ci-checks included', () => {
+      const triggerSet = buildTriggerSet(readStrykerConfig(strykerConfigPath))
+      const manifests = readdirSync(join(root, 'packages'), {withFileTypes: true})
+        .filter(entry => entry.isDirectory() && existsSync(join(root, 'packages', entry.name, 'package.json')))
+        .map(entry => `packages/${entry.name}/package.json`)
+      expect(manifests).toContain('packages/ci-checks/package.json')
+      for (const manifest of manifests) expect(triggerSet.files.has(manifest), manifest).toBe(true)
+    })
+
+    it('resolves a relative specifier of a repo-relative file against the root', () => {
+      const reached = reachedModulesTransitive('packages/ci-checks/src/mutation-guards-reach.ts')
+      expect(reached.has('packages/ci-checks/src/check-mutation-guards.ts')).toBe(true)
+      expect(reached.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
+    })
+  },
+)
+
+// The real config and the real tree: the pair of verdicts the move must not change, and the proof that every file of this
+// package the gate itself loads is a trigger, so editing the gate cannot read not-applicable.
+describe('the gate classifies the real tree after the move', {timeout: 60_000}, () => {
+  const realConfig = readStrykerConfig(strykerConfigPath)
+  const realTriggerSet = buildTriggerSet(realConfig)
+  const verdictFor = async (changed: readonly string[]) =>
+    (await evaluateTriggerGate(realConfig, PULL_REQUEST_EVENT, fakeGateDeps({fetchChangedFiles: () => [...changed]})))
+      ?.verdict
+
+  it('a core-only change is applicable (the gate runs Stryker)', async () => {
+    expect(await verdictFor(['packages/core/src/guards.ts'])).toBeUndefined()
+    expect(await verdictFor(['packages/core/src/guards.test.ts'])).toBeUndefined()
+  })
+
+  it('a docs-only change is not-applicable', async () => {
+    expect(await verdictFor(['README.md', 'docs/solutions/best-practices/x.md', 'docs/plans/y.md'])).toBe(
+      'not-applicable',
+    )
+  })
+
+  it('a change to the entrypoint, the gate, its CLI wiring, the root helper or the config test is applicable', async () => {
+    for (const file of [
+      'scripts/check-mutation-guards.ts',
+      'packages/ci-checks/src/check-mutation-guards.ts',
+      'packages/ci-checks/src/check-mutation-guards-cli.ts',
+      'packages/ci-checks/src/repository-root.ts',
+      'packages/ci-checks/src/mutation-guards-config.test.ts',
+    ]) {
+      expect(await verdictFor([file]), file).toBeUndefined()
+    }
+  })
+
+  it('every file of packages/ci-checks the entrypoint loads is in the trigger set', () => {
+    const loaded = [...buildImportClosure(['scripts/check-mutation-guards.ts']).files].filter(file =>
+      file.startsWith('packages/ci-checks/'),
+    )
+    // The entrypoint names the CLI by package name, the CLI reaches the gate, the gate reaches the root helper.
+    expect(loaded).toEqual(
+      expect.arrayContaining([
+        'packages/ci-checks/src/check-mutation-guards-cli.ts',
+        'packages/ci-checks/src/check-mutation-guards.ts',
+        'packages/ci-checks/src/repository-root.ts',
+      ]),
+    )
+    for (const file of loaded) expect(realTriggerSet.files.has(file), file).toBe(true)
+  })
+
+  it('every file the gate and its tests load from this package is in the trigger set, so no edit to them reads not-applicable', () => {
+    const entries = [
+      'packages/ci-checks/src/check-mutation-guards.test.ts',
+      'packages/ci-checks/src/check-mutation-guards-cli.test.ts',
+      'packages/ci-checks/src/mutation-guards-config.test.ts',
+    ]
+    for (const entry of entries) {
+      const own = [...buildImportClosure([entry]).files].filter(file => file.startsWith('packages/ci-checks/'))
+      expect(own.length, entry).toBeGreaterThan(0)
+      for (const file of own) expect(realTriggerSet.files.has(file), `${entry} -> ${file}`).toBe(true)
+    }
+  })
+
+  it('the moved lint modules are triggers through the mutated CLI modules that import them', () => {
+    for (const file of [
+      'packages/ci-checks/src/check-md-links.ts',
+      'packages/ci-checks/src/check-override-floors.ts',
+      'packages/ci-checks/src/check-solutions-examples.ts',
+      'packages/ci-checks/src/check-renovate-config.ts',
+      'packages/ci-checks/src/check-renovate-ranges.ts',
+      'packages/ci-checks/src/renovate-runtime.ts',
+      'packages/ci-checks/src/install-renovate.ts',
+    ]) {
+      expect(realTriggerSet.files.has(file), file).toBe(true)
+    }
+  })
+})
+
+describe('the gate fails closed on a missing or unusable stryker.config.json', () => {
+  it.each([
+    ['is missing', undefined, /ENOENT/u],
+    ['is not JSON', '{ nope', /JSON/iu],
+    ['has no mutate list', '{"testFiles": []}', /missing a string\[\] "mutate" field/u],
+    ['has a mutate list of non-strings', '{"mutate": [1]}', /missing a string\[\] "mutate" field/u],
+  ])('reading a config that %s throws, so the gate never reports a verdict from it', (_name, body, pattern) => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-mutation-guards-config-missing-'))
+    try {
+      const path = join(dir, 'stryker.config.json')
+      if (body !== undefined) writeFileSync(path, body, 'utf8')
+      expect(() => readStrykerConfig(path)).toThrow(pattern)
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+})

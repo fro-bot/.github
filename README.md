@@ -205,13 +205,13 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild and the corrections lifecycle and context. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety` and `wiki-change-detect-core` are held at 100% mutation kills. |
 | [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It does not import `@fro-bot/status-truth`. |
 | [`@fro-bot/reports`](packages/reports/README.md) | In the repository | The improvement-metrics loop (`improvement-metrics-detect`, `-report` and `-core`), `daily-digest-counts` and `gateway-announce`. `scripts/` keeps one entrypoint per CLI. The four CLI modules and `gateway-announce` are held at 100% mutation kills. It depends only on `@fro-bot/core` and `@fro-bot/privacy`. |
-| `ci-checks` | Planned | The domain package that the remaining `scripts/` modules move into. |
+| [`@fro-bot/ci-checks`](packages/ci-checks/README.md) | In the repository | The repository checks: the mutation gate (`check-mutation-guards`, which resolves its root from the package) with `mutation-guards-reach`, the `md-links`, `override-floors` and `solutions-examples` lints, and the Renovate tooling (`install-renovate`, `check-renovate-config`, `check-renovate-ranges`, `renovate-runtime`). `scripts/` keeps one entrypoint per CLI. The seven CLI modules, `mutation-guards-reach` and `repository-root` are held at 100% mutation kills. It depends on `@fro-bot/core`, `@fro.bot/wiki-write-core`, `typescript` and `yaml`. |
 
 `scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
 
 ### Package dependency graph
 
-The graph below is the authoritative one: `scripts/package-layout.test.ts` checks the real graph, and this diagram is maintained by hand. Dashed nodes are planned. An arrow points from a package to what it depends on; the dotted arrow is a `devDependencies` edge.
+The graph below is the authoritative one: `scripts/package-layout.test.ts` checks the real graph, and this diagram is maintained by hand. An arrow points from a package to what it depends on; the dotted arrow is a `devDependencies` edge.
 
 ```mermaid
 flowchart BT
@@ -225,7 +225,7 @@ flowchart BT
   wikiops["@fro-bot/wiki-ops"]
   knowledge["@fro-bot/knowledge"]
   reports["@fro-bot/reports"]
-  cichecks["ci-checks (planned)"]:::planned
+  cichecks["@fro-bot/ci-checks"]
 
   core -. "dev: spawn tests" .-> testkit
   core -. "dev: authority test" .-> wwc
@@ -236,6 +236,7 @@ flowchart BT
   knowledge -. "dev: fixtures" .-> testkit
   knowledge -. "dev: fixtures" .-> wwc
   reports -. "dev: fixtures" .-> testkit
+  cichecks -. "dev: fixtures" .-> testkit
   privacy --> core & wwc
   registry --> core & wwc
   dispatch --> core & wwc
@@ -244,8 +245,6 @@ flowchart BT
   knowledge --> core & privacy & wikiops
   reports --> core & privacy
   cichecks --> core & wwc
-
-  classDef planned stroke-dasharray: 5 5
 ```
 
 ### Containers
@@ -260,7 +259,7 @@ C4Container
 
   System_Boundary(repo, "fro-bot/.github") {
     Container(workflows, "Workflows", "GitHub Actions YAML", "Schedules and events; run scripts/<name>.ts")
-    Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, and the modules not yet moved into a package")
+    Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, the build and release scripts, wiki-lockfile-gates and the four wiki-write-core wrappers")
     Container(core, "@fro-bot/core", "Private package", "guards, output, json, retry, github, cli, env")
     Container(privacy, "@fro-bot/privacy", "Private package", "Private-leak scan, wiki-presence gate, public-output gate, token loaders, operator tools")
     Container(registry, "@fro-bot/registry", "Private package", "Metadata writers, reconcile, invitations, survey results, data-branch merges")
@@ -271,7 +270,7 @@ C4Container
     Container(wikiops, "@fro-bot/wiki-ops", "Private package", "Wiki handoff, change detection, queries, context expansion, repair, lint-issue sync, index rebuild, corrections")
     Container(knowledge, "@fro-bot/knowledge", "Private package", "Learning capture, pattern synthesis, drafted solution docs")
     Container(reports, "@fro-bot/reports", "Private package", "Improvement-metrics detect, report and core, daily digest counts, gateway announce")
-    Container(domains, "Domain package (planned)", "Private package", "ci-checks")
+    Container(cichecks, "@fro-bot/ci-checks", "Private package", "Mutation gate and its reach module, md-links, override-floors and solutions-examples lints, Renovate install, config and range checks")
   }
 
   System_Ext(github, "GitHub", "REST API, Git Data API, Actions runner")
@@ -303,12 +302,12 @@ C4Container
   Rel(scripts, reports, "fronts")
   Rel(reports, core, "imports")
   Rel(reports, privacy, "imports")
-  Rel(scripts, domains, "will front")
-  Rel(domains, core, "will import")
+  Rel(scripts, cichecks, "fronts")
+  Rel(cichecks, core, "imports")
+  Rel(cichecks, wwc, "imports")
   Rel(scripts, testkit, "tests import")
   Rel(scripts, github, "calls")
 
-  UpdateElementStyle(domains, $bgColor="grey", $borderColor="grey")
   UpdateRelStyle(operator, workflows, $offsetX="-40", $offsetY="-10")
   UpdateRelStyle(workflows, scripts, $offsetX="-30", $offsetY="-10")
   UpdateRelStyle(scripts, core, $offsetX="-60", $offsetY="20")
@@ -332,8 +331,9 @@ C4Container
   UpdateRelStyle(scripts, reports, $offsetX="-60", $offsetY="50")
   UpdateRelStyle(reports, core, $offsetX="50", $offsetY="-30")
   UpdateRelStyle(reports, privacy, $offsetX="-20", $offsetY="-40")
-  UpdateRelStyle(scripts, domains, $offsetX="20", $offsetY="10")
-  UpdateRelStyle(domains, core, $offsetX="-20", $offsetY="-10")
+  UpdateRelStyle(scripts, cichecks, $offsetX="20", $offsetY="10")
+  UpdateRelStyle(cichecks, core, $offsetX="-20", $offsetY="-10")
+  UpdateRelStyle(cichecks, wwc, $offsetX="20", $offsetY="-30")
   UpdateRelStyle(scripts, testkit, $offsetX="30", $offsetY="30")
   UpdateRelStyle(scripts, github, $offsetX="40", $offsetY="-20")
 ```

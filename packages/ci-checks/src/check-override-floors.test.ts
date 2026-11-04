@@ -3,6 +3,10 @@ import type {execFileSync} from 'node:child_process'
 import type {AuditRunResult} from './check-override-floors.ts'
 
 import {Buffer} from 'node:buffer'
+import {chmodSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {delimiter, join} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {checkOverrideFloors, formatProblem, parseAuditOutput, runBunAudit} from './check-override-floors.ts'
 
@@ -326,5 +330,56 @@ describe('formatProblem', () => {
     expect(formatProblem({kind: 'unparseable-advisory-record', packageName: 'ajv', index: 3})).toBe(
       'ajv: bun audit advisory record at index 3 is missing required fields (id, severity, vulnerable_versions)',
     )
+  })
+})
+
+/** The failure reason of a result that must be a failure; fails the test otherwise. */
+function failureReason(result: AuditRunResult): string {
+  if (result.ok) throw new Error('expected a failed audit run')
+  return result.reason
+}
+
+describe('the parse failure and exec failure reasons', () => {
+  it('names a JSON parse failure with the parser message and a wrong shape with the expected shape', () => {
+    expect(failureReason(parseAuditOutput('{ nope'))).toMatch(/^bun audit output did not parse as JSON: .+/u)
+    expect(failureReason(parseAuditOutput(''))).toMatch(/^bun audit output did not parse as JSON: .+/u)
+    expect(failureReason(parseAuditOutput('[]'))).toBe(
+      'bun audit output did not match the expected shape (a map of package names)',
+    )
+  })
+
+  it('recovers stdout from a thrown error only when it is a string or a Buffer', () => {
+    const throwing = (error: unknown) =>
+      (() => {
+        throw error
+      }) as unknown as typeof execFileSync
+    expect(runBunAudit(throwing({stdout: '{}'}))).toEqual({ok: true, advisories: {}})
+    expect(runBunAudit(throwing({stdout: Buffer.from('{"a": []}')}))).toEqual({ok: true, advisories: {a: []}})
+    for (const error of ['boom', null, 7, {stdout: 7}, {stdout: undefined}, {stdout: ['{}']}]) {
+      expect(failureReason(runBunAudit(throwing(error))), String(error)).toMatch(/^bun audit could not be executed: /u)
+    }
+  })
+})
+
+describe('checkOverrideFloors with the default audit', () => {
+  it('runs `bun audit --json` from PATH and judges its output', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'check-override-floors-bin-'))
+    const originalPath = process.env.PATH
+    try {
+      const bun = join(directory, 'bun')
+      writeFileSync(
+        bun,
+        '#!/usr/bin/env node\nif (process.argv.slice(2).join(" ") !== "audit --json") process.exit(9)\n' +
+          'process.stdout.write(JSON.stringify({left: [{id: 1, severity: "high", vulnerable_versions: "<1"}]}))\nprocess.exit(1)\n',
+      )
+      chmodSync(bun, 0o755)
+      process.env.PATH = `${directory}${delimiter}${originalPath ?? ''}`
+      const result = checkOverrideFloors()
+      expect(result.ok).toBe(false)
+      expect(result.problems).toMatchObject([{kind: 'blocking-advisory', packageName: 'left', advisoryId: 1}])
+    } finally {
+      process.env.PATH = originalPath
+      rmSync(directory, {recursive: true, force: true})
+    }
   })
 })

@@ -982,9 +982,6 @@ const DYNAMIC_IMPORT_STRING_PATTERN = /import\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g
 // Dynamic `import(`./x${'.js'}`)` — the template literal's raw content is resolved separately
 // (see resolveTemplateLiteralSpecifier) since it may carry a literal-only `${...}` interpolation.
 const DYNAMIC_IMPORT_TEMPLATE_PATTERN = /import\(\s*`([^`]*)`\s*\)/gu
-// A literal-only `${'...'}`/`${"..."}` interpolation inside a template literal specifier.
-const TEMPLATE_LITERAL_LOOKUP_PATTERN = /\$\{\s*(['"])((?:\\.|(?!\1).)*)\1\s*\}/gu
-
 /**
  * Injectable seam for every filesystem read the import-closure extractor performs
  * (`directSpecifiers`, `wikiWriteCoreSubpathSourceFiles`), defaulting to a real
@@ -1011,7 +1008,7 @@ const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
 // specifier character classes exclude `$` and `{`, so it never matches. Every specifier scan below
 // shares this, so no scan sees fewer shapes than another. These patterns are not in a mutated
 // module, so they may stay module-level constants.
-const SPECIFIER_INTRODUCER = String.raw`(?:from\s+['"]|import\s+['"]|(?:import|vi\.(?:mock|doMock|importActual|importMock)\s*(?:<[^>\n]*>)?)\(\s*['"\x60])`
+const SPECIFIER_INTRODUCER = String.raw`(?:from\s+['"]|import\s+['"]|(?:import|vi\.(?:mock|doMock|importActual|importMock)\s*(?:\uE000[^\uE001]*\uE001)?)\(\s*['"\x60])`
 // `from '@fro.bot/wiki-write-core'` (bare, group 1 undefined) or
 // `from '@fro.bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug').
 const WIKI_WRITE_CORE_SPECIFIER_PATTERN = new RegExp(
@@ -1028,6 +1025,47 @@ const FRO_BOT_PACKAGE_SPECIFIER_PATTERN = new RegExp(
   'gu',
 )
 
+const VITEST_TYPE_ARGUMENT_HEAD = /vi\.(?:mock|doMock|importActual|importMock)\s*</gu
+// Private-use characters that mark a vitest type-argument list for SPECIFIER_INTRODUCER. They are replaced in the source
+// first, so a source cannot carry a marker of its own.
+const TYPE_ARGUMENT_OPEN = '\uE000'
+const TYPE_ARGUMENT_CLOSE = '\uE001'
+
+/**
+ * Prepares source text for the two specifier scans that follow `vi.mock<...>(`. The introducer used to be
+ * `vi.mock\s*(?:<[^>\n]*>)?\(`, which rescans to the same `>` (or the end of the line) from every `<` and is
+ * quadratic on a line of `vi.mock<` heads. Here the `<` and `>` of each type-argument list that is closed by a `>` on
+ * its own line and followed at once by `(` are replaced with markers, and the introducer matches the markers, so a
+ * head costs the length of its own list. A list is marked once, at its first head: a later head inside it shares the
+ * same `>`, so it matches exactly when the first does, and the first match consumes it. The markers are the only
+ * change, so every other match, and every captured specifier, is what it was on the unmarked text (the specifier classes
+ * hold neither `<`, `>` nor a private-use character). A private-use character already in the source becomes U+FFFD
+ * first, which no pattern here distinguishes from the original.
+ */
+export function markVitestTypeArguments(source: string): string {
+  const content = source.replaceAll(TYPE_ARGUMENT_OPEN, '\uFFFD').replaceAll(TYPE_ARGUMENT_CLOSE, '\uFFFD')
+  let result = ''
+  let copied = 0
+  let markedStop = -1
+  // The first `>` or newline at or after `searchedFrom` is `stop`; heads come in increasing order, so a head that
+  // starts before `stop` reuses it and the scan of a line is done once.
+  let searchedFrom = -1
+  let stop = -1
+  for (const head of content.matchAll(VITEST_TYPE_ARGUMENT_HEAD)) {
+    const open = head.index + head[0].length - 1
+    if (searchedFrom === -1 || open + 1 > stop) {
+      searchedFrom = open + 1
+      stop = searchedFrom
+      while (stop < content.length && content.charAt(stop) !== '>' && content.charAt(stop) !== '\n') stop += 1
+    }
+    if (stop === markedStop || content.charAt(stop) !== '>' || content.charAt(stop + 1) !== '(') continue
+    result += content.slice(copied, open) + TYPE_ARGUMENT_OPEN + content.slice(open + 1, stop) + TYPE_ARGUMENT_CLOSE
+    copied = stop + 1
+    markedStop = stop
+  }
+  return result + content.slice(copied)
+}
+
 /**
  * Resolves a dynamic-import template literal's raw content (e.g. `./x${'.js'}`) by inlining
  * every literal-only `${'...'}`/`${"..."}` interpolation. Returns `undefined` if the result
@@ -1036,9 +1074,85 @@ const FRO_BOT_PACKAGE_SPECIFIER_PATTERN = new RegExp(
  * dropped rather than mis-resolved.
  */
 function resolveTemplateLiteralSpecifier(raw: string): string | undefined {
-  const resolved = raw.replaceAll(TEMPLATE_LITERAL_LOOKUP_PATTERN, (_match, _quote: string, inner: string) => inner)
+  const resolved = inlineLiteralInterpolations(raw)
   if (resolved.includes('${') || !resolved.startsWith('.')) return undefined
   return resolved
+}
+
+const LINE_TERMINATORS: ReadonlySet<string> = new Set(['\n', '\r', '\u2028', '\u2029'])
+
+function codePointLength(text: string, index: number): number {
+  const high = text.charCodeAt(index)
+  const low = text.charCodeAt(index + 1)
+  return high >= 0xd8_00 && high <= 0xdb_ff && low >= 0xdc_00 && low <= 0xdf_ff ? 2 : 1
+}
+
+/**
+ * For each position `p`, the index of the closing quote of the first body that a left-to-right, greedy,
+ * backtracking match of `(?:\\.|(?!Q).)*` followed by `Q\s*}` finds from `p`, or -1 when none exists. A backslash
+ * can be consumed as the start of an escape (`\\.`) or on its own (`.`), and the engine prefers the escape, so this
+ * is the same choice order as the regular expression it replaces, computed once per position from the right.
+ * That expression took exponential time on a run of backslashes with no closing quote.
+ */
+function closingQuotePositions(text: string, quote: string): Int32Array {
+  const closing = new Int32Array(text.length + 2).fill(-1)
+  for (let position = text.length - 1; position >= 0; position -= 1) {
+    const char = text.charAt(position)
+    if (char === quote) {
+      let end = position + 1
+      while (end < text.length && /\s/u.test(text.charAt(end))) end += 1
+      if (text.charAt(end) === '}') closing[position] = position
+      continue
+    }
+    if (LINE_TERMINATORS.has(char)) continue
+    if (char === '\\' && position + 1 < text.length && !LINE_TERMINATORS.has(text.charAt(position + 1))) {
+      const escaped = closing[position + 1 + codePointLength(text, position + 1)] ?? -1
+      if (escaped >= 0) {
+        closing[position] = escaped
+        continue
+      }
+    }
+    closing[position] = closing[position + codePointLength(text, position)] ?? -1
+  }
+  return closing
+}
+
+/**
+ * Replaces every literal-only `${'...'}` / `${"..."}` interpolation in `raw` with its text, left to right and without
+ * overlap, and leaves any other `${` alone. The output is what `raw.replaceAll(/\$\{\s*(['"])((?:\\.|(?!\1).)*)\1\s*\}/gu,
+ * (_match, _quote, inner) => inner)` returns, in time linear in `raw` (the differential test in
+ * `regex-scaling.test.ts` holds both to the same answers). Exported for that test.
+ */
+export function inlineLiteralInterpolations(raw: string): string {
+  const tables = new Map<string, Int32Array>()
+  let result = ''
+  let copied = 0
+  let start = raw.indexOf('${')
+  while (start !== -1) {
+    let quoteAt = start + 2
+    while (quoteAt < raw.length && /\s/u.test(raw.charAt(quoteAt))) quoteAt += 1
+    const quote = raw.charAt(quoteAt)
+    if (quote !== "'" && quote !== '"') {
+      start = raw.indexOf('${', start + 1)
+      continue
+    }
+    let table = tables.get(quote)
+    if (table === undefined) {
+      table = closingQuotePositions(raw, quote)
+      tables.set(quote, table)
+    }
+    const closeAt = table[quoteAt + 1] ?? -1
+    if (closeAt < 0) {
+      start = raw.indexOf('${', start + 1)
+      continue
+    }
+    let end = closeAt + 1
+    while (/\s/u.test(raw.charAt(end))) end += 1
+    result += raw.slice(copied, start) + raw.slice(quoteAt + 1, closeAt)
+    copied = end + 1
+    start = raw.indexOf('${', copied)
+  }
+  return result + raw.slice(copied)
 }
 
 /**
@@ -1235,7 +1349,7 @@ export function wikiWriteCoreSubpathSourceFiles(
   repoRelativeFilePath: string,
   readSource: SourceReader = defaultReadSource,
 ): string[] {
-  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
+  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot, repoRelativeFilePath))))
   const subpaths: string[] = []
   for (const match of content.matchAll(WIKI_WRITE_CORE_SPECIFIER_PATTERN)) {
     subpaths.push(match[1] ?? 'index')
@@ -1308,7 +1422,7 @@ export function froBotPackageSourceFiles(
   repoRelativeFilePath: string,
   readSource: SourceReader = defaultReadSource,
 ): string[] {
-  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
+  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot, repoRelativeFilePath))))
   const sources: string[] = []
   for (const match of content.matchAll(FRO_BOT_PACKAGE_SPECIFIER_PATTERN)) {
     const [, packageDir, subpath] = match

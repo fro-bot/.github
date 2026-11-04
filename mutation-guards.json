@@ -682,63 +682,55 @@
     },
     {
       "path": "scripts/check-md-links.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-md-links-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/check-md-links.ts and check-md-links-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/check-mutation-guards.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-mutation-guards-cli and runs it under `import.meta.main`, not the `file://${process.argv[1]}` comparison of the other entrypoints, so a path the URL form escapes cannot make the gate end in exit 0 without running. The gate is in packages/ci-checks/src/check-mutation-guards.ts and check-mutation-guards-cli.ts; the surface, the import-only case and the fail-closed paths are pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/check-override-floors.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-override-floors-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/check-override-floors.ts and check-override-floors-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/check-renovate-config.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-renovate-config-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/check-renovate-config.ts and check-renovate-config-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/check-renovate-ranges.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-renovate-ranges-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/check-renovate-ranges.ts and check-renovate-ranges-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/check-solutions-examples.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/check-solutions-examples-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/check-solutions-examples.ts and check-solutions-examples-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "scripts/install-renovate.ts",
-      "reason": "TBD"
+      "reason": "Entrypoint shim: it imports main from @fro-bot/ci-checks/install-renovate-cli and runs it under the entry guard. The behaviour is in packages/ci-checks/src/install-renovate.ts and install-renovate-cli.ts, and the surface is pinned by scripts/ci-checks-flows.test.ts."
     },
     {
       "path": "packages/ci-checks/src/check-md-links.ts",
-      "reason": "TBD"
+      "reason": "Broken-relative-link lint over the root and docs/ markdown. Measured: a targeted Stryker pass over this module with check-md-links.test.ts and check-md-links-cli.test.ts (vitest runner, test-owned temp directories, Node 24.22.0) scored 95.00% (57 of 60 killed, 3 survivors). The survivors are the `replaceAll('\\\\', '/')` argument, which only changes a path containing a backslash (a Windows separator; on a POSIX file name it would make the later read fail), and the first two operands of `isErrorWithCode` (`error instanceof Error && 'code' in error`), which every error `readdir` throws satisfies, so replacing them with `true` or `||` changes nothing observable. The walk order, the sort and the ENOENT-versus-other split are killed. It is not a security boundary, autonomous write, persisted trust state or generated executable artifact."
     },
     {
       "path": "packages/ci-checks/src/check-mutation-guards.ts",
-      "reason": "TBD"
-    },
-    {
-      "path": "packages/ci-checks/src/check-override-floors.ts",
-      "reason": "TBD"
+      "reason": "The mutation gate: the directive scanner, the report classifier, the trigger set and import closure, and the Stryker spawn. A directive scanner cannot describe its own grammar in comments without matching it, and a module under `mutate` would run a Stryker run of its own tests under the gate. Measured: a targeted Stryker pass over this module with check-mutation-guards.test.ts, check-mutation-guards-cli.test.ts, superlinear-differential.test.ts and inline-literal-interpolations.test.ts (vitest runner, test-owned temp report paths, Node 24.22.0, 1,237 mutants) scored 86.98% (1,076 of 1,237 killed or timed out, 146 survivors, 15 without coverage). The survivors sit mostly in the classifier's reason strings and status vocabulary (classifyMutationReport 32, flattenReport 15, describeUnreadableReport 6, printResult 5), the string-literal stripper (stripStringLiterals 19, evaluateDirectiveLine 11), the Stryker spawn wrapper (defaultStrykerSpawner 9) and the loop guards of the four linear-time rewrites (markVitestTypeArguments 8, closingQuotePositions 7, codePointLength 7), whose output the seeded differentials hold to the old code on random input but whose index arithmetic stays unkilled. packages/ci-checks/src/check-mutation-guards-cli.ts and scripts/ci-checks-flows.test.ts pin the exit-code mapping and the fail-closed paths end to end."
     },
     {
       "path": "packages/ci-checks/src/check-renovate-config.ts",
-      "reason": "TBD"
+      "reason": "Renovate preset gate: classifies `extends` entries, fetches version-pinned github presets and runs the pinned Renovate validator. CI tooling, not a security boundary, autonomous write, persisted trust state or generated executable artifact. Measured: a targeted Stryker pass over this module with check-renovate-config.test.ts and check-renovate-config-cli.test.ts (vitest runner, test-owned temp prefixes, Node 24.22.0) scored 74.02% (151 of 204 killed or timed out, 28 survivors, 25 without coverage; the no-coverage mutants are the paths that need the real Renovate scratch install)."
     },
     {
       "path": "packages/ci-checks/src/check-renovate-ranges.ts",
-      "reason": "TBD"
+      "reason": "Judges every `allowedVersions` value with the pinned Renovate's versioning engines. CI tooling, not a security boundary, autonomous write, persisted trust state or generated executable artifact. Measured: a targeted Stryker pass over this module with check-renovate-ranges.test.ts and check-renovate-ranges-cli.test.ts (vitest runner, test-owned temp directories, Node 24.22.0) scored 78.66% (129 of 164 killed or timed out, 14 survivors, 21 without coverage; the no-coverage mutants need the real Renovate scratch install)."
     },
     {
       "path": "packages/ci-checks/src/check-solutions-examples.ts",
-      "reason": "TBD"
-    },
-    {
-      "path": "packages/ci-checks/src/install-renovate.ts",
-      "reason": "TBD"
+      "reason": "Documentation lint: parses the fenced TypeScript examples in docs/solutions and checks `verify:` markers. It imports `typescript`, so no barrel re-exports it. Measured: a targeted Stryker pass over this module with check-solutions-examples.test.ts, check-solutions-examples-cli.test.ts and superlinear-differential.test.ts (vitest runner, test-owned temp directories, Node 24.22.0) scored 68.37% (389 of 569 killed or timed out, 133 survivors, 47 without coverage). The comment-span rewrite (`findCommentSpans`) is held to the old scan by a seeded differential; the survivors are mostly diagnostic reason strings and near-miss thresholds the tests assert only as a finding being present."
     },
     {
       "path": "packages/ci-checks/src/renovate-runtime.ts",
-      "reason": "TBD"
+      "reason": "Locates, installs and loads the pinned scratch Renovate (pin parsing, prefix resolution, install-command shape, fail-loud version and RE2 checks). CI tooling, not a security boundary, autonomous write, persisted trust state or generated executable artifact. Measured: a targeted Stryker pass over this module with renovate-runtime.test.ts and install-renovate-cli.test.ts (vitest runner, test-owned temp prefixes, Node 24.22.0) scored 56.54% (121 of 214 killed, 25 survivors, 68 without coverage; the no-coverage mutants are the RE2 build and real-module-load paths that need a real Renovate scratch install and a native binding, which the Test Renovate Gate and `check:renovate-config` exercise in CI)."
     }
   ]
 }

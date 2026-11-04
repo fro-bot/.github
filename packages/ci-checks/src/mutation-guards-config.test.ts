@@ -655,3 +655,35 @@ describe('reachedModulesTransitive regex-literal quote gap (item 2, pins documen
     expect(reached.has(relative(repositoryRoot, join(tmpDir, 'real.ts')).replaceAll('\\', '/'))).toBe(true)
   })
 })
+
+describe('mutation-guards.json is read from the repository root and fails closed', () => {
+  it('is the file at the root, not a copy under the package', () => {
+    expect(mutationGuardsPath).toBe(join(findRepositoryRoot(), 'mutation-guards.json'))
+    expect(existsSync(mutationGuardsPath)).toBe(true)
+    expect(existsSync(join(findRepositoryRoot(), 'packages', 'ci-checks', 'mutation-guards.json'))).toBe(false)
+    expect(strykerConfigPath).toBe(join(findRepositoryRoot(), 'stryker.config.json'))
+  })
+
+  it.each([
+    ['is missing', undefined, /ENOENT/u],
+    ['is not JSON', '{ nope', /JSON/iu],
+    ['has no not-mutated list', '{}', /is missing a \{path, reason\}\[\] "not-mutated" field/u],
+    [
+      'has an entry without a reason',
+      '{"not-mutated": [{"path": "a.ts"}]}',
+      /is missing a \{path, reason\}\[\] "not-mutated" field/u,
+    ],
+  ])(
+    'reading a file that %s throws, so Tests 1, 5, 6 and 7 fail rather than pass on nothing',
+    (_name, body, pattern) => {
+      const dir = mkdtempSync(join(tmpdir(), 'mutation-guards-config-missing-'))
+      try {
+        const path = join(dir, 'mutation-guards.json')
+        if (body !== undefined) writeFileSync(path, body, 'utf8')
+        expect(() => readMutationGuardsFile(path)).toThrow(pattern)
+      } finally {
+        rmSync(dir, {recursive: true, force: true})
+      }
+    },
+  )
+})
