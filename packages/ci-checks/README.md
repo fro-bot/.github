@@ -24,14 +24,15 @@ Everything in this package that reads text a pull request controls is linear in 
 
 - the template-literal lookup `${'...'}` (exponential on a run of backslashes) is `inlineLiteralInterpolations`;
 - the `vi.mock<...>(` type-argument introducer (a rescan to the same `>` from every `<`) is `markVitestTypeArguments`;
-- the brace forms of the barrel export pattern (a rescan to the same `}`) are `stripBarrelExports`;
+- the brace forms of the barrel export pattern (a rescan to the same `}`) are `stripBarrelExports` in `barrel-exports.ts`;
 - the HTML comment scan of a solution document (a rescan to the end of the document from every unclosed `<!--`, and a line count from the start for every comment) is `findCommentSpans`.
 
 ## Modules
 
 | Subpath | Exports | Notes |
 | --- | --- | --- |
-| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `stripBarrelExports`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
+| `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
+| `@fro-bot/ci-checks/barrel-exports` | `stripBarrelExports`, `firstAtOrAfter` | Mutated. The three barrel re-export forms removed from a source in linear time; `mutation-guards-reach` calls it. |
 | `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
 | `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md` and `docs/**/*.md` of the working directory. |
@@ -65,6 +66,7 @@ C4Component
   title Components of @fro-bot/ci-checks
 
   Container_Boundary(cichecks, "@fro-bot/ci-checks") {
+    Component(barrel_exports, "barrel-exports", "TypeScript", "Strips the re-export statements of a module in linear time")
     Component(check_md_links, "check-md-links", "TypeScript", "Finds broken relative links in root and docs/ markdown")
     Component(check_md_links_cli, "check-md-links-cli", "TypeScript", "goke CLI; read-only")
     Component(check_mutation_guards, "check-mutation-guards", "TypeScript", "The mutation gate: trigger set, Stryker spawn, report classifier, verdict and exit code")
@@ -102,7 +104,6 @@ C4Component
   Rel(entrypoints, install_renovate_cli, "main")
   Rel(check_md_links_cli, check_md_links, "imports")
   Rel(check_mutation_guards, repository_root, "imports")
-  Rel(check_mutation_guards, x, "imports")
   Rel(check_mutation_guards_cli, check_mutation_guards, "imports")
   Rel(check_override_floors_cli, check_override_floors, "imports")
   Rel(check_renovate_config, check_renovate_ranges, "types with")
@@ -113,6 +114,7 @@ C4Component
   Rel(check_solutions_examples_cli, check_solutions_examples, "imports")
   Rel(install_renovate, renovate_runtime, "imports")
   Rel(install_renovate_cli, install_renovate, "imports")
+  Rel(mutation_guards_reach, barrel_exports, "imports")
   Rel(mutation_guards_reach, check_mutation_guards, "imports")
   Rel(mutation_guards_reach, repository_root, "imports")
   Rel(renovate_runtime, check_renovate_ranges, "types with")
@@ -145,17 +147,17 @@ C4Component
   UpdateRelStyle(entrypoints, install_renovate_cli, $offsetX="-26", $offsetY="45")
   UpdateRelStyle(check_md_links_cli, check_md_links, $offsetX="-5", $offsetY="-47")
   UpdateRelStyle(check_mutation_guards, repository_root, $offsetX="30", $offsetY="-34")
-  UpdateRelStyle(check_mutation_guards, x, $offsetX="75", $offsetY="-49")
-  UpdateRelStyle(check_mutation_guards_cli, check_mutation_guards, $offsetX="-10", $offsetY="-32")
-  UpdateRelStyle(check_override_floors_cli, check_override_floors, $offsetX="-59", $offsetY="-17")
-  UpdateRelStyle(check_renovate_config, check_renovate_ranges, $offsetX="35", $offsetY="45")
-  UpdateRelStyle(check_renovate_config, renovate_runtime, $offsetX="31", $offsetY="-33")
-  UpdateRelStyle(check_renovate_config_cli, check_renovate_config, $offsetX="-15", $offsetY="-5")
-  UpdateRelStyle(check_renovate_ranges, renovate_runtime, $offsetX="-21", $offsetY="12")
-  UpdateRelStyle(check_renovate_ranges_cli, check_renovate_ranges, $offsetX="60", $offsetY="22")
-  UpdateRelStyle(check_solutions_examples_cli, check_solutions_examples, $offsetX="29", $offsetY="35")
-  UpdateRelStyle(install_renovate, renovate_runtime, $offsetX="13", $offsetY="5")
-  UpdateRelStyle(install_renovate_cli, install_renovate, $offsetX="0", $offsetY="33")
+  UpdateRelStyle(check_mutation_guards_cli, check_mutation_guards, $offsetX="75", $offsetY="-49")
+  UpdateRelStyle(check_override_floors_cli, check_override_floors, $offsetX="-10", $offsetY="-32")
+  UpdateRelStyle(check_renovate_config, check_renovate_ranges, $offsetX="-59", $offsetY="-17")
+  UpdateRelStyle(check_renovate_config, renovate_runtime, $offsetX="35", $offsetY="45")
+  UpdateRelStyle(check_renovate_config_cli, check_renovate_config, $offsetX="31", $offsetY="-33")
+  UpdateRelStyle(check_renovate_ranges, renovate_runtime, $offsetX="-15", $offsetY="-5")
+  UpdateRelStyle(check_renovate_ranges_cli, check_renovate_ranges, $offsetX="-21", $offsetY="12")
+  UpdateRelStyle(check_solutions_examples_cli, check_solutions_examples, $offsetX="60", $offsetY="22")
+  UpdateRelStyle(install_renovate, renovate_runtime, $offsetX="29", $offsetY="35")
+  UpdateRelStyle(install_renovate_cli, install_renovate, $offsetX="13", $offsetY="5")
+  UpdateRelStyle(mutation_guards_reach, barrel_exports, $offsetX="0", $offsetY="33")
   UpdateRelStyle(mutation_guards_reach, check_mutation_guards, $offsetX="-50", $offsetY="-6")
   UpdateRelStyle(mutation_guards_reach, repository_root, $offsetX="72", $offsetY="31")
   UpdateRelStyle(renovate_runtime, check_renovate_ranges, $offsetX="-13", $offsetY="38")

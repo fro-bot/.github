@@ -139,7 +139,7 @@ function listScriptsGateFiles(dir: string): string[] {
  * silently.
  *
  * **Shared walk, opposing preferences.** `reachedModulesTransitive` is also the changed-file
- * trigger gate's closure walk (`scripts/check-mutation-guards.ts`'s `buildImportClosure`),
+ * trigger gate's closure walk (`packages/ci-checks/src/check-mutation-guards.ts`'s `buildImportClosure`),
  * which wants reach as WIDE as possible — every additional reached file is one more file that
  * correctly triggers a run, strictly safer. This consumer wants the opposite: reach as NARROW
  * as possible, since a wider walk only ever LOWERS how often the "unreached entry" violation
@@ -318,7 +318,7 @@ describe('mutation guard enumeration', () => {
   // The pairing check counts reach through a barrel as reach, so it sees nothing wrong when
   // private-leak.ts's direct exercisers are gone and only wiki-write-core.test.ts remains,
   // reaching it through index.ts's `export *`. The strict check in
-  // `scripts/mutation-guards-reach.test.ts` flags that same config.
+  // `packages/ci-checks/src/mutation-guards-reach.test.ts` flags that same config.
   it('Test 3b: the pairing check stays blind to a barrel-only exerciser of private-leak.ts', () => {
     const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath)
     const directExercisers = new Set([
