@@ -5,6 +5,7 @@
   "description": "The repository checks of the Fro Bot control plane: the mutation gate, the lints and the Renovate tooling",
   "type": "module",
   "exports": {
+    "./barrel-exports": "./src/barrel-exports.ts",
     "./check-md-links": "./src/check-md-links.ts",
     "./check-md-links-cli": "./src/check-md-links-cli.ts",
     "./check-mutation-guards": "./src/check-mutation-guards.ts",

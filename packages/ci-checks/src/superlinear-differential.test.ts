@@ -1,12 +1,12 @@
 /**
- * Seeded differentials for the three scans that were rewritten to run in linear time: each new implementation is held to the
+ * Seeded differentials for the scans that were rewritten to run in linear time: each new implementation is held to the
  * output of the code it replaced, copied here verbatim as the reference, on random texts built from the pieces that make
  * the old patterns backtrack (unclosed heads, nested heads, newlines, lone surrogates, astral pairs). The seed is fixed, so a
  * failure reproduces.
  */
 
 import {describe, expect, it} from 'vitest'
-import {markVitestTypeArguments, stripBarrelExports, wikiWriteCoreSubpathSourceFiles} from './check-mutation-guards.ts'
+import {markVitestTypeArguments, wikiWriteCoreSubpathSourceFiles} from './check-mutation-guards.ts'
 import {findCommentSpans} from './check-solutions-examples.ts'
 
 /** mulberry32: a small seeded generator. */
@@ -126,76 +126,6 @@ describe('markVitestTypeArguments agrees with the vitest type-argument introduce
     expect(markVitestTypeArguments(forged)).not.toContain('\uE000')
     expect(newPackageSpecifiers(forged)).toEqual(oldPackageSpecifiers(forged))
     expect(newPackageSpecifiers(forged)).toEqual([])
-  })
-})
-
-// ---------------------------------------------------------------------------------------------------------------------
-// barrel export statements
-// ---------------------------------------------------------------------------------------------------------------------
-
-function oldStripBarrel(content: string): string {
-  const pattern =
-    /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?|export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?/gu
-  return content.replaceAll(pattern, '')
-}
-
-const BARREL_PIECES = [
-  'export ',
-  'export',
-  'export type ',
-  'export type',
-  'export * ',
-  'export type * ',
-  'export * as a ',
-  '* ',
-  '{',
-  '{',
-  '}',
-  '}',
-  ' {',
-  'a',
-  ', b',
-  ' from ',
-  'from',
-  "'./a.ts'",
-  '"./b.ts"',
-  "'",
-  '"',
-  ';',
-  ' ',
-  '\n',
-  'type ',
-  'as x ',
-  ...SURROGATES,
-]
-
-describe('stripBarrelExports agrees with the three-form replaceAll it replaced', () => {
-  it('on 150,000 seeded random sources', () => {
-    const random = generator(0x13_02)
-    const disagreements: string[] = []
-    for (let index = 0; index < 150_000; index += 1) {
-      const text = build(random, BARREL_PIECES, 18)
-      if (stripBarrelExports(text) !== oldStripBarrel(text)) disagreements.push(JSON.stringify(text))
-      if (disagreements.length >= 5) break
-    }
-    expect(disagreements).toEqual([])
-  })
-
-  it.each([
-    "export {a} from './a.ts'",
-    "export type {A} from './a.ts'\nexport * from './b.ts'",
-    "export { export { a } from './a.ts'",
-    "export {a export {b} from './b.ts'",
-    "export {a} from './a.ts' export {b} from './b.ts'",
-    "export {a}\nfrom './a.ts';",
-    'export {a} from ',
-    "export {a} from './a.ts",
-    'export {',
-    'export {} from "x"',
-    "export type { a } from 'x'; export type {",
-    "export * from 'a'export * from 'b'",
-  ])('on %j', text => {
-    expect(stripBarrelExports(text)).toBe(oldStripBarrel(text))
   })
 })
 

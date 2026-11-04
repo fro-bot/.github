@@ -1,13 +1,8 @@
 import {existsSync, readFileSync} from 'node:fs'
 import {join} from 'node:path'
 
-import {
-  directSpecifiers,
-  isLiteralPath,
-  stripBarrelExports,
-  stripComments,
-  type SourceReader,
-} from './check-mutation-guards.ts'
+import {stripBarrelExports} from './barrel-exports.ts'
+import {directSpecifiers, isLiteralPath, stripComments, type SourceReader} from './check-mutation-guards.ts'
 import {findRepositoryRoot} from './repository-root.ts'
 
 function defaultReadSource(absolutePath: string): string {

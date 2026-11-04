@@ -25,12 +25,12 @@
 import process from 'node:process'
 import {resolveMarkdownLinks} from '@fro.bot/wiki-write-core/markdown-links'
 import {describe, expect, it} from 'vitest'
+import {stripBarrelExports} from './barrel-exports.ts'
 import {
   directSpecifiers,
   froBotPackageSourceFiles,
   markVitestTypeArguments,
   scanDirectiveViolations,
-  stripBarrelExports,
   wikiWriteCoreSubpathSourceFiles,
 } from './check-mutation-guards.ts'
 import {extractCodeBlocks, findCommentSpans} from './check-solutions-examples.ts'
@@ -204,6 +204,11 @@ describe('the barrel check scales linearly in a source file', {timeout: SUITE_TI
       make: repeat("export * from './a.ts'\nexport {b} from './b.ts'\nexport type {C} from './c.ts'\n"),
     },
     {name: 'a long run of spaces after export', make: (size: number) => `export${' '.repeat(size)}x`},
+    {
+      // Every head shares the one close, and the close is followed by a long run of spaces with no `from`.
+      name: 'many brace heads sharing one close, then a long whitespace run with no from',
+      make: (size: number) => `${'export{'.repeat(size / 16)}}${' '.repeat((size * 9) / 16)}x`,
+    },
   ])('$name', ({make}) => {
     expect(growthRatio(make, SMALL, check)).toBeLessThan(CEILING)
   })
@@ -285,6 +290,15 @@ describe('the worst-case inputs reach the scans they measure', () => {
     const read = (path: string): string =>
       path.endsWith('package.json') ? '{"name":"@fro-bot/core","exports":{"./guards":"./src/guards.ts"}}' : closed
     expect(froBotPackageSourceFiles('packages/ci-checks/src/x.ts', read).length).toBe(Math.floor(size / 70))
+  })
+
+  it('heads that share one close reach the barrel strip, each one failing on the same missing from clause', () => {
+    const shared = `${'export{'.repeat(size / 16)}}${' '.repeat((size * 9) / 16)}x`
+    expect(shared.length).toBeGreaterThanOrEqual(size)
+    expect(stripBarrelExports(shared)).toBe(shared)
+    expect(isPureReexportBarrel('x.ts', () => shared)).toBe(false)
+    const withClause = `${'export{'.repeat(size / 16)}} from 'a'${' '.repeat((size * 9) / 16)}x`
+    expect(stripBarrelExports(withClause)).toBe('x')
   })
 
   it('unclosed brace heads reach the barrel strip and survive it; complete statements are removed', () => {

@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
+    "packages/ci-checks/src/barrel-exports.ts",
     "packages/ci-checks/src/check-md-links-cli.ts",
     "packages/ci-checks/src/check-mutation-guards-cli.ts",
     "packages/ci-checks/src/check-override-floors-cli.ts",
@@ -49,6 +50,7 @@
     "scripts/wiki-lockfile-gates.ts"
   ],
   "testFiles": [
+    "packages/ci-checks/src/barrel-exports.test.ts",
     "packages/ci-checks/src/check-md-links-cli.test.ts",
     "packages/ci-checks/src/check-mutation-guards-cli.test.ts",
     "packages/ci-checks/src/check-override-floors-cli.test.ts",
