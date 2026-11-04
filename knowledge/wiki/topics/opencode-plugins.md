@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-01
+updated: 2026-11-04
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: c312aeb5407461d345bcf50fc299794fd4d75582
+    accessed: 2026-11-04
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-11-01
@@ -112,6 +115,35 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-04: dual-line support needs separate host evidence
+
+[[marcusrbrown--systematic]] now declares optional peers for both OpenCode
+API lines: v1 `@opencode-ai/plugin >=1.18.29` and v2
+`@opencode/plugin >=2.2.0`. Its README distinguishes v1 `plugin` from v2
+`plugins`, while explicitly limiting setup/OCX output to the v1 key. A
+single package supporting both APIs does not establish installer parity.
+
+The workflow makes the evidence split explicit: four v2 full-contract shards
+plus two v1 smoke profiles (floor/current), each with checked CLI versions,
+and separate report guards under one always-reporting aggregator. Host pins
+are loaded from a data file not read in this survey; the manifest's v1
+**1.19.5** and v2 **2.2.5** development pins must not be substituted for them.
+Relevant PRs run the suite; main pushes do not. Neither the advertised peer
+range nor a green main-push aggregator proves full cross-version coverage.
+
+This also supersedes the October observation that the plugin smoke test
+expects a function default: the current step requires an object with
+`id`, `setup`, and `server`, invokes `server`, then verifies populated
+agent/command maps. Pi is still only import/shape-checked in that step.
+Export shape, installer configuration, host profile coverage, and successful
+execution are four different contracts. Keep them separate when assessing a
+migration; collapsing them into “supports v2” hides the unfinished edges.
+
+Sources: [README](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/README.md),
+[manifest](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/package.json),
+[Main workflow](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/main.yaml).
+These are static declarations, not observed test results.
 
 ## 2026-10-26: development pins, peer promises, and host coverage differ
 

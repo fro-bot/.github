@@ -9769,3 +9769,53 @@ the bot identification marker and both Run Summary markers.
 Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-11-04 13:05] ingest | marcusrbrown/systematic
+
+Surveyed public `main` at `c312aeb5407461d345bcf50fc299794fd4d75582`.
+Updated `knowledge/wiki/repos/marcusrbrown--systematic.md` and
+`knowledge/wiki/topics/opencode-plugins.md` additively. Preserved historical
+observations and explicitly superseded the three-peer inventory, function-only
+plugin export contract, four-shard-only coverage description, and stale README
+count discrepancy. The README and listing now agree on 33 skills / 37 agents.
+
+Durable findings: one package declares optional OpenCode v1/v2 peers with
+different configuration keys; setup/OCX still writes only the v1 key. Node's
+declared floor is >=20.11. CI declares four v2 full-contract shards plus v1
+floor/current smoke profiles and separate report guards. Main pushes still
+skip these profiles. The plugin smoke test now requires an object default
+with id/setup/server; Pi gains a packaged subagent directory declaration.
+Generated-surface checks are consolidated behind `surfaces:drift`. The Claude
+publisher requires an executable search artifact without establishing its
+semantics. Fro Bot is present at v0.134.0; no onboarding draft is needed.
+
+Reads were bounded to public identity/default-ref resolution, a complete
+directory listing, two READMEs, two package manifests, and seven workflow files.
+No target code, scripts, host-pin data, lock contents, release artifacts, issues,
+or live execution results were read or executed. Corrections context contained
+no records. Manifest pins and workflow intent remain distinct from runtime
+compatibility and observed success.
+
+Validation covers YAML frontmatter, required fields, source SHA, wikilinks,
+related-page targets, preserved page history, append-only log history, edit
+scope, and whitespace. No application behavior changed; application tests are
+not applicable. Existing unrelated working-tree changes are preserved.
+`knowledge/index.md` is unchanged. The caller owns commit/push/PR delivery.
+A single marked control-repository commit comment points here for the canonical
+summary; no issue run notice is created.
+
+Sources: https://github.com/marcusrbrown/systematic/tree/c312aeb5407461d345bcf50fc299794fd4d75582;
+`README.md`, `evals/README.md`, `package.json`, `docs/package.json`, and
+`.github/workflows/{main,release,release-gate,docs,fro-bot,publish-claude-code-plugin,release-notes}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/41834459352
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/c5758a62e0e5acf6fdb11010315e5efdf02e1020#commitcomment-208104088
+Exactly one commit comment was posted. Its returned body confirms the bot
+identification marker and both Run Summary markers.
+
+## [2026-11-04 13:08] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
