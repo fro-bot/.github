@@ -23,7 +23,7 @@ import {formatJsonLine} from '@fro-bot/core/json'
 import {writeGithubOutputs} from '@fro-bot/core/output'
 import {
   buildHandoffFromGitIndex,
-  DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+  draftedSolutionsHandoffPolicy,
   type BuildWikiHandoffResult,
   type GitRunner,
 } from '@fro-bot/wiki-ops/wiki-handoff-core'
@@ -40,7 +40,7 @@ export async function buildDraftedHandoff(params: BuildDraftedHandoffParams): Pr
     cwd: params.cwd,
     outDir: params.outDir,
     pathspec: 'docs/solutions',
-    policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+    policy: draftedSolutionsHandoffPolicy(),
     ...(params.runGit === undefined ? {} : {runGit: params.runGit}),
   })
 }

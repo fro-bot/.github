@@ -15,7 +15,7 @@ import {promisify} from 'node:util'
 import {spawnEntrypoint, type SpawnEntrypointResult} from '@fro-bot/test-kit/spawn-entrypoint'
 import {
   createGitRunner,
-  DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
+  draftedSolutionsHandoffMaxTotalBytes,
   type GitRunner,
 } from '@fro-bot/wiki-ops/wiki-handoff-core'
 import {afterEach, describe, expect, it} from 'vitest'
@@ -272,7 +272,7 @@ describe('buildDraftedHandoff: rejected changes (nothing is produced)', () => {
     const arranged = await arrange()
     await writeFile(
       path.join(arranged.cwd, 'docs/solutions/best-practices/big.md'),
-      Buffer.alloc(DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES + 1, 0x61),
+      Buffer.alloc(draftedSolutionsHandoffMaxTotalBytes() + 1, 0x61),
     )
 
     await expectRejected(arranged, /size cap/)

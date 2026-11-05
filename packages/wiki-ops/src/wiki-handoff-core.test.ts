@@ -13,15 +13,15 @@ import {
   buildHandoffFromGitIndex,
   buildWikiHandoff,
   captureWikiBaseline,
-  DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
-  DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+  draftedSolutionsHandoffMaxTotalBytes,
+  draftedSolutionsHandoffPolicy,
   isAllowedDraftedSolutionPath,
   isAllowedWikiHandoffPath,
   parseGitStatusPorcelainZ,
   validateAndApplyHandoff,
   validateAndApplyWikiHandoff,
-  WIKI_HANDOFF_MAX_TOTAL_BYTES,
-  WIKI_HANDOFF_POLICY,
+  wikiHandoffMaxTotalBytes,
+  wikiHandoffPolicy,
   WikiHandoffValidationError,
   type GitRunner,
 } from './wiki-handoff-core.ts'
@@ -798,7 +798,7 @@ describe('validateAndApplyWikiHandoff', () => {
 
   it('rejects a manifest whose total size exceeds the cap', async () => {
     const mocks = makeFsMocks({
-      [`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: WIKI_HANDOFF_MAX_TOTAL_BYTES + 1},
+      [`${T}/handoff/files/knowledge/wiki/repos/foo.md`]: {size: wikiHandoffMaxTotalBytes() + 1},
     })
     mocks.setManifest(JSON.stringify({changed: ['knowledge/wiki/repos/foo.md'], deleted: []}))
 
@@ -866,8 +866,8 @@ describe('isAllowedDraftedSolutionPath', () => {
 
 describe('assertSafeHandoffPath', () => {
   it('applies the supplied policy: a wiki path passes the wiki policy and fails the drafted policy', () => {
-    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', WIKI_HANDOFF_POLICY)).not.toThrow()
-    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', DRAFTED_SOLUTIONS_HANDOFF_POLICY)).toThrow(
+    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', wikiHandoffPolicy())).not.toThrow()
+    expect(() => assertSafeHandoffPath('knowledge/wiki/repos/foo.md', draftedSolutionsHandoffPolicy())).toThrow(
       WikiHandoffValidationError,
     )
   })
@@ -881,7 +881,7 @@ describe('validateAndApplyHandoff with the wiki policy', () => {
     )
 
     const result = await validateAndApplyHandoff({
-      policy: WIKI_HANDOFF_POLICY,
+      policy: wikiHandoffPolicy(),
       handoffDir: `${T}/handoff`,
       workspaceDir: `${T}/workspace`,
       mkdirImpl: mocks.mkdirImpl,
@@ -897,14 +897,14 @@ describe('validateAndApplyHandoff with the wiki policy', () => {
       deleted: ['knowledge/wiki/repos/old.md'],
       skipped: [],
     })
-    expect(WIKI_HANDOFF_POLICY.maxTotalBytes).toBe(WIKI_HANDOFF_MAX_TOTAL_BYTES)
-    expect(WIKI_HANDOFF_POLICY.allowDeletions).toBe(true)
+    expect(wikiHandoffPolicy().maxTotalBytes).toBe(wikiHandoffMaxTotalBytes())
+    expect(wikiHandoffPolicy().allowDeletions).toBe(true)
   })
 })
 
 async function applyDrafted(mocks: ReturnType<typeof makeFsMocks>) {
   return validateAndApplyHandoff({
-    policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+    policy: draftedSolutionsHandoffPolicy(),
     handoffDir: `${T}/handoff`,
     workspaceDir: `${T}/workspace`,
     mkdirImpl: mocks.mkdirImpl,
@@ -992,7 +992,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
   it('rejects a bundle over the drafted size cap and writes nothing', async () => {
     const mocks = makeFsMocks({
       [`${T}/handoff/files/docs/solutions/best-practices/big.md`]: {
-        size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES + 1,
+        size: draftedSolutionsHandoffMaxTotalBytes() + 1,
       },
     })
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/big.md'], deleted: []}))
@@ -1003,7 +1003,7 @@ describe('validateAndApplyHandoff with the drafted-solutions policy', () => {
 
   it('accepts a bundle that is exactly at the size cap', async () => {
     const mocks = makeFsMocks({
-      [`${T}/handoff/files/docs/solutions/best-practices/edge.md`]: {size: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES},
+      [`${T}/handoff/files/docs/solutions/best-practices/edge.md`]: {size: draftedSolutionsHandoffMaxTotalBytes()},
     })
     mocks.setManifest(JSON.stringify({changed: ['docs/solutions/best-practices/edge.md'], deleted: []}))
 
@@ -1089,11 +1089,11 @@ describe('backslash handoff paths', () => {
 
   it.each(draftedPaths)('the drafted predicate and path check reject %s', (candidate: string) => {
     expect(isAllowedDraftedSolutionPath(candidate)).toBe(false)
-    expect(() => assertSafeHandoffPath(candidate, DRAFTED_SOLUTIONS_HANDOFF_POLICY)).toThrow(/backslash/)
+    expect(() => assertSafeHandoffPath(candidate, draftedSolutionsHandoffPolicy())).toThrow(/backslash/)
   })
 
   it.each(wikiPaths)('the wiki path check rejects %s', (candidate: string) => {
-    expect(() => assertSafeHandoffPath(candidate, WIKI_HANDOFF_POLICY)).toThrow(/backslash/)
+    expect(() => assertSafeHandoffPath(candidate, wikiHandoffPolicy())).toThrow(/backslash/)
     expect(() => assertSafeWikiHandoffPath(candidate)).toThrow(WikiHandoffValidationError)
   })
 
@@ -1182,7 +1182,7 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
       cwd: `${T}/repo`,
       outDir: `${T}/out`,
       pathspec: 'knowledge',
-      policy: WIKI_HANDOFF_POLICY,
+      policy: wikiHandoffPolicy(),
       runGit,
       ...io,
     })
@@ -1204,7 +1204,7 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
       cwd: `${T}/repo`,
       outDir: `${T}/out`,
       pathspec: 'knowledge',
-      policy: WIKI_HANDOFF_POLICY,
+      policy: wikiHandoffPolicy(),
       runGit,
       ...io,
     })
@@ -1230,7 +1230,7 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
         cwd: `${T}/repo`,
         outDir: `${T}/out`,
         pathspec: 'docs/solutions',
-        policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+        policy: draftedSolutionsHandoffPolicy(),
         runGit,
         ...io,
       }),
@@ -1249,7 +1249,7 @@ describe('buildHandoffFromGitIndex (policy-taking, git-object based)', () => {
         cwd: `${T}/repo`,
         outDir: `${T}/out`,
         pathspec: 'docs/solutions',
-        policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+        policy: draftedSolutionsHandoffPolicy(),
         runGit,
         ...writers(),
       }),

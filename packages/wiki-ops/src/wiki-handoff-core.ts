@@ -41,10 +41,10 @@ export function isAllowedDraftedSolutionPath(relativePath: string): boolean {
   // No backslash normalization: a path is only ever written as-is, so it is only ever judged as-is.
   const segments = relativePath.split('/')
   if (segments.length !== 4) return false
-  const [root, solutions, category, file] = segments
+  const [root, solutions, category, file] = segments as [string, string, string, string]
   if (root !== 'docs' || solutions !== 'solutions') return false
-  if (category === undefined || !SOLUTION_CATEGORIES.has(category)) return false
-  return file !== undefined && file.length > '.md'.length && file.endsWith('.md')
+  if (!SOLUTION_CATEGORIES.has(category)) return false
+  return file.length > '.md'.length && file.endsWith('.md')
 }
 
 export interface GitStatusChanges {
@@ -64,12 +64,11 @@ export function parseGitStatusPorcelainZ(output: string): GitStatusChanges {
   const records = output.split('\0')
   // Drop the trailing empty element that a well-formed trailing NUL produces.
   if (records.at(-1) === '') records.pop()
+  // Consumed from the end with pop(), so a rename record can take the field that follows it.
+  records.reverse()
 
-  let index = 0
-  while (index < records.length) {
-    const record = records[index]
-    index += 1
-    if (record === undefined || record.length < 3) continue
+  for (let record = records.pop(); record !== undefined; record = records.pop()) {
+    if (record.length < 3) continue
 
     const status = record.slice(0, 2)
     const currentPath = record.slice(3)
@@ -77,8 +76,7 @@ export function parseGitStatusPorcelainZ(output: string): GitStatusChanges {
 
     if (isRenameOrCopy) {
       // Original path is the next NUL field, not part of this record.
-      const originalPath = records[index]
-      index += 1
+      const originalPath = records.pop()
       if (originalPath !== undefined) deleted.push(originalPath)
       changed.push(currentPath)
       continue
@@ -363,14 +361,18 @@ interface StagedEntry {
 function parseRawDiffZ(output: string): StagedEntry[] {
   const fields = output.split('\0')
   if (fields.at(-1) === '') fields.pop()
+  // Consumed from the end with pop(): each entry is a metadata field followed by its path field.
+  fields.reverse()
   const entries: StagedEntry[] = []
-  for (let index = 0; index < fields.length; index += 2) {
-    const meta = /^:(\d{6}) (\d{6}) ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) ([A-Z])$/.exec(fields[index] ?? '')
-    const entryPath = fields[index + 1]
+  for (let metaField = fields.pop(); metaField !== undefined; metaField = fields.pop()) {
+    const meta = /^:(\d{6}) (\d{6}) ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) ([A-Z])$/.exec(metaField)
+    const entryPath = fields.pop()
     if (meta === null || entryPath === undefined || entryPath === '') {
       throw new WikiHandoffValidationError('wiki-handoff-build: unexpected `git diff --cached --raw` output')
     }
-    entries.push({status: meta[5] ?? '', newMode: meta[2] ?? '', newSha: meta[4] ?? '', path: entryPath})
+    // The pattern has exactly five capture groups, so a match always fills all of them.
+    const [, , newMode, , newSha, status] = meta as unknown as [string, string, string, string, string, string]
+    entries.push({status, newMode, newSha, path: entryPath})
   }
   return entries
 }
@@ -504,25 +506,36 @@ export interface HandoffPolicy {
   maxTotalBytes: number
 }
 
-/** Generous cap for a wiki-page delta; catches a runaway or malicious artifact early. */
-export const WIKI_HANDOFF_MAX_TOTAL_BYTES = 5 * 1024 * 1024
+// The cap and both policies are functions, not top-level constants: a module-level initializer runs once
+// per worker, so a mutant in it is static and no test can kill it. Each call builds a fresh value.
 
-export const WIKI_HANDOFF_POLICY: HandoffPolicy = {
-  name: 'wiki',
-  isAllowedPath: isAllowedWikiHandoffPath,
-  allowDeletions: true,
-  isUnappliedPath: isSharedWikiFile,
-  maxTotalBytes: WIKI_HANDOFF_MAX_TOTAL_BYTES,
+/** Generous cap for a wiki-page delta; catches a runaway or malicious artifact early. */
+export function wikiHandoffMaxTotalBytes(): number {
+  return 5 * 1024 * 1024
+}
+
+export function wikiHandoffPolicy(): HandoffPolicy {
+  return {
+    name: 'wiki',
+    isAllowedPath: isAllowedWikiHandoffPath,
+    allowDeletions: true,
+    isUnappliedPath: isSharedWikiFile,
+    maxTotalBytes: wikiHandoffMaxTotalBytes(),
+  }
 }
 
 /** A drafted run holds at most five proposals' docs; 1 MiB is far above that and still catches runaway output. */
-export const DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES = 1024 * 1024
+export function draftedSolutionsHandoffMaxTotalBytes(): number {
+  return 1024 * 1024
+}
 
-export const DRAFTED_SOLUTIONS_HANDOFF_POLICY: HandoffPolicy = {
-  name: 'drafted-solutions',
-  isAllowedPath: isAllowedDraftedSolutionPath,
-  allowDeletions: false,
-  maxTotalBytes: DRAFTED_SOLUTIONS_HANDOFF_MAX_TOTAL_BYTES,
+export function draftedSolutionsHandoffPolicy(): HandoffPolicy {
+  return {
+    name: 'drafted-solutions',
+    isAllowedPath: isAllowedDraftedSolutionPath,
+    allowDeletions: false,
+    maxTotalBytes: draftedSolutionsHandoffMaxTotalBytes(),
+  }
 }
 
 /** Rejects traversal segments, absolute paths, and anything outside the policy's allowlist. */
@@ -553,7 +566,7 @@ export function assertSafeHandoffPath(relativePath: string, policy: HandoffPolic
 
 /** Rejects traversal segments, absolute paths, and anything outside the wiki allowlist. */
 export function assertSafeWikiHandoffPath(relativePath: string): void {
-  assertSafeHandoffPath(relativePath, WIKI_HANDOFF_POLICY)
+  assertSafeHandoffPath(relativePath, wikiHandoffPolicy())
 }
 
 function assertManifestShape(value: unknown): asserts value is WikiHandoffManifest {
@@ -581,7 +594,9 @@ export interface ApplyWikiHandoffParams {
 }
 
 /** Only entries a valid artifact may contain — anything else (e.g. a resurrected metadata.json) is rejected before any file read. */
-const ALLOWED_TOP_LEVEL_ENTRIES = new Set(['manifest.json', 'files'])
+function allowedTopLevelEntries(): ReadonlySet<string> {
+  return new Set(['manifest.json', 'files'])
+}
 
 export interface ApplyWikiHandoffResult {
   applied: string[]
@@ -594,9 +609,9 @@ export interface ApplyHandoffParams extends ApplyWikiHandoffParams {
   policy: HandoffPolicy
 }
 
-/** Validates and applies a wiki handoff: {@link validateAndApplyHandoff} under {@link WIKI_HANDOFF_POLICY}. */
+/** Validates and applies a wiki handoff: {@link validateAndApplyHandoff} under {@link wikiHandoffPolicy}. */
 export async function validateAndApplyWikiHandoff(params: ApplyWikiHandoffParams): Promise<ApplyWikiHandoffResult> {
-  return validateAndApplyHandoff({...params, policy: WIKI_HANDOFF_POLICY})
+  return validateAndApplyHandoff({...params, policy: wikiHandoffPolicy()})
 }
 
 /**
@@ -613,8 +628,9 @@ export async function validateAndApplyHandoff(params: ApplyHandoffParams): Promi
   const rmImpl = params.rmImpl ?? fs.rm
   const readdirImpl = params.readdirImpl ?? fs.readdir
 
+  const allowedEntries = allowedTopLevelEntries()
   const topLevelEntries = await readdirImpl(params.handoffDir)
-  const unexpectedEntries = topLevelEntries.filter(entry => !ALLOWED_TOP_LEVEL_ENTRIES.has(entry))
+  const unexpectedEntries = topLevelEntries.filter(entry => !allowedEntries.has(entry))
   if (unexpectedEntries.length > 0) {
     throw new WikiHandoffValidationError(
       `${policy.name} handoff artifact contains unexpected top-level entries: ${unexpectedEntries.join(', ')}`,
@@ -669,7 +685,7 @@ export async function validateAndApplyHandoff(params: ApplyHandoffParams): Promi
     }
   }
 
-  const isUnapplied = policy.isUnappliedPath ?? (() => false)
+  const isUnapplied = (relativePath: string): boolean => policy.isUnappliedPath?.(relativePath) === true
   const skipped: string[] = []
   const applied: string[] = []
   for (const relativePath of manifest.changed) {
