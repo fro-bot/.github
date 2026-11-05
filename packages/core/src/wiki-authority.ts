@@ -31,13 +31,17 @@ function frobotAuthors(): ReadonlySet<string> {
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
  *
+ * The wiki pattern spells "any character" as `[\s\S]`, not `.`, because `.` does not match a line
+ * terminator (LF, CR, U+2028, U+2029) and a page name containing one would escape the guard. The
+ * patterns carry no `m` flag, so `^` and `$` still anchor the whole path.
+ *
  * Exported for its tests; `isDataOwnedPath` is the shared entry point `merge-back-data.ts` uses.
  *
  * Function, not const: same static-mutant workaround as `frobotAuthors()` above.
  */
 export function guardedPatterns(): readonly RegExp[] {
   return [
-    /^knowledge\/wiki\/[^/]+\/.+\.md$/,
+    /^knowledge\/wiki\/[^/]+\/[\s\S]+\.md$/,
     /^knowledge\/index\.md$/,
     /^knowledge\/log\.md$/,
     /^knowledge\/corrections\.yaml$/,

@@ -904,6 +904,31 @@ describe('isDataOwnedPath / guardedPatterns (shared data-owned set)', () => {
     expect(isDataOwnedPath(path)).toBe(false)
   })
 
+  // `.` does not match a line terminator, so a pattern written with `.+` let such a name escape.
+  it.each([
+    ['LF', '\n'],
+    ['CR', '\r'],
+    ['LS', '\u2028'],
+    ['PS', '\u2029'],
+  ])('owns a wiki page whose name contains a %s', (_name, terminator) => {
+    expect(isDataOwnedPath(`knowledge/wiki/repos/a${terminator}b.md`)).toBe(true)
+    expect(isDataOwnedPath(`knowledge/wiki/repos/${terminator}.md`)).toBe(true)
+    expect(isDataOwnedPath(`knowledge/wiki/topics/nested${terminator}/deep.md`)).toBe(true)
+  })
+
+  it.each([
+    'x\nknowledge/index.md',
+    'knowledge/index.md\n',
+    'knowledge/log.md\u2028',
+    '\rknowledge/corrections.yaml',
+    'metadata/repos.yaml\n',
+    'metadata/a\nb.yaml/c.yaml',
+    'knowledge/wiki/repos/a.md\n',
+    'knowledge/wiki/repos/\nREADME.txt',
+  ])('still anchors the whole path: does not own %j', path => {
+    expect(isDataOwnedPath(path)).toBe(false)
+  })
+
   it('exposes the same pattern list the guard consumes, with zero arity', () => {
     // #given the exported pattern source
     // #then it is a zero-arity function whose patterns agree with the predicate
@@ -1559,6 +1584,36 @@ describe('runWikiAuthority', () => {
       cleanup()
     }
   })
+
+  it.each([
+    ['LF', '\n'],
+    ['LS', '\u2028'],
+  ])(
+    'blocks a human PR that adds, or renames away, a wiki page whose name contains a %s',
+    async (_name, terminator) => {
+      const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-terminator-', {
+        pull_request: {
+          number: 7,
+          user: {login: 'marcusrbrown'},
+          head: {ref: 'feature/x'},
+          base: {repo: {full_name: 'fro-bot/.github'}},
+        },
+      })
+      const added = `knowledge/wiki/repos/a${terminator}b.md`
+      const renamedAway = `knowledge/wiki/repos/c${terminator}d.md`
+      mockExecFileSync.mockReset()
+      mockExecFileSync.mockReturnValueOnce(ghFiles(added, ['docs/moved.md', renamedAway]))
+      try {
+        const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+        expect(result.exitCode).toBe(1)
+        expect(result.stderr).toContain(added)
+        expect(result.stderr).toContain(renamedAway)
+      } finally {
+        cleanup()
+      }
+    },
+  )
 
   it('rejects when the event payload is malformed', async () => {
     const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-malformed-', {pull_request: {}})
