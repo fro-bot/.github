@@ -5,7 +5,7 @@ import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest'
 import {checkMutationGuardsCli, main} from './check-mutation-guards-cli.ts'
-import {VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
+import {runMutationGuardCheck, VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
 
 // Nothing here may spawn Stryker or call `gh`: the mock replaces both child-process entry points the module graph
 // reaches (`spawnSync` in the gate, `execFileSync` in the changed-file fetch of @fro-bot/core/wiki-authority).
@@ -128,6 +128,17 @@ function eventFile(name: string): string {
   return path
 }
 
+// What `gh api --paginate .../pulls/{n}/files --jq '.[] | {filename, previous_filename}'` prints: one compact JSON
+// object per changed file. A string entry is a file with no previous path; a `[filename, previous]` tuple is a rename.
+function ghFiles(...entries: readonly (string | readonly [filename: string, previous: string])[]): string {
+  return entries
+    .map(entry => {
+      const [filename, previous] = typeof entry === 'string' ? [entry, null] : entry
+      return `${JSON.stringify({filename, previous_filename: previous})}\n`
+    })
+    .join('')
+}
+
 async function runMain(env: Record<string, string>): Promise<{stdout: string; stderr: string}> {
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
@@ -149,7 +160,7 @@ async function runMain(env: Record<string, string>): Promise<{stdout: string; st
 
 describe('main, with the real guard against the real stryker.config.json and a stubbed pull_request event', () => {
   it('reports not-applicable and exits 0 for a docs-only change, without spawning Stryker', async () => {
-    mockExecFileSync.mockReturnValue('README.md\ndocs/plans/x.md\n')
+    mockExecFileSync.mockReturnValue(ghFiles('README.md', 'docs/plans/x.md'))
     const summary = join(root, 'summary-na.md')
     writeFileSync(summary, 'earlier\n')
     const output = await runMain({
@@ -163,9 +174,38 @@ describe('main, with the real guard against the real stryker.config.json and a s
     expect(mockSpawnSync).not.toHaveBeenCalled()
     expect(mockExecFileSync).toHaveBeenCalledWith(
       'gh',
-      ['api', '--paginate', '/repos/fro-bot/.github/pulls/7/files', '--jq', '.[].filename'],
+      ['api', '--paginate', '/repos/fro-bot/.github/pulls/7/files', '--jq', '.[] | {filename, previous_filename}'],
       {encoding: 'utf8'},
     )
+  })
+
+  it('runs the gate when a configured mutation test is renamed to an unrelated path', async () => {
+    // #given the only new path is outside the trigger set, but its previous path is a configured test file
+    mockExecFileSync.mockReturnValue(
+      ghFiles(['docs/moved-test.ts', 'packages/ci-checks/src/check-md-links-cli.test.ts']),
+    )
+    // The report path is test-owned: an applicable run clears its report before it spawns Stryker, and
+    // `main` would clear the real checkout's `reports/mutation/mutation.json`.
+    const reportPath = join(root, 'renamed-test-report.json')
+    const spawner = vi.fn()
+    const outcome = await runMutationGuardCheck(
+      spawner,
+      reportPath,
+      {reporters: ['json'], resolvedJsonReportPath: reportPath},
+      {eventName: 'pull_request', eventPath: eventFile('renamed-test')},
+    )
+    // #then the gate does not short-circuit to not-applicable and reaches Stryker
+    expect(spawner).toHaveBeenCalledTimes(1)
+    expect(outcome.verdict).not.toBe('not-applicable')
+  })
+
+  it('fails closed with instrumentation-failed and exit 1 when the changed-file list is at the API cap', async () => {
+    // #given 3,000 listed files, none in the trigger set: the file that is would be the one cut off
+    mockExecFileSync.mockReturnValue(ghFiles(...Array.from({length: 3000}, (_, index) => `docs/f${index}.md`)))
+    const output = await runMain({GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventFile('cap')})
+    expect(process.exitCode).toBe(1)
+    expect(output.stdout).toMatch(/^trigger-gate:0:0 trigger-gate ChangedFileGateFailed\ninstrumentation-failed\n$/u)
+    expect(mockSpawnSync).not.toHaveBeenCalled()
   })
 
   it('fails closed with instrumentation-failed and exit 1 when the changed files cannot be fetched', async () => {

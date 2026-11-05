@@ -1,5 +1,6 @@
 import {execFileSync} from 'node:child_process'
 import {readFile} from 'node:fs/promises'
+import {z} from 'zod'
 
 /**
  * Fro Bot identities permitted to commit autonomously-managed files on `main`.
@@ -30,13 +31,17 @@ function frobotAuthors(): ReadonlySet<string> {
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
  *
+ * The wiki pattern spells "any character" as `[\s\S]`, not `.`, because `.` does not match a line
+ * terminator (LF, CR, U+2028, U+2029) and a page name containing one would escape the guard. The
+ * patterns carry no `m` flag, so `^` and `$` still anchor the whole path.
+ *
  * Exported for its tests; `isDataOwnedPath` is the shared entry point `merge-back-data.ts` uses.
  *
  * Function, not const: same static-mutant workaround as `frobotAuthors()` above.
  */
 export function guardedPatterns(): readonly RegExp[] {
   return [
-    /^knowledge\/wiki\/[^/]+\/.+\.md$/,
+    /^knowledge\/wiki\/[^/]+\/[\s\S]+\.md$/,
     /^knowledge\/index\.md$/,
     /^knowledge\/log\.md$/,
     /^knowledge\/corrections\.yaml$/,
@@ -184,19 +189,41 @@ export async function readPullRequestContext(
  * Fetch the complete list of changed files for a pull request using the paginated GitHub API.
  *
  * Uses `gh api --paginate` so files beyond GitHub's first-page soft limit are always included.
+ * A renamed file is listed under its new path and, when GitHub reports one, its
+ * `previous_filename`, so a rename out of a guarded path or out of a gate's trigger set still
+ * counts as touching it. The `--jq` filter keeps only those two fields, which holds the output
+ * well under `execFileSync`'s default buffer even for a PR that has the maximum 3,000 files.
  * `{fullName}` is the `owner/repo` string sourced from the event payload's
  * `pull_request.base.repo.full_name` field; falls back to `gh repo view` when the payload
  * does not carry it (e.g. re-triggered workflows).
+ *
+ * Throws on a line that is not a `{filename, previous_filename}` object: a path dropped from
+ * the set would let a guarded change through. Throws too when the list holds 3,000 files: the
+ * endpoint returns at most 3,000 even with `--paginate`, so a list that long cannot be told from
+ * one that was cut off. Both callers turn the throw into a failing result.
  *
  * Exported for unit testing.
  */
 export function fetchChangedFiles(prNumber: number, fullName: string): string[] {
   const stdout = execFileSync(
     'gh',
-    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[].filename'],
+    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[] | {filename, previous_filename}'],
     {encoding: 'utf8'},
   )
-  return stdout.split('\n').filter(line => line.length > 0)
+  const entry = z.object({filename: z.string(), previous_filename: z.string().nullable()})
+  const entries = stdout
+    .split('\n')
+    .filter(line => line.length > 0)
+    .map(line => entry.parse(JSON.parse(line)))
+  const apiFileLimit = 3000
+  if (entries.length >= apiFileLimit) {
+    throw new Error(
+      `fetchChangedFiles: pull request #${prNumber} lists ${entries.length} files, the most the GitHub API returns; the list may be truncated`,
+    )
+  }
+  return entries.flatMap(({filename, previous_filename: previous}) =>
+    previous === null ? [filename] : [filename, previous],
+  )
 }
 
 export interface WikiAuthorityRun {

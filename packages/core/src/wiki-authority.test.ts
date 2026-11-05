@@ -36,6 +36,30 @@ function writeTempEvent(prefix: string, payload: unknown): {eventPath: string; c
 // The repository the guard runs in; a Fro Bot allow additionally requires the PR's head repo to be it.
 const THIS_REPO = 'fro-bot/.github'
 
+// What `gh api --paginate .../pulls/{n}/files --jq '.[] | {filename, previous_filename}'` prints: one
+// compact JSON object per changed file, `previous_filename` null unless GitHub reports a rename.
+// A string entry is a file with no previous path; a `[filename, previous]` tuple is a rename.
+function ghFiles(...entries: readonly (string | readonly [filename: string, previous: string])[]): string {
+  return entries
+    .map(entry => {
+      const [filename, previous] = typeof entry === 'string' ? [entry, null] : entry
+      return `${JSON.stringify({filename, previous_filename: previous})}\n`
+    })
+    .join('')
+}
+
+const CHANGED_FILES_ARGS = [
+  'api',
+  '--paginate',
+  '/repos/fro-bot/.github/pulls/{n}/files',
+  '--jq',
+  '.[] | {filename, previous_filename}',
+] as const
+
+function changedFilesArgs(prNumber: number): string[] {
+  return CHANGED_FILES_ARGS.map(arg => arg.replace('{n}', String(prNumber)))
+}
+
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
     it('allows fro-bot[bot] editing a guarded metadata yaml', () => {
@@ -880,6 +904,31 @@ describe('isDataOwnedPath / guardedPatterns (shared data-owned set)', () => {
     expect(isDataOwnedPath(path)).toBe(false)
   })
 
+  // `.` does not match a line terminator, so a pattern written with `.+` let such a name escape.
+  it.each([
+    ['LF', '\n'],
+    ['CR', '\r'],
+    ['LS', '\u2028'],
+    ['PS', '\u2029'],
+  ])('owns a wiki page whose name contains a %s', (_name, terminator) => {
+    expect(isDataOwnedPath(`knowledge/wiki/repos/a${terminator}b.md`)).toBe(true)
+    expect(isDataOwnedPath(`knowledge/wiki/repos/${terminator}.md`)).toBe(true)
+    expect(isDataOwnedPath(`knowledge/wiki/topics/nested${terminator}/deep.md`)).toBe(true)
+  })
+
+  it.each([
+    'x\nknowledge/index.md',
+    'knowledge/index.md\n',
+    'knowledge/log.md\u2028',
+    '\rknowledge/corrections.yaml',
+    'metadata/repos.yaml\n',
+    'metadata/a\nb.yaml/c.yaml',
+    'knowledge/wiki/repos/a.md\n',
+    'knowledge/wiki/repos/\nREADME.txt',
+  ])('still anchors the whole path: does not own %j', path => {
+    expect(isDataOwnedPath(path)).toBe(false)
+  })
+
   it('exposes the same pattern list the guard consumes, with zero arity', () => {
     // #given the exported pattern source
     // #then it is a zero-arity function whose patterns agree with the predicate
@@ -1181,30 +1230,27 @@ describe('readPullRequestContext (optional-chaining discrimination)', () => {
 describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
   it('calls gh api --paginate with the correct endpoint and returns filenames', () => {
     // #given execFileSync returns a newline-separated list of filenames (as gh --paginate would)
-    mockExecFileSync.mockReturnValue('scripts/foo.ts\nmetadata/repos.yaml\nknowledge/index.md\n')
+    mockExecFileSync.mockReturnValue(ghFiles('scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'))
 
     // #when fetchChangedFiles is called with prNumber and fullName
     const files = fetchChangedFiles(42, 'fro-bot/.github')
 
     // #then it uses gh api --paginate (not gh pr view) and returns all filenames
-    expect(mockExecFileSync).toHaveBeenCalledWith(
-      'gh',
-      ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
-      {encoding: 'utf8'},
-    )
+    expect(mockExecFileSync).toHaveBeenCalledWith('gh', changedFilesArgs(42), {encoding: 'utf8'})
     expect(files).toEqual(['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'])
   })
 
   it('includes metadata/repos.yaml from a paginated response not on the first page (guard bypass prevented)', () => {
     // #given execFileSync returns filenames where metadata/repos.yaml appears later
     // (simulating it being beyond the first page of a large PR — --paginate merges it all)
-    const paginatedOutput = [
-      'scripts/a.ts',
-      'scripts/b.ts',
-      // ... imagine 300 files above, then:
-      'metadata/repos.yaml',
-    ].join('\n')
-    mockExecFileSync.mockReturnValue(`${paginatedOutput}\n`)
+    mockExecFileSync.mockReturnValue(
+      ghFiles(
+        'scripts/a.ts',
+        'scripts/b.ts',
+        // ... imagine 300 files above, then:
+        'metadata/repos.yaml',
+      ),
+    )
 
     const files = fetchChangedFiles(99, 'fro-bot/.github')
 
@@ -1223,12 +1269,75 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
   })
 
   it('filters empty lines from the output', () => {
-    // #given output with trailing newline (common from shell tools)
-    mockExecFileSync.mockReturnValue('foo.ts\n\nbar.ts\n')
+    // #given output with a blank line and a trailing newline
+    mockExecFileSync.mockReturnValue(`${ghFiles('foo.ts')}\n${ghFiles('bar.ts')}`)
 
     const files = fetchChangedFiles(1, 'owner/repo')
 
     expect(files).toEqual(['foo.ts', 'bar.ts'])
+  })
+
+  it('returns the filename alone when previous_filename is null', () => {
+    mockExecFileSync.mockReturnValue('{"filename":"scripts/foo.ts","previous_filename":null}\n')
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual(['scripts/foo.ts'])
+  })
+
+  it('returns both the new and the previous path of a renamed file', () => {
+    mockExecFileSync.mockReturnValue(ghFiles('README.md', ['docs/moved.md', 'metadata/repos.yaml'], 'scripts/x.ts'))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual([
+      'README.md',
+      'docs/moved.md',
+      'metadata/repos.yaml',
+      'scripts/x.ts',
+    ])
+  })
+
+  it('returns an empty list for a pull request with no changed files', () => {
+    mockExecFileSync.mockReturnValue('')
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual([])
+  })
+
+  // GET /pulls/{n}/files returns at most 3,000 files even with --paginate, so a list that long
+  // may be cut off and cannot be told from a complete one.
+  const unguardedFiles = (count: number): string[] => Array.from({length: count}, (_, index) => `src/f${index}.ts`)
+
+  it('returns every path of a list one file short of the API cap', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(2999)))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual(unguardedFiles(2999))
+  })
+
+  it('counts files, not paths: 2,999 renames pass although they yield 5,998 paths', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(2999).map(file => [file, `old/${file}`] as const)))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toHaveLength(5998)
+  })
+
+  it('throws at exactly the API cap, where the list may be truncated', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(3000)))
+
+    expect(() => fetchChangedFiles(7, 'owner/repo')).toThrow(/pull request #7.*3000 files.*truncated/u)
+  })
+
+  it('throws at the API cap when the files are renames', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(3000).map(file => [file, `old/${file}`] as const)))
+
+    expect(() => fetchChangedFiles(1, 'owner/repo')).toThrow(/truncated/u)
+  })
+
+  it.each([
+    ['a line that is not JSON', 'scripts/foo.ts\n'],
+    ['an entry without a filename', '{"previous_filename":null}\n'],
+    ['a non-string filename', '{"filename":3,"previous_filename":null}\n'],
+    ['a non-string previous_filename', '{"filename":"a.ts","previous_filename":3}\n'],
+    ['a missing previous_filename', '{"filename":"a.ts"}\n'],
+  ])('throws on %s rather than dropping a path from the set', (_name, output) => {
+    mockExecFileSync.mockReturnValue(output)
+
+    expect(() => fetchChangedFiles(1, 'owner/repo')).toThrow()
   })
 })
 
@@ -1298,7 +1407,7 @@ describe('runWikiAuthority', () => {
       },
     })
     mockExecFileSync.mockReset()
-    mockExecFileSync.mockReturnValueOnce('scripts/foo.ts\nREADME.md\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('scripts/foo.ts', 'README.md'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1309,11 +1418,7 @@ describe('runWikiAuthority', () => {
       })
       // fullName came from the event payload: the gh repo view fallback must not have been called.
       expect(mockExecFileSync).toHaveBeenCalledTimes(1)
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        'gh',
-        ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
-        {encoding: 'utf8'},
-      )
+      expect(mockExecFileSync).toHaveBeenCalledWith('gh', changedFilesArgs(42), {encoding: 'utf8'})
     } finally {
       cleanup()
     }
@@ -1329,7 +1434,7 @@ describe('runWikiAuthority', () => {
       },
     })
     mockExecFileSync.mockReset()
-    mockExecFileSync.mockReturnValueOnce('metadata/repos.yaml\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('metadata/repos.yaml'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1348,7 +1453,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fork-data',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml')],
     })
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
@@ -1360,7 +1465,7 @@ describe('runWikiAuthority', () => {
       suffix: 'null-head-repo',
       headRepo: null,
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml')],
     })
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
@@ -1371,7 +1476,7 @@ describe('runWikiAuthority', () => {
       suffix: 'own-data',
       headRepo: {full_name: 'fro-bot/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\nknowledge/index.md\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml', 'knowledge/index.md')],
     })
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('check-wiki-authority: ok (author=fro-bot[bot], files_checked=2)')
@@ -1382,7 +1487,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fallback-same',
       headRepo: {full_name: 'fro-bot/.github'},
       base: undefined,
-      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+      mockedGh: ['fro-bot/.github\n', ghFiles('metadata/repos.yaml')],
     })
     expect(same.exitCode).toBe(0)
     expect(same.stdout).toContain('check-wiki-authority: ok')
@@ -1391,7 +1496,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fallback-different',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: undefined,
-      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+      mockedGh: ['fro-bot/.github\n', ghFiles('metadata/repos.yaml')],
     })
     expect(different.exitCode).toBe(1)
     expect(different.stderr).toContain('metadata/repos.yaml')
@@ -1408,7 +1513,7 @@ describe('runWikiAuthority', () => {
     mockExecFileSync.mockReset()
     // Untrimmed, to prove `.trim()` actually runs on the fallback lookup's output.
     mockExecFileSync.mockReturnValueOnce('  fro-bot/.github  \n')
-    mockExecFileSync.mockReturnValueOnce('README.md\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('README.md'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1419,17 +1524,96 @@ describe('runWikiAuthority', () => {
         ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
         {encoding: 'utf8'},
       )
-      expect(mockExecFileSync).toHaveBeenNthCalledWith(
-        2,
-        'gh',
-        ['api', '--paginate', '/repos/fro-bot/.github/pulls/99/files', '--jq', '.[].filename'],
-        {encoding: 'utf8'},
-      )
+      expect(mockExecFileSync).toHaveBeenNthCalledWith(2, 'gh', changedFilesArgs(99), {encoding: 'utf8'})
       expect(result.stdout).toContain('check-wiki-authority: ok')
     } finally {
       cleanup()
     }
   })
+
+  it('blocks a human PR that renames a file out of a guarded path', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-rename-out-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    mockExecFileSync.mockReset()
+    // #given GitHub reports the file under its new, unguarded path with the guarded one as previous_filename
+    mockExecFileSync.mockReturnValueOnce(ghFiles(['docs/moved.md', 'knowledge/wiki/repos/x.md']))
+    try {
+      const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+      // #then the guarded source path counts as touched
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('knowledge/wiki/repos/x.md')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('blocks a human PR that renames a file into a guarded path', async () => {
+    const result = await runAsFroBot({
+      suffix: 'rename-in',
+      headRepo: {full_name: 'contributor-fork/.github'},
+      base: {repo: {full_name: 'fro-bot/.github'}},
+      mockedGh: [ghFiles(['metadata/repos.yaml', 'docs/old.yaml'])],
+    })
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('metadata/repos.yaml')
+  })
+
+  it('rejects, rather than allowing the PR, when the changed-file list is at the API cap', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-cap-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    mockExecFileSync.mockReset()
+    // #given 3,000 listed files, none of them guarded: the guarded edit may be the file cut off
+    mockExecFileSync.mockReturnValueOnce(ghFiles(...Array.from({length: 3000}, (_, index) => `src/f${index}.ts`)))
+    try {
+      await expect(runWikiAuthority({GITHUB_EVENT_PATH: eventPath})).rejects.toThrow(/truncated/u)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it.each([
+    ['LF', '\n'],
+    ['LS', '\u2028'],
+  ])(
+    'blocks a human PR that adds, or renames away, a wiki page whose name contains a %s',
+    async (_name, terminator) => {
+      const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-terminator-', {
+        pull_request: {
+          number: 7,
+          user: {login: 'marcusrbrown'},
+          head: {ref: 'feature/x'},
+          base: {repo: {full_name: 'fro-bot/.github'}},
+        },
+      })
+      const added = `knowledge/wiki/repos/a${terminator}b.md`
+      const renamedAway = `knowledge/wiki/repos/c${terminator}d.md`
+      mockExecFileSync.mockReset()
+      mockExecFileSync.mockReturnValueOnce(ghFiles(added, ['docs/moved.md', renamedAway]))
+      try {
+        const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+        expect(result.exitCode).toBe(1)
+        expect(result.stderr).toContain(added)
+        expect(result.stderr).toContain(renamedAway)
+      } finally {
+        cleanup()
+      }
+    },
+  )
 
   it('rejects when the event payload is malformed', async () => {
     const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-malformed-', {pull_request: {}})
