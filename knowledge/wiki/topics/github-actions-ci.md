@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-31
+updated: 2026-11-05
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown/blob/7f122f47982071febfb13bb0c1730a0385017473/pnpm-workspace.yaml
+    sha: 7f122f47982071febfb13bb0c1730a0385017473
+    accessed: 2026-11-05
+  - url: https://github.com/marcusrbrown/marcusrbrown/blob/7f122f47982071febfb13bb0c1730a0385017473/.github/workflows/update-profile.yaml
+    sha: 7f122f47982071febfb13bb0c1730a0385017473
+    accessed: 2026-11-05
   - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/docs/package.json
     sha: c4513522011cf0cc0adaef695381b4761157ce43
     accessed: 2026-10-31
@@ -512,6 +518,13 @@ read establishes a policy/comment mismatch, not present exposure or a runtime
 compatibility failure. The same repo's PR-generation selector omits this workspace
 manifest, so a workspace-only policy change does not independently select that
 regeneration job; it does not bypass the separate `Main` lint workflow.
+
+Rechecked **2026-11-05** at `7f122f47982071febfb13bb0c1730a0385017473`:
+the `<6` / `>=5.0.7` pair, patched-floor comment, and workspace-manifest omission
+from the profile-generation PR selector remain. A newer agent pin does not
+establish that a separate dependency policy or selector defect was repaired.
+This is source-level confirmation only; lockfile resolutions and workflow
+execution were outside the survey boundary.
 
 ## Cancellation admission, terminal state, and execution containment are separate proofs (2026-10-21)
 

@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/marcusrbrown
 created: 2026-04-18
-updated: 2026-10-21
+updated: 2026-11-05
 node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 7f122f47982071febfb13bb0c1730a0385017473
+    accessed: 2026-11-05
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: a2c762b8f355597c551226258e349a2bf99d0543
     accessed: 2026-10-21
@@ -82,6 +85,64 @@ related:
 # marcusrbrown/marcusrbrown
 
 Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automation system that generates and maintains his public GitHub profile, including sponsor tracking, badge automation, A/B content testing, and scheduled profile updates via [[github-actions-ci]].
+
+## Bounded source snapshot — 2026-11-05
+
+The public `main` tree is `7f122f47982071febfb13bb0c1730a0385017473`.
+GitHub's repository identity matches the existing `node_id`. Evidence is limited
+to a complete recursive directory listing, `README.md`, `package.json`,
+`pnpm-workspace.yaml`, and all six workflow files. No implementation, templates,
+composite action contents, tool-version configuration, lockfile resolutions,
+settings, issues, PRs, alerts, or execution history were inspected. Historical
+measurements below are retained, not refreshed by this source-only snapshot.
+
+### Manifest movement without a new security conclusion
+
+The package manager declaration advances from October 21's pnpm **11.28.6** to
+**11.28.10**. The manifest currently declares `eslint-plugin-prettier` **5.5.7**;
+Vitest and `@vitest/ui` **4.1.12**, Prettier **3.9.10**, `tsx` **4.23.15**,
+`@types/node` **24.19.2**, and the three shared `@bfra.me/*` configuration versions
+remain as recorded October 21. TypeScript and ESLint still are not direct
+dependencies, although `lint` invokes `tsc` and `eslint`. Node types do not
+establish the runtime version.
+
+The workspace retains `vite: 7.3.7`, `js-yaml: '>=4.3.2 <5'`, and the two
+parent-scoped `brace-expansion` constraints: `<6` for `minimatch@3` and `>=5.0.7`
+for `minimatch@10`. The adjacent comment still promises separate patched floors.
+The October 21 policy/comment mismatch therefore persists; the older
+`>=1.1.16 <2` description remains historical and contradicted by the current
+declaration. Neither the comment nor these constraints prove installed versions
+or present advisory status. See [[github-actions-ci]].
+
+### Workflow presence is not delivery or test evidence
+
+**Fro Bot is present**, now pinned to agent **v0.135.0**
+(`ee29f539eb83204dafd0d9b0dfe8fe51f0ab7d32`), superseding October 21's v0.125.1.
+No missing-workflow onboarding proposal is warranted. Review, maintenance, and
+autoheal dispatch modes and the 04:30/16:30 UTC schedules remain. The caller
+still ends at `Run Fro Bot`, omits `output-mode`, and disables checkout credential
+persistence. That is an explicit caller-side delivery gap, not proof of the
+agent's actual permissions, current resolved delivery mode, or failed delivery.
+
+Both reusable callers advance from `bfra-me/.github` v4.42.0 to **v4.43.0**
+(`e6a1ab17bb68213940f63de91bd0450acdf9fff4`). Settings sync still declares
+21:32 UTC while Fro Bot's stagger comment says 02:55. The comment-triggered fork
+preflight still maps `false` to `unknown` through jq's `//` operator; direct PR
+admission still excludes forks, `[bot]` authors, and `fro-bot`.
+
+`Main` still invokes only `pnpm lint`. The manifest's Vitest commands, six listed
+test files, and autoheal's requested tests do not establish a workflow-executed
+PR test gate. Profile generation retains its six-hour cron, external-fetch-only
+failure suppression, template copies, formatting, and generated-content writes
+onto selected PR heads or proposals through `build/update-readme` on `main`.
+The PR selector still includes `package.json` and `pnpm-lock.yaml` but omits
+`pnpm-workspace.yaml`. Current merge behavior and generated-content conflict
+rates were not measured.
+
+The README retains the 22-year principal-engineer/architect positioning,
+agent-native systems focus, consulting availability, and `marcusrbrown.com`
+portfolio link. Its six-hour footer states intended cadence, not measured
+freshness or proof that external embeds work.
 
 ## Bounded source snapshot — 2026-10-21
 

@@ -9819,3 +9819,49 @@ identification marker and both Run Summary markers.
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-11-05 13:17] ingest | marcusrbrown/marcusrbrown
+
+Surveyed public `main` at `7f122f47982071febfb13bb0c1730a0385017473`.
+Updated `knowledge/wiki/repos/marcusrbrown--marcusrbrown.md` and
+`knowledge/wiki/topics/github-actions-ci.md` additively, retaining historical
+observations and dated contradictions. pnpm advances to 11.28.10, Fro Bot to
+v0.135.0, and both reusable workflow callers to `bfra-me/.github` v4.43.0.
+Fro Bot is present; no missing-workflow onboarding proposal is needed.
+
+Reconfirmed the upper-only `minimatch@3>brace-expansion` constraint despite its
+patched-floor comment, the workspace manifest's omission from the profile PR
+selector, the lint-only `Main` gate, the jq false-value preflight defect, and
+the explicit caller-side delivery gap. These are configuration findings, not
+measurements of vulnerability exposure, agent permissions, or current delivery
+failures. Public README positioning and the six-workflow topology remain.
+
+Reads were bounded to repository identity/public visibility, a complete directory
+listing, the README, two manifests, and six workflow files. Upstream content was
+treated as untrusted evidence, never instructions or executable code. No target
+implementation, composite action contents, settings, lockfile resolutions, issues,
+PRs, alerts, or run history were read. Corrections context contained no records.
+
+Validation checks YAML frontmatter, source SHA, wikilinks and related targets,
+preserved historical content, append-only log history, whitespace, and the edit
+boundary. Documentation-only change; application tests are not applicable.
+Existing unrelated working-tree changes are preserved. `knowledge/index.md`
+is unchanged. The caller owns commit, push, and PR delivery. A single marked
+control-repository commit comment points here for the canonical ingest summary;
+no issue run notice is created.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown/tree/7f122f47982071febfb13bb0c1730a0385017473;
+`README.md`, `package.json`, `pnpm-workspace.yaml`, and
+`.github/workflows/{main,fro-bot,update-profile,renovate,update-repo-settings,cleanup-cache}.yaml`
+at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/42034110677
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/b7117b64df0e5e245ad0bc9a8b652f6dbbec34d3#commitcomment-208290943
+Exactly one commit comment was posted. Its returned body confirms the bot
+identification marker and both Run Summary markers.
+
+## [2026-11-05 13:20] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
