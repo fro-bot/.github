@@ -36,7 +36,7 @@ import {
   parsePatternProposalSupersedes,
   tokenizeTitle,
 } from './capture-patterns-synthesis.ts'
-import {parseCoverageBlock, renderPrBody, type CoverageRow} from './drafted-solutions-pr-body.ts'
+import {findCoverageBlock, parseCoverageBlock, renderPrBody, type CoverageRow} from './drafted-solutions-pr-body.ts'
 
 const BEST_OF = 3
 const READABLE_MILLISECONDS = 50
@@ -261,6 +261,55 @@ describe('the coverage block scales linearly', {timeout: SUITE_TIMEOUT_MILLISECO
   it.each(cases)('parseCoverageBlock: $name', ({make, reaches}) => {
     reaches(make(SMALL))
     expect(growthRatio(make, SMALL, input => parseCoverageBlock(input, 'existing-pr'))).toBeLessThan(CEILING)
+  })
+})
+
+describe('the coverage block scan scales linearly on its own', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
+  // `parseCoverageBlock` rejects a second marker before the scan runs, so the guard hides any quadratic
+  // behaviour in the scan itself. These cases call the scan directly, where many heads are reachable.
+  const MARKER = '<!-- fro-bot:drafted-solutions-coverage v1'
+  const TERMINATOR = '\n-->'
+  /** The input then a terminator: only a walk to the end of the text finds the payload's end. */
+  const reachesTerminator = (head: string) => (input: string) => {
+    expect(findCoverageBlock(`${input}${TERMINATOR}`)).toBe(input.slice(head.length))
+  }
+  const cases: ScalingCase[] = [
+    {
+      name: "CodeQL's shape: many heads, each followed by a, no terminator",
+      make: (size: number) => `${MARKER}\n${repeat(`${MARKER}\na`)(size)}`,
+      reaches: reachesTerminator(`${MARKER}\n`),
+    },
+    {
+      name: 'many heads and nothing else, no terminator',
+      make: repeat(`${MARKER}\n`),
+      reaches: reachesTerminator(`${MARKER}\n`),
+    },
+    {
+      name: 'many CRLF heads, no terminator',
+      make: repeat(`${MARKER}\r\na`),
+      reaches: reachesTerminator(`${MARKER}\r\n`),
+    },
+    {
+      name: 'many near-heads with a CR but no LF',
+      make: repeat(`${MARKER}\r`),
+      reaches: input => {
+        expect(findCoverageBlock(`${input}x\n${MARKER}\n{}\n-->`)).toBe('{}')
+      },
+    },
+    {
+      name: 'one head and a long payload of near-terminators',
+      make: (size: number) => `${MARKER}\n${repeat('\n--')(size)}`,
+      reaches: reachesTerminator(`${MARKER}\n`),
+    },
+    {
+      name: 'one head and a long payload of CRLF near-terminators',
+      make: (size: number) => `${MARKER}\r\n${repeat('\r\n->')(size)}`,
+      reaches: reachesTerminator(`${MARKER}\r\n`),
+    },
+  ]
+  it.each(cases)('findCoverageBlock: $name', ({make, reaches}) => {
+    reaches(make(SMALL))
+    expect(growthRatio(make, SMALL, input => findCoverageBlock(input))).toBeLessThan(CEILING)
   })
 })
 

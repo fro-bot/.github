@@ -602,7 +602,7 @@
     },
     {
       "path": "packages/knowledge/src/drafted-solutions-pr-body.ts",
-      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 75.78% (446 mutants: 338 killed, 104 survived, 4 with no coverage). Survivors: renderPrBody (27), parseRow (16), parseEvidence (11), renderRow (11), ROW_KEYS (9) and parseCoverageBlock (6): table-cell escapes and the exact key lists of the hidden coverage block."
+      "reason": "Moved from scripts/ unchanged apart from the runner wiring and was outside the mutate list there. A targeted Stryker pass over this module with all of packages/knowledge/src tests (vitest runner, test-owned temp paths, Node 24.22.0) scored 75.78% (446 mutants: 338 killed, 104 survived, 4 with no coverage). Survivors: renderPrBody (27), parseRow (16), parseEvidence (11), renderRow (11), ROW_KEYS (9) and parseCoverageBlock (6): table-cell escapes and the exact key lists of the hidden coverage block. That score predates findCoverageBlock, which replaced the BLOCK_PATTERN regex with an indexOf scan and was not re-measured: a re-run of the same targeted pass was stopped after about 25 minutes with no mutant results, because 313 of its mutants are static and each reruns the whole suite. findCoverageBlock is pinned by a seeded differential test against the old pattern (80,000 bodies plus every prefix slice of a fixed document) in drafted-solutions-coverage-block-scan.test.ts and by the scaling cases in regex-scaling.test.ts."
     },
     {
       "path": "packages/knowledge/src/drafted-solutions-publish.ts",
