@@ -1,5 +1,6 @@
 import {execFileSync} from 'node:child_process'
 import {readFile} from 'node:fs/promises'
+import {z} from 'zod'
 
 /**
  * Fro Bot identities permitted to commit autonomously-managed files on `main`.
@@ -184,19 +185,33 @@ export async function readPullRequestContext(
  * Fetch the complete list of changed files for a pull request using the paginated GitHub API.
  *
  * Uses `gh api --paginate` so files beyond GitHub's first-page soft limit are always included.
+ * A renamed file is listed under its new path and, when GitHub reports one, its
+ * `previous_filename`, so a rename out of a guarded path or out of a gate's trigger set still
+ * counts as touching it. The `--jq` filter keeps only those two fields, which holds the output
+ * well under `execFileSync`'s default buffer even for a PR that has the maximum 3,000 files.
  * `{fullName}` is the `owner/repo` string sourced from the event payload's
  * `pull_request.base.repo.full_name` field; falls back to `gh repo view` when the payload
  * does not carry it (e.g. re-triggered workflows).
+ *
+ * Throws on a line that is not a `{filename, previous_filename}` object: a path dropped from
+ * the set would let a guarded change through.
  *
  * Exported for unit testing.
  */
 export function fetchChangedFiles(prNumber: number, fullName: string): string[] {
   const stdout = execFileSync(
     'gh',
-    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[].filename'],
+    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[] | {filename, previous_filename}'],
     {encoding: 'utf8'},
   )
-  return stdout.split('\n').filter(line => line.length > 0)
+  const entry = z.object({filename: z.string(), previous_filename: z.string().nullable()})
+  return stdout
+    .split('\n')
+    .filter(line => line.length > 0)
+    .flatMap(line => {
+      const {filename, previous_filename: previous} = entry.parse(JSON.parse(line))
+      return previous === null ? [filename] : [filename, previous]
+    })
 }
 
 export interface WikiAuthorityRun {

@@ -36,6 +36,30 @@ function writeTempEvent(prefix: string, payload: unknown): {eventPath: string; c
 // The repository the guard runs in; a Fro Bot allow additionally requires the PR's head repo to be it.
 const THIS_REPO = 'fro-bot/.github'
 
+// What `gh api --paginate .../pulls/{n}/files --jq '.[] | {filename, previous_filename}'` prints: one
+// compact JSON object per changed file, `previous_filename` null unless GitHub reports a rename.
+// A string entry is a file with no previous path; a `[filename, previous]` tuple is a rename.
+function ghFiles(...entries: readonly (string | readonly [filename: string, previous: string])[]): string {
+  return entries
+    .map(entry => {
+      const [filename, previous] = typeof entry === 'string' ? [entry, null] : entry
+      return `${JSON.stringify({filename, previous_filename: previous})}\n`
+    })
+    .join('')
+}
+
+const CHANGED_FILES_ARGS = [
+  'api',
+  '--paginate',
+  '/repos/fro-bot/.github/pulls/{n}/files',
+  '--jq',
+  '.[] | {filename, previous_filename}',
+] as const
+
+function changedFilesArgs(prNumber: number): string[] {
+  return CHANGED_FILES_ARGS.map(arg => arg.replace('{n}', String(prNumber)))
+}
+
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
     it('allows fro-bot[bot] editing a guarded metadata yaml', () => {
@@ -1181,30 +1205,27 @@ describe('readPullRequestContext (optional-chaining discrimination)', () => {
 describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
   it('calls gh api --paginate with the correct endpoint and returns filenames', () => {
     // #given execFileSync returns a newline-separated list of filenames (as gh --paginate would)
-    mockExecFileSync.mockReturnValue('scripts/foo.ts\nmetadata/repos.yaml\nknowledge/index.md\n')
+    mockExecFileSync.mockReturnValue(ghFiles('scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'))
 
     // #when fetchChangedFiles is called with prNumber and fullName
     const files = fetchChangedFiles(42, 'fro-bot/.github')
 
     // #then it uses gh api --paginate (not gh pr view) and returns all filenames
-    expect(mockExecFileSync).toHaveBeenCalledWith(
-      'gh',
-      ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
-      {encoding: 'utf8'},
-    )
+    expect(mockExecFileSync).toHaveBeenCalledWith('gh', changedFilesArgs(42), {encoding: 'utf8'})
     expect(files).toEqual(['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'])
   })
 
   it('includes metadata/repos.yaml from a paginated response not on the first page (guard bypass prevented)', () => {
     // #given execFileSync returns filenames where metadata/repos.yaml appears later
     // (simulating it being beyond the first page of a large PR — --paginate merges it all)
-    const paginatedOutput = [
-      'scripts/a.ts',
-      'scripts/b.ts',
-      // ... imagine 300 files above, then:
-      'metadata/repos.yaml',
-    ].join('\n')
-    mockExecFileSync.mockReturnValue(`${paginatedOutput}\n`)
+    mockExecFileSync.mockReturnValue(
+      ghFiles(
+        'scripts/a.ts',
+        'scripts/b.ts',
+        // ... imagine 300 files above, then:
+        'metadata/repos.yaml',
+      ),
+    )
 
     const files = fetchChangedFiles(99, 'fro-bot/.github')
 
@@ -1223,12 +1244,47 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
   })
 
   it('filters empty lines from the output', () => {
-    // #given output with trailing newline (common from shell tools)
-    mockExecFileSync.mockReturnValue('foo.ts\n\nbar.ts\n')
+    // #given output with a blank line and a trailing newline
+    mockExecFileSync.mockReturnValue(`${ghFiles('foo.ts')}\n${ghFiles('bar.ts')}`)
 
     const files = fetchChangedFiles(1, 'owner/repo')
 
     expect(files).toEqual(['foo.ts', 'bar.ts'])
+  })
+
+  it('returns the filename alone when previous_filename is null', () => {
+    mockExecFileSync.mockReturnValue('{"filename":"scripts/foo.ts","previous_filename":null}\n')
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual(['scripts/foo.ts'])
+  })
+
+  it('returns both the new and the previous path of a renamed file', () => {
+    mockExecFileSync.mockReturnValue(ghFiles('README.md', ['docs/moved.md', 'metadata/repos.yaml'], 'scripts/x.ts'))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual([
+      'README.md',
+      'docs/moved.md',
+      'metadata/repos.yaml',
+      'scripts/x.ts',
+    ])
+  })
+
+  it('returns an empty list for a pull request with no changed files', () => {
+    mockExecFileSync.mockReturnValue('')
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual([])
+  })
+
+  it.each([
+    ['a line that is not JSON', 'scripts/foo.ts\n'],
+    ['an entry without a filename', '{"previous_filename":null}\n'],
+    ['a non-string filename', '{"filename":3,"previous_filename":null}\n'],
+    ['a non-string previous_filename', '{"filename":"a.ts","previous_filename":3}\n'],
+    ['a missing previous_filename', '{"filename":"a.ts"}\n'],
+  ])('throws on %s rather than dropping a path from the set', (_name, output) => {
+    mockExecFileSync.mockReturnValue(output)
+
+    expect(() => fetchChangedFiles(1, 'owner/repo')).toThrow()
   })
 })
 
@@ -1298,7 +1354,7 @@ describe('runWikiAuthority', () => {
       },
     })
     mockExecFileSync.mockReset()
-    mockExecFileSync.mockReturnValueOnce('scripts/foo.ts\nREADME.md\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('scripts/foo.ts', 'README.md'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1309,11 +1365,7 @@ describe('runWikiAuthority', () => {
       })
       // fullName came from the event payload: the gh repo view fallback must not have been called.
       expect(mockExecFileSync).toHaveBeenCalledTimes(1)
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        'gh',
-        ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
-        {encoding: 'utf8'},
-      )
+      expect(mockExecFileSync).toHaveBeenCalledWith('gh', changedFilesArgs(42), {encoding: 'utf8'})
     } finally {
       cleanup()
     }
@@ -1329,7 +1381,7 @@ describe('runWikiAuthority', () => {
       },
     })
     mockExecFileSync.mockReset()
-    mockExecFileSync.mockReturnValueOnce('metadata/repos.yaml\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('metadata/repos.yaml'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1348,7 +1400,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fork-data',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml')],
     })
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
@@ -1360,7 +1412,7 @@ describe('runWikiAuthority', () => {
       suffix: 'null-head-repo',
       headRepo: null,
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml')],
     })
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
@@ -1371,7 +1423,7 @@ describe('runWikiAuthority', () => {
       suffix: 'own-data',
       headRepo: {full_name: 'fro-bot/.github'},
       base: {repo: {full_name: 'fro-bot/.github'}},
-      mockedGh: ['metadata/repos.yaml\nknowledge/index.md\n'],
+      mockedGh: [ghFiles('metadata/repos.yaml', 'knowledge/index.md')],
     })
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('check-wiki-authority: ok (author=fro-bot[bot], files_checked=2)')
@@ -1382,7 +1434,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fallback-same',
       headRepo: {full_name: 'fro-bot/.github'},
       base: undefined,
-      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+      mockedGh: ['fro-bot/.github\n', ghFiles('metadata/repos.yaml')],
     })
     expect(same.exitCode).toBe(0)
     expect(same.stdout).toContain('check-wiki-authority: ok')
@@ -1391,7 +1443,7 @@ describe('runWikiAuthority', () => {
       suffix: 'fallback-different',
       headRepo: {full_name: 'contributor-fork/.github'},
       base: undefined,
-      mockedGh: ['fro-bot/.github\n', 'metadata/repos.yaml\n'],
+      mockedGh: ['fro-bot/.github\n', ghFiles('metadata/repos.yaml')],
     })
     expect(different.exitCode).toBe(1)
     expect(different.stderr).toContain('metadata/repos.yaml')
@@ -1408,7 +1460,7 @@ describe('runWikiAuthority', () => {
     mockExecFileSync.mockReset()
     // Untrimmed, to prove `.trim()` actually runs on the fallback lookup's output.
     mockExecFileSync.mockReturnValueOnce('  fro-bot/.github  \n')
-    mockExecFileSync.mockReturnValueOnce('README.md\n')
+    mockExecFileSync.mockReturnValueOnce(ghFiles('README.md'))
     try {
       const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
 
@@ -1419,16 +1471,46 @@ describe('runWikiAuthority', () => {
         ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
         {encoding: 'utf8'},
       )
-      expect(mockExecFileSync).toHaveBeenNthCalledWith(
-        2,
-        'gh',
-        ['api', '--paginate', '/repos/fro-bot/.github/pulls/99/files', '--jq', '.[].filename'],
-        {encoding: 'utf8'},
-      )
+      expect(mockExecFileSync).toHaveBeenNthCalledWith(2, 'gh', changedFilesArgs(99), {encoding: 'utf8'})
       expect(result.stdout).toContain('check-wiki-authority: ok')
     } finally {
       cleanup()
     }
+  })
+
+  it('blocks a human PR that renames a file out of a guarded path', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-rename-out-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    mockExecFileSync.mockReset()
+    // #given GitHub reports the file under its new, unguarded path with the guarded one as previous_filename
+    mockExecFileSync.mockReturnValueOnce(ghFiles(['docs/moved.md', 'knowledge/wiki/repos/x.md']))
+    try {
+      const result = await runWikiAuthority({GITHUB_EVENT_PATH: eventPath})
+
+      // #then the guarded source path counts as touched
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('knowledge/wiki/repos/x.md')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('blocks a human PR that renames a file into a guarded path', async () => {
+    const result = await runAsFroBot({
+      suffix: 'rename-in',
+      headRepo: {full_name: 'contributor-fork/.github'},
+      base: {repo: {full_name: 'fro-bot/.github'}},
+      mockedGh: [ghFiles(['metadata/repos.yaml', 'docs/old.yaml'])],
+    })
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('metadata/repos.yaml')
   })
 
   it('rejects when the event payload is malformed', async () => {

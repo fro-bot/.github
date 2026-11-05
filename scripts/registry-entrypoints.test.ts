@@ -95,10 +95,19 @@ function pullRequestEvent(author: string, headRef: string): unknown {
   }
 }
 
-function ghFixtures(files: string): string {
+/** A string is a changed file; a `[filename, previous]` tuple is a rename, as `--jq '.[] | {filename, previous_filename}'` prints it. */
+function ghFixtures(...files: readonly (string | readonly [filename: string, previous: string])[]): string {
   const directory = scratch('gh')
   writeFileSync(join(directory, 'repo'), 'fro-bot/.github\n')
-  writeFileSync(join(directory, 'files.txt'), files)
+  writeFileSync(
+    join(directory, 'files.txt'),
+    files
+      .map(file => {
+        const [filename, previous] = typeof file === 'string' ? [file, null] : file
+        return `${JSON.stringify({filename, previous_filename: previous})}\n`
+      })
+      .join(''),
+  )
   return directory
 }
 
@@ -111,7 +120,7 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
     })
 
   it('exits 0 and prints the ok summary for a PR that touches no Fro Bot-only path', async () => {
-    const directory = ghFixtures('README.md\nscripts/x.ts\n')
+    const directory = ghFixtures('README.md', 'scripts/x.ts')
     const result = await check(directory, pullRequestEvent('marcusrbrown', 'feat/x'))
     expect(result).toEqual({
       exitCode: 0,
@@ -119,11 +128,13 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
       stderr: '',
       githubOutput: '',
     })
-    expect(ghCalls(directory)).toEqual(['api --paginate /repos/fro-bot/.github/pulls/5/files --jq .[].filename'])
+    expect(ghCalls(directory)).toEqual([
+      'api --paginate /repos/fro-bot/.github/pulls/5/files --jq .[] | {filename, previous_filename}',
+    ])
   })
 
   it('exits 1 and names the path when a human PR touches a Fro Bot-only path', async () => {
-    const result = await check(ghFixtures('knowledge/wiki/repos/x.md\n'), pullRequestEvent('marcusrbrown', 'feat/x'))
+    const result = await check(ghFixtures('knowledge/wiki/repos/x.md'), pullRequestEvent('marcusrbrown', 'feat/x'))
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('knowledge/wiki/repos/x.md')
@@ -140,7 +151,7 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
   })
 
   it('exits 1 with the message when the event payload is malformed', async () => {
-    const result = await check(ghFixtures(''), {pull_request: {}})
+    const result = await check(ghFixtures(), {pull_request: {}})
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain(
@@ -148,10 +159,19 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
     )
   })
 
+  it('exits 1 and names the path when a human PR renames a file out of a Fro Bot-only path', async () => {
+    const result = await check(
+      ghFixtures(['docs/moved.md', 'knowledge/wiki/repos/x.md']),
+      pullRequestEvent('marcusrbrown', 'feat/x'),
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('knowledge/wiki/repos/x.md')
+  })
+
   it.each([[['--help']], [['--bogus']], [['stray']], [['--help=false']]])(
     '%j is a usage error and checks nothing',
     async argv => {
-      const directory = ghFixtures('knowledge/wiki/repos/x.md\n')
+      const directory = ghFixtures('knowledge/wiki/repos/x.md')
       const result = await check(directory, pullRequestEvent('marcusrbrown', 'feat/x'), argv)
       expect(result.exitCode, JSON.stringify(argv)).toBe(1)
       expect(result.stdout, JSON.stringify(argv)).toBe('')
@@ -329,7 +349,7 @@ process.stdout.write('imported:' + String(process.exitCode ?? 'unset'))
       entrypoint: harness,
       runtime: 'node',
       cwd: directory,
-      env: {PATH: `${binDirectory}:${process.env.PATH ?? ''}`, FAKE_GH_DIR: ghFixtures('')},
+      env: {PATH: `${binDirectory}:${process.env.PATH ?? ''}`, FAKE_GH_DIR: ghFixtures()},
     })
     expect(result).toEqual({exitCode: 0, stdout: 'imported:unset', stderr: '', githubOutput: ''})
     expect(existsSync(outputPath)).toBe(false)

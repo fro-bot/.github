@@ -71,7 +71,11 @@ if (process.env.FAKE_GH_FILES === undefined) {
   process.stderr.write('gh: files unavailable (fake)\n')
   process.exit(1)
 }
-process.stdout.write(process.env.FAKE_GH_FILES)
+// One changed file per line; a tab separates a renamed file's new path from its previous one.
+for (const line of process.env.FAKE_GH_FILES.split('\n').filter(Boolean)) {
+  const [filename, previous] = line.split('\t')
+  process.stdout.write(JSON.stringify({filename, previous_filename: previous ?? null}) + '\n')
+}
 `,
   )
   fakeExecutable(
@@ -792,6 +796,18 @@ describe('scripts/check-mutation-guards.ts run from a copy of the package: the r
       expect(calls[0]?.scrubbed).toEqual(['GITHUB_STEP_SUMMARY=<unset>', 'GH_TOKEN=<unset>', 'GITHUB_TOKEN=<unset>'])
     },
   )
+
+  it('is applicable when a mutate entry of the copy is renamed to an unrelated path: Stryker is spawned', async () => {
+    const copy = copyOfTheGate(CONFIG, {'mutated.ts': 'export const a = 1\n'})
+    const log = join(root, 'bunx-renamed.log')
+    const result = await runCopy(copy, {
+      ...prEnv('renamed', 'docs/moved.md\tmutated.ts\n'),
+      FAKE_BUNX_LOG: log,
+      FAKE_BUNX_EXIT: '1',
+    })
+    expect(result.stdout).not.toContain('NotApplicable')
+    expect(readFileSync(log, 'utf8').trimEnd().split('\n')).toHaveLength(1)
+  })
 
   it('deletes only the copy report before the spawn, and leaves the real checkout alone', async () => {
     const copy = copyOfTheGate(CONFIG, {

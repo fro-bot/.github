@@ -128,6 +128,17 @@ function eventFile(name: string): string {
   return path
 }
 
+// What `gh api --paginate .../pulls/{n}/files --jq '.[] | {filename, previous_filename}'` prints: one compact JSON
+// object per changed file. A string entry is a file with no previous path; a `[filename, previous]` tuple is a rename.
+function ghFiles(...entries: readonly (string | readonly [filename: string, previous: string])[]): string {
+  return entries
+    .map(entry => {
+      const [filename, previous] = typeof entry === 'string' ? [entry, null] : entry
+      return `${JSON.stringify({filename, previous_filename: previous})}\n`
+    })
+    .join('')
+}
+
 async function runMain(env: Record<string, string>): Promise<{stdout: string; stderr: string}> {
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
@@ -149,7 +160,7 @@ async function runMain(env: Record<string, string>): Promise<{stdout: string; st
 
 describe('main, with the real guard against the real stryker.config.json and a stubbed pull_request event', () => {
   it('reports not-applicable and exits 0 for a docs-only change, without spawning Stryker', async () => {
-    mockExecFileSync.mockReturnValue('README.md\ndocs/plans/x.md\n')
+    mockExecFileSync.mockReturnValue(ghFiles('README.md', 'docs/plans/x.md'))
     const summary = join(root, 'summary-na.md')
     writeFileSync(summary, 'earlier\n')
     const output = await runMain({
@@ -163,9 +174,21 @@ describe('main, with the real guard against the real stryker.config.json and a s
     expect(mockSpawnSync).not.toHaveBeenCalled()
     expect(mockExecFileSync).toHaveBeenCalledWith(
       'gh',
-      ['api', '--paginate', '/repos/fro-bot/.github/pulls/7/files', '--jq', '.[].filename'],
+      ['api', '--paginate', '/repos/fro-bot/.github/pulls/7/files', '--jq', '.[] | {filename, previous_filename}'],
       {encoding: 'utf8'},
     )
+  })
+
+  it('runs the gate when a configured mutation test is renamed to an unrelated path', async () => {
+    // #given the only new path is outside the trigger set, but its previous path is a configured test file
+    mockExecFileSync.mockReturnValue(
+      ghFiles(['docs/moved-test.ts', 'packages/ci-checks/src/check-md-links-cli.test.ts']),
+    )
+    const output = await runMain({GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventFile('renamed-test')})
+    // #then the gate does not short-circuit to not-applicable and reaches Stryker
+    expect(output.stdout).not.toContain('NotApplicable')
+    expect(output.stdout).not.toContain('not-applicable')
+    expect(mockSpawnSync).toHaveBeenCalled()
   })
 
   it('fails closed with instrumentation-failed and exit 1 when the changed files cannot be fetched', async () => {
