@@ -54,7 +54,7 @@ export type BodyContext = 'new-pr' | 'existing-pr'
 const BLOCK_VERSION = 1
 const BLOCK_MARKER = '<!-- fro-bot:drafted-solutions-coverage'
 const BLOCK_START = `${BLOCK_MARKER} v${BLOCK_VERSION}`
-const BLOCK_PATTERN = /<!-- fro-bot:drafted-solutions-coverage v1\r?\n([\s\S]*?)\r?\n-->/
+const BLOCK_END = '\n-->'
 
 const ROW_KEYS = ['issue', 'outcome', 'targetDoc', 'sourceSha', 'evidence', 'droppedClaims', 'bodyHash', 'reason']
 const EVIDENCE_KEYS = ['kind', 'ref']
@@ -218,6 +218,35 @@ export function validateCoverageRows(value: unknown): CoverageResult {
 }
 
 /**
+ * The payload between the block's start line and its first `-->` line, or `undefined` when there is none.
+ * It returns what `/<!-- fro-bot:drafted-solutions-coverage v1\r?\n([\s\S]*?)\r?\n-->/.exec(text)?.[1]`
+ * returned, in one forward pass. That pattern's lazy payload rescans the rest of the text from every
+ * start marker, so many markers and no terminator cost quadratic time (CodeQL `js/polynomial-redos`).
+ *
+ * A head is the start marker then `\n` or `\r\n`; a marker followed by anything else is skipped. The payload
+ * ends at the first `\n-->` after the head, minus one `\r` just before that `\n` when the payload has one.
+ * The first head with a terminator wins, and a head without one means no later head has one: its
+ * terminator search covers every later head's. So the scan stops there.
+ */
+export function findCoverageBlock(text: string): string | undefined {
+  let marker = text.indexOf(BLOCK_START)
+  while (marker !== -1) {
+    let payloadStart = marker + BLOCK_START.length
+    if (text.startsWith('\r\n', payloadStart)) payloadStart += 2
+    else if (text.startsWith('\n', payloadStart)) payloadStart += 1
+    else {
+      marker = text.indexOf(BLOCK_START, payloadStart)
+      continue
+    }
+
+    const end = text.indexOf(BLOCK_END, payloadStart)
+    if (end === -1) return undefined
+    return text.slice(payloadStart, end > payloadStart && text[end - 1] === '\r' ? end - 1 : end)
+  }
+  return undefined
+}
+
+/**
  * Reads the coverage block from a PR body. A new PR with no block is empty coverage; an
  * existing PR with no block is an error, because a lost block would silently re-draft (and
  * re-close) every proposal.
@@ -231,14 +260,14 @@ export function parseCoverageBlock(body: string | null | undefined, context: Bod
   }
   if (occurrences > 1) return fail(`coverage block is duplicated (${occurrences} copies)`)
 
-  const match = BLOCK_PATTERN.exec(text)
-  if (match?.[1] === undefined) {
+  const payloadText = findCoverageBlock(text)
+  if (payloadText === undefined) {
     return fail(`coverage block is truncated or malformed (expected "${BLOCK_START}" ... "-->")`)
   }
 
   let payload: unknown
   try {
-    payload = JSON.parse(match[1])
+    payload = JSON.parse(payloadText)
   } catch (error: unknown) {
     return fail(`coverage block is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
   }
