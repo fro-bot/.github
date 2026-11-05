@@ -194,7 +194,9 @@ export async function readPullRequestContext(
  * does not carry it (e.g. re-triggered workflows).
  *
  * Throws on a line that is not a `{filename, previous_filename}` object: a path dropped from
- * the set would let a guarded change through.
+ * the set would let a guarded change through. Throws too when the list holds 3,000 files: the
+ * endpoint returns at most 3,000 even with `--paginate`, so a list that long cannot be told from
+ * one that was cut off. Both callers turn the throw into a failing result.
  *
  * Exported for unit testing.
  */
@@ -205,13 +207,19 @@ export function fetchChangedFiles(prNumber: number, fullName: string): string[] 
     {encoding: 'utf8'},
   )
   const entry = z.object({filename: z.string(), previous_filename: z.string().nullable()})
-  return stdout
+  const entries = stdout
     .split('\n')
     .filter(line => line.length > 0)
-    .flatMap(line => {
-      const {filename, previous_filename: previous} = entry.parse(JSON.parse(line))
-      return previous === null ? [filename] : [filename, previous]
-    })
+    .map(line => entry.parse(JSON.parse(line)))
+  const apiFileLimit = 3000
+  if (entries.length >= apiFileLimit) {
+    throw new Error(
+      `fetchChangedFiles: pull request #${prNumber} lists ${entries.length} files, the most the GitHub API returns; the list may be truncated`,
+    )
+  }
+  return entries.flatMap(({filename, previous_filename: previous}) =>
+    previous === null ? [filename] : [filename, previous],
+  )
 }
 
 export interface WikiAuthorityRun {

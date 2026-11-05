@@ -168,6 +168,16 @@ describe('check-wiki-authority (bun, main.yaml: no argv)', () => {
     expect(result.stderr).toContain('knowledge/wiki/repos/x.md')
   })
 
+  it('exits 1 with the truncation message when the changed-file list is at the API cap', async () => {
+    const result = await check(
+      ghFixtures(...Array.from({length: 3000}, (_, index) => `src/f${index}.ts`)),
+      pullRequestEvent('marcusrbrown', 'feat/x'),
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('truncated')
+  })
+
   it.each([[['--help']], [['--bogus']], [['stray']], [['--help=false']]])(
     '%j is a usage error and checks nothing',
     async argv => {

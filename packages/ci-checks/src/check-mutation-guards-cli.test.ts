@@ -191,6 +191,15 @@ describe('main, with the real guard against the real stryker.config.json and a s
     expect(mockSpawnSync).toHaveBeenCalled()
   })
 
+  it('fails closed with instrumentation-failed and exit 1 when the changed-file list is at the API cap', async () => {
+    // #given 3,000 listed files, none in the trigger set: the file that is would be the one cut off
+    mockExecFileSync.mockReturnValue(ghFiles(...Array.from({length: 3000}, (_, index) => `docs/f${index}.md`)))
+    const output = await runMain({GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventFile('cap')})
+    expect(process.exitCode).toBe(1)
+    expect(output.stdout).toMatch(/^trigger-gate:0:0 trigger-gate ChangedFileGateFailed\ninstrumentation-failed\n$/u)
+    expect(mockSpawnSync).not.toHaveBeenCalled()
+  })
+
   it('fails closed with instrumentation-failed and exit 1 when the changed files cannot be fetched', async () => {
     mockExecFileSync.mockImplementation(() => {
       throw new Error('gh: HTTP 502')

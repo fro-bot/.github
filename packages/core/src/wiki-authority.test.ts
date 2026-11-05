@@ -1275,6 +1275,34 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
     expect(fetchChangedFiles(1, 'owner/repo')).toEqual([])
   })
 
+  // GET /pulls/{n}/files returns at most 3,000 files even with --paginate, so a list that long
+  // may be cut off and cannot be told from a complete one.
+  const unguardedFiles = (count: number): string[] => Array.from({length: count}, (_, index) => `src/f${index}.ts`)
+
+  it('returns every path of a list one file short of the API cap', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(2999)))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toEqual(unguardedFiles(2999))
+  })
+
+  it('counts files, not paths: 2,999 renames pass although they yield 5,998 paths', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(2999).map(file => [file, `old/${file}`] as const)))
+
+    expect(fetchChangedFiles(1, 'owner/repo')).toHaveLength(5998)
+  })
+
+  it('throws at exactly the API cap, where the list may be truncated', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(3000)))
+
+    expect(() => fetchChangedFiles(7, 'owner/repo')).toThrow(/pull request #7.*3000 files.*truncated/u)
+  })
+
+  it('throws at the API cap when the files are renames', () => {
+    mockExecFileSync.mockReturnValue(ghFiles(...unguardedFiles(3000).map(file => [file, `old/${file}`] as const)))
+
+    expect(() => fetchChangedFiles(1, 'owner/repo')).toThrow(/truncated/u)
+  })
+
   it.each([
     ['a line that is not JSON', 'scripts/foo.ts\n'],
     ['an entry without a filename', '{"previous_filename":null}\n'],
@@ -1511,6 +1539,25 @@ describe('runWikiAuthority', () => {
     })
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('metadata/repos.yaml')
+  })
+
+  it('rejects, rather than allowing the PR, when the changed-file list is at the API cap', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-cap-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+    mockExecFileSync.mockReset()
+    // #given 3,000 listed files, none of them guarded: the guarded edit may be the file cut off
+    mockExecFileSync.mockReturnValueOnce(ghFiles(...Array.from({length: 3000}, (_, index) => `src/f${index}.ts`)))
+    try {
+      await expect(runWikiAuthority({GITHUB_EVENT_PATH: eventPath})).rejects.toThrow(/truncated/u)
+    } finally {
+      cleanup()
+    }
   })
 
   it('rejects when the event payload is malformed', async () => {
