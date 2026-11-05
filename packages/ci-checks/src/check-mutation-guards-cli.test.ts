@@ -5,7 +5,7 @@ import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest'
 import {checkMutationGuardsCli, main} from './check-mutation-guards-cli.ts'
-import {VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
+import {runMutationGuardCheck, VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
 
 // Nothing here may spawn Stryker or call `gh`: the mock replaces both child-process entry points the module graph
 // reaches (`spawnSync` in the gate, `execFileSync` in the changed-file fetch of @fro-bot/core/wiki-authority).
@@ -184,11 +184,19 @@ describe('main, with the real guard against the real stryker.config.json and a s
     mockExecFileSync.mockReturnValue(
       ghFiles(['docs/moved-test.ts', 'packages/ci-checks/src/check-md-links-cli.test.ts']),
     )
-    const output = await runMain({GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventFile('renamed-test')})
+    // The report path is test-owned: an applicable run clears its report before it spawns Stryker, and
+    // `main` would clear the real checkout's `reports/mutation/mutation.json`.
+    const reportPath = join(root, 'renamed-test-report.json')
+    const spawner = vi.fn()
+    const outcome = await runMutationGuardCheck(
+      spawner,
+      reportPath,
+      {reporters: ['json'], resolvedJsonReportPath: reportPath},
+      {eventName: 'pull_request', eventPath: eventFile('renamed-test')},
+    )
     // #then the gate does not short-circuit to not-applicable and reaches Stryker
-    expect(output.stdout).not.toContain('NotApplicable')
-    expect(output.stdout).not.toContain('not-applicable')
-    expect(mockSpawnSync).toHaveBeenCalled()
+    expect(spawner).toHaveBeenCalledTimes(1)
+    expect(outcome.verdict).not.toBe('not-applicable')
   })
 
   it('fails closed with instrumentation-failed and exit 1 when the changed-file list is at the API cap', async () => {
