@@ -2427,10 +2427,11 @@ describe('validateAndApplyHandoff, applying', () => {
     const mocks = makeFsMocks({
       [`${T}/handoff/files/knowledge/wiki/repos/a.md`]: {size: 1},
       [`${T}/handoff/files/knowledge/wiki/repos/b.md`]: {size: 1},
+      [`${T}/handoff/files/knowledge/wiki/repos/c.md`]: {size: 1},
     })
     mocks.setManifest(
       JSON.stringify({
-        changed: ['knowledge/wiki/repos/a.md', 'knowledge/wiki/repos/b.md'],
+        changed: ['knowledge/wiki/repos/a.md', 'knowledge/wiki/repos/b.md', 'knowledge/wiki/repos/c.md'],
         deleted: ['knowledge/wiki/repos/old.md'],
       }),
     )
@@ -2454,7 +2455,10 @@ describe('validateAndApplyHandoff, applying', () => {
     )
 
     expect(error).toBe(failure)
-    expect(callsOf(writeFileImpl)).toHaveLength(2)
+    expect(callsOf(writeFileImpl).map(([target]) => target)).toStrictEqual([
+      `${T}/workspace/knowledge/wiki/repos/a.md`,
+      `${T}/workspace/knowledge/wiki/repos/b.md`,
+    ])
     expect(callsOf(mocks.rmImpl)).toStrictEqual([])
   })
 })
