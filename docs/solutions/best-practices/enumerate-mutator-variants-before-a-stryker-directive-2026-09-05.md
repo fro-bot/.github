@@ -101,7 +101,7 @@ the mutation gate exists to catch.
 - For each directive removed in favor of a test: prove red→green — apply the mutant the directive used to
   suppress, confirm the new test fails with the exact divergence the mutant would cause, restore, confirm
   green.
-- After the file's directives are finalized, run the full `pnpm check:mutation-guards` and confirm the
+- After the file's directives are finalized, run the full `bun run check:mutation-guards` and confirm the
   module's own per-mutant counts (0 Survived / 0 NoCoverage / 0 Timeout, only genuinely-equivalent
   `Ignored` mutants remaining).
 
