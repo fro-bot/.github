@@ -7,7 +7,7 @@ topic: workflow-shell-dedup
 
 ## Summary
 
-Every block of workflow shell that is copied across workflows gets one definition. A single composite action owns the fail-closed `data`-branch sync. The three copied blocks that carry real logic (the survey privacy gate, the warning router around wiki ingest, and the gateway-announce event builder) move into the private package CLIs that already own that logic. Each workflow that held a copy calls the shared definition instead.
+Every block of workflow shell that is copied across workflows gets one definition. Two composite actions hold the shell-only blocks: the fail-closed data sync and the survey privacy gate. The two blocks that wrap package CLIs, the warning router and the gateway-announce event builder, move into private package code. Each workflow that held a copy calls the shared definition instead.
 
 ---
 
@@ -15,84 +15,95 @@ Every block of workflow shell that is copied across workflows gets one definitio
 
 Phase 1 moved `scripts/` into `@fro-bot/*` packages and left workflow YAML untouched (see origin: `docs/brainstorms/2026-10-24-scripts-workspace-packages-requirements.md`). The YAML still carries hand-copied shell, and the copies have drifted:
 
-- The `data` metadata overlay exists 17 times across 10 workflows and one composite action. It comes in six variants with three fetch forms, two ways of laying files down (one stages them in the index, one does not), two absent-branch behaviours and five different error strings. `reconcile-repos.yaml` carries a warning comment about the staging side effect, because a later step that expects a clean index breaks.
-- The survey privacy gate runs the same `node(id)` GraphQL lookup twice in `survey-repo.yaml`, with different pass checks and error text, while the same query already lives in `packages/privacy`.
-- The warning router around wiki ingest (redirect stderr, route prefixed lines to the step summary, map exit 3 to a page conflict) exists three times, two of them byte-identical. A fourth copy with a different prefix handles correction context.
-- The gateway-announce event builder exists three times as a `jq -nc` step in front of the CLI. The CLI never fails the run, but the `jq` step can, so the "announce never fails the run" comments on two of the copies overstate the guarantee.
+- **Data sync.** Copying paths from the `data` branch into a checkout happens in 18 blocks: 17 overlay steps in 10 workflows plus the `sync-wiki` composite action, and wiki-repair's unprobed restore in `wiki-lint.yaml`. They use three fetch forms, two ways of laying files down (one stages them in the index, one does not), two absent-branch behaviours and five error strings. Only `sync-wiki` retries. `reconcile-repos.yaml` warns that a future step expecting a clean index would break on the staged files.
+- **Survey privacy gate.** `survey-repo.yaml` runs the `node(id)` visibility lookup twice, with different pass checks and error text. The `packages/privacy` resolver selects `nameWithOwner` only and makes no visibility decision, so these two workflow copies are the only visibility allowlist in the repo.
+- **Warning router.** The shell that redirects a CLI's stderr, routes prefixed lines to the step summary and maps wiki ingest's exit 3 to a page conflict exists three times around wiki ingest, two of them byte-identical. A fourth copy handles correction context with a different prefix.
+- **Gateway-announce event builder.** It exists three times as a `jq -nc` step in front of the CLI. The CLI never fails the run, but the `jq` step can, so the "announce never fails the run" comments on two copies overstate the guarantee.
 
-A fix to any of these lands in one copy and silently misses the others. The privacy gate and the overlay sit on fail-closed paths, where drift is a privacy or data-integrity risk, not just a tidiness one.
+A fix to any of these lands in one copy and silently misses the others. The data sync and the privacy gate sit on fail-closed paths, where drift is a privacy or data-integrity risk, not just a tidiness one.
 
 ---
 
 ## Requirements
 
-**Data-branch sync**
+**Data sync**
 
-- R1. One composite action performs every sync of paths from the `data` branch into a workflow checkout, for both `metadata/` and `knowledge/`.
-- R2. The action keeps the fail-closed probe: a present branch syncs, an absent branch follows the caller's declared absent-branch behaviour (skip or fail), and any other probe or fetch failure aborts the step.
-- R3. The action lays files into the working tree only and leaves the index clean, for every caller.
-- R4. All 17 current copies, including `.github/actions/sync-wiki`, are replaced by the shared action. No workflow keeps an inline `ls-remote origin data` overlay.
-- R5. The action exposes the synced `data` commit to callers, as `sync-wiki` does today.
+- R1. One composite action, built by extending `.github/actions/sync-wiki` in place, performs every data sync. It takes the list of paths to sync, so one caller can sync `knowledge` and `metadata/repos.yaml` together.
+- R2. The action probes the branch first. Probe exit 0 syncs. Exit 2 (branch absent) follows the caller's required absent-branch input, `skip` or `fail`, with no default. Any other probe or fetch failure aborts the step after the bounded retry.
+- R3. The action fetches with `--no-tags` at full depth and restores into the working tree only, leaving the index clean. Restore is additive: files deleted on `data` are not removed from the checkout.
+- R4. All 18 blocks call the action. Each caller keeps its current absent-branch behaviour. Wiki-repair gains the probe and declares `fail`.
+- R5. The action exposes the synced `data` commit, as `sync-wiki` does today.
 
-**Logic clusters to package CLIs**
+**Survey privacy gate**
 
-- R6. Both survey privacy-gate steps call one private-package CLI that resolves a node ID to a public repository or refuses. The refusal stays neutral: no repository identity appears in logs or outputs on failure.
-- R7. The four warning-router copies (three around wiki ingest, one around correction context) are replaced by one shared renderer. Each workflow keeps its current outputs, including survey's page-conflict output that the redispatch job reads.
-- R8. The three gateway-announce event builders move into `packages/reports`. Building the event happens inside the CLI's never-fail guard, so a malformed input logs and exits 0 instead of failing the step.
+- R6. A second composite action holds the visibility gate in shell, and both survey gate steps call it. It admits a node only when the lookup reports `isPrivate` false and a non-empty `nameWithOwner`. It validates the node ID's shape before any lookup.
+- R7. Gate refusals name at most the opaque node ID, as today. Owner and repository name never appear in a log or output on a refusal path.
+
+**Package code**
+
+- R8. One shared warning router replaces the four copies. It is parameterised by prefix and output set, so the correction-context copy keeps its unfiltered summary append and no conflict output. Survey keeps the page-conflict output the redispatch job reads.
+- R9. The warning router lives outside `packages/wiki-write-core` and does not change the published emitter. A test pins the `wiki-ingest:` prefixes against the emitter's output.
+- R10. The three event builders move into the gateway-announce CLI in `packages/reports`, inside its never-fail guard. A builder error prints one fixed `gateway-announce:` line naming only the event type, emits a `::warning::` annotation, and exits 0.
 
 **Contracts and tests**
 
-- R9. Every workflow output, exit code and step-summary line that a downstream step, job or test reads stays the same, except the announce behaviour R8 changes.
-- R10. Tests pin each shared definition's behaviour once, and pin each workflow's wiring to it. Tests that discover overlay or gate steps by their shell text keep finding every caller, so no caller silently drops out of coverage.
-- R11. The App-token scope contract and the `env:`-only rule for passing expression values into shell hold for every moved step.
+- R11. Every workflow output, exit code and step-summary line that a downstream step, job or test reads stays the same. The named exceptions are: R2 retry for callers that had none, R3 index state and fetch depth, R4 wiki-repair's probe, R6 recheck's `nameWithOwner` check, and R10.
+- R12. Tests pin each shared definition's behaviour once, including the probe's exit 0, exit 2 and other-exit matrix run against the action's own shell. A test holds an explicit list of callers with their declared inputs, so removing or adding a caller fails until the list changes.
+- R13. The App-token scope contract holds for every moved step. Expression values reach shell only through `env:`, inside the composite actions as well as in workflows.
+- R14. Neither composite action takes a token input. The data sync inherits each caller's checkout settings, including the five callers that run with `persist-credentials: false`.
 
 ---
 
 ## Acceptance Examples
 
-- AE1. **Covers R2.** Given the `data` branch is absent, when `reconcile-repos` syncs metadata, the step succeeds and reconcile bootstraps the branch. When `wiki-lint` syncs knowledge in the same state, the step fails.
-- AE2. **Covers R2.** Given `git ls-remote` exits with a status other than 0 or 2, when any caller syncs, the step fails and no later step runs on unverified metadata.
-- AE3. **Covers R3.** Given a workflow synced `metadata/` and later runs `git status` or builds a handoff from the working tree, the synced files show as unstaged changes, never as staged ones.
-- AE4. **Covers R6.** Given a node ID for a private or unknown repository, when the survey gate runs, the step fails with a message that names neither owner nor repository.
-- AE5. **Covers R7, R9.** Given wiki ingest exits 3, when the survey ingest step finishes, it sets the same conflict output it sets today and the redispatch job reruns the survey.
-- AE6. **Covers R8.** Given `WIKI_PAGES_CHANGED` is not a number, when the survey announce step runs, the step logs the failure and exits 0. Today it fails.
+- AE1. **Covers R2, R4.** Given the `data` branch is absent, when reconcile syncs metadata, the step succeeds and reconcile bootstraps the branch. When wiki-lint or wiki-repair syncs, the step fails.
+- AE2. **Covers R2.** Given `git ls-remote` exits with a status other than 0 or 2 on every attempt, when any caller syncs, the step fails and no later step runs on unverified files.
+- AE3. **Covers R3.** Given a workflow synced `metadata/`, when a later step runs `git diff --cached`, it reports no synced paths.
+- AE4. **Covers R6, R7.** Given a node ID for a private repository, when either survey gate step runs, the step fails and its output names neither owner nor repository.
+- AE5. **Covers R8, R11.** Given wiki ingest exits 3, when the survey ingest step finishes, it sets the same conflict output it sets today and the redispatch job reruns the survey.
+- AE6. **Covers R10.** Given `WIKI_PAGES_CHANGED` is not a number, when the survey announce step runs, it prints the fixed error line without the value, raises a warning annotation, and exits 0. Today the step fails.
 
 ---
 
 ## Success Criteria
 
-- A change to overlay, privacy-gate, warning-router or announce behaviour is made in one place, and a test fails if any workflow stops using that place.
-- The live runs that exercise each moved step (reconcile, a survey, status-truth, capture-learnings, cross-repo-dispatch, the daily Fro Bot run, wiki-lint, merge-data) pass after merge with unchanged outputs.
-- A planner can sequence the work without deciding product behaviour: every behaviour change is named here (R3, R8) and everything else is parity.
+- A change to data sync, privacy gate, warning router or announce behaviour is made in one place, and a test fails if any workflow stops using that place.
+- After merge, the live runs that exercise moved steps pass with the outputs R11 promises: reconcile, a survey, status-truth, capture-learnings, capture-patterns, cross-repo-dispatch, improvement-metrics, poll-invitations, draft-solutions, the daily Fro Bot run, and wiki-lint with repair.
+- A planner can sequence the work without deciding behaviour: every behaviour change is listed in R11, and everything else is parity.
 
 ---
 
 ## Scope Boundaries
 
-- Step-summary writers (24 sites in 12 workflows) stay inline. Most are one per workflow and are not copies.
+- Step-summary writers stay inline. There are 24 sites in 12 workflows, ten of them with two or three, but each renders a different result shape and none is a copy of another.
 - Non-duplicated inline steps stay inline, even when they hold logic.
-- Retiring the overlay, so metadata readers read `origin/data` directly instead of from a synced checkout, is a follow-up.
+- `merge-data.yaml`'s fetch of `data` is not a data sync. It needs full history with `--prune` for promotion and is excluded.
+- The operator instructions printed by `packages/registry/src/reconcile-issues.ts` contain a visibility query as text. They are not executed and are not part of the privacy gate.
+- Retiring the data sync, so metadata readers read `origin/data` directly, is a follow-up.
 - MCP exposure of the package CLIs waits on fro-bot/agent#1931 (caller-provided MCP servers), still open.
 - Unifying wiki-change detection is a separate change. `fro-bot.yaml` uses `git diff` plus a hash and `survey-repo.yaml` uses the `wiki-change-detect` CLI, and unifying them changes behaviour.
-- Agent prep blocks (persona, query and baseline assembly) are not in this phase. They are near-copies, but their shape depends on the wiki-change split above.
+- Agent prep blocks (persona, query and baseline assembly) are not in this phase. Their shape depends on the wiki-change split above.
 
 ---
 
 ## Key Decisions
 
-- **Mechanism by fit, duplicates only.** Git plumbing goes into a composite action; logic goes into package CLIs. Forcing the overlay into a CLI would put a dependency install ahead of steps that are plain git, and TypeScript adds little to an exit-code switch. Two mechanisms is the accepted cost.
-- **Restore to the working tree everywhere.** `sync-wiki`, survey and wiki-lint already do this. It removes the staged-index trap that `reconcile-repos.yaml` warns about, and no caller was found to rely on the staged state.
-- **Extend the existing composite.** `.github/actions/sync-wiki` is already a fail-closed sync for `knowledge/` with bounded retry, so it is the base rather than a new action beside it.
-- **Announce builder inside the never-fail guard.** This is a fix: the documented contract is that announcing never fails the run.
-- **Correction-context renderer is folded in** as the fourth copy of the warning-router shape.
+- **Mechanism by fit, duplicates only.** Shell-only blocks go into composite actions, and blocks that wrap a package CLI go into package code. A package CLI for the data sync or the privacy gate would put a dependency install ahead of steps that are plain `git`, `gh` and `jq`, and the survey resolve job has no checkout at all today. It gains a credential-free checkout of `.github/actions` only.
+- **The privacy gate does not reuse the `packages/privacy` resolver.** That resolver serves the private-leak scan and returns names without a visibility decision, so reusing it would fail open.
+- **Node IDs are treated as opaque.** The 2026-05-16 survey gate design accepts only an opaque `node_id` and logs it on refusal. This phase keeps that.
+- **Working-tree restore everywhere.** `sync-wiki`, survey and wiki-lint already do this. No step was found that relies on staged metadata: the handoff builders stage and read their own pathspec. The search covered `.github/workflows` and `packages/*/src`.
+- **Retry for every data sync caller.** Failure still aborts after the bounded attempts, so only timing changes.
+- **Full-depth fetch.** `--depth=1` would make the three callers with `fetch-depth: 0` shallow.
+- **Draft-solutions publish keeps `skip` on an absent branch.** Its privacy check is a denylist, so an absent branch leaves it reading `main`'s metadata. This is an accepted gap: `data` is persistent and a ruleset blocks its deletion.
+- **Announce failures are redacted and annotated.** The runner prints `error.message` by default, which could echo the repo list the CLI redacts today. The annotation keeps a dropped event visible without failing the run.
 - **Prior work.** The phase 1 plan `docs/plans/2026-10-24-001-refactor-scripts-workspace-packages-plan.md` (status active, phase 1 units complete) records this work as deferred. `docs/solutions/workflow-issues/workflow-consolidation-invariant-trace-2026-06-24.md` (status active) is the checklist for tracing callers and invariants when consolidating workflow steps.
 
 ---
 
 ## Dependencies / Assumptions
 
-- Every overlay caller checks out the repository before the overlay, so a local `uses: ./.github/actions/...` resolves. Verified for reconcile-repos, status-truth, capture-learnings, cross-repo-dispatch and improvement-metrics. The rest are unverified.
-- Checkout credential persistence is a workflow contract that some fetches depend on (`docs/solutions/workflow-issues/agent-credential-preflights-are-workflow-contracts-2026-10-09.md`). The shared action must work under each caller's current checkout settings.
+- Every data sync block runs after `actions/checkout` in its job, and none reads output from the setup action.
+- Unauthenticated callers fetch `data` anonymously, which works because the repository is public.
 
 ---
 
@@ -100,9 +111,7 @@ A fix to any of these lands in one copy and silently misses the others. The priv
 
 ### Deferred to Planning
 
-- [Affects R7][Technical] Where the shared warning router lives. The wiki-ingest CLI is in the published `@fro.bot/wiki-write-core`, so changing its surface triggers an npm release. A renderer in a private package that reads the captured stderr avoids that.
-- [Affects R2][Technical] Whether the bounded retry in `sync-wiki` applies to every caller. Today only `sync-wiki` retries, and the 13 canonical copies do not.
-- [Affects R6][Technical] Whether `packages/privacy/src/private-repo-resolution.ts` already covers the node-ID-to-public-repo check, or whether a new CLI is needed. The survey gate also validates node-ID shape and `nameWithOwner`.
-- [Affects R2][Technical] Fetch form. Copies use `--no-tags`, no flag and `--depth=1`. Pick one.
-- [Affects R10][Technical] How `scripts/data-branch-probe-workflows.test.ts` discovers callers once the shell lives in the action, for example by `uses:` reference instead of shell text.
-- [Affects R1][Needs research] Ordering inside each job relative to `./.github/actions/setup`, for the callers not yet checked.
+- [Affects R8][Technical] Which private package owns the warning router, within the import rules `scripts/package-layout.test.ts` enforces, and whether it is a CLI that runs the wrapped command or a renderer reading captured stderr.
+- [Affects R6][Technical] The sparse checkout shape for the survey resolve job, so it fetches only `.github/actions` with no credentials persisted.
+- [Affects R12][Technical] How the caller-list test is organised, and how it replaces the `ls-remote` text discovery in `scripts/data-branch-probe-workflows.test.ts`.
+- [Affects R10][Technical] Whether the gateway-announce CLI keeps `EVENT_CONTEXT_JSON` as an input alongside the typed builders, since its tests pin that interface today.
