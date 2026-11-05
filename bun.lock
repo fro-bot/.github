@@ -28,6 +28,19 @@
         "vitest": "5.0.5",
       },
     },
+    "packages/ci-checks": {
+      "name": "@fro-bot/ci-checks",
+      "version": "0.0.0",
+      "dependencies": {
+        "@fro-bot/core": "workspace:*",
+        "@fro.bot/wiki-write-core": "workspace:*",
+        "typescript": "6.0.3",
+        "yaml": "^2.6.0",
+      },
+      "devDependencies": {
+        "@fro-bot/test-kit": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@fro-bot/core",
       "version": "0.0.0",
@@ -286,6 +299,8 @@
     "@eslint/object-schema": ["@eslint/object-schema@3.0.5", "", {}, "sha512-vqTaUEgxzm+YDSdElad6PiRoX4t8VGDjCtt05zn4nU810UIx/uNEV7/lZJ6KwFThKZOzOxzXy48da+No7HZaMw=="],
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.7.3", "", { "dependencies": { "@eslint/core": "1.2.1", "levn": "0.4.1" } }, "sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q=="],
+
+    "@fro-bot/ci-checks": ["@fro-bot/ci-checks@workspace:packages/ci-checks"],
 
     "@fro-bot/core": ["@fro-bot/core@workspace:packages/core"],
 

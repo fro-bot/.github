@@ -1,11 +1,9 @@
 import {existsSync, readFileSync} from 'node:fs'
-import {join, resolve} from 'node:path'
+import {join} from 'node:path'
 
+import {stripBarrelExports} from './barrel-exports.ts'
 import {directSpecifiers, isLiteralPath, stripComments, type SourceReader} from './check-mutation-guards.ts'
-
-function repositoryRoot(): string {
-  return resolve(import.meta.dirname, '..')
-}
+import {findRepositoryRoot} from './repository-root.ts'
 
 function defaultReadSource(absolutePath: string): string {
   return readFileSync(absolutePath, 'utf8')
@@ -22,16 +20,6 @@ export function treeOf(path: string): 'packages' | 'scripts' | undefined {
   return undefined
 }
 
-// Every alternative form a pure re-export statement can take. Deliberately mirrors what
-// `directSpecifiers` (./check-mutation-guards.ts) already recognizes as a re-export, so a
-// module this pattern fails to strip is exactly a module `directSpecifiers` would also treat
-// as carrying no reach-worthy specifier of its own (has none of the forms it looks for).
-// A function rather than a module-level const, so its regex mutants are covered by the barrel
-// tests alone instead of being static mutants that run every test file.
-function barrelExportStatementPattern(): RegExp {
-  return /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?|export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?/gu
-}
-
 /**
  * A "pure re-export barrel": a module whose entire body, after stripping comments, consists
  * ONLY of `export * from '...'` / `export * as X from '...'` / `export {...} from '...'` /
@@ -46,7 +34,7 @@ function barrelExportStatementPattern(): RegExp {
  * file whose only possible effect on any test is forwarding another module's exports untouched,
  * never a file that could itself run logic a test exercises.
  *
- * Known fail-open shapes, pinned by the truth table in `scripts/mutation-guards-reach.test.ts`.
+ * Known fail-open shapes, pinned by the truth table in `packages/ci-checks/src/mutation-guards-reach.test.ts`.
  * `export *from'./a.ts'`, `export type{a}from'./a.ts'` and `export{a}from'./a.ts'` are missed by
  * `directSpecifiers`, which requires whitespace after `from`, so the forwarded module is
  * unreached from that file and a change to it does not trigger the gate. `export type* from
@@ -54,15 +42,15 @@ function barrelExportStatementPattern(): RegExp {
  * so it is not stripped: the module is a non-barrel and its forwarding counts as reach.
  */
 export function isPureReexportBarrel(repoRelativeFilePath: string, readSource: SourceReader): boolean {
-  const content = stripComments(readSource(join(repositoryRoot(), repoRelativeFilePath)))
-  const withoutBarrelStatements = content.replaceAll(barrelExportStatementPattern(), '')
+  const content = stripComments(readSource(join(findRepositoryRoot(), repoRelativeFilePath)))
+  const withoutBarrelStatements = stripBarrelExports(content)
   return withoutBarrelStatements.trim().length === 0
 }
 
 /**
  * Stricter sibling of `reachedModulesTransitive` (`./check-mutation-guards.ts`), used ONLY by
  * `findMutateEntriesWithoutSourceReach` below — never by the trigger gate, which needs reach as
- * wide as possible (see `findMutateTestPairingViolations` in `scripts/mutation-guards-config.test.ts`;
+ * wide as possible (see `findMutateTestPairingViolations` in `packages/ci-checks/src/mutation-guards-config.test.ts`;
  * this function must never be substituted there). Same walk over `directSpecifiers`, except:
  * when a module being followed is a pure re-export barrel (`isPureReexportBarrel`), its own
  * specifiers are never added to the reached set — a test that only imports a barrel is not
@@ -86,7 +74,7 @@ export function sourceReachTransitive(
 
   const enqueueSpecifiersOf = (file: string): void => {
     for (const target of directSpecifiers(file, readSource)) {
-      if (!exists(join(repositoryRoot(), target)) || reached.has(target)) continue
+      if (!exists(join(findRepositoryRoot(), target)) || reached.has(target)) continue
       reached.add(target)
       followQueue.push(target)
     }
@@ -102,7 +90,7 @@ export function sourceReachTransitive(
 }
 
 /**
- * `findMutateTestPairingViolations` (`scripts/mutation-guards-config.test.ts`) counts reach
+ * `findMutateTestPairingViolations` (`packages/ci-checks/src/mutation-guards-config.test.ts`) counts reach
  * through a barrel as reach, so a `mutate` entry exercised only via `index.ts`'s `export *`
  * (never through a direct, own-code import chain) passes that check even when no `testFiles`
  * entry actually imports it by a traceable path. This function requires the stricter

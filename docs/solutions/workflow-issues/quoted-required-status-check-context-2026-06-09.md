@@ -127,7 +127,7 @@ risk: a silent pass that validates nothing. Before adding a job name to
 
 `Check Mutation Guards` is built this way. Its job-level condition is only
 `github.event_name == 'pull_request'`, because a push to `main` has no PR to diff against. The
-changed-file gate lives in `scripts/check-mutation-guards.ts`: an unmatched change set returns
+changed-file gate lives in `packages/ci-checks/src/check-mutation-guards.ts`: an unmatched change set returns
 `not-applicable`, which maps to exit code `0`. A job-level skip would also report Success, but with
 no record of why validation did not run; the in-script gate leaves that decision in the job's output.
 

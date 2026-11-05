@@ -1,6 +1,6 @@
 import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join, relative, resolve} from 'node:path'
+import {join, relative} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 import {
@@ -10,8 +10,9 @@ import {
   readStrykerConfig,
 } from './check-mutation-guards.ts'
 import {normalizePath, treeOf} from './mutation-guards-reach.ts'
+import {findRepositoryRoot} from './repository-root.ts'
 
-const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryRoot = findRepositoryRoot()
 const packagesRoot = join(repositoryRoot, 'packages')
 const scriptsDir = join(repositoryRoot, 'scripts')
 const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
@@ -138,7 +139,7 @@ function listScriptsGateFiles(dir: string): string[] {
  * silently.
  *
  * **Shared walk, opposing preferences.** `reachedModulesTransitive` is also the changed-file
- * trigger gate's closure walk (`scripts/check-mutation-guards.ts`'s `buildImportClosure`),
+ * trigger gate's closure walk (`packages/ci-checks/src/check-mutation-guards.ts`'s `buildImportClosure`),
  * which wants reach as WIDE as possible — every additional reached file is one more file that
  * correctly triggers a run, strictly safer. This consumer wants the opposite: reach as NARROW
  * as possible, since a wider walk only ever LOWERS how often the "unreached entry" violation
@@ -283,12 +284,26 @@ describe('mutation guard enumeration', () => {
     ).toEqual([])
   })
 
-  it('Test 2b: the gate-file convention enumerates mutation-guards-*.ts modules and skips their tests', () => {
+  it('Test 2b: the gate-file convention enumerates the check-*.ts entrypoints and skips tests', () => {
     const files = listScriptsGateFiles(scriptsDir)
 
-    expect(files).toContain('scripts/mutation-guards-reach.ts')
-    expect(files).not.toContain('scripts/mutation-guards-reach.test.ts')
-    expect(files).not.toContain('scripts/mutation-guards-config.test.ts')
+    // The seven entrypoints of @fro-bot/ci-checks stay in scripts/ under their old names, so the convention still
+    // finds them; the modules they front live in packages/ci-checks/src and are Test 1's.
+    for (const name of [
+      'check-md-links',
+      'check-mutation-guards',
+      'check-override-floors',
+      'check-renovate-config',
+      'check-renovate-ranges',
+      'check-solutions-examples',
+    ]) {
+      expect(files).toContain(`scripts/${name}.ts`)
+    }
+    expect(files).toContain('scripts/wiki-lockfile-gates.ts')
+    expect(files).toContain('scripts/build-wiki-write-core.ts')
+    expect(files.filter(path => path.endsWith('.test.ts'))).toEqual([])
+    // The modules moved out: nothing in scripts/ is a mutation-guards-* module any more.
+    expect(files.filter(path => /^scripts\/mutation-guards-.+\.ts$/u.test(path))).toEqual([])
   })
 
   it('Test 3: every mutate entry is reached by a same-tree test, and no pairing crosses the packages/scripts tree boundary', () => {
@@ -303,7 +318,7 @@ describe('mutation guard enumeration', () => {
   // The pairing check counts reach through a barrel as reach, so it sees nothing wrong when
   // private-leak.ts's direct exercisers are gone and only wiki-write-core.test.ts remains,
   // reaching it through index.ts's `export *`. The strict check in
-  // `scripts/mutation-guards-reach.test.ts` flags that same config.
+  // `packages/ci-checks/src/mutation-guards-reach.test.ts` flags that same config.
   it('Test 3b: the pairing check stays blind to a barrel-only exerciser of private-leak.ts', () => {
     const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath)
     const directExercisers = new Set([
@@ -494,9 +509,11 @@ describe('reachedByPackageName (real tree)', () => {
   })
 
   it('does not count a relative import as a name import', () => {
-    expect(reachedByPackageName('scripts/check-mutation-guards.test.ts').has('scripts/check-mutation-guards.ts')).toBe(
-      false,
-    )
+    expect(
+      reachedByPackageName('packages/ci-checks/src/check-mutation-guards.test.ts').has(
+        'packages/ci-checks/src/check-mutation-guards.ts',
+      ),
+    ).toBe(false)
   })
 })
 
@@ -637,4 +654,36 @@ describe('reachedModulesTransitive regex-literal quote gap (item 2, pins documen
     expect(reached.has(relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/'))).toBe(true)
     expect(reached.has(relative(repositoryRoot, join(tmpDir, 'real.ts')).replaceAll('\\', '/'))).toBe(true)
   })
+})
+
+describe('mutation-guards.json is read from the repository root and fails closed', () => {
+  it('is the file at the root, not a copy under the package', () => {
+    expect(mutationGuardsPath).toBe(join(findRepositoryRoot(), 'mutation-guards.json'))
+    expect(existsSync(mutationGuardsPath)).toBe(true)
+    expect(existsSync(join(findRepositoryRoot(), 'packages', 'ci-checks', 'mutation-guards.json'))).toBe(false)
+    expect(strykerConfigPath).toBe(join(findRepositoryRoot(), 'stryker.config.json'))
+  })
+
+  it.each([
+    ['is missing', undefined, /ENOENT/u],
+    ['is not JSON', '{ nope', /JSON/iu],
+    ['has no not-mutated list', '{}', /is missing a \{path, reason\}\[\] "not-mutated" field/u],
+    [
+      'has an entry without a reason',
+      '{"not-mutated": [{"path": "a.ts"}]}',
+      /is missing a \{path, reason\}\[\] "not-mutated" field/u,
+    ],
+  ])(
+    'reading a file that %s throws, so Tests 1, 5, 6 and 7 fail rather than pass on nothing',
+    (_name, body, pattern) => {
+      const dir = mkdtempSync(join(tmpdir(), 'mutation-guards-config-missing-'))
+      try {
+        const path = join(dir, 'mutation-guards.json')
+        if (body !== undefined) writeFileSync(path, body, 'utf8')
+        expect(() => readMutationGuardsFile(path)).toThrow(pattern)
+      } finally {
+        rmSync(dir, {recursive: true, force: true})
+      }
+    },
+  )
 })

@@ -30,6 +30,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 - [Wiki-ops package](packages/wiki-ops/README.md): `@fro-bot/wiki-ops` the wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild and the corrections lifecycle and context
 - [Knowledge package](packages/knowledge/README.md): `@fro-bot/knowledge` the learning capture (harvest and open), the pattern synthesis (cluster, open and synthesis) and the drafted solution docs (harvest, validate-rows, handoff-build, publish, pr-body, shared)
 - [Reports package](packages/reports/README.md): `@fro-bot/reports` the improvement-metrics loop (detect, report and core), the daily digest counts and the gateway announcer
+- [CI checks package](packages/ci-checks/README.md): `@fro-bot/ci-checks` the mutation gate (`check-mutation-guards`, which resolves its repository root from the package) and its reach module, the md-links, override-floors and solutions-examples lints, and the Renovate install, config and range checks
 - [Dispatch package](packages/dispatch/README.md): `@fro-bot/dispatch` `cross-repo-dispatch` (seven modules: model, marker, receipts, plan, run, github, cli) and `dispatch-renovate`
 - [Test kit](packages/test-kit/README.md): `@fro-bot/test-kit` shared test fakes and helpers, imported by tests only
 - [Wiki-write core package](packages/wiki-write-core/README.md): `@fro.bot/wiki-write-core`, the only published package

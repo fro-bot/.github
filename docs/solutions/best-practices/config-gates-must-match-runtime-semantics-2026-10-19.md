@@ -31,12 +31,12 @@ Workflows job passed the gate and all 102 focused tests against Renovate 44.165.
 ## Guidance
 
 1. **Assert the active engine, not just the installed version.** In
-   `scripts/renovate-runtime.ts`, fresh and reused scratch installations provision
+   `packages/ci-checks/src/renovate-runtime.ts`, fresh and reused scratch installations provision
    RE2 when needed. Runtime loading also requires Renovate to report RE2 as
    available. Installing with lifecycle scripts disabled alone leaves the native
    binding unavailable and permits a different regex language.
 2. **Preserve fallback order and normalization boundaries.**
-   `scripts/check-renovate-ranges.ts` tries the regex predicate, the selected
+   `packages/ci-checks/src/check-renovate-ranges.ts` tries the regex predicate, the selected
    versioning's `isValid`, then raw `semver.validRange` from the same installation.
    Npm's legacy-range normalization belongs to npm versioning, not the fallback.
 3. **Resolve exactly the file the consumer reads.** For the pinned Renovate
@@ -75,8 +75,8 @@ Recheck these boundaries when the pinned consumer changes.
 | Default preset with both `default.json` and `renovate.json` | Validate `default.json` |
 | Named preset `rules/missing` with a valid `rules.json` | Reject the unsupported selector |
 
-The committed regression cases live in `scripts/check-renovate-ranges.test.ts`,
-`scripts/check-renovate-config.test.ts`, and `scripts/renovate-runtime.test.ts`.
+The committed regression cases live in `packages/ci-checks/src/check-renovate-ranges.test.ts`,
+`packages/ci-checks/src/check-renovate-config.test.ts`, and `packages/ci-checks/src/renovate-runtime.test.ts`.
 Their real-runtime suites require `RENOVATE_PREFIX`; ordinary mock-only runs do
 not substitute for those checks.
 

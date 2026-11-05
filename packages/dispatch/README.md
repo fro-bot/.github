@@ -140,6 +140,6 @@ C4Component
 1. Add `src/<name>.ts` and its subpath to `exports` in `package.json`. Use erasable TypeScript syntax only: Node strip-only loads the file, and Test Scripts Load fails on `enum`, `namespace` and parameter properties.
 2. Add `src/<name>.test.ts` and import the module by relative path.
 3. Keep the import direction: `dispatch-model` imports nothing from the package, and nothing imports `dispatch-cli`. A new `cross-repo-dispatch` module goes in the seam that owns its responsibility; keep every module under 2,000 lines.
-4. List the module in `stryker.config.json` `mutate` (and its test in `testFiles`), or in `mutation-guards.json` `not-mutated` with a reason. `scripts/mutation-guards-config.test.ts` fails an unlisted module.
+4. List the module in `stryker.config.json` `mutate` (and its test in `testFiles`), or in `mutation-guards.json` `not-mutated` with a reason. `packages/ci-checks/src/mutation-guards-config.test.ts` fails an unlisted module.
 5. Update the diagram above and the package graph in the root `README.md`.
 6. A new CLI gets a `*-cli.ts` module (the only kind that may import `@fro-bot/core/cli`), a six-line `scripts/<name>.ts` entrypoint, and a case in `scripts/dispatch-flows.test.ts`.

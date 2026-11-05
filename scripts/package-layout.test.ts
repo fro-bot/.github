@@ -2,10 +2,10 @@ import {existsSync, readdirSync, readFileSync} from 'node:fs'
 import {builtinModules} from 'node:module'
 import {join, posix, resolve} from 'node:path'
 
+import {stripComments} from '@fro-bot/ci-checks/check-mutation-guards'
 import {isRecord} from '@fro-bot/core/guards'
 import {describe, expect, it} from 'vitest'
 import {parse as parseYaml} from 'yaml'
-import {stripComments} from './check-mutation-guards.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const packagesRoot = join(repositoryRoot, 'packages')

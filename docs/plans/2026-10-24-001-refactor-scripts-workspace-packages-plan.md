@@ -968,7 +968,7 @@ CLI tables follow one legend:
 
 **Verification:** The workflow-invoked report CLIs match the surface table.
 
-- [ ] **Unit 13: `@fro-bot/ci-checks`** (last)
+- [x] **Unit 13: `@fro-bot/ci-checks`** (last)
 
 **Goal:** Move the repo-level checks, the Renovate tooling and the mutation gate itself.
 
@@ -1018,7 +1018,7 @@ CLI tables follow one legend:
 - Integration: the `&&` chains at `package.json:33,36` stop at the first non-zero exit.
 - Edge case: `check-override-floors` exits non-zero on a high advisory and 0 otherwise, as the agent prompt reads it.
 
-**Verification:** `scripts/` holds only entrypoints plus `wiki-lockfile-gates.ts`, the build and release scripts and the four wiki-write-core wrappers. That is the phase 1 end state.
+**Verification:** `scripts/` holds only entrypoints plus `wiki-lockfile-gates.ts`, the build and release scripts and the four wiki-write-core wrappers. That is the phase 1 end state. Phase 1 is complete with this unit: every domain package is in the repository, and `scripts/` holds the entrypoints, `wiki-lockfile-gates.ts`, the build and release scripts (`build-wiki-write-core.ts`, `verify-wiki-write-core-package.ts`, `wiki-write-core-release.ts`) and the four wiki-write-core wrappers (`data-branch-bootstrap.ts`, `wiki-ingest.ts`, `wiki-lint.ts`, `wiki-slug.ts`), plus the cross-package contract tests.
 
 ## System-Wide Impact
 

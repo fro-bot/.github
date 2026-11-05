@@ -185,7 +185,7 @@ not an accidental missing wrapper.
 
 ### Separate unreadable, absent, and empty report state
 
-PR #3830 added the `TestFileNotExecuted` rule to `scripts/check-mutation-guards.ts` after a live
+PR #3830 added the `TestFileNotExecuted` rule to `packages/ci-checks/src/check-mutation-guards.ts` after a live
 mutation run showed Stryker silently dropping configured test files from collection while still
 writing a readable report. Review found a second fail-open in the new rule: the extraction helper,
 `extractReportTestFileCounts`, returned `undefined` both when the report could not be inspected and
@@ -227,7 +227,7 @@ const testFilesMapMissingMutant: LocatedMutant[] = hasTestFilesMapMissing
   : []
 ```
 
-A regression test in `scripts/check-mutation-guards.test.ts` pins the distinction: a readable report
+A regression test in `packages/ci-checks/src/check-mutation-guards.test.ts` pins the distinction: a readable report
 with configured tests and no `testFiles` map yields `instrumentation-failed`, not `clean`.
 
 ### One canonical `isRecord` for capture-patterns

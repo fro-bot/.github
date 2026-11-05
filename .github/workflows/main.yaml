@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  # The one declaration of the Renovate used by `bun run check:renovate-config`. scripts/renovate-runtime.ts
+  # The one declaration of the Renovate used by `bun run check:renovate-config`. packages/ci-checks/src/renovate-runtime.ts
   # reads it from this file, and the inherited bfra-me regex manager for `*_VERSION: x # renovate: ...`
   # in workflow files keeps it current. Renovate is not a repo dependency (its tree carries unfixed
   # advisories that fail `check:override-floors`); it is installed into a scratch prefix at check time.
@@ -190,7 +190,7 @@ jobs:
         # install the previous step left in RENOVATE_PREFIX.
         env:
           RENOVATE_PREFIX: ${{ runner.temp }}/renovate
-        run: bunx --no-install vitest run scripts/check-renovate-config.test.ts scripts/check-renovate-ranges.test.ts scripts/renovate-runtime.test.ts
+        run: bunx --no-install vitest run packages/ci-checks/src/check-renovate-config.test.ts packages/ci-checks/src/check-renovate-ranges.test.ts packages/ci-checks/src/renovate-runtime.test.ts
 
       - name: 📦 Install Release Tools
         # The semantic-release tool set pinned in release-wiki-write-core.yaml goes into a scratch prefix

@@ -4,7 +4,7 @@ date: 2026-09-08
 last_updated: 2026-09-08
 verified: 2026-09-08
 category: best-practices
-module: scripts/check-mutation-guards.ts
+module: packages/ci-checks/src/check-mutation-guards.ts
 problem_type: best_practice
 component: testing_framework
 severity: high
