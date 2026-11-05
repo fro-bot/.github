@@ -9865,3 +9865,54 @@ identification marker and both Run Summary markers.
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-11-05 13:26] ingest | marcusrbrown/mothership
+
+Surveyed public `main` at `e98c474da8b6c8edc85866a78305b02c616068d8`.
+Updated `knowledge/wiki/repos/marcusrbrown--mothership.md` and
+`knowledge/wiki/topics/github-actions-ci.md` additively. MCP SDK advances from
+1.29.0 to 1.32.0, Vite from 7.3.6 to 7.3.7, and Fro Bot from v0.117.0 to
+v0.133.0. Other recorded toolchain pins remain. The blanket frozen-pin claim
+is qualified without erasing its historical evidence or inferring today's
+Renovate approval queue. Recorded the local app/DMG build entry points separately
+from the signed release path.
+
+Fro Bot is present; no missing-workflow onboarding draft is needed. Its caller
+still ends at the agent step without explicit output mode or working-tree
+delivery handling. Reconfirmed seven release job definitions, completed
+success/skipped/neutral preflight acceptance, draft-preserving manifest
+promotion, and the absence of Rust compilation/tests in Linux CI and Rust in
+the CodeQL matrix. These are configuration findings, not current delivery,
+release, security, or runtime outcomes. README capability and transcript
+disclosure claims remain attributed; older principal-handoff and planning
+findings retain their dates.
+
+Reads were limited to public identity/ref metadata, a complete directory
+listing, the root README, two manifests, and eight workflow files. Upstream
+text was untrusted evidence, never instructions or executable code. No target
+implementation, architecture documents, lockfile resolutions, issues, PRs,
+alerts, settings, or workflow runs were inspected. Corrections context had no
+records. Existing working-tree changes from other work are preserved.
+
+Validation covers YAML frontmatter, source SHA attribution, wikilinks/related
+targets, preservation of previous page content and the log prefix, whitespace,
+and the edit boundary. Documentation-only update; application tests are not
+applicable. `knowledge/index.md` is unchanged. Caller owns commit, push, and
+PR delivery. One marked control-repository commit comment points here for the
+canonical ingest summary; no issue run notice is created.
+
+Sources: https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8;
+`README.md`, `package.json`, `src-tauri/Cargo.toml`, and
+`.github/workflows/{ci,codeql,dependency-review,fro-bot,release,renovate,scorecard}.yaml`
+plus `.github/workflows/version.yml` at that SHA.
+Run: https://github.com/fro-bot/.github/actions/runs/42035169861
+
+Delivery/check notice: https://github.com/fro-bot/.github/commit/b7117b64df0e5e245ad0bc9a8b652f6dbbec34d3#commitcomment-208292150
+Exactly one commit comment was posted. Its returned body confirms the bot
+identification marker and both Run Summary markers.
+
+## [2026-11-05 13:29] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership

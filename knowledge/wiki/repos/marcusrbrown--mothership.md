@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/mothership
 created: 2026-07-06
-updated: 2026-10-22
+updated: 2026-11-05
 node_id: R_kgDOTOX0_A
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: e98c474da8b6c8edc85866a78305b02c616068d8
+    accessed: 2026-11-05
   - url: https://github.com/marcusrbrown/mothership
     sha: b799c49e2b2ea57878d4f29ef897c6138c8053f1
     accessed: 2026-10-22
@@ -75,6 +78,61 @@ As of the 2026-09-08 survey the `ide_*` surface has doubled from layout control 
 The tables and detailed survey below retain their **2026-09-08 snapshot**.
 The following bounded observations are the newer evidence; historical issue,
 release, alert, and workflow-run counts were not rechecked.
+
+## 2026-11-05 Observation — selective dependency movement, same delivery boundary
+
+The public `main` branch resolves to
+`e98c474da8b6c8edc85866a78305b02c616068d8`. A complete directory listing,
+the root README, JavaScript and Rust manifests, and all eight workflow files
+provide this bounded refresh; implementation and live GitHub operational state
+were not inspected.
+
+- **Some pins moved, not the whole toolchain.** The JavaScript manifest now
+  declares MCP SDK **`1.32.0`** (October 22: `1.29.0`) and Vite **`7.3.7`**
+  (October 22: `7.3.6`). Both manifests still declare app version `0.1.0`;
+  space-bus `0.15.0`, TypeScript `5.8.3`, Biome `1.9.4`, Changesets `2.31.1`,
+  and Tauri CLI `2.11.4` remain exact JavaScript manifest pins. React and
+  dockview remain ranges `^19.1.0` and `^7.0.2`. These are declarations, not
+  lockfile resolutions. The older blanket frozen-pin description no longer
+  applies to MCP SDK or Vite; September's dashboard-approval diagnosis remains
+  historical evidence, not proof of today's queue or how these bumps landed.
+- **Local packaging is explicitly distinct from release signing.** The manifest's
+  `build` and `build:dmg` scripts both compile arm64 and x64 sidecars, invoke
+  Tauri with the release config, and override `createUpdaterArtifacts:false`.
+  `build` requests the `app` bundle; `build:dmg` requests `app,dmg`. Those local
+  entry points do not invoke the workflow's signing/notarization or provenance
+  chain. No build was run, so successful packaging is not established.
+- **Fro Bot is present, not an onboarding gap.** `fro-bot.yaml` pins
+  `fro-bot/agent` **v0.133.0** at
+  `e3f7631de1b4f0ff377c50a27a61d2d86337edff`, superseding October's v0.117.0.
+  Daily `15 6 * * *` scheduling, custom-prompt dispatch, Bun `1.3.14`, and
+  default/workflow-ref checkout with `persist-credentials:false` remain.
+  It still has no explicit `output-mode` and no step after `Run Fro Bot` to
+  detect, commit, push, or open a PR for working-tree edits. A delivery-contract
+  follow-up remains justified; a missing-workflow draft does not. Action
+  internals, resolved delivery mode, and actual delivery outcomes are unverified.
+- **Release gates remain configured, not exercised by this survey.** There are
+  seven release job definitions, dual macOS targets, signing behind
+  `environment: release`, provenance attestation, draft creation, and updater
+  manifest promotion that retains draft status. The six-context preflight still
+  accepts completed `success`, `skipped`, or `neutral` checks. Linux CI still
+  runs type/lint/Bun-test, design, release-config smoke, and workflow lint gates
+  without Rust compilation/tests; CodeQL still covers only
+  `javascript-typescript` and `actions`. See [[github-actions-ci]].
+
+The README continues to describe 17 `ide_*` tools, a shared UI/MCP executor,
+loopback transport, and a per-launch bearer rendezvous. Its structural-allowlist
+wording still sits beside the explicit warning that transcript text is returned
+verbatim and is not guaranteed secret-free. The no-tagged-or-signed-release
+statement and planned code-view/Storybook/MCP Apps panels remain **README
+claims**, not newly verified release or implementation inventories. Historical
+principal-handoff, planning-runtime, alert, and dropped-fix findings retain their
+original dates; this read boundary cannot resolve them.
+
+Sources: [README](https://github.com/marcusrbrown/mothership/blob/e98c474da8b6c8edc85866a78305b02c616068d8/README.md),
+[JavaScript manifest](https://github.com/marcusrbrown/mothership/blob/e98c474da8b6c8edc85866a78305b02c616068d8/package.json),
+[Rust manifest](https://github.com/marcusrbrown/mothership/blob/e98c474da8b6c8edc85866a78305b02c616068d8/src-tauri/Cargo.toml),
+and [workflow directory](https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows).
 
 ## 2026-10-22 Observation — unchanged source snapshot
 

@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-11-05
 sources:
+  - url: https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows
+    sha: e98c474da8b6c8edc85866a78305b02c616068d8
+    accessed: 2026-11-05
   - url: https://github.com/marcusrbrown/marcusrbrown/blob/7f122f47982071febfb13bb0c1730a0385017473/pnpm-workspace.yaml
     sha: 7f122f47982071febfb13bb0c1730a0385017473
     accessed: 2026-11-05
@@ -978,6 +981,22 @@ evidence only: an unchanged commit does not refresh check-run conclusions,
 environment reviewer settings, or actual delivery outcomes. Keep those live
 claims dated until measured independently; workflow presence alone needs no
 onboarding draft. Source: the pinned workflow directory linked above.
+
+**2026-11-05 revalidation:** [[marcusrbrown--mothership]] has advanced to
+`e98c474da8b6c8edc85866a78305b02c616068d8`; all eight workflow files were
+re-read. Fro Bot now pins v0.133.0 at
+`e3f7631de1b4f0ff377c50a27a61d2d86337edff`, but still ends at the agent
+step without explicit `output-mode` or downstream working-tree delivery.
+A newer agent pin alone is not evidence that the caller contract was repaired.
+The seven release job definitions and `success`/`skipped`/`neutral` acceptance
+set remain; signing, draft creation, and manifest promotion are separate stages,
+and promotion still retains draft status. Linux CI has no Rust compilation/test
+lane, while CodeQL still lists only `javascript-typescript` and `actions`.
+These are source-defined gates, not fresh measurements of reviewer settings,
+check outcomes, signed releases, or dropped fixes. Workflow presence needs no
+onboarding draft; delivery wiring is a separate follow-up.
+
+Source: [workflow directory at the new snapshot](https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows).
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 
