@@ -1,7 +1,7 @@
 ---
 title: A mutation score can measure nothing — check reachability before writing tests
 date: 2026-09-08
-last_updated: 2026-09-08
+last_updated: 2026-11-05
 verified: 2026-09-08
 category: best-practices
 module: packages/ci-checks/src/check-mutation-guards.ts
@@ -27,7 +27,6 @@ tags:
 ## Context
 
 A mutation score is a claim about which mutants your tests killed. It is silent about mutants the harness never gave any test a chance to kill. Two mechanisms produce that silence, and both look like ordinary coverage from the outside — the module is listed in `mutate`, tests exist and pass, and the report prints a number.
-
 
 ## Guidance
 
@@ -56,6 +55,18 @@ Before removing anything from `testFiles`, enumerate every module still in `muta
 
 Scope `mutate` by materiality — does a mutant here threaten the guarantee the module exists to provide — rather than by module shape.
 
+### A `not-mutated` entry records its measured score
+
+Give the targeted score and name the tests covering the module. Before reaching for a directive, look for static constants, unreachable fallbacks and untested defaults. `packages/wiki-ops/src/wiki-handoff-core.ts` reached `mutate` after its policies became functions (`wikiHandoffPolicy`, `packages/wiki-ops/src/wiki-handoff-core.ts:524`) and its real git and filesystem defaults got tests.
+
+### Mutants can redirect filesystem operations to real paths
+
+Keep argument parsing behind `import.meta.main` and restrict destructive targets. Run filesystem and git tests under a test-owned temporary root, using that root as the working directory and paths beneath it as targets.
+
+### A timeout fails the gate
+
+A timed-out mutant fails `check:mutation-guards`. The verdict is `mutant-timeout` (`packages/ci-checks/src/check-mutation-guards.ts:425`) unless an instrumentation failure or a directive violation takes precedence. Test loop bounds, and make an invalid bound fail promptly.
+
 ## Why This Matters
 
 Both mechanisms fail in the reassuring direction. A clean or improving score is read as evidence the guard is tested, when it can equally mean the guard was never instrumented. For modules that exist to enforce a privacy or authority boundary, that is the worst possible failure mode for a metric: it is loudest exactly when it is least informative.
@@ -74,29 +85,31 @@ The second mechanism is worse than the first, because a static mutant reports 0 
 The conversion that unfroze the decision table:
 
 <!-- verify: guardedPatterns from packages/core/src/wiki-authority.ts -->
+
 ```ts
 // Before: evaluated once per Stryker worker; every mutant inside is static.
-const GUARDED_PATTERNS = [/^knowledge\/wiki\/[^/]+\/.+\.md$/, /* … */]
+const GUARDED_PATTERNS = [/^knowledge\/wiki\/[^/]+\/.+\.md$/ /* … */]
 
 // After: evaluated per call, so each mutant is observable by a test.
 function guardedPatterns(): readonly RegExp[] {
-  return [/^knowledge\/wiki\/[^/]+\/.+\.md$/, /* … */]
+  return [/^knowledge\/wiki\/[^/]+\/.+\.md$/ /* … */]
 }
 ```
 
 The import that looks like coverage and isn't:
 
 ```ts
-// Contributes zero mutant kills to the source module — exercises the built artifact.
-import {checkPrivateLeak} from '@fro.bot/wiki-write-core'
+// Contributes zero mutant kills: resolves to the real tree, not the instrumented copy.
+import {checkPrivateLeak} from "@fro.bot/wiki-write-core/private-leak"
 
 // Instrumented, and therefore counted.
-import {checkPrivateLeak} from './private-leak.ts'
+import {checkPrivateLeak} from "./private-leak.ts"
 ```
 
 ## Related
 
-- [`enumerate-mutator-variants-before-a-stryker-directive`](enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md) — the adjacent trap: a mutant that *is* reachable, silenced by an over-broad directive
+- [`enumerate-mutator-variants-before-a-stryker-directive`](enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md) — the adjacent trap: a mutant that _is_ reachable, silenced by an over-broad directive
 - [`mutation-coverage-is-silent-about-unwritten-branches`](../security-issues/mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md) — the third silence: a branch the code never wrote cannot be mutated at all
 - [`size-subprocess-buffers-selectively-at-call-sites`](size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md) — states the static-`const` mechanism in a code comment; the rule lives here
+- [`moving-a-script-into-a-workspace-package-changes-its-contract`](moving-a-script-into-a-workspace-package-changes-its-contract-2026-11-05.md) — what else a move into a package changes
 - Merge commits `3bd59db` and `498f33d`
