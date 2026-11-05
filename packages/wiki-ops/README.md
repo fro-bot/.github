@@ -10,7 +10,7 @@ Nothing here holds a credential of its own. `wiki-handoff-build` runs in the unt
 
 | Subpath | Exports | Notes |
 | --- | --- | --- |
-| `@fro-bot/wiki-ops/wiki-handoff-core` | `buildWikiHandoff`, `buildHandoffFromGitIndex`, `captureWikiBaseline`, `validateAndApplyWikiHandoff`, `validateAndApplyHandoff`, `assertSafeHandoffPath`, `WIKI_HANDOFF_POLICY`, `DRAFTED_SOLUTIONS_HANDOFF_POLICY`, `WikiHandoffValidationError`, ... | The artifact contract between build and apply, shared with the drafted-solutions publish step in `scripts/`. |
+| `@fro-bot/wiki-ops/wiki-handoff-core` | `buildWikiHandoff`, `buildHandoffFromGitIndex`, `captureWikiBaseline`, `validateAndApplyWikiHandoff`, `validateAndApplyHandoff`, `assertSafeHandoffPath`, `wikiHandoffPolicy`, `draftedSolutionsHandoffPolicy`, `WikiHandoffValidationError`, ... | The artifact contract between build and apply, shared with the drafted-solutions publish step in `scripts/`. |
 | `@fro-bot/wiki-ops/wiki-handoff-baseline`, `-cli` | `runWikiHandoffBaseline`; `wikiHandoffBaselineCli`, `main` | The pre-agent baseline. Stdout `{"files":N}`. |
 | `@fro-bot/wiki-ops/wiki-handoff-build`, `-cli` | `runWikiHandoffBuild`; `wikiHandoffBuildCli`, `main` | Writes `manifest.json` and `files/`, appends `changed=` to `$GITHUB_OUTPUT`, prints `{"changed":n,"deleted":n}`. |
 | `@fro-bot/wiki-ops/wiki-handoff-apply`, `-cli` | `runWikiHandoffApply`, `formatWikiHandoffApplyError`; `wikiHandoffApplyCli`, `main` | Validates, then applies into the workspace. Stdout `{applied,deleted,skipped}`; stderr `::error::wiki-handoff-apply: <message>`. |

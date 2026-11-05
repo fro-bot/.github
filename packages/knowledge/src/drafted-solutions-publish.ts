@@ -69,7 +69,7 @@ import {
   type PublicOutputTokens,
 } from '@fro-bot/privacy/status-truth-public-output'
 import {
-  DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+  draftedSolutionsHandoffPolicy,
   validateAndApplyHandoff,
   WikiHandoffValidationError,
 } from '@fro-bot/wiki-ops/wiki-handoff-core'
@@ -184,7 +184,7 @@ async function stageHandoff(handoffDir: string): Promise<StagedFile[]> {
   const stagingDir = await mkdtemp(path.join(tmpdir(), 'drafted-solutions-stage-'))
   try {
     const {applied} = await validateAndApplyHandoff({
-      policy: DRAFTED_SOLUTIONS_HANDOFF_POLICY,
+      policy: draftedSolutionsHandoffPolicy(),
       handoffDir,
       workspaceDir: stagingDir,
     })
