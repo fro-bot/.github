@@ -176,13 +176,15 @@ async function defaultExists(absolutePath: string): Promise<boolean> {
 }
 
 function assertBaselineShape(value: unknown, baselinePath: string): asserts value is WikiBaselineManifest {
+  // Optional chaining reads null and primitives as having no `files`, which fails the object check below.
+  const candidate = value as {files?: unknown; deleted?: unknown} | null | undefined
+  const files = candidate?.files
+  const deleted = candidate?.deleted
   if (
-    typeof value !== 'object' ||
-    value === null ||
-    typeof (value as {files?: unknown}).files !== 'object' ||
-    (value as {files?: unknown}).files === null ||
-    !Array.isArray((value as {deleted?: unknown}).deleted) ||
-    !(value as {deleted: unknown[]}).deleted.every(entry => typeof entry === 'string')
+    typeof files !== 'object' ||
+    files === null ||
+    !Array.isArray(deleted) ||
+    !deleted.every(entry => typeof entry === 'string')
   ) {
     throw new Error(`wiki-handoff-build: baseline at ${baselinePath} has unexpected shape`)
   }
@@ -233,7 +235,7 @@ async function scopeToBaseline(params: {
   for (const relativePath of Object.keys(baseline.files)) {
     if (rawChanged.includes(relativePath) || rawDeleted.includes(relativePath)) continue
     const exists = await existsImpl(path.join(cwd, relativePath))
-    if (!exists) {
+    if (exists === false) {
       deleted.push(relativePath)
     }
   }
@@ -335,7 +337,12 @@ export type GitRunner = (args: readonly string[], options: {maxBuffer: number}) 
 
 export function createGitRunner(cwd: string): GitRunner {
   return async (args, options) => {
-    const {stdout} = await execFileAsync('git', [...args], {cwd, maxBuffer: options.maxBuffer, encoding: 'buffer'})
+    const {stdout} = await execFileAsync('git', [...args], {
+      cwd,
+      maxBuffer: options.maxBuffer,
+      // Stryker disable next-line StringLiteral: the only literal on this line, so its one variant is 'buffer' -> ""; Node's execFile treats an encoding that Buffer.isEncoding rejects ("" included) like 'buffer' and returns a Buffer, so that variant is equivalent.
+      encoding: 'buffer',
+    })
     return stdout
   }
 }
