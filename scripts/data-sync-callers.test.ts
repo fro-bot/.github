@@ -51,10 +51,18 @@ interface Caller {
   paths: string
   ifAbsent: 'skip' | 'fail'
   follows: Anchor
+  /** The first step in the job that reads the synced files; the sync must come before it. */
+  precedes: Site
+  /** The sync step's own `if:`, or undefined when it runs unconditionally. */
+  if?: string
   continueOnError?: true
 }
 
-/** The data-sync caller table from the plan, one row per call site. */
+/**
+ * The data-sync caller table from the plan, one row per call site. `follows` and `precedes` bound the
+ * sync from both sides: after the checkout (or the named anchor) and before the first step that reads
+ * the files it restores. Every job has such a step, so no row is without a `precedes`.
+ */
 const CALLERS: readonly Caller[] = [
   {
     workflow: 'capture-learnings.yaml',
@@ -63,6 +71,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'harvest'},
   },
   {
     workflow: 'capture-learnings.yaml',
@@ -71,6 +80,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'open'},
   },
   {
     workflow: 'capture-patterns.yaml',
@@ -79,6 +89,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'detect'},
   },
   {
     workflow: 'capture-patterns.yaml',
@@ -87,6 +98,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'open'},
   },
   {
     workflow: 'cross-repo-dispatch.yaml',
@@ -95,6 +107,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'dispatch'},
   },
   {
     workflow: 'cross-repo-dispatch.yaml',
@@ -103,6 +116,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'track'},
   },
   {
     workflow: 'draft-solutions.yaml',
@@ -111,6 +125,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'publish'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -119,6 +134,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'solutions-query'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -127,6 +143,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'digest-counts'},
   },
   {
     workflow: 'improvement-metrics.yaml',
@@ -135,6 +152,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'detect'},
   },
   {
     workflow: 'reconcile-repos.yaml',
@@ -143,6 +161,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {name: '🔁 Reconcile repos'},
   },
   {
     workflow: 'status-truth.yaml',
@@ -151,6 +170,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'detect'},
   },
   {
     workflow: 'status-truth.yaml',
@@ -159,6 +179,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata/',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'open'},
   },
   {
     workflow: 'survey-repo.yaml',
@@ -167,6 +188,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'onboarded'},
   },
   {
     workflow: 'survey-repo.yaml',
@@ -175,6 +197,8 @@ const CALLERS: readonly Caller[] = [
     paths: 'metadata',
     ifAbsent: 'skip',
     follows: {name: 'Validate and apply wiki handoff'},
+    precedes: {id: 'onboarded-persist'},
+    if: "needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'",
   },
   {
     workflow: 'wiki-lint.yaml',
@@ -183,6 +207,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'fail',
     follows: 'checkout',
+    precedes: {name: 'Run wiki lint'},
     continueOnError: true,
   },
   {
@@ -192,6 +217,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge metadata/repos.yaml',
     ifAbsent: 'fail',
     follows: {name: "📦 Grandfather main's wiki repos"},
+    precedes: {id: 'repair'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -200,6 +226,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'wiki-baseline'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -208,6 +235,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {name: 'Validate and apply wiki handoff'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -216,6 +244,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'wiki-query'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -224,6 +253,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'wiki-baseline'},
   },
   {
     workflow: 'fro-bot.yaml',
@@ -232,6 +262,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {name: 'Validate and apply wiki handoff'},
   },
   {
     workflow: 'survey-repo.yaml',
@@ -240,6 +271,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {id: 'wiki-baseline'},
   },
   {
     workflow: 'survey-repo.yaml',
@@ -248,6 +280,8 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
+    precedes: {name: 'Validate and apply wiki handoff'},
+    if: "needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'",
   },
 ]
 
@@ -319,6 +353,8 @@ describe('data sync callers: the caller list', () => {
     expect(step?.run).toBeUndefined()
     expect(step?.env).toBeUndefined()
     expect(step?.['continue-on-error']).toBe(caller.continueOnError)
+    // A sync that gains, loses or changes its condition changes when the data is restored.
+    expect(step?.if).toBe(caller.if)
   })
 
   it.each(CALLERS.map(caller => [callerKey(caller), caller] as const))('%s: keeps its order', (_key, caller) => {
@@ -333,6 +369,11 @@ describe('data sync callers: the caller list', () => {
     // The sync restores files into the checkout, so it follows the first checkout, and no later checkout wipes it.
     expect(syncIndex).toBeGreaterThan(Math.min(...checkoutIndexes))
     expect(checkoutIndexes.filter(index => index > syncIndex)).toStrictEqual([])
+
+    // The first step that reads the synced files comes after the sync, so a step moved above it fails here.
+    const precedesIndex = steps.findIndex(step => matchesSite(step, caller.precedes))
+    expect(precedesIndex, `consuming step ${siteLabel(caller.precedes)} exists`).toBeGreaterThanOrEqual(0)
+    expect(syncIndex).toBeLessThan(precedesIndex)
 
     if (caller.follows !== 'checkout') {
       const anchorName = caller.follows.name
