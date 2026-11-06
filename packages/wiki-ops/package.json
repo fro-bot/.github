@@ -11,6 +11,8 @@
     "./rebuild-wiki-index-cli": "./src/rebuild-wiki-index-cli.ts",
     "./render-corrections-context": "./src/render-corrections-context.ts",
     "./render-corrections-context-cli": "./src/render-corrections-context-cli.ts",
+    "./route-stderr": "./src/route-stderr.ts",
+    "./route-stderr-cli": "./src/route-stderr-cli.ts",
     "./solution-docs-paths": "./src/solution-docs-paths.ts",
     "./solutions-query": "./src/solutions-query.ts",
     "./solutions-query-cli": "./src/solutions-query-cli.ts",

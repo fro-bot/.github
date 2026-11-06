@@ -1,0 +1,869 @@
+{
+  "note": "What the four shell steps replaced by route-stderr produced, captured on ubuntu:24.04 (GNU bash, grep, sed) with a stub bun, before the change. Each case is the input given to the wrapped command and what the old step wrote.",
+  "cases": [
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "two warnings",
+      "stderr": "wiki-ingest:warning:{\"code\":\"a\"}\nwiki-ingest:warning:second warning\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:{\"code\":\"a\"}\nwiki-ingest:warning:second warning\n",
+        "summary": "### Wiki ingest warnings\n- {\"code\":\"a\"}\n- second warning\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "warnings and findings",
+      "stderr": "wiki-ingest:warning:w1\nwiki-ingest:finding:f1\nwiki-ingest:warning:w2\nwiki-ingest:finding:f2\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:w1\nwiki-ingest:finding:f1\nwiki-ingest:warning:w2\nwiki-ingest:finding:f2\n",
+        "summary": "### Wiki ingest warnings\n- w1\n- w2\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "findings before warnings",
+      "stderr": "wiki-ingest:finding:f1\nwiki-ingest:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:finding:f1\nwiki-ingest:warning:w1\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 3 conflict with a finding",
+      "stderr": "wiki-ingest:finding:page conflict: a/b.md\n",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "",
+        "stderr": "wiki-ingest:finding:page conflict: a/b.md\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 3 with nothing on stderr",
+      "stderr": "",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 1 with unprefixed text",
+      "stderr": "error: boom\n    at x (y.ts:1:1)\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "error: boom\n    at x (y.ts:1:1)\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 1 with warnings among unprefixed text",
+      "stderr": "starting\nwiki-ingest:warning:w1\n::error::bad\nwiki-ingest:finding:f1\nfailed\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "starting\nwiki-ingest:warning:w1\n::error::bad\nwiki-ingest:finding:f1\nfailed\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "empty stderr exit 0",
+      "stderr": "",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 2 with nothing on stderr",
+      "stderr": "",
+      "exit": 2,
+      "observed": {
+        "status": 2,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "warning without a trailing newline",
+      "stderr": "wiki-ingest:warning:last line",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:last line",
+        "summary": "### Wiki ingest warnings\n- last line\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "unprefixed text without a trailing newline",
+      "stderr": "no newline",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "no newline",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix not at line start",
+      "stderr": "x wiki-ingest:warning:nope\n wiki-ingest:finding:nope\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "x wiki-ingest:warning:nope\n wiki-ingest:finding:nope\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix with an empty message",
+      "stderr": "wiki-ingest:warning:\nwiki-ingest:finding:\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:\nwiki-ingest:finding:\n",
+        "summary": "### Wiki ingest warnings\n- \n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix twice in a line",
+      "stderr": "wiki-ingest:warning:wiki-ingest:warning:inner\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:wiki-ingest:warning:inner\n",
+        "summary": "### Wiki ingest warnings\n- wiki-ingest:warning:inner\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "crlf line endings",
+      "stderr": "wiki-ingest:warning:a\r\nwiki-ingest:finding:b\r\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:a\r\nwiki-ingest:finding:b\r\n",
+        "summary": "### Wiki ingest warnings\n- a\r\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "blank lines and a markdown heading",
+      "stderr": "\nwiki-ingest:warning:# not a heading\n\nwiki-ingest:warning:- item\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "\nwiki-ingest:warning:# not a heading\n\nwiki-ingest:warning:- item\n",
+        "summary": "### Wiki ingest warnings\n- # not a heading\n- - item\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "workflow command lines pass through",
+      "stderr": "::warning::x\nwiki-ingest:warning:w1\n::error::y\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "::warning::x\nwiki-ingest:warning:w1\n::error::y\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "corrections prefix is not a wiki-ingest route",
+      "stderr": "corrections:warning:c1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:c1\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "ingested 2 pages\n",
+      "childOutput": "pages_changed=2\n",
+      "name": "child stdout and its own output line",
+      "stderr": "wiki-ingest:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "ingested 2 pages\n",
+        "stderr": "wiki-ingest:warning:w1\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": "pages_changed=2\n"
+      }
+    },
+    {
+      "step": "fro-bot-ingest",
+      "family": "ingest",
+      "stdout": "conflict\n",
+      "childOutput": "pages_changed=0\n",
+      "name": "exit 3 keeps the child output line",
+      "stderr": "wiki-ingest:finding:f1\n",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "conflict\n",
+        "stderr": "wiki-ingest:finding:f1\n",
+        "summary": "",
+        "output": "pages_changed=0\n"
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "two warnings",
+      "stderr": "wiki-ingest:warning:{\"code\":\"a\"}\nwiki-ingest:warning:second warning\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:{\"code\":\"a\"}\nwiki-ingest:warning:second warning\n",
+        "summary": "### Wiki ingest warnings\n- {\"code\":\"a\"}\n- second warning\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "warnings and findings",
+      "stderr": "wiki-ingest:warning:w1\nwiki-ingest:finding:f1\nwiki-ingest:warning:w2\nwiki-ingest:finding:f2\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:w1\nwiki-ingest:finding:f1\nwiki-ingest:warning:w2\nwiki-ingest:finding:f2\n",
+        "summary": "### Wiki ingest warnings\n- w1\n- w2\n### Wiki ingest findings\n- f1\n- f2\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "findings before warnings",
+      "stderr": "wiki-ingest:finding:f1\nwiki-ingest:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:finding:f1\nwiki-ingest:warning:w1\n",
+        "summary": "### Wiki ingest warnings\n- w1\n### Wiki ingest findings\n- f1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 3 conflict with a finding",
+      "stderr": "wiki-ingest:finding:page conflict: a/b.md\n",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "",
+        "stderr": "wiki-ingest:finding:page conflict: a/b.md\n",
+        "summary": "### Wiki ingest findings\n- page conflict: a/b.md\n",
+        "output": "conflict=true\n"
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 3 with nothing on stderr",
+      "stderr": "",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": "conflict=true\n"
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 1 with unprefixed text",
+      "stderr": "error: boom\n    at x (y.ts:1:1)\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "error: boom\n    at x (y.ts:1:1)\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 1 with warnings among unprefixed text",
+      "stderr": "starting\nwiki-ingest:warning:w1\n::error::bad\nwiki-ingest:finding:f1\nfailed\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "starting\nwiki-ingest:warning:w1\n::error::bad\nwiki-ingest:finding:f1\nfailed\n",
+        "summary": "### Wiki ingest warnings\n- w1\n### Wiki ingest findings\n- f1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "empty stderr exit 0",
+      "stderr": "",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 2 with nothing on stderr",
+      "stderr": "",
+      "exit": 2,
+      "observed": {
+        "status": 2,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "warning without a trailing newline",
+      "stderr": "wiki-ingest:warning:last line",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:last line",
+        "summary": "### Wiki ingest warnings\n- last line\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "unprefixed text without a trailing newline",
+      "stderr": "no newline",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "no newline",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix not at line start",
+      "stderr": "x wiki-ingest:warning:nope\n wiki-ingest:finding:nope\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "x wiki-ingest:warning:nope\n wiki-ingest:finding:nope\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix with an empty message",
+      "stderr": "wiki-ingest:warning:\nwiki-ingest:finding:\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:\nwiki-ingest:finding:\n",
+        "summary": "### Wiki ingest warnings\n- \n### Wiki ingest findings\n- \n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix twice in a line",
+      "stderr": "wiki-ingest:warning:wiki-ingest:warning:inner\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:wiki-ingest:warning:inner\n",
+        "summary": "### Wiki ingest warnings\n- wiki-ingest:warning:inner\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "crlf line endings",
+      "stderr": "wiki-ingest:warning:a\r\nwiki-ingest:finding:b\r\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:a\r\nwiki-ingest:finding:b\r\n",
+        "summary": "### Wiki ingest warnings\n- a\r\n### Wiki ingest findings\n- b\r\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "blank lines and a markdown heading",
+      "stderr": "\nwiki-ingest:warning:# not a heading\n\nwiki-ingest:warning:- item\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "\nwiki-ingest:warning:# not a heading\n\nwiki-ingest:warning:- item\n",
+        "summary": "### Wiki ingest warnings\n- # not a heading\n- - item\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "workflow command lines pass through",
+      "stderr": "::warning::x\nwiki-ingest:warning:w1\n::error::y\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "::warning::x\nwiki-ingest:warning:w1\n::error::y\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "",
+      "childOutput": "",
+      "name": "corrections prefix is not a wiki-ingest route",
+      "stderr": "corrections:warning:c1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:c1\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "ingested 2 pages\n",
+      "childOutput": "pages_changed=2\n",
+      "name": "child stdout and its own output line",
+      "stderr": "wiki-ingest:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "ingested 2 pages\n",
+        "stderr": "wiki-ingest:warning:w1\n",
+        "summary": "### Wiki ingest warnings\n- w1\n",
+        "output": "pages_changed=2\n"
+      }
+    },
+    {
+      "step": "survey-wiki-commit",
+      "family": "ingest",
+      "stdout": "conflict\n",
+      "childOutput": "pages_changed=0\n",
+      "name": "exit 3 keeps the child output line",
+      "stderr": "wiki-ingest:finding:f1\n",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "conflict\n",
+        "stderr": "wiki-ingest:finding:f1\n",
+        "summary": "### Wiki ingest findings\n- f1\n",
+        "output": "pages_changed=0\nconflict=true\n"
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "one warning among unprefixed text",
+      "stderr": "note\ncorrections:warning:w1\nmore\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "note\ncorrections:warning:w1\nmore\n",
+        "summary": "### Correction context warnings\nnote\n- w1\nmore\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "two warnings",
+      "stderr": "corrections:warning:w1\ncorrections:warning:w2\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:w1\ncorrections:warning:w2\n",
+        "summary": "### Correction context warnings\n- w1\n- w2\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "only unprefixed text, exit 1",
+      "stderr": "REPO_NODE_ID is required\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "REPO_NODE_ID is required\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "a warning and a failure, exit 1",
+      "stderr": "corrections:warning:w1\nfailed to read page\n",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "corrections:warning:w1\nfailed to read page\n",
+        "summary": "### Correction context warnings\n- w1\nfailed to read page\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "empty stderr",
+      "stderr": "",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "warning without a trailing newline",
+      "stderr": "corrections:warning:last",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:last",
+        "summary": "### Correction context warnings\n- last",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "unprefixed text without a trailing newline",
+      "stderr": "no newline",
+      "exit": 1,
+      "observed": {
+        "status": 1,
+        "stdout": "",
+        "stderr": "no newline",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "unprefixed line then a prefixed line without a trailing newline",
+      "stderr": "first\ncorrections:warning:last",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "first\ncorrections:warning:last",
+        "summary": "### Correction context warnings\nfirst\n- last",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix not at line start",
+      "stderr": " corrections:warning:nope\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": " corrections:warning:nope\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "prefix with an empty message",
+      "stderr": "corrections:warning:\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:\n",
+        "summary": "### Correction context warnings\n- \n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "crlf line endings",
+      "stderr": "corrections:warning:a\r\nb\r\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "corrections:warning:a\r\nb\r\n",
+        "summary": "### Correction context warnings\n- a\r\nb\r\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "exit 3 is not a conflict here",
+      "stderr": "corrections:warning:w1\n",
+      "exit": 3,
+      "observed": {
+        "status": 3,
+        "stdout": "",
+        "stderr": "corrections:warning:w1\n",
+        "summary": "### Correction context warnings\n- w1\n",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "",
+      "childOutput": "",
+      "name": "wiki-ingest prefix is not a corrections route",
+      "stderr": "wiki-ingest:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "",
+        "stderr": "wiki-ingest:warning:w1\n",
+        "summary": "",
+        "output": ""
+      }
+    },
+    {
+      "step": "survey-corrections",
+      "family": "corrections",
+      "stdout": "wrote file\n",
+      "childOutput": "",
+      "name": "child stdout passes through",
+      "stderr": "corrections:warning:w1\n",
+      "exit": 0,
+      "observed": {
+        "status": 0,
+        "stdout": "wrote file\n",
+        "stderr": "corrections:warning:w1\n",
+        "summary": "### Correction context warnings\n- w1\n",
+        "output": ""
+      }
+    }
+  ]
+}

@@ -350,7 +350,13 @@ describe('survey-repo correction injection contract', () => {
     expect(run).toContain('bun scripts/render-corrections-context.ts')
     expect(run).not.toContain('GITHUB_OUTPUT')
     expect(run).not.toContain('client_payload')
-    expect(run).toContain('exit "$status"')
+    // The router replays stderr, appends the whole stderr to the summary only when a prefixed line exists, and
+    // returns the wrapped command's exit code, so the step still fails when the render fails.
+    expect(run.trim()).toBe(
+      "bun scripts/route-stderr.ts --route 'corrections:warning:=Correction context warnings' --summary all bun scripts/render-corrections-context.ts",
+    )
+    expect(correctionStep?.id).toBe('correction-context')
+    expect(correctionStep?.env).toStrictEqual({REPO_NODE_ID: `${'$' + '{{'} inputs.node_id }}`})
   })
 
   it('passes the correction context through the agent prompt contract', () => {
@@ -368,8 +374,18 @@ describe('survey-repo correction injection contract', () => {
     const commitStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
     const run = commitStep?.run ?? ''
 
-    expect(run).toContain("grep '^wiki-ingest:finding:'")
-    expect(run).toContain("echo '### Wiki ingest findings'")
+    expect(run).toContain("--route 'wiki-ingest:finding:=Wiki ingest findings'")
+    expect(run).toContain("--route 'wiki-ingest:warning:=Wiki ingest warnings'")
+  })
+
+  it('routes the wiki commit step through the warning router, keeping its id, writer literal and conflict output', () => {
+    const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+    const commitStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
+
+    expect(commitStep?.id).toBe('wiki-commit')
+    expect(String(commitStep?.run).replaceAll(/\s+/gu, ' ').trim()).toBe(
+      "bun scripts/route-stderr.ts --route 'wiki-ingest:warning:=Wiki ingest warnings' --route 'wiki-ingest:finding:=Wiki ingest findings' --summary filtered --conflict-exit 3 --conflict-output conflict bun scripts/wiki-ingest.ts",
+    )
   })
 
   it('delegates wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
@@ -2175,6 +2191,15 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     (workflowParsed as {on?: {workflow_dispatch?: {inputs?: Record<string, Record<string, unknown>>}}}).on ?? {}
   ).workflow_dispatch?.inputs
 
+  /**
+   * A `bun` shim for a step that runs the warning router: `bun scripts/route-stderr.ts` is the real router, and
+   * every other `bun` call (the wrapped ingest) runs `body`. The router finds the shim on the PATH it is given.
+   */
+  const realBun = execFileSync('which', ['bun'], {encoding: 'utf8'}).trim()
+  function routedBun(body: string): string {
+    return `if [ "$1" = scripts/route-stderr.ts ]; then exec "${realBun}" "$@"; fi\n${body}`
+  }
+
   /** Runs a step's script under `bash -e` with shims first on PATH; returns exit status and files written. */
   function runStep(
     script: string,
@@ -2254,7 +2279,7 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     [0, '', 0],
     [2, '', 2],
   ])('the wiki commit step maps ingest exit %i to output %j and keeps the status', (ingestExit, output, status) => {
-    const result = runStep(ingestStep?.run ?? '', {}, {bun: `exit ${ingestExit}`})
+    const result = runStep(ingestStep?.run ?? '', {}, {bun: routedBun(`exit ${ingestExit}`)})
 
     expect(result.output).toBe(output)
     expect(result.status).toBe(status)
@@ -2266,7 +2291,7 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     const result = runStep(
       ingestStep?.run ?? '',
       {},
-      {bun: String.raw`printf 'wiki-ingest:warning:%s\n' '${warning}' >&2`},
+      {bun: routedBun(String.raw`printf 'wiki-ingest:warning:%s\n' '${warning}' >&2`)},
     )
 
     expect(result.status).toBe(0)

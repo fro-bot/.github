@@ -242,7 +242,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 ### PR A: data sync
 
-- [ ] **Unit 1: Extend the test-kit step runner for composite shell**
+- [x] **Unit 1: Extend the test-kit step runner for composite shell**
 
 **Goal:** One stubbed runner can drive a composite action's shell through the full probe and retry matrix.
 
@@ -272,7 +272,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 **Verification:** the existing workflow tests pass unchanged; the new runner reproduces the fro-bot matrix.
 
-- [ ] **Unit 2: Turn `sync-wiki` into `sync-data`**
+- [x] **Unit 2: Turn `sync-wiki` into `sync-data`**
 
 **Goal:** One parameterised action implements R1–R5.
 
@@ -316,7 +316,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 **Verification:** every scenario passes; actionlint is clean.
 
-- [ ] **Unit 3: Move all 24 call sites and replace shell-text discovery**
+- [x] **Unit 3: Move all 24 call sites and replace shell-text discovery**
 
 **Goal:** Every data sync in a workflow is a `uses: ./.github/actions/sync-data` step, and a caller-list test pins them.
 
@@ -392,7 +392,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 ### PR C: warning router
 
-- [ ] **Unit 5: `route-stderr` CLI in `@fro-bot/wiki-ops`**
+- [x] **Unit 5: `route-stderr` CLI in `@fro-bot/wiki-ops`**
 
 **Goal:** One router replaces the four copies with identical observable outputs.
 
