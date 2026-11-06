@@ -513,6 +513,10 @@
       "reason": "The goke entrypoint of render-corrections-context: one writing root command that takes no argument; a failure keeps exit 1 and prints its message after any warning lines. Pinned by packages/wiki-ops/src/render-corrections-context-cli.test.ts (the config, the missing node id, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
     },
     {
+      "path": "packages/wiki-ops/src/route-stderr-cli.ts",
+      "reason": "The goke entrypoint of route-stderr: one writing root command whose trailing variadic positional is the wrapped command, with `--route`, `--summary`, `--conflict-exit` and `--conflict-output`. It parses the options, turns a conflict flag without its pair into a usage error, and hands a plan to route-stderr.ts, which is in the mutation set. A missing route or command, an unknown flag, a `--` separator, `--help` and a malformed option value are usage errors that never start the command. Pinned by packages/wiki-ops/src/route-stderr-cli.test.ts (the config, every usage error, the default replay, `main`, each workflow step's real argv, and byte-for-byte parity with the four shell steps it replaced, spawned through scripts/route-stderr.ts) and by packages/wiki-ops/src/route-stderr-prefixes.test.ts."
+    },
+    {
       "path": "packages/wiki-ops/src/rebuild-wiki-index.ts",
       "reason": "Heals knowledge/index.md from the wiki pages on disk, or merges log.md files chronologically into knowledge/log.md. No workflow runs it. The index and log rules are @fro.bot/wiki-write-core's rebuildWikiIndex and mergeWikiLogs, pinned by packages/wiki-ops/src/rebuild-wiki-index.test.ts and by the mutation set in wiki-write-core; this module is the disk loader around them, pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts against a temp checkout and by scripts/wiki-ops-flows.test.ts."
     },

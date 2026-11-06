@@ -262,21 +262,7 @@ jobs:
         id: correction-context
         env:
           REPO_NODE_ID: ${{ inputs.node_id }}
-        run: |
-          warning_file="$RUNNER_TEMP/corrections-warnings"
-          if bun scripts/render-corrections-context.ts 2>"$warning_file"; then
-            status=0
-          else
-            status=$?
-          fi
-          cat "$warning_file" >&2
-          if grep -q '^corrections:warning:' "$warning_file"; then
-            {
-              echo '### Correction context warnings'
-              sed 's/^corrections:warning:/- /' "$warning_file"
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$status"
+        run: bun scripts/route-stderr.ts --route 'corrections:warning:=Correction context warnings' --summary all bun scripts/render-corrections-context.ts
 
       # Attempt 1 of up to 3 (KTD4/KTD9). 20-minute agent-internal timeout; the
       # 23-minute step timeout-minutes adds headroom for OpenCode bootstrap and the
@@ -657,32 +643,14 @@ jobs:
           WIKI_SUMMARY: Surveyed ${{ needs.survey-repo.outputs.target-repository }} and updated the control-plane wiki.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ needs.survey-repo.outputs.target-repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ needs.survey-repo.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
-        run: |
-          warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
-          if bun scripts/wiki-ingest.ts 2>"$warning_file"; then
-            status=0
-          else
-            status=$?
-          fi
-          cat "$warning_file" >&2
-          if grep -q '^wiki-ingest:warning:' "$warning_file"; then
-            {
-              echo '### Wiki ingest warnings'
-              grep '^wiki-ingest:warning:' "$warning_file" | sed 's/^wiki-ingest:warning:/- /'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if grep -q '^wiki-ingest:finding:' "$warning_file"; then
-            {
-              echo '### Wiki ingest findings'
-              grep '^wiki-ingest:finding:' "$warning_file" | sed 's/^wiki-ingest:finding:/- /'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          # Exit 3 is a page conflict: another writer changed a page this survey edited. The step still
-          # fails; the output lets survey-redispatch start a fresh run.
-          if [ "$status" -eq 3 ]; then
-            echo 'conflict=true' >> "$GITHUB_OUTPUT"
-          fi
-          exit "$status"
+        # Exit 3 is a page conflict: another writer changed a page this survey edited. The step still
+        # fails; the router's `conflict` output lets survey-redispatch start a fresh run.
+        run: >-
+          bun scripts/route-stderr.ts
+          --route 'wiki-ingest:warning:=Wiki ingest warnings'
+          --route 'wiki-ingest:finding:=Wiki ingest findings'
+          --summary filtered --conflict-exit 3 --conflict-output conflict
+          bun scripts/wiki-ingest.ts
 
       # Write the survey outcome back to metadata/repos.yaml so the reconcile staleness
       # gate can filter this repo out of tomorrow's candidate list. 'success' needs the

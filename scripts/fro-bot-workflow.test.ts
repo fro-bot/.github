@@ -1019,6 +1019,20 @@ describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts 
   })
 
   it.each([
+    ['fro-bot-wiki-ingest', 'Ingest wiki insight changes'],
+    ['fro-bot-observe-wiki-ingest', 'Ingest wiki insight changes'],
+  ])(
+    '%s routes ingest warnings (not findings) into the summary through the router, byte for byte the same line',
+    (jobName, stepName) => {
+      const ingestStep = froBotParsed.jobs[jobName]?.steps?.find(step => step.name === stepName)
+
+      expect(ingestStep?.run?.trim()).toBe(
+        "bun scripts/route-stderr.ts --route 'wiki-ingest:warning:=Wiki ingest warnings' --summary filtered bun scripts/wiki-ingest.ts",
+      )
+    },
+  )
+
+  it.each([
     ['fro-bot', 'fro-bot-wiki-ingest'],
     ['fro-bot-observe', 'fro-bot-observe-wiki-ingest'],
   ])('%s hands its sync commit to %s through a job output, before any agent step', (agentJobName, ingestJobName) => {
