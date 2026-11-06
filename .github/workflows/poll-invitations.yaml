@@ -50,16 +50,9 @@ jobs:
       - name: 📣 Announce invitations to gateway
         if: steps.poll.outputs.public_invitations_accepted > 0
         env:
-          EVENT_TYPE: invitation_accepted
           INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
           INVITATIONS_REPOS: ${{ steps.poll.outputs.public_invitations_accepted_repos }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
-        run: |
-          EVENT_CONTEXT_JSON="$(jq -nc \
-            --argjson count "$INVITATIONS_ACCEPTED" \
-            --argjson repos "$INVITATIONS_REPOS" \
-            '{count: $count, repos: $repos}')"
-          export EVENT_CONTEXT_JSON
-          bun scripts/gateway-announce.ts
+        run: bun scripts/gateway-announce.ts --event invitation_accepted
