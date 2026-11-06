@@ -51,6 +51,8 @@ interface SyncOptions {
   exitSequences?: Record<string, number[]>
   lsRemoteExit?: number
   env?: Record<string, string>
+  /** Files created in the step's working directory first, so a glob has something to match. */
+  files?: readonly string[]
 }
 
 function runSync(options: SyncOptions = {}) {
@@ -69,6 +71,7 @@ function runSync(options: SyncOptions = {}) {
     revParseOutput: 'abc123def456',
     lsRemoteExit: options.lsRemoteExit ?? 0,
     ...(options.exitSequences === undefined ? {} : {exitSequences: options.exitSequences}),
+    ...(options.files === undefined ? {} : {files: options.files}),
   })
 }
 
@@ -182,9 +185,20 @@ describe('sync-data action: branch present (shell-flow, stubbed git)', () => {
   })
 
   it('hands a path containing * to git restore literally, not expanded against the checkout', () => {
-    // The runner's cwd holds `git`, `bun`, `node`, `sleep` and `step.sh`; an expanded `*` would name them.
-    expect(runSync({paths: 'knowledge/*'}).trace.at(-1)).toBe(restoreOf('knowledge/*'))
-    expect(runSync({paths: 'metadata/*'}).trace.at(-1)).toBe(overlayOf('metadata/*'))
+    // Files a glob would match, so an accidental shell expansion changes the trace instead of hiding.
+    const files = ['knowledge/a.md', 'knowledge/b.md', 'knowledge/wiki/c.md', 'metadata/x.yaml', 'metadata/y.yaml']
+    const knowledge = runSync({paths: 'knowledge/*', files})
+    const metadata = runSync({paths: 'metadata/*', files})
+
+    expect(knowledge.status).toBe(0)
+    expect(knowledge.trace.at(-1)).toBe(restoreOf('knowledge/*'))
+    expect(metadata.status).toBe(0)
+    expect(metadata.trace.at(-1)).toBe(overlayOf('metadata/*'))
+    // And a glob in the middle of a name, and a `?` and a bracket class.
+    expect(runSync({paths: 'knowledge/*.md knowledge/?.md', files}).trace.at(-1)).toBe(
+      restoreOf('knowledge/*.md knowledge/?.md'),
+    )
+    expect(runSync({paths: 'metadata/[xy].yaml', files}).trace.at(-1)).toBe(overlayOf('metadata/[xy].yaml'))
   })
 
   it('the fetch carries no depth flag', () => {
@@ -423,13 +437,27 @@ describe('sync-data action: SYNC_WIKI_RETRY_DELAY_SECONDS', () => {
   })
 })
 
-function runReal(clone: string, options: {paths: string; ifAbsent: string}) {
+interface RealRun {
+  paths: string
+  ifAbsent: string
+  /** The shell that runs the step. Only a test of the harness itself changes it. */
+  shell?: string
+  /** The script the shell runs. Only a test of the harness itself changes it. */
+  script?: string
+}
+
+/**
+ * Runs the action's script against a real clone. A nonzero exit of the script is a result; anything
+ * else (the shell never launched, a signal ended it, a buffer overflowed) means the run proves nothing
+ * and throws, so a negative case cannot pass because bash was missing.
+ */
+function runReal(clone: string, options: RealRun) {
   const outputFile = join(clone, '..', `github-output-${Math.random().toString(36).slice(2)}`)
   writeFileSync(outputFile, '')
   let status = 0
   let stdout = ''
   try {
-    stdout = execFileSync('bash', ['-c', runScript], {
+    stdout = execFileSync(options.shell ?? 'bash', ['-c', options.script ?? runScript], {
       cwd: clone,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -444,12 +472,42 @@ function runReal(clone: string, options: {paths: string; ifAbsent: string}) {
       },
     })
   } catch (error) {
-    const failure = error as {status?: number; stdout?: string}
-    status = failure.status ?? 1
+    const failure = error as {status?: unknown; signal?: unknown; stdout?: unknown}
+    // A process that ran and exited reports a numeric status and no signal. Everything else is infrastructure.
+    if (typeof failure.status !== 'number' || (failure.signal !== null && failure.signal !== undefined)) throw error
+    status = failure.status
     stdout = String(failure.stdout ?? '')
   }
   return {status, stdout, githubOutput: readFileSync(outputFile, 'utf8')}
 }
+
+describe('sync-data action: the real-repository harness', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'sync-data-harness-'))
+  const clone = join(scratch, 'clone')
+  mkdirSync(clone)
+  afterAll(() => rmSync(scratch, {recursive: true, force: true}))
+
+  it('throws when the shell never launches, instead of reporting a failing exit', () => {
+    expect(() => runReal(clone, {paths: 'knowledge', ifAbsent: 'skip', shell: join(scratch, 'no-such-shell')})).toThrow(
+      /ENOENT/,
+    )
+  })
+
+  it('throws when a signal ends the script, instead of reporting a failing exit', () => {
+    expect(() => runReal(clone, {paths: 'knowledge', ifAbsent: 'skip', script: 'kill -TERM $$'})).toThrow()
+  })
+
+  it('returns a script that ran and exited nonzero as a result', () => {
+    const run = runReal(clone, {paths: 'knowledge', ifAbsent: 'skip', script: 'echo ran; exit 7'})
+
+    expect(run.status).toBe(7)
+    expect(run.stdout).toBe('ran\n')
+  })
+
+  it('returns a script that exited zero as a result', () => {
+    expect(runReal(clone, {paths: 'knowledge', ifAbsent: 'skip', script: 'true'}).status).toBe(0)
+  })
+})
 
 describe('sync-data action: real repositories (integration)', () => {
   const git = (cwd: string, ...args: string[]): string =>
