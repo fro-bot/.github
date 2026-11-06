@@ -10,7 +10,6 @@ import {resolve} from 'node:path'
 import {COVERAGE_OUTCOMES, EVIDENCE_KINDS, FIELD_LIMITS} from '@fro-bot/knowledge/drafted-solutions-pr-body'
 import {DIGEST_VERSION, type DraftedDigest} from '@fro-bot/knowledge/drafted-solutions-shared'
 import {validateDraftedRows} from '@fro-bot/knowledge/drafted-solutions-validate-rows'
-import {overlayWasAttempted, runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
@@ -313,7 +312,8 @@ describe('draft-solutions.yaml handoff plumbing', () => {
     expect(overlayIndex).toBeGreaterThanOrEqual(0)
     expect(publishIndex).toBeGreaterThan(overlayIndex)
     expect(steps[overlayIndex]?.['continue-on-error']).toBeUndefined()
-    expect(String(steps[overlayIndex]?.run)).toContain('git checkout origin/data -- metadata/')
+    expect(steps[overlayIndex]?.uses).toBe('./.github/actions/sync-data')
+    expect(steps[overlayIndex]?.with).toStrictEqual({paths: 'metadata/', 'if-absent': 'skip'})
   })
 
   it('publish paths are all inside the workspace dot-directory', () => {
@@ -507,43 +507,5 @@ describe('draft-solutions.yaml agent prompt', () => {
 
   it('forbids side effects: no issues, comments, branches, commits, or PRs', () => {
     expect(prompt).toContain('Do not create issues, comments, branches, commits, or PRs')
-  })
-})
-
-describe('draft-solutions.yaml publish metadata overlay probe', () => {
-  const overlayStep = publishJob?.steps.find(step => step.name === '⤵ Overlay metadata from data branch')
-  const script = String(overlayStep?.run ?? '')
-  const runOverlay = (lsRemoteExit: number) => runStepWithStubs(script, {lsRemoteExit})
-
-  it('exit 0 (branch present): fetches data and checks out metadata/', () => {
-    const result = runOverlay(0)
-
-    expect(result.status).toBe(0)
-    expect(result.trace).toContain('git fetch --no-tags origin data')
-    expect(result.trace).toContain('git checkout origin/data -- metadata/')
-  })
-
-  it('exit 2 (branch absent): skips with the existing message and succeeds without fetching', () => {
-    const result = runOverlay(2)
-
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('data branch not yet established; skipping metadata overlay.')
-    expect(overlayWasAttempted(result.trace)).toBe(false)
-  })
-
-  it('exit 128 (probe failed): fails the step naming the exit code, with no overlay', () => {
-    const result = runOverlay(128)
-
-    expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain('::error::')
-    expect(result.stdout).toContain('128')
-    expect(overlayWasAttempted(result.trace)).toBe(false)
-  })
-
-  it.each([1, 255])('any other probe exit (%i) also fails the step', (code: number) => {
-    const result = runOverlay(code)
-
-    expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain(String(code))
   })
 })

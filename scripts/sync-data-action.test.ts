@@ -217,6 +217,15 @@ describe('sync-data action: probe and fetch failures (shell-flow, stubbed git)',
     expect(run.githubOutput).toBe('')
   })
 
+  it.each([1, 255])('any other probe exit (%i) fails closed naming the exit code, with no fetch', code => {
+    const run = runSync({lsRemoteExit: code})
+
+    expect(run.status).not.toBe(0)
+    expect(run.stdout).toContain(`::error::data branch probe failed (exit ${code})`)
+    expect(run.trace).toStrictEqual([PROBE, PROBE, PROBE])
+    expect(run.githubOutput).toBe('')
+  })
+
   it('probe fails once, then succeeds: fetch and restore run, exactly one warning, no error', () => {
     const run = runSync({exitSequences: {'ls-remote': [128, 0]}})
 

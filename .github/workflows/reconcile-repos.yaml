@@ -61,28 +61,12 @@ jobs:
       # git authenticates via the credentials actions/checkout persisted on origin, so no
       # explicit token env is needed here. The fetch is guarded: when `data` does not yet
       # exist (first run, fresh clone, fork, accidental deletion) reconcile bootstraps it,
-      # so a missing branch must not hard-fail this step under `set -euo pipefail`.
-      # NOTE: `git checkout origin/data -- metadata/` leaves metadata/ staged in the index.
-      # Reconcile commits via Octokit (not git CLI), so this is fine. Any future step in this
-      # job that depends on a clean index must `git reset HEAD metadata/` first.
+      # so a missing branch skips the overlay (`if-absent: skip`) instead of failing the step.
       - name: ⤵ Overlay metadata from data branch
-        run: |
-          set -euo pipefail
-          status=0
-          git ls-remote --exit-code origin data >/dev/null || status=$?
-          case "$status" in
-            0)
-              git fetch --no-tags origin data
-              git checkout origin/data -- metadata/
-              ;;
-            2)
-              echo "data branch not yet established; reconcile will bootstrap it."
-              ;;
-            *)
-              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
-              exit 1
-              ;;
-          esac
+        uses: ./.github/actions/sync-data
+        with:
+          paths: metadata/
+          if-absent: skip
 
       - name: 🔁 Reconcile repos
         env:

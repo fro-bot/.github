@@ -192,16 +192,25 @@ jobs:
 
       - name: Sync wiki from data branch
         id: sync-wiki
-        uses: ./.github/actions/sync-wiki
+        uses: ./.github/actions/sync-data
+        with:
+          paths: knowledge
+          if-absent: skip
+
+      - name: Overlay metadata from data branch
+        uses: ./.github/actions/sync-data
+        with:
+          paths: metadata
+          if-absent: skip
 
       # Gate: only repos already tracked in metadata/repos.yaml may have a wiki page
       # written to the data branch. A page for an un-onboarded repo would be
       # unattributable to the promotion privacy gate and would block data -> main.
       #
-      # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
-      # (authoritative runtime state) before running the check. If the branch is absent (probe
-      # exit 2) the script runs against the checked-out (main) metadata instead. Any other
-      # failure (a failed probe, fetch, or restore) fails the step: stale main metadata could
+      # Metadata overlay: the step above restored metadata/ from the data branch (authoritative
+      # runtime state) before this check. If the branch is absent (probe exit 2) the script runs
+      # against the checked-out (main) metadata instead. Any other
+      # failure (a failed probe, fetch, or restore) fails that step: stale main metadata could
       # still say private===false for a repo that has since gone private, so the check never
       # runs on metadata the overlay could not refresh. The private===false predicate in
       # publicRepoEntryExists keeps the absent-branch fallback fail-safe: only entries with
@@ -216,29 +225,7 @@ jobs:
         env:
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
-        run: |
-          status=0
-          git ls-remote --exit-code origin data >/dev/null || status=$?
-          case "$status" in
-            0)
-              git fetch origin data || {
-                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
-                exit 1
-              }
-              git restore --source FETCH_HEAD --worktree -- metadata || {
-                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
-                exit 1
-              }
-              ;;
-            2)
-              # data branch absent: nothing to overlay.
-              ;;
-            *)
-              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
-              exit 1
-              ;;
-          esac
-          bun scripts/check-repo-onboarded.ts
+        run: bun scripts/check-repo-onboarded.ts
 
       # Hashes the actual filesystem content of eligible scoped paths (not `git diff`/
       # `git status` output), so an index-only operation can never flip `changed` and an
@@ -669,7 +656,10 @@ jobs:
       - name: Sync wiki from data branch
         id: sync-wiki
         if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
-        uses: ./.github/actions/sync-wiki
+        uses: ./.github/actions/sync-data
+        with:
+          paths: knowledge
+          if-absent: skip
 
       - name: Download wiki handoff artifact
         if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
@@ -684,11 +674,19 @@ jobs:
           WIKI_HANDOFF_DIR: ${{ runner.temp }}/wiki-handoff
         run: bun scripts/wiki-handoff-apply.ts
 
+      - name: Overlay metadata from data branch
+        if: needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'
+        uses: ./.github/actions/sync-data
+        with:
+          paths: metadata
+          if-absent: skip
+
       # The onboarded gate in survey-repo ran when the survey started. A rename applied to `data` since
       # then (rename-tracked-repo.yaml deletes the old-slug page and moves the row) would otherwise be
       # undone by this commit, which replays the precomputed old-slug page onto the new head. So the same
-      # check runs again here against `data`, right before the commit. It needs no credential: the repo
-      # is public. If the overlay cannot be fetched the step fails and the commit is skipped; a refused
+      # check runs again here against `data`, right before the commit (the overlay step above refreshes
+      # metadata/). It needs no credential: the repo
+      # is public. If the overlay cannot be fetched that step fails and the commit is skipped; a refused
       # check skips the commit too, and the record step then records `failure` (SURVEY_STATUS requires
       # a successful wiki-commit), never `success`.
       - name: Re-check repo onboarded before the wiki commit
@@ -697,29 +695,7 @@ jobs:
         env:
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
-        run: |
-          status=0
-          git ls-remote --exit-code origin data >/dev/null || status=$?
-          case "$status" in
-            0)
-              git fetch origin data || {
-                echo "::error::metadata overlay fetch failed; refusing to run the onboarded check on stale metadata."
-                exit 1
-              }
-              git restore --source FETCH_HEAD --worktree -- metadata || {
-                echo "::error::metadata overlay restore failed; refusing to run the onboarded check on stale metadata."
-                exit 1
-              }
-              ;;
-            2)
-              # data branch absent: nothing to overlay.
-              ;;
-            *)
-              echo "::error::git ls-remote origin data failed with exit code $status; refusing to continue with unverified metadata."
-              exit 1
-              ;;
-          esac
-          bun scripts/check-repo-onboarded.ts
+        run: bun scripts/check-repo-onboarded.ts
 
       - name: Commit wiki ingest to data branch
         id: wiki-commit

@@ -374,12 +374,12 @@ describe('survey-repo correction injection contract', () => {
 
   it('delegates wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
     const syncStep = steps.find(step => step.name === 'Sync wiki from data branch')
-    expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+    expect(syncStep?.uses).toBe('./.github/actions/sync-data')
   })
 
   it('survey-persist exports the synced data commit to wiki-ingest.ts through env, from a sync step that precedes it', () => {
     const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
-    const syncIndex = persistSteps.findIndex(step => step.uses === './.github/actions/sync-wiki')
+    const syncIndex = persistSteps.findIndex(step => step.uses === './.github/actions/sync-data')
     const ingestIndex = persistSteps.findIndex(step => step.name === 'Commit wiki ingest to data branch')
     const ingestStep = persistSteps[ingestIndex]
     const expressionStart = '$' + '{{'
@@ -396,7 +396,7 @@ describe('survey-repo correction injection contract', () => {
     const agentJob = workflowParsed.jobs['survey-repo']
     const agentSteps = agentJob?.steps ?? []
     const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
-    const syncIndex = agentSteps.findIndex(step => step.uses === './.github/actions/sync-wiki')
+    const syncIndex = agentSteps.findIndex(step => step.uses === './.github/actions/sync-data')
     const firstAgentIndex = agentSteps.findIndex(step => (step.uses ?? '').startsWith('fro-bot/agent@'))
     const applyStep = persistSteps.find(step => step.name === 'Validate and apply wiki handoff')
     const ingestStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
@@ -625,15 +625,20 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
       expect(String(checkStep()?.env?.REPO_NAME ?? '')).toContain('needs.survey-resolve.outputs.resolve-repo')
     })
 
-    it('reads metadata from the data branch, and fails the step rather than check stale metadata', () => {
-      const run = String(checkStep()?.run ?? '')
+    it('reads metadata from the data branch through the sync action, and the check runs no git of its own', () => {
+      const names = (persistJob?.steps ?? []).map(step => step.name ?? '')
+      const overlay = persistJob?.steps.find(step => step.name === 'Overlay metadata from data branch')
 
-      expect(run).toContain('git fetch origin data')
-      expect(run).toContain('git restore --source FETCH_HEAD --worktree -- metadata')
-      // Both the fetch and the restore refuse to continue on failure.
-      expect(run.match(/exit 1/g)?.length).toBeGreaterThanOrEqual(2)
-      // The overlay precedes the check.
-      expect(run.indexOf('git restore')).toBeLessThan(run.indexOf('bun scripts/check-repo-onboarded.ts'))
+      expect(overlay?.uses).toBe('./.github/actions/sync-data')
+      expect(overlay?.with).toStrictEqual({paths: 'metadata', 'if-absent': 'skip'})
+      // The overlay carries the check's own preconditions, so a skipped persist never fetches.
+      expect(overlay?.if).toBe(checkStep()?.if)
+      // The overlay precedes the check and follows the handoff apply.
+      expect(names.indexOf('Overlay metadata from data branch')).toBeLessThan(names.indexOf(STEP_NAME))
+      expect(names.indexOf('Overlay metadata from data branch')).toBeGreaterThan(
+        names.indexOf('Validate and apply wiki handoff'),
+      )
+      expect(String(checkStep()?.run ?? '')).toBe('bun scripts/check-repo-onboarded.ts')
     })
 
     it("runs after the trusted recheck and before the wiki commit, under the commit step's own preconditions", () => {
