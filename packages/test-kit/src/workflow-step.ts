@@ -12,9 +12,9 @@
  */
 
 import {spawnSync} from 'node:child_process'
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {dirname, isAbsolute, join} from 'node:path'
 import process from 'node:process'
 
 export interface StepRun {
@@ -44,6 +44,8 @@ export interface StepRunOptions {
   revParseOutput?: string
   /** Environment the step sees, as the workflow's `env:` block would set it. */
   env?: Record<string, string>
+  /** Files created, with their directories, in the step's working directory before it runs, so a glob has something to match. Paths are relative and stay inside it. */
+  files?: readonly string[]
   /** Further tools to stub, such as `gh`. Each logs its invocation to the trace and exits 0. */
   stubTools?: readonly string[]
   /** A git subcommand that fails (exit 128, with a `fatal:` line on stderr) instead of succeeding. */
@@ -103,6 +105,10 @@ function parseGithubOutput(content: string): Record<string, string> {
         body.push(lines[index] ?? '')
         index += 1
       }
+      // The runner rejects a block that never closes; a test that reads one would be reading a truncated value.
+      if (index >= lines.length) {
+        throw new Error(`GITHUB_OUTPUT block "${block[1]}" has no closing delimiter line ${block[2]}`)
+      }
       outputs[block[1] ?? ''] = body.join('\n')
       continue
     }
@@ -121,8 +127,17 @@ export function runStepWithStubs(script: string, options: StepRunOptions): StepR
       throw new Error(`exitSequences key is not a plain git subcommand: ${subcommand}`)
     }
   }
+  for (const file of options.files ?? []) {
+    if (isAbsolute(file) || file.split('/').includes('..')) {
+      throw new Error(`files entry must be a relative path inside the working directory: ${file}`)
+    }
+  }
   const dir = mkdtempSync(join(tmpdir(), 'workflow-step-'))
   try {
+    for (const file of options.files ?? []) {
+      mkdirSync(dirname(join(dir, file)), {recursive: true})
+      writeFileSync(join(dir, file), '')
+    }
     for (const tool of ['git', 'bun', 'node', ...(options.stubTools ?? [])]) {
       writeFileSync(join(dir, tool), STUB(tool))
       chmodSync(join(dir, tool), 0o755)

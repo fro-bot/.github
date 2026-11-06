@@ -130,6 +130,37 @@ describe('runStepWithStubs: GITHUB_OUTPUT readback', () => {
     expect(run.outputs).toStrictEqual({body: 'line1\nline2', after: '1'})
   })
 
+  it('reads key=value and delimiter forms together, in any order', () => {
+    const run = runStepWithStubs(
+      [
+        'echo "first=1" >> "$GITHUB_OUTPUT"',
+        String.raw`printf 'body<<GH_DELIM\nline1\nline2\nGH_DELIM\n' >> "$GITHUB_OUTPUT"`,
+        'echo "last=3" >> "$GITHUB_OUTPUT"',
+      ].join('\n'),
+      {},
+    )
+
+    expect(run.outputs).toStrictEqual({first: '1', body: 'line1\nline2', last: '3'})
+  })
+
+  it('throws on a delimiter block with no closing delimiter line, naming the key and delimiter', () => {
+    const unterminated = String.raw`printf 'body<<GH_DELIM\nline1\nline2\n' >> "$GITHUB_OUTPUT"`
+
+    expect(() => runStepWithStubs(unterminated, {})).toThrow(/body.*GH_DELIM/)
+  })
+
+  it('throws when the closing delimiter only appears inside a longer line', () => {
+    const notClosed = String.raw`printf 'body<<GH_DELIM\nline1\nGH_DELIM trailing\n' >> "$GITHUB_OUTPUT"`
+
+    expect(() => runStepWithStubs(notClosed, {})).toThrow(/GH_DELIM/)
+  })
+
+  it('accepts an empty delimiter block', () => {
+    const run = runStepWithStubs(String.raw`printf 'empty<<GH_DELIM\nGH_DELIM\n' >> "$GITHUB_OUTPUT"`, {})
+
+    expect(run.outputs).toStrictEqual({empty: ''})
+  })
+
   it('is empty when the step wrote nothing', () => {
     const run = runStepWithStubs('true', {})
 
@@ -155,5 +186,20 @@ describe('runStepWithStubs: spawn failure', () => {
 
   it('still returns a normal nonzero exit as a run, not a throw', () => {
     expect(runStepWithStubs('exit 3', {}).status).toBe(3)
+  })
+})
+
+describe('runStepWithStubs: files in the working directory', () => {
+  it('creates the listed files, with their directories, before the step runs', () => {
+    const run = runStepWithStubs('ls knowledge metadata', {
+      files: ['knowledge/a.md', 'knowledge/b.md', 'metadata/x.yaml'],
+    })
+
+    expect(run.stdout.split('\n')).toStrictEqual(['knowledge:', 'a.md', 'b.md', '', 'metadata:', 'x.yaml', ''])
+  })
+
+  it('rejects a path that would leave the working directory', () => {
+    expect(() => runStepWithStubs('true', {files: ['../escape.txt']})).toThrow(/files/)
+    expect(() => runStepWithStubs('true', {files: ['/abs.txt']})).toThrow(/files/)
   })
 })
