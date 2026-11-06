@@ -6,7 +6,7 @@ component: tooling
 module: .github/workflows/survey-repo.yaml
 severity: high
 date: 2026-05-16
-last_updated: 2026-07-04
+last_updated: 2026-11-05
 verified: 2026-05-16
 related_components:
   - development_workflow
@@ -70,7 +70,7 @@ on:
 run-name: Survey Repo  # static; do NOT echo inputs.node_id
 ```
 
-**2. Mint an App installation token for the gate's GraphQL lookup, then resolve and verify as the first step** before any other step exposes identity. The gate's only question is "is this node a public repository?" — that's a public read, but it must work for repos in any org the dispatch lands on, including orgs whose policy forbids long-lived fine-grained PATs (e.g., bfra-me requires ≤366d lifetime; see `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the diagnostic loop that surfaced this). An installation token minted for the calling repo's owner sidesteps PAT policy entirely while still permitting public-read GraphQL. Scope it to `permission-metadata: read` — the lookup is a visibility read, so the token needs nothing wider (the later `recheck-token` mint uses the same owner-scoped, metadata-read shape):
+**2. Mint an App installation token for the gate's GraphQL lookup, then resolve and verify through the `resolve-public-repo` action** before any other step exposes identity. The gate's only question is "is this node a public repository?" — that's a public read, but it must work for repos in any org the dispatch lands on, including orgs whose policy forbids long-lived fine-grained PATs (e.g., bfra-me requires ≤366d lifetime; see `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the diagnostic loop that surfaced this). An installation token minted for the calling repo's owner sidesteps PAT policy entirely while still permitting public-read GraphQL. Scope it to `permission-metadata: read` — the lookup is a visibility read, so the token needs nothing wider (the later `recheck-token` mint uses the same owner-scoped, metadata-read shape):
 
 ```yaml
 - name: Mint App token for privacy gate
@@ -85,53 +85,10 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
 
 - name: 🔒 Resolve and verify
   id: resolve
-  env:
-    NODE_ID: ${{ inputs.node_id }}
-    GH_TOKEN: ${{ steps.gate-token.outputs.token }}
-  run: |
-    # Shape validation BEFORE any GraphQL or log — fail with neutral message
-    if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
-      printf 'Aborting: dispatch input shape invalid\n' >&2
-      exit 1
-    fi
-
-    # shellcheck disable=SC2016
-    gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
-    # Capture stderr to a temp file so failures surface the real gh/GitHub error
-    # (auth, permission, rate limit, network) instead of a generic abort line.
-    gh_stderr=$(mktemp)
-    if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
-      printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
-      # Use %s format so leading dashes in the marker are treated as arguments,
-      # not options (bash builtin printf rejects '---...' as an option).
-      printf '%s\n' '--- gh stderr ---' >&2
-      cat "$gh_stderr" >&2
-      printf '%s\n' '--- end gh stderr ---' >&2
-      rm -f "$gh_stderr"
-      exit 1
-    fi
-    rm -f "$gh_stderr"
-
-    name_with_owner=$(printf '%s' "$response" | jq -er '
-      .data.node
-      | select(type == "object")
-      | select(.isPrivate == false)
-      | select((.nameWithOwner | type) == "string")
-      | select(.nameWithOwner != "")
-      | .nameWithOwner
-    ') || {
-      printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
-      exit 1
-    }
-
-    resolved_owner="${name_with_owner%%/*}"
-    resolved_repo="${name_with_owner#*/}"
-
-    {
-      printf 'owner=%s\n' "$resolved_owner"
-      printf 'repo=%s\n' "$resolved_repo"
-      printf 'node_id=%s\n' "$NODE_ID"
-    } >> "$GITHUB_OUTPUT"
+  uses: ./.github/actions/resolve-public-repo
+  with:
+    node-id: ${{ inputs.node_id }}
+    token: ${{ steps.gate-token.outputs.token }}
 ```
 
 **3. Recheck visibility before any persistence or external emit**, scoped to every survey (not just wiki-changed), using its own dedicated recheck token:
@@ -140,36 +97,15 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
 - name: 🔒 Recheck visibility
   id: recheck
   if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
-  env:
-    NODE_ID: ${{ inputs.node_id }}
-    GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
-  run: |
-    # shellcheck disable=SC2016
-    gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
-    gh_stderr=$(mktemp)
-    trap 'rm -f "$gh_stderr"' EXIT
-    if ! response=$(gh api graphql \
-      -F id="$NODE_ID" \
-      -f query="$gql_query" \
-      2>"$gh_stderr"); then
-      printf 'GraphQL recheck failed for node_id: %s\n' "$NODE_ID" >&2
-      printf '%s\n' '--- gh stderr ---' >&2
-      cat "$gh_stderr" >&2
-      printf '%s\n' '--- end gh stderr ---' >&2
-      exit 1
-    fi
-
-    # No gh stderr dump here: a jq mismatch is a logic failure (repo flipped private /
-    # unexpected isPrivate value), not a gh transport/API error — there is no gh stderr to surface.
-    if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
-      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
-      exit 1
-    fi
-
-    echo "private=false" >> "$GITHUB_OUTPUT"  # only reached on the confirmed-public path
+  uses: ./.github/actions/resolve-public-repo
+  with:
+    node-id: ${{ inputs.node_id }}
+    token: ${{ steps.recheck-token.outputs.token }}
 ```
 
-The recheck snippet above now matches production verbatim: the `2>/dev/null` swallow is gone, replaced with the same tempfile-capture pattern the resolve step (in section 2) already used. The asymmetry once tracked here as follow-up issue #3345 ("Survey Repo privacy gate: complete the stderr-surfacing pattern + tempfile cleanup robustness") was resolved on 2026-06-04 — recheck now captures `gh` stderr to a tempfile and dumps it between marker lines on failure, same as resolve.
+Both gate steps are one definition, `.github/actions/resolve-public-repo`. It takes `node-id` and `token` as inputs (read through `env:` inside the action, never interpolated into `run:`), checks the node ID shape against the whole string before any call, makes one `node(id)` query for `nameWithOwner isPrivate`, and admits only a boolean `isPrivate == false` with a non-empty `nameWithOwner`. It writes `owner`, `repo`, `node_id` and `private` (always `false`) only after every check passes. `gh` stderr is discarded: an upstream message can name a repository, and this runs on a public surface. A refusal prints a fixed reason plus the opaque node ID and nothing else (`Aborting: <node id> is not definitively public`, `GraphQL lookup failed for node_id: <node id>`, or, for a malformed ID, `Aborting: dispatch input shape invalid` with no value). `survey-resolve` has `contents: read` and a sparse, credential-free checkout of `.github/actions` from the default branch so the local action resolves. `scripts/resolve-public-repo-action.test.ts` pins the shell behavior.
+
+> **Superseded (2026-11-05).** Earlier revisions of this section showed the two gates as inline `run:` blocks that captured `gh` stderr to a tempfile and replayed it between `--- gh stderr ---` marker lines (the pattern from #3344 and the resolution of #3345), and said the recheck snippet matched production verbatim. Those blocks are gone, as is the stderr replay. The history below records why the replay was added; it is no longer current behavior.
 
 **4. Route every persistence and external-emit step through the recheck-success gate.** This is the load-bearing detail. The recheck is only as useful as the breadth of its gating:
 
@@ -263,7 +199,7 @@ The breadth of the recheck gate matters as much as its existence. Routing the re
 7. **When refreshing identity from a downstream API (`repos.get`, GraphQL), use the refreshed value, not the pre-refresh original.** Stale identifiers — especially from invitation payloads — can dispatch under the wrong repo.
 8. **Test the contract directly.** At least one test should assert the exact `inputs:` shape the caller sends to `createWorkflowDispatch`, separate from logic tests. Contract drift is invisible to behavior tests until it leaks.
 9. **Make fail-closed paths observable.** Silent `catch {}` that downgrades to a safe default is correct but mute. Write a structured stderr line carrying error status and kind (no canonical identifiers) so transient failures are visible in CI logs.
-10. **Capture `gh api` stderr to a tempfile, not `2>/dev/null`.** Workflow gates that swallow the underlying API error force every future investigation to start from zero. Use `2>"$gh_stderr"` + `cat "$gh_stderr" >&2` between marker lines on failure. See `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the bash-builtin-`printf` marker pattern.
+10. **Do not replay `gh api` stderr from a public-surface gate.** *Superseded 2026-11-05; the earlier rule was to capture stderr to a tempfile and dump it between marker lines (`2>"$gh_stderr"` + `cat "$gh_stderr" >&2`).* An upstream error can name a repository, so the gate discards it (`2>/dev/null`) and prints a fixed reason plus the opaque node ID. Diagnose a failing lookup by rerunning the same query with the token outside the public log, not from the step output. The bash-builtin `printf` marker pattern in `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` still applies to non-gate steps.
 
 ## Update (2026-09-25)
 
@@ -272,6 +208,10 @@ target before the agent runs, and `survey-persist` mints its own dedicated reche
 and reruns the recheck before any persistence or emit step. The standalone `broadcast`
 job above no longer exists — broadcast is the `📣 Announce survey to gateway` step inside
 `survey-persist`, gated directly on `steps.recheck.conclusion == 'success'`.
+
+## Update (2026-11-05)
+
+Both gate steps are the `.github/actions/resolve-public-repo` composite action (see section 3). `survey-resolve` gained `contents: read` and a sparse default-branch checkout of `.github/actions`. Step ids `resolve` and `recheck`, the `node_id` output name and the job outputs are unchanged. The refusal text no longer includes `gh` stderr.
 
 ## Related Issues
 

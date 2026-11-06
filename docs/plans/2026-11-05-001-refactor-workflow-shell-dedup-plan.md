@@ -354,7 +354,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 ### PR B: privacy gate
 
-- [ ] **Unit 4: `resolve-public-repo` composite action**
+- [x] **Unit 4: `resolve-public-repo` composite action**
 
 **Goal:** Both survey gate steps use one allowlist.
 

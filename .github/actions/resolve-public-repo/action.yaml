@@ -1,0 +1,85 @@
+name: Resolve Public Repo
+description: Resolve a GitHub node ID to a repository and succeed only when GitHub reports it as definitively public
+
+inputs:
+  node-id:
+    description: The opaque GraphQL node ID of the repository. Checked against `^[A-Za-z0-9_=-]+$` as a whole string before any API call.
+    required: true
+  token:
+    description: A GitHub token that can read repository metadata for the node's owner. Read as `GH_TOKEN` by the step's `gh` call only; the step never prints it.
+    required: true
+
+outputs:
+  owner:
+    description: The repository owner. Written only when the repository is definitively public.
+    value: ${{ steps.gate.outputs.owner }}
+  repo:
+    description: The repository name. Written only when the repository is definitively public.
+    value: ${{ steps.gate.outputs.repo }}
+  node_id:
+    description: The node ID that was verified, echoed back.
+    value: ${{ steps.gate.outputs.node_id }}
+  private:
+    description: Always `false` when the step succeeds; a private or unverifiable repository fails the step before any output is written.
+    value: ${{ steps.gate.outputs.private }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify the node is a public repository
+      id: gate
+      # A caller's `if:` gates the whole action and does not reach this step, which would otherwise carry
+      # the implicit success() and be skipped or interrupted by a workflow cancellation mid-run.
+      if: ${{ always() }}
+      env:
+        GATE_NODE_ID: ${{ inputs.node-id }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+
+        # [[ =~ ]] matches the whole string, so a value with a second line cannot pass on its first.
+        shape_pattern='^[A-Za-z0-9_=-]+$'
+        if ! [[ "${GATE_NODE_ID:-}" =~ $shape_pattern ]]; then
+          printf 'Aborting: dispatch input shape invalid\n' >&2
+          exit 1
+        fi
+
+        # shellcheck disable=SC2016
+        gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
+
+        # gh's stderr is discarded: an upstream message can name a repository, and this runs on a
+        # public surface. The refusal below carries only the opaque node ID.
+        if ! response=$(gh api graphql -F id="$GATE_NODE_ID" -f query="$gql_query" 2>/dev/null); then
+          printf 'GraphQL lookup failed for node_id: %s\n' "$GATE_NODE_ID" >&2
+          exit 1
+        fi
+
+        # The allowlist: a repository object whose isPrivate is the boolean false and whose
+        # nameWithOwner is a non-empty string. Absent, null, "false" and every other shape fail.
+        name_with_owner=$(printf '%s' "$response" | jq -er '
+          .data.node
+          | select(type == "object")
+          | select(.isPrivate == false)
+          | select((.nameWithOwner | type) == "string")
+          | select(.nameWithOwner != "")
+          | .nameWithOwner
+        ' 2>/dev/null) || {
+          printf 'Aborting: %s is not definitively public\n' "$GATE_NODE_ID" >&2
+          exit 1
+        }
+
+        # GitHub owner and repository names fit this set. Anything else (a newline that could forge an
+        # output line, a missing slash) is not a value to hand to later steps.
+        name_pattern='^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
+        if ! [[ "$name_with_owner" =~ $name_pattern ]]; then
+          printf 'Aborting: %s is not definitively public\n' "$GATE_NODE_ID" >&2
+          exit 1
+        fi
+
+        {
+          printf 'owner=%s\n' "${name_with_owner%%/*}"
+          printf 'repo=%s\n' "${name_with_owner#*/}"
+          printf 'node_id=%s\n' "$GATE_NODE_ID"
+          printf 'private=false\n'
+        } >> "$GITHUB_OUTPUT"
+      shell: bash
