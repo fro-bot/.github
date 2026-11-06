@@ -4,7 +4,7 @@ import process from 'node:process'
 import {formatJsonLine} from '@fro-bot/core/json'
 import {retry} from '@fro-bot/core/retry'
 
-const EVENT_TYPES = ['survey_completed', 'invitation_accepted', 'daily_digest'] as const
+export const EVENT_TYPES = ['survey_completed', 'invitation_accepted', 'daily_digest'] as const
 
 export type EventType = (typeof EVENT_TYPES)[number]
 
@@ -42,6 +42,8 @@ export type AnnounceResult =
   | {posted: false; failure: 'invalid-event-type'}
   | {posted: false; failure: 'missing-context'}
   | {posted: false; failure: 'malformed-context'}
+  | {posted: false; failure: 'invalid-context'}
+  | {posted: false; failure: 'conflicting-input'}
 
 /** The wait before the one retry. */
 const RETRY_DELAY_MS = 5000
@@ -161,17 +163,85 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   return {posted: false, failure: 'http', status: res.status}
 }
 
+type EventContext = Record<string, unknown>
+
+/**
+ * A non-negative integer written in digits, or `undefined`. Leading zeros read as the number, as `jq --argjson` did.
+ * No match, an absent value included, is `Number(undefined)`: NaN, which is not a safe integer.
+ */
+function parseCount(raw: string | undefined): number | undefined {
+  const count = Number(raw?.match(/^\d+$/u)?.[0])
+  return Number.isSafeInteger(count) ? count : undefined
+}
+
+function nonEmpty(raw: string | undefined): string | undefined {
+  return raw === '' ? undefined : raw
+}
+
+function isNamedRepo(repo: unknown): boolean {
+  const named = repo as {owner?: unknown; name?: unknown} | null | undefined
+  return typeof named?.owner === 'string' && typeof named.name === 'string'
+}
+
+/**
+ * The repos the invitation poller prints: an array of `{owner, name}` objects. Anything else is not announced. The
+ * parsed value is returned as it is, so each repo keeps the key order it was written in, as `jq --argjson` kept it.
+ */
+function parseRepos(raw: string | undefined): unknown[] | undefined {
+  let parsed: unknown
+  try {
+    // An absent value is the text `undefined`, which is not JSON.
+    parsed = JSON.parse(String(raw))
+  } catch {
+    // Not JSON: `parsed` stays undefined, which is not an array.
+  }
+  return Array.isArray(parsed) && parsed.every(isNamedRepo) ? parsed : undefined
+}
+
+/**
+ * The context of `event`, built from the env names the announce steps set. Key order is the order the replaced
+ * `jq -nc` blocks printed, so the signed bytes do not change. `undefined` means an input is missing or malformed.
+ */
+function buildEventContext(event: EventType, env: Record<string, string | undefined>): EventContext | undefined {
+  if (event === 'daily_digest') {
+    const reposTracked = parseCount(env.REPOS_TRACKED)
+    const surveysToday = parseCount(env.SURVEYS_TODAY)
+    const reportUrl = nonEmpty(env.REPORT_URL)
+    if (reposTracked === undefined || surveysToday === undefined || reportUrl === undefined) return undefined
+    return {repos_tracked: reposTracked, surveys_today: surveysToday, report_url: reportUrl}
+  }
+  if (event === 'invitation_accepted') {
+    const count = parseCount(env.INVITATIONS_ACCEPTED)
+    const repos = parseRepos(env.INVITATIONS_REPOS)
+    if (count === undefined || repos === undefined) return undefined
+    return {count, repos}
+  }
+  const owner = nonEmpty(env.REPO_OWNER)
+  const repo = nonEmpty(env.REPO_NAME)
+  const slug = nonEmpty(env.REPO_SLUG)
+  // The survey step used to default an empty count to 0 in the shell; the builder keeps that default.
+  const wikiPagesChanged = parseCount(nonEmpty(env.WIKI_PAGES_CHANGED) ?? '0')
+  if (owner === undefined || repo === undefined || slug === undefined || wikiPagesChanged === undefined) {
+    return undefined
+  }
+  return {owner, repo, slug, wiki_pages_changed: wikiPagesChanged}
+}
+
 /**
  * Parse-and-dispatch logic for the CLI entrypoint. Reads from the provided env
  * map; does NOT call process.exit or read process.env directly.
  *
  * Kill-switch is checked first — short-circuits even when EVENT_TYPE /
- * EVENT_CONTEXT_JSON are absent. Writes structured diagnostics to stderr
- * (redaction unchanged: event type class + coarse status only).
+ * EVENT_CONTEXT_JSON are absent, and before an `--event` builder validates its inputs. Writes structured
+ * diagnostics to stderr (redaction unchanged: event type class + coarse status only).
+ *
+ * With `deps.event` (the `--event` flag) the context comes from the typed builder for that event and
+ * `EVENT_TYPE` / `EVENT_CONTEXT_JSON` must be unset: two input sources for one event is refused. Without it,
+ * the event type and the context JSON come from the env as before.
  */
 export async function runCli(
   env: Record<string, string | undefined>,
-  deps?: {announceImpl?: typeof announce},
+  deps?: {announceImpl?: typeof announce; event?: EventType},
 ): Promise<AnnounceResult> {
   const announceImpl = deps?.announceImpl ?? announce
 
@@ -179,6 +249,29 @@ export async function runCli(
   if (isKillSwitchActive(env.GATEWAY_ANNOUNCE_DISABLED)) {
     process.stderr.write('gateway-announce: kill switch active; skipping POST\n')
     return {posted: false, skipped: 'kill-switch'}
+  }
+
+  const event = deps?.event
+  if (event !== undefined) {
+    if (nonEmpty(env.EVENT_TYPE) !== undefined || nonEmpty(env.EVENT_CONTEXT_JSON) !== undefined) {
+      process.stderr.write('gateway-announce: --event cannot be combined with EVENT_TYPE or EVENT_CONTEXT_JSON\n')
+      return {posted: false, failure: 'conflicting-input'}
+    }
+    const built = buildEventContext(event, env)
+    if (built === undefined) {
+      // A fixed line: the inputs are never printed, because a malformed value can be anything a step output held.
+      process.stderr.write(
+        `gateway-announce: ${event} context invalid\n::warning::gateway-announce: ${event} context invalid\n`,
+      )
+      return {posted: false, failure: 'invalid-context'}
+    }
+    return announceImpl({
+      eventType: event,
+      context: built,
+      killSwitch: env.GATEWAY_ANNOUNCE_DISABLED ?? '',
+      secret: env.GATEWAY_WEBHOOK_SECRET ?? '',
+      url: env.GATEWAY_PRESENCE_URL ?? '',
+    })
   }
 
   const eventType = env.EVENT_TYPE
@@ -231,7 +324,8 @@ export async function runCli(
 export async function runGatewayAnnounce(
   env: Record<string, string | undefined>,
   io: {readonly stdout: (text: string) => void},
+  event?: EventType,
 ): Promise<void> {
-  const result = await runCli(env)
+  const result = await runCli(env, {event})
   io.stdout(formatJsonLine(result))
 }
