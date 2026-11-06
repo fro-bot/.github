@@ -9916,3 +9916,17 @@ identification marker and both Run Summary markers.
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-11-06 06:12] manual-edit | topic:github-actions-ci
+
+Daily oversight captured source-declared inert-artifact validation before App token creation, plus admitted-build queue retention and pre-publication freshness checks. Distinguished the authenticated Git-clone boundary from generic Pages deployment and source inspection from runtime verification. Existing wiki and metadata changes were preserved; only this topic and this log were edited by the oversight pass, for trusted ingest rather than direct Git delivery.
+
+Sources: https://github.com/marcusrbrown/systematic/blob/7b35b9a35dc331f426c35945e475856a8a657260/.github/workflows/docs.yaml
+
+Run: https://github.com/fro-bot/.github/actions/runs/42171018482
+
+## [2026-11-06 06:19] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@5fcb3ca94eedfc492500a18888017275bcb69fd5

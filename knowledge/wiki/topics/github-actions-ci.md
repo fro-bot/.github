@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-05
+updated: 2026-11-06
 sources:
+  - url: https://github.com/marcusrbrown/systematic/blob/7b35b9a35dc331f426c35945e475856a8a657260/.github/workflows/docs.yaml
+    sha: 7b35b9a35dc331f426c35945e475856a8a657260
+    accessed: 2026-11-06
   - url: https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows
     sha: e98c474da8b6c8edc85866a78305b02c616068d8
     accessed: 2026-11-05
@@ -399,6 +402,12 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Validate inert artifacts before introducing publishing credentials (2026-11-06)
+
+At `7b35b9a3`, [[marcusrbrown--systematic]] separates its docs build from the credential-bearing deployment job. Before creating the App token, deployment rejects a missing artifact directory, case-insensitive `.git` entries, symlinks, and files that are neither regular files nor directories. The workflow explains the less obvious boundary: copying an artifact into an authenticated Git clone can make Git configuration such as `core.fsmonitor` executable on a later Git operation. A static-site artifact must therefore be inert, not merely produced by a separate build job. Ordinary dotfiles remain allowed.
+
+The same job queues only admitted builds with `cancel-in-progress: false` and `queue: max`, then rechecks freshness before publication. This extends the October 28 writer-serialization observation: an older build finishing late must not replace the newest release's pending deployment, then skip itself as stale and leave no current deployment queued. Apply the artifact check where content enters a credential-bearing clone; do not assume every Pages deployment has that same boundary. These are source-declared safeguards, not a malicious artifact test or scheduler/runtime verification performed by this survey.
 
 ## Parallel checks need individual exit-status aggregation (2026-10-31)
 
