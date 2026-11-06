@@ -28,16 +28,16 @@ A fix to any of these lands in one copy and silently misses the others. The data
 
 **Data sync**
 
-- R1. One composite action, built by extending `.github/actions/sync-wiki` in place, performs every data sync. It takes the list of paths to sync, so one caller can sync `knowledge` and `metadata/repos.yaml` together.
+- R1. One composite action, built from `.github/actions/sync-wiki` and renamed `sync-data` because it now serves metadata too, performs every data sync. It takes the list of paths to sync, so one caller can sync `knowledge` and `metadata/repos.yaml` together.
 - R2. The action probes the branch first. Probe exit 0 syncs. Exit 2 (branch absent) follows the caller's required absent-branch input, `skip` or `fail`, with no default. Any other probe or fetch failure aborts the step after the bounded retry.
 - R3. The action fetches with `--no-tags` at full depth and restores into the working tree only, leaving the index clean. Restore is additive: files deleted on `data` are not removed from the checkout.
-- R4. All 18 blocks call the action. Each caller keeps its current absent-branch behaviour. Wiki-repair gains the probe and declares `fail`.
+- R4. All 18 blocks call the action, and so do the 7 steps that already use `sync-wiki`: 24 call sites in all. Each caller keeps its current absent-branch behaviour. Wiki-repair gains the probe and declares `fail`.
 - R5. The action exposes the synced `data` commit, as `sync-wiki` does today.
 
 **Survey privacy gate**
 
 - R6. A second composite action holds the visibility gate in shell, and both survey gate steps call it. It admits a node only when the lookup reports `isPrivate` false and a non-empty `nameWithOwner`. It validates the node ID's shape before any lookup.
-- R7. Gate refusals name at most the opaque node ID, as today. Owner and repository name never appear in a log or output on a refusal path.
+- R7. Gate refusals print a fixed reason and the opaque node ID. Owner and repository name never appear in a log or output on a refusal path, so the raw `gh` stderr dump is dropped.
 
 **Package code**
 
@@ -47,10 +47,10 @@ A fix to any of these lands in one copy and silently misses the others. The data
 
 **Contracts and tests**
 
-- R11. Every workflow output, exit code and step-summary line that a downstream step, job or test reads stays the same. The named exceptions are: R2 retry for callers that had none, R3 index state and fetch depth, R4 wiki-repair's probe, R6 recheck's `nameWithOwner` check, and R10.
+- R11. Every workflow output, exit code and step-summary line that a downstream step, job or test reads stays the same. The named exceptions are: R2 retry for callers that had none, R3 index state and fetch depth, R4 wiki-repair's probe and wiki-lint's step output renamed from `data_sha` to `data-sha`, R6 recheck's `nameWithOwner` check and the resolve job's new `contents: read` checkout, R7's refusal log text, and R10.
 - R12. Tests pin each shared definition's behaviour once, including the probe's exit 0, exit 2 and other-exit matrix run against the action's own shell. A test holds an explicit list of callers with their declared inputs, so removing or adding a caller fails until the list changes.
 - R13. The App-token scope contract holds for every moved step. Expression values reach shell only through `env:`, inside the composite actions as well as in workflows.
-- R14. Neither composite action takes a token input. The data sync inherits each caller's checkout settings, including the five callers that run with `persist-credentials: false`.
+- R14. The data sync takes no token input and inherits each caller's checkout settings, including the five callers that run with `persist-credentials: false`. The privacy gate takes the job's App token as an explicit input.
 
 ---
 
