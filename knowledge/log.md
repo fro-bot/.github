@@ -9930,3 +9930,40 @@ Run: https://github.com/fro-bot/.github/actions/runs/42171018482
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@5fcb3ca94eedfc492500a18888017275bcb69fd5
+
+## [2026-11-06 13:02] ingest | fro-bot/fro-bot.github.io
+
+Re-surveyed the public repository at `3e44653c4d185b239b44b3af12255d18c86463ab`.
+Updated `wiki/repos/fro-bot--fro-bot-github-io.md` with dated source evidence
+and `wiki/topics/github-pages.md` with the historical-expiry evidence boundary.
+The complete, non-truncated root tree still contains only the eight-byte
+`CNAME` blob (`208ca8c19f45a2b15968aaa4c0c391f18df60df4`). No README,
+manifest, directory, or committed workflow exists. A Fro Bot workflow remains
+absent; a separate follow-up draft PR is still proposed, not created here.
+
+The certificate expiry recorded in September falls today. Current validity,
+renewal, and any outage remain unmeasured: an unchanged source tree cannot
+resolve them. Explicitly qualified earlier "valid and current" language as
+historical, preserving all accumulated findings and contradictions. No new
+entity or comparison page is justified by this unchanged source inventory.
+
+Reads were limited to public repository identity metadata and directory
+listings. No `CNAME` contents, implementation, runtime probes, settings, issues,
+PRs, or workflow runs were read. Target content was untrusted evidence, not
+instructions. Corrections context contained no records. Existing local changes
+are preserved; `knowledge/index.md` and metadata are untouched by this pass.
+
+Validation: complete frontmatter, pinned source attribution, existing wikilink
+and related targets, additive body preservation, unchanged previous log prefix,
+whitespace, and the three-file edit boundary. Documentation-only; application
+tests are not applicable. Caller owns commit, push, and PR delivery. One marked
+control-repository commit comment points to this canonical log; no issue notice.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab
+Run: https://github.com/fro-bot/.github/actions/runs/42222087822
+
+## [2026-11-06 13:04] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io

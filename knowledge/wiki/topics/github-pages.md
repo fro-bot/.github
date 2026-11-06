@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-11-02
+updated: 2026-11-06
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-11-06
   - url: https://github.com/fro-bot/systematic
     sha: b3c99bcd4b32614b10111bf84477d5a6dac8dfb9
     accessed: 2026-11-02
@@ -92,6 +95,25 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## A historical certificate expiry is not a current outage (2026-11-06)
+
+The complete root listing for [[fro-bot--fro-bot-github-io]] is still the
+single `CNAME` blob at `3e44653c4d185b239b44b3af12255d18c86463ab`, with no
+README, manifest, or repo-local Fro Bot workflow. This source observation
+does not resolve the certificate observation whose recorded expiry is today.
+That leaf was last measured on September 25; the October 7 renewal forecast
+has not been tested within the subsequent bounded source surveys.
+
+An expiry date crossing the calendar is not a new measurement. Preserve the
+old certificate evidence, explicitly mark current validity as unmeasured,
+and do not convert either the old expiry or an unchanged tree into an outage
+claim. Runtime TLS, DNS, and redirect checks require separate authorization
+when the survey permits only listings, READMEs, manifests, and workflows.
+Likewise, missing committed automation establishes a repo-local gap, not
+the absence of external monitoring or the failure of certificate renewal.
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## Generated route growth is not a registry measurement (2026-11-02)
 
