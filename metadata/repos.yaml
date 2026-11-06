@@ -183,11 +183,11 @@ repos:
     name: tokentoilet
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-22
-    last_survey_status: success
+    last_survey_at: 2026-11-06
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-11-23
+    next_survey_eligible_at: 2026-12-06
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ3rINw
