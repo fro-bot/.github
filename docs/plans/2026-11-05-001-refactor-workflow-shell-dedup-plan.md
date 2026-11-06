@@ -392,7 +392,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 ### PR C: warning router
 
-- [ ] **Unit 5: `route-stderr` CLI in `@fro-bot/wiki-ops`**
+- [x] **Unit 5: `route-stderr` CLI in `@fro-bot/wiki-ops`**
 
 **Goal:** One router replaces the four copies with identical observable outputs.
 

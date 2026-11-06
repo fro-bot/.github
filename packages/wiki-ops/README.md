@@ -22,6 +22,7 @@ Nothing here holds a credential of its own. `wiki-handoff-build` runs in the unt
 | `@fro-bot/wiki-ops/wiki-context-expand`, `-cli` | `runWikiContextExpandCli`, `assembleExpandedContext`, `validateQuery`, `parseHandoffContent`, ...; `main` | The agent's `linked` and `query` expansion. Hand-parsed, because the query text may start with `-`. |
 | `@fro-bot/wiki-ops/correction-lifecycle`, `-cli` | `main`, `buildHelp`, `findRepositoryRoot`, `CorrectionLifecycleCliError`, ...; `main` | Records, retires, reconfirms and supersedes entries in `knowledge/corrections.yaml`. Hand-parsed, because an option value such as `--text --help` must stay a value. |
 | `@fro-bot/wiki-ops/render-corrections-context`, `-cli` | `renderCorrectionsContext`, `formatCorrectionsContext`; `renderCorrectionsContextCli`, `main` | Writes `.github/corrections-context.json`. The `corrections:warning:` lines go to stderr before the error is rethrown. |
+| `@fro-bot/wiki-ops/route-stderr`, `-cli` | `parseRoute`, `buildSummary`, `runRouteStderr`, `RouteStderrUsageError`; `routeStderrCli`, `main` | The warning router: runs a command with no shell, replays its stderr unchanged and lifts routed prefixes into the job summary. `route-stderr` is mutated at full kills. |
 | `@fro-bot/wiki-ops/rebuild-wiki-index`, `-cli` | `runRebuildWikiIndex`; `rebuildWikiIndexCli`, `main` | Rebuilds `knowledge/index.md`, or with `--merge-logs <path> [path...]` merges logs into `knowledge/log.md`. |
 | `@fro-bot/wiki-ops/wiki-repair`, `-cli` | `runWikiRepairCli`, `planWikiRepairs`, `gateWikiRepairs`, `runAndRecordWikiRepair`, `recordWikiRepairResult`, ...; `wikiRepairCli`, `main` | The integrity repair. Writes its result file before it sets the exit code. |
 | `@fro-bot/wiki-ops/wiki-lint-issues`, `-cli` | `runWikiLintIssues`, `planIssueLifecycle`, `syncWikiLintIssues`, `validateWikiLintJsonReport`, `WikiLintIssuesExit`; `wikiLintIssuesCli`, `main` | Syncs lint issues. Writes the five counters before the exit-1 path. |
@@ -40,7 +41,8 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `solutions-query` | `fro-bot.yaml`: no argv | `true` | `excerpt`, `selected-paths`, `byte-length`; exit 0 on every error. |
 | `wiki-context-expand` | The agent prompt: `linked`, `query "<text>"`, `--help`, `-h` | `true` | Stdout JSON. Bad arguments give a structured result and exit 1, not a throw. Hand-parsed. |
 | `correction-lifecycle` | The agent through bash: `record`, `retire`, `reconfirm`, `supersede`, `help`, per-command `--help` | `false` | JSON; the exit code is the lifecycle `main()`. Hand-parsed. |
-| `render-corrections-context` | `survey-repo.yaml`: `if bun ... 2>file` | `false` | `corrections:warning:` lines on stderr, then the error and exit 1. Writes `.github/corrections-context.json`. |
+| `render-corrections-context` | `survey-repo.yaml`: wrapped by `route-stderr`, which reads its `corrections:warning:` lines | `false` | `corrections:warning:` lines on stderr, then the error and exit 1. Writes `.github/corrections-context.json`. |
+| `route-stderr` | `fro-bot.yaml` (both ingest steps) and `survey-repo.yaml` (the wiki commit and the corrections load): router flags, then the wrapped command as the trailing positional, no `--`. `--route <prefix>=<heading>` (one or more), `--summary filtered\|all`, `--conflict-exit <code> --conflict-output <name>` | `false` | The wrapped command's exit code. Its stderr is replayed unchanged, as bytes. A summary section is written only when a line starts with a routed prefix: `filtered` writes the matching lines as bullets, `all` the heading and the whole stderr. `<name>=true` is appended to `$GITHUB_OUTPUT` on the conflict exit code only. A missing route or command, an unknown flag, a `--` and a half-declared conflict are usage errors (exit 1) and the command never starts. A command that cannot start exits 127 (not found) or 126 with a fixed line naming only the error code. No line it writes names the command, its arguments or the environment. |
 | `wiki-repair` | `wiki-lint.yaml`: no argv | `false` | The result file read by the `if: always()` summary; exit 1 on an abort. Dry-run capable. |
 | `wiki-lint-issues` | `wiki-lint.yaml`: no argv, or the report path as the one optional positional | `false` | `opened`, `updated`, `reopened`, `closed`, `failed` and the summary table, then exit 1 on a failed issue call. |
 | `rebuild-wiki-index` | No workflow caller: no argv, or `--merge-logs <path> [path...]` | `false` | Stdout `rebuilt ...` or `merged ...`. |
@@ -60,6 +62,8 @@ C4Component
     Component(rebuild_wiki_index_cli, "rebuild-wiki-index-cli", "TypeScript", "goke CLI; writing")
     Component(render_corrections_context, "render-corrections-context", "TypeScript", "corrections-context.json for one page; warns before it rethrows")
     Component(render_corrections_context_cli, "render-corrections-context-cli", "TypeScript", "goke CLI; writing")
+    Component(route_stderr, "route-stderr", "TypeScript", "Runs one command, replays its stderr unchanged, lifts routed prefixes into the step summary; mutated at full kills")
+    Component(route_stderr_cli, "route-stderr-cli", "TypeScript", "goke CLI; writing; the wrapped command is the trailing variadic positional")
     Component(solution_docs_paths, "solution-docs-paths", "TypeScript", "The canonical docs/solutions category list; a leaf")
     Component(solutions_query, "solutions-query", "TypeScript", "docs/solutions retrieval for the agent prompt; best-effort")
     Component(solutions_query_cli, "solutions-query-cli", "TypeScript", "goke CLI; read-only")
@@ -93,6 +97,7 @@ C4Component
   Rel(entrypoints, correction_lifecycle_cli, "main")
   Rel(entrypoints, rebuild_wiki_index_cli, "main")
   Rel(entrypoints, render_corrections_context_cli, "main")
+  Rel(entrypoints, route_stderr_cli, "main")
   Rel(entrypoints, solutions_query_cli, "main")
   Rel(entrypoints, wiki_change_detect_cli, "main")
   Rel(entrypoints, wiki_context_expand_cli, "main")
@@ -105,6 +110,7 @@ C4Component
   Rel(correction_lifecycle_cli, correction_lifecycle, "imports")
   Rel(rebuild_wiki_index_cli, rebuild_wiki_index, "imports")
   Rel(render_corrections_context_cli, render_corrections_context, "imports")
+  Rel(route_stderr_cli, route_stderr, "imports")
   Rel(solutions_query_cli, solutions_query, "imports")
   Rel(wiki_change_detect, wiki_change_detect_core, "imports")
   Rel(wiki_change_detect_cli, wiki_change_detect, "imports")
@@ -123,6 +129,7 @@ C4Component
   Rel(wiki_repair_cli, wiki_repair, "imports")
   Rel(rebuild_wiki_index_cli, core, "runs on")
   Rel(render_corrections_context_cli, core, "runs on")
+  Rel(route_stderr_cli, core, "runs on")
   Rel(solutions_query_cli, core, "runs on")
   Rel(wiki_change_detect_cli, core, "runs on")
   Rel(wiki_handoff_apply_cli, core, "runs on")
@@ -135,6 +142,7 @@ C4Component
   Rel(correction_lifecycle, wwc, "imports")
   Rel(rebuild_wiki_index, wwc, "imports")
   Rel(render_corrections_context, wwc, "imports")
+  Rel(route_stderr, core, "imports")
   Rel(solutions_query, core, "imports")
   Rel(solutions_query, wwc, "imports")
   Rel(wiki_change_detect, core, "imports")
@@ -156,6 +164,7 @@ C4Component
   UpdateRelStyle(entrypoints, correction_lifecycle_cli, $offsetX="66", $offsetY="-46")
   UpdateRelStyle(entrypoints, rebuild_wiki_index_cli, $offsetX="29", $offsetY="11")
   UpdateRelStyle(entrypoints, render_corrections_context_cli, $offsetX="67", $offsetY="-49")
+  UpdateRelStyle(entrypoints, route_stderr_cli, $offsetX="40", $offsetY="-30")
   UpdateRelStyle(entrypoints, solutions_query_cli, $offsetX="-28", $offsetY="9")
   UpdateRelStyle(entrypoints, wiki_change_detect_cli, $offsetX="45", $offsetY="-15")
   UpdateRelStyle(entrypoints, wiki_context_expand_cli, $offsetX="-39", $offsetY="-46")
@@ -168,6 +177,7 @@ C4Component
   UpdateRelStyle(correction_lifecycle_cli, correction_lifecycle, $offsetX="17", $offsetY="3")
   UpdateRelStyle(rebuild_wiki_index_cli, rebuild_wiki_index, $offsetX="-8", $offsetY="36")
   UpdateRelStyle(render_corrections_context_cli, render_corrections_context, $offsetX="-13", $offsetY="8")
+  UpdateRelStyle(route_stderr_cli, route_stderr, $offsetX="-20", $offsetY="10")
   UpdateRelStyle(solutions_query_cli, solutions_query, $offsetX="-36", $offsetY="37")
   UpdateRelStyle(wiki_change_detect, wiki_change_detect_core, $offsetX="-3", $offsetY="34")
   UpdateRelStyle(wiki_change_detect_cli, wiki_change_detect, $offsetX="12", $offsetY="-33")
@@ -186,6 +196,7 @@ C4Component
   UpdateRelStyle(wiki_repair_cli, wiki_repair, $offsetX="69", $offsetY="-9")
   UpdateRelStyle(rebuild_wiki_index_cli, core, $offsetX="48", $offsetY="-30")
   UpdateRelStyle(render_corrections_context_cli, core, $offsetX="-23", $offsetY="2")
+  UpdateRelStyle(route_stderr_cli, core, $offsetX="-30", $offsetY="6")
   UpdateRelStyle(solutions_query_cli, core, $offsetX="-19", $offsetY="-46")
   UpdateRelStyle(wiki_change_detect_cli, core, $offsetX="-72", $offsetY="13")
   UpdateRelStyle(wiki_handoff_apply_cli, core, $offsetX="-3", $offsetY="27")
@@ -198,6 +209,7 @@ C4Component
   UpdateRelStyle(correction_lifecycle, wwc, $offsetX="-38", $offsetY="-26")
   UpdateRelStyle(rebuild_wiki_index, wwc, $offsetX="9", $offsetY="5")
   UpdateRelStyle(render_corrections_context, wwc, $offsetX="26", $offsetY="7")
+  UpdateRelStyle(route_stderr, core, $offsetX="20", $offsetY="-8")
   UpdateRelStyle(solutions_query, core, $offsetX="-18", $offsetY="37")
   UpdateRelStyle(solutions_query, wwc, $offsetX="-10", $offsetY="-32")
   UpdateRelStyle(wiki_change_detect, core, $offsetX="78", $offsetY="16")
