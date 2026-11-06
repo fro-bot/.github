@@ -14,6 +14,7 @@ import {parse} from 'yaml'
 interface ActionStep {
   name?: string
   id?: string
+  if?: string
   run?: string
   shell?: string
   env?: Record<string, unknown>
@@ -94,6 +95,13 @@ describe('resolve-public-repo action: shape', () => {
   it('is a composite action whose run step pins shell: bash', () => {
     expect(action.runs?.using).toBe('composite')
     expect(gateStep?.shell).toBe('bash')
+  })
+
+  it('runs its inner step under always(), because a caller if: does not reach composite inner steps', () => {
+    // The caller's `if: always() && ...` gates the whole action. Inside it the step has the implicit
+    // success() condition, so a cancellation arriving mid-run would skip the gate and break the
+    // cancelled-survey fallback that depends on `recheck` succeeding.
+    expect(gateStep?.if).toBe(`${expressionStart} always() }}`)
   })
 
   it('takes two required inputs, node-id and token', () => {

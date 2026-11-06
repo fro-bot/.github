@@ -28,6 +28,9 @@ runs:
   steps:
     - name: Verify the node is a public repository
       id: gate
+      # A caller's `if:` gates the whole action and does not reach this step, which would otherwise carry
+      # the implicit success() and be skipped or interrupted by a workflow cancellation mid-run.
+      if: ${{ always() }}
       env:
         GATE_NODE_ID: ${{ inputs.node-id }}
         GH_TOKEN: ${{ inputs.token }}
