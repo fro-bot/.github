@@ -161,6 +161,8 @@ export function runStepWithStubs(script: string, options: StepRunOptions): StepR
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    // A spawn failure (ENOBUFS, ENOENT, a timeout) leaves the streams null or truncated; a test must not read them.
+    if (spawned.error !== undefined) throw spawned.error
     const result = {status: spawned.status ?? 1, stdout: spawned.stdout, stderr: spawned.stderr}
     const githubOutput = readFileSync(outputFile, 'utf8')
     return {

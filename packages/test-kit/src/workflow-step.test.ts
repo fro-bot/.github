@@ -144,3 +144,16 @@ describe('runStepWithStubs: GITHUB_OUTPUT readback', () => {
     expect(run.outputs).toStrictEqual({k: 'v'})
   })
 })
+
+describe('runStepWithStubs: spawn failure', () => {
+  it('throws the spawn error instead of returning a run with missing streams', () => {
+    // A step that prints more than spawnSync's output buffer holds fails the spawn with ENOBUFS.
+    const flood = String.raw`head -c 4000000 /dev/zero | tr '\0' a`
+
+    expect(() => runStepWithStubs(flood, {})).toThrow(/ENOBUFS/)
+  })
+
+  it('still returns a normal nonzero exit as a run, not a throw', () => {
+    expect(runStepWithStubs('exit 3', {}).status).toBe(3)
+  })
+})

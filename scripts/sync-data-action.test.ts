@@ -39,7 +39,10 @@ const expressionStart = '$' + '{{'
 const PROBE = 'git ls-remote --exit-code origin data'
 const FETCH = 'git fetch --no-tags origin data'
 const REV_PARSE = 'git rev-parse FETCH_HEAD'
+/** The restore a `knowledge` group gets: a mirror, so a page deleted on data is removed from the checkout. */
 const restoreOf = (paths: string): string => `git restore --source FETCH_HEAD --worktree -- ${paths}`
+/** The restore a `metadata` group gets: an overlay, so a tracked file only main has survives. */
+const overlayOf = (paths: string): string => `git restore --source FETCH_HEAD --worktree --overlay -- ${paths}`
 
 interface SyncOptions {
   paths?: string
@@ -100,8 +103,11 @@ describe('sync-data action: shape', () => {
     }
   })
 
-  it('names neither a path nor a caller in its error text', () => {
-    const errors = runScript.split('\n').filter(line => line.includes('::error::'))
+  it('names neither a path nor a caller in its probe, fetch and absent-branch error text', () => {
+    // Input-validation errors (prefixed `sync-data:`) may name the two trees the action supports.
+    const errors = runScript
+      .split('\n')
+      .filter(line => line.includes('::error::') && !line.includes('::error::sync-data:'))
     expect(errors.length).toBeGreaterThan(0)
     for (const line of errors) {
       expect(line).not.toMatch(/knowledge|metadata|wiki/i)
@@ -142,28 +148,43 @@ describe('sync-data action: branch present (shell-flow, stubbed git)', () => {
     expect(run.trace.join('\n')).not.toMatch(/git (?:add|checkout|reset|stash|commit)\b/)
   })
 
-  it('restores two paths in one call', () => {
+  it('restores a metadata path as an overlay, never as a mirror', () => {
+    const run = runSync({paths: 'metadata/'})
+
+    expect(run.status).toBe(0)
+    expect(run.trace).toStrictEqual([PROBE, FETCH, REV_PARSE, overlayOf('metadata/')])
+    expect(run.outputs['data-sha']).toBe('abc123def456')
+  })
+
+  it('restores a mixed list as one mirror call for knowledge and one overlay call for metadata', () => {
     const run = runSync({paths: 'knowledge metadata/repos.yaml'})
 
     expect(run.status).toBe(0)
-    expect(run.trace).toStrictEqual([PROBE, FETCH, REV_PARSE, restoreOf('knowledge metadata/repos.yaml')])
+    expect(run.trace).toStrictEqual([PROBE, FETCH, REV_PARSE, restoreOf('knowledge'), overlayOf('metadata/repos.yaml')])
     expect(run.outputs['data-sha']).toBe('abc123def456')
+  })
+
+  it('groups by mode whatever order the list is written in, and several paths per group share one call', () => {
+    const run = runSync({paths: 'metadata/repos.yaml knowledge/wiki metadata/other.yaml knowledge/index.md'})
+
+    expect(run.status).toBe(0)
+    expect(run.trace.slice(3)).toStrictEqual([
+      restoreOf('knowledge/wiki knowledge/index.md'),
+      overlayOf('metadata/repos.yaml metadata/other.yaml'),
+    ])
   })
 
   it('splits paths on any whitespace, newlines included', () => {
     const run = runSync({paths: '  knowledge\n\tmetadata/repos.yaml  '})
 
     expect(run.status).toBe(0)
-    expect(run.trace.at(-1)).toBe(restoreOf('knowledge metadata/repos.yaml'))
+    expect(run.trace.slice(3)).toStrictEqual([restoreOf('knowledge'), overlayOf('metadata/repos.yaml')])
   })
 
   it('hands a path containing * to git restore literally, not expanded against the checkout', () => {
-    const run = runSync({paths: 'knowledge*'})
-
-    expect(run.status).toBe(0)
     // The runner's cwd holds `git`, `bun`, `node`, `sleep` and `step.sh`; an expanded `*` would name them.
-    expect(run.trace.at(-1)).toBe(restoreOf('knowledge*'))
-    expect(runSync({paths: '*'}).trace.at(-1)).toBe(restoreOf('*'))
+    expect(runSync({paths: 'knowledge/*'}).trace.at(-1)).toBe(restoreOf('knowledge/*'))
+    expect(runSync({paths: 'metadata/*'}).trace.at(-1)).toBe(overlayOf('metadata/*'))
   })
 
   it('the fetch carries no depth flag', () => {
@@ -266,11 +287,19 @@ describe('sync-data action: probe and fetch failures (shell-flow, stubbed git)',
   })
 
   it('restore of a path missing on data fails the step with no data-sha', () => {
-    const run = runSync({paths: 'knowledge missing/path', exitSequences: {restore: [1]}})
+    const run = runSync({paths: 'knowledge metadata/missing.yaml', exitSequences: {restore: [0, 1]}})
 
     expect(run.status).not.toBe(0)
     expect(run.githubOutput).toBe('')
-    expect(run.trace.at(-1)).toBe(restoreOf('knowledge missing/path'))
+    expect(run.trace.slice(3)).toStrictEqual([restoreOf('knowledge'), overlayOf('metadata/missing.yaml')])
+  })
+
+  it('a failing knowledge restore stops before the metadata restore and writes no data-sha', () => {
+    const run = runSync({paths: 'knowledge metadata/repos.yaml', exitSequences: {restore: [1]}})
+
+    expect(run.status).not.toBe(0)
+    expect(run.githubOutput).toBe('')
+    expect(run.trace.slice(3)).toStrictEqual([restoreOf('knowledge')])
   })
 
   it('keeps fetch output in the job log on every attempt while the probe stays silent', () => {
@@ -317,6 +346,43 @@ describe('sync-data action: input validation (fails before any git call)', () =>
     expect(run.trace).toStrictEqual([])
     expect(run.githubOutput).toBe('')
   })
+
+  it.each([
+    'docs',
+    'docs/solutions',
+    'knowledgebase',
+    'metadatafoo',
+    'knowledge*',
+    '.',
+    '*',
+    '/etc/passwd',
+    '/knowledge',
+    '../knowledge',
+    'knowledge/../docs',
+    'knowledge/..',
+    'metadata/../.github',
+    'metadata/a/../../x',
+    '.github/workflows',
+    '-n',
+    'knowledge docs',
+    'metadata/repos.yaml packages',
+  ])('rejects the unsupported paths %j before any git call, whatever the branch state', paths => {
+    for (const lsRemoteExit of [0, 2]) {
+      const run = runSync({paths, lsRemoteExit})
+
+      expect(run.status).not.toBe(0)
+      expect(run.stdout).toContain('::error::')
+      expect(run.trace).toStrictEqual([])
+      expect(run.githubOutput).toBe('')
+    }
+  })
+
+  it.each(['knowledge', 'knowledge/', 'knowledge/wiki/repos', 'metadata', 'metadata/', 'metadata/repos.yaml'])(
+    'accepts the supported path %j',
+    paths => {
+      expect(runSync({paths}).status).toBe(0)
+    },
+  )
 
   it('rejects paths that are not set at all', () => {
     const run = runStepWithStubs(runScript, {env: {SYNC_DATA_IF_ABSENT: 'skip'}})
@@ -423,6 +489,9 @@ describe('sync-data action: real repositories (integration)', () => {
     mkdirSync(join(seed, 'metadata'))
     writeFileSync(join(seed, 'knowledge', 'page.md'), 'main page\n')
     writeFileSync(join(seed, 'metadata', 'repos.yaml'), 'main: repos\n')
+    // Tracked on main only: data does not carry them (a mirror removes them, an overlay keeps them).
+    writeFileSync(join(seed, 'knowledge', 'main-only.md'), 'main only page\n')
+    writeFileSync(join(seed, 'metadata', 'main-only.yaml'), 'main: only\n')
     git(seed, 'add', '-A')
     git(seed, 'commit', '-q', '-m', 'main one')
     writeFileSync(join(seed, 'README.md'), 'second main commit\n')
@@ -434,6 +503,7 @@ describe('sync-data action: real repositories (integration)', () => {
       writeFileSync(join(seed, 'knowledge', 'page.md'), 'data page\n')
       writeFileSync(join(seed, 'knowledge', 'only-on-data.md'), 'data only\n')
       writeFileSync(join(seed, 'metadata', 'repos.yaml'), 'data: repos\n')
+      git(seed, 'rm', '-q', 'knowledge/main-only.md', 'metadata/main-only.yaml')
       git(seed, 'add', '-A')
       git(seed, 'commit', '-q', '-m', 'data one')
       writeFileSync(join(seed, 'knowledge', 'page.md'), 'data page, newest\n')
@@ -461,11 +531,14 @@ describe('sync-data action: real repositories (integration)', () => {
     expect(readFileSync(join(clone, 'knowledge', 'only-on-data.md'), 'utf8')).toBe('data only\n')
     expect(readFileSync(join(clone, 'metadata', 'repos.yaml'), 'utf8')).toBe('data: repos\n')
     expect(git(clone, 'diff', '--cached', '--name-only')).toBe('')
-    // The restore is working-tree only, so the changes show as unstaged edits against HEAD.
+    // The restore is working-tree only, so the changes show as unstaged edits against HEAD: the knowledge
+    // mirror removes the page data deleted, and the metadata overlay keeps the file only main has.
     expect(git(clone, 'diff', '--name-only').split('\n').toSorted()).toStrictEqual([
+      'knowledge/main-only.md',
       'knowledge/page.md',
       'metadata/repos.yaml',
     ])
+    expect(existsSync(join(clone, 'metadata', 'main-only.yaml'))).toBe(true)
     expect(git(clone, 'tag', '--list')).toBe('')
   })
 
@@ -482,6 +555,7 @@ describe('sync-data action: real repositories (integration)', () => {
     expect(readFileSync(join(clone, 'knowledge', 'page.md'), 'utf8')).toBe('data page, newest\n')
     // Paths the caller did not list stay as main has them.
     expect(readFileSync(join(clone, 'metadata', 'repos.yaml'), 'utf8')).toBe('main: repos\n')
+    expect(existsSync(join(clone, 'metadata', 'main-only.yaml'))).toBe(true)
     expect(git(clone, 'diff', '--cached', '--name-only')).toBe('')
     expect(git(clone, 'rev-parse', '--is-shallow-repository')).toBe('false')
     expect(git(clone, 'rev-list', '--count', dataTip)).toBe('4')
@@ -515,11 +589,79 @@ describe('sync-data action: real repositories (integration)', () => {
     const clone = join(root, 'clone')
     git(root, 'clone', '-q', `file://${origin}`, clone)
 
-    const run = runReal(clone, {paths: 'knowledge does-not-exist', ifAbsent: 'skip'})
+    const run = runReal(clone, {paths: 'metadata/does-not-exist.yaml', ifAbsent: 'skip'})
 
     expect(run.status).not.toBe(0)
     expect(run.githubOutput).toBe('')
     // git rejects the unmatched pathspec before it writes anything.
-    expect(readFileSync(join(clone, 'knowledge', 'page.md'), 'utf8')).toBe('main page\n')
+    expect(readFileSync(join(clone, 'metadata', 'repos.yaml'), 'utf8')).toBe('main: repos\n')
+  })
+
+  function cloneFull() {
+    const {root, origin, dataTip} = createOrigin({withData: true})
+    const clone = join(root, 'full')
+    git(root, 'clone', '-q', '--branch', 'main', `file://${origin}`, clone)
+    return {clone, dataTip}
+  }
+
+  describe('restore mode follows the path group', () => {
+    it('a metadata sync keeps a tracked metadata file that only main has, and updates the rest', () => {
+      const {clone, dataTip} = cloneFull()
+
+      const run = runReal(clone, {paths: 'metadata', ifAbsent: 'skip'})
+
+      expect(run.status).toBe(0)
+      expect(run.githubOutput).toBe(`data-sha=${dataTip}\n`)
+      expect(readFileSync(join(clone, 'metadata', 'main-only.yaml'), 'utf8')).toBe('main: only\n')
+      expect(readFileSync(join(clone, 'metadata', 'repos.yaml'), 'utf8')).toBe('data: repos\n')
+      // The knowledge tree is not in the list, so it is untouched.
+      expect(readFileSync(join(clone, 'knowledge', 'main-only.md'), 'utf8')).toBe('main only page\n')
+      expect(git(clone, 'diff', '--cached', '--name-only')).toBe('')
+    })
+
+    it('a knowledge sync mirrors data: a page data deleted is removed, and one only data has appears', () => {
+      const {clone, dataTip} = cloneFull()
+
+      const run = runReal(clone, {paths: 'knowledge', ifAbsent: 'skip'})
+
+      expect(run.status).toBe(0)
+      expect(run.githubOutput).toBe(`data-sha=${dataTip}\n`)
+      expect(existsSync(join(clone, 'knowledge', 'main-only.md'))).toBe(false)
+      expect(readFileSync(join(clone, 'knowledge', 'page.md'), 'utf8')).toBe('data page, newest\n')
+      expect(readFileSync(join(clone, 'knowledge', 'only-on-data.md'), 'utf8')).toBe('data only\n')
+      // The metadata tree is not in the list, so it is untouched.
+      expect(readFileSync(join(clone, 'metadata', 'main-only.yaml'), 'utf8')).toBe('main: only\n')
+      expect(git(clone, 'diff', '--cached', '--name-only')).toBe('')
+    })
+
+    it('a mixed list does both: knowledge mirrors and metadata overlays', () => {
+      const {clone, dataTip} = cloneFull()
+
+      const run = runReal(clone, {paths: 'knowledge metadata/repos.yaml', ifAbsent: 'fail'})
+
+      expect(run.status).toBe(0)
+      expect(run.githubOutput).toBe(`data-sha=${dataTip}\n`)
+      expect(existsSync(join(clone, 'knowledge', 'main-only.md'))).toBe(false)
+      expect(readFileSync(join(clone, 'metadata', 'repos.yaml'), 'utf8')).toBe('data: repos\n')
+      expect(readFileSync(join(clone, 'metadata', 'main-only.yaml'), 'utf8')).toBe('main: only\n')
+      expect(git(clone, 'diff', '--cached', '--name-only')).toBe('')
+    })
+
+    it.each(['docs', 'README.md', 'knowledge/../README.md', 'knowledgebase', 'knowledge README.md'])(
+      'an unsupported path (%j) fails before git runs: no fetch ref, no file touched, no data-sha',
+      paths => {
+        const {clone} = cloneFull()
+        const before = git(clone, 'status', '--porcelain')
+
+        const run = runReal(clone, {paths, ifAbsent: 'skip'})
+
+        expect(run.status).not.toBe(0)
+        expect(run.githubOutput).toBe('')
+        expect(git(clone, 'status', '--porcelain')).toBe(before)
+        expect(readFileSync(join(clone, 'knowledge', 'page.md'), 'utf8')).toBe('main page\n')
+        // No fetch ran, so FETCH_HEAD was never written.
+        expect(existsSync(join(clone, '.git', 'FETCH_HEAD'))).toBe(false)
+      },
+    )
   })
 })
