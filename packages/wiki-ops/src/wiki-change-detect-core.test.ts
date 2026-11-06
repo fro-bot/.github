@@ -24,13 +24,24 @@ const directory = {isSymbolicLink: () => false, isDirectory: () => true, isFile:
 const file = {isSymbolicLink: () => false, isDirectory: () => false, isFile: () => true}
 const noneIgnored: WikiChangeDetectCheckIgnoreRunnerFn = async () => ({stdout: '', exitCode: 1})
 
-/** A tree of `knowledge/wiki/<names>` regular files, served through the injected seams. */
+/**
+ * A tree of `knowledge/wiki/<names>` regular files, served through the injected seams. Like a real `readdir`, only a
+ * path `lstatImpl` reports as a directory has children; anything else fails with `ENOTDIR`.
+ */
 function seams(names: string[], overrides: Partial<Parameters<typeof captureWikiScopeSnapshot>[0]> = {}) {
+  const lstatImpl =
+    overrides.lstatImpl ?? (async (absolutePath: string) => (absolutePath.endsWith('wiki') ? directory : file))
   return {
     cwd: '/virtual',
     scopePaths: ['knowledge/wiki'],
-    lstatImpl: async (absolutePath: string) => (absolutePath.endsWith('wiki') ? directory : file),
-    readdirImpl: async () => names.map(dir),
+    lstatImpl,
+    readdirImpl: async (absolutePath: string) => {
+      const stats = await lstatImpl(absolutePath)
+      if (!stats.isDirectory()) {
+        throw Object.assign(new Error(`ENOTDIR: not a directory, scandir '${absolutePath}'`), {code: 'ENOTDIR'})
+      }
+      return names.map(dir)
+    },
     readFileImpl: async (absolutePath: string) => Buffer.from(absolutePath),
     hashImpl: (contents: Buffer) => contents.toString(),
     checkIgnoreRunnerImpl: noneIgnored,
