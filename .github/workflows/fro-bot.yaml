@@ -1279,21 +1279,13 @@ jobs:
       - name: 📣 Announce daily digest to gateway
         if: steps.validated.outputs.valid == 'true'
         env:
-          EVENT_TYPE: daily_digest
           REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
           SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
           REPORT_URL: ${{ steps.report-url.outputs.report_url }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
-        run: |
-          EVENT_CONTEXT_JSON="$(jq -nc \
-            --argjson repos_tracked "$REPOS_TRACKED" \
-            --argjson surveys_today "$SURVEYS_TODAY" \
-            --arg report_url "$REPORT_URL" \
-            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
-          export EVENT_CONTEXT_JSON
-          bun scripts/gateway-announce.ts
+        run: bun scripts/gateway-announce.ts --event daily_digest
 
   # ── Trusted writer: applies the fro-bot-observe job's wiki handoff artifact to `data` ──
   fro-bot-observe-wiki-ingest:

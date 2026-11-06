@@ -695,7 +695,6 @@ jobs:
           needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
           needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' }}
         env:
-          EVENT_TYPE: survey_completed
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
           REPO_SLUG: ${{ needs.survey-repo.outputs.target-slug }}
@@ -703,15 +702,7 @@ jobs:
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
           WIKI_PAGES_CHANGED: ${{ steps.wiki-commit.outputs.pages_changed || '0' }}
-        run: |
-          EVENT_CONTEXT_JSON="$(jq -nc \
-            --arg owner "$REPO_OWNER" \
-            --arg repo "$REPO_NAME" \
-            --arg slug "$REPO_SLUG" \
-            --argjson pages "${WIKI_PAGES_CHANGED:-0}" \
-            '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: $pages}')"
-          export EVENT_CONTEXT_JSON
-          bun scripts/gateway-announce.ts
+        run: bun scripts/gateway-announce.ts --event survey_completed
 
       # Cadence-advance safety net: if the normal "Record survey result" step did not
       # run or did not succeed (cancelled run, hard timeout, upstream failure before

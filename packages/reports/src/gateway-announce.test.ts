@@ -1274,3 +1274,283 @@ describe('announce status floor, fixed stderr lines and the real wait', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 })
+
+// ─── Typed event builders (`--event`) ────────────────────────────────────────
+
+/**
+ * The context bytes the replaced `jq -nc` blocks printed for the same inputs, captured from jq 1.8.2 on
+ * main at 5fcb3ca before the builders moved. `JSON.stringify` of a builder's context must equal them, so
+ * the signed body does not change.
+ */
+const JQ_DIGEST = '{"repos_tracked":14,"surveys_today":3,"report_url":"https://github.com/fro-bot/.github/issues/99"}'
+const JQ_DIGEST_ZEROS =
+  '{"repos_tracked":0,"surveys_today":0,"report_url":"https://github.com/fro-bot/.github/issues/1"}'
+const JQ_INVITATIONS = String.raw`{"count":2,"repos":[{"owner":"fro-bot","name":"public-repo"},{"owner":"acme","name":"wid\"gets"}]}`
+const JQ_INVITATIONS_SPACED = '{"count":1,"repos":[{"owner":"fro-bot","name":"public-repo"}]}'
+const JQ_SURVEY = '{"owner":"acme","repo":"widgets","slug":"acme/widgets","wiki_pages_changed":3}'
+const JQ_SURVEY_EMPTY_PAGES = String.raw`{"owner":"é-org","repo":"re\"po","slug":"é-org/re\"po","wiki_pages_changed":0}`
+
+const JQ_DIGEST_VALUE: unknown = JSON.parse(JQ_DIGEST)
+
+const DIGEST_ENV = {
+  REPOS_TRACKED: '14',
+  SURVEYS_TODAY: '3',
+  REPORT_URL: 'https://github.com/fro-bot/.github/issues/99',
+}
+const INVITATIONS_ENV = {
+  INVITATIONS_ACCEPTED: '2',
+  INVITATIONS_REPOS: String.raw`[{"owner":"fro-bot","name":"public-repo"},{"owner":"acme","name":"wid\"gets"}]`,
+}
+const SURVEY_ENV = {
+  REPO_OWNER: 'acme',
+  REPO_NAME: 'widgets',
+  REPO_SLUG: 'acme/widgets',
+  WIKI_PAGES_CHANGED: '3',
+}
+
+/** Runs `runCli` for `event` against a stubbed announcer and returns what the announcer was handed. */
+async function buildWith(
+  event: 'daily_digest' | 'invitation_accepted' | 'survey_completed',
+  env: Record<string, string>,
+) {
+  const spy = vi.fn(async () => ({posted: true, status: 200}) as const)
+  const {result, stderr} = await captureStderr(async () =>
+    runCli(env, {announceImpl: spy as unknown as typeof announce, event}),
+  )
+  return {result, stderr, spy}
+}
+
+describe('runCli --event builds the context the jq blocks built', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['daily_digest', DIGEST_ENV, JQ_DIGEST],
+    [
+      'daily_digest',
+      {
+        ...DIGEST_ENV,
+        REPOS_TRACKED: '0',
+        SURVEYS_TODAY: '0',
+        REPORT_URL: 'https://github.com/fro-bot/.github/issues/1',
+      },
+      JQ_DIGEST_ZEROS,
+    ],
+    ['invitation_accepted', INVITATIONS_ENV, JQ_INVITATIONS],
+    [
+      'invitation_accepted',
+      {INVITATIONS_ACCEPTED: '1', INVITATIONS_REPOS: '[ { "owner" : "fro-bot" , "name" : "public-repo" } ]'},
+      JQ_INVITATIONS_SPACED,
+    ],
+    ['survey_completed', SURVEY_ENV, JQ_SURVEY],
+    [
+      'survey_completed',
+      {REPO_OWNER: 'é-org', REPO_NAME: 're"po', REPO_SLUG: 'é-org/re"po', WIKI_PAGES_CHANGED: ''},
+      JQ_SURVEY_EMPTY_PAGES,
+    ],
+  ] as const)('%s: the context serializes to the jq bytes and nothing else is printed', async (event, env, jqBytes) => {
+    const {result, stderr, spy} = await buildWith(event, {...env})
+    expect(result).toEqual({posted: true, status: 200})
+    expect(stderr).toBe('')
+    expect(spy).toHaveBeenCalledOnce()
+    const params = (spy.mock.calls as unknown as [{eventType: string; context: unknown}][])[0]?.[0]
+    expect(params?.eventType).toBe(event)
+    expect(JSON.stringify(params?.context)).toBe(jqBytes)
+  })
+
+  it('hands the announcer the gateway settings from the supplied env, and an empty string for a missing one', async () => {
+    const {spy} = await buildWith('daily_digest', {
+      ...DIGEST_ENV,
+      GATEWAY_ANNOUNCE_DISABLED: 'false',
+      GATEWAY_WEBHOOK_SECRET: 's3cret',
+      GATEWAY_PRESENCE_URL: 'https://gateway.example.com/presence',
+    })
+    expect(spy).toHaveBeenCalledWith({
+      eventType: 'daily_digest',
+      context: JQ_DIGEST_VALUE,
+      killSwitch: 'false',
+      secret: 's3cret',
+      url: 'https://gateway.example.com/presence',
+    })
+    const bare = await buildWith('daily_digest', DIGEST_ENV)
+    expect(bare.spy).toHaveBeenCalledWith(expect.objectContaining({killSwitch: '', secret: '', url: ''}))
+  })
+
+  it('reads a digit string with leading zeros as jq did', async () => {
+    const {spy} = await buildWith('daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '007'})
+    const params = (spy.mock.calls as unknown as [{context: unknown}][])[0]?.[0]
+    expect(params?.context).toEqual({repos_tracked: 7, surveys_today: 3, report_url: DIGEST_ENV.REPORT_URL})
+  })
+
+  it('survey_completed: an absent WIKI_PAGES_CHANGED is 0', async () => {
+    const {REPO_OWNER, REPO_NAME, REPO_SLUG} = SURVEY_ENV
+    const {spy} = await buildWith('survey_completed', {REPO_OWNER, REPO_NAME, REPO_SLUG})
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({context: {owner: 'acme', repo: 'widgets', slug: 'acme/widgets', wiki_pages_changed: 0}}),
+    )
+  })
+
+  it('invitation_accepted: an empty repos array is valid', async () => {
+    const {spy} = await buildWith('invitation_accepted', {INVITATIONS_ACCEPTED: '0', INVITATIONS_REPOS: '[]'})
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({context: {count: 0, repos: []}}))
+  })
+
+  it('treats an empty EVENT_TYPE and an empty EVENT_CONTEXT_JSON as unset', async () => {
+    const {result, spy} = await buildWith('daily_digest', {...DIGEST_ENV, EVENT_TYPE: '', EVENT_CONTEXT_JSON: ''})
+    expect(result).toEqual({posted: true, status: 200})
+    expect(spy).toHaveBeenCalledOnce()
+  })
+})
+
+describe('runCli --event rejects a context it cannot build', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const BAD_URL = 'https://github.com/fro-bot/.github/issues/99'
+  const cases: readonly (readonly [
+    string,
+    'daily_digest' | 'invitation_accepted' | 'survey_completed',
+    Record<string, string>,
+  ])[] = [
+    ['a non-numeric REPOS_TRACKED', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: 'leaky-value-1'}],
+    ['a negative REPOS_TRACKED', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '-1'}],
+    ['a fractional REPOS_TRACKED', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '1.5'}],
+    ['a REPOS_TRACKED with trailing text', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '1x'}],
+    ['a REPOS_TRACKED with leading text', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: 'x1'}],
+    ['a REPOS_TRACKED in exponent form', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '1e3'}],
+    ['a REPOS_TRACKED in hex form', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '0x10'}],
+    ['a REPOS_TRACKED with a trailing space', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '1 '}],
+    ['a REPOS_TRACKED with a leading space', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: ' 1'}],
+    ['a REPOS_TRACKED with a trailing newline', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '1\n'}],
+    ['a REPOS_TRACKED past the safe integers', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: '9007199254740993'}],
+    ['an empty REPOS_TRACKED', 'daily_digest', {...DIGEST_ENV, REPOS_TRACKED: ''}],
+    ['a missing REPOS_TRACKED', 'daily_digest', {SURVEYS_TODAY: '3', REPORT_URL: BAD_URL}],
+    ['a non-numeric SURVEYS_TODAY', 'daily_digest', {...DIGEST_ENV, SURVEYS_TODAY: 'leaky-value-2'}],
+    ['a missing SURVEYS_TODAY', 'daily_digest', {REPOS_TRACKED: '14', REPORT_URL: BAD_URL}],
+    ['an empty REPORT_URL', 'daily_digest', {...DIGEST_ENV, REPORT_URL: ''}],
+    ['a missing REPORT_URL', 'daily_digest', {REPOS_TRACKED: '14', SURVEYS_TODAY: '3'}],
+    [
+      'a non-numeric INVITATIONS_ACCEPTED',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_ACCEPTED: 'leaky-value-3'},
+    ],
+    ['a missing INVITATIONS_ACCEPTED', 'invitation_accepted', {INVITATIONS_REPOS: '[]'}],
+    [
+      'malformed INVITATIONS_REPOS JSON',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '{"leaky-value-4": oops'},
+    ],
+    ['an empty INVITATIONS_REPOS', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: ''}],
+    ['a missing INVITATIONS_REPOS', 'invitation_accepted', {INVITATIONS_ACCEPTED: '2'}],
+    [
+      'INVITATIONS_REPOS that is an object',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '{"owner":"a","name":"b"}'},
+    ],
+    ['INVITATIONS_REPOS that is null', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: 'null'}],
+    ['INVITATIONS_REPOS holding a number', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: '[1]'}],
+    ['INVITATIONS_REPOS holding null', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: '[null]'}],
+    ['INVITATIONS_REPOS holding an array', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: '[[]]'}],
+    [
+      'INVITATIONS_REPOS holding a string',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '["acme/widgets"]'},
+    ],
+    ['a repo with no name', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: '[{"owner":"acme"}]'}],
+    ['a repo with no owner', 'invitation_accepted', {...INVITATIONS_ENV, INVITATIONS_REPOS: '[{"name":"widgets"}]'}],
+    [
+      'a repo whose owner is not a string',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '[{"owner":1,"name":"w"}]'},
+    ],
+    [
+      'a repo whose name is not a string',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '[{"owner":"a","name":1}]'},
+    ],
+    [
+      'one good repo and one bad',
+      'invitation_accepted',
+      {...INVITATIONS_ENV, INVITATIONS_REPOS: '[{"owner":"a","name":"b"},{"owner":"a"}]'},
+    ],
+    ['an empty REPO_OWNER', 'survey_completed', {...SURVEY_ENV, REPO_OWNER: ''}],
+    ['a missing REPO_OWNER', 'survey_completed', {REPO_NAME: 'widgets', REPO_SLUG: 'acme/widgets'}],
+    ['an empty REPO_NAME', 'survey_completed', {...SURVEY_ENV, REPO_NAME: ''}],
+    ['a missing REPO_NAME', 'survey_completed', {REPO_OWNER: 'acme', REPO_SLUG: 'acme/widgets'}],
+    ['an empty REPO_SLUG', 'survey_completed', {...SURVEY_ENV, REPO_SLUG: ''}],
+    ['a missing REPO_SLUG', 'survey_completed', {REPO_OWNER: 'acme', REPO_NAME: 'widgets'}],
+    ['a non-numeric WIKI_PAGES_CHANGED', 'survey_completed', {...SURVEY_ENV, WIKI_PAGES_CHANGED: 'leaky-value-5'}],
+    ['a negative WIKI_PAGES_CHANGED', 'survey_completed', {...SURVEY_ENV, WIKI_PAGES_CHANGED: '-3'}],
+  ]
+
+  it.each(cases)(
+    '%s: one fixed line, a warning, no announcer call, and no input value in stderr',
+    async (_name, event, env) => {
+      const {result, stderr, spy} = await buildWith(event, env)
+      expect(result).toEqual({posted: false, failure: 'invalid-context'})
+      expect(stderr).toBe(
+        `gateway-announce: ${event} context invalid\n::warning::gateway-announce: ${event} context invalid\n`,
+      )
+      expect(stderr).not.toContain('leaky-value')
+      expect(spy).not.toHaveBeenCalled()
+    },
+  )
+
+  it('never echoes a secret-shaped value or the repos JSON', async () => {
+    const {stderr} = await buildWith('invitation_accepted', {
+      INVITATIONS_ACCEPTED: 'x',
+      INVITATIONS_REPOS: '[{"owner":"acme","name":"private-widget-8841"}]',
+    })
+    expect(stderr).not.toContain('private-widget-8841')
+  })
+})
+
+describe('runCli --event keeps the kill switch first and refuses a second input source', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('a kill switch skips before the builder validates, even for malformed input', async () => {
+    const {result, stderr, spy} = await buildWith('daily_digest', {
+      GATEWAY_ANNOUNCE_DISABLED: 'true',
+      REPOS_TRACKED: 'not-a-number',
+    })
+    expect(result).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(stderr).toBe('gateway-announce: kill switch active; skipping POST\n')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('a kill switch skips before the conflict check', async () => {
+    const {result, spy} = await buildWith('daily_digest', {
+      ...DIGEST_ENV,
+      GATEWAY_ANNOUNCE_DISABLED: '1',
+      EVENT_TYPE: 'daily_digest',
+    })
+    expect(result).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['EVENT_TYPE', {EVENT_TYPE: 'daily_digest'}],
+    ['EVENT_CONTEXT_JSON', {EVENT_CONTEXT_JSON: '{"a":1}'}],
+    ['both', {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: '{"a":1}'}],
+  ])('--event with %s set is refused with one fixed line and no announcer call', async (_name, extra) => {
+    const {result, stderr, spy} = await buildWith('daily_digest', {...DIGEST_ENV, ...extra})
+    expect(result).toEqual({posted: false, failure: 'conflicting-input'})
+    expect(stderr).toBe('gateway-announce: --event cannot be combined with EVENT_TYPE or EVENT_CONTEXT_JSON\n')
+    expect(stderr).not.toContain('{"a":1}')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('without --event, EVENT_TYPE and EVENT_CONTEXT_JSON behave as before', async () => {
+    const spy = vi.fn(async () => ({posted: true, status: 200}))
+    const result = await runCli(
+      {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: JQ_DIGEST, REPOS_TRACKED: 'ignored'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+    expect(result).toEqual({posted: true, status: 200})
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({eventType: 'daily_digest', context: JQ_DIGEST_VALUE}))
+  })
+})

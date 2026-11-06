@@ -294,6 +294,127 @@ describe('gateway-announce through scripts/gateway-announce.ts', () => {
     })
   })
 
+  // The context bytes the replaced `jq -nc` blocks printed for these inputs, captured from jq 1.8.2 on main at
+  // 5fcb3ca before the builders moved. The signed body must carry exactly these bytes.
+  it.each([
+    [
+      'daily_digest',
+      {REPOS_TRACKED: '14', SURVEYS_TODAY: '3', REPORT_URL: 'https://github.com/fro-bot/.github/issues/99'},
+      '{"repos_tracked":14,"surveys_today":3,"report_url":"https://github.com/fro-bot/.github/issues/99"}',
+    ],
+    [
+      'invitation_accepted',
+      {
+        INVITATIONS_ACCEPTED: '2',
+        INVITATIONS_REPOS: String.raw`[{"owner":"fro-bot","name":"public-repo"},{"owner":"acme","name":"wid\"gets"}]`,
+      },
+      String.raw`{"count":2,"repos":[{"owner":"fro-bot","name":"public-repo"},{"owner":"acme","name":"wid\"gets"}]}`,
+    ],
+    [
+      'survey_completed',
+      {REPO_OWNER: 'acme', REPO_NAME: 'widgets', REPO_SLUG: 'acme/widgets', WIKI_PAGES_CHANGED: '3'},
+      '{"owner":"acme","repo":"widgets","slug":"acme/widgets","wiki_pages_changed":3}',
+    ],
+    [
+      'survey_completed',
+      {REPO_OWNER: 'é-org', REPO_NAME: 're"po', REPO_SLUG: 'é-org/re"po', WIKI_PAGES_CHANGED: ''},
+      String.raw`{"owner":"é-org","repo":"re\"po","slug":"é-org/re\"po","wiki_pages_changed":0}`,
+    ],
+  ])(
+    '--event %s signs the same context bytes the jq block printed, from env alone',
+    async (eventType, env, jqBytes) => {
+      await withGateway([200], async gateway => {
+        const result = await run('gateway-announce', {
+          argv: ['--event', eventType],
+          env: announceEnv(gateway, {EVENT_TYPE: undefined, EVENT_CONTEXT_JSON: undefined, ...env}),
+        })
+        expect(result.exitCode).toBe(0)
+        expect(result.stdout).toBe('{"posted":true,"status":200}\n')
+        expect(result.stderr).toBe('')
+        expect(gateway.received).toHaveLength(1)
+        const [received] = gateway.received
+        const timestamp = String(received?.headers['x-gateway-timestamp'])
+        expect(received?.body).toBe(
+          `{"v":1,"event_type":"${eventType}","fired_at":"${timestamp}","context":${jqBytes},"rendered_text":null}`,
+        )
+        expect(received?.headers['x-gateway-signature']).toBe(
+          createHmac('sha256', SECRET)
+            .update(`${timestamp}.${received?.body ?? ''}`)
+            .digest('hex'),
+        )
+      })
+    },
+  )
+
+  it('--event exits 0 with a fixed line and a warning, and posts nothing, for a context it cannot build', async () => {
+    await withGateway([200], async gateway => {
+      const result = await run('gateway-announce', {
+        argv: ['--event', 'daily_digest'],
+        env: announceEnv(gateway, {
+          EVENT_TYPE: undefined,
+          EVENT_CONTEXT_JSON: undefined,
+          REPOS_TRACKED: 'leaky-value-9',
+          SURVEYS_TODAY: '3',
+          REPORT_URL: DIGEST_CONTEXT.report_url,
+        }),
+      })
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('{"posted":false,"failure":"invalid-context"}\n')
+      expect(result.stderr).toBe(
+        'gateway-announce: daily_digest context invalid\n::warning::gateway-announce: daily_digest context invalid\n',
+      )
+      expect(gateway.received).toEqual([])
+    })
+  })
+
+  it.each([
+    ['EVENT_TYPE', {EVENT_TYPE: 'daily_digest', EVENT_CONTEXT_JSON: undefined}],
+    ['EVENT_CONTEXT_JSON', {EVENT_TYPE: undefined, EVENT_CONTEXT_JSON: JSON.stringify(DIGEST_CONTEXT)}],
+  ])('--event with %s set exits 0 and posts nothing', async (_name, overrides) => {
+    await withGateway([200], async gateway => {
+      const result = await run('gateway-announce', {
+        argv: ['--event', 'daily_digest'],
+        env: announceEnv(gateway, {
+          ...overrides,
+          REPOS_TRACKED: '14',
+          SURVEYS_TODAY: '3',
+          REPORT_URL: DIGEST_CONTEXT.report_url,
+        }),
+      })
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('{"posted":false,"failure":"conflicting-input"}\n')
+      expect(gateway.received).toEqual([])
+    })
+  })
+
+  it('--event exits 0 and posts nothing on the kill switch, before it validates the context', async () => {
+    await withGateway([200], async gateway => {
+      const result = await run('gateway-announce', {
+        argv: ['--event', 'daily_digest'],
+        env: announceEnv(gateway, {
+          EVENT_TYPE: undefined,
+          EVENT_CONTEXT_JSON: undefined,
+          GATEWAY_ANNOUNCE_DISABLED: 'true',
+          REPOS_TRACKED: 'not-a-number',
+        }),
+      })
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('{"posted":false,"skipped":"kill-switch"}\n')
+      expect(result.stderr).toBe('gateway-announce: kill switch active; skipping POST\n')
+      expect(gateway.received).toEqual([])
+    })
+  })
+
+  it('--event bogus is a usage error that still exits 0 and posts nothing', async () => {
+    await withGateway([200], async gateway => {
+      const result = await run('gateway-announce', {argv: ['--event', 'bogus'], env: announceEnv(gateway)})
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('Usage')
+      expect(gateway.received).toEqual([])
+    })
+  })
+
   it('never prints the secret or the signature, on success or on a non-2xx', async () => {
     for (const status of [200, 404]) {
       await withGateway([status], async gateway => {

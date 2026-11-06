@@ -438,7 +438,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Eve
 
 ### PR D: announce builders
 
-- [ ] **Unit 6: Typed event builders in `gateway-announce`**
+- [x] **Unit 6: Typed event builders in `gateway-announce`**
 
 **Goal:** The three `jq` builders go, and a malformed input cannot fail the step.
 
