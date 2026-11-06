@@ -510,11 +510,35 @@ describe('survey-repo.yaml App-token persistence migration', () => {
 describe('survey-repo.yaml: survey-resolve — pre-agent App-token mint isolated from every agent job', () => {
   const resolveJob = workflowParsed.jobs['survey-resolve']
   const surveyJob = workflowParsed.jobs['survey-repo']
+  const expressionStart = '$' + '{{'
 
-  it('declares survey-resolve with no agent step and no checkout — it only mints and resolves', () => {
+  it('declares survey-resolve with no agent step — it only checks out the trusted action, mints and resolves', () => {
     expect(resolveJob).toBeDefined()
     expect(resolveJob?.steps.find(step => (step.uses ?? '').startsWith('fro-bot/agent@'))).toBeUndefined()
-    expect(resolveJob?.steps.find(step => (step.uses ?? '').startsWith('actions/checkout@'))).toBeUndefined()
+  })
+
+  it('survey-resolve holds exactly contents: read, the least privilege its trusted-code checkout needs', () => {
+    expect(resolveJob?.permissions).toStrictEqual({contents: 'read'})
+  })
+
+  it('survey-resolve checks out only .github/actions from the default branch, persisting no credentials', () => {
+    const checkouts = (resolveJob?.steps ?? []).filter(step => (step.uses ?? '').startsWith('actions/checkout@'))
+
+    expect(checkouts).toHaveLength(1)
+    expect(String(checkouts[0]?.with?.ref ?? '')).toBe(`${expressionStart} github.event.repository.default_branch }}`)
+    expect(checkouts[0]?.with?.['sparse-checkout']).toBe('.github/actions')
+    expect(checkouts[0]?.with?.['persist-credentials']).toBe(false)
+  })
+
+  it('survey-resolve runs the gate action after the checkout and after the token mint', () => {
+    const checkoutIndex = findStepIndex(resolveJob, step => (step.uses ?? '').startsWith('actions/checkout@'))
+    const mintIndex = findStepIndex(resolveJob, step => step.id === 'gate-token')
+    const gateIndex = findStepIndex(resolveJob, step => step.id === 'resolve')
+
+    expect(checkoutIndex).toBeGreaterThanOrEqual(0)
+    expect(gateIndex).toBeGreaterThan(checkoutIndex)
+    expect(gateIndex).toBeGreaterThan(mintIndex)
+    expect(resolveJob?.steps[gateIndex]?.uses).toBe('./.github/actions/resolve-public-repo')
   })
 
   it('exposes resolve-outcome/resolve-owner/resolve-repo as survey-resolve job outputs', () => {
@@ -684,8 +708,8 @@ describe('survey-repo.yaml/survey-persist.yaml A2: trusted-job privacy recheck',
 
   it('the recheck step uses its own dedicated recheck-token (not the data-write app-token), and REPO_PRIVATE downstream reads the local recheck output', () => {
     const recheckStep = persistJob?.steps.find(step => step.name === '🔒 Recheck visibility')
-    expect(String(recheckStep?.env?.GH_TOKEN ?? '')).toContain('steps.recheck-token.outputs.token')
-    expect(String(recheckStep?.env?.NODE_ID ?? '')).toContain('inputs.node_id')
+    expect(String(recheckStep?.with?.token ?? '')).toContain('steps.recheck-token.outputs.token')
+    expect(String(recheckStep?.with?.['node-id'] ?? '')).toContain('inputs.node_id')
 
     for (const stepName of ['Record survey result', 'Record survey result (cancelled/timeout fallback)']) {
       const step = persistJob?.steps.find(s => s.name === stepName)

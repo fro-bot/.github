@@ -72,7 +72,8 @@ env:
 
 jobs:
   # ─── Trusted pre-agent resolver: privacy verification only ──────────────────
-  # No agent step in this job, ever. actions/create-github-app-token declares a
+  # No agent step in this job, ever. The only code it checks out is the gate action, sparse and
+  # credential-free (see the checkout step). actions/create-github-app-token declares a
   # `post:` phase that re-reads its own `with:` inputs (client-id, APPLICATION_PRIVATE_KEY)
   # from runner state after every main step in the SAME job — including an agent step,
   # whose shell can tamper with the runner's _actions tree. Minting here, in a job with
@@ -82,7 +83,8 @@ jobs:
     name: Resolve and verify target repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read
     outputs:
       resolve-outcome: ${{ steps.resolve.outcome }}
       resolve-owner: ${{ steps.resolve.outputs.owner }}
@@ -102,6 +104,17 @@ jobs:
               ;;
           esac
 
+      # Trusted action code only: the gate is a local composite action, so the job needs `.github/actions`
+      # from the default branch (the same ref survey-persist runs). Sparse, and no credential is persisted.
+      # The workflow YAML itself still comes from the dispatch ref; pinning this checkout closes only the
+      # path where the action is edited but its caller is not.
+      - name: Checkout trusted action code (default branch)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
       # The privacy gate's only question is "is this node a public repository?" That
       # is a public read, but it must work for repos in any org the dispatch lands
       # on — including orgs whose policy forbids long-lived fine-grained PATs (e.g.
@@ -119,51 +132,10 @@ jobs:
 
       - name: 🔒 Resolve and verify
         id: resolve
-        env:
-          NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
-        run: |
-          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
-            printf 'Aborting: dispatch input shape invalid\n' >&2
-            exit 1
-          fi
-
-          # shellcheck disable=SC2016
-          gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
-          # Capture stderr to a temp file so a failure surfaces the real gh/GitHub error
-          # (auth, permission, rate limit, network) instead of a generic abort line.
-          gh_stderr=$(mktemp)
-          trap 'rm -f "$gh_stderr"' EXIT
-          if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
-            printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
-            # Use %s format so leading dashes in the marker are treated as arguments,
-            # not options (bash builtin printf otherwise rejects '---...' as an option).
-            printf '%s\n' '--- gh stderr ---' >&2
-            cat "$gh_stderr" >&2
-            printf '%s\n' '--- end gh stderr ---' >&2
-            exit 1
-          fi
-
-          name_with_owner=$(printf '%s' "$response" | jq -er '
-            .data.node
-            | select(type == "object")
-            | select(.isPrivate == false)
-            | select((.nameWithOwner | type) == "string")
-            | select(.nameWithOwner != "")
-            | .nameWithOwner
-          ') || {
-            printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
-            exit 1
-          }
-
-          resolved_owner="${name_with_owner%%/*}"
-          resolved_repo="${name_with_owner#*/}"
-
-          {
-            printf 'owner=%s\n' "$resolved_owner"
-            printf 'repo=%s\n' "$resolved_repo"
-            printf 'node_id=%s\n' "$NODE_ID"
-          } >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-public-repo
+        with:
+          node-id: ${{ inputs.node_id }}
+          token: ${{ steps.gate-token.outputs.token }}
 
   survey-repo:
     name: Survey Repo
@@ -614,44 +586,16 @@ jobs:
           # Only used for a public-node GraphQL visibility read — narrow to metadata.
           permission-metadata: read
 
-      # The privacy gate, run trusted-side. Same GraphQL query and fail-closed
-      # behavior as before A2; only the execution context moved. See the mint step
-      # above for why this runs on resolve-outcome, not agent-conclusion.
+      # The privacy gate, run trusted-side: the same action and allowlist as `resolve` in
+      # survey-resolve. See the mint step above for why this runs on resolve-outcome,
+      # not agent-conclusion.
       - name: 🔒 Recheck visibility
         id: recheck
         if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
-        env:
-          NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
-        run: |
-          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
-            printf 'Aborting: dispatch input shape invalid\n' >&2
-            exit 1
-          fi
-
-          # shellcheck disable=SC2016
-          gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
-          gh_stderr=$(mktemp)
-          trap 'rm -f "$gh_stderr"' EXIT
-          if ! response=$(gh api graphql \
-            -F id="$NODE_ID" \
-            -f query="$gql_query" \
-            2>"$gh_stderr"); then
-            printf 'GraphQL recheck failed for node_id: %s\n' "$NODE_ID" >&2
-            printf '%s\n' '--- gh stderr ---' >&2
-            cat "$gh_stderr" >&2
-            printf '%s\n' '--- end gh stderr ---' >&2
-            exit 1
-          fi
-
-          # No gh stderr dump here: a jq mismatch is a logic failure (repo flipped private /
-          # unexpected isPrivate value), not a gh transport/API error — there is no gh stderr to surface.
-          if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
-            printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
-            exit 1
-          fi
-
-          echo "private=false" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/resolve-public-repo
+        with:
+          node-id: ${{ inputs.node_id }}
+          token: ${{ steps.recheck-token.outputs.token }}
 
       - name: Sync wiki from data branch
         id: sync-wiki
