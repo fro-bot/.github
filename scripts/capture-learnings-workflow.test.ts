@@ -156,7 +156,8 @@ describe('capture-learnings.yaml harvest/draft/publish split', () => {
     expect(harvestIndex).toBeGreaterThan(overlayIndex)
     const overlayStep = harvestJob?.steps[overlayIndex]
     expect((overlayStep as WorkflowStep & {'continue-on-error'?: boolean})?.['continue-on-error']).toBeUndefined()
-    expect(String(overlayStep?.run ?? '')).toContain('git checkout origin/data -- metadata/')
+    expect(overlayStep?.uses).toBe('./.github/actions/sync-data')
+    expect(overlayStep?.with).toStrictEqual({paths: 'metadata/', 'if-absent': 'skip'})
   })
 
   it('the agent step uses the read-only workflow GITHUB_TOKEN, never a write token', () => {

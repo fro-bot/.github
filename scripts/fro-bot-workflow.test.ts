@@ -9,7 +9,7 @@
  */
 
 import {execFileSync} from 'node:child_process'
-import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -616,277 +616,13 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   })
 })
 
-describe('sync-wiki composite action: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
-  const syncWikiActionPath = resolve(import.meta.dirname, '../.github/actions/sync-wiki/action.yaml')
-  const syncWikiAction: unknown = parse(readFileSync(syncWikiActionPath, 'utf8'))
-  const syncStep = (syncWikiAction as {runs?: {steps?: WorkflowStep[]}}).runs?.steps?.find(
-    step => step.name === 'Sync wiki from data branch',
-  )
-  const runScript = String(syncStep?.run ?? '')
-
-  it('finds the Sync wiki from data branch step in the action file', () => {
-    expect(syncStep).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
-  })
-
-  it('pins shell: bash on the composite step (composite run steps have no default shell)', () => {
-    expect(syncStep?.shell).toBe('bash')
-  })
-
-  // Bounded, single-purpose fake `git`: only the three subcommands this step calls
-  // are recognized, each exits per an env var the test controls, and each appends its
-  // own name to a trace file so tests can assert which subcommands actually ran.
-  // ls-remote/fetch also accept a space-separated exit sequence (e.g. FAKE_GIT_FETCH_EXITS="128 128 0")
-  // consumed one value per call via a counter file, falling back to the fixed single-value var.
-  // Not a git reimplementation.
-  const fakeGit = [
-    '#!/bin/sh',
-    'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
-    'if [ -n "$FAKE_GIT_ECHO" ]; then echo "fake-git-output:$1" >&2; fi',
-    'next_from_sequence() {',
-    '  seq_var="$1"; counter_file="$2"; fallback_var="$3"',
-    String.raw`  eval "sequence=\$$seq_var"`,
-    '  if [ -z "$sequence" ]; then',
-    String.raw`    eval "exit \$$fallback_var"`,
-    '  fi',
-    '  count=$(cat "$counter_file" 2>/dev/null || echo 0)',
-    '  # shellcheck disable=SC2086',
-    '  value=$(echo $sequence | cut -d" " -f$((count + 1)))',
-    '  echo $((count + 1)) > "$counter_file"',
-    '  exit "$value"',
-    '}',
-    'case "$1" in',
-    '  ls-remote) next_from_sequence FAKE_GIT_LS_REMOTE_EXITS "$FAKE_GIT_TRACE_FILE.ls-remote-count" FAKE_GIT_LS_REMOTE_EXIT ;;',
-    '  fetch) next_from_sequence FAKE_GIT_FETCH_EXITS "$FAKE_GIT_TRACE_FILE.fetch-count" FAKE_GIT_FETCH_EXIT ;;',
-    '  rev-parse) echo "$FAKE_GIT_REV_PARSE_OUTPUT"; exit "$FAKE_GIT_REV_PARSE_EXIT" ;;',
-    '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
-    '  *) exit 0 ;;',
-    'esac',
-  ].join('\n')
-
-  function runSyncStep(env: Record<string, string>): {
-    status: number
-    stdout: string
-    stderr: string
-    trace: string[]
-    sleeps: string[]
-    pwned: boolean
-    githubOutput: string
-  } {
-    const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
-    try {
-      const gitPath = join(dir, 'git')
-      writeFileSync(gitPath, fakeGit)
-      chmodSync(gitPath, 0o755)
-      // Fake `sleep` records the requested delay instead of waiting, so backoff assertions cost no wall time.
-      const sleepLog = join(dir, 'sleeps')
-      writeFileSync(sleepLog, '')
-      const sleepPath = join(dir, 'sleep')
-      writeFileSync(sleepPath, `#!/bin/sh\necho "$1" >> "${sleepLog}"\n`)
-      chmodSync(sleepPath, 0o755)
-      const scriptPath = join(dir, 'step.sh')
-      writeFileSync(scriptPath, runScript)
-      const traceFile = join(dir, 'trace')
-      writeFileSync(traceFile, '')
-      const outputFile = join(dir, 'github-output')
-      writeFileSync(outputFile, '')
-      const runEnv = {
-        SYNC_WIKI_RETRY_DELAY_SECONDS: '0',
-        GITHUB_OUTPUT: outputFile,
-        FAKE_GIT_REV_PARSE_OUTPUT: 'abc123def456',
-        FAKE_GIT_REV_PARSE_EXIT: '0',
-        ...env,
-        PATH: `${dir}:${process.env.PATH ?? ''}`,
-        FAKE_GIT_TRACE_FILE: traceFile,
-      }
-      const stderrFile = join(dir, 'stderr')
-      let result: {status: number; stdout: string}
-      try {
-        const stdout = execFileSync('bash', ['-c', 'bash "$0" 2>"$1"', scriptPath, stderrFile], {
-          cwd: dir,
-          env: runEnv,
-          encoding: 'utf8',
-        })
-        result = {status: 0, stdout}
-      } catch (error) {
-        const failure = error as {status?: number; stdout?: string}
-        result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
-      }
-      const stderr = readFileSync(stderrFile, 'utf8')
-      const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
-      const sleeps = readFileSync(sleepLog, 'utf8').split('\n').filter(Boolean)
-      const githubOutput = readFileSync(outputFile, 'utf8')
-      return {...result, stderr, trace, sleeps, githubOutput, pwned: existsSync(join(dir, 'pwned'))}
-    } finally {
-      rmSync(dir, {recursive: true, force: true})
-    }
-  }
-
-  it('branch present, fetch and restore succeed: exits clean with no warning or skip message', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).toBe(0)
-    // the synced commit is exported for the ingest write guard
-    expect(result.githubOutput).toBe('data-sha=abc123def456\n')
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.stdout).not.toContain('not yet established')
-  })
-
-  it('data branch absent (ls-remote exit 2): informational message, no warning, exits clean', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).toBe(0)
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.stdout.toLowerCase()).toContain('not yet established')
-    // no data branch, so there is no synced commit to export
-    expect(result.githubOutput).toBe('')
-  })
-
-  it('writes data-sha only after the fetch and the restore both succeeded', () => {
-    const fetchFails = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
-    const restoreFails = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXIT: '0',
-      FAKE_GIT_FETCH_EXIT: '0',
-      FAKE_GIT_RESTORE_EXIT: '1',
-    })
-    const probeFails = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXIT: '128',
-      FAKE_GIT_FETCH_EXIT: '0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-
-    for (const result of [fetchFails, restoreFails, probeFails]) {
-      expect(result.status).not.toBe(0)
-      expect(result.githubOutput).toBe('')
-    }
-  })
-
-  it('fails closed, with no output, when the fetched commit cannot be resolved', () => {
-    const result = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXIT: '0',
-      FAKE_GIT_FETCH_EXIT: '0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-      FAKE_GIT_REV_PARSE_EXIT: '128',
-    })
-
-    expect(result.status).not.toBe(0)
-    expect(result.githubOutput).toBe('')
-    expect(result.trace).toEqual(['ls-remote', 'fetch', 'rev-parse'])
-  })
-
-  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed after 3 attempts with a byte-identical ::error::, no fetch/restore attempted', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain(
-      '::error::data branch probe failed (exit 128); refusing to run on a possibly stale knowledge/ snapshot.',
-    )
-    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
-    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'ls-remote'])
-  })
-
-  it('fetch fails after a successful probe: fails closed after 3 attempts with a byte-identical ::error::, no restore attempted', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).not.toBe(0)
-    expect(result.stdout).toContain(
-      '::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot.',
-    )
-    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
-    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch'])
-  })
-
-  it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
-    expect(result.status).not.toBe(0)
-  })
-
-  it('probe fails once, then succeeds: fetch and restore run, exits clean, exactly one ::warning::, no ::error::', () => {
-    const result = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXITS: '128 0',
-      FAKE_GIT_FETCH_EXIT: '0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-    expect(result.status).toBe(0)
-    expect(result.stdout).not.toContain('::error::')
-    expect(result.stdout.match(/::warning::/g)).toHaveLength(1)
-    expect(result.trace).toEqual(['ls-remote', 'ls-remote', 'fetch', 'rev-parse', 'restore'])
-  })
-
-  it('fetch fails twice, then succeeds: restore runs, exits clean, exactly two ::warning:: lines', () => {
-    const result = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXIT: '0',
-      FAKE_GIT_FETCH_EXITS: '1 1 0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-    expect(result.status).toBe(0)
-    expect(result.stdout).not.toContain('::error::')
-    expect(result.stdout.match(/::warning::/g)).toHaveLength(2)
-    expect(result.trace).toEqual(['ls-remote', 'fetch', 'fetch', 'fetch', 'rev-parse', 'restore'])
-  })
-
-  it('probe exit 2 (branch absent) is never retried: exactly one ls-remote call, no ::warning::', () => {
-    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).toBe(0)
-    expect(result.stdout).not.toContain('::warning::')
-    expect(result.trace).toEqual(['ls-remote'])
-  })
-
-  it('probe fails transiently, then reports branch absent: skips the sync but warns that absence followed a failure', () => {
-    const result = runSyncStep({
-      FAKE_GIT_LS_REMOTE_EXITS: '128 2',
-      FAKE_GIT_FETCH_EXIT: '0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain(
-      '::warning::data branch probe returned exit 2 on attempt 2/3 after earlier failures',
-    )
-    expect(result.stdout.toLowerCase()).toContain('not yet established')
-    expect(result.trace).toEqual(['ls-remote', 'ls-remote'])
-  })
-
-  it.each(['', '5s', 'a[$(touch pwned)]'])(
-    'falls back to the default delay when SYNC_WIKI_RETRY_DELAY_SECONDS is %j',
-    delay => {
-      const result = runSyncStep({
-        SYNC_WIKI_RETRY_DELAY_SECONDS: delay,
-        FAKE_GIT_LS_REMOTE_EXIT: '0',
-        FAKE_GIT_FETCH_EXITS: '1 0',
-        FAKE_GIT_RESTORE_EXIT: '0',
-      })
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain('retrying in 5s')
-      expect(result.sleeps).toEqual(['5'])
-      expect(result.pwned).toBe(false)
-    },
-  )
-
-  it('backs off linearly at the production default: 5s, then 10s (15s worst case)', () => {
-    const result = runSyncStep({
-      SYNC_WIKI_RETRY_DELAY_SECONDS: '',
-      FAKE_GIT_LS_REMOTE_EXIT: '0',
-      FAKE_GIT_FETCH_EXITS: '1 1 1',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-    expect(result.status).toBe(1)
-    expect(result.sleeps).toEqual(['5', '10'])
-  })
-
-  it('keeps git fetch output in the job log on every attempt while the probe stays silent', () => {
-    const result = runSyncStep({
-      FAKE_GIT_ECHO: '1',
-      FAKE_GIT_LS_REMOTE_EXIT: '0',
-      FAKE_GIT_FETCH_EXITS: '1 0',
-      FAKE_GIT_RESTORE_EXIT: '0',
-    })
-    expect(result.status).toBe(0)
-    expect(result.stderr.match(/fake-git-output:fetch/g)).toHaveLength(2)
-    expect(result.stderr).not.toContain('fake-git-output:ls-remote')
-  })
-})
-
 describe('fro-bot.yaml: all three jobs delegate wiki sync to the hardened composite action (regression guard against per-job drift)', () => {
   it.each(['fro-bot', 'fro-bot-remediate', 'fro-bot-observe'])(
-    '%s has a Sync wiki from data branch step using ./.github/actions/sync-wiki',
+    '%s has a Sync wiki from data branch step using ./.github/actions/sync-data for knowledge',
     jobName => {
       const syncStep = froBotParsed.jobs[jobName]?.steps?.find(step => step.name === 'Sync wiki from data branch')
-      expect(syncStep?.uses).toBe('./.github/actions/sync-wiki')
+      expect(syncStep?.uses).toBe('./.github/actions/sync-data')
+      expect(syncStep?.with).toStrictEqual({paths: 'knowledge', 'if-absent': 'skip'})
     },
   )
 
@@ -1263,42 +999,14 @@ describe('fro-bot-observe-announce: 🔒 Validate digest values — extract-and-
 })
 
 describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts (contract)', () => {
-  const syncWikiAction = parse(
-    readFileSync(resolve(import.meta.dirname, '../.github/actions/sync-wiki/action.yaml'), 'utf8'),
-  ) as {
-    outputs?: Record<string, {value?: string}>
-    runs?: {steps?: WorkflowStep[]}
-  }
-  const syncStep = syncWikiAction.runs?.steps?.find(step => step.name === 'Sync wiki from data branch')
   const expressionStart = '$' + '{{'
-
-  it('declares data-sha, sourced from the sync step', () => {
-    expect(syncStep?.id).toBe('sync')
-    expect(syncWikiAction.outputs?.['data-sha']?.value).toBe(`${expressionStart} steps.sync.outputs.data-sha }}`)
-  })
-
-  it('resolves FETCH_HEAD after the fetch, and writes the output after the restore, inside the fetch-success branch only', () => {
-    const run = syncStep?.run ?? ''
-    const fetchAt = run.indexOf('run_with_retry "data branch fetch"')
-    const resolveAt = run.indexOf('git rev-parse FETCH_HEAD')
-    const restoreAt = run.indexOf('git restore --source FETCH_HEAD')
-    const writeAt = run.indexOf('>> "$GITHUB_OUTPUT"')
-    const notEstablishedAt = run.indexOf('data branch not yet established')
-
-    expect(fetchAt).toBeGreaterThanOrEqual(0)
-    expect(resolveAt).toBeGreaterThan(fetchAt)
-    expect(restoreAt).toBeGreaterThan(resolveAt)
-    expect(writeAt).toBeGreaterThan(restoreAt)
-    expect(notEstablishedAt).toBeGreaterThan(writeAt)
-    expect(run.match(/GITHUB_OUTPUT/g)).toHaveLength(1)
-  })
 
   it.each([
     ['fro-bot-wiki-ingest', 'Ingest wiki insight changes'],
     ['fro-bot-observe-wiki-ingest', 'Ingest wiki insight changes'],
   ])('%s exports the sync step output to wiki-ingest.ts through env, not run:', (jobName, stepName) => {
     const job = froBotParsed.jobs[jobName]
-    const syncIndex = findStepIndex(job, step => step.uses === './.github/actions/sync-wiki')
+    const syncIndex = findStepIndex(job, step => step.uses === './.github/actions/sync-data')
     const ingestIndex = findStepIndex(job, step => step.name === stepName)
     const ingestStep = job?.steps?.[ingestIndex]
 
@@ -1316,7 +1024,7 @@ describe('wiki ingest write base: the synced data commit reaches wiki-ingest.ts 
   ])('%s hands its sync commit to %s through a job output, before any agent step', (agentJobName, ingestJobName) => {
     const agentJob = froBotParsed.jobs[agentJobName]
     const ingestJob = froBotParsed.jobs[ingestJobName]
-    const syncIndex = findStepIndex(agentJob, step => step.uses === './.github/actions/sync-wiki')
+    const syncIndex = findStepIndex(agentJob, step => step.uses === './.github/actions/sync-data')
     const firstAgentIndex = findStepIndex(agentJob, step => (step.uses ?? '').startsWith('fro-bot/agent@'))
     const applyStep = ingestJob?.steps?.find(step => step.name === 'Validate and apply wiki handoff')
     const ingestStep = ingestJob?.steps?.find(step => step.name === 'Ingest wiki insight changes')

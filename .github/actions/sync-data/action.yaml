@@ -1,0 +1,128 @@
+---
+name: Sync Data
+description: Restore paths from the data branch into the working tree, failing closed on any probe or fetch error
+
+inputs:
+  paths:
+    description: Whitespace-separated paths to restore from the data branch, each under `knowledge` (restored as a mirror of data, so a page data deleted is removed) or `metadata` (restored as an overlay, so a tracked file only the checkout has is kept). Any other path fails the step before git runs. Passed to `git restore` literally; globs are not expanded by the shell.
+    required: true
+  if-absent:
+    description: What to do when the data branch does not exist yet. `skip` exits clean with no data-sha; `fail` fails the step.
+    required: true
+
+outputs:
+  data-sha:
+    description: The data-branch commit the paths were restored from. Empty when the data branch is not yet established and `if-absent` is `skip`.
+    value: ${{ steps.sync.outputs.data-sha }}
+
+runs:
+  steps:
+    - name: Sync paths from data branch
+      id: sync
+      env:
+        SYNC_DATA_PATHS: ${{ inputs.paths }}
+        SYNC_DATA_IF_ABSENT: ${{ inputs.if-absent }}
+      run: |
+        set -euo pipefail
+
+        case "${SYNC_DATA_IF_ABSENT:-}" in
+          skip|fail) ;;
+          *)
+            echo "::error::sync-data: if-absent must be 'skip' or 'fail'."
+            exit 1
+            ;;
+        esac
+
+        # read -a splits on whitespace and never expands a glob, so a `*` reaches git restore as written.
+        declare -a sync_paths=()
+        IFS=$' \t\n' read -r -d '' -a sync_paths <<< "${SYNC_DATA_PATHS:-}" || true
+        if [ "${#sync_paths[@]}" -eq 0 ]; then
+          echo "::error::sync-data: paths must name at least one path."
+          exit 1
+        fi
+
+        # Restore mode follows the tree a path lives in, so each path must live in one of two:
+        #   knowledge  mirrors data (a page data deleted is removed from the checkout)
+        #   metadata   overlays data (a tracked file only the checkout has is kept)
+        # Anything else has no defined mode and is rejected before any git call, as is any `..` component.
+        declare -a mirror_paths=() overlay_paths=()
+        for sync_path in "${sync_paths[@]}"; do
+          case "/${sync_path}/" in
+            */../*)
+              echo "::error::sync-data: path escapes its tree: ${sync_path}"
+              exit 1
+              ;;
+          esac
+          case "$sync_path" in
+            knowledge|knowledge/*) mirror_paths+=("$sync_path") ;;
+            metadata|metadata/*) overlay_paths+=("$sync_path") ;;
+            *)
+              echo "::error::sync-data: path is not under knowledge or metadata: ${sync_path}"
+              exit 1
+              ;;
+          esac
+        done
+
+        retry_delay="${SYNC_WIKI_RETRY_DELAY_SECONDS:-5}"
+        case "$retry_delay" in ''|*[!0-9]*) retry_delay=5 ;; esac
+        max_attempts=3
+
+        # Runs a network git operation with bounded retry; skip_exit (if non-empty) returns immediately on that exit code; quiet=1 discards output.
+        run_with_retry() {
+          local op_name="$1" skip_exit="$2" quiet="$3" attempt=1 status delay
+          shift 3
+          while true; do
+            status=0
+            if [ "$quiet" = 1 ]; then
+              "$@" >/dev/null 2>&1 || status=$?
+            else
+              "$@" || status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              return 0
+            fi
+            if [ -n "$skip_exit" ] && [ "$status" -eq "$skip_exit" ]; then
+              if [ "$attempt" -gt 1 ]; then
+                echo "::warning::${op_name} returned exit ${status} on attempt ${attempt}/${max_attempts} after earlier failures"
+              fi
+              return "$status"
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              return "$status"
+            fi
+            delay=$((retry_delay * attempt))
+            echo "::warning::${op_name} failed (attempt ${attempt}/${max_attempts}); retrying in ${delay}s"
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
+        }
+
+        ls_remote_status=0
+        run_with_retry "data branch probe" 2 1 git ls-remote --exit-code origin data || ls_remote_status=$?
+        if [ "$ls_remote_status" -eq 0 ]; then
+          if run_with_retry "data branch fetch" "" 0 git fetch --no-tags origin data; then
+            data_sha="$(git rev-parse FETCH_HEAD)"
+            if [ "${#mirror_paths[@]}" -gt 0 ]; then
+              git restore --source FETCH_HEAD --worktree -- "${mirror_paths[@]}"
+            fi
+            if [ "${#overlay_paths[@]}" -gt 0 ]; then
+              git restore --source FETCH_HEAD --worktree --overlay -- "${overlay_paths[@]}"
+            fi
+            echo "data-sha=${data_sha}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::data branch fetch failed; refusing to continue on a possibly stale snapshot."
+            exit 1
+          fi
+        elif [ "$ls_remote_status" -eq 2 ]; then
+          if [ "$SYNC_DATA_IF_ABSENT" = fail ]; then
+            echo "::error::data branch not yet established; refusing to continue without it."
+            exit 1
+          fi
+          echo "data branch not yet established; skipping data sync."
+        else
+          echo "::error::data branch probe failed (exit $ls_remote_status); refusing to continue on a possibly stale snapshot."
+          exit 1
+        fi
+      shell: bash
+
+  using: composite

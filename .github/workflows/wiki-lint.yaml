@@ -42,22 +42,17 @@ jobs:
       - name: Restore wiki from data branch
         id: restore-wiki
         continue-on-error: true
-        run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --depth=1 origin data
-            git restore --source FETCH_HEAD --worktree -- knowledge
-            echo "data_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
-          else
-            printf '%s\n' 'cannot lint wiki snapshot: origin/data is unavailable' >&2
-            exit 1
-          fi
+        uses: ./.github/actions/sync-data
+        with:
+          paths: knowledge
+          if-absent: fail
 
       - name: Run wiki lint
         if: steps.restore-wiki.outcome == 'success'
         env:
           WIKI_LINT_REPORT_PATH: wiki-lint-report.md
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
-          WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data_sha }}
+          WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data-sha }}
         run: bun scripts/wiki-lint.ts
 
       - name: Compute repairable output
@@ -174,11 +169,10 @@ jobs:
 
       - name: Restore data snapshot
         id: restore-data
-        run: |
-          set -euo pipefail
-          git fetch --depth=1 origin data
-          git restore --source FETCH_HEAD --worktree -- knowledge metadata/repos.yaml
-          echo "data_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/sync-data
+        with:
+          paths: knowledge metadata/repos.yaml
+          if-absent: fail
 
       # Least-privilege write token, minted only in this job, skipped entirely
       # on dry-run dispatches (no write credential exists on a run that cannot write).
@@ -200,7 +194,7 @@ jobs:
           WIKI_REPAIR_RESULT_PATH: ${{ runner.temp }}/wiki-repair-result.json
           # Scheduled runs carry no inputs, so a schedule run is always live (not dry-run).
           WIKI_REPAIR_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          WIKI_REPAIR_DATA_TIP_SHA: ${{ steps.restore-data.outputs.data_sha }}
+          WIKI_REPAIR_DATA_TIP_SHA: ${{ steps.restore-data.outputs.data-sha }}
           WIKI_REPAIR_OWNER: ${{ github.repository_owner }}
           WIKI_REPAIR_REPO: ${{ github.event.repository.name }}
         run: bun scripts/wiki-repair.ts

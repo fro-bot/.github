@@ -718,10 +718,10 @@ describe('lintWikiSnapshot', () => {
     const workflow = await readFile('.github/workflows/wiki-lint.yaml', 'utf8')
 
     expect(workflow).toContain('fetch-depth: 1')
-    expect(workflow).toContain('git ls-remote --exit-code origin data')
-    expect(workflow).toContain('git fetch --depth=1 origin data')
+    // The probe, retry and fetch live in the shared action; the lint job must fail, not skip, on an absent branch.
+    expect(workflow).toContain('uses: ./.github/actions/sync-data')
+    expect(workflow).toContain('if-absent: fail')
     expect(workflow).toContain('cannot lint wiki snapshot')
-    expect(workflow).toContain('exit 1')
     expect(workflow).toContain('continue-on-error: true')
     expect(workflow).toContain('WIKI_LINT_FAILURE_MESSAGE')
     expect(workflow).toContain("steps.restore-wiki.outcome == 'failure'")
