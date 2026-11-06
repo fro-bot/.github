@@ -71,8 +71,8 @@ editor's.
 
 Review also flagged a second-order risk. Once checkout stops persisting credentials, every later
 `git fetch`, `git restore`, or `git push` that relied on them has to be audited. The wiki sync step
-was the case in point in #3878; it has since moved into `.github/actions/sync-wiki/action.yaml`, which
-fails closed (see Examples).
+was the case in point in #3878; it has since moved into `.github/actions/sync-data/action.yaml` (first
+`sync-wiki`, renamed 2026-11-05), which fails closed (see Examples).
 
 ## Guidance
 
@@ -152,7 +152,7 @@ downstream.
 ### Separate "branch absent" from "probe failed"
 
 A bare `if git ls-remote ...; then git fetch ...; fi` conflates a missing branch with a failed probe.
-The current `.github/actions/sync-wiki/action.yaml` discriminates on exit code, retries transient
+The current `.github/actions/sync-data/action.yaml` discriminates on exit code, retries transient
 failures, and refuses to continue on a possibly stale `knowledge/` snapshot:
 
 ```bash
@@ -229,6 +229,15 @@ Exemptions are keyed `file#job#step` (lines 65-68) and each must say why. The on
 `wiki-lint.yaml#wiki-lint#Restore wiki from data branch`, which treats an absent branch as fatal
 too. The test also fails if the old tolerant `if git ls-remote --exit-code origin data` form
 reappears anywhere except an exempt step.
+
+> **Update 2026-11-05.** All 17 shell copies of this contract, and the 7 steps that already called
+> `sync-wiki`, now call `.github/actions/sync-data` with `paths` and `if-absent` inputs. The
+> probe, retry and restore are pinned once, in `scripts/sync-data-action.test.ts`; the caller list
+> and its declared inputs are pinned in `scripts/data-sync-callers.test.ts`, which also fails on any
+> workflow `run:` step that fetches, checks out or restores from `origin data`. The enforcement test
+> described above, `scripts/data-branch-probe-workflows.test.ts`, no longer exists, and the shell
+> excerpts above are the pre-move forms. The action fetches with `--no-tags` and no depth limit and
+> restores the working tree only, so the overlay no longer leaves `metadata/` staged.
 
 A local check confirms the exit codes the form relies on: an absent ref exits 2 and an unreachable
 remote exits 128. The exit code for an authentication failure was not tested.
