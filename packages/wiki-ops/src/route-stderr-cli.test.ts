@@ -1,5 +1,15 @@
 import {Buffer} from 'node:buffer'
-import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
@@ -256,6 +266,34 @@ describe('a flag after the command, through the real entrypoint', () => {
   it('does not take an option value that starts with a dash for a flag after the command', async () => {
     const result = await spawnRouter(['--route', '-odd:=Heading', process.execPath, CHILD])
     expect(result.stderr).not.toContain('a flag after the command')
+  })
+})
+
+describe('the shim under a checkout path the URL form escapes', () => {
+  const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+
+  /**
+   * The smallest faithful setup: the real shim copied to `<root>/scripts/route-stderr.ts` under a directory whose
+   * name has a space, a `#` and a `%`, with `node_modules` linked to the repository's so the package import
+   * resolves. `import.meta.url` percent-encodes the path while `process.argv[1]` does not.
+   */
+  it('still runs the router and the wrapped command, and returns its exit code', async () => {
+    const checkout = join(dir, 'check out #1 100%')
+    mkdirSync(join(checkout, 'scripts'), {recursive: true})
+    symlinkSync(join(REPOSITORY_ROOT, 'node_modules'), join(checkout, 'node_modules'))
+    const shim = join(checkout, 'scripts', 'route-stderr.ts')
+    copyFileSync(ENTRYPOINT, shim)
+    const marker = join(dir, 'child-ran.json')
+
+    const result = await spawnEntrypoint({
+      entrypoint: shim,
+      argv: [...['--route', 'wiki-ingest:warning:=Wiki ingest warnings'], process.execPath, CHILD],
+      env: {GITHUB_STEP_SUMMARY: summaryPath, CASE_ARGV_FILE: marker, CASE_EXIT: '3', CASE_STDERR: 'plain\n'},
+    })
+
+    expect(existsSync(marker)).toBe(true)
+    expect(result.exitCode).toBe(3)
+    expect(result.stderr).toBe('plain\n')
   })
 })
 
