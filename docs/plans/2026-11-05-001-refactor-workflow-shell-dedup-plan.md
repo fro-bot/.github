@@ -373,7 +373,7 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fr
 
 **Test scenarios:**
 
-- Happy path: public repo → owner, repo, node-id written; exit 0.
+- Happy path: public repo → `owner`, `repo`, `node_id` written; exit 0.
 - Error path: private repo, null node, non-repository node, empty `nameWithOwner`, malformed JSON → non-zero, no outputs, stderr contains neither owner nor repo.
 - Error path: `isPrivate` absent, `null`, or the string `"false"` with a valid `nameWithOwner` → non-zero, no outputs.
 - Error path: `gh` exits non-zero with stderr naming a repository → non-zero, that text absent from the step's output.
