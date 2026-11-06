@@ -15,7 +15,7 @@ Every block of workflow shell that is copied across workflows gets one definitio
 
 Phase 1 moved `scripts/` into `@fro-bot/*` packages and left workflow YAML untouched (see origin: `docs/brainstorms/2026-10-24-scripts-workspace-packages-requirements.md`). The YAML still carries hand-copied shell, and the copies have drifted:
 
-- **Data sync.** Copying paths from the `data` branch into a checkout happens in 18 blocks: 17 overlay steps in 10 workflows plus the `sync-wiki` composite action, and wiki-repair's unprobed restore in `wiki-lint.yaml`. They use three fetch forms, two ways of laying files down (one stages them in the index, one does not), two absent-branch behaviours and five error strings. Only `sync-wiki` retries. `reconcile-repos.yaml` warns that a future step expecting a clean index would break on the staged files.
+- **Data sync.** Copying paths from the `data` branch into a checkout happens in 17 copied `run:` blocks across 10 workflows (16 probed overlay steps plus wiki-repair's unprobed restore in `wiki-lint.yaml`), and in the `sync-wiki` composite action that 7 more steps call. They use three fetch forms, two ways of laying files down (one stages them in the index, one does not), two absent-branch behaviours and five error strings. Only `sync-wiki` retries. `reconcile-repos.yaml` warns that a future step expecting a clean index would break on the staged files.
 - **Survey privacy gate.** `survey-repo.yaml` runs the `node(id)` visibility lookup twice, with different pass checks and error text. The `packages/privacy` resolver selects `nameWithOwner` only and makes no visibility decision, so these two workflow copies are the only visibility allowlist in the repo.
 - **Warning router.** The shell that redirects a CLI's stderr, routes prefixed lines to the step summary and maps wiki ingest's exit 3 to a page conflict exists three times around wiki ingest, two of them byte-identical. A fourth copy handles correction context with a different prefix.
 - **Gateway-announce event builder.** It exists three times as a `jq -nc` step in front of the CLI. The CLI never fails the run, but the `jq` step can, so the "announce never fails the run" comments on two copies overstate the guarantee.
@@ -31,7 +31,7 @@ A fix to any of these lands in one copy and silently misses the others. The data
 - R1. One composite action, built from `.github/actions/sync-wiki` and renamed `sync-data` because it now serves metadata too, performs every data sync. It takes the list of paths to sync, so one caller can sync `knowledge` and `metadata/repos.yaml` together.
 - R2. The action probes the branch first. Probe exit 0 syncs. Exit 2 (branch absent) follows the caller's required absent-branch input, `skip` or `fail`, with no default. Any other probe or fetch failure aborts the step after the bounded retry.
 - R3. The action fetches with `--no-tags` at full depth and restores into the working tree only, leaving the index clean. Restore is additive: files deleted on `data` are not removed from the checkout.
-- R4. All 18 blocks call the action, and so do the 7 steps that already use `sync-wiki`: 24 call sites in all. Each caller keeps its current absent-branch behaviour. Wiki-repair gains the probe and declares `fail`.
+- R4. The 17 copied `run:` blocks call the action, and so do the 7 steps that already use `sync-wiki`: 24 call sites in all. Each caller keeps its current absent-branch behaviour. Wiki-repair gains the probe and declares `fail`.
 - R5. The action exposes the synced `data` commit, as `sync-wiki` does today.
 
 **Survey privacy gate**
@@ -93,7 +93,7 @@ A fix to any of these lands in one copy and silently misses the others. The data
 - **Node IDs are treated as opaque.** The 2026-05-16 survey gate design accepts only an opaque `node_id` and logs it on refusal. This phase keeps that.
 - **Working-tree restore everywhere.** `sync-wiki`, survey and wiki-lint already do this. No step was found that relies on staged metadata: the handoff builders stage and read their own pathspec. The search covered `.github/workflows` and `packages/*/src`.
 - **Retry for every data sync caller.** Failure still aborts after the bounded attempts, so only timing changes.
-- **Full-depth fetch.** `--depth=1` would make the three callers with `fetch-depth: 0` shallow.
+- **Full-depth fetch.** `--depth=1` would make the sync-calling jobs with `fetch-depth: 0` (in survey-repo, fro-bot, draft-solutions and improvement-metrics) shallow.
 - **Draft-solutions publish keeps `skip` on an absent branch.** Its privacy check is a denylist, so an absent branch leaves it reading `main`'s metadata. This is an accepted gap: `data` is persistent and a ruleset blocks its deletion.
 - **Announce failures are redacted and annotated.** The runner prints `error.message` by default, which could echo the repo list the CLI redacts today. The annotation keeps a dropped event visible without failing the run.
 - **Prior work.** The phase 1 plan `docs/plans/2026-10-24-001-refactor-scripts-workspace-packages-plan.md` (status active, phase 1 units complete) records this work as deferred. `docs/solutions/workflow-issues/workflow-consolidation-invariant-trace-2026-06-24.md` (status active) is the checklist for tracing callers and invariants when consolidating workflow steps.

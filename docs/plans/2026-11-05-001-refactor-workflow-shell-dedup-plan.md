@@ -147,19 +147,22 @@ The copies have drifted in fetch form, index state, absent-branch behaviour, err
 ## Key Technical Decisions
 
 - **Two composite actions, two package changes.** Shell-only blocks become composite actions; blocks that wrap a package CLI become package code (see origin).
-- **Rename `sync-wiki` to `sync-data`.** It now syncs metadata too. The rename touches about nine test assertions that change in the same unit anyway.
-- **`sync-data` inputs: `paths` (required, whitespace-separated) and `if-absent` (required, `skip` or `fail`).** Both reach the shell through `env:` on the action's step. Error text names neither `knowledge/` nor a caller.
-- **Fetch never passes `--depth`.** Full-depth callers stay unshallow. Restore needs only the fetched tip, so the action does not unshallow anything. Wiki-lint and wiki-repair, which fetch `--depth=1` today, fetch the branch without a depth limit.
+- **Rename the action directory `sync-wiki` to `sync-data`; keep caller step ids.** The action now syncs metadata too. Caller steps keep their ids (`sync-wiki`, `restore-wiki`, `restore-data`, `onboarded`, `onboarded-persist`), so every `steps.<id>` reference and the pin in `scripts/trusted-wiki-env-source-guard.test.ts` stay valid. The retry knob keeps its name `SYNC_WIKI_RETRY_DELAY_SECONDS`, which existing tests set.
+- **`sync-data` inputs: `paths` (required, whitespace-separated) and `if-absent` (required, `skip` or `fail`).** Both reach the shell through `env:` on the action's step, and `paths` is split into an array with globbing off. Error text names neither `knowledge/` nor a caller. Callers are static and pinned by the caller table, so `paths` gets no allowlist.
+- **Fetch never passes `--depth`.** Full-depth callers stay unshallow. Restore needs only the fetched tip, so the action does not unshallow anything. Wiki-lint and wiki-repair, which fetch `--depth=1` today, fetch the branch without a depth limit. The PR records the measured fetch time; it is a note, not a gate.
 - **The fetched tip is the snapshot.** If `data` moves between probe and fetch, the action restores and reports the fetched SHA, as `sync-wiki` does.
 - **A missing requested path fails the step.** `git restore` rejects an unmatched pathspec before writing, so no SHA is emitted and later steps gated on success do not run. This is today's behaviour.
+- **Draft-solutions publish keeps `skip` on an absent branch.** Its privacy check is a denylist, so an absent branch leaves it reading `main`'s metadata. This is an accepted gap (see origin): `data` is persistent and a ruleset blocks its deletion.
 - **The gate action takes the App token as an input.** Relying on step `env:` reaching composite inner steps is unverified. The data sync takes no token.
-- **`survey-resolve` gains `contents: read` and a sparse, credential-free checkout of `.github/actions`.** A checkout under `permissions: {}` is unverified on this repo; `contents: read` is the least privilege that is known to work.
+- **`survey-resolve` gains `contents: read` and a sparse, credential-free checkout of `.github/actions` from the default branch.** This matches `survey-persist`'s trusted-code checkout. The workflow YAML itself still comes from the dispatch ref, so pinning the checkout closes only the edit-the-action-but-not-the-caller path. A checkout under `permissions: {}` is unverified here; `contents: read` is the least privilege known to work.
+- **The node-ID shape check matches the whole string.** Today's `printf | grep -qE` passes a multi-line value if any line matches (checked: `@x` + newline + `abc` passes). The action uses `[[ =~ ]]`.
 - **Gate refusals print a fixed reason plus the node ID.** The raw `gh` stderr dump goes, so no upstream message can name a repository.
-- **Gate outputs keep their names.** The action exposes `owner`, `repo`, `node-id` and `private`; the caller steps keep ids `resolve` and `recheck`, and the job's outputs map from the step outputs as today.
-- **The warning router is a wrapper CLI in `@fro-bot/wiki-ops` that runs the command after `--`.** The YAML keeps the literal `bun scripts/wiki-ingest.ts`, which the two writer-step guards depend on. A stderr-file renderer would leave the capture shell copied four times. wiki-ops already depends on `core` and `wiki-write-core`, so no new package edge appears.
-- **Router parameters:** one or more `--route <prefix>=<heading>` pairs, `--summary filtered|all`, and `--conflict-exit <code> --conflict-output <name>`. It replays stderr verbatim, appends summary sections, writes the conflict output only on the named exit code, and exits with the wrapped command's code.
-- **Typed announce builders are a second input source.** `--event daily-digest|invitation-accepted|survey-completed` builds the context from named env vars. `EVENT_CONTEXT_JSON` stays, and passing both is a usage error. Context key order matches today's `jq` output so the signed bytes do not change.
-- **Builder failures use a fixed `errorFormat`.** One `gateway-announce:` line naming the event type and a `::warning::` annotation, exit 0, no network call. The kill switch is still checked first. Survey's empty pages-changed value still defaults to 0.
+- **Gate outputs keep their names.** The action exposes `owner`, `repo`, `node_id` and `private`; the caller steps keep ids `resolve` and `recheck`, and the job's outputs map from the step outputs as today.
+- **The warning router is a wrapper CLI in `@fro-bot/wiki-ops` that takes the wrapped command as a trailing variadic positional.** The core runner rejects any `--` in argv, so the router's own flags come first and the command follows with no separator. The wrapped commands take no flags today; a flag after the command is a usage error (usage exit 1, so a misconfigured step fails loudly). A wrapped command that needs flags would need a runner change, which is out of scope. The YAML keeps the literal `bun scripts/wiki-ingest.ts`, which the two writer-step guards depend on. wiki-ops already depends on `core` and `wiki-write-core`, so no new package edge appears.
+- **Router parameters:** one or more `--route <prefix>=<heading>` (accepted as a string or an array, normalised to an array), `--summary filtered|all`, and `--conflict-exit <code> --conflict-output <name>`. The child is spawned from an argv array with no shell, inherits stdout, env and cwd unchanged, and has its stderr captured and replayed verbatim. Summary sections are written only when at least one line matches a route prefix; `all` then appends the whole stderr after the heading, `filtered` only the matching lines. The conflict output is written only on the named exit code, and the router exits with the wrapped command's code. No usage or error line echoes argv or env.
+- **Router mutation status:** `route-stderr.ts` joins Stryker's `mutate` list, with its test importing it by relative path; `route-stderr-cli.ts` goes into `mutation-guards.json` `not-mutated` with a goke-entrypoint reason like the existing CLI entries.
+- **Typed announce builders are a second input source.** `--event` takes today's `EVENT_TYPE` values (`daily_digest`, `invitation_accepted`, `survey_completed`) and replaces `EVENT_TYPE` in the three workflow steps. It builds the context from the env names those steps set today. `EVENT_CONTEXT_JSON` stays for its existing callers; `--event` together with `EVENT_CONTEXT_JSON` or `EVENT_TYPE` is a usage error. Context key order matches today's `jq` output so the signed bytes do not change.
+- **Builder failures use a fixed `errorFormat`.** One `gateway-announce:` line naming the event type and a `::warning::` annotation, exit 0, no network call. The kill switch is still checked first. Survey's empty pages-changed value still defaults to 0. The daily-digest `validated` step stays, so its gate on the announce step is unchanged.
 
 ## Open Questions
 
@@ -168,12 +171,14 @@ The copies have drifted in fetch form, index state, absent-branch behaviour, err
 - Checkout root and depth: every caller checks out at the workspace root; the action never passes `--depth`.
 - Missing restore path: the step fails with no SHA, as today.
 - `EVENT_CONTEXT_JSON`: kept beside the typed builders.
-- Router shape and home: wrapper CLI in wiki-ops.
+- Router shape and home: wrapper CLI in wiki-ops, command as a trailing variadic positional.
+- Wiki-repair live coverage: it runs only on repairable findings. No fixture forces one; PR A records it as not exercised until a real repair run happens.
 - Double sync calls in observe and survey: kept separate.
 
 ### Deferred to Implementation
 
 - The router CLI's final flag spelling, within the parameters above.
+- Whether `gh api graphql` exits 0 on a partial-errors payload. The gate's tests cover both outcomes.
 - Whether ESLint or actionlint covers `.github/actions/**`: check, and add coverage only if neither does.
 - Measured size of a full `data` fetch for wiki-lint, recorded in the PR body.
 
@@ -198,6 +203,39 @@ flowchart LR
 ```
 
 The data sync state machine is unchanged except for its parameters: probe → exit 0 fetch and restore and write `data-sha`; exit 2 skip (empty output) or fail per `if-absent`; any other exit retry then fail.
+
+## Data-sync caller table
+
+The caller-list test in Unit 3 holds this table. `paths` and `if-absent` match each site's behaviour today.
+
+| # | Workflow | Job | Step (id) | `paths` | `if-absent` | Must follow |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `capture-learnings.yaml` | `capture-learnings-harvest` | Overlay metadata | `metadata/` | skip | checkout |
+| 2 | `capture-learnings.yaml` | `capture-learnings-publish` | Overlay metadata | `metadata/` | skip | checkout |
+| 3 | `capture-patterns.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
+| 4 | `capture-patterns.yaml` | `open-publish` | Overlay metadata | `metadata/` | skip | checkout |
+| 5 | `cross-repo-dispatch.yaml` | `dispatch` | Overlay metadata | `metadata/` | skip | checkout |
+| 6 | `cross-repo-dispatch.yaml` | `track` | Overlay metadata | `metadata/` | skip | checkout |
+| 7 | `draft-solutions.yaml` | `publish` | Overlay metadata | `metadata/` | skip | checkout |
+| 8 | `fro-bot.yaml` | `fro-bot-observe` | Overlay metadata | `metadata/` | skip | checkout |
+| 9 | `fro-bot.yaml` | `fro-bot-observe-announce` | Overlay metadata | `metadata/` | skip | checkout |
+| 10 | `improvement-metrics.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
+| 11 | `reconcile-repos.yaml` | `reconcile-repos` | Overlay metadata | `metadata/` | skip | checkout |
+| 12 | `status-truth.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
+| 13 | `status-truth.yaml` | `open` | Overlay metadata | `metadata/` | skip | checkout |
+| 14 | `survey-repo.yaml` | `survey-repo` | new sync step before `onboarded` | `metadata` | skip | checkout |
+| 15 | `survey-repo.yaml` | `survey-persist` | new sync step before `onboarded-persist` | `metadata` | skip | `Validate and apply wiki handoff` |
+| 16 | `wiki-lint.yaml` | `wiki-lint` | `restore-wiki` | `knowledge` | fail | checkout |
+| 17 | `wiki-lint.yaml` | `wiki-repair` | `restore-data` | `knowledge metadata/repos.yaml` | fail | `Grandfather main's wiki repos` |
+| 18 | `fro-bot.yaml` | `fro-bot` | `sync-wiki` | `knowledge` | skip | checkout |
+| 19 | `fro-bot.yaml` | `fro-bot-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout |
+| 20 | `fro-bot.yaml` | `fro-bot-remediate` | (no id) | `knowledge` | skip | checkout |
+| 21 | `fro-bot.yaml` | `fro-bot-observe` | `sync-wiki` | `knowledge` | skip | checkout |
+| 22 | `fro-bot.yaml` | `fro-bot-observe-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout |
+| 23 | `survey-repo.yaml` | `survey-repo` | `sync-wiki` | `knowledge` | skip | checkout |
+| 24 | `survey-repo.yaml` | `survey-persist` | `sync-wiki` | `knowledge` | skip | checkout |
+
+Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fro-bot-remediate`'s later `Restore knowledge/ to a clean tree` step already compensates for additive restore.
 
 ## Implementation Units
 
@@ -243,13 +281,14 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 
 **Files:**
 
-- Create: `.github/actions/sync-data/action.yaml` (moved from `.github/actions/sync-wiki/action.yaml`)
+- Create: `.github/actions/sync-data/action.yaml`
+- Delete: `.github/actions/sync-wiki/action.yaml`
 - Create: `scripts/sync-data-action.test.ts`
 - Modify: `scripts/fro-bot-workflow.test.ts` (its `sync-wiki` matrix moves to the new test)
 
 **Approach:**
 
-- Inputs `paths` and `if-absent`, both required, passed through `env:`. Reject an `if-absent` value other than `skip` or `fail`, and an empty `paths`.
+- Inputs `paths` and `if-absent`, both required, passed through `env:`. Reject an `if-absent` value other than `skip` or `fail`, and an empty `paths`. Split `paths` into an array with globbing off.
 - Fetch `git fetch --no-tags origin data` with retry; restore `--worktree` only; write `data-sha` after restore.
 - Neutral error text.
 
@@ -265,6 +304,8 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Error path: fetch fails twice then succeeds → restored, `data-sha` written.
 - Error path: restore of a path missing on `data` → non-zero, no `data-sha`.
 - Error path: missing or invalid `if-absent`, empty `paths` → non-zero before any git call.
+- Edge case: a `paths` value containing `*` reaches `git restore` literally, not expanded against the checkout.
+- Edge case: `SYNC_WIKI_RETRY_DELAY_SECONDS` unset, numeric and non-numeric behave as in today's `sync-wiki` tests.
 - Integration: the action YAML contains no `${{` inside any `run:`.
 - Integration: a real temporary repo with a `data` branch, a shallow clone and a full clone. Sync restores the tip, leaves `git diff --cached` empty, and leaves the full clone unshallow.
 
@@ -282,23 +323,25 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 
 - Modify: `.github/workflows/capture-learnings.yaml`, `capture-patterns.yaml`, `cross-repo-dispatch.yaml`, `improvement-metrics.yaml`, `status-truth.yaml`, `fro-bot.yaml`, `draft-solutions.yaml`, `reconcile-repos.yaml`, `survey-repo.yaml`, `wiki-lint.yaml`
 - Create: `scripts/data-sync-callers.test.ts`
-- Delete: `scripts/data-branch-probe-workflows.test.ts` (its matrix moved to Unit 2)
-- Modify: `scripts/draft-solutions-workflow.test.ts`, `scripts/capture-learnings-workflow.test.ts`, `scripts/wiki-lint.test.ts`, `scripts/survey-repo-workflow.test.ts`, `scripts/fro-bot-workflow.test.ts`
+- Delete: `scripts/data-branch-probe-workflows.test.ts` (its exit-code matrix is covered by Unit 2's action test; its discovery role moves to the caller-list test)
+- Modify: `scripts/draft-solutions-workflow.test.ts`, `scripts/capture-learnings-workflow.test.ts`, `scripts/wiki-lint.test.ts`, `scripts/survey-repo-workflow.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/trusted-wiki-env-source-guard.test.ts` (only if its action-path pin changes)
 
 **Approach:**
 
-- 17 `run:` steps become `uses:` steps; the 7 existing `uses: sync-wiki` steps point at `sync-data` and gain `with:`.
-- Each caller keeps its absent-branch behaviour: `fail` for wiki-lint and wiki-repair, `skip` everywhere else. Reconcile's bootstrap message moves to its next step if anything reads it; otherwise it goes.
+- 17 `run:` steps become `uses:` steps; the 7 existing `uses: sync-wiki` steps point at `sync-data` and gain `with:`. The [caller table](#data-sync-caller-table) gives every site's job, step id, `paths`, `if-absent` and ordering.
+- Steps keep their ids. Wiki-lint's `restore-wiki` and wiki-repair's `restore-data` are the converted steps, so `steps.restore-wiki.outcome` and both `data-sha` reads keep resolving. Wiki-lint keeps `continue-on-error: true`.
+- Wiki-repair's sync stays after `Grandfather main's wiki repos`. That copy of main's pages is the privacy gate's grandfather input, so syncing first would let every data page match itself.
 - Survey's onboarded checks keep their step ids and names on the `check-repo-onboarded.ts` step; the sync is a new step before it.
-- Wiki-lint and wiki-repair read `steps.<id>.outputs.data-sha` instead of `data_sha`. Wiki-lint keeps `continue-on-error: true` and its `outcome` gate on the sync step.
+- Reconcile's bootstrap message goes; nothing reads it.
 - Remove the reconcile NOTE about staged metadata.
 
 **Test scenarios:**
 
-- Happy path: the caller-list test holds one entry per call site (workflow, job, step name, `paths`, `if-absent`) and finds exactly those 24 `uses:` steps.
-- Error path: removing a call site, adding an unlisted one, or changing a declared input fails the test.
-- Error path: any workflow `run:` step containing `ls-remote` together with `origin data`, or `restore --source FETCH_HEAD`, fails the test.
-- Integration: each call site comes after its job's `actions/checkout`.
+- Happy path: the caller-list test holds the caller table (workflow, job, step id or name, `paths`, `if-absent`, the step it must follow) and finds exactly those 24 `uses:` steps.
+- Error path: removing a call site, adding an unlisted one, changing a declared input, or reordering a site against its anchor step fails the test.
+- Error path: any workflow `run:` step that touches `origin data` through `ls-remote`, `fetch`, `checkout` or `restore`, or that pipes a fetch, checkout or restore into `|| true`, fails the test. `merge-data.yaml`'s promotion fetch is the one named exemption.
+- Integration: each call site comes after its job's `actions/checkout`; wiki-repair's comes after `Grandfather main's wiki repos`.
+- Integration: every `steps.<id>.outcome` and `steps.<id>.outputs.data-sha` reference in the moved workflows names a step that exists in the same job.
 - Integration: the draft-solutions and capture-learnings ordering assertions still hold with the sync step in the same position.
 - Integration: wiki-lint's lint and repair paths read `data-sha`, and `WIKI_REPAIR_DATA_TIP_SHA` still comes from the repair sync.
 
@@ -319,25 +362,28 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Create: `.github/actions/resolve-public-repo/action.yaml`
 - Create: `scripts/resolve-public-repo-action.test.ts`
 - Modify: `.github/workflows/survey-repo.yaml`
-- Modify: `scripts/survey-repo-workflow.test.ts`, `scripts/app-token-scope-guard.test.ts` (only if mint consumers are pinned by step)
+- Modify: `scripts/survey-repo-workflow.test.ts`. Its assertion that `survey-resolve` has no checkout, and the matching header comment in `survey-repo.yaml`, change on purpose to allow the sparse checkout. `scripts/app-token-scope-guard.test.ts` needs no change: mint permissions and reach do not move.
 
 **Approach:**
 
-- Inputs `node-id` and `token`, through `env:`. Shape check `^[A-Za-z0-9_=-]+$` before any call. One `node(id)` query selecting `nameWithOwner isPrivate`. Admit only `isPrivate == false` and a non-empty string `nameWithOwner`.
-- Outputs `owner`, `repo`, `node-id`, `private`. The `recheck` step maps `private` as today.
+- Inputs `node-id` and `token`, through `env:`. Whole-string shape check `^[A-Za-z0-9_=-]+$` before any call. One `node(id)` query selecting `nameWithOwner isPrivate`. Admit only `isPrivate == false` (boolean) and a non-empty string `nameWithOwner`.
+- Outputs `owner`, `repo`, `node_id`, `private`. The `recheck` step maps `private` as today.
 - Refusal and API-failure paths print a fixed reason and the node ID only, and never replay `gh` stderr.
-- `survey-resolve`: `contents: read`, a sparse checkout of `.github/actions` with `persist-credentials: false`, then the gate. `survey-persist` already checks out.
+- `survey-resolve`: `contents: read`, a sparse checkout of `.github/actions` from the default branch with `persist-credentials: false`, then the gate. `survey-persist` already checks out the default branch.
 
 **Test scenarios:**
 
 - Happy path: public repo → owner, repo, node-id written; exit 0.
 - Error path: private repo, null node, non-repository node, empty `nameWithOwner`, malformed JSON → non-zero, no outputs, stderr contains neither owner nor repo.
+- Error path: `isPrivate` absent, `null`, or the string `"false"` with a valid `nameWithOwner` → non-zero, no outputs.
 - Error path: `gh` exits non-zero with stderr naming a repository → non-zero, that text absent from the step's output.
-- Error path: malformed node ID → non-zero before `gh` runs.
+- Error path: `gh` exits 0 with a partial-errors payload → decided by the same allowlist; no outputs unless it passes.
+- Error path: malformed node ID, including a multi-line value whose second line is valid → non-zero before `gh` runs.
+- Integration: the action YAML contains no `${{` inside any `run:`, and the gate steps in `survey-repo.yaml` pass `node-id` and `token` through `with:` only.
 - Integration: `steps.recheck` conditions, `REPO_PRIVATE` env and job outputs resolve to the same names as before.
 - Integration: `survey-resolve` has exactly `contents: read`, its checkout is sparse to `.github/actions` and persists no credentials, and the gate step follows it.
 
-**Verification:** survey workflow tests pass; the scope-guard test passes.
+**Verification:** survey workflow tests pass; the scope-guard test passes unchanged.
 
 ### PR C: warning router
 
@@ -355,13 +401,14 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Test: `packages/wiki-ops/src/route-stderr.test.ts`, `packages/wiki-ops/src/route-stderr-cli.test.ts`, `packages/wiki-ops/src/route-stderr-prefixes.test.ts`
 - Modify: `.github/workflows/fro-bot.yaml` (two ingest steps), `.github/workflows/survey-repo.yaml` (ingest and corrections steps)
 - Modify: `scripts/survey-repo-workflow.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/fro-bot-workflow-wiki-handoff.test.ts`
-- Modify: `stryker.config.json` or `mutation-guards.json`, `packages/wiki-ops/README.md` (CLI table, C4 diagram), `.github/copilot-instructions.md` (wiki-ops CLI list and count)
+- Modify: `stryker.config.json` (`route-stderr.ts` and its test), `mutation-guards.json` (`route-stderr-cli.ts` not-mutated), `packages/wiki-ops/README.md` (CLI table, C4 diagram), `.github/copilot-instructions.md` (wiki-ops CLI list and count)
 
 **Approach:**
 
-- Spawn the command after `--` with the step's env and cwd, capture stderr, replay it to stderr unchanged, append summary sections per route, write the conflict output when the exit code matches, exit with the command's code.
-- `--summary all` reproduces the corrections step's unfiltered append; `filtered` reproduces the ingest steps.
-- Workflow steps read `bun scripts/route-stderr.ts --route … -- bun scripts/wiki-ingest.ts`, so the writer-step guards still find `wiki-ingest.ts`.
+- The command is a trailing variadic positional after the router's flags. Spawn it from that argv array with no shell; stdout, env and cwd are inherited, stderr is captured and replayed unchanged.
+- Summary sections only when a route prefix matches. `--summary all` then reproduces the corrections step's unfiltered append; `filtered` reproduces the ingest steps.
+- Workflow steps read `bun scripts/route-stderr.ts --route … bun scripts/wiki-ingest.ts`, so the writer-step guards still find `wiki-ingest.ts`.
+- The CLI's usage exit is 1, so a misconfigured step fails instead of skipping the ingest.
 
 **Execution note:** Capture each current step's summary and outputs for warning, finding, exit-3 and failure inputs first; the new steps must match byte for byte.
 
@@ -370,10 +417,15 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Happy path: exit 0 with two warnings → both replayed, summary has the heading and both lines, exit 0.
 - Happy path: survey routes → warnings and findings in separate sections.
 - Edge case: empty stderr → no summary section, exit 0.
-- Edge case: `--summary all` with non-prefixed failure text → whole stderr appended after the heading, matching today's corrections step.
+- Edge case: `--summary all` with one prefixed line among unprefixed failure text → heading plus the whole stderr, matching today's corrections step.
+- Edge case: `--summary all` with only unprefixed stderr → no summary section, stderr replayed unchanged.
+- Edge case: one `--route`, two `--route`s, none → parsed as one, two, and a usage error.
+- Edge case: an argument containing shell metacharacters reaches the child literally.
+- Edge case: the child writes `pages_changed` to `GITHUB_OUTPUT`; the router's `conflict` line is appended without overwriting it.
 - Error path: exit 3 with `--conflict-exit 3` → `conflict=true` written, exit 3.
 - Error path: exit 1 → no conflict output, exit 1.
-- Error path: no command after `--` → usage error.
+- Error path: no command, or a flag after the command → usage error, exit 1, the child never runs.
+- Integration: the CLI driven through `runCli` with each workflow step's exact argv runs the wrapped command and returns its exit code.
 - Integration: the prefix test runs the real emitters on fixtures and asserts every emitted prefix has a route in the workflows that call them.
 - Integration: `data-write-token-guard.test.ts` and `trusted-wiki-env-source-guard.test.ts` still count the same writer steps.
 
@@ -398,8 +450,8 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 
 **Approach:**
 
-- `--event <name>` reads named env vars (`REPOS_TRACKED`, `SURVEYS_TODAY`, `REPORT_URL`; `INVITATION_COUNT`, `INVITATION_REPOS`; `SURVEY_OWNER`, `SURVEY_REPO`, `SURVEY_SLUG`, `WIKI_PAGES_CHANGED`), validates types, and builds the context with today's key order.
-- Kill switch first; `--event` with `EVENT_CONTEXT_JSON` set is a usage error (exit 0 per the CLI's `usageCode`).
+- `--event <name>` takes `daily_digest`, `invitation_accepted` or `survey_completed` and reads the env names the steps set today: `REPOS_TRACKED`, `SURVEYS_TODAY`, `REPORT_URL`; `INVITATIONS_ACCEPTED`, `INVITATIONS_REPOS`; `REPO_OWNER`, `REPO_NAME`, `REPO_SLUG`, `WIKI_PAGES_CHANGED`. It validates types and builds the context with today's key order. The three steps drop `EVENT_TYPE`.
+- Kill switch first; `--event` together with `EVENT_CONTEXT_JSON` or `EVENT_TYPE` is a usage error (exit 0 per the CLI's `usageCode`).
 - A builder error prints `gateway-announce: <event> context invalid`, emits `::warning::`, makes no network call, exits 0.
 
 **Test scenarios:**
@@ -408,6 +460,8 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Edge case: empty `WIKI_PAGES_CHANGED` → 0.
 - Error path: non-numeric count, malformed repos JSON, missing required field → fixed line, warning annotation, exit 0, no fetch, input value absent from stderr.
 - Error path: kill switch on with malformed input → skipped before validation.
+- Error path: `--event` with `EVENT_CONTEXT_JSON` or `EVENT_TYPE` set → usage line, exit 0, no post.
+- Integration: each workflow announce step's env names match the names its `--event` builder reads.
 - Integration: `EVENT_CONTEXT_JSON` callers behave as before.
 - Integration: each workflow announce step passes `--event` and env only, with no `jq`.
 
@@ -418,15 +472,17 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - **Interaction graph:** ten workflows, two composite actions, two package CLIs. Survey is the densest: data sync ×4 steps, gate ×2, router ×2, announce ×1.
 - **Error propagation:** data sync and gate fail closed; the router passes the wrapped exit code through; announce never fails.
 - **State lifecycle:** synced files are unstaged in the working tree; nothing commits them.
-- **Unchanged invariants:** step ids `resolve`, `recheck`, `onboarded`, `onboarded-persist`; job outputs; `pages_changed` from the ingest CLI; signed announce bytes; the writer-step literal `wiki-ingest.ts`; every App-token mint's scope.
+- **Unchanged invariants:** step ids `resolve`, `recheck`, `onboarded`, `onboarded-persist`, `sync-wiki`, `restore-wiki`, `restore-data`; job outputs; `pages_changed` from the ingest CLI; signed announce bytes; the writer-step literal `wiki-ingest.ts`; every App-token mint's scope.
 
 ## Risks & Dependencies
 
 | Risk | Mitigation |
 | --- | --- |
 | A caller silently leaves coverage when its shell moves | Caller-list test with declared inputs; a forbidden-shell check over every workflow `run:` |
-| Full `data` fetch slows wiki-lint | Measure in PR A; accept if seconds, otherwise record and revisit |
-| Sparse checkout in `survey-resolve` loads a different revision of the action | Checkout of the workflow's own ref (default `actions/checkout` behaviour for dispatch) |
+| Full `data` fetch slows wiki-lint | Measured and recorded in PR A |
+| The gate runs a different revision of its action than the persist job | Both jobs check out the default branch |
+| Wiki-repair syncs before its grandfather copy and weakens the privacy gate | Caller table pins its anchor step; the caller test fails on reorder |
+| Draft-solutions publish skips on an absent branch with a denylist check | Accepted gap (see origin); `data` is persistent and deletion-protected |
 | Router replay changes a summary line | Capture current outputs before the change and match byte for byte |
 | Announce key order changes the signature | Flow test compares signed bytes against the `jq` build |
 
@@ -436,7 +492,7 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 - Each PR's evidence must show the moved steps executed, not only that runs passed:
   - **A:** next reconcile (daily), cross-repo-dispatch (6-hourly), daily Fro Bot run, then the Sunday chain (status-truth, capture-learnings, improvement-metrics, wiki-lint) and Monday draft-solutions. capture-patterns and survey need a dispatch, each approved first. Wiki-repair runs only on repairable findings; record it as not exercised until it does.
   - **B:** one approved survey dispatch of a known public repo shows `resolve` and `recheck` succeeding.
-  - **C:** the daily Fro Bot run and the same survey dispatch show the summary sections.
+  - **C:** the daily Fro Bot run, plus a new approved survey dispatch after merge, show the summary sections.
   - **D:** invitation polling and the daily digest show posted announcements; survey announce on the next survey.
 - Rollback for any PR is a revert; no data repair is involved.
 
