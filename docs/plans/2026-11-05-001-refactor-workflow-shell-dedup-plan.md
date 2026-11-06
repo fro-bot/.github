@@ -25,11 +25,11 @@ The copies have drifted in fetch form, index state, absent-branch behaviour, err
 
 ## Requirements Trace
 
-- R1–R5. Data sync: one action, probe exit 0/2/other with a required absent-branch input, bounded retry, `--no-tags` full-depth fetch, additive working-tree restore, exposes the synced SHA, 24 call sites.
+- R1–R5. Data sync: one action, probe exit 0/2/other with a required absent-branch input, bounded retry, `--no-tags` full-depth fetch, working-tree restore by tree (`knowledge` mirrors, `metadata` overlays), exposes the synced SHA, 24 call sites.
 - R6–R7. Privacy gate: one action holding the `isPrivate == false` allowlist with a node-ID shape check; refusals print a fixed reason and the node ID only.
 - R8–R9. Warning router: one parameterised router outside `packages/wiki-write-core`; emitter prefixes pinned by test.
 - R10. Announce: typed builders under the never-fail guard; builder errors print a fixed line, raise `::warning::`, exit 0.
-- R11. Parity except the named changes.
+- R11. Parity except the named changes, which now include survey's two metadata syncs moving from mirror to overlay.
 - R12. Each shared definition pinned once; explicit caller list with declared inputs.
 - R13. App-token scope contract and `env:`-only expression passing hold, inside actions too.
 - R14. Data sync takes no token; the gate takes the job's App token as an input.
@@ -149,6 +149,7 @@ The copies have drifted in fetch form, index state, absent-branch behaviour, err
 - **Two composite actions, two package changes.** Shell-only blocks become composite actions; blocks that wrap a package CLI become package code (see origin).
 - **Rename the action directory `sync-wiki` to `sync-data`; keep caller step ids.** The action now syncs metadata too. Caller steps keep their ids (`sync-wiki`, `restore-wiki`, `restore-data`, `onboarded`, `onboarded-persist`), so every `steps.<id>` reference and the pin in `scripts/trusted-wiki-env-source-guard.test.ts` stay valid. The retry knob keeps its name `SYNC_WIKI_RETRY_DELAY_SECONDS`, which existing tests set.
 - **`sync-data` inputs: `paths` (required, whitespace-separated) and `if-absent` (required, `skip` or `fail`).** Both reach the shell through `env:` on the action's step, and `paths` is split into an array with globbing off. Error text names neither `knowledge/` nor a caller. Callers are static and pinned by the caller table, so `paths` gets no allowlist.
+- **Restore mode follows the tree.** `git restore --source FETCH_HEAD --worktree` without `--overlay` removes tracked files absent from the source. `metadata` paths restore with `--overlay`, matching the `git checkout origin/data -- metadata/` the 15 metadata callers used, so a tracked file only the checkout carries survives. `knowledge` paths restore without it, a mirror, matching `sync-wiki` and wiki-lint. A `paths` list is grouped by tree and each group restored with its own mode, `knowledge` first. A path not under `knowledge` or `metadata`, or with a `..` component, has no defined mode and fails the step before any git call. Survey's two metadata syncs were mirrors (`git restore` without overlay) and become overlays; they read only `repos.yaml`, so the change is listed in R11. An earlier draft called restore additive for every copy, which was wrong for `knowledge` and for survey.
 - **Fetch never passes `--depth`.** Full-depth callers stay unshallow. Restore needs only the fetched tip, so the action does not unshallow anything. Wiki-lint and wiki-repair, which fetch `--depth=1` today, fetch the branch without a depth limit. The PR records the measured fetch time; it is a note, not a gate.
 - **The fetched tip is the snapshot.** If `data` moves between probe and fetch, the action restores and reports the fetched SHA, as `sync-wiki` does.
 - **A missing requested path fails the step.** `git restore` rejects an unmatched pathspec before writing, so no SHA is emitted and later steps gated on success do not run. This is today's behaviour.
@@ -208,34 +209,34 @@ The data sync state machine is unchanged except for its parameters: probe → ex
 
 The caller-list test in Unit 3 holds this table. `paths` and `if-absent` match each site's behaviour today.
 
-| # | Workflow | Job | Step (id) | `paths` | `if-absent` | Must follow |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | `capture-learnings.yaml` | `capture-learnings-harvest` | Overlay metadata | `metadata/` | skip | checkout |
-| 2 | `capture-learnings.yaml` | `capture-learnings-publish` | Overlay metadata | `metadata/` | skip | checkout |
-| 3 | `capture-patterns.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
-| 4 | `capture-patterns.yaml` | `open-publish` | Overlay metadata | `metadata/` | skip | checkout |
-| 5 | `cross-repo-dispatch.yaml` | `dispatch` | Overlay metadata | `metadata/` | skip | checkout |
-| 6 | `cross-repo-dispatch.yaml` | `track` | Overlay metadata | `metadata/` | skip | checkout |
-| 7 | `draft-solutions.yaml` | `publish` | Overlay metadata | `metadata/` | skip | checkout |
-| 8 | `fro-bot.yaml` | `fro-bot-observe` | Overlay metadata | `metadata/` | skip | checkout |
-| 9 | `fro-bot.yaml` | `fro-bot-observe-announce` | Overlay metadata | `metadata/` | skip | checkout |
-| 10 | `improvement-metrics.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
-| 11 | `reconcile-repos.yaml` | `reconcile-repos` | Overlay metadata | `metadata/` | skip | checkout |
-| 12 | `status-truth.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout |
-| 13 | `status-truth.yaml` | `open` | Overlay metadata | `metadata/` | skip | checkout |
-| 14 | `survey-repo.yaml` | `survey-repo` | new sync step before `onboarded` | `metadata` | skip | checkout |
-| 15 | `survey-repo.yaml` | `survey-persist` | new sync step before `onboarded-persist` | `metadata` | skip | `Validate and apply wiki handoff` |
-| 16 | `wiki-lint.yaml` | `wiki-lint` | `restore-wiki` | `knowledge` | fail | checkout |
-| 17 | `wiki-lint.yaml` | `wiki-repair` | `restore-data` | `knowledge metadata/repos.yaml` | fail | `Grandfather main's wiki repos` |
-| 18 | `fro-bot.yaml` | `fro-bot` | `sync-wiki` | `knowledge` | skip | checkout |
-| 19 | `fro-bot.yaml` | `fro-bot-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout |
-| 20 | `fro-bot.yaml` | `fro-bot-remediate` | (no id) | `knowledge` | skip | checkout |
-| 21 | `fro-bot.yaml` | `fro-bot-observe` | `sync-wiki` | `knowledge` | skip | checkout |
-| 22 | `fro-bot.yaml` | `fro-bot-observe-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout |
-| 23 | `survey-repo.yaml` | `survey-repo` | `sync-wiki` | `knowledge` | skip | checkout |
-| 24 | `survey-repo.yaml` | `survey-persist` | `sync-wiki` | `knowledge` | skip | checkout |
+| # | Workflow | Job | Step (id) | `paths` | `if-absent` | Must follow | Must precede (first consumer) | `if` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `capture-learnings.yaml` | `capture-learnings-harvest` | Overlay metadata | `metadata/` | skip | checkout | `Harvest candidates` | none |
+| 2 | `capture-learnings.yaml` | `capture-learnings-publish` | Overlay metadata | `metadata/` | skip | checkout | `Open learning-proposal issues` | none |
+| 3 | `capture-patterns.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout | `Detect candidate patterns` | none |
+| 4 | `capture-patterns.yaml` | `open-publish` | Overlay metadata | `metadata/` | skip | checkout | `Open pattern proposal issues` | none |
+| 5 | `cross-repo-dispatch.yaml` | `dispatch` | Overlay metadata | `metadata/` | skip | checkout | `Dispatch approved goal items` | none |
+| 6 | `cross-repo-dispatch.yaml` | `track` | Overlay metadata | `metadata/` | skip | checkout | `Track dispatched goal items` | none |
+| 7 | `draft-solutions.yaml` | `publish` | Overlay metadata | `metadata/` | skip | checkout | `Publish drafted solution docs` | none |
+| 8 | `fro-bot.yaml` | `fro-bot-observe` | Overlay metadata | `metadata/` | skip | checkout | `Query solutions context` | none |
+| 9 | `fro-bot.yaml` | `fro-bot-observe-announce` | Overlay metadata | `metadata/` | skip | checkout | `Derive daily digest counts` | none |
+| 10 | `improvement-metrics.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout | `Detect improvement-metric edges` | none |
+| 11 | `reconcile-repos.yaml` | `reconcile-repos` | Overlay metadata | `metadata/` | skip | checkout | `Reconcile repos` | none |
+| 12 | `status-truth.yaml` | `detect` | Overlay metadata | `metadata/` | skip | checkout | `Detect status-truth drift` | none |
+| 13 | `status-truth.yaml` | `open` | Overlay metadata | `metadata/` | skip | checkout | `Open status-truth proposals` | none |
+| 14 | `survey-repo.yaml` | `survey-repo` | new sync step before `onboarded` | `metadata` | skip | checkout | `Check repo onboarded` | none |
+| 15 | `survey-repo.yaml` | `survey-persist` | new sync step before `onboarded-persist` | `metadata` | skip | `Validate and apply wiki handoff` | `Re-check repo onboarded before the wiki commit` | `needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'` |
+| 16 | `wiki-lint.yaml` | `wiki-lint` | `restore-wiki` | `knowledge` | fail | checkout | `Run wiki lint` | none |
+| 17 | `wiki-lint.yaml` | `wiki-repair` | `restore-data` | `knowledge metadata/repos.yaml` | fail | `Grandfather main's wiki repos` | `Run wiki repair` | none |
+| 18 | `fro-bot.yaml` | `fro-bot` | `sync-wiki` | `knowledge` | skip | checkout | `Capture wiki baseline` | none |
+| 19 | `fro-bot.yaml` | `fro-bot-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout | `Validate and apply wiki handoff` | none |
+| 20 | `fro-bot.yaml` | `fro-bot-remediate` | (no id) | `knowledge` | skip | checkout | `Query wiki context` | none |
+| 21 | `fro-bot.yaml` | `fro-bot-observe` | `sync-wiki` | `knowledge` | skip | checkout | `Capture wiki baseline` | none |
+| 22 | `fro-bot.yaml` | `fro-bot-observe-wiki-ingest` | `sync-wiki` | `knowledge` | skip | checkout | `Validate and apply wiki handoff` | none |
+| 23 | `survey-repo.yaml` | `survey-repo` | `sync-wiki` | `knowledge` | skip | checkout | `Capture wiki baseline` | none |
+| 24 | `survey-repo.yaml` | `survey-persist` | `sync-wiki` | `knowledge` | skip | checkout | `Validate and apply wiki handoff` | `needs.survey-repo.outputs.wiki-artifact-ready == 'success' && steps.recheck.conclusion == 'success'` |
 
-Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fro-bot-remediate`'s later `Restore knowledge/ to a clean tree` step already compensates for additive restore.
+Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. Every job has a consuming step, so no row lacks a `Must precede` entry. The `Must precede` column is the first step that reads the files the sync restores; `Download` and token-mint steps in between do not. Rows 18–24 and 16–17 restore `knowledge` as a mirror, as `sync-wiki` did; `fro-bot-remediate`'s later `Restore knowledge/ to a clean tree` step is unchanged.
 
 ## Implementation Units
 
@@ -288,8 +289,8 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fr
 
 **Approach:**
 
-- Inputs `paths` and `if-absent`, both required, passed through `env:`. Reject an `if-absent` value other than `skip` or `fail`, and an empty `paths`. Split `paths` into an array with globbing off.
-- Fetch `git fetch --no-tags origin data` with retry; restore `--worktree` only; write `data-sha` after restore.
+- Inputs `paths` and `if-absent`, both required, passed through `env:`. Reject an `if-absent` value other than `skip` or `fail`, and an empty `paths`. Split `paths` into an array with globbing off. Group the paths by tree: `knowledge` restores as a mirror, `metadata` with `--overlay`, and any other path (or one with a `..` component) is rejected before any git call.
+- Fetch `git fetch --no-tags origin data` with retry; restore `--worktree` only, one call per mode group; write `data-sha` after every restore succeeded.
 - Neutral error text.
 
 **Execution note:** Start from the moved fro-bot matrix, then add the new input cases test-first.
@@ -297,17 +298,21 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fr
 **Test scenarios:**
 
 - Happy path: probe 0, fetch 0 → files restored for every listed path, `data-sha` written, index unchanged.
-- Happy path: two paths (`knowledge metadata/repos.yaml`) restored in one call.
+- Happy path: a mixed list (`knowledge metadata/repos.yaml`) restores `knowledge` as a mirror and `metadata/repos.yaml` as an overlay, one call each.
+- Happy path: a `metadata` path restores with `--overlay`; a `knowledge` path restores without it.
 - Edge case: probe 2 with `skip` → exit 0, no `data-sha`, no fetch.
 - Error path: probe 2 with `fail` → non-zero exit, no fetch.
 - Error path: probe exits 128 on every attempt → non-zero after three attempts, delays recorded.
 - Error path: fetch fails twice then succeeds → restored, `data-sha` written.
 - Error path: restore of a path missing on `data` → non-zero, no `data-sha`.
 - Error path: missing or invalid `if-absent`, empty `paths` → non-zero before any git call.
+- Error path: a path outside `knowledge` and `metadata` (`docs`, `knowledgebase`, `/etc/passwd`, `*`), or one with a `..` component → non-zero before any git call, whatever the branch state.
+- Error path: a failing `knowledge` restore stops before the `metadata` restore; no `data-sha`.
 - Edge case: a `paths` value containing `*` reaches `git restore` literally, not expanded against the checkout.
 - Edge case: `SYNC_WIKI_RETRY_DELAY_SECONDS` unset, numeric and non-numeric behave as in today's `sync-wiki` tests.
 - Integration: the action YAML contains no `${{` inside any `run:`.
 - Integration: a real temporary repo with a `data` branch, a shallow clone and a full clone. Sync restores the tip, leaves `git diff --cached` empty, and leaves the full clone unshallow.
+- Integration: a tracked metadata file only `main` has survives a `metadata` sync; a knowledge page deleted on `data` is removed by a `knowledge` sync; a mixed list does both; an unsupported path fails before git runs and touches nothing.
 
 **Verification:** every scenario passes; actionlint is clean.
 
@@ -337,8 +342,8 @@ Rows 1–17 are today's `run:` blocks; rows 18–24 already use `sync-wiki`. `fr
 
 **Test scenarios:**
 
-- Happy path: the caller-list test holds the caller table (workflow, job, step id or name, `paths`, `if-absent`, the step it must follow) and finds exactly those 24 `uses:` steps.
-- Error path: removing a call site, adding an unlisted one, changing a declared input, or reordering a site against its anchor step fails the test.
+- Happy path: the caller-list test holds the caller table (workflow, job, step id or name, `paths`, `if-absent`, the step it must follow, the first step that reads the synced files, the step's `if:`) and finds exactly those 24 `uses:` steps.
+- Error path: removing a call site, adding an unlisted one, changing a declared input or `if:`, or moving a site before its anchor step or after the first step that reads the files it restores fails the test.
 - Error path: any workflow `run:` step that touches `origin data` through `ls-remote`, `fetch`, `checkout` or `restore`, or that pipes a fetch, checkout or restore into `|| true`, fails the test. `merge-data.yaml`'s promotion fetch is the one named exemption.
 - Integration: each call site comes after its job's `actions/checkout`; wiki-repair's comes after `Grandfather main's wiki repos`.
 - Integration: every `steps.<id>.outcome` and `steps.<id>.outputs.data-sha` reference in the moved workflows names a step that exists in the same job.

@@ -237,7 +237,9 @@ reappears anywhere except an exempt step.
 > workflow `run:` step that fetches, checks out or restores from `origin data`. The enforcement test
 > described above, `scripts/data-branch-probe-workflows.test.ts`, no longer exists, and the shell
 > excerpts above are the pre-move forms. The action fetches with `--no-tags` and no depth limit and
-> restores the working tree only, so the overlay no longer leaves `metadata/` staged.
+> restores the working tree only, so the overlay no longer leaves `metadata/` staged. `metadata`
+> paths restore with `--overlay` (a tracked file only the checkout has survives) and `knowledge`
+> paths mirror `data`; any other path is rejected before git runs.
 
 A local check confirms the exit codes the form relies on: an absent ref exits 2 and an unreachable
 remote exits 128. The exit code for an authentication failure was not tested.
