@@ -208,6 +208,84 @@ describe('argv', () => {
   })
 })
 
+/** Runs the real entrypoint; `childRan` says whether the wrapped child fixture started. */
+async function spawnRouter(argv: readonly string[]) {
+  const marker = join(dir, 'child-ran.json')
+  const result = await spawnEntrypoint({
+    entrypoint: ENTRYPOINT,
+    argv,
+    env: {GITHUB_STEP_SUMMARY: summaryPath, CASE_ARGV_FILE: marker, CASE_EXIT: '0'},
+  })
+  return {...result, childRan: existsSync(marker)}
+}
+
+describe('a flag after the command, through the real entrypoint', () => {
+  const routerFlags = ['--route', 'wiki-ingest:warning:=Wiki ingest warnings']
+
+  it('control: the same argv without the trailing flag runs the child', async () => {
+    const result = await spawnRouter([...routerFlags, '--summary', 'all', process.execPath, CHILD])
+    expect(result.exitCode).toBe(0)
+    expect(result.childRan).toBe(true)
+  })
+
+  it.each([
+    ['a recognised flag with a separate value', ['--summary', 'all']],
+    ['a recognised flag in the = form', ['--summary=all']],
+    ['a second --route', ['--route', 'x=y']],
+    ['a conflict flag', ['--conflict-exit', '3']],
+    ['an unknown flag', ['--bogus']],
+    ['a short flag', ['-x']],
+    ['help', ['--help']],
+  ])('%s is a usage error: exit 1, and the child is never started', async (_name, trailing) => {
+    const result = await spawnRouter([...routerFlags, process.execPath, CHILD, ...trailing])
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      "route-stderr: a flag after the command is not allowed: the command follows the router's flags and takes no flags of its own\n",
+    )
+    expect(result.childRan).toBe(false)
+    expect(readFileSync(summaryPath, 'utf8')).toBe('')
+  })
+
+  it('does not echo the flag, the command or the environment', async () => {
+    const result = await spawnRouter([...routerFlags, process.execPath, CHILD, '--secret-flag=hunter2'])
+    expect(result.stderr).not.toContain('hunter2')
+    expect(result.stderr).not.toContain(CHILD)
+  })
+
+  it('does not take an option value that starts with a dash for a flag after the command', async () => {
+    const result = await spawnRouter(['--route', '-odd:=Heading', process.execPath, CHILD])
+    expect(result.stderr).not.toContain('a flag after the command')
+  })
+})
+
+describe('the usage text', () => {
+  it('carries an example, the route syntax, both summary modes, the paired conflict flags and the no-flags rule', async () => {
+    const result = await runCli(routeStderrCli(), {argv: ['--help'], env: runnerEnv()})
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    for (const part of [
+      'bun scripts/route-stderr.ts --route',
+      '--route <prefix>=<heading>',
+      '--summary filtered|all',
+      '--conflict-exit <code>',
+      '--conflict-output <name>',
+      'together',
+      'no `--`',
+      'no flags of its own',
+    ]) {
+      expect(result.stderr, part).toContain(part)
+    }
+  })
+
+  it('is the text a usage error prints after its message', async () => {
+    const help = await runCli(routeStderrCli(), {argv: ['--help'], env: runnerEnv()})
+    const bad = await runCli(routeStderrCli(), {argv: ['--route', 'a:=B', '--bogus', 'x'], env: runnerEnv()})
+    expect(bad.exitCode).toBe(1)
+    expect(bad.stderr.endsWith(help.stderr)).toBe(true)
+  })
+})
+
 describe('main', () => {
   it('runs the CLI against process.argv and sets the exit code', async () => {
     const argv = process.argv
@@ -220,6 +298,27 @@ describe('main', () => {
     }
     expect(process.exitCode).toBe(1)
     expect(write).toHaveBeenCalled()
+  })
+})
+
+describe('main with a flag after the command', () => {
+  it('writes the usage line, exits 1 and never starts the command', async () => {
+    const argv = process.argv
+    process.argv = [argv[0] ?? '', argv[1] ?? '', ROUTE, ...CHILD_COMMAND, '--summary', 'all']
+    vi.stubEnv('CASE_ARGV_FILE', argvFile)
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      await main()
+    } finally {
+      process.argv = argv
+      vi.unstubAllEnvs()
+    }
+    expect(process.exitCode).toBe(1)
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(String(write.mock.calls[0]?.[0])).toBe(
+      "route-stderr: a flag after the command is not allowed: the command follows the router's flags and takes no flags of its own\n",
+    )
+    expect(existsSync(argvFile)).toBe(false)
   })
 })
 

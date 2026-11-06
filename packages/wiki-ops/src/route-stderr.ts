@@ -75,6 +75,34 @@ export function parseRoute(spec: string): Route {
   return {prefix, heading}
 }
 
+/** The router options that take a value, in `--flag value` or `--flag=value` form. */
+function optionTakesValue(token: string): boolean {
+  return token === '--route' || token === '--summary' || token === '--conflict-exit' || token === '--conflict-output'
+}
+
+/** The index of the command in `argv`, or -1: the first token that is not an option, an option's value or a `--`. */
+function commandIndex(argv: readonly string[]): number {
+  let valueNext = false
+  for (const [index, token] of argv.entries()) {
+    if (valueNext) valueNext = false
+    else if (token === '--') return -1
+    else if (optionTakesValue(token)) valueNext = true
+    else if (!token.startsWith('-')) return index
+  }
+  return -1
+}
+
+/**
+ * Whether a token that starts with a dash follows the command in `argv` (the arguments after the script path).
+ * The wrapped commands take no flags, so a later token with a dash is refused, and the goke runner, which reads
+ * the router's own flags wherever they appear, never gets to treat it as one. This reads raw argv, so it runs
+ * before the runner. An unknown flag before the command, a `--` and help are left to the runner.
+ */
+export function hasFlagAfterCommand(argv: readonly string[]): boolean {
+  const at = commandIndex(argv)
+  return at !== -1 && argv.slice(at + 1).some(token => token.startsWith('-'))
+}
+
 /** A name `$GITHUB_OUTPUT` can carry without a delimiter. The pattern is anchored and has no nested quantifier. */
 function isOutputName(value: string): boolean {
   return /^[\w-]+$/u.test(value)

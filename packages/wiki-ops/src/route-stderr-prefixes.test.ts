@@ -14,18 +14,81 @@ import {buildSummary, parseRoute, type Route} from './route-stderr.ts'
  * here: adding a kind to an emitter fails this test until a step routes it, or this file says why it does not.
  */
 
-const WIKI_INGEST_SOURCE = readFileSync(
-  fileURLToPath(new URL('../../wiki-write-core/src/wiki-ingest.ts', import.meta.url)),
-  'utf8',
-)
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 
-/** Every `wiki-ingest:<kind>:` literal the emitter's source writes to stderr. */
-function emittedWikiIngestKinds(): string[] {
-  const kinds = new Set<string>()
-  for (const match of WIKI_INGEST_SOURCE.matchAll(/process\.stderr\.write\(\s*`wiki-ingest:([a-z]+):/gu)) {
-    if (match[1] !== undefined) kinds.add(match[1])
+/**
+ * Every non-test source file that can write a `wiki-ingest:` line: the whole published package the ingest comes
+ * from, and the script that wraps it.
+ */
+function emitterSources(): {file: string; text: string}[] {
+  const directory = join(REPOSITORY_ROOT, 'packages/wiki-write-core/src')
+  const files = readdirSync(directory)
+    .filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+    .map(name => join(directory, name))
+  files.push(join(REPOSITORY_ROOT, 'scripts/wiki-ingest.ts'))
+  return files.map(file => ({file, text: readFileSync(file, 'utf8')}))
+}
+
+/** Lines with this text after `wiki-ingest:` are diagnostics for a person, not routed records. */
+const NON_RECORD_FOLLOW = ' '
+
+/** Every place `text` mentions `wiki-ingest` followed by a colon, and what follows. */
+function colonMentions(text: string): string[] {
+  const needle = 'wiki-ingest:'
+  const mentions: string[] = []
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    mentions.push(text.slice(at + needle.length, at + needle.length + 40))
   }
-  return [...kinds].sort()
+  return mentions
+}
+
+/** A `<kind>:` at the start of `rest`, where a kind is lowercase letters and dashes. */
+function leadingKind(rest: string): string | undefined {
+  const colon = rest.indexOf(':')
+  if (colon < 1) return undefined
+  const kind = rest.slice(0, colon)
+  return [...kind].every(char => (char >= 'a' && char <= 'z') || char === '-') ? kind : undefined
+}
+
+interface EmitterScan {
+  /** Kinds written as a `wiki-ingest:<kind>:` literal, in any quoting, call or template form. */
+  readonly kinds: string[]
+  /** Mentions that are neither a `<kind>:` literal nor the allowed `wiki-ingest: <text>` diagnostic form. */
+  readonly unrecognised: string[]
+}
+
+function scanEmitters(sources: readonly {file: string; text: string}[]): EmitterScan {
+  const kinds = new Set<string>()
+  const unrecognised: string[] = []
+  for (const {file, text} of sources) {
+    for (const rest of colonMentions(text)) {
+      const kind = leadingKind(rest)
+      if (kind !== undefined) kinds.add(kind)
+      else if (!rest.startsWith(NON_RECORD_FOLLOW)) unrecognised.push(`${file}: wiki-ingest:${rest}`)
+    }
+    // The literal split around a variable or a plus sign cannot be matched to a route, so it is refused.
+    for (const split of [
+      "'wiki-ingest' +",
+      '"wiki-ingest" +',
+      '`wiki-ingest${',
+      "'wiki-ingest:' +",
+      '"wiki-ingest:" +',
+    ]) {
+      if (text.includes(split)) unrecognised.push(`${file}: builds the prefix in pieces (${split})`)
+    }
+  }
+  return {kinds: [...kinds].sort(), unrecognised}
+}
+
+const emittedWikiIngestKinds = (): string[] => scanEmitters(emitterSources()).kinds
+
+/**
+ * Kinds an ingest step deliberately does not route. The fro-bot ingest steps never routed findings; the survey
+ * commit step routes every kind. An entry here must be true: a routed kind listed as unrouted fails.
+ */
+const UNROUTED_KINDS: Readonly<Record<string, readonly string[]>> = {
+  'fro-bot-ingest': ['finding'],
+  'survey-wiki-commit': [],
 }
 
 function routesOf(step: RouterStep): Route[] {
@@ -80,8 +143,56 @@ describe('every workflow step that runs an emitter', () => {
 })
 
 describe('the wiki-ingest emitter', () => {
-  it('writes exactly the kinds `warning` and `finding`', () => {
-    expect(emittedWikiIngestKinds()).toStrictEqual(['finding', 'warning'])
+  it('writes exactly the kinds `warning` and `finding`, in every file that can write a wiki-ingest line', () => {
+    const scan = scanEmitters(emitterSources())
+    expect(scan.kinds).toStrictEqual(['finding', 'warning'])
+    expect(scan.unrecognised).toStrictEqual([])
+  })
+
+  it('scans the whole package and the wrapping script', () => {
+    const files = emitterSources().map(source => source.file)
+    expect(files.some(file => file.endsWith('packages/wiki-write-core/src/wiki-ingest.ts'))).toBe(true)
+    expect(files.some(file => file.endsWith('scripts/wiki-ingest.ts'))).toBe(true)
+    expect(files.some(file => file.endsWith('.test.ts'))).toBe(false)
+  })
+
+  describe('the scan', () => {
+    const scan = (text: string): EmitterScan => scanEmitters([{file: 'x.ts', text: text.replaceAll('@{', '${')}])
+
+    it.each([
+      ['a template literal', 'process.stderr.write(`wiki-ingest:warning:@{x}\\n`)'],
+      ['a single-quoted string', "process.stderr.write('wiki-ingest:warning:' + x)"],
+      ['a double-quoted string', String.raw`process.stderr.write("wiki-ingest:warning:x\n")`],
+      ['a helper argument', 'emit(`wiki-ingest:warning:@{x}`)'],
+      ['a constant', "const PREFIX = 'wiki-ingest:warning:'"],
+      ['a multi-line call', 'process.stderr.write(\n  `wiki-ingest:warning:@{x}`,\n)'],
+    ])('finds the kind in %s', (_name, text) => {
+      expect(scan(text).kinds).toStrictEqual(['warning'])
+    })
+
+    it('collects different kinds, once each', () => {
+      const result = scan('a(`wiki-ingest:b-kind:`); a(`wiki-ingest:a:`); a(`wiki-ingest:a:`)')
+      expect(result.kinds).toStrictEqual(['a', 'b-kind'])
+      expect(result.unrecognised).toStrictEqual([])
+    })
+
+    it('allows the human diagnostic form `wiki-ingest: <text>`', () => {
+      const result = scan('process.stderr.write(`::error::wiki-ingest: @{message}\\n`)')
+      expect(result.kinds).toStrictEqual([])
+      expect(result.unrecognised).toStrictEqual([])
+    })
+
+    it.each([
+      ['a kind built from a variable', 'write(`wiki-ingest:@{kind}:x`)'],
+      ['an upper-case kind', 'write(`wiki-ingest:Warning:x`)'],
+      ['a kind with no closing colon', 'write(`wiki-ingest:warning`)'],
+      ['an empty kind', 'write(`wiki-ingest::x`)'],
+      ['the prefix joined to a variable', "write('wiki-ingest:' + kind + ':')"],
+      ['the name split from the colon', "write('wiki-ingest' + ':warning:')"],
+      ['a template that starts with the name', 'write(`wiki-ingest@{sep}warning:`)'],
+    ])('refuses %s', (_name, text) => {
+      expect(scan(text).unrecognised.length).toBeGreaterThan(0)
+    })
   })
 
   it('has a route for every kind in the survey commit step', () => {
@@ -97,6 +208,20 @@ describe('the wiki-ingest emitter', () => {
       expect(routesOf(step).map(route => route.prefix)).toStrictEqual(['wiki-ingest:warning:'])
     }
   })
+
+  it.each(ingestSteps.map(step => [`${step.file}/${step.job}`, step] as const))(
+    '%s routes every emitted kind or lists it as deliberately unrouted, and lists nothing it routes',
+    (_name, step) => {
+      const routed = new Set(routesOf(step).map(route => route.prefix))
+      const unrouted = UNROUTED_KINDS[step.key] ?? []
+      for (const kind of emittedWikiIngestKinds()) {
+        const isRouted = routed.has(`wiki-ingest:${kind}:`)
+        expect(isRouted || unrouted.includes(kind), `${kind} is neither routed nor listed as unrouted`).toBe(true)
+        expect(isRouted && unrouted.includes(kind), `${kind} is routed and listed as unrouted`).toBe(false)
+      }
+      for (const kind of unrouted) expect(emittedWikiIngestKinds()).toContain(kind)
+    },
+  )
 
   it('is routed by every step that runs it, and by no other prefix', () => {
     const prefixes = new Set(emittedWikiIngestKinds().map(kind => `wiki-ingest:${kind}:`))

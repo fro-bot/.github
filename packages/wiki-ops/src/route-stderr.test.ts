@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url'
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {
   buildSummary,
+  hasFlagAfterCommand,
   parseRoute,
   RouteStderrUsageError,
   runRouteStderr,
@@ -98,6 +99,54 @@ describe('parseRoute', () => {
       message = (error as Error).message
     }
     expect(message).toBe('--route needs <prefix>=<heading>, with a non-empty prefix and heading on one line')
+  })
+})
+
+describe('hasFlagAfterCommand', () => {
+  it.each([
+    [['--route', 'a=b', 'bun', 'x.ts', '--summary', 'all']],
+    [['--route', 'a=b', 'bun', 'x.ts', '--route', 'x=y']],
+    [['--route=a=b', 'bun', '--bogus']],
+    [['bun', '-x']],
+    [['bun', 'x.ts', '-']],
+    [['--summary', 'all', '--route', 'a=b', 'bun', 'x.ts', '--conflict-exit=3']],
+    [['--route', 'a=b', 'bun', 'x.ts', 'arg', '--help']],
+    [['--conflict-exit', '3', '--conflict-output', 'c', 'bun', 'x.ts', '-h']],
+  ])('is true for %j: a token that starts with a dash follows the command', argv => {
+    expect(hasFlagAfterCommand(argv)).toBe(true)
+  })
+
+  it.each([
+    [[]],
+    [['--route', 'a=b', 'bun', 'x.ts']],
+    [['--route', 'a=b', '--summary', 'all', '--conflict-exit', '3', '--conflict-output', 'c', 'bun', 'x.ts']],
+    [['--route=a=b', '--summary=all', '--conflict-exit=3', '--conflict-output=c', 'bun', 'x.ts']],
+    // A value that starts with a dash is still the option's value, not the command.
+    [['--route', '-odd=heading', 'bun', 'x.ts']],
+    [['--summary', '-1', 'bun']],
+    [['--conflict-exit', '-1', '--conflict-output', '-c', 'bun']],
+    // Each option takes the next token as its value, so a dash after that value comes before any command.
+    [['--route', 'a=b', '-x']],
+    [['--summary', 'all', '-x']],
+    [['--conflict-exit', '3', '-x']],
+    [['--conflict-output', 'c', '-x']],
+    // No command at all: nothing follows one.
+    [['--bogus', '-x', '-y']],
+    [['--help']],
+    [['-h']],
+    [['--route']],
+    [['--route', 'a=b']],
+    // An unknown flag before the command is the runner's to reject, as is a separator.
+    [['--bogus', 'bun', 'x.ts']],
+    [['--', 'bun', '-x']],
+    [['--route', 'a=b', '--', 'bun', 'x.ts']],
+  ])('is false for %j', argv => {
+    expect(hasFlagAfterCommand(argv)).toBe(false)
+  })
+
+  it('reads the first token that is not an option or an option value as the command', () => {
+    expect(hasFlagAfterCommand(['--route', 'a=b', 'x', '--route', 'c=d'])).toBe(true)
+    expect(hasFlagAfterCommand(['--route', 'a=b', '--route', 'c=d', 'x'])).toBe(false)
   })
 })
 

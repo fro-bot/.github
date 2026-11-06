@@ -5,9 +5,10 @@
  *       bun scripts/wiki-ingest.ts
  *
  * The router's own flags come first and the command is the trailing variadic positional, with no `--` (the runner
- * rejects one). The wrapped commands take no flags of their own: an unknown flag anywhere is a usage error, and the
- * router's flags are read wherever they appear. Usage exits 1, so a misconfigured step fails instead of skipping the
- * command. It runs an arbitrary command, so it is not read-only.
+ * rejects one). The wrapped commands take no flags of their own. The runner reads the router's flags wherever they
+ * appear, so `main` first refuses any dash-led token after the command (`hasFlagAfterCommand`, on the raw argv); a
+ * caller that drives `routeStderrCli` through `runCli` directly does not get that check. Usage exits 1, so a
+ * misconfigured step fails instead of skipping the command. It runs an arbitrary command, so it is not read-only.
  *
  * The command's stderr is replayed to the process stderr as bytes, not through the runner's sink: the sink strips
  * ANSI colour sequences, and a replay has to be verbatim. The command's stdout is inherited.
@@ -15,11 +16,42 @@
 
 import process from 'node:process'
 import {defineCommand, runCliMain, z, type CliConfig} from '@fro-bot/core/cli'
-import {parseRoute, RouteStderrUsageError, runRouteStderr, type RouteStderrPlan} from './route-stderr.ts'
+import {
+  hasFlagAfterCommand,
+  parseRoute,
+  RouteStderrUsageError,
+  runRouteStderr,
+  type RouteStderrPlan,
+} from './route-stderr.ts'
 
 export interface RouteStderrCliOptions {
   /** Where the command's stderr goes. Defaults to the process stderr. A test passes a collector. */
   readonly replay?: (stderr: Uint8Array) => void
+}
+
+/** Printed for `--help` and after a usage error; one complete example, then each part of the syntax. */
+function usageText(): string {
+  return `${[
+    'Usage:',
+    '  bun scripts/route-stderr.ts --route <prefix>=<heading> [--route ...] [--summary filtered|all] \\',
+    '    [--conflict-exit <code> --conflict-output <name>] <command> [<argument> ...]',
+    '',
+    'Example:',
+    "  bun scripts/route-stderr.ts --route 'wiki-ingest:warning:=Wiki ingest warnings' --summary filtered \\",
+    '    --conflict-exit 3 --conflict-output conflict bun scripts/wiki-ingest.ts',
+    '',
+    'Runs the command with no shell, replays its stderr unchanged and returns its exit code.',
+    '',
+    '  --route <prefix>=<heading>   A stderr line that starts with <prefix> goes under "### <heading>" in the job',
+    '                               summary. Repeat the flag for more routes. At least one is required.',
+    '  --summary filtered|all       filtered (default): the matching lines as bullets, one section per route.',
+    '                               all: the heading and the whole stderr; takes exactly one --route.',
+    '  --conflict-exit <code>       Together with --conflict-output: on this exit code (1-255) append',
+    '  --conflict-output <name>     <name>=true to $GITHUB_OUTPUT. The two flags go together.',
+    '',
+    "The command follows the router's flags with no `--` between them, and takes no flags of its own: a token",
+    'that starts with a dash after the command is a usage error, and the command is not started.',
+  ].join('\n')}\n`
 }
 
 function formatRouteStderrError(error: unknown): string {
@@ -32,6 +64,7 @@ export function routeStderrCli(options: RouteStderrCliOptions = {}): CliConfig {
   return {
     name: 'route-stderr',
     errorFormat: formatRouteStderrError,
+    usageText: usageText(),
     commands: [
       defineCommand({
         readOnly: false,
@@ -66,5 +99,14 @@ export function routeStderrCli(options: RouteStderrCliOptions = {}): CliConfig {
 }
 
 export async function main(): Promise<void> {
+  // The runner reads the router's own flags wherever they appear, so a flag after the command is refused here,
+  // on the raw argv, before the runner or the command sees it.
+  if (hasFlagAfterCommand(process.argv.slice(2))) {
+    process.stderr.write(
+      "route-stderr: a flag after the command is not allowed: the command follows the router's flags and takes no flags of its own\n",
+    )
+    process.exitCode = 1
+    return
+  }
   await runCliMain(routeStderrCli())
 }
