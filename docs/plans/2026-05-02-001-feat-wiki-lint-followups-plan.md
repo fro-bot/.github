@@ -1,5 +1,5 @@
 ---
-title: feat: Add post-v1 wiki-lint escalation and repair flows
+title: 'feat: Add post-v1 wiki-lint escalation and repair flows'
 type: feat
 status: complete
 date: 2026-05-02
