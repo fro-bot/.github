@@ -529,6 +529,10 @@
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-query.ts, pinned by packages/wiki-ops/src/wiki-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },
     {
+      "path": "scripts/knowledge-mcp.ts",
+      "reason": "Entrypoint shim of the knowledge MCP server. It has no static import: under the entry guard it removes OPENCODE_PASSWORD and OPENCODE_CONFIG_CONTENT from the process, dynamically imports @fro-bot/wiki-ops/knowledge-mcp and calls serve inside a try, so no module code runs before the delete and a load failure writes only the fixed `knowledge-mcp: error:startup` line and sets a non-zero exit code. It is a short script with one catch a mutant could change only in ways the spawned tests below see: the behaviour is in packages/wiki-ops/src/knowledge-mcp.ts, in the mutation set at full kills. Pinned by scripts/knowledge-mcp-server.test.ts, which spawns the exact command the knowledge-mcp-config action writes (`bun scripts/knowledge-mcp.ts`, no argv) against a temp checkout, records that both variables were deleted, observes the environment at the moment the server module loads (it fails if either variable is still set), forces a module-load failure and checks stderr is exactly the fixed line, and checks that the shim has no static import and that importing it starts no server."
+    },
+    {
       "path": "scripts/solutions-query.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/solutions-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/solutions-query.ts, pinned by packages/wiki-ops/src/solutions-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },

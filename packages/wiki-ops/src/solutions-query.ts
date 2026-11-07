@@ -1,4 +1,3 @@
-import type {Dirent} from 'node:fs'
 import {Buffer} from 'node:buffer'
 import {readdir, readFile} from 'node:fs/promises'
 import process from 'node:process'
@@ -8,6 +7,7 @@ import {formatJsonLine} from '@fro-bot/core/json'
 import {writeGithubOutputs} from '@fro-bot/core/output'
 import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {parse, YAMLParseError} from 'yaml'
+import {validateQuery} from './wiki-context-expand.ts'
 
 const MAX_CONTEXT_BYTES = 4 * 1024
 const SOLUTIONS_ROOT = 'docs/solutions'
@@ -44,6 +44,8 @@ export interface AssembleSolutionsContextParams {
   now: Date
   maxBytes?: number
   stalenessDays?: number
+  /** Receives each closed-vocabulary warning line, newline included. Defaults to `process.stderr`. */
+  warn?: (line: string) => void
 }
 
 export interface AssembleSolutionsContextResult {
@@ -74,7 +76,7 @@ export function assembleSolutionsContext(params: AssembleSolutionsContextParams)
   const stalenessDays = params.stalenessDays ?? STALENESS_DAYS_DEFAULT
 
   const privateTokens = buildPrivateTokenSet(params.privateNames)
-  const docs = collectDocs(params.files, privateTokens)
+  const docs = collectDocs(params.files, privateTokens, params.warn ?? writeStderr)
   const tokens = collectTokens(params.event)
 
   const securityFlavored = isSecurityFlavored(tokens)
@@ -121,7 +123,11 @@ export function assembleSolutionsContext(params: AssembleSolutionsContextParams)
 // Doc collection and parsing
 // ---------------------------------------------------------------------------
 
-function collectDocs(files: Record<string, string>, privateTokens: Set<string>): SolutionDoc[] {
+function collectDocs(
+  files: Record<string, string>,
+  privateTokens: Set<string>,
+  warn: (line: string) => void,
+): SolutionDoc[] {
   const docs: SolutionDoc[] = []
 
   for (const [path, content] of Object.entries(files)) {
@@ -145,7 +151,7 @@ function collectDocs(files: Record<string, string>, privateTokens: Set<string>):
           : error instanceof Error
             ? error.constructor.name
             : 'unknown'
-      process.stderr.write(`solutions-query: skipped 1 doc on malformed frontmatter (path: ${path}): ${reason}\n`)
+      warn(`solutions-query: skipped 1 doc on malformed frontmatter (path: ${path}): ${reason}\n`)
       continue
     }
 
@@ -153,7 +159,7 @@ function collectDocs(files: Record<string, string>, privateTokens: Set<string>):
     const fullText = content.toLowerCase()
     if (containsPrivateToken(fullText, privateTokens)) {
       // Reference by path only — never emit a resolved private name
-      process.stderr.write(`solutions-query: excluded 1 doc on privacy scan (path: ${path})\n`)
+      warn(`solutions-query: excluded 1 doc on privacy scan (path: ${path})\n`)
       continue
     }
 
@@ -326,22 +332,63 @@ export function truncateToBytes(value: string, maxBytes: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Disk loader
+// Loaders
 // ---------------------------------------------------------------------------
 
-async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
+/** The file-system and warning seams the loaders read through, so a caller can run them in memory. */
+export interface SolutionsReaders {
+  readonly readDir: (path: string) => Promise<readonly {name: string; isFile: () => boolean}[]>
+  readonly readFile: (path: string) => Promise<string>
+  /** Receives each closed-vocabulary warning line, newline included. */
+  readonly warn: (line: string) => void
+}
+
+function writeStderr(line: string): void {
+  process.stderr.write(line)
+}
+
+/** The checkout-relative disk readers the CLI uses. A function so its closures are built per call. */
+function diskReaders(): SolutionsReaders {
+  return {
+    readDir: async path => readdir(path, {withFileTypes: true}),
+    readFile: async path => readFile(path, 'utf8'),
+    warn: writeStderr,
+  }
+}
+
+interface LoadedSolutionsFiles {
+  readonly files: Record<string, string>
+  /** Whether at least one category directory could be listed. False means the tree is absent or unreadable. */
+  readonly listed: boolean
+  /**
+   * False when a category directory exists but could not be listed, or a doc could not be read. A
+   * category directory that does not exist (ENOENT) is not a gap. A caller that must not answer from
+   * half a corpus checks this; the CLI ignores it.
+   */
+  readonly complete: boolean
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+async function loadSolutionsFiles(io: SolutionsReaders): Promise<LoadedSolutionsFiles> {
   const files: Record<string, string> = {}
+  let listed = false
+  let complete = true
 
   for (const subdir of SOLUTIONS_SUBDIRS) {
     const dirPath = `${SOLUTIONS_ROOT}/${subdir}`
-    let entries: Dirent[]
+    let entries: readonly {name: string; isFile: () => boolean}[]
 
     try {
-      entries = await readdir(dirPath, {withFileTypes: true})
-    } catch {
-      // Directory may not exist in some environments — skip
+      entries = await io.readDir(dirPath)
+    } catch (error) {
+      // Directory may not exist in some environments — skip. One that exists but cannot be listed is a gap.
+      if (!isMissingPath(error)) complete = false
       continue
     }
+    listed = true
 
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.md')) {
@@ -350,41 +397,48 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
 
       const path = `${dirPath}/${entry.name}`
       try {
-        files[path] = await readFile(path, 'utf8')
+        files[path] = await io.readFile(path)
       } catch {
-        process.stderr.write(`solutions-query: could not read file (path: ${path})\n`)
+        complete = false
+        io.warn(`solutions-query: could not read file (path: ${path})\n`)
       }
     }
   }
 
-  return files
+  return {files, listed, complete}
 }
 
 // ---------------------------------------------------------------------------
 // Private names loader
 // ---------------------------------------------------------------------------
 
+interface LoadedPrivateNames {
+  readonly names: string[]
+  /** False when `metadata/repos.yaml` could not be read, parsed or had an unexpected shape. */
+  readonly loaded: boolean
+}
+
 // This scan is defense-in-depth, not the primary privacy control. The docs/solutions/
 // corpus lives on main and has already cleared the promotion leak gate, so by construction
 // it carries no private identifier. Canonical private names live on the data branch and are
 // overlaid only for schedule/workflow_dispatch runs; on other events this returns 0 names
 // and the scan is inert over already-gated content. The trust chokepoint remains promotion.
-async function loadPrivateNamesFromDisk(): Promise<string[]> {
+async function loadPrivateNames(io: SolutionsReaders): Promise<LoadedPrivateNames> {
   let reposYaml: string
 
   try {
-    reposYaml = await readFile('metadata/repos.yaml', 'utf8')
+    reposYaml = await io.readFile('metadata/repos.yaml')
   } catch {
-    process.stderr.write('solutions-query: could not read metadata/repos.yaml; privacy scan uses 0 private names\n')
-    return []
+    io.warn('solutions-query: could not read metadata/repos.yaml; privacy scan uses 0 private names\n')
+    return {names: [], loaded: false}
   }
 
   try {
     const parsed: unknown = parse(reposYaml)
-    if (!isRecord(parsed)) return []
+    if (!isRecord(parsed)) return {names: [], loaded: false}
 
     const repos = parsed.repos
-    if (!Array.isArray(repos)) return []
+    if (!Array.isArray(repos)) return {names: [], loaded: false}
 
     const privateNames: string[] = []
 
@@ -403,10 +457,10 @@ async function loadPrivateNamesFromDisk(): Promise<string[]> {
       privateNames.push(`${owner}/${name}`)
     }
 
-    return privateNames
+    return {names: privateNames, loaded: true}
   } catch {
-    process.stderr.write('solutions-query: could not parse metadata/repos.yaml; privacy scan uses 0 private names\n')
-    return []
+    io.warn('solutions-query: could not parse metadata/repos.yaml; privacy scan uses 0 private names\n')
+    return {names: [], loaded: false}
   }
 }
 
@@ -429,6 +483,62 @@ function writeGithubOutput(
 }
 
 // ---------------------------------------------------------------------------
+// Query entry for in-process callers
+// ---------------------------------------------------------------------------
+
+/** Why a query entry returned no result. `metadata-unavailable` means the private-name list could not be loaded. */
+export type SolutionsSearchFailure = 'invalid-query' | 'corpus-unavailable' | 'metadata-unavailable'
+
+export type SolutionsSearchOutcome =
+  | {readonly ok: true; readonly result: AssembleSolutionsContextResult}
+  | {readonly ok: false; readonly reason: SolutionsSearchFailure}
+
+export interface SolutionsSearchDeps {
+  readonly readDir: SolutionsReaders['readDir']
+  readonly readFile: SolutionsReaders['readFile']
+  /** Receives warning lines, which carry doc paths. Defaults to dropping them. */
+  readonly warn?: SolutionsReaders['warn']
+  /** Defaults to the current time. */
+  readonly now?: Date
+}
+
+/**
+ * Rank `docs/solutions` against one agent-supplied query. The query goes through the same
+ * validation as `wiki-context-expand query`, then scores as the event title, so the ranking,
+ * private-name scan and byte cap are the ones `runSolutionsQuery` uses. Unlike the best-effort CLI
+ * this entry reports a missing corpus or an unloadable private-name list as a failure: an empty
+ * match must mean "nothing matched". It writes to no stream and no file. A read failure becomes a
+ * failure result; the caller still wraps the call for anything unexpected.
+ */
+export async function searchSolutions(query: string, deps: SolutionsSearchDeps): Promise<SolutionsSearchOutcome> {
+  if (!validateQuery(query).valid) {
+    return {ok: false, reason: 'invalid-query'}
+  }
+
+  const warn = deps.warn ?? (() => {})
+  const io: SolutionsReaders = {readDir: deps.readDir, readFile: deps.readFile, warn}
+  const [{files, listed, complete}, privateNames] = await Promise.all([loadSolutionsFiles(io), loadPrivateNames(io)])
+
+  // A partial corpus would rank and answer from half the docs, and the model could not tell.
+  if (!listed || !complete) {
+    return {ok: false, reason: 'corpus-unavailable'}
+  }
+  if (!privateNames.loaded) {
+    return {ok: false, reason: 'metadata-unavailable'}
+  }
+
+  const result = assembleSolutionsContext({
+    files,
+    event: {eventName: '', title: query},
+    privateNames: privateNames.names,
+    now: deps.now ?? new Date(),
+    warn,
+  })
+
+  return {ok: true, result}
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -446,7 +556,8 @@ export async function runSolutionsQuery(
   now: Date = new Date(),
 ): Promise<void> {
   try {
-    const [files, privateNames] = await Promise.all([loadSolutionsFilesFromDisk(), loadPrivateNamesFromDisk()])
+    const readers = diskReaders()
+    const [{files}, {names: privateNames}] = await Promise.all([loadSolutionsFiles(readers), loadPrivateNames(readers)])
 
     const result = assembleSolutionsContext({
       files,

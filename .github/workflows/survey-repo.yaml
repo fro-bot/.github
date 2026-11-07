@@ -264,6 +264,15 @@ jobs:
           REPO_NODE_ID: ${{ inputs.node_id }}
         run: bun scripts/route-stderr.ts --route 'corrections:warning:=Correction context warnings' --summary all bun scripts/render-corrections-context.ts
 
+      # Adds the `knowledge` MCP server (wiki and solutions lookups) to the config all three attempts
+      # share. A survey has no handoff file, so `knowledge_wiki_linked` answers with an error here and
+      # the prompts name only the two search tools.
+      - name: Add the knowledge tools to the agent config
+        id: knowledge-mcp
+        uses: ./.github/actions/knowledge-mcp-config
+        with:
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+
       # Attempt 1 of up to 3 (KTD4/KTD9). 20-minute agent-internal timeout; the
       # 23-minute step timeout-minutes adds headroom for OpenCode bootstrap and the
       # action's post phase, which the agent timeout does not cover.
@@ -275,7 +284,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           # Write wiki updates to the workflow's working tree so the next step can
           # commit them to the `data` branch via scripts/wiki-ingest.ts.
           output-mode: working-dir
@@ -294,6 +303,13 @@ jobs:
             </persona>
 
             ${{ steps.ingest-prompt.outputs.prompt }}
+
+            <knowledge_tools>
+            When this run lists the tools `knowledge_wiki_search` and `knowledge_solutions_search`,
+            you may use them to check what the wiki and the documented solutions already say
+            before you write a page. They are optional. A tool that fails returns a short error
+            code, not content.
+            </knowledge_tools>
 
       # Detect 1: gated on attempt 1 concluding success (KTD1) — a hard failure fails
       # the job on its own and never reaches detection or a retry.
@@ -316,7 +332,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: working-dir
           timeout: '1200000'
           prompt: |
@@ -336,6 +352,13 @@ jobs:
             your final response and make no wiki changes.
 
             ${{ steps.ingest-prompt.outputs.prompt }}
+
+            <knowledge_tools>
+            When this run lists the tools `knowledge_wiki_search` and `knowledge_solutions_search`,
+            you may use them to check what the wiki and the documented solutions already say
+            before you write a page. They are optional. A tool that fails returns a short error
+            code, not content.
+            </knowledge_tools>
 
       # Detect 2: same script, same pre-attempt-1 baseline hash — retries never reset
       # the workspace (KTD6), so this still measures cumulative change since baseline.
@@ -357,7 +380,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: working-dir
           timeout: '1200000'
           prompt: |
@@ -377,6 +400,13 @@ jobs:
             your final response and make no wiki changes.
 
             ${{ steps.ingest-prompt.outputs.prompt }}
+
+            <knowledge_tools>
+            When this run lists the tools `knowledge_wiki_search` and `knowledge_solutions_search`,
+            you may use them to check what the wiki and the documented solutions already say
+            before you write a page. They are optional. A tool that fails returns a short error
+            code, not content.
+            </knowledge_tools>
 
       # Detect 3: the last detection in the chain — final-attempt below pairs
       # whichever attempt actually ran last with this (or an earlier) detect's output.

@@ -7,8 +7,9 @@ import {parse} from 'yaml'
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const solutionsQueryModulePromise: Promise<{
   assembleSolutionsContext: typeof import('./solutions-query.js').assembleSolutionsContext
+  searchSolutions: typeof import('./solutions-query.js').searchSolutions
 }> = import(`./solutions-query${'.js'}`)
-const {assembleSolutionsContext} = await solutionsQueryModulePromise
+const {assembleSolutionsContext, searchSolutions} = await solutionsQueryModulePromise
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -829,6 +830,226 @@ describe('assembleSolutionsContext', () => {
     // #then the output contains NO U+FFFD replacement chars
     expect(result.excerpt).not.toContain('\uFFFD')
     expect(result.byteLength).toBeLessThanOrEqual(120)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// searchSolutions: the query entry for in-process callers
+// ---------------------------------------------------------------------------
+
+type Readers = Parameters<typeof searchSolutions>[1]
+
+/** A file-system error as Node raises it: the `code` is what tells a missing path from an unreadable one. */
+function fsError(code: string, path: string): Error {
+  return Object.assign(new Error(`${code}: ${path}`), {code})
+}
+
+/** An in-memory checkout: a map from path to content. A directory exists when some path sits under it. */
+function memoryReaders(files: Readonly<Record<string, string>>, overrides: Partial<Readers> = {}): Readers {
+  return {
+    readDir: async path => {
+      const prefix = `${path}/`
+      const names = Object.keys(files)
+        .filter(file => file.startsWith(prefix) && !file.slice(prefix.length).includes('/'))
+        .map(file => file.slice(prefix.length))
+      const isDirectory = Object.keys(files).some(file => file.startsWith(prefix))
+      if (!isDirectory) throw fsError('ENOENT', path)
+      return names.map(name => ({name, isFile: () => true}))
+    },
+    readFile: async path => {
+      const content = files[path]
+      if (content === undefined) throw fsError('ENOENT', path)
+      return content
+    },
+    ...overrides,
+  }
+}
+
+const SEARCH_REPOS_YAML = 'repos:\n  - owner: acme-corp\n    name: hidden-repo\n    private: true\n'
+
+describe('searchSolutions', () => {
+  it('returns the doc whose title matches the query, with its excerpt and path', async () => {
+    // #given a checkout holding one reconcile doc
+    const files = {...ALL_DOCS, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+
+    // #when the query matches that doc's title
+    const outcome = await searchSolutions('reconcile repos pattern', memoryReaders(files))
+
+    // #then the result carries the doc
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.result.selectedPaths).toEqual(['docs/solutions/best-practices/reconcile-repos-pattern.md'])
+    expect(outcome.result.excerpt).toContain('## Reconcile Repos Pattern')
+    expect(outcome.result.excerpt).toContain('Path: docs/solutions/best-practices/reconcile-repos-pattern.md')
+  })
+
+  it('returns an empty result, not a failure, when nothing matches', async () => {
+    const files = {...ALL_DOCS, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+
+    const outcome = await searchSolutions('zzzzqqqq nonexistent topic', memoryReaders(files))
+
+    expect(outcome).toEqual({ok: true, result: {excerpt: '', selectedPaths: [], byteLength: 0}})
+  })
+
+  it.each([
+    ['empty', '   '],
+    ['path-like', '../etc/passwd'],
+    ['overbroad', 'wiki'],
+    ['over 200 characters', `reconcile ${'a'.repeat(200)}`],
+  ])('rejects a %s query before reading anything', async (_label, query) => {
+    // #given readers that fail the test when touched
+    const touched = vi.fn()
+    const readers: Readers = {
+      readDir: async () => {
+        touched()
+        return []
+      },
+      readFile: async () => {
+        touched()
+        return ''
+      },
+    }
+
+    // #when the query is rejected
+    const outcome = await searchSolutions(query, readers)
+
+    // #then no corpus access happened
+    expect(outcome).toEqual({ok: false, reason: 'invalid-query'})
+    expect(touched).not.toHaveBeenCalled()
+  })
+
+  it('fails with corpus-unavailable when the docs/solutions tree is missing, and the sink gets no path', async () => {
+    // #given a checkout with metadata but no docs/solutions
+    const warn = vi.fn()
+    const readers = memoryReaders({'metadata/repos.yaml': SEARCH_REPOS_YAML}, {warn})
+    const missing: Readers = {
+      ...readers,
+      readDir: async path => {
+        throw fsError('ENOENT', path)
+      },
+    }
+
+    // #when a valid query runs
+    const outcome = await searchSolutions('reconcile repos pattern', missing)
+
+    // #then the failure is distinct from an empty match and nothing carrying a path reached the sink
+    expect(outcome).toEqual({ok: false, reason: 'corpus-unavailable'})
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('fails with corpus-unavailable when one category lists and another exists but cannot be listed', async () => {
+    // #given a readable category and a category directory that exists but denies the listing
+    const files = {...BEST_PRACTICE_DOC, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+    const readers = memoryReaders(files)
+    const denied: Readers = {
+      ...readers,
+      readDir: async path => {
+        if (path === 'docs/solutions/security-issues') throw fsError('EACCES', path)
+        return readers.readDir(path)
+      },
+    }
+    const warn = vi.fn()
+
+    // #when a query that the readable category matches runs
+    const outcome = await searchSolutions('reconcile repos pattern', {...denied, warn})
+
+    // #then a partial corpus is a failure, not a successful answer from the readable half
+    expect(outcome).toEqual({ok: false, reason: 'corpus-unavailable'})
+  })
+
+  it('fails with corpus-unavailable when one doc reads and another cannot be read', async () => {
+    const files = {
+      ...BEST_PRACTICE_DOC,
+      'docs/solutions/best-practices/unreadable.md': '---\ntitle: Unreadable\n---\nbody\n',
+      'metadata/repos.yaml': SEARCH_REPOS_YAML,
+    }
+    const readers = memoryReaders(files)
+    const denied: Readers = {
+      ...readers,
+      readFile: async path => {
+        if (path === 'docs/solutions/best-practices/unreadable.md') throw fsError('EACCES', path)
+        return readers.readFile(path)
+      },
+    }
+
+    expect(await searchSolutions('reconcile repos pattern', denied)).toEqual({ok: false, reason: 'corpus-unavailable'})
+  })
+
+  it('treats a category directory that does not exist as a normal skip', async () => {
+    // #given only one category exists; the rest raise ENOENT
+    const files = {...BEST_PRACTICE_DOC, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+
+    const outcome = await searchSolutions('reconcile repos pattern', memoryReaders(files))
+
+    expect(outcome.ok).toBe(true)
+  })
+
+  it('fails with metadata-unavailable when repos.yaml cannot be read, parsed or has the wrong shape', async () => {
+    const docs = {...ALL_DOCS}
+    const readers = memoryReaders(docs)
+
+    await expect(searchSolutions('reconcile repos pattern', readers)).resolves.toEqual({
+      ok: false,
+      reason: 'metadata-unavailable',
+    })
+    await expect(
+      searchSolutions('reconcile repos pattern', memoryReaders({...docs, 'metadata/repos.yaml': 'repos: [unclosed\n'})),
+    ).resolves.toEqual({ok: false, reason: 'metadata-unavailable'})
+    await expect(
+      searchSolutions('reconcile repos pattern', memoryReaders({...docs, 'metadata/repos.yaml': 'just a string\n'})),
+    ).resolves.toEqual({ok: false, reason: 'metadata-unavailable'})
+    await expect(
+      searchSolutions('reconcile repos pattern', memoryReaders({...docs, 'metadata/repos.yaml': 'other: 1\n'})),
+    ).resolves.toEqual({ok: false, reason: 'metadata-unavailable'})
+  })
+
+  it('applies the private-name scan and routes warnings to the injected sink, never to process.stderr', async () => {
+    // #given a doc naming a private repo and a doc with malformed frontmatter
+    const files = {
+      ...BEST_PRACTICE_DOC,
+      'docs/solutions/workflow-issues/leaky.md':
+        '---\ntitle: Reconcile leak\n---\nReconcile acme-corp/hidden-repo settings.\n',
+      'docs/solutions/workflow-issues/broken.md': '---\ntitle: [unclosed\n---\nreconcile body\n',
+      'metadata/repos.yaml': SEARCH_REPOS_YAML,
+    }
+    const warn = vi.fn()
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    try {
+      // #when the query matches all three
+      const outcome = await searchSolutions('reconcile repos', memoryReaders(files, {warn}))
+
+      // #then only the clean doc is returned, the sink saw both skips, and process.stderr stayed silent
+      expect(outcome.ok).toBe(true)
+      if (!outcome.ok) return
+      expect(outcome.result.selectedPaths).toEqual(['docs/solutions/best-practices/reconcile-repos-pattern.md'])
+      expect(warn.mock.calls.map(call => String(call[0]))).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('excluded 1 doc on privacy scan'),
+          expect.stringContaining('skipped 1 doc on malformed frontmatter'),
+        ]),
+      )
+      expect(stderr).not.toHaveBeenCalled()
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
+  it('drops warnings by default and never writes to process.stderr', async () => {
+    const files = {
+      'docs/solutions/workflow-issues/broken.md': '---\ntitle: [unclosed\n---\nreconcile body\n',
+      'metadata/repos.yaml': SEARCH_REPOS_YAML,
+    }
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    try {
+      const outcome = await searchSolutions('reconcile body', memoryReaders(files))
+
+      expect(outcome.ok).toBe(true)
+      expect(stderr).not.toHaveBeenCalled()
+    } finally {
+      stderr.mockRestore()
+    }
   })
 })
 

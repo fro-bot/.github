@@ -1,0 +1,134 @@
+name: Knowledge MCP Config
+description: Build the opencode-config value that adds the `knowledge` MCP server to the OPENCODE_CONFIG secret, so an agent step can call the wiki and solutions lookups as tools
+
+inputs:
+  opencode-config:
+    description: The OPENCODE_CONFIG secret, empty when unset. Read through `env:` only. Never printed; it is parsed and merged, and a value that does not parse fails the step with a fixed message.
+    required: false
+    default: ''
+  handoff-path:
+    description: The path of the job's wiki-context handoff file, set as the server's `WIKI_CONTEXT_HANDOFF_PATH`. A relative path is resolved against the workspace. Leave empty for a job without a handoff (survey); `wiki_linked` then answers `no-handoff`.
+    required: false
+    default: ''
+  fork:
+    description: '`true` on a pull request from a fork. The secret is then passed through unchanged and no server is added, because the checkout holds fork-authored code that the server would run.'
+    required: false
+    default: ''
+
+outputs:
+  opencode-config:
+    description: The config for the agent step's `opencode-config` input. The merged JSON on one line, or the secret unchanged on a fork.
+    value: ${{ steps.merge.outputs.opencode-config }}
+
+runs:
+  using: composite
+  steps:
+    - name: Add the knowledge server to the agent config
+      id: merge
+      # A caller's `if:` gates the whole action and does not reach this step, which would otherwise carry
+      # the implicit success() and be skipped by a cancellation arriving mid-run.
+      if: ${{ always() }}
+      env:
+        KNOWLEDGE_MCP_CONFIG: ${{ inputs.opencode-config }}
+        KNOWLEDGE_MCP_HANDOFF_PATH: ${{ inputs.handoff-path }}
+        KNOWLEDGE_MCP_FORK: ${{ inputs.fork }}
+      run: |
+        set -euo pipefail
+
+        # Every message below is fixed text. jq prints the offending value on a type error, so its
+        # stderr is discarded on every call, and no variable that holds the secret reaches a message.
+        fail() {
+          printf '::error::knowledge-mcp-config: %s\n' "$1" >&2
+          exit 1
+        }
+
+        if [ "${KNOWLEDGE_MCP_FORK:-}" = 'true' ]; then
+          # A fork's checkout holds fork-authored code, and a review-comment mention would launch it as
+          # the server. The secret goes through as it came, in a block form that carries any newline.
+          delimiter="KNOWLEDGE_MCP_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          case "${KNOWLEDGE_MCP_CONFIG:-}" in
+            *"$delimiter"*) fail 'could not pass the config through' ;;
+          esac
+          {
+            printf 'opencode-config<<%s\n' "$delimiter"
+            printf '%s\n' "${KNOWLEDGE_MCP_CONFIG:-}"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        workspace="${GITHUB_WORKSPACE:-}"
+        case "$workspace" in
+          /*) ;;
+          *) fail 'the workspace path is not absolute' ;;
+        esac
+
+        handoff="${KNOWLEDGE_MCP_HANDOFF_PATH:-}"
+        if [ -n "$handoff" ]; then
+          case "$handoff" in
+            /*) ;;
+            *) handoff="$workspace/$handoff" ;;
+          esac
+        fi
+
+        # An unset secret is an empty config. Anything else must be one JSON object.
+        base='{}'
+        if [ -n "${KNOWLEDGE_MCP_CONFIG//[[:space:]]/}" ]; then
+          base=$(printf '%s' "$KNOWLEDGE_MCP_CONFIG" | jq -c . 2>/dev/null) || fail 'opencode-config is not valid JSON'
+        fi
+        printf '%s' "$base" | jq -e 'type == "object"' >/dev/null 2>&1 || fail 'opencode-config must be a JSON object'
+
+        # Each type is checked before `keys`, `has` or any walk of the value. `//` is not used for a
+        # presence test: it treats `false` and `null` as absent, and a `"mcp": false` must fail, not vanish.
+        printf '%s' "$base" | jq -e 'if has("mcp") then (.mcp | type == "object") else true end' >/dev/null 2>&1 ||
+          fail 'opencode-config mcp must be a JSON object'
+
+        # The agent's own rule (fro-bot/agent v0.136.0 mcp-servers-v2.ts, parseMcpServersV2): an
+        # enabled-only value (no `type` key, a boolean `enabled`) is skipped before the key is read, so
+        # `servers: {enabled: false}` is not a map. Otherwise `mcp.servers` is the native map of servers
+        # unless it carries `type`, in which case it is one server that happens to be named `servers`.
+        native=$(printf '%s' "$base" | jq -r '
+          def enabledonly:
+            type == "object" and (has("type") | not) and ((.enabled | type) == "boolean");
+          def direct:
+            type == "object" and has("type")
+            and (.type == "local" or .type == "remote"
+                 or ((.type | type) == "string" and ((.type | contains("{env:")) or (.type | contains("{file:")))));
+          if has("mcp") and (.mcp | has("servers"))
+          then (.mcp.servers | (type == "object") and (enabledonly | not) and (direct | not))
+          else false end' 2>/dev/null) || fail 'could not read the mcp servers'
+
+        # The model sees `knowledge_<tool>`, and a second server with this name would share the prefix.
+        printf '%s' "$base" | jq -e '
+          (if has("mcp") then (.mcp | has("knowledge")) else false end)
+          or (if has("mcp") and (.mcp | has("servers")) and ((.mcp.servers | type) == "object")
+              then (.mcp.servers | has("knowledge")) else false end) | not' >/dev/null 2>&1 ||
+          fail 'opencode-config already defines a knowledge MCP server'
+
+        merged=$(printf '%s' "$base" | jq -c \
+          --arg cwd "$workspace" \
+          --arg handoff "$handoff" \
+          --argjson native "$native" '
+          ({type: "local", command: ["bun", "scripts/knowledge-mcp.ts"], cwd: $cwd}
+            + (if $handoff == "" then {} else {environment: {WIKI_CONTEXT_HANDOFF_PATH: $handoff}} end)) as $server
+          | (if has("mcp") then . else . + {mcp: {}} end)
+          | if $native then .mcp.servers.knowledge = $server else .mcp.knowledge = $server end' 2>/dev/null) ||
+          fail 'could not add the knowledge server'
+
+        case "$merged" in
+          *$'\n'* | *$'\r'*) fail 'could not write the config' ;;
+        esac
+
+        # The merged value holds the operator's config, so it is masked before it is written anywhere.
+        # The runner decodes %25, %0D and %0A in a command's data, so each is escaped, `%` first.
+        # The pieces sit in variables so the substitutions read the same on every bash.
+        percent='%'
+        cr=$'\r'
+        lf=$'\n'
+        masked="${merged//$percent/%25}"
+        masked="${masked//$cr/%0D}"
+        masked="${masked//$lf/%0A}"
+        printf '::add-mask::%s\n' "$masked"
+
+        printf 'opencode-config=%s\n' "$merged" >> "$GITHUB_OUTPUT"
+      shell: bash

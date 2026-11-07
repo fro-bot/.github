@@ -2,7 +2,7 @@
 
 The wiki handoff, change detection, context, query, repair, index and corrections tools of the Fro Bot control plane: the build and apply halves of the agent-to-trusted handoff, the survey change detector, the wiki and solutions queries that feed the agent prompt, `wiki-context-expand`, the integrity repair and lint-issue sync, the index rebuild, and the corrections lifecycle and context. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
-It depends on `@fro-bot/core` (guards, env, output, JSON lines, retry, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the wiki-presence gate that `wiki-repair` runs before it commits), `@fro.bot/wiki-write-core` (the `wiki-ingest`, `wiki-lint`, `wiki-slug`, `wiki-utils`, `corrections` and `schemas` subpaths), `@octokit/rest` (a type) and `yaml`. Tests also import `@fro-bot/test-kit`.
+It depends on `@fro-bot/core` (guards, env, output, JSON lines, retry, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the wiki-presence gate that `wiki-repair` runs before it commits), `@fro.bot/wiki-write-core` (the `wiki-ingest`, `wiki-lint`, `wiki-slug`, `wiki-utils`, `corrections` and `schemas` subpaths), `@octokit/rest` (a type), `yaml`, and for the MCP server `goke`, `@goke/mcp` and `zod`. Tests also import `@fro-bot/test-kit` and `@modelcontextprotocol/sdk` (a dev dependency, the test client).
 
 Nothing here holds a credential of its own. `wiki-handoff-build` runs in the untrusted agent job and `wiki-handoff-apply` in the trusted job, and the artifact between them is the contract. `packages/wiki-ops/src/wiki-handoff-core.ts` validates, before anything is written, every manifest path (traversal, absolute paths, backslashes, scope), the top-level entries of the artifact, the size cap, and the source file of each changed entry, which must be a regular file and not a symlink (`lstat` on the file itself). It does not `lstat` the directories above that file, and it does not check whether a directory in the destination workspace is a symlink. Both rest on assumptions about who controls those directories. The artifact directory is the output of `actions/download-artifact`, and `actions/upload-artifact` builds its file list with a glob that follows symbolic links (`followSymbolicLinks: true`, `omitBrokenSymbolicLinks: true`) and zips regular files, so an uploaded artifact holds regular files only. The workspace is the trusted job's fresh default-branch checkout, so a symlinked directory there would have to be tracked on `main`. On the build side, `wiki-handoff-build` refuses a symlink or non-regular source and any out-of-scope path from `git status`, and `buildHandoffFromGitIndex` accepts only mode `100644` blobs. `wiki-repair` and `wiki-lint-issues` run with an App token minted by their own jobs. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
 
@@ -17,6 +17,7 @@ Nothing here holds a credential of its own. `wiki-handoff-build` runs in the unt
 | `@fro-bot/wiki-ops/wiki-change-detect-core`, `wiki-change-detect`, `-cli` | `computeWikiChangeHash`, `captureWikiScopeSnapshot`, `hashWikiScopeSnapshot`; `runWikiChangeDetect`, `formatWikiChangeDetectError`; `wikiChangeDetectCli`, `main` | The survey change detector: `hash=` for `baseline`, `changed=` for `detect`. The core is mutated at full kills. |
 | `@fro-bot/wiki-ops/wiki-query`, `-cli` | `assembleWikiContext`, `writeSelectedPathsHandoff`, `runWikiQuery`; `wikiQueryCli`, `main` | The baseline wiki excerpt, selected paths and byte length, plus the owner-only handoff file. |
 | `@fro-bot/wiki-ops/solutions-query`, `-cli` | `assembleSolutionsContext`, `runSolutionsQuery`; `solutionsQueryCli`, `main` | The `docs/solutions` excerpt. Falls back to an empty result on any error. |
+| `@fro-bot/wiki-ops/knowledge-mcp` | `serve`, `buildKnowledgeCli`, `knowledgeToolNames`, `defaultKnowledgeDeps` | The `knowledge` MCP server: `wiki_search`, `wiki_linked` and `solutions_search` over `@goke/mcp`, calling the `wiki-context-expand` and `solutions-query` code in-process. Mutated at full kills. See [MCP server](#mcp-server). |
 | `@fro-bot/wiki-ops/solution-docs-paths` | `SOLUTION_SUBDIRS` | The canonical category list; a leaf. |
 | `@fro-bot/wiki-ops/wiki-context-safety` | `evaluateCandidateSafety`, `filterSafeCandidates` | The candidate safety filter. Mutated at full kills. |
 | `@fro-bot/wiki-ops/wiki-context-expand`, `-cli` | `runWikiContextExpandCli`, `assembleExpandedContext`, `validateQuery`, `parseHandoffContent`, ...; `main` | The agent's `linked` and `query` expansion. Hand-parsed, because the query text may start with `-`. |
@@ -49,6 +50,24 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 
 Argv that matches nothing declared, `--help` included, is a usage error on every CLI on the runner: exit 1, usage on stderr, and nothing runs. `wiki-context-expand` and `correction-lifecycle` keep their own parsers and their own help.
 
+## MCP server
+
+`scripts/knowledge-mcp.ts` starts the `knowledge` MCP server over stdio. The `knowledge-mcp-config` composite action writes it into `opencode-config` as `["bun", "scripts/knowledge-mcp.ts"]`, with the checkout as `cwd`, and the model sees the tools as `knowledge_<command>`.
+
+| Tool | Argument | Backed by | Errors |
+| --- | --- | --- | --- |
+| `wiki_search` | `query` (required) | `runWikiContextExpandCli` in query mode | `invalid-query`, `corpus-unavailable` |
+| `wiki_linked` | none | `runWikiContextExpandCli` in linked mode, with the handoff path from the server definition | `no-handoff`, `handoff-malformed`, `corpus-unavailable` |
+| `solutions_search` | `query` (required) | `searchSolutions` in `solutions-query` | `invalid-query`, `corpus-unavailable` |
+
+- The exposure is an allowlist (`knowledgeToolNames`), pinned by `knowledge-mcp.test.ts`, which also checks that no write-marked command, `resolve-private` or `enumerate-existing-leaks` is on it. `readOnly` alone is not the control: nothing enforces it.
+- A query is JSON, never argv, so `-foo bar` is text. Both searches validate it with `validateQuery`.
+- A handler never throws. It returns the JSON result, or `isError` with `{"error":"<code>"}` and one of five fixed codes (`no-handoff`, `handoff-malformed`, `invalid-query`, `corpus-unavailable`, `unexpected`). A missing corpus is `corpus-unavailable`, never an empty match. No query, path or error message leaves the server.
+- Stdout is JSON-RPC only. Stderr is `knowledge-mcp: ready`, `knowledge-mcp: error:startup` and one `knowledge-mcp: error:<code>` line per error result.
+- There is no path argument. The handoff path is the `WIKI_CONTEXT_HANDOFF_PATH` the server definition sets, and the corpus is read relative to the checkout root.
+- The server writes no file and needs no credential. The shim removes `OPENCODE_PASSWORD` and `OPENCODE_CONFIG_CONTENT` from the process before it imports anything. That narrows what the server's own code can read; it is not an isolation boundary.
+- The server owns a private goke instance. It cannot sit on `@fro-bot/core/cli`, whose runner builds its instance per call and replaces command actions.
+
 ## Package diagram
 
 ```mermaid
@@ -58,6 +77,7 @@ C4Component
   Container_Boundary(wikiops, "@fro-bot/wiki-ops") {
     Component(correction_lifecycle, "correction-lifecycle", "TypeScript", "record, retire, reconfirm and supersede in the corrections sidecar; hand-parsed")
     Component(correction_lifecycle_cli, "correction-lifecycle-cli", "TypeScript", "Process wiring: exit code from the lifecycle main; hand-parsed")
+    Component(knowledge_mcp, "knowledge-mcp", "TypeScript", "The knowledge MCP server: wiki_search, wiki_linked, solutions_search; allowlisted; never throws; mutated at full kills")
     Component(rebuild_wiki_index, "rebuild-wiki-index", "TypeScript", "Rebuild index.md from disk, or merge log.md files")
     Component(rebuild_wiki_index_cli, "rebuild-wiki-index-cli", "TypeScript", "goke CLI; writing")
     Component(render_corrections_context, "render-corrections-context", "TypeScript", "corrections-context.json for one page; warns before it rethrows")
@@ -92,9 +112,11 @@ C4Component
   System_Ext(core, "@fro-bot/core", "cli, env, guards, json, output, github, retry")
   System_Ext(privacy, "@fro-bot/privacy", "check-wiki-private-presence")
   System_Ext(wwc, "@fro.bot/wiki-write-core", "wiki-ingest, wiki-lint, wiki-slug, wiki-utils, corrections, schemas")
+  System_Ext(goke_mcp, "@goke/mcp", "Serves a goke instance's commands as MCP tools over stdio")
   System_Ext(github, "GitHub", "REST and Git Data API")
 
   Rel(entrypoints, correction_lifecycle_cli, "main")
+  Rel(entrypoints, knowledge_mcp, "serve")
   Rel(entrypoints, rebuild_wiki_index_cli, "main")
   Rel(entrypoints, render_corrections_context_cli, "main")
   Rel(entrypoints, route_stderr_cli, "main")
@@ -108,6 +130,9 @@ C4Component
   Rel(entrypoints, wiki_query_cli, "main")
   Rel(entrypoints, wiki_repair_cli, "main")
   Rel(correction_lifecycle_cli, correction_lifecycle, "imports")
+  Rel(knowledge_mcp, solutions_query, "imports")
+  Rel(knowledge_mcp, wiki_context_expand, "imports")
+  Rel(knowledge_mcp, goke_mcp, "served by")
   Rel(rebuild_wiki_index_cli, rebuild_wiki_index, "imports")
   Rel(render_corrections_context_cli, render_corrections_context, "imports")
   Rel(route_stderr_cli, route_stderr, "imports")
