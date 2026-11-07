@@ -301,7 +301,7 @@ sequenceDiagram
 - `bun run check:mutation-guards` is clean.
 - `scripts/package-layout.test.ts` passes with the new dependencies declared, and the lock resolves one `@modelcontextprotocol/sdk` copy.
 
-- [ ] **Unit 3: `knowledge-mcp-config` composite action**
+- [x] **Unit 3: `knowledge-mcp-config` composite action**
 
 **Goal:** One shared step that turns the `OPENCODE_CONFIG` secret into an `opencode-config` value carrying the `knowledge` server.
 
