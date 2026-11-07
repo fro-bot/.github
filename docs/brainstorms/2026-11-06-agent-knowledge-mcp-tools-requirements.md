@@ -7,7 +7,7 @@ topic: agent-knowledge-mcp-tools
 
 ## Summary
 
-A repo-owned MCP server gives Fro Bot agent runs three knowledge tools they can call mid-run: wiki search, linked-page expansion and solutions search. A test-pinned allowlist decides what the server exposes, and one shared workflow action wires it into every agent step. Scheduled and dispatched runs, plus review-comment and discussion mentions, get the tools on the current agent pin. PR, issue and issue-comment runs get them once a requested fro-bot/agent change ships.
+A repo-owned MCP server gives Fro Bot agent runs three knowledge tools they can call mid-run: wiki search, linked-page expansion and solutions search. A test-pinned allowlist decides what the server exposes, and one shared workflow action wires it into the Fro Bot agent jobs and survey. Scheduled and dispatched runs, plus review-comment and discussion mentions, get the tools on the current agent pin. PR, issue and issue-comment runs get them once a requested fro-bot/agent change ships.
 
 ---
 
@@ -50,7 +50,7 @@ The shipped contract shapes this work:
 
 **Wiring**
 
-- R8. One shared composite action builds each agent step's `opencode-config`. It reads the `OPENCODE_CONFIG` secret through `env:` and treats an empty secret as `{}`. It adds the server definition and writes no `{env:}` or `{file:}` reference. It fails the job when the secret doesn't parse or already defines a server with the same name. Every agent step uses it.
+- R8. One shared composite action builds each agent step's `opencode-config`. It reads the `OPENCODE_CONFIG` secret through `env:` and treats an empty secret as `{}`. It adds the server definition and writes no `{env:}` or `{file:}` reference. It fails the job when the secret doesn't parse or already defines a server with the same name. The main `fro-bot` job, Remediate, Observe and all three survey attempts use it. capture-learnings, capture-patterns and draft-solutions keep the raw secret: their prompts limit them to a supplied digest, and draft-solutions runs on an older checkout.
 - R9. The fixed `WIKI_CONTEXT` and `SOLUTIONS_CONTEXT` excerpts stay unchanged.
 - R10. Prompts for agent jobs whose triggers all keep MCP point the agent at the tools instead of the `wiki-context-expand` bash recipe. The main `fro-bot` job keeps the bash recipe and mentions the tools for runs that have them.
 
