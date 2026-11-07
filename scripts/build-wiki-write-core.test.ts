@@ -59,6 +59,93 @@ import {
   writeGateContractMarker,
 } from './build-wiki-write-core.ts'
 
+// The guard installed by the `vi.mock('node:fs/promises')` above, pinned. Every path used here is a nonexistent
+// child of the repository root, so without the guard each call would fail with ENOENT (or, for `rm` with `force`,
+// succeed) and never touch a file; the assertion is on the guard's own message.
+describe('the file-system guard', () => {
+  const outside = (...segments: string[]): string => join(repositoryRoot(), 'no-such-directory', ...segments)
+  const refused = 'refusing to touch a path outside the OS temp directory'
+
+  it.each([
+    ['writeFile', async () => writeFile(outside('file'), 'x')],
+    ['mkdir', async () => mkdir(outside('directory'), {recursive: true})],
+    ['mkdtemp', async () => mkdtemp(outside('prefix-'))],
+    ['rm', async () => rm(outside('file'), {force: true, recursive: true})],
+    ['rename (source)', async () => rename(outside('file'), join(tmpdir(), 'wiki-write-core-guard-target'))],
+    ['rename (target)', async () => rename(join(tmpdir(), 'wiki-write-core-guard-source'), outside('file'))],
+    ['symlink', async () => symlink('target', outside('link'))],
+    ['chmod', async () => chmod(outside('file'), 0o644)],
+    ['utimes', async () => utimes(outside('file'), new Date(), new Date())],
+  ] as const)('refuses %s on a path outside the OS temp directory', async (_name, operation) => {
+    await expect(operation()).rejects.toThrow(refused)
+  })
+
+  it('refuses a relative path, which would resolve against the checkout', async () => {
+    await expect(writeFile('relative-guard-probe.txt', 'x')).rejects.toThrow(refused)
+  })
+
+  it('refuses a sibling of the temp directory whose name merely starts with it', async () => {
+    await expect(writeFile(`${tmpdir()}-sibling/file`, 'x')).rejects.toThrow(refused)
+  })
+
+  it('lets a path under the OS temp directory through', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    try {
+      await writeFile(join(directory, 'file'), 'x')
+      await expect(readFile(join(directory, 'file'), 'utf8')).resolves.toBe('x')
+    } finally {
+      await rm(directory, {force: true, recursive: true})
+    }
+  })
+})
+
+// Fail closed. `runBuild` and `stagePackage` write through `node:fs/promises` with paths from option defaults
+// (`options.markerDirectory ?? markerDirectory()`), and a Stryker mutant or a hand edit that swaps one default in
+// points the write at the real `packages/wiki-write-core/dist/` before any assertion has run. These wrappers
+// refuse every mutating call whose path is not under the OS temp directory, so a swapped default throws instead of
+// touching the checkout. The module is mocked for the whole file: the build code and the package verifier import
+// it by name, and none of them takes the file-system functions as an option.
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const {tmpdir: osTmpdir} = await import('node:os')
+  const nodePath = await import('node:path')
+  const roots = [nodePath.resolve(osTmpdir()), await actual.realpath(osTmpdir())]
+  const assertInsideTemp = (target: unknown): void => {
+    const path = target instanceof URL ? target.pathname : String(target)
+    const absolute = nodePath.resolve(path)
+    if (!roots.some(root => absolute === root || absolute.startsWith(`${root}${nodePath.sep}`))) {
+      throw new Error(`refusing to touch a path outside the OS temp directory: ${path}`)
+    }
+  }
+  // The index of every path argument that names something the call creates, changes or removes.
+  const guarded = {
+    appendFile: [0],
+    chmod: [0],
+    copyFile: [1],
+    cp: [1],
+    link: [1],
+    mkdir: [0],
+    mkdtemp: [0],
+    rename: [0, 1],
+    rm: [0],
+    rmdir: [0],
+    symlink: [1],
+    truncate: [0],
+    unlink: [0],
+    utimes: [0],
+    writeFile: [0],
+  } as const satisfies Record<string, readonly number[]>
+  const wrapped: Record<string, unknown> = {...actual}
+  for (const [name, indexes] of Object.entries(guarded)) {
+    const original = (actual as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[name]
+    wrapped[name] = async (...args: unknown[]) => {
+      for (const index of indexes) assertInsideTemp(args[index])
+      return original?.(...args)
+    }
+  }
+  return {...wrapped, default: wrapped}
+})
+
 // Pure and cheap, so first: the mutants of `publishedExports` and its helpers die here, not after the real `tsc` tests.
 describe('published manifest', () => {
   it('maps a src entry to the dist import and its declaration file, and passes other values through', () => {
