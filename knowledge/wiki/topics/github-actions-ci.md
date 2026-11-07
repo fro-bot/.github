@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-11-07
 sources:
+  - url: https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml
+    sha: a9d710f95335d42f0f066163e43cc1e261021352
+    accessed: 2026-11-07
   - url: https://github.com/marcusrbrown/infra/blob/149b77b7719447be1425a0e2cb2013dbf4c392b8/.github/workflows/release.yaml
     sha: 149b77b7719447be1425a0e2cb2013dbf4c392b8
     accessed: 2026-11-07
@@ -405,6 +408,30 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Retire a delivery diagnosis when the declared channel changes (2026-11-07)
+
+At `a9d710f9`, [[marcusrbrown--vbs]] explicitly selects `branch-pr` for
+scheduled and autoheal-dispatch runs, and `working-dir` otherwise. This
+supersedes the October 23 observation of an unset delivery input and qualifies
+the September discarded-self-repair case below: the historical failures remain
+evidence of that earlier revision, not proof of today's missing channel.
+The action remains the final step and checkout still disables credential
+persistence. Neither fact alone demonstrates failure once the action is
+explicitly assigned delivery ownership. Actual publication and credential
+behavior remain unmeasured in this source-only pass.
+
+The same workflow now requests one combined daily pass at 03:30 UTC, one dated
+report issue, deduplication, root-cause branch reuse, and a review-backlog cap.
+It also forbids scheduled workflow edits, unlike the historical self-repair
+carve-out. These are prompt-level policies, not proof of enforcement or a
+measured throughput gain. Keep delivery selection, agent policy, and observed
+publication separate when comparing revisions. The comment-trigger jq fallback
+defect and Renovate admission predicate previously documented here persist;
+fixing one boundary does not establish that neighboring guards were repaired.
+
+Source: [Fro Bot workflow](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml),
+[Renovate caller](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/renovate.yaml).
 
 ## Verify registry visibility after a publish reports success (2026-11-07)
 

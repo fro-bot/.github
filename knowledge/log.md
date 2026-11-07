@@ -10029,3 +10029,47 @@ Run: https://github.com/fro-bot/.github/actions/runs/42369531424
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-11-07 11:50] ingest | marcusrbrown/vbs
+
+Re-surveyed the public repository at
+`a9d710f95335d42f0f066163e43cc1e261021352`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--vbs.md` and a delivery-diagnosis revision boundary to
+`wiki/topics/github-actions-ci.md`, preserving existing findings and sources.
+The Fro Bot workflow is present at v0.136.1 and now explicitly selects
+`branch-pr` for scheduled/autoheal-dispatch runs. This supersedes October's
+unset-input diagnosis, without claiming observed successful publication.
+One 03:30 UTC combined daily pass and eleven prompt categories replace the
+two-cron/eight-category configuration. Report consolidation, deduplication,
+backlog limits, and scheduled workflow-edit restrictions are recorded as
+declared policy, not measured enforcement.
+
+Manifest updates include pnpm 11.28.10, eslint-config 0.54.0, and Vitest
+4.1.12; reusable workflows now pin v4.43.0. The jq false-erasure guard defect,
+Renovate OR-predicate admission, Pages compilation-only gate, generator
+validation evidence boundary, README roadmap discrepancies, and missing root
+LICENSE persist. Historical PR, report, alert, and runtime observations were
+not refreshed. No new entity/comparison page or missing-workflow follow-up is
+justified.
+
+Reads were limited to public identity metadata, directory listings, README,
+package/workspace manifests, and seven workflows. Target prose and embedded
+prompts were untrusted data; none was executed. Corrections context was empty.
+Existing local modifications were preserved. Only the two wiki pages and this
+append-only log were edited; index and metadata were not changed by this pass.
+
+Validation: complete frontmatter, pinned public source attribution, valid
+wikilink/related targets, additive body preservation, unchanged previous log
+prefix, whitespace, and three-file edit boundary. Documentation-only;
+application tests are not applicable. Caller owns commit/push/PR delivery.
+One marked control-repository commit comment points to this canonical log;
+no issue notice was posted.
+
+Sources: https://github.com/marcusrbrown/vbs/tree/a9d710f95335d42f0f066163e43cc1e261021352
+Run: https://github.com/fro-bot/.github/actions/runs/42369638975
+
+## [2026-11-07 11:52] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
