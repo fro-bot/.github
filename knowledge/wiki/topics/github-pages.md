@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-11-06
+updated: 2026-11-07
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-11-07
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-11-06
@@ -95,6 +98,28 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Local Lighthouse evidence is not production monitoring (2026-11-07)
+
+The historical Performance Monitoring section below describes audits against
+the deployed portfolio. At the re-confirmed `8a1567df` revision,
+[[marcusrbrown--marcusrbrown-github-io]] actually builds its checkout and runs
+Lighthouse against four `localhost:4173` routes through `pnpm run preview`,
+three times per URL. Desktop/mobile settings emulate client conditions; they
+do not turn a local artifact into an observation of Pages hosting, TLS, DNS,
+redirects, or the current production content. Preserve the listed budgets as
+declared thresholds, not measured production results. Weekly scheduling is
+declared, but execution history was outside this survey.
+
+Its PR report also uses a green score threshold of 90 for both devices, despite
+the desktop assertion requiring 95, and selects the first matching report JSON
+rather than establishing a route/run aggregate. A green comment is therefore
+not the strict assertion verdict. Trace the audited URL, report selection, and
+assertion thresholds separately before interpreting a performance badge or
+summary. This is a source-contract qualification, not a measured regression;
+the underlying repository revision is unchanged from October 23.
+
+Source: [performance workflow](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml).
 
 ## A historical certificate expiry is not a current outage (2026-11-06)
 

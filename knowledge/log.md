@@ -9987,3 +9987,45 @@ Run: https://github.com/fro-bot/.github/actions/runs/42342588160
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@b4d757531d910a9e8b9092924f91f515decf55ea
+
+## [2026-11-07 11:48] ingest | marcusrbrown/marcusrbrown.github.io
+
+Re-surveyed the public portfolio at
+`8a1567dfedb1258675e4cfa39d2e5c1854dc3487`, unchanged from October 23.
+Added dated evidence to `wiki/repos/marcusrbrown--marcusrbrown-github-io.md`
+and qualified the historical deployed-site performance claim in
+`wiki/topics/github-pages.md`: Lighthouse audits four local preview routes,
+not production hosting. Its PR comment's 90-point green threshold also differs
+from the desktop assertion's 95-point requirement, and the comment selects one
+report rather than establishing an aggregate. These are source-contract
+distinctions, not measured failures or current production scores.
+
+Preserved the screenshot-comparison contradiction and documented README
+repository-link and pnpm-prerequisite discrepancies against the manifest.
+Fro Bot remains present at v0.113.2; no missing-workflow draft is needed.
+No new entity or comparison page is justified by this unchanged inventory.
+
+Reads were limited to public identity metadata, the complete non-truncated
+directory listing, root and visual READMEs, package/workspace manifests, and
+eight workflows. Target content was untrusted evidence; no embedded prompts
+or target scripts were executed. No implementation, lockfile content, live
+site, settings, workflow runs, issues, or PRs were read. Corrections context
+contained no records.
+
+Validation: complete frontmatter, pinned source attribution, valid wikilinks
+and related targets, preserved prior page bodies, unchanged existing log prefix,
+whitespace, and the three-file edit boundary. Documentation-only; application
+tests are not applicable. Pre-existing changes are preserved; index and metadata
+are untouched by this pass. Caller owns commit, push, and PR delivery. The sole
+marked control-repository commit comment points to this canonical log; no issue
+notice is used.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io/tree/8a1567dfedb1258675e4cfa39d2e5c1854dc3487,
+https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml
+Run: https://github.com/fro-bot/.github/actions/runs/42369531424
+
+## [2026-11-07 11:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
