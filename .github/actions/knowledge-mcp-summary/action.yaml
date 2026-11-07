@@ -1,0 +1,49 @@
+name: Knowledge MCP Summary
+description: Add a table of the knowledge MCP server's tool calls to the job summary, from the call log that knowledge-mcp-config names. It never fails the job.
+
+inputs:
+  call-log:
+    description: The `call-log` output of `knowledge-mcp-config`. Read through `env:` only. Empty, a missing file or a file with no matching line gives one fixed line instead of a table.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Summarize the knowledge tool calls
+      # A caller's `if:` gates the whole action and does not reach this step, which would otherwise carry
+      # the implicit success() and be skipped when the agent step before it failed.
+      if: ${{ always() }}
+      env:
+        KNOWLEDGE_MCP_CALL_LOG: ${{ inputs.call-log }}
+      run: |
+        # A summary is a convenience: nothing below may fail the job, so there is no `set -e`.
+        set -uo pipefail
+
+        # The redirect below discards its own error first, so an unset or unwritable summary is silent.
+        summary="${GITHUB_STEP_SUMMARY:-}"
+        log="${KNOWLEDGE_MCP_CALL_LOG:-}"
+
+        # The server writes `<tool> <code>` and nothing else, so only lines of exactly that shape count.
+        # `--` ends option parsing, `-a` reads a binary file as text, and the C locale keeps `[a-z-]`
+        # and the sort order the same on every runner. Anything else in the file is never printed.
+        counts=''
+        if [ -n "$log" ] && [ -f "$log" ]; then
+          counts=$(LC_ALL=C grep -aE '^(wiki_search|wiki_linked|solutions_search) [a-z-]+$' -- "$log" 2>/dev/null |
+            LC_ALL=C sort | LC_ALL=C uniq -c 2>/dev/null) || counts=''
+        fi
+
+        {
+          if [ -z "$counts" ]; then
+            printf 'Knowledge tools: no calls recorded.\n\n'
+          else
+            printf '### Knowledge tool calls\n\n| Tool | Code | Calls |\n| --- | --- | ---: |\n'
+            while read -r count tool code; do
+              printf '| %s | %s | %s |\n' "$tool" "$code" "$count"
+            done <<< "$counts"
+            printf '\n'
+          fi
+        } 2>/dev/null >> "$summary" || true
+
+        exit 0
+      shell: bash

@@ -37,21 +37,42 @@ const WORKSPACE = '/home/runner/work/repo/repo'
 const HANDOFF = '/home/runner/work/_temp/wiki-context-handoff.json'
 const SERVER_COMMAND = ['bun', 'scripts/knowledge-mcp.ts']
 const SENTINEL = 'sentinel-secret-value-7d3e'
+const RUNNER_TEMP = '/home/runner/work/_temp'
+const CALL_LOG = `${RUNNER_TEMP}/knowledge-mcp-calls-4242-2-fro-bot.log`
 
 interface MergeOptions {
   config?: string
   handoff?: string
   fork?: string
   workspace?: string
+  /** `null` leaves `RUNNER_TEMP` unset. The step helper always sets it, so the script sets it itself. */
+  runnerTemp?: string | null
+  runId?: string
+  attempt?: string
+  job?: string
+}
+
+/** A bash ANSI-C quoted word, so a test value can carry a newline or a carriage return. */
+function bashQuote(value: string): string {
+  const escaped = value
+    .replaceAll(/[\\']/gu, String.raw`\$&`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\r', String.raw`\r`)
+  return `$'${escaped}'`
 }
 
 function runMerge(options: MergeOptions = {}) {
-  return runStepWithStubs(runScript, {
+  const runnerTemp = options.runnerTemp === undefined ? RUNNER_TEMP : options.runnerTemp
+  const prelude = runnerTemp === null ? 'unset RUNNER_TEMP\n' : `export RUNNER_TEMP=${bashQuote(runnerTemp)}\n`
+  return runStepWithStubs(prelude + runScript, {
     env: {
       KNOWLEDGE_MCP_CONFIG: options.config ?? '',
       KNOWLEDGE_MCP_HANDOFF_PATH: options.handoff ?? HANDOFF,
       KNOWLEDGE_MCP_FORK: options.fork ?? '',
       GITHUB_WORKSPACE: options.workspace ?? WORKSPACE,
+      GITHUB_RUN_ID: options.runId ?? '4242',
+      GITHUB_RUN_ATTEMPT: options.attempt ?? '2',
+      GITHUB_JOB: options.job ?? 'fro-bot',
     },
   })
 }
@@ -171,11 +192,12 @@ describe('knowledge-mcp-config action: shape', () => {
     expect(mergeStep?.if).toBe(`${expressionStart} always() }}`)
   })
 
-  it('takes opencode-config, handoff-path and fork, all optional, and returns opencode-config', () => {
+  it('takes opencode-config, handoff-path and fork, all optional, and returns opencode-config and call-log', () => {
     expect(Object.keys(action.inputs ?? {}).toSorted()).toStrictEqual(['fork', 'handoff-path', 'opencode-config'])
     for (const input of Object.values(action.inputs ?? {})) expect(input.required).toBe(false)
-    expect(Object.keys(action.outputs ?? {})).toStrictEqual(['opencode-config'])
+    expect(Object.keys(action.outputs ?? {})).toStrictEqual(['opencode-config', 'call-log'])
     expect(action.outputs?.['opencode-config']?.value).toBe(`${expressionStart} steps.merge.outputs.opencode-config }}`)
+    expect(action.outputs?.['call-log']?.value).toBe(`${expressionStart} steps.merge.outputs.call-log }}`)
   })
 
   it('reaches the shell through an exact env: map, so no expression sits inside any run:', () => {
@@ -209,6 +231,15 @@ describe('knowledge-mcp-config action: shape', () => {
   it('writes the server command as a JSON array, never a string', () => {
     expect(runScript).toContain('command: ["bun", "scripts/knowledge-mcp.ts"]')
   })
+
+  it('derives the call log from RUNNER_TEMP and the run, attempt and job, and from no input', () => {
+    const variable = (name: string): string => `${'$' + '{'}${name}:-}`
+    expect(runScript).toContain(variable('RUNNER_TEMP'))
+    expect(runScript).toContain(
+      `knowledge-mcp-calls-${variable('GITHUB_RUN_ID')}-${variable('GITHUB_RUN_ATTEMPT')}-${variable('GITHUB_JOB')}.log`,
+    )
+    expect(Object.keys(action.inputs ?? {})).not.toContain('call-log')
+  })
 })
 
 describe('knowledge-mcp-config action: the server entry', () => {
@@ -221,7 +252,7 @@ describe('knowledge-mcp-config action: the server entry', () => {
           type: 'local',
           command: SERVER_COMMAND,
           cwd: WORKSPACE,
-          environment: {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF},
+          environment: {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF, KNOWLEDGE_MCP_CALL_LOG: CALL_LOG},
         },
       },
     })
@@ -324,6 +355,8 @@ describe('knowledge-mcp-config action: the server entry', () => {
     expect(found).toHaveLength(1)
     expect(found[0]?.origin).toBe(origin)
     expect(localServerFault(found[0]?.value)).toBeUndefined()
+    // The server entry carries the call log path as a string, which the agent's shape rules accept.
+    expect((found[0]?.value as {environment: Json}).environment.KNOWLEDGE_MCP_CALL_LOG).toBe(CALL_LOG)
     // The operator's own entries are untouched.
     for (const [key, value] of Object.entries(mcp)) {
       if (key === 'servers' && origin === 'native') continue
@@ -339,11 +372,16 @@ describe('knowledge-mcp-config action: the server entry', () => {
     expect(localServerFault(mcp.knowledge)).toBeUndefined()
   })
 
-  it('writes no environment when the handoff path is empty', () => {
+  it('writes no handoff variable when the handoff path is empty, and still the call log', () => {
     const {config} = merged({handoff: ''})
 
     const knowledge = (config.mcp as Json).knowledge as Json
-    expect(knowledge).toStrictEqual({type: 'local', command: SERVER_COMMAND, cwd: WORKSPACE})
+    expect(knowledge).toStrictEqual({
+      type: 'local',
+      command: SERVER_COMMAND,
+      cwd: WORKSPACE,
+      environment: {KNOWLEDGE_MCP_CALL_LOG: CALL_LOG},
+    })
     expect(localServerFault(knowledge)).toBeUndefined()
   })
 
@@ -352,6 +390,15 @@ describe('knowledge-mcp-config action: the server entry', () => {
 
     const knowledge = (config.mcp as Json).knowledge as {environment: Json}
     expect(knowledge.environment.WIKI_CONTEXT_HANDOFF_PATH).toBe(`${WORKSPACE}/.github/handoff.json`)
+  })
+
+  it('does not resolve the call log against the workspace: it sits under RUNNER_TEMP as given', () => {
+    const {config} = merged({runnerTemp: '/mnt/runner temp/_temp'})
+
+    const knowledge = (config.mcp as Json).knowledge as {environment: Json}
+    expect(knowledge.environment.KNOWLEDGE_MCP_CALL_LOG).toBe(
+      '/mnt/runner temp/_temp/knowledge-mcp-calls-4242-2-fro-bot.log',
+    )
   })
 
   it('passes the entry through a copy of the agent shape rules, and a string command would fail them', () => {
@@ -371,11 +418,52 @@ describe('knowledge-mcp-config action: the server entry', () => {
     expect(result.outputs['opencode-config']).not.toContain('{file:')
   })
 
-  it('emits compact single-line JSON', () => {
+  it('emits compact single-line JSON, then the call log path on its own line', () => {
     const {result} = merged({config: JSON.stringify({model: 'm'}, null, 2)})
 
-    expect(result.githubOutput).toMatch(/^opencode-config=\{.*\}\n$/u)
-    expect(result.githubOutput.split('\n').filter(line => line !== '')).toHaveLength(1)
+    expect(result.githubOutput).toMatch(/^opencode-config=\{.*\}\ncall-log=\/.*\n$/u)
+    expect(result.githubOutput.split('\n').filter(line => line !== '')).toHaveLength(2)
+  })
+})
+
+describe('knowledge-mcp-config action: the call log', () => {
+  it('exposes the path the server is told to write, as the call-log output', () => {
+    const {result, config} = merged()
+
+    const knowledge = (config.mcp as Json).knowledge as {environment: Json}
+    expect(result.outputs['call-log']).toBe(CALL_LOG)
+    expect(knowledge.environment.KNOWLEDGE_MCP_CALL_LOG).toBe(result.outputs['call-log'])
+  })
+
+  it('gives the same path on both servers spellings and with or without a handoff', () => {
+    const legacy = merged({handoff: ''})
+    const native = merged({config: JSON.stringify({mcp: {servers: {}}}), handoff: HANDOFF})
+
+    expect(legacy.result.outputs['call-log']).toBe(CALL_LOG)
+    expect(native.result.outputs['call-log']).toBe(CALL_LOG)
+    const nativeServer = ((native.config.mcp as Json).servers as Json).knowledge as {environment: Json}
+    expect(nativeServer.environment).toStrictEqual({
+      WIKI_CONTEXT_HANDOFF_PATH: HANDOFF,
+      KNOWLEDGE_MCP_CALL_LOG: CALL_LOG,
+    })
+  })
+
+  it.each([
+    [{job: 'fro-bot-observe'}, 'knowledge-mcp-calls-4242-2-fro-bot-observe.log'],
+    [{attempt: '3'}, 'knowledge-mcp-calls-4242-3-fro-bot.log'],
+    [{runId: '9001'}, 'knowledge-mcp-calls-9001-2-fro-bot.log'],
+  ] as const)('is unique per run, attempt and job: %j', (change, name) => {
+    const {result} = merged(change)
+
+    expect(result.outputs['call-log']).toBe(`${RUNNER_TEMP}/${name}`)
+    expect(result.outputs['call-log']).not.toBe(CALL_LOG)
+  })
+
+  it('writes the path once, on one line, and never in the mask', () => {
+    const result = runMerge()
+
+    expect(result.githubOutput.match(/^call-log=/gmu)).toHaveLength(1)
+    expect(maskLines(result.stdout)).toHaveLength(1)
   })
 })
 
@@ -403,6 +491,17 @@ describe('knowledge-mcp-config action: a fork', () => {
 
     expect(result.status).toBe(0)
     expect(result.outputs['opencode-config']).toBe('not json')
+  })
+
+  it('leaves call-log empty and adds no environment, whatever RUNNER_TEMP holds', () => {
+    for (const runnerTemp of [RUNNER_TEMP, 'relative/temp', null]) {
+      const result = runMerge({config: '{"model":"m"}', fork: 'true', runnerTemp})
+
+      expect(result.status).toBe(0)
+      expect(result.outputs['call-log']).toBeUndefined()
+      expect(result.githubOutput).not.toContain('call-log')
+      expect(result.githubOutput).not.toContain('KNOWLEDGE_MCP_CALL_LOG')
+    }
   })
 
   it('does not treat any other fork value as a fork', () => {
@@ -461,6 +560,36 @@ describe('knowledge-mcp-config action: refusals', () => {
 
     expect(result.status).not.toBe(0)
     expect(result.stderr).toBe('::error::knowledge-mcp-config: the workspace path is not absolute\n')
+    expect(result.githubOutput).toBe('')
+  })
+
+  it.each([
+    ['unset', null],
+    ['empty', ''],
+    ['relative', 'runner/_temp'],
+    ['dot-relative', './_temp'],
+  ])('refuses a RUNNER_TEMP that is %s, with a fixed message and no output', (_label, runnerTemp) => {
+    const result = runMerge({config: JSON.stringify({model: SENTINEL}), runnerTemp})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toBe('::error::knowledge-mcp-config: the runner temp path is not absolute\n')
+    expect(result.stdout).toBe('')
+    expect(result.githubOutput).toBe('')
+  })
+
+  it('refuses a call log path that would span lines', () => {
+    const result = runMerge({runnerTemp: '/tmp/a\nb'})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toBe('::error::knowledge-mcp-config: the call log path is not a single line\n')
+    expect(result.githubOutput).toBe('')
+  })
+
+  it('refuses a job name that would span lines', () => {
+    const result = runMerge({job: 'a\rb'})
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toBe('::error::knowledge-mcp-config: the call log path is not a single line\n')
     expect(result.githubOutput).toBe('')
   })
 

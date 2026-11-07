@@ -700,6 +700,13 @@ jobs:
             sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
 
+      # Reads this job's call log; the file is unique to the job and run attempt. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
+
       - name: Detect wiki insight changes
         id: wiki-changes
         if: always() && !cancelled()
@@ -975,6 +982,13 @@ jobs:
             output-mode: working-dir is the one that can actually persist it.
             </knowledge_persistence>
 
+      # Reads this job's call log; the file is unique to the job and run attempt. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
+
   # ── Oversight half of the daily pass: categories 5–8 + daily report ──────
   # working-dir. Runs after fro-bot-remediate (whether it ran or was
   # skipped) so the report can describe remediation that actually landed.
@@ -1154,6 +1168,13 @@ jobs:
             wiki pages. Keep changes additive, preserve contradictions with dates and
             sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
+
+      # Reads this job's call log; the file is unique to the job and run attempt. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
 
       - name: Detect wiki insight changes
         id: wiki-changes

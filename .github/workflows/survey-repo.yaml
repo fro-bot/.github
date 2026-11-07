@@ -311,6 +311,14 @@ jobs:
             code, not content.
             </knowledge_tools>
 
+      # Reads this job's call log. The three attempts share one file, so a later summary also counts the
+      # earlier attempts' calls. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
+
       # Detect 1: gated on attempt 1 concluding success (KTD1) — a hard failure fails
       # the job on its own and never reaches detection or a retry.
       - name: Detect wiki survey changes
@@ -360,6 +368,14 @@ jobs:
             code, not content.
             </knowledge_tools>
 
+      # Reads this job's call log. The three attempts share one file, so a later summary also counts the
+      # earlier attempts' calls. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
+
       # Detect 2: same script, same pre-attempt-1 baseline hash — retries never reset
       # the workspace (KTD6), so this still measures cumulative change since baseline.
       - name: Detect wiki survey changes (retry 1)
@@ -407,6 +423,14 @@ jobs:
             before you write a page. They are optional. A tool that fails returns a short error
             code, not content.
             </knowledge_tools>
+
+      # Reads this job's call log. The three attempts share one file, so a later summary also counts the
+      # earlier attempts' calls. It never fails the job.
+      - name: Summarize knowledge tool calls
+        if: ${{ always() && steps.knowledge-mcp.outputs.call-log != '' }}
+        uses: ./.github/actions/knowledge-mcp-summary
+        with:
+          call-log: ${{ steps.knowledge-mcp.outputs.call-log }}
 
       # Detect 3: the last detection in the chain — final-attempt below pairs
       # whichever attempt actually ran last with this (or an earlier) detect's output.

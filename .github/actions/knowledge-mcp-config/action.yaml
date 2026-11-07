@@ -1,5 +1,5 @@
 name: Knowledge MCP Config
-description: Build the opencode-config value that adds the `knowledge` MCP server to the OPENCODE_CONFIG secret, so an agent step can call the wiki and solutions lookups as tools
+description: Build the opencode-config value that adds the `knowledge` MCP server to the OPENCODE_CONFIG secret, so an agent step can call the wiki and solutions lookups as tools, and name the call log the server appends to
 
 inputs:
   opencode-config:
@@ -19,6 +19,9 @@ outputs:
   opencode-config:
     description: The config for the agent step's `opencode-config` input. The merged JSON on one line, or the secret unchanged on a fork.
     value: ${{ steps.merge.outputs.opencode-config }}
+  call-log:
+    description: The absolute path of the file the server appends one `<tool> <code>` line to per call, unique to this job and run attempt. Empty on a fork, where no server is added. Feed it to `knowledge-mcp-summary`.
+    value: ${{ steps.merge.outputs.call-log }}
 
 runs:
   using: composite
@@ -71,6 +74,20 @@ runs:
           esac
         fi
 
+        # The server appends one line per tool call here. OpenCode keeps a local server's stderr in its
+        # debug log, so this file is the only record a run leaves of a call. The name carries the run,
+        # the attempt and the job, so a re-run or a second job on the runner never shares a file. It is
+        # built from runner-provided variables only, never from an input.
+        runner_temp="${RUNNER_TEMP:-}"
+        case "$runner_temp" in
+          /*) ;;
+          *) fail 'the runner temp path is not absolute' ;;
+        esac
+        call_log="${runner_temp}/knowledge-mcp-calls-${GITHUB_RUN_ID:-}-${GITHUB_RUN_ATTEMPT:-}-${GITHUB_JOB:-}.log"
+        case "$call_log" in
+          *$'\n'* | *$'\r'*) fail 'the call log path is not a single line' ;;
+        esac
+
         # An unset secret is an empty config. Anything else must be one JSON object.
         base='{}'
         if [ -n "${KNOWLEDGE_MCP_CONFIG//[[:space:]]/}" ]; then
@@ -108,9 +125,11 @@ runs:
         merged=$(printf '%s' "$base" | jq -c \
           --arg cwd "$workspace" \
           --arg handoff "$handoff" \
+          --arg calllog "$call_log" \
           --argjson native "$native" '
-          ({type: "local", command: ["bun", "scripts/knowledge-mcp.ts"], cwd: $cwd}
-            + (if $handoff == "" then {} else {environment: {WIKI_CONTEXT_HANDOFF_PATH: $handoff}} end)) as $server
+          ({type: "local", command: ["bun", "scripts/knowledge-mcp.ts"], cwd: $cwd,
+            environment: ((if $handoff == "" then {} else {WIKI_CONTEXT_HANDOFF_PATH: $handoff} end)
+              + {KNOWLEDGE_MCP_CALL_LOG: $calllog})}) as $server
           | (if has("mcp") then . else . + {mcp: {}} end)
           | if $native then .mcp.servers.knowledge = $server else .mcp.knowledge = $server end' 2>/dev/null) ||
           fail 'could not add the knowledge server'
@@ -130,5 +149,9 @@ runs:
         masked="${masked//$lf/%0A}"
         printf '::add-mask::%s\n' "$masked"
 
-        printf 'opencode-config=%s\n' "$merged" >> "$GITHUB_OUTPUT"
+        # Neither value holds a newline: the merged JSON was checked above, the path just before it.
+        {
+          printf 'opencode-config=%s\n' "$merged"
+          printf 'call-log=%s\n' "$call_log"
+        } >> "$GITHUB_OUTPUT"
       shell: bash

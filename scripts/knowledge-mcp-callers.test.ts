@@ -16,6 +16,7 @@ import {parse} from 'yaml'
 
 const WORKFLOWS_DIR = resolve(import.meta.dirname, '../.github/workflows')
 const ACTION = './.github/actions/knowledge-mcp-config'
+const SUMMARY_ACTION = './.github/actions/knowledge-mcp-summary'
 const AGENT_PREFIX = 'fro-bot/agent@'
 // Literal GitHub Actions expression syntax, split to dodge eslint's no-template-curly-in-string rule.
 const OPEN = '$' + '{{'
@@ -23,6 +24,8 @@ const expr = (body: string): string => `${OPEN} ${body} }}`
 
 const SECRET = expr('secrets.OPENCODE_CONFIG')
 const CONFIG_OUTPUT = expr('steps.knowledge-mcp.outputs.opencode-config')
+const CALL_LOG_OUTPUT = expr('steps.knowledge-mcp.outputs.call-log')
+const SUMMARY_IF = expr(`always() && steps.knowledge-mcp.outputs.call-log != ''`)
 const FORK_FLAG = expr('github.event.pull_request.head.repo.fork')
 const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_wiki_linked', 'knowledge_solutions_search'] as const
 const RECIPE_LINKED = `WIKI_CONTEXT_HANDOFF_PATH='${OPEN} env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
@@ -179,6 +182,22 @@ describe('knowledge MCP callers: the classification is total', () => {
   })
 })
 
+describe('knowledge MCP callers: the call-log summary', () => {
+  it('appears only in the jobs of the table, once per agent step', () => {
+    const found: string[] = []
+    for (const file of readdirSync(WORKFLOWS_DIR).filter(name => name.endsWith('.yaml'))) {
+      for (const [job, body] of Object.entries(load(file).jobs ?? {})) {
+        for (const step of body.steps ?? []) {
+          if (step.uses === SUMMARY_ACTION) found.push(`${file}/${job}`)
+        }
+      }
+    }
+
+    const expected = CALLERS.flatMap(caller => caller.agentSteps.map(() => `${caller.workflow}/${caller.job}`))
+    expect(found.toSorted()).toStrictEqual(expected.toSorted())
+  })
+})
+
 describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
   const steps = stepsOf(caller.workflow, caller.job)
   const configIndex = indexOfStep(steps, step => step.uses === ACTION, 'knowledge-mcp-config')
@@ -217,6 +236,30 @@ describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
       expect(agent.with?.['opencode-config']).toBe(CONFIG_OUTPUT)
     }
   })
+
+  it.each(caller.agentSteps)(
+    'agent step %s has exactly one summary step right after it, reading the same config step output',
+    id => {
+      const agentAt = indexOfStep(steps, step => step.id === id, id)
+      const nextAgentAt = steps.findIndex(
+        (step, index) => index > agentAt && step.uses?.startsWith(AGENT_PREFIX) === true,
+      )
+      const between = steps.slice(agentAt + 1, nextAgentAt === -1 ? steps.length : nextAgentAt)
+      const summary = steps[agentAt + 1]
+
+      expect(summary?.uses).toBe(SUMMARY_ACTION)
+      expect(summary?.name).toBe('Summarize knowledge tool calls')
+      expect(summary?.if).toBe(SUMMARY_IF)
+      expect(summary?.with).toStrictEqual({'call-log': CALL_LOG_OUTPUT})
+      expect(summary?.id).toBeUndefined()
+      expect(summary?.env).toBeUndefined()
+      expect(summary?.run).toBeUndefined()
+      // The step carries no secret and no credential.
+      expect(JSON.stringify(summary)).not.toContain('secrets.')
+      expect(JSON.stringify(summary)).not.toContain('token')
+      expect(between.filter(step => step.uses === SUMMARY_ACTION)).toHaveLength(1)
+    },
+  )
 
   it.each(caller.agentSteps)('agent step %s names the right tools in its prompt', id => {
     const prompt = String(steps.find(step => step.id === id)?.with?.prompt ?? '')
