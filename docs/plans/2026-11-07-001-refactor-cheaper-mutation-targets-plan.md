@@ -145,7 +145,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 ## Implementation Units
 
-- [ ] **Unit 1: Lazy repository root in the mutation gate**
+- [x] **Unit 1: Lazy repository root in the mutation gate**
 
 **Goal:** Remove the module-load calls of `findRepositoryRoot()` so its mutants are no longer static.
 

@@ -22,10 +22,10 @@ import {findRepositoryRoot} from './repository-root.ts'
 // resolve to `scripts/fixture-a.ts` — a path that never exists on disk — and the traversal is
 // handed an injected `exists`, so nothing here touches the filesystem under `scripts/`.
 
-const repositoryRoot = findRepositoryRoot()
-
+// The root is looked up inside the helper, not at module load: a module-level lookup would run during test
+// collection and make every mutant of `findRepositoryRoot` static.
 function toRepoRelative(absolutePath: string): string {
-  return relative(repositoryRoot, absolutePath).replaceAll('\\', '/')
+  return relative(findRepositoryRoot(), absolutePath).replaceAll('\\', '/')
 }
 
 /**
@@ -415,7 +415,7 @@ describe('findMutateEntriesWithoutSourceReach (fake reach)', () => {
 
 describe('findMutateEntriesWithoutSourceReach (real config)', () => {
   it('reports zero violations against the REAL stryker.config.json', () => {
-    const {mutate, testFiles} = readStrykerConfig(strykerConfigPath)
+    const {mutate, testFiles} = readStrykerConfig(strykerConfigPath())
     const violations = findMutateEntriesWithoutSourceReach(mutate, testFiles, sourceReachTransitive)
 
     expect(violations, violations.length === 0 ? undefined : `barrel-only reach for: ${violations.join(', ')}`).toEqual(
@@ -424,7 +424,7 @@ describe('findMutateEntriesWithoutSourceReach (real config)', () => {
   })
 
   it('flags private-leak.ts once its direct same-tree exercisers are removed from testFiles', () => {
-    const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath)
+    const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath())
     // Both direct, non-barrel exercisers of private-leak.ts must be removed for this fixture:
     // private-leak-adapter.test.ts (imports it via the adapter) and private-leak.test.ts
     // (imports it directly). With either one still present, private-leak.ts is genuinely

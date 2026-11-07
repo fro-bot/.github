@@ -9,10 +9,12 @@ import {findRepositoryRoot} from './repository-root.ts'
 
 // Every path the gate reads or writes is named from here: `stryker.config.json`, the report, the files the
 // trigger set enumerates and the Stryker spawn's cwd. See `repository-root.ts`.
-const repositoryRoot = findRepositoryRoot()
-export const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
+// Functions, not module-level constants: a root looked up at module load runs while the test files are
+// collected, which makes every mutant of `findRepositoryRoot` static (each one runs against the whole suite).
+const repositoryRoot = (): string => findRepositoryRoot()
+export const strykerConfigPath = (): string => join(repositoryRoot(), 'stryker.config.json')
 // Exported so tests can stage/inspect a stale report at the exact path the runner reads.
-export const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'mutation.json')
+export const mutationReportPath = (): string => join(repositoryRoot(), 'reports', 'mutation', 'mutation.json')
 
 // ---------------------------------------------------------------------------
 // Closed verdict vocabulary
@@ -300,7 +302,7 @@ export function classifyMutationReport(
   reportJson: unknown,
   directiveViolations: readonly LocatedMutant[],
   missingMutateFiles: readonly string[] = [],
-  reportPath: string = mutationReportPath,
+  reportPath: string = mutationReportPath(),
   literalMutateEntries: readonly string[] = [],
   reporterConfig?: ReporterConfig,
   readError?: string,
@@ -952,8 +954,8 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * JSON report, never this return value. Exported as an injectable seam for testing.
  */
 export function defaultStrykerSpawner(): void {
-  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath], {
-    cwd: repositoryRoot,
+  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath()], {
+    cwd: repositoryRoot(),
     stdio: 'inherit',
     env: buildStrykerSpawnEnv(),
   })
@@ -1162,10 +1164,10 @@ function normalizeSpecifierExtension(specifier: string): string {
 
 function resolveSpecifier(repoRelativeFilePath: string, specifier: string): string {
   const fileDir = dirname(repoRelativeFilePath)
-  return relative(repositoryRoot, resolve(repositoryRoot, fileDir, normalizeSpecifierExtension(specifier))).replaceAll(
-    '\\',
-    '/',
-  )
+  return relative(
+    repositoryRoot(),
+    resolve(repositoryRoot(), fileDir, normalizeSpecifierExtension(specifier)),
+  ).replaceAll('\\', '/')
 }
 
 /**
@@ -1257,7 +1259,7 @@ export function stripComments(content: string): string {
  * regex/comment-stripping machinery a second time.
  */
 export function directSpecifiers(repoRelativeFilePath: string, readSource: SourceReader): string[] {
-  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
+  const content = stripComments(readSource(join(repositoryRoot(), repoRelativeFilePath)))
   const raw: string[] = []
 
   for (const match of content.matchAll(STATIC_RELATIVE_IMPORT_PATTERN)) {
@@ -1309,7 +1311,7 @@ export function reachedModulesTransitive(
   const followQueue: string[] = []
 
   for (const target of directSpecifiers(repoRelativeFilePath, readSource)) {
-    if (!existsSync(join(repositoryRoot, target))) continue
+    if (!existsSync(join(repositoryRoot(), target))) continue
     reached.add(target)
     followQueue.push(target)
   }
@@ -1319,7 +1321,7 @@ export function reachedModulesTransitive(
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
     for (const target of directSpecifiers(current, readSource)) {
-      if (!existsSync(join(repositoryRoot, target))) continue
+      if (!existsSync(join(repositoryRoot(), target))) continue
       if (reached.has(target)) continue
       reached.add(target)
       followQueue.push(target)
@@ -1344,7 +1346,7 @@ export function wikiWriteCoreSubpathSourceFiles(
   repoRelativeFilePath: string,
   readSource: SourceReader = defaultReadSource,
 ): string[] {
-  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot, repoRelativeFilePath))))
+  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot(), repoRelativeFilePath))))
   const subpaths: string[] = []
   for (const match of content.matchAll(WIKI_WRITE_CORE_SPECIFIER_PATTERN)) {
     subpaths.push(match[1] ?? 'index')
@@ -1375,7 +1377,7 @@ function resolveFroBotPackageExport(
   const manifestPath = `packages/${packageDir}/package.json`
   let raw: string
   try {
-    raw = readSource(join(repositoryRoot, manifestPath))
+    raw = readSource(join(repositoryRoot(), manifestPath))
   } catch (error) {
     if (isMissingFileError(error)) return undefined
     throw error
@@ -1398,7 +1400,7 @@ function resolveFroBotPackageExport(
     const specifier = subpath === undefined ? `@fro-bot/${packageDir}` : `@fro-bot/${packageDir}/${subpath}`
     throw new Error(`${manifestPath}: the exports entry "${key}" for ${specifier} is not a plain string path`)
   }
-  return relative(repositoryRoot, resolve(repositoryRoot, 'packages', packageDir, target)).replaceAll('\\', '/')
+  return relative(repositoryRoot(), resolve(repositoryRoot(), 'packages', packageDir, target)).replaceAll('\\', '/')
 }
 
 /**
@@ -1417,7 +1419,7 @@ export function froBotPackageSourceFiles(
   repoRelativeFilePath: string,
   readSource: SourceReader = defaultReadSource,
 ): string[] {
-  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot, repoRelativeFilePath))))
+  const content = markVitestTypeArguments(stripComments(readSource(join(repositoryRoot(), repoRelativeFilePath))))
   const sources: string[] = []
   for (const match of content.matchAll(FRO_BOT_PACKAGE_SPECIFIER_PATTERN)) {
     const [, packageDir, subpath] = match
@@ -1460,7 +1462,7 @@ export function buildImportClosure(
     const normalized = normalizeMutatePath(current)
     if (visited.has(normalized)) continue
     visited.add(normalized)
-    if (!isLiteralPath(normalized) || !existsSync(join(repositoryRoot, normalized))) continue
+    if (!isLiteralPath(normalized) || !existsSync(join(repositoryRoot(), normalized))) continue
 
     const reached = reachedModulesTransitive(normalized, readSource)
     for (const target of reached) {
@@ -1536,7 +1538,7 @@ const PACKAGE_MANIFEST_PATTERN = /^packages\/[^/]+\/package\.json$/u
 
 /** Repo-relative path of the manifest of every directory under `packages/` that has one. */
 function listPackageManifests(): string[] {
-  const packagesDir = join(repositoryRoot, 'packages')
+  const packagesDir = join(repositoryRoot(), 'packages')
   if (!existsSync(packagesDir)) return []
   return readdirSync(packagesDir, {withFileTypes: true})
     .filter(entry => entry.isDirectory() && existsSync(join(packagesDir, entry.name, 'package.json')))
@@ -1738,13 +1740,13 @@ export async function evaluateTriggerGate(
  */
 export async function runMutationGuardCheck(
   spawner: () => void = defaultStrykerSpawner,
-  reportPath: string = mutationReportPath,
+  reportPath: string = mutationReportPath(),
   reporterConfig?: ReporterConfig,
   triggerGateEnv?: {readonly eventName?: string; readonly eventPath?: string},
   triggerGateDeps?: ChangedFileGateDeps,
   triggerGateReadSource?: SourceReader,
 ): Promise<ClassificationResult> {
-  const config = readStrykerConfig(strykerConfigPath)
+  const config = readStrykerConfig(strykerConfigPath())
 
   const gateResult = await evaluateTriggerGate(config, triggerGateEnv, triggerGateDeps, triggerGateReadSource)
   if (gateResult !== undefined) return gateResult
@@ -1753,11 +1755,11 @@ export async function runMutationGuardCheck(
   spawner()
 
   const {json: reportJson, readError} = readMutationReport(reportPath)
-  const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
+  const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot())
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
   const literalTestFileEntries = config.testFiles.filter(isLiteralPath)
-  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? reporterConfigFrom(config, strykerConfigPath)
+  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? reporterConfigFrom(config, strykerConfigPath())
   return classifyMutationReport(
     reportJson,
     directiveViolations,

@@ -222,7 +222,7 @@ describe('classifyMutationReport', () => {
     const report = buildReport([
       {file: 'scripts/present.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'},
     ])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [
       'scripts/present.ts',
       'scripts/absent.ts',
     ])
@@ -234,7 +234,7 @@ describe('classifyMutationReport', () => {
     const report = buildReport([
       {file: 'scripts/x.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'},
     ])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, ['./scripts/x.ts'])
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), ['./scripts/x.ts'])
     expect(result.verdict).toBe('clean')
   })
 
@@ -262,7 +262,7 @@ describe('classifyMutationReport', () => {
         statusReason: 'Ignored by excludedMutations',
       },
     ])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, ['scripts/vacuous.ts'])
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), ['scripts/vacuous.ts'])
     expect(result.verdict).toBe('instrumentation-failed')
     const sentinel = result.mutants.find(m => m.status === 'AllMutantsIgnored')
     expect(sentinel?.file).toBe('scripts/vacuous.ts')
@@ -281,7 +281,7 @@ describe('classifyMutationReport', () => {
       },
       {file: 'scripts/mixed.ts', line: 2, column: 1, mutatorName: 'BooleanLiteral', status: 'Killed'},
     ])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, ['scripts/mixed.ts'])
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), ['scripts/mixed.ts'])
     expect(result.verdict).toBe('clean')
     expect(result.mutants.some(m => m.status === 'AllMutantsIgnored')).toBe(false)
   })
@@ -291,9 +291,9 @@ describe('classifyMutationReport', () => {
   // other would silently make the wrapper read a stale or nonexistent report.
   it('reports instrumentation-failed when reporters does not include "json"', () => {
     const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], {
       reporters: ['clear-text'],
-      resolvedJsonReportPath: mutationReportPath,
+      resolvedJsonReportPath: mutationReportPath(),
     })
     expect(result.verdict).toBe('instrumentation-failed')
     const sentinel = result.mutants.find(m => m.status === 'ReporterConfigMismatch')
@@ -303,21 +303,21 @@ describe('classifyMutationReport', () => {
 
   it('reports instrumentation-failed when the resolved jsonReporter.fileName does not match reportPath', () => {
     const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], {
       reporters: ['json', 'clear-text'],
       resolvedJsonReportPath: '/some/other/path/mutation.json',
     })
     expect(result.verdict).toBe('instrumentation-failed')
     const sentinel = result.mutants.find(m => m.status === 'ReporterConfigMismatch')
     expect(sentinel?.reason).toContain('/some/other/path/mutation.json')
-    expect(sentinel?.reason).toContain(mutationReportPath)
+    expect(sentinel?.reason).toContain(mutationReportPath())
   })
 
   it('reports clean when reporterConfig matches (reporters includes json, path matches)', () => {
     const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], {
       reporters: ['json', 'clear-text'],
-      resolvedJsonReportPath: mutationReportPath,
+      resolvedJsonReportPath: mutationReportPath(),
     })
     expect(result.verdict).toBe('clean')
   })
@@ -344,7 +344,7 @@ describe('classifyMutationReport', () => {
       [{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'NoCoverage'}],
       {'scripts/present.test.ts': {tests: [{id: '1', name: 'a test'}]}},
     )
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], undefined, undefined, [
       'scripts/present.test.ts',
       'scripts/dropped.test.ts',
     ])
@@ -359,7 +359,7 @@ describe('classifyMutationReport', () => {
       [{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'NoCoverage'}],
       {'scripts/dropped.test.ts': {tests: []}},
     )
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], undefined, undefined, [
       'scripts/dropped.test.ts',
     ])
     expect(result.verdict).toBe('instrumentation-failed')
@@ -372,7 +372,7 @@ describe('classifyMutationReport', () => {
     const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}], {
       'scripts/present.test.ts': {tests: [{id: '1', name: 'a test'}]},
     })
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], undefined, undefined, [
       './scripts/present.test.ts',
     ])
     expect(result.verdict).toBe('clean')
@@ -384,7 +384,7 @@ describe('classifyMutationReport', () => {
   })
 
   it('does not double-report a dropped test file when the report itself is unreadable', () => {
-    const result = classifyMutationReport(undefined, [], [], mutationReportPath, [], undefined, undefined, [
+    const result = classifyMutationReport(undefined, [], [], mutationReportPath(), [], undefined, undefined, [
       'scripts/dropped.test.ts',
     ])
     expect(result.verdict).toBe('instrumentation-failed')
@@ -398,7 +398,7 @@ describe('classifyMutationReport', () => {
   // skip verification because there was nothing to compare against.
   it('reports instrumentation-failed when the report is readable but has no top-level testFiles map at all', () => {
     const report = {schemaVersion: '2.0', files: {'a.ts': {mutants: []}}}
-    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+    const result = classifyMutationReport(report, [], [], mutationReportPath(), [], undefined, undefined, [
       'scripts/one.test.ts',
       'scripts/two.test.ts',
     ])
@@ -807,7 +807,7 @@ describe('resolveReporterConfig (default reporterConfig resolution)', () => {
   const realConfigPath = join(findRepositoryRoot(), 'stryker.config.json')
 
   it('reads the same config file the production run reads', () => {
-    expect(realConfigPath).toBe(strykerConfigPath)
+    expect(realConfigPath).toBe(strykerConfigPath())
   })
 
   // Blocking: a `reporters` field present but the wrong shape (a bare string, not an array)
@@ -860,7 +860,7 @@ describe('resolveReporterConfig (default reporterConfig resolution)', () => {
   it('resolves the real stryker.config.json to reporters including "json" and resolvedJsonReportPath equal to mutationReportPath', () => {
     const result = resolveReporterConfig(realConfigPath)
     expect(result.reporters).toContain('json')
-    expect(result.resolvedJsonReportPath).toBe(mutationReportPath)
+    expect(result.resolvedJsonReportPath).toBe(mutationReportPath())
   })
 
   // runMutationGuardCheck's default-construction line is `reporterConfig ??
@@ -1092,7 +1092,7 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
 // ---------------------------------------------------------------------------
 
 describe('closure-based trigger set against the real config', () => {
-  const realConfig = readStrykerConfig(strykerConfigPath)
+  const realConfig = readStrykerConfig(strykerConfigPath())
   const realTriggerSet = buildTriggerSet(realConfig)
 
   // Sanity: the real config's closure actually adds something beyond the literal enumerated
@@ -1467,16 +1467,16 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // real path before this test ran — marker or genuine pre-existing content — is asserted to
   // survive byte-for-byte.
   it('never touches the real mutationReportPath when a reportPath override is given', async () => {
-    const realReportDir = dirname(mutationReportPath)
+    const realReportDir = dirname(mutationReportPath())
     mkdirSync(realReportDir, {recursive: true})
 
-    const preExistingContent = existsSync(mutationReportPath) ? readFileSync(mutationReportPath, 'utf8') : undefined
+    const preExistingContent = existsSync(mutationReportPath()) ? readFileSync(mutationReportPath(), 'utf8') : undefined
     if (preExistingContent === undefined) {
       // Nothing was there before: safe to write a disposable marker, since "nothing existed"
       // is exactly the state `finally` restores by removing it again.
-      writeFileSync(mutationReportPath, `sentinel-${String(Date.now())}`, 'utf8')
+      writeFileSync(mutationReportPath(), `sentinel-${String(Date.now())}`, 'utf8')
     }
-    const expectedContent = readFileSync(mutationReportPath, 'utf8')
+    const expectedContent = readFileSync(mutationReportPath(), 'utf8')
 
     try {
       const otherTempReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-sentinel-')), 'mutation.json')
@@ -1485,11 +1485,11 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       }
       await runMutationGuardCheck(noOpSpawner, otherTempReportPath, undefined, NOT_A_PULL_REQUEST_ENV)
 
-      expect(readFileSync(mutationReportPath, 'utf8')).toBe(expectedContent)
+      expect(readFileSync(mutationReportPath(), 'utf8')).toBe(expectedContent)
       rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
     } finally {
       if (preExistingContent === undefined) {
-        rmSync(mutationReportPath, {force: true})
+        rmSync(mutationReportPath(), {force: true})
       }
       // else: preExistingContent was never overwritten, so there is nothing to restore.
     }
@@ -2021,16 +2021,16 @@ describe(
     const root = findRepositoryRoot()
 
     it('reads stryker.config.json and writes the report under the root, never under packages/ci-checks', () => {
-      expect(strykerConfigPath).toBe(join(root, 'stryker.config.json'))
-      expect(mutationReportPath).toBe(join(root, 'reports', 'mutation', 'mutation.json'))
-      expect(existsSync(strykerConfigPath)).toBe(true)
-      expect(strykerConfigPath).not.toContain(join('packages', 'ci-checks'))
-      expect(mutationReportPath).not.toContain(join('packages', 'ci-checks'))
+      expect(strykerConfigPath()).toBe(join(root, 'stryker.config.json'))
+      expect(mutationReportPath()).toBe(join(root, 'reports', 'mutation', 'mutation.json'))
+      expect(existsSync(strykerConfigPath())).toBe(true)
+      expect(strykerConfigPath()).not.toContain(join('packages', 'ci-checks'))
+      expect(mutationReportPath()).not.toContain(join('packages', 'ci-checks'))
     })
 
     it("reads the config's report path from the same root: the config names reports/mutation/mutation.json", () => {
-      const reporter = resolveReporterConfig(strykerConfigPath)
-      expect(reporter.resolvedJsonReportPath).toBe(mutationReportPath)
+      const reporter = resolveReporterConfig(strykerConfigPath())
+      expect(reporter.resolvedJsonReportPath).toBe(mutationReportPath())
       expect(reporter.reporters).toContain('json')
     })
 
@@ -2048,7 +2048,7 @@ describe(
     })
 
     it('lists the manifest of every package that exists under the root, ci-checks included', () => {
-      const triggerSet = buildTriggerSet(readStrykerConfig(strykerConfigPath))
+      const triggerSet = buildTriggerSet(readStrykerConfig(strykerConfigPath()))
       const manifests = readdirSync(join(root, 'packages'), {withFileTypes: true})
         .filter(entry => entry.isDirectory() && existsSync(join(root, 'packages', entry.name, 'package.json')))
         .map(entry => `packages/${entry.name}/package.json`)
@@ -2067,7 +2067,7 @@ describe(
 // The real config and the real tree: the pair of verdicts the move must not change, and the proof that every file of this
 // package the gate itself loads is a trigger, so editing the gate cannot read not-applicable.
 describe('the gate classifies the real tree after the move', {timeout: 60_000}, () => {
-  const realConfig = readStrykerConfig(strykerConfigPath)
+  const realConfig = readStrykerConfig(strykerConfigPath())
   const realTriggerSet = buildTriggerSet(realConfig)
   const verdictFor = async (changed: readonly string[]) =>
     (await evaluateTriggerGate(realConfig, PULL_REQUEST_EVENT, fakeGateDeps({fetchChangedFiles: () => [...changed]})))
