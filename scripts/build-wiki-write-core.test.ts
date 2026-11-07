@@ -23,7 +23,7 @@ import {
 import {tmpdir} from 'node:os'
 import {basename, dirname, join, parse, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
 import {
@@ -173,13 +173,31 @@ vi.mock('node:fs/promises', async importOriginal => {
 
 // A path that cannot be created: a child of a regular file (`package.json`, present in the checkout, a Stryker
 // sandbox and any copy of either). A broken guard therefore fails with ENOTDIR instead of leaving a file behind,
-// wherever the checkout lives; `discard` still removes whatever a broken guard did manage to create.
+// wherever the checkout lives.
+//
+// Cleanup removes only what this describe allocated. Every directory it makes goes through `allocate`, which
+// records it, and `discard` does nothing for any path that is not that directory or inside one: not the temp
+// directory, not a sibling of a fixture, not a fixed child of the temp directory, not a path in the checkout.
+// `discard` bypasses the guard (it uses the real `rm`), so this check is the only thing between a probe and a
+// recursive delete of someone else's file.
 describe('the file-system guard', () => {
   const unreachable = (...segments: string[]): string => join(repositoryRoot(), 'package.json', ...segments)
   const refusedOutside = 'refusing to touch a path outside a test-owned fixture directory'
-  const discard = async (...paths: string[]): Promise<void> => {
+  const allocated: string[] = []
+  const allocate = async (): Promise<string> => {
+    const directory = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    allocated.push(directory)
+    return directory
+  }
+  const isOwned = (path: string): boolean => {
+    const target = resolve(path)
+    return allocated.some(root => target === resolve(root) || target.startsWith(`${resolve(root)}${sep}`))
+  }
+  const discard = async (path: string): Promise<boolean> => {
+    if (!isOwned(path)) return false
     const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
-    for (const path of paths) await real.rm(path, {force: true, recursive: true}).catch(() => undefined)
+    await real.rm(path, {force: true, recursive: true})
+    return true
   }
   const probe = async (path: string, operation: () => Promise<unknown>, message: string | RegExp): Promise<void> => {
     try {
@@ -188,6 +206,11 @@ describe('the file-system guard', () => {
       await discard(path)
     }
   }
+  afterEach(async () => {
+    // Through `discard`, not the guarded `rm`: a test that already removed its fixture unregistered it.
+    for (const directory of allocated) await discard(directory)
+    allocated.length = 0
+  })
 
   it.each([
     ['writeFile', (p: string) => async () => writeFile(p, 'x')],
@@ -208,17 +231,13 @@ describe('the file-system guard', () => {
   })
 
   it('refuses a checkout path on either side of a rename, copy or link', async () => {
-    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    const fixture = await allocate()
     const outsidePath = unreachable('probe')
-    try {
-      await writeFile(join(fixture, 'file'), 'x')
-      await probe(outsidePath, async () => rename(join(fixture, 'file'), outsidePath), refusedOutside)
-      await probe(outsidePath, async () => rename(outsidePath, join(fixture, 'moved')), refusedOutside)
-      await probe(outsidePath, async () => copyFile(join(fixture, 'file'), outsidePath), refusedOutside)
-      await expect(readFile(join(fixture, 'file'), 'utf8')).resolves.toBe('x')
-    } finally {
-      await rm(fixture, {force: true, recursive: true})
-    }
+    await writeFile(join(fixture, 'file'), 'x')
+    await probe(outsidePath, async () => rename(join(fixture, 'file'), outsidePath), refusedOutside)
+    await probe(outsidePath, async () => rename(outsidePath, join(fixture, 'moved')), refusedOutside)
+    await probe(outsidePath, async () => copyFile(join(fixture, 'file'), outsidePath), refusedOutside)
+    await expect(readFile(join(fixture, 'file'), 'utf8')).resolves.toBe('x')
   })
 
   it('refuses a relative path before resolving it against the working directory', async () => {
@@ -228,34 +247,57 @@ describe('the file-system guard', () => {
   })
 
   it('refuses a sibling of a fixture directory whose name merely starts with it', async () => {
-    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
-    const sibling = `${fixture}-sibling`
-    try {
-      await probe(sibling, async () => writeFile(join(sibling, 'file'), 'x'), refusedOutside)
-    } finally {
-      await rm(fixture, {force: true, recursive: true})
-    }
+    const sibling = `${await allocate()}-sibling`
+    await probe(sibling, async () => writeFile(join(sibling, 'file'), 'x'), refusedOutside)
   })
 
-  it('refuses the temp directory itself and a path that climbs out of a fixture directory', async () => {
-    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
-    try {
-      // `writeFile` onto a directory fails with EISDIR even when the guard is broken: nothing here can delete the
-      // temp directory, and there is nothing to discard.
-      await expect(writeFile(tmpdir(), 'x')).rejects.toThrow(refusedOutside)
-      const climb = join(fixture, '..', 'wiki-write-core-guard-escape')
-      await probe(climb, async () => writeFile(climb, 'x'), refusedOutside)
-    } finally {
-      await rm(fixture, {force: true, recursive: true})
-    }
+  it('refuses the temp directory itself', async () => {
+    // `writeFile` onto a directory fails with EISDIR even when the guard is broken, and there is nothing to discard.
+    await expect(writeFile(tmpdir(), 'x')).rejects.toThrow(refusedOutside)
   })
 
   it('lets a registered fixture directory through, and stops once it is removed', async () => {
-    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    const fixture = await allocate()
     await writeFile(join(fixture, 'file'), 'x')
     await expect(readFile(join(fixture, 'file'), 'utf8')).resolves.toBe('x')
     await rm(fixture, {force: true, recursive: true})
     await probe(fixture, async () => writeFile(join(fixture, 'file'), 'y'), refusedOutside)
+  })
+
+  // Cleanup is the one thing here that bypasses the guard, so it gets its own proof: it removes what the test
+  // allocated and leaves everything else alone, including files that exist and sit in a registered directory.
+  describe('cleanup', () => {
+    it('removes a path inside a directory this describe allocated', async () => {
+      const fixture = await allocate()
+      await writeFile(join(fixture, 'file'), 'x')
+      await expect(discard(join(fixture, 'file'))).resolves.toBe(true)
+      await expect(readFile(join(fixture, 'file'), 'utf8')).rejects.toThrow('ENOENT')
+    })
+
+    it('leaves a path outside every allocated directory alone', async () => {
+      // A directory made through the same mocked `mkdtemp` (so it is writable) that this describe did not record.
+      const stranger = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-stranger-'))
+      const fixture = await allocate()
+      try {
+        await writeFile(join(stranger, 'sentinel'), 'keep')
+        const outside = [
+          join(stranger, 'sentinel'),
+          stranger,
+          `${fixture}-sibling`,
+          join(fixture, '..', basename(stranger), 'sentinel'),
+          // A fixed, shared child of the temp directory: the path a fixture-relative `..` probe would reach.
+          join(fixture, '..', 'wiki-write-core-guard-escape'),
+          tmpdir(),
+          repositoryRoot(),
+          unreachable('probe'),
+          join('relative', 'path'),
+        ]
+        for (const path of outside) await expect(discard(path), path).resolves.toBe(false)
+        await expect(readFile(join(stranger, 'sentinel'), 'utf8')).resolves.toBe('keep')
+      } finally {
+        await rm(stranger, {force: true, recursive: true})
+      }
+    })
   })
 })
 
