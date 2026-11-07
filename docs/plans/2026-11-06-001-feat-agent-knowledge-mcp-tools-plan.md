@@ -350,7 +350,7 @@ sequenceDiagram
 
 **Verification:** The action tests pass under real bash and jq, and actionlint is clean.
 
-- [ ] **Unit 4: Wire the four jobs and update their prompts**
+- [x] **Unit 4: Wire the four jobs and update their prompts**
 
 **Goal:** The main `fro-bot` job, Remediate, Observe and survey pass the composite's output to the agent. Their prompts reflect which runs have tools.
 

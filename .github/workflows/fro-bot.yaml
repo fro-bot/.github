@@ -617,6 +617,16 @@ jobs:
             }}
         run: bun scripts/solutions-query.ts
 
+      # Adds the `knowledge` MCP server (wiki and solutions lookups) to the agent's config.
+      # The agent drops it on pull_request, issue_comment and issues; a fork PR gets the secret unchanged.
+      - name: Add the knowledge tools to the agent config
+        id: knowledge-mcp
+        uses: ./.github/actions/knowledge-mcp-config
+        with:
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
+          fork: ${{ github.event.pull_request.head.repo.fork }}
+
       - name: Run Fro Bot
         id: fro-bot-agent
         uses: fro-bot/agent@d5d9aa69e1f913ce5691eac1f1f7f59f0cbd57a0 # v0.136.0
@@ -637,7 +647,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           prompt: |
             <persona>
             ${{ env.PERSONA }}
@@ -656,7 +666,16 @@ jobs:
             <wiki_context_expansion>
             The wiki context above is baseline-injected and usually enough on its own — do not
             expand by default. If baseline context is insufficient, following linked pages would
-            help, or you have a short grounded query, you may optionally run one of:
+            help, or you have a short grounded query, you may optionally look further.
+
+            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
+            the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
+            and returns documented solutions. A tool that fails returns a short error code, not
+            content; an empty result means nothing matched.
+
+            When the run does not list them, run one of:
 
             `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
             `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
@@ -872,6 +891,16 @@ jobs:
             exit 1
           fi
 
+      # Adds the `knowledge` MCP server (wiki and solutions lookups) to the agent's config.
+      # The agent drops it on pull_request, issue_comment and issues; a fork PR gets the secret unchanged.
+      - name: Add the knowledge tools to the agent config
+        id: knowledge-mcp
+        uses: ./.github/actions/knowledge-mcp-config
+        with:
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
+          fork: ${{ github.event.pull_request.head.repo.fork }}
+
       - name: Run Fro Bot
         id: fro-bot-agent
         uses: fro-bot/agent@d5d9aa69e1f913ce5691eac1f1f7f59f0cbd57a0 # v0.136.0
@@ -891,7 +920,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: branch-pr
           prompt: |
             <persona>
@@ -911,7 +940,16 @@ jobs:
             <wiki_context_expansion>
             The wiki context above is baseline-injected and usually enough on its own — do not
             expand by default. If baseline context is insufficient, following linked pages would
-            help, or you have a short grounded query, you may optionally run one of:
+            help, or you have a short grounded query, you may optionally look further.
+
+            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
+            the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
+            and returns documented solutions. A tool that fails returns a short error code, not
+            content; an empty result means nothing matched.
+
+            When the run does not list them, run one of:
 
             `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
             `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
@@ -1032,6 +1070,16 @@ jobs:
           SOLUTIONS_QUERY_BODY: ''
         run: bun scripts/solutions-query.ts
 
+      # Adds the `knowledge` MCP server (wiki and solutions lookups) to the agent's config.
+      # The agent drops it on pull_request, issue_comment and issues; a fork PR gets the secret unchanged.
+      - name: Add the knowledge tools to the agent config
+        id: knowledge-mcp
+        uses: ./.github/actions/knowledge-mcp-config
+        with:
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
+          fork: ${{ github.event.pull_request.head.repo.fork }}
+
       - name: Run Fro Bot
         id: fro-bot-agent
         uses: fro-bot/agent@d5d9aa69e1f913ce5691eac1f1f7f59f0cbd57a0 # v0.136.0
@@ -1051,7 +1099,7 @@ jobs:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
-          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: working-dir
           # Observe runs 20-30 minutes; the job's 60-minute limit stays the backstop.
           timeout: '2700000'
@@ -1073,7 +1121,16 @@ jobs:
             <wiki_context_expansion>
             The wiki context above is baseline-injected and usually enough on its own — do not
             expand by default. If baseline context is insufficient, following linked pages would
-            help, or you have a short grounded query, you may optionally run one of:
+            help, or you have a short grounded query, you may optionally look further.
+
+            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
+            the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
+            and returns documented solutions. A tool that fails returns a short error code, not
+            content; an empty result means nothing matched.
+
+            When the run does not list them, run one of:
 
             `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
             `bun scripts/wiki-context-expand.ts query "<short grounded query>"`

@@ -35,6 +35,11 @@
  *       agent's own — the same `post:`-phase re-exposure mechanism as (d), generalized to
  *       any action (not just create-github-app-token) that has one.
  *
+ * One narrow exemption to (e): the pre-agent `./.github/actions/knowledge-mcp-config` step may carry
+ * `secrets.OPENCODE_CONFIG`, and only that secret, when the agent step's `opencode-config` input reads
+ * that step's `opencode-config` output. The action builds the config the agent itself receives, so the
+ * model already holds the value, and a local composite action has no `post:` phase to re-run later.
+ *
  * Supersedes the narrower `agent-token-mint-order-guard.test.ts` (which only caught a
  * token MINTED after the agent step, not one minted before and merely reused after).
  *
@@ -83,6 +88,19 @@ const CREDENTIAL_REF_PATTERNS = [/secrets\.\w+/g, /steps\.[\w-]+\.outputs\.token
 
 /** Wider net for composite-action content: also flags a bare GITHUB_TOKEN reference. */
 const COMPOSITE_ACTION_CREDENTIAL_PATTERNS = [...CREDENTIAL_REF_PATTERNS, /\bGITHUB_TOKEN\b/g]
+
+/** The local composite action that builds the agent's own `opencode-config` from the secret. */
+const CONFIG_BUILDER_USES = './.github/actions/knowledge-mcp-config'
+const CONFIG_SECRET_REF = 'secrets.OPENCODE_CONFIG'
+
+/**
+ * Whether `step` is the config-builder action whose output the agent step reads as its `opencode-config`.
+ * Tied to the agent step's input on purpose: the same action wired anywhere else gets no exemption.
+ */
+function feedsAgentConfig(step: WorkflowStep, agentStep: WorkflowStep | undefined): boolean {
+  if (step.uses !== CONFIG_BUILDER_USES || step.id === undefined) return false
+  return String(agentStep?.with?.['opencode-config'] ?? '').includes(`steps.${step.id}.outputs.opencode-config`)
+}
 
 function findRefs(text: string, patterns: RegExp[]): string[] {
   const found: string[] = []
@@ -227,7 +245,12 @@ export function scanAgentJob(params: ScanAgentJobParams): ScanAgentJobResult {
   // create-github-app-token specifically.
   for (const step of steps.slice(0, agentStepIndex)) {
     if (typeof step.uses !== 'string' || step.uses === '') continue
-    pushIfForeign(step.name ?? step.id ?? '(unnamed step)', findCredentialRefs(stepText(step)))
+    const refs = findCredentialRefs(stepText(step))
+    const exempt = feedsAgentConfig(step, agentStep)
+    pushIfForeign(
+      step.name ?? step.id ?? '(unnamed step)',
+      exempt ? refs.filter(ref => ref !== CONFIG_SECRET_REF) : refs,
+    )
   }
 
   return {agentCredential, violations}
@@ -568,6 +591,69 @@ describe('scanAgentJob (fixture-driven unit tests for each new rule)', () => {
         resolveCompositeAction: noOpResolver,
       })
       expect(result.violations).toStrictEqual([])
+    })
+
+    describe('the config-builder exemption', () => {
+      const configStep: WorkflowStep = {
+        name: 'build config',
+        id: 'knowledge-mcp',
+        uses: './.github/actions/knowledge-mcp-config',
+        with: {'opencode-config': `${EXPR} secrets.OPENCODE_CONFIG }}`},
+      }
+      const feedsConfig: WorkflowStep = {
+        ...agentStep,
+        with: {
+          ...agentStep.with,
+          'opencode-config': `${EXPR} steps.knowledge-mcp.outputs.opencode-config }}`,
+        },
+      }
+
+      it('lets the config-builder step carry secrets.OPENCODE_CONFIG when the agent reads its output', () => {
+        const result = scanAgentJob({job: {steps: [configStep, feedsConfig]}, resolveCompositeAction: noOpResolver})
+        expect(result.violations).toStrictEqual([])
+      })
+
+      it('still flags any other secret on the config-builder step', () => {
+        const result = scanAgentJob({
+          job: {
+            steps: [
+              {...configStep, with: {...configStep.with, extra: `${EXPR} secrets.GATEWAY_WEBHOOK_SECRET }}`}},
+              feedsConfig,
+            ],
+          },
+          resolveCompositeAction: noOpResolver,
+        })
+        expect(result.violations).toStrictEqual([{step: 'build config', ref: 'secrets.GATEWAY_WEBHOOK_SECRET'}])
+      })
+
+      it('gives no exemption when the agent step does not read the step output', () => {
+        const result = scanAgentJob({job: {steps: [configStep, agentStep]}, resolveCompositeAction: noOpResolver})
+        expect(result.violations).toStrictEqual([{step: 'build config', ref: 'secrets.OPENCODE_CONFIG'}])
+      })
+
+      it('gives no exemption when the agent reads a different step id', () => {
+        const result = scanAgentJob({
+          job: {steps: [{...configStep, id: 'other'}, feedsConfig]},
+          resolveCompositeAction: noOpResolver,
+        })
+        expect(result.violations).toStrictEqual([{step: 'build config', ref: 'secrets.OPENCODE_CONFIG'}])
+      })
+
+      it('gives no exemption to any other action, even one the agent reads', () => {
+        const result = scanAgentJob({
+          job: {steps: [{...configStep, uses: 'some-org/some-action@abc'}, feedsConfig]},
+          resolveCompositeAction: noOpResolver,
+        })
+        expect(result.violations).toStrictEqual([{step: 'build config', ref: 'secrets.OPENCODE_CONFIG'}])
+      })
+
+      it('gives the same action no exemption after the agent step', () => {
+        const result = scanAgentJob({
+          job: {steps: [feedsConfig, {...configStep, name: 'late config'}]},
+          resolveCompositeAction: () => 'name: knowledge-mcp-config',
+        })
+        expect(result.violations).toStrictEqual([{step: 'late config', ref: 'secrets.OPENCODE_CONFIG'}])
+      })
     })
 
     it('does not flag a pre-agent uses: step with no with:/env: at all', () => {
