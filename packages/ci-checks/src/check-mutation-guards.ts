@@ -1500,8 +1500,9 @@ export function buildImportClosure(
  * `testFiles` set: the Stryker/vitest/package configs that shape how the run resolves and
  * executes; the wrapper, its CLI wiring, the repository-root helper, the `scripts/` entrypoint that
  * `bun run check:mutation-guards` runs and its own config-enumeration test (self-referential — a
- * change to any of them changes what this check enforces or how); the workflow file that defines this very
- * job (a job rename or trigger change is itself worth a run); the shared setup action every
+ * change to any of them changes what this check enforces or how); the `not-mutated` lockfile-gate entry
+ * shim, whose `import.meta.main` guard is the one line of that gate no mutant covers; the workflow file
+ * that defines this very job (a job rename or trigger change is itself worth a run); the shared setup action every
  * job (including this one) depends on to install and cache dependencies; and the two
  * `tsconfig*.json` files whose settings affect how the mutated TypeScript compiles.
  * `quartz-site/tsconfig.json` is deliberately excluded — it configures an unrelated
@@ -1515,6 +1516,7 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
   'bun.lock',
   'bunfig.toml',
   'scripts/check-mutation-guards.ts',
+  'scripts/wiki-lockfile-gates.ts',
   'packages/ci-checks/src/check-mutation-guards.ts',
   'packages/ci-checks/src/check-mutation-guards-cli.ts',
   'packages/ci-checks/src/repository-root.ts',

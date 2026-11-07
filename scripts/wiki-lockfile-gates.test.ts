@@ -9,10 +9,11 @@ import {
   checkLockfileIntegrity,
   isLocalPluginSource,
   isLocalPluginSourceWithinRoot,
+  main,
   runCli,
   type LockFile,
   type QuartzConfig,
-} from './wiki-lockfile-gates.ts'
+} from './wiki-lockfile-gates-core.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -1689,44 +1690,18 @@ describe('runCli coverage mode — yaml resolution topology', () => {
 })
 
 // ---------------------------------------------------------------------------
-// main() — CLI self-invoke guard (import.meta.url === file://<argv[1]>)
+// main() — the CLI wiring around runCli (argv, cwd, stdout, stderr, exit)
 // ---------------------------------------------------------------------------
 
-// Every runCli-level test above imports the module without ever setting process.argv[1] to its own
-// path, so the `false` branch of every mutator variant on the guard/main() wiring is trivially
-// exercised already -- that alone does not kill the mutants on `main()`'s body or the guard condition
-// itself. Cache-busts the dynamic import (unique query string) so the module's top-level code
-// re-executes with the manipulated argv/cwd, rather than returning the already-cached module instance.
-// Note: these tests exercise main()'s body and its wiring to runCli/process, not the guard predicate
-// itself -- vitest strips the query string from import.meta.url before the equality check runs, and a
-// real production invocation never carries one either, so the query string is purely a test-isolation
-// device, not something the guard has to tolerate.
-describe('main() CLI self-invoke guard', () => {
-  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
-    const modulePath = new URL('./wiki-lockfile-gates.ts', import.meta.url)
-    const originalArgv = [...process.argv]
-
-    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit called')
-    })
-
-    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
-    try {
-      await import(`${modulePath.href}?guard-test-noop`)
-      expect(exitSpy).not.toHaveBeenCalled()
-      expect(stdoutSpy).not.toHaveBeenCalled()
-      expect(stderrSpy).not.toHaveBeenCalled()
-    } finally {
-      exitSpy.mockRestore()
-      vi.restoreAllMocks()
-      process.argv = originalArgv
-    }
+// `main()` is called directly: the self-invoke guard lives in the unmutated `wiki-lockfile-gates.ts` shim,
+// where a module-level statement cannot make a mutant static, and `wiki-lockfile-gates-entrypoint.test.ts`
+// pins the guard by spawning the shim. These tests pin what `main()` reads and writes.
+describe('main()', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it('invokes main() and writes the coverage-mode success message to stdout without calling process.exit', async () => {
-    const modulePath = new URL('./wiki-lockfile-gates.ts', import.meta.url)
+  it('writes the coverage-mode success message to stdout without calling process.exit', async () => {
     const originalArgv = [...process.argv]
     const dir = await mkdtemp(join(tmpdir(), 'wiki-lockfile-gates-main-'))
 
@@ -1758,24 +1733,22 @@ describe('main() CLI self-invoke guard', () => {
     // unlimited calls.
     vi.spyOn(process, 'cwd').mockImplementationOnce(() => dir)
 
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname, 'coverage']
+    process.argv = [originalArgv[0] ?? 'node', 'wiki-lockfile-gates.ts', 'coverage']
     try {
-      await import(`${modulePath.href}?guard-test-main-coverage-ok`)
+      await main()
       expect(exitSpy).not.toHaveBeenCalled()
       expect(stdoutOutput.join('')).toBe(
         'Lockfile coverage gate passed: 1 enabled remote plugin(s) match 1 lock entry.\n',
       )
       expect(stderrSpy).not.toHaveBeenCalled()
     } finally {
-      exitSpy.mockRestore()
       vi.restoreAllMocks()
       process.argv = originalArgv
       await rm(dir, {recursive: true, force: true})
     }
   })
 
-  it('invokes main() and exits with the unknown-mode message on stderr for a nonzero exit code', async () => {
-    const modulePath = new URL('./wiki-lockfile-gates.ts', import.meta.url)
+  it('writes the unknown-mode message to stderr and exits with the nonzero code', async () => {
     const originalArgv = [...process.argv]
 
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
@@ -1788,16 +1761,15 @@ describe('main() CLI self-invoke guard', () => {
       throw new Error('process.exit called')
     })
 
-    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname, 'totally-bogus']
+    process.argv = [originalArgv[0] ?? 'node', 'wiki-lockfile-gates.ts', 'totally-bogus']
     try {
-      await expect(import(`${modulePath.href}?guard-test-main-bogus-mode`)).rejects.toThrow('process.exit called')
+      await expect(main()).rejects.toThrow('process.exit called')
       expect(exitSpy).toHaveBeenCalledWith(2)
       expect(stdoutSpy).not.toHaveBeenCalled()
       expect(stderrOutput.join('')).toBe(
         'wiki-lockfile-gates: unknown mode "totally-bogus" (expected "coverage" or "integrity")\n',
       )
     } finally {
-      exitSpy.mockRestore()
       vi.restoreAllMocks()
       process.argv = originalArgv
     }

@@ -177,7 +177,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Verification:** The after report shows no static mutants in `repository-root.ts`, 4 of 4 killed with named killers, and the gate's own tests pass.
 
-- [ ] **Unit 2: Split the lockfile gate into core and shim**
+- [x] **Unit 2: Split the lockfile gate into core and shim**
 
 **Goal:** Move the lockfile gate's logic out of the entry file so that no mutated code runs at module load.
 

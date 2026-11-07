@@ -59,7 +59,7 @@ Two later rounds of hardening (PRs #3862 and #3865) added companion rules for th
    including a bare `owner/repo` shorthand that only the loader accepts. The gate therefore reports a
    bare `owner/repo` as unparseable rather than as "missing from the lock". A wrong-parser divergence
    that fails closed still misleads: the next maintainer goes looking for a lockfile problem that does
-   not exist. `scripts/wiki-lockfile-gates.ts` documents the grammar, and a golden test in
+   not exist. `scripts/wiki-lockfile-gates-core.ts` documents the grammar, and a golden test in
    `scripts/wiki-lockfile-gates.test.ts` runs the gate against the real `quartz-site/quartz.config.yaml`
    and `quartz.lock.json`.
 

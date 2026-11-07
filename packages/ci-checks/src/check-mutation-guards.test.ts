@@ -913,6 +913,7 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('bun.lock')).toBe(true)
     expect(triggerSet.files.has('bunfig.toml')).toBe(true)
     expect(triggerSet.files.has('scripts/check-mutation-guards.ts')).toBe(true)
+    expect(triggerSet.files.has('scripts/wiki-lockfile-gates.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards-cli.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
@@ -1115,6 +1116,22 @@ describe('closure-based trigger set against the real config', () => {
     )
     expect(result).toBeUndefined()
     expect(realTriggerSet.files.has('packages/wiki-write-core/src/wiki-slug.ts')).toBe(true)
+  })
+
+  // The lockfile gate's entry shim is `not-mutated` and sits outside the closure (nothing imports it), so
+  // only the fixed-trigger list makes a shim-only PR run: its `import.meta.main` guard is covered by no
+  // mutant, and a change to it must still get a full run.
+  it('does NOT report not-applicable for a changed set of only scripts/wiki-lockfile-gates.ts (the unmutated shim)', async () => {
+    expect(realConfig.mutate).not.toContain('scripts/wiki-lockfile-gates.ts')
+    expect(realConfig.mutate).toContain('scripts/wiki-lockfile-gates-core.ts')
+
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['scripts/wiki-lockfile-gates.ts']}),
+    )
+    expect(result).toBeUndefined()
+    expect(realTriggerSet.files.has('scripts/wiki-lockfile-gates.ts')).toBe(true)
   })
 
   // (b) A file genuinely outside the real closure, computed from the real config rather than
