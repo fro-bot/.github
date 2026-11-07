@@ -42,6 +42,11 @@ const FULL_CHECKOUT: Readonly<Record<string, string>> = {
   [HANDOFF_PATH]: HANDOFF,
 }
 
+/** A file-system error as Node raises it: the `code` tells a missing path from an unreadable one. */
+function fsError(code: string, path: string): Error {
+  return Object.assign(new Error(`${code}: ${path}`), {code})
+}
+
 interface Harness {
   readonly deps: KnowledgeDeps
   readonly stderr: string[]
@@ -61,12 +66,12 @@ function memoryDeps(
       const names = Object.keys(files)
         .filter(file => file.startsWith(prefix) && !file.slice(prefix.length).includes('/'))
         .map(file => file.slice(prefix.length))
-      if (names.length === 0) throw new Error(`ENOENT: ${path}`)
+      if (names.length === 0) throw fsError('ENOENT', path)
       return names.map(name => ({name, isFile: () => true}))
     },
     readFile: async path => {
       const content = files[path]
-      if (content === undefined) throw new Error(`ENOENT: ${path}`)
+      if (content === undefined) throw fsError('ENOENT', path)
       return content
     },
     writeStderr: line => stderr.push(line),
@@ -524,6 +529,38 @@ describe('solutions_search', () => {
       isError: true,
       text: errorText('corpus-unavailable'),
     })
+  })
+
+  it('answers corpus-unavailable when one category lists and another cannot be listed', async () => {
+    const base = memoryDeps(FULL_CHECKOUT).deps
+    const h = await harness(FULL_CHECKOUT, {
+      readDir: async path => {
+        if (path === 'docs/solutions/security-issues') throw fsError('EACCES', path)
+        return base.readDir(path)
+      },
+    })
+
+    expect(await call(h, 'solutions_search', {query: 'cache invalidation region rotation'})).toEqual({
+      isError: true,
+      text: errorText('corpus-unavailable'),
+    })
+  })
+
+  it('answers corpus-unavailable when one doc reads and another cannot be read', async () => {
+    const files = {...FULL_CHECKOUT, 'docs/solutions/best-practices/unreadable.md': SOLUTION_DOC}
+    const base = memoryDeps(files).deps
+    const h = await harness(files, {
+      readFile: async path => {
+        if (path === 'docs/solutions/best-practices/unreadable.md') throw fsError('EACCES', path)
+        return base.readFile(path)
+      },
+    })
+
+    expect(await call(h, 'solutions_search', {query: 'cache invalidation region rotation'})).toEqual({
+      isError: true,
+      text: errorText('corpus-unavailable'),
+    })
+    expect(h.stderr.join('')).not.toContain('unreadable.md')
   })
 
   it('maps a non-string query that reaches the handler to invalid-query', async () => {

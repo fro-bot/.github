@@ -839,6 +839,11 @@ describe('assembleSolutionsContext', () => {
 
 type Readers = Parameters<typeof searchSolutions>[1]
 
+/** A file-system error as Node raises it: the `code` is what tells a missing path from an unreadable one. */
+function fsError(code: string, path: string): Error {
+  return Object.assign(new Error(`${code}: ${path}`), {code})
+}
+
 /** An in-memory checkout: a map from path to content. A directory exists when some path sits under it. */
 function memoryReaders(files: Readonly<Record<string, string>>, overrides: Partial<Readers> = {}): Readers {
   return {
@@ -848,12 +853,12 @@ function memoryReaders(files: Readonly<Record<string, string>>, overrides: Parti
         .filter(file => file.startsWith(prefix) && !file.slice(prefix.length).includes('/'))
         .map(file => file.slice(prefix.length))
       const isDirectory = Object.keys(files).some(file => file.startsWith(prefix))
-      if (!isDirectory) throw new Error(`ENOENT: ${path}`)
+      if (!isDirectory) throw fsError('ENOENT', path)
       return names.map(name => ({name, isFile: () => true}))
     },
     readFile: async path => {
       const content = files[path]
-      if (content === undefined) throw new Error(`ENOENT: ${path}`)
+      if (content === undefined) throw fsError('ENOENT', path)
       return content
     },
     ...overrides,
@@ -920,7 +925,7 @@ describe('searchSolutions', () => {
     const missing: Readers = {
       ...readers,
       readDir: async path => {
-        throw new Error(`ENOENT: ${path}`)
+        throw fsError('ENOENT', path)
       },
     }
 
@@ -930,6 +935,53 @@ describe('searchSolutions', () => {
     // #then the failure is distinct from an empty match and nothing carrying a path reached the sink
     expect(outcome).toEqual({ok: false, reason: 'corpus-unavailable'})
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('fails with corpus-unavailable when one category lists and another exists but cannot be listed', async () => {
+    // #given a readable category and a category directory that exists but denies the listing
+    const files = {...BEST_PRACTICE_DOC, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+    const readers = memoryReaders(files)
+    const denied: Readers = {
+      ...readers,
+      readDir: async path => {
+        if (path === 'docs/solutions/security-issues') throw fsError('EACCES', path)
+        return readers.readDir(path)
+      },
+    }
+    const warn = vi.fn()
+
+    // #when a query that the readable category matches runs
+    const outcome = await searchSolutions('reconcile repos pattern', {...denied, warn})
+
+    // #then a partial corpus is a failure, not a successful answer from the readable half
+    expect(outcome).toEqual({ok: false, reason: 'corpus-unavailable'})
+  })
+
+  it('fails with corpus-unavailable when one doc reads and another cannot be read', async () => {
+    const files = {
+      ...BEST_PRACTICE_DOC,
+      'docs/solutions/best-practices/unreadable.md': '---\ntitle: Unreadable\n---\nbody\n',
+      'metadata/repos.yaml': SEARCH_REPOS_YAML,
+    }
+    const readers = memoryReaders(files)
+    const denied: Readers = {
+      ...readers,
+      readFile: async path => {
+        if (path === 'docs/solutions/best-practices/unreadable.md') throw fsError('EACCES', path)
+        return readers.readFile(path)
+      },
+    }
+
+    expect(await searchSolutions('reconcile repos pattern', denied)).toEqual({ok: false, reason: 'corpus-unavailable'})
+  })
+
+  it('treats a category directory that does not exist as a normal skip', async () => {
+    // #given only one category exists; the rest raise ENOENT
+    const files = {...BEST_PRACTICE_DOC, 'metadata/repos.yaml': SEARCH_REPOS_YAML}
+
+    const outcome = await searchSolutions('reconcile repos pattern', memoryReaders(files))
+
+    expect(outcome.ok).toBe(true)
   })
 
   it('fails with metadata-unavailable when repos.yaml cannot be read, parsed or has the wrong shape', async () => {

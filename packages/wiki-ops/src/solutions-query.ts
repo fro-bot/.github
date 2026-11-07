@@ -360,11 +360,22 @@ interface LoadedSolutionsFiles {
   readonly files: Record<string, string>
   /** Whether at least one category directory could be listed. False means the tree is absent or unreadable. */
   readonly listed: boolean
+  /**
+   * False when a category directory exists but could not be listed, or a doc could not be read. A
+   * category directory that does not exist (ENOENT) is not a gap. A caller that must not answer from
+   * half a corpus checks this; the CLI ignores it.
+   */
+  readonly complete: boolean
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 async function loadSolutionsFiles(io: SolutionsReaders): Promise<LoadedSolutionsFiles> {
   const files: Record<string, string> = {}
   let listed = false
+  let complete = true
 
   for (const subdir of SOLUTIONS_SUBDIRS) {
     const dirPath = `${SOLUTIONS_ROOT}/${subdir}`
@@ -372,8 +383,9 @@ async function loadSolutionsFiles(io: SolutionsReaders): Promise<LoadedSolutions
 
     try {
       entries = await io.readDir(dirPath)
-    } catch {
-      // Directory may not exist in some environments — skip
+    } catch (error) {
+      // Directory may not exist in some environments — skip. One that exists but cannot be listed is a gap.
+      if (!isMissingPath(error)) complete = false
       continue
     }
     listed = true
@@ -387,12 +399,13 @@ async function loadSolutionsFiles(io: SolutionsReaders): Promise<LoadedSolutions
       try {
         files[path] = await io.readFile(path)
       } catch {
+        complete = false
         io.warn(`solutions-query: could not read file (path: ${path})\n`)
       }
     }
   }
 
-  return {files, listed}
+  return {files, listed, complete}
 }
 
 // ---------------------------------------------------------------------------
@@ -504,9 +517,10 @@ export async function searchSolutions(query: string, deps: SolutionsSearchDeps):
 
   const warn = deps.warn ?? (() => {})
   const io: SolutionsReaders = {readDir: deps.readDir, readFile: deps.readFile, warn}
-  const [{files, listed}, privateNames] = await Promise.all([loadSolutionsFiles(io), loadPrivateNames(io)])
+  const [{files, listed, complete}, privateNames] = await Promise.all([loadSolutionsFiles(io), loadPrivateNames(io)])
 
-  if (!listed) {
+  // A partial corpus would rank and answer from half the docs, and the model could not tell.
+  if (!listed || !complete) {
     return {ok: false, reason: 'corpus-unavailable'}
   }
   if (!privateNames.loaded) {
