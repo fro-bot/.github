@@ -402,29 +402,27 @@ describe('runCommand with a fake spawn', () => {
 })
 
 describe('runRouteStderr plan validation', () => {
-  // A command that cannot start resolves at once with exit 127 and no process, so these accept cases cost
-  // nothing and the validation mutants die in the first tests of the file.
+  // A command that cannot start resolves with exit 127 after a failed `spawn`, with no process left running, so
+  // these accept cases are cheap and the validation mutants die in the first tests of the file. They go through
+  // `runRouteStderr` and the real `spawn`, so they keep the default timeout: only the fake-spawn tests above are
+  // free of I/O and safe to hold to 500 ms.
   const MISSING = 'route-stderr-no-such-command'
 
-  it('accepts a plan of two routes with different prefixes', FAKE, async () => {
+  it('accepts a plan of two routes with different prefixes', async () => {
     const ran = await run(childPlan({routes: [WARNING, FINDING], command: [MISSING]}), baseEnv())
     expect(ran.code).toBe(127)
   })
 
-  it.each([[1], [255]])('accepts the conflict exit code %j', FAKE, async exitCode => {
+  it.each([[1], [255]])('accepts the conflict exit code %j', async exitCode => {
     const ran = await run(childPlan({conflict: {exitCode, output: 'conflict'}, command: [MISSING]}), baseEnv())
     expect(ran.code).toBe(127)
     expect(ran.output).toBe('')
   })
 
-  it.each([['a'], ['Z'], ['5'], ['_'], ['-'], ['Page_conflict-2']])(
-    'accepts the output name %j',
-    FAKE,
-    async output => {
-      const ran = await run(childPlan({conflict: {exitCode: 127, output}, command: [MISSING]}), baseEnv())
-      expect(ran.output).toBe(`${output}=true\n`)
-    },
-  )
+  it.each([['a'], ['Z'], ['5'], ['_'], ['-'], ['Page_conflict-2']])('accepts the output name %j', async output => {
+    const ran = await run(childPlan({conflict: {exitCode: 127, output}, command: [MISSING]}), baseEnv())
+    expect(ran.output).toBe(`${output}=true\n`)
+  })
 
   it.each([['a=b'], ['a b'], ['a\nb'], [''], ['a<<b']])(
     'rejects the output name %j before the command runs',
