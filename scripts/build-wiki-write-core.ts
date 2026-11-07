@@ -138,6 +138,8 @@ export interface RunBuildOptions {
   markerDirectory?: string
   removeDirectory?: typeof rm
   replaceDirectory?: typeof replaceDirectoryAtomically
+  /** The resolved build config the source-tree hash uses; resolved from `buildConfigPath` with `tsc` when omitted. */
+  resolvedBuildConfig?: unknown
   runTypeScriptBuild?: (outputDirectory: string) => void
   sourceRoot?: string
   stageRoot?: string
@@ -153,8 +155,8 @@ export interface RunBuildOptions {
  * build is assembled into a publishable package directory, and `verify` packs that directory and
  * resolves every export of the resulting tarball. All I/O boundaries that would otherwise make this
  * unreachable outside a real CLI invocation are injectable: `runTypeScriptBuild` (default:
- * `runTypeScriptBuild`, which spawns real `tsc`), `verifyPackage` (default: `verifyStagedPackage`)
- * and every path default.
+ * `runTypeScriptBuild`, which spawns real `tsc`), `verifyPackage` (default: `verifyStagedPackage`),
+ * `resolvedBuildConfig` (default: `tsc --showConfig` on `buildConfigPath`) and every path default.
  */
 export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
   const currentSourceRoot = options.sourceRoot ?? sourceRoot()
@@ -190,6 +192,7 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
       sourceRoot: currentSourceRoot,
       buildConfigPath: currentBuildConfig,
       manifestPath: currentManifest,
+      resolvedBuildConfig: options.resolvedBuildConfig,
     })
     await collectFiles(temporaryRoot)
     await embedSourceTreeHash(temporaryRoot, sourceHash)

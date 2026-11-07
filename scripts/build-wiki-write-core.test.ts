@@ -59,6 +59,94 @@ import {
   writeGateContractMarker,
 } from './build-wiki-write-core.ts'
 
+// Pure and cheap, so first: the mutants of `publishedExports` and its helpers die here, not after the real `tsc` tests.
+describe('published manifest', () => {
+  it('maps a src entry to the dist import and its declaration file, and passes other values through', () => {
+    expect(
+      publishedExports({
+        '.': './src/index.ts',
+        './wiki-lint': './src/wiki-lint.ts',
+        './package.json': './package.json',
+        './conditional': {import: './dist/conditional.js'},
+        './nested': './src/nested/deep.ts',
+        './other-extension': './src/data.json',
+        './outside': './lib/other.ts',
+        './number': 1,
+        './array': ['./src/array.ts'],
+        './embedded': './other/./src/embedded.ts',
+        './trailing': './src/trailing.tsx',
+        './declaration-map': './src/map.ts.map',
+      }),
+    ).toEqual({
+      '.': {types: './dist/index.d.ts', import: './dist/index.js'},
+      './wiki-lint': {types: './dist/wiki-lint.d.ts', import: './dist/wiki-lint.js'},
+      './package.json': './package.json',
+      './conditional': {import: './dist/conditional.js'},
+      './nested': './src/nested/deep.ts',
+      './other-extension': './src/data.json',
+      './outside': './lib/other.ts',
+      './number': 1,
+      './array': ['./src/array.ts'],
+      './embedded': './other/./src/embedded.ts',
+      './trailing': './src/trailing.tsx',
+      './declaration-map': './src/map.ts.map',
+    })
+  })
+
+  it('keeps the subpath key order and passes a non-record exports value through', () => {
+    expect(Object.keys(publishedExports({'./b': './src/b.ts', './a': './src/a.ts'}) as object)).toEqual(['./b', './a'])
+    expect(publishedExports('./src/index.ts')).toBe('./src/index.ts')
+    expect(publishedExports(null)).toBeNull()
+    expect(publishedExports(['./src/index.ts'])).toEqual(['./src/index.ts'])
+  })
+
+  it('rewrites only exports in the manifest text and keeps every other field and its order', () => {
+    const text = JSON.stringify({name: 'x', exports: {'.': './src/index.ts'}, files: ['dist'], engines: {node: '>=24'}})
+    const published = publishedManifest(text, 'package.json')
+    expect(published.endsWith('}\n')).toBe(true)
+    expect(JSON.parse(published)).toEqual({
+      name: 'x',
+      exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
+      files: ['dist'],
+      engines: {node: '>=24'},
+    })
+    expect(Object.keys(JSON.parse(published) as object)).toEqual(['name', 'exports', 'files', 'engines'])
+    expect(published).toContain('\n  "name": "x"')
+  })
+
+  it.each(['{"name":"x"}', '[]', 'null', '"text"'])('rejects a manifest without an exports object: %s', content => {
+    expect(() => publishedManifest(content, 'packages/wiki-write-core/package.json')).toThrow(
+      'package manifest must define exports: packages/wiki-write-core/package.json',
+    )
+  })
+
+  it('produces the same digest input for the committed manifest as for its dist-form equivalent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-published-hash-'))
+    const sourceDir = join(root, 'src')
+    const configPath = join(root, 'tsconfig.build.json')
+    try {
+      await mkdir(sourceDir)
+      await writeFile(join(sourceDir, 'index.ts'), 'export const value = 1\n')
+      await writeFile(configPath, '{}\n')
+      const hashFor = async (exportsField: unknown) => {
+        const manifestPath = join(root, 'package.json')
+        await writeFile(manifestPath, `${JSON.stringify({files: ['dist'], exports: exportsField})}\n`)
+        return computeSourceTreeHash({
+          sourceRoot: sourceDir,
+          buildConfigPath: configPath,
+          manifestPath,
+          resolvedBuildConfig: {},
+        })
+      }
+      const fromSource = await hashFor({'.': './src/index.ts'})
+      const fromDist = await hashFor({'.': {types: './dist/index.d.ts', import: './dist/index.js'}})
+      expect(fromSource).toBe(fromDist)
+    } finally {
+      await rm(root, {force: true, recursive: true})
+    }
+  })
+})
+
 describe('wiki-write-core build inputs', () => {
   it('rejects symlinks while collecting distribution files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-symlink-'))
@@ -997,7 +1085,13 @@ async function makeRunBuildFixture(): Promise<{
   cleanup: () => Promise<void>
   fakeBuild: (variant?: string) => (outputDirectory: string) => void
   root: string
-  sourceOpts: {buildConfigPath: string; manifestPath: string; markerDirectory: string; sourceRoot: string}
+  sourceOpts: {
+    buildConfigPath: string
+    manifestPath: string
+    markerDirectory: string
+    resolvedBuildConfig: unknown
+    sourceRoot: string
+  }
 }> {
   const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-runbuild-'))
   const sourceDir = join(root, 'src')
@@ -1027,11 +1121,178 @@ async function makeRunBuildFixture(): Promise<{
 
   return {
     root,
-    sourceOpts: {sourceRoot: sourceDir, buildConfigPath, manifestPath, markerDirectory: markerDir},
+    // The resolved config is injected: resolving it for real runs `bunx tsc --showConfig` in every test.
+    sourceOpts: {
+      sourceRoot: sourceDir,
+      buildConfigPath,
+      manifestPath,
+      markerDirectory: markerDir,
+      resolvedBuildConfig: {},
+    },
     fakeBuild,
     cleanup: async () => rm(root, {force: true, recursive: true}),
   }
 }
+
+// Seam tests first. Each pins that a `runBuild` option is used instead of its default, so a mutant that swaps a
+// default in runs at most one real tool (a `tsc` build, `npm pack`, a `tsc --showConfig`) before the first of
+// these fails. The slower tests below then never wait on a real tool.
+describe('runBuild seams', () => {
+  it('runs the injected runTypeScriptBuild into the temporary build directory instead of tsc', async () => {
+    const fixture = await makeRunBuildFixture()
+    const buildTypeScript = vi.fn(fixture.fakeBuild('a'))
+    try {
+      await runBuild({...fixture.sourceOpts, runTypeScriptBuild: buildTypeScript})
+      expect(buildTypeScript).toHaveBeenCalledTimes(1)
+      expect(basename(buildTypeScript.mock.calls[0]?.[0] ?? '')).toMatch(/^\.wiki-write-core-dist-/u)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('forwards resolvedBuildConfig to the source-tree hash, so a different config gives a different hash', async () => {
+    const fixture = await makeRunBuildFixture()
+    const markerPath = join(fixture.sourceOpts.markerDirectory, 'gate-contract.json')
+    const hashFor = async (resolvedBuildConfig: unknown): Promise<string> => {
+      await runBuild({...fixture.sourceOpts, resolvedBuildConfig, runTypeScriptBuild: fixture.fakeBuild('a')})
+      return (JSON.parse(await readFile(markerPath, 'utf8')) as {sourceTreeHash: string}).sourceTreeHash
+    }
+    try {
+      const first = await hashFor({compilerOptions: {target: 'es2022'}})
+      const second = await hashFor({compilerOptions: {target: 'es2023'}})
+      expect(first).not.toBe(second)
+      for (const [actual, target] of [
+        [first, 'es2022'],
+        [second, 'es2023'],
+      ] as const) {
+        const expected = await computeSourceTreeHash({
+          sourceRoot: fixture.sourceOpts.sourceRoot,
+          buildConfigPath: fixture.sourceOpts.buildConfigPath,
+          manifestPath: fixture.sourceOpts.manifestPath,
+          resolvedBuildConfig: {compilerOptions: {target}},
+        })
+        expect(actual).toBe(expected)
+      }
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('stages through the injected replaceDirectory', async () => {
+    const fixture = await makeRunBuildFixture()
+    const stageRoot = join(fixture.root, 'stage', 'package')
+    const replaceDirectory = vi.fn(replaceDirectoryAtomically)
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        stageRoot,
+        replaceDirectory,
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+      })
+      expect(replaceDirectory).toHaveBeenCalledTimes(1)
+      expect(await realpath(replaceDirectory.mock.calls[0]?.[1] ?? '')).toBe(await realpath(stageRoot))
+      expect(await readdir(stageRoot)).toContain('wiki-write-core-stage.marker')
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('removes the temporary build directory with force and recursive after a successful build', async () => {
+    const fixture = await makeRunBuildFixture()
+    const removeDirectory = vi.fn(rm)
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        checkOnly: false,
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+        removeDirectory,
+      })
+      expect(removeDirectory).toHaveBeenCalledTimes(1)
+      expect(removeDirectory).toHaveBeenCalledWith(expect.stringContaining('.wiki-write-core-dist-'), {
+        force: true,
+        recursive: true,
+      })
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('verifies the staged package it built and reports the counts', async () => {
+    const fixture = await makeRunBuildFixture()
+    const stageRoot = join(fixture.root, 'stage')
+    const verifyPackage = vi.fn(async (_root: string) => ({
+      files: ['dist/index.js', 'package.json'],
+      sourceTreeHash: 'a'.repeat(64),
+      subpaths: ['@fro.bot/wiki-write-core'],
+    }))
+    const messages: string[] = []
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        checkOnly: false,
+        stageRoot,
+        verify: true,
+        verifyPackage,
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+        write: message => messages.push(message),
+      })
+      expect(verifyPackage).toHaveBeenCalledWith(stageRoot)
+      expect(messages).toEqual(['wiki-write-core package verified: 1 export subpaths, 2 tarball files\n'])
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('propagates a replaceDirectory failure from staging and leaves no staging directory behind', async () => {
+    const fixture = await makeRunBuildFixture()
+    const stageParent = join(fixture.root, 'stage')
+    const stagingNames: string[] = []
+    try {
+      await expect(
+        runBuild({
+          ...fixture.sourceOpts,
+          checkOnly: false,
+          stageRoot: join(stageParent, 'package'),
+          runTypeScriptBuild: fixture.fakeBuild('a'),
+          replaceDirectory: async source => {
+            stagingNames.push(basename(source))
+            throw new Error('simulated replaceDirectory failure')
+          },
+        }),
+      ).rejects.toThrow('simulated replaceDirectory failure')
+      expect(stagingNames).toHaveLength(1)
+      expect(stagingNames[0]).toMatch(/^\.wiki-write-core-stage-/u)
+      expect(await readdir(stageParent)).toEqual([])
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('resolves the build config path it was given when no resolved config is injected', async () => {
+    // The one runBuild test that runs the real `tsc --showConfig`: the default resolution, against the fixture's
+    // own config. The repository's `tsconfig.build.json` would resolve to something else.
+    const fixture = await makeRunBuildFixture()
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        resolvedBuildConfig: undefined,
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+      })
+      const marker = JSON.parse(
+        await readFile(join(fixture.sourceOpts.markerDirectory, 'gate-contract.json'), 'utf8'),
+      ) as {sourceTreeHash: string}
+      const expected = await computeSourceTreeHash({
+        sourceRoot: fixture.sourceOpts.sourceRoot,
+        buildConfigPath: fixture.sourceOpts.buildConfigPath,
+        manifestPath: fixture.sourceOpts.manifestPath,
+        resolvedBuildConfig: resolveBuildConfig(fixture.sourceOpts.buildConfigPath),
+      })
+      expect(marker.sourceTreeHash).toBe(expected)
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+})
 
 describe('runBuild', () => {
   it('writes only the marker into the marker directory, and a subsequent --check run finds it up to date', async () => {
@@ -1174,26 +1435,6 @@ describe('runBuild', () => {
     }
   })
 
-  it('removes the temporary build directory with force and recursive after a successful build', async () => {
-    const fixture = await makeRunBuildFixture()
-    const removeDirectory = vi.fn(rm)
-    try {
-      await runBuild({
-        ...fixture.sourceOpts,
-        checkOnly: false,
-        runTypeScriptBuild: fixture.fakeBuild('a'),
-        removeDirectory,
-      })
-      expect(removeDirectory).toHaveBeenCalledTimes(1)
-      expect(removeDirectory).toHaveBeenCalledWith(expect.stringContaining('.wiki-write-core-dist-'), {
-        force: true,
-        recursive: true,
-      })
-    } finally {
-      await fixture.cleanup()
-    }
-  })
-
   it('removes the temporary build directory with force and recursive after a failed build', async () => {
     const fixture = await makeRunBuildFixture()
     const removeDirectory = vi.fn(rm)
@@ -1240,6 +1481,7 @@ describe('runBuild', () => {
         sourceRoot: fixture.sourceOpts.sourceRoot,
         buildConfigPath: fixture.sourceOpts.buildConfigPath,
         manifestPath: fixture.sourceOpts.manifestPath,
+        resolvedBuildConfig: fixture.sourceOpts.resolvedBuildConfig,
       })
       const marker = JSON.parse(
         await readFile(join(fixture.sourceOpts.markerDirectory, 'gate-contract.json'), 'utf8'),
@@ -1326,32 +1568,6 @@ describe('runBuild', () => {
     }
   })
 
-  it('verifies the staged package it built and reports the counts', async () => {
-    const fixture = await makeRunBuildFixture()
-    const stageRoot = join(fixture.root, 'stage')
-    const verifyPackage = vi.fn(async (_root: string) => ({
-      files: ['dist/index.js', 'package.json'],
-      sourceTreeHash: 'a'.repeat(64),
-      subpaths: ['@fro.bot/wiki-write-core'],
-    }))
-    const messages: string[] = []
-    try {
-      await runBuild({
-        ...fixture.sourceOpts,
-        checkOnly: false,
-        stageRoot,
-        verify: true,
-        verifyPackage,
-        runTypeScriptBuild: fixture.fakeBuild('a'),
-        write: message => messages.push(message),
-      })
-      expect(verifyPackage).toHaveBeenCalledWith(stageRoot)
-      expect(messages).toEqual(['wiki-write-core package verified: 1 export subpaths, 2 tarball files\n'])
-    } finally {
-      await fixture.cleanup()
-    }
-  })
-
   it('stages into a scratch directory when verifying without a stage root, then removes it', async () => {
     const fixture = await makeRunBuildFixture()
     const seen: {root: string; files: string[]}[] = []
@@ -1400,31 +1616,6 @@ describe('runBuild', () => {
         }),
       ).rejects.toThrow('simulated verification failure')
       await expect(pathExists(scratch)).resolves.toBe(false)
-    } finally {
-      await fixture.cleanup()
-    }
-  })
-
-  it('propagates a replaceDirectory failure from staging and leaves no staging directory behind', async () => {
-    const fixture = await makeRunBuildFixture()
-    const stageParent = join(fixture.root, 'stage')
-    const stagingNames: string[] = []
-    try {
-      await expect(
-        runBuild({
-          ...fixture.sourceOpts,
-          checkOnly: false,
-          stageRoot: join(stageParent, 'package'),
-          runTypeScriptBuild: fixture.fakeBuild('a'),
-          replaceDirectory: async source => {
-            stagingNames.push(basename(source))
-            throw new Error('simulated replaceDirectory failure')
-          },
-        }),
-      ).rejects.toThrow('simulated replaceDirectory failure')
-      expect(stagingNames).toHaveLength(1)
-      expect(stagingNames[0]).toMatch(/^\.wiki-write-core-stage-/u)
-      expect(await readdir(stageParent)).toEqual([])
     } finally {
       await fixture.cleanup()
     }
@@ -1526,93 +1717,6 @@ describe('stageRootAllowlist', () => {
 
   it('defaults to the real OS temp directory', () => {
     expect(stageRootAllowlist({})).toEqual([tmpdir()])
-  })
-})
-
-describe('published manifest', () => {
-  it('maps a src entry to the dist import and its declaration file, and passes other values through', () => {
-    expect(
-      publishedExports({
-        '.': './src/index.ts',
-        './wiki-lint': './src/wiki-lint.ts',
-        './package.json': './package.json',
-        './conditional': {import: './dist/conditional.js'},
-        './nested': './src/nested/deep.ts',
-        './other-extension': './src/data.json',
-        './outside': './lib/other.ts',
-        './number': 1,
-        './array': ['./src/array.ts'],
-        './embedded': './other/./src/embedded.ts',
-        './trailing': './src/trailing.tsx',
-        './declaration-map': './src/map.ts.map',
-      }),
-    ).toEqual({
-      '.': {types: './dist/index.d.ts', import: './dist/index.js'},
-      './wiki-lint': {types: './dist/wiki-lint.d.ts', import: './dist/wiki-lint.js'},
-      './package.json': './package.json',
-      './conditional': {import: './dist/conditional.js'},
-      './nested': './src/nested/deep.ts',
-      './other-extension': './src/data.json',
-      './outside': './lib/other.ts',
-      './number': 1,
-      './array': ['./src/array.ts'],
-      './embedded': './other/./src/embedded.ts',
-      './trailing': './src/trailing.tsx',
-      './declaration-map': './src/map.ts.map',
-    })
-  })
-
-  it('keeps the subpath key order and passes a non-record exports value through', () => {
-    expect(Object.keys(publishedExports({'./b': './src/b.ts', './a': './src/a.ts'}) as object)).toEqual(['./b', './a'])
-    expect(publishedExports('./src/index.ts')).toBe('./src/index.ts')
-    expect(publishedExports(null)).toBeNull()
-    expect(publishedExports(['./src/index.ts'])).toEqual(['./src/index.ts'])
-  })
-
-  it('rewrites only exports in the manifest text and keeps every other field and its order', () => {
-    const text = JSON.stringify({name: 'x', exports: {'.': './src/index.ts'}, files: ['dist'], engines: {node: '>=24'}})
-    const published = publishedManifest(text, 'package.json')
-    expect(published.endsWith('}\n')).toBe(true)
-    expect(JSON.parse(published)).toEqual({
-      name: 'x',
-      exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
-      files: ['dist'],
-      engines: {node: '>=24'},
-    })
-    expect(Object.keys(JSON.parse(published) as object)).toEqual(['name', 'exports', 'files', 'engines'])
-    expect(published).toContain('\n  "name": "x"')
-  })
-
-  it.each(['{"name":"x"}', '[]', 'null', '"text"'])('rejects a manifest without an exports object: %s', content => {
-    expect(() => publishedManifest(content, 'packages/wiki-write-core/package.json')).toThrow(
-      'package manifest must define exports: packages/wiki-write-core/package.json',
-    )
-  })
-
-  it('produces the same digest input for the committed manifest as for its dist-form equivalent', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-published-hash-'))
-    const sourceDir = join(root, 'src')
-    const configPath = join(root, 'tsconfig.build.json')
-    try {
-      await mkdir(sourceDir)
-      await writeFile(join(sourceDir, 'index.ts'), 'export const value = 1\n')
-      await writeFile(configPath, '{}\n')
-      const hashFor = async (exportsField: unknown) => {
-        const manifestPath = join(root, 'package.json')
-        await writeFile(manifestPath, `${JSON.stringify({files: ['dist'], exports: exportsField})}\n`)
-        return computeSourceTreeHash({
-          sourceRoot: sourceDir,
-          buildConfigPath: configPath,
-          manifestPath,
-          resolvedBuildConfig: {},
-        })
-      }
-      const fromSource = await hashFor({'.': './src/index.ts'})
-      const fromDist = await hashFor({'.': {types: './dist/index.d.ts', import: './dist/index.js'}})
-      expect(fromSource).toBe(fromDist)
-    } finally {
-      await rm(root, {force: true, recursive: true})
-    }
   })
 })
 

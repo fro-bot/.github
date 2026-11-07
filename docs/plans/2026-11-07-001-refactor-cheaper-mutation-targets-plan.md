@@ -251,7 +251,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Verification:** The after report shows 214 of 214 killed, no mutant waiting out the 10 s timeout, and the route-stderr CLI parity tests unchanged.
 
-- [ ] **Unit 4: Config-resolution seam for the build script**
+- [x] **Unit 4: Config-resolution seam for the build script**
 
 **Goal:** Stop `runBuild` tests from running real `tsc --showConfig`, and make seam default swaps fail before real tools run.
 
