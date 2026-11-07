@@ -105,6 +105,54 @@ function localServerFault(value: unknown): string | undefined {
   return undefined
 }
 
+function isRecord(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isReference(value: unknown): boolean {
+  return typeof value === 'string' && (value.includes('{env:') || value.includes('{file:'))
+}
+
+function isPositiveInt(value: unknown): boolean {
+  return isReference(value) || (typeof value === 'number' && Number.isInteger(value) && value > 0)
+}
+
+/** `isEnabledOnly` at mcp-servers-v2.ts:136-138: a legacy `{enabled: <boolean>}` entry with no `type` key is skipped. */
+function isEnabledOnly(value: unknown): boolean {
+  return isRecord(value) && !('type' in value) && typeof value.enabled === 'boolean'
+}
+
+interface AgentEntry {
+  readonly name: string
+  readonly value: unknown
+  readonly origin: 'legacy' | 'native'
+}
+
+/**
+ * A port of the entry selection in `parseMcpServersV2` (fro-bot/agent v0.136.0, mcp-servers-v2.ts:229-262):
+ * which keys are servers, which spelling declares each, and where it fails before any server is parsed.
+ */
+function agentEntries(mcp: unknown): {ok: true; entries: AgentEntry[]} | {ok: false; message: string} {
+  if (!isRecord(mcp)) return {ok: false, message: 'mcp must be a JSON object'}
+  const entries: AgentEntry[] = []
+  for (const [key, value] of Object.entries(mcp)) {
+    if (isEnabledOnly(value)) continue
+    if (key === 'servers' && !isDirectServer(value)) {
+      if (!isRecord(value)) return {ok: false, message: 'mcp.servers must be a JSON object'}
+      for (const [name, server] of Object.entries(value)) entries.push({name, value: server, origin: 'native'})
+      continue
+    }
+    if (key === 'timeout' && !isDirectServer(value)) {
+      if (!(isPositiveInt(value) || (isRecord(value) && Object.values(value).every(isPositiveInt)))) {
+        return {ok: false, message: 'mcp.timeout is malformed'}
+      }
+      continue
+    }
+    entries.push({name: key, value, origin: 'legacy'})
+  }
+  return {ok: true, entries}
+}
+
 /** Decodes a workflow command's data the way the runner does. */
 function decodeCommandData(data: string): string {
   return data.replaceAll('%0D', '\r').replaceAll('%0A', '\n').replaceAll('%25', '%')
@@ -250,6 +298,44 @@ describe('knowledge-mcp-config action: the server entry', () => {
 
     const mcp = config.mcp as Json
     expect(mcp.servers).toBe(5)
+    expect(localServerFault(mcp.knowledge)).toBeUndefined()
+  })
+
+  it.each([
+    ['an empty mcp', {}, 'legacy'],
+    ['another legacy server', {other: {type: 'remote', url: 'https://example.com/mcp'}}, 'legacy'],
+    ['a native servers map', {servers: {other: {type: 'local', command: ['node', 'x.js']}}}, 'native'],
+    ['a native servers map that is empty', {servers: {}}, 'native'],
+    ['a legacy server named servers', {servers: {type: 'remote', url: 'https://example.com/mcp'}}, 'legacy'],
+    ['an enabled-only servers entry (false)', {servers: {enabled: false}}, 'legacy'],
+    ['an enabled-only servers entry (true)', {servers: {enabled: true}}, 'legacy'],
+    ['an mcp.timeout block beside a server', {timeout: 5000, other: {type: 'remote', url: 'https://x.test'}}, 'legacy'],
+  ] as const)('the agent finds exactly one valid knowledge server beside %s', (_label, mcp, origin) => {
+    // #given an mcp block of this shape
+    const {config} = merged({config: JSON.stringify({mcp})})
+
+    // #when the agent's entry selection reads the merged block
+    const selection = agentEntries(config.mcp)
+
+    // #then it finds exactly one knowledge entry, under the spelling the agent would read it from, with a valid local shape
+    expect(selection.ok).toBe(true)
+    if (!selection.ok) return
+    const found = selection.entries.filter(entry => entry.name === 'knowledge')
+    expect(found).toHaveLength(1)
+    expect(found[0]?.origin).toBe(origin)
+    expect(localServerFault(found[0]?.value)).toBeUndefined()
+    // The operator's own entries are untouched.
+    for (const [key, value] of Object.entries(mcp)) {
+      if (key === 'servers' && origin === 'native') continue
+      expect((config.mcp as Json)[key]).toStrictEqual(value)
+    }
+  })
+
+  it('writes mcp.knowledge, not mcp.servers.knowledge, beside an enabled-only servers entry', () => {
+    const {config} = merged({config: JSON.stringify({mcp: {servers: {enabled: false}}})})
+
+    const mcp = config.mcp as Json
+    expect(mcp.servers).toStrictEqual({enabled: false})
     expect(localServerFault(mcp.knowledge)).toBeUndefined()
   })
 

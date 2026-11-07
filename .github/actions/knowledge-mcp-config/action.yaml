@@ -83,15 +83,19 @@ runs:
         printf '%s' "$base" | jq -e 'if has("mcp") then (.mcp | type == "object") else true end' >/dev/null 2>&1 ||
           fail 'opencode-config mcp must be a JSON object'
 
-        # The agent's own rule (fro-bot/agent mcp-servers-v2.ts): `mcp.servers` is the native map of
-        # servers unless it carries `type`, in which case it is one server that happens to be named `servers`.
+        # The agent's own rule (fro-bot/agent v0.136.0 mcp-servers-v2.ts, parseMcpServersV2): an
+        # enabled-only value (no `type` key, a boolean `enabled`) is skipped before the key is read, so
+        # `servers: {enabled: false}` is not a map. Otherwise `mcp.servers` is the native map of servers
+        # unless it carries `type`, in which case it is one server that happens to be named `servers`.
         native=$(printf '%s' "$base" | jq -r '
+          def enabledonly:
+            type == "object" and (has("type") | not) and ((.enabled | type) == "boolean");
           def direct:
             type == "object" and has("type")
             and (.type == "local" or .type == "remote"
                  or ((.type | type) == "string" and ((.type | contains("{env:")) or (.type | contains("{file:")))));
           if has("mcp") and (.mcp | has("servers"))
-          then (.mcp.servers | (type == "object") and (direct | not))
+          then (.mcp.servers | (type == "object") and (enabledonly | not) and (direct | not))
           else false end' 2>/dev/null) || fail 'could not read the mcp servers'
 
         # The model sees `knowledge_<tool>`, and a second server with this name would share the prefix.
