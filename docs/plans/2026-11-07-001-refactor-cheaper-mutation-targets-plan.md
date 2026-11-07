@@ -219,7 +219,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Verification:** `mutation-guards-config.test.ts` accepts the new layout. The Node strip-only loop in Test Scripts Load imports both files. The after report has no static mutants in the core module.
 
-- [ ] **Unit 3: Spawn seam and test order for the router**
+- [x] **Unit 3: Spawn seam and test order for the router**
 
 **Goal:** Make `route-stderr` mutants that hang, or that only late tests kill, fail in its first fast tests.
 

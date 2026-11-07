@@ -146,7 +146,7 @@ export function buildSummary(stderr: string, routes: readonly Route[], mode: Sum
     .join('')
 }
 
-interface CommandResult {
+export interface CommandResult {
   readonly code: number
   readonly stderr: Buffer
 }
@@ -163,7 +163,15 @@ function errorCodeOf(error: unknown): string {
   return String((error as NodeJS.ErrnoException).code)
 }
 
-async function runCommand(command: readonly string[], env: RouteStderrIo['env']): Promise<CommandResult> {
+/**
+ * Spawns `command` and resolves with its exit code and captured stderr; never rejects. `spawnProcess` is a seam
+ * for tests: a fake child settles every start, exit and signal outcome without a real process or a timer.
+ */
+export async function runCommand(
+  command: readonly string[],
+  env: RouteStderrIo['env'],
+  spawnProcess: typeof spawn = spawn,
+): Promise<CommandResult> {
   // `assertPlan` has already rejected an empty command.
   const file = command[0] as string
   const args = command.slice(1)
@@ -172,7 +180,7 @@ async function runCommand(command: readonly string[], env: RouteStderrIo['env'])
     const chunks: Buffer[] = []
     try {
       // Node leaves a variable whose value is undefined out of the child's environment.
-      const child = spawn(file, args, {env, stdio: ['inherit', 'inherit', 'pipe']})
+      const child = spawnProcess(file, args, {env, stdio: ['inherit', 'inherit', 'pipe']})
       child.stderr.on('data', (chunk: Buffer) => {
         chunks.push(chunk)
       })
