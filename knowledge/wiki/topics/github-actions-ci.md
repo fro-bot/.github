@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-06
+updated: 2026-11-07
 sources:
+  - url: https://github.com/marcusrbrown/infra/blob/149b77b7719447be1425a0e2cb2013dbf4c392b8/.github/workflows/release.yaml
+    sha: 149b77b7719447be1425a0e2cb2013dbf4c392b8
+    accessed: 2026-11-07
   - url: https://github.com/marcusrbrown/systematic/blob/7b35b9a35dc331f426c35945e475856a8a657260/.github/workflows/docs.yaml
     sha: 7b35b9a35dc331f426c35945e475856a8a657260
     accessed: 2026-11-06
@@ -402,6 +405,25 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Verify registry visibility after a publish reports success (2026-11-07)
+
+At `149b77b7`, [[marcusrbrown--infra]] adds a consumer-visible postcondition after
+Changesets reports `published=true`: the published-package payload must be a
+nonempty JSON array, and each exact `name@version` must resolve from the explicit
+public npm registry. The workflow uses online-preferred queries and bounded
+exponential backoff: 13 attempts, with 12 waits totaling at most 285 seconds per
+package. Missing visibility fails the job instead of leaving a successful publish
+claim unsupported by the registry; resolved packages enter the step summary.
+
+The reusable distinction is **publisher acknowledgement versus consumer
+availability**. A downstream release consumer should not infer the second from
+the first. For this control plane's wiki-write-core release, evaluate an exact
+version visibility check after publishing rather than adding another version-bump
+mechanism. Registry lookup alone does not prove tarball contents, provenance,
+installability or runtime behavior, and this pattern does not replace the existing
+packed-package and artifact-integrity checks. This survey inspected workflow
+source only; it did not run the retry loop or establish a registry incident.
 
 ## Validate inert artifacts before introducing publishing credentials (2026-11-06)
 

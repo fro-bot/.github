@@ -9967,3 +9967,23 @@ Run: https://github.com/fro-bot/.github/actions/runs/42222087822
 Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-11-07 05:40] manual-edit | topics/github-actions-ci
+
+Daily oversight captured a source-declared post-publish registry-visibility
+check from public marcusrbrown/infra at `149b77b7`: validate the published-package
+payload, then resolve each exact version with bounded online-preferred retries.
+Distinguished publisher acknowledgement from consumer availability, and registry
+visibility from package integrity or runtime acceptance. No retry execution or
+registry incident is claimed. Existing wiki and metadata changes were preserved;
+this pass edits only the CI topic and this append-only log. Trusted ingestion
+owns delivery; knowledge/index.md is unchanged.
+
+Sources: https://github.com/marcusrbrown/infra/blob/149b77b7719447be1425a0e2cb2013dbf4c392b8/.github/workflows/release.yaml
+Run: https://github.com/fro-bot/.github/actions/runs/42342588160
+
+## [2026-11-07 05:47] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@b4d757531d910a9e8b9092924f91f515decf55ea
