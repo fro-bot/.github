@@ -37,9 +37,9 @@ None of these mutants time out. All four are `Killed` or `Ignored`. Static mutan
 
 **Guarantees kept**
 
-- R3. All four targets stay in `mutate`. No `Stryker disable` directive is added, and `ignoreStatic` stays off.
+- R3. The logic of all four targets stays in `mutate`. No `Stryker disable` directive is added, and `ignoreStatic` stays off.
 - R4. Each target keeps a 100% kill rate. Every behaviour its mutants check today is still checked after the change.
-- R5. Restructured source behaves the same for its callers, including CLI exit codes, output and the self-invoke behaviour of entrypoints.
+- R5. Restructured source behaves the same for its callers, including CLI exit codes, output and the self-invoke behaviour of entrypoints. The one intended change: an entrypoint whose path contains a space or `#` now runs instead of exiting 0 without running.
 - R6. The gate's trigger set, verdict rules and full-run behaviour do not change.
 
 ---
@@ -55,7 +55,7 @@ None of these mutants time out. All four are `Killed` or `Ignored`. Static mutan
 
 - R1's p90 is met on the first 10 completed applicable runs after merge, Renovate runs included.
 - The four targets' combined share of summed mutant time drops well below today's 66%.
-- No verdict rule, trigger or `mutate` entry changes.
+- No verdict rule changes. The only `mutate` change is where the lockfile gate's logic lives, and its entry script still triggers the gate.
 - Planning can choose a fix for each target without inventing behaviour.
 
 ---
