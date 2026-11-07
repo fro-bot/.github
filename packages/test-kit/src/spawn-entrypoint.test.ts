@@ -101,6 +101,20 @@ appendFileSync(process.env.GITHUB_OUTPUT ?? '', 'scan_result=error\n')
     }
   })
 
+  it('lets a caller env override the git isolation defaults', async () => {
+    const entrypoint = await script(
+      `git-config-override-${runtime}.ts`,
+      `process.stdout.write(JSON.stringify([process.env.GIT_CONFIG_GLOBAL ?? null, process.env.GIT_CONFIG_NOSYSTEM ?? null]))
+`,
+    )
+    const result = await spawnEntrypoint({
+      entrypoint,
+      runtime,
+      env: {GIT_CONFIG_GLOBAL: '/caller/gitconfig', GIT_CONFIG_NOSYSTEM: undefined},
+    })
+    expect(JSON.parse(result.stdout)).toEqual(['/caller/gitconfig', null])
+  })
+
   it('runs in the given working directory', async () => {
     const entrypoint = await script(`cwd-${runtime}.ts`, `process.stdout.write(process.cwd())`)
     const result = await spawnEntrypoint({entrypoint, runtime, cwd: directory})
