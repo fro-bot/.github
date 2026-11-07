@@ -5,7 +5,13 @@
 if (import.meta.main) {
   delete process.env.OPENCODE_PASSWORD
   delete process.env.OPENCODE_CONFIG_CONTENT
-  const {serve} = await import('@fro-bot/wiki-ops/knowledge-mcp')
-  await serve()
+  try {
+    const {serve} = await import('@fro-bot/wiki-ops/knowledge-mcp')
+    await serve()
+  } catch {
+    // A load failure would otherwise print a raw stack, which can hold paths. The agent then runs without the tools.
+    process.stderr.write('knowledge-mcp: error:startup\n')
+    process.exitCode = 1
+  }
 }
 /* eslint-enable node/prefer-global/process */

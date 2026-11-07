@@ -427,6 +427,56 @@ describe('knowledge MCP server: the composite command, spawned', () => {
   })
 })
 
+/**
+ * A Bun preload that hooks the load of the server module (`packages/wiki-ops/src/knowledge-mcp.ts`, reached
+ * as `@fro-bot/wiki-ops/knowledge-mcp`). `onLoad` runs when the shim imports that module, so whatever
+ * the callback sees is what the module's own load sees.
+ */
+function modulePreload(onLoadBody: string): string {
+  return [
+    "import {appendFileSync} from 'node:fs'",
+    'Bun.plugin({',
+    "  name: 'knowledge-mcp-load-hook',",
+    '  setup(build) {',
+    String.raw`    build.onLoad({filter: /packages[\\/]wiki-ops[\\/]src[\\/]knowledge-mcp\.ts$/}, async args => {`,
+    onLoadBody,
+    "      return {contents: await Bun.file(args.path).text(), loader: 'ts'}",
+    '    })',
+    '  },',
+    '})',
+    '',
+  ].join('\n')
+}
+
+interface ShimRun {
+  readonly code: number | null
+  readonly stdout: string
+  readonly stderr: string
+}
+
+/** Runs the real shim under `bun --preload`, with stdin closed, and returns how it ended. */
+async function runShim(cwd: string, preload: string, env: Readonly<Record<string, string>>): Promise<ShimRun> {
+  return new Promise((settle, fail) => {
+    const child = spawn('bun', ['--preload', preload, 'scripts/knowledge-mcp.ts'], {
+      cwd,
+      env: {...getDefaultEnvironment(), ...env},
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8')
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8')
+    })
+    child.on('error', fail)
+    child.on('close', code => {
+      settle({code, stdout, stderr})
+    })
+  })
+}
+
 describe('knowledge MCP server: the shim', () => {
   it('has no static import statement', async () => {
     const source = await readFile(join(REPO_ROOT, 'scripts/knowledge-mcp.ts'), 'utf8')
@@ -450,5 +500,47 @@ describe('knowledge MCP server: the shim', () => {
     }
 
     expect(stdout).toEqual([])
+  })
+
+  it('removes both OpenCode variables before the server module is loaded', async () => {
+    // #given a hook that records, as the server module loads, whether each variable is still in the environment
+    const cwd = await makeCheckout()
+    const log = join(cwd, 'env-at-load.log')
+    const preload = join(cwd, 'record-env-at-load.ts')
+    await writeFile(
+      preload,
+      modulePreload(
+        String.raw`      appendFileSync(process.env.ENV_LOAD_LOG ?? "", String("OPENCODE_PASSWORD" in process.env) + ":" + String("OPENCODE_CONFIG_CONTENT" in process.env) + "\n")`,
+      ),
+    )
+
+    // #when the real shim starts, with both variables set, and then ends because stdin is closed
+    await runShim(cwd, preload, {
+      ENV_LOAD_LOG: log,
+      OPENCODE_PASSWORD: 'sentinel-password-5f2a',
+      OPENCODE_CONFIG_CONTENT: 'sentinel-config-9c1d',
+    })
+
+    // #then the module loaded exactly once, and neither variable was there when it did
+    expect((await readFile(log, 'utf8')).split('\n').filter(line => line !== '')).toEqual(['false:false'])
+  })
+
+  it('writes only the fixed startup line and exits non-zero when the server module cannot load', async () => {
+    // #given a hook that makes the module's load throw an error whose message holds a path
+    const cwd = await makeCheckout()
+    const preload = join(cwd, 'fail-module-load.ts')
+    await writeFile(
+      preload,
+      modulePreload('      throw new Error("cannot load /home/runner/work/private/secret-module.ts")'),
+    )
+
+    // #when the real shim starts
+    const run = await runShim(cwd, preload, {})
+
+    // #then stderr is the fixed line alone: no stack, no path, nothing on stdout
+    expect(run.stderr).toBe('knowledge-mcp: error:startup\n')
+    expect(run.stdout).toBe('')
+    expect(run.code).not.toBe(0)
+    expect(run.code).not.toBeNull()
   })
 })
