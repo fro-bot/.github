@@ -162,6 +162,9 @@ export function runStepWithStubs(script: string, options: StepRunOptions): StepR
     const spawned = spawnSync('bash', [scriptPath], {
       cwd: dir,
       env: {
+        // No global or system git config, so a real git the step runs never sees the developer's signing or identity.
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_NOSYSTEM: '1',
         ...options.env,
         PATH: `${dir}:${process.env.PATH ?? ''}`,
         STUB_DIR: dir,
