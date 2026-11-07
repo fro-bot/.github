@@ -178,6 +178,16 @@ async function solutionsSearch(deps: KnowledgeDeps, query: unknown): Promise<Kno
 }
 
 /**
+ * What the model reads about the `query` argument. It states the shape `validateQuery` enforces, so an
+ * `invalid-query` answer is not a guess: at most 200 characters, no slash or backslash, none of the shell
+ * characters `; & | ` $ ( ) { } < >`, none of `[[ ]] {{ }}` or HTML comment marks, and not one generic word.
+ * A function so a mutant in the text is exercised whenever a test reads it.
+ */
+export function queryDescription(): string {
+  return 'Plain words, at most 200 characters: no slashes, no shell characters (; & | ` $ ( ) { } < > \\), no [[ ]] or {{ }}, and not one generic word such as "wiki" or "docs". Example: "cache invalidation region rotation".'
+}
+
+/**
  * Registers the three commands on a fresh goke instance. The query is a required `--query` option, not
  * a positional: `@goke/mcp` gives a positional a plain string schema, while an option carries its zod
  * schema and the adapter rejects a call that leaves it out before the handler runs.
@@ -190,7 +200,7 @@ export function buildKnowledgeCli(deps: KnowledgeDeps): ReturnType<typeof goke> 
       'wiki_search',
       'Search the Fro Bot knowledge wiki for pages relevant to a short plain-language query. Returns at most three pages as JSON with their paths.',
     )
-    .option('--query <query>', z.string().describe('What to look for, in plain words. Free text; it is never a path.'))
+    .option('--query <query>', z.string().describe(queryDescription()))
     .required()
     .action(async options => wikiSearch(deps, options.query))
 
@@ -206,7 +216,7 @@ export function buildKnowledgeCli(deps: KnowledgeDeps): ReturnType<typeof goke> 
       'solutions_search',
       'Search the documented solutions (docs/solutions) for prior learnings relevant to a short plain-language query. Returns the best matches as JSON with their paths.',
     )
-    .option('--query <query>', z.string().describe('What to look for, in plain words. Free text; it is never a path.'))
+    .option('--query <query>', z.string().describe(queryDescription()))
     .required()
     .action(async options => solutionsSearch(deps, options.query))
 

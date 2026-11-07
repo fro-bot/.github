@@ -14,6 +14,7 @@ import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 import {fileURLToPath} from 'node:url'
 
+import {queryDescription} from '@fro-bot/wiki-ops/knowledge-mcp'
 import {Client} from '@modelcontextprotocol/sdk/client/index.js'
 import {getDefaultEnvironment, StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js'
 import {McpError} from '@modelcontextprotocol/sdk/types.js'
@@ -230,6 +231,12 @@ describe('knowledge MCP server: the composite command, spawned', () => {
     // #then exactly the three allowlisted tools exist and stderr is only the ready line
     expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_linked', 'wiki_search'])
     expect(stderrLines(session)).toEqual([READY_LINE])
+
+    // The query text the model reads over the real transport is the validator-shaped description.
+    for (const name of ['wiki_search', 'solutions_search']) {
+      const schema = tools.find(tool => tool.name === name)?.inputSchema
+      expect((schema?.properties as {query: {description: string}}).query.description).toBe(queryDescription())
+    }
   })
 
   it('wiki_search returns what wiki-context-expand query prints for the same input', async () => {

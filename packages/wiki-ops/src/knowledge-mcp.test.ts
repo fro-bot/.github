@@ -4,7 +4,6 @@
  * contract on the composite's exact command is `scripts/knowledge-mcp-server.test.ts`.
  */
 
-import type {ExpandResult} from './wiki-context-expand.ts'
 import {readdirSync} from 'node:fs'
 import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
@@ -18,9 +17,11 @@ import {
   buildKnowledgeCli,
   defaultKnowledgeDeps,
   knowledgeToolNames,
+  queryDescription,
   serve,
   type KnowledgeDeps,
 } from './knowledge-mcp.ts'
+import {validateQuery, type ExpandResult} from './wiki-context-expand.ts'
 
 const SRC_DIR = dirname(fileURLToPath(import.meta.url))
 const PACKAGES_DIR = resolve(SRC_DIR, '../..')
@@ -114,6 +115,10 @@ async function call(
 
 const errorText = (code: string): string => JSON.stringify({error: code})
 
+/** The text the model reads about the `query` argument, written out so a change to it is a visible diff. */
+const QUERY_DESCRIPTION =
+  'Plain words, at most 200 characters: no slashes, no shell characters (; & | ` $ ( ) { } < > \\), no [[ ]] or {{ }}, and not one generic word such as "wiki" or "docs". Example: "cache invalidation region rotation".'
+
 describe('knowledge tool surface', () => {
   it('names exactly the three tools', () => {
     expect(knowledgeToolNames()).toEqual(['wiki_search', 'wiki_linked', 'solutions_search'])
@@ -185,12 +190,28 @@ describe('knowledge tool surface', () => {
       const schema = byName.get(name)?.inputSchema
       expect(schema?.required).toEqual(['query'])
       expect(JSON.stringify(schema?.properties)).toContain('"type":"string"')
-      expect(JSON.stringify(schema?.properties)).toContain('plain words')
+      expect((schema?.properties as {query: {description: string}}).query.description).toBe(QUERY_DESCRIPTION)
     }
     expect(byName.get('wiki_linked')?.inputSchema.required).toBeUndefined()
     expect(byName.get('wiki_search')?.description).toContain('wiki')
     expect(byName.get('wiki_linked')?.description).toContain('link')
     expect(byName.get('solutions_search')?.description).toContain('solutions')
+  })
+
+  it('tells the model the query shape the validator enforces, with a valid example', () => {
+    // #given the text both search tools show for `query`
+    expect(queryDescription()).toBe(QUERY_DESCRIPTION)
+
+    // #then every rule it names is a rule validateQuery applies, and its example passes
+    const accepted = (query: string): boolean => validateQuery(query).valid
+    expect(accepted('cache invalidation region rotation')).toBe(true)
+    expect(accepted('a'.repeat(200))).toBe(true)
+    expect(accepted('a'.repeat(201))).toBe(false)
+    for (const character of ['/', '\\', ';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>']) {
+      expect(accepted(`cache${character}rotation`), character).toBe(false)
+    }
+    for (const marker of ['[[x]]', '{{x}}']) expect(accepted(`cache ${marker} rotation`), marker).toBe(false)
+    for (const generic of ['wiki', 'docs']) expect(accepted(generic), generic).toBe(false)
   })
 
   it('exposes only allowlisted commands even when the goke instance holds others', async () => {
