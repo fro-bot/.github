@@ -6,8 +6,9 @@
  * `process.stderr` bypasses the in-process runner's sinks, and only a real process shows the bytes a
  * step reads and the exit code the job gets.
  *
- * The child starts with a minimal environment (`PATH`, `HOME`) plus the caller's, so nothing from the
- * developer's shell leaks into a result. `GITHUB_OUTPUT` is applied last and always points at a fresh
+ * The child starts with a minimal environment (`PATH`, `HOME`, and a git config that reads no global or
+ * system file, so a developer's `commit.gpgsign` never reaches a git the child runs) plus the caller's,
+ * so nothing from the developer's shell leaks into a result. `GITHUB_OUTPUT` is applied last and always points at a fresh
  * temp file, whatever the caller's `env` says.
  *
  * `bun` and `node` are found on `PATH`, never from the parent's `process.execPath`: a Bun parent would
@@ -56,7 +57,7 @@ export interface SpawnEntrypointResult {
 }
 
 function baseEnvironment(): Record<string, string> {
-  const base: Record<string, string> = {}
+  const base: Record<string, string> = {GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1'}
   for (const name of ['PATH', 'HOME'] as const) {
     const value = process.env[name]
     if (value !== undefined) base[name] = value

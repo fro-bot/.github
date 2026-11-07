@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 import {fileURLToPath} from 'node:url'
-import {afterAll, beforeAll, describe, expect, it} from 'vitest'
+import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 
 import {spawnEntrypoint, type Runtime} from './spawn-entrypoint.ts'
 
@@ -83,6 +83,21 @@ appendFileSync(process.env.GITHUB_OUTPUT ?? '', 'scan_result=error\n')
       expect(JSON.parse(result.stdout)).toEqual({leak: null, home: true, removed: null})
     } finally {
       delete process.env.SPAWN_ENTRYPOINT_LEAK
+    }
+  })
+
+  it('gives the child a git that reads no global or system config, whatever the parent exports', async () => {
+    vi.stubEnv('GIT_CONFIG_GLOBAL', '/nonexistent/developer-gitconfig')
+    const entrypoint = await script(
+      `git-config-${runtime}.ts`,
+      `process.stdout.write(JSON.stringify([process.env.GIT_CONFIG_GLOBAL ?? null, process.env.GIT_CONFIG_NOSYSTEM ?? null]))
+`,
+    )
+    try {
+      const result = await spawnEntrypoint({entrypoint, runtime})
+      expect(JSON.parse(result.stdout)).toEqual(['/dev/null', '1'])
+    } finally {
+      vi.unstubAllEnvs()
     }
   })
 
