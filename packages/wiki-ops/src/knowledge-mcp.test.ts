@@ -4,7 +4,8 @@
  * contract on the composite's exact command is `scripts/knowledge-mcp-server.test.ts`.
  */
 
-import {readdirSync} from 'node:fs'
+import {mkdtempSync, readdirSync, readFileSync, rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
 import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 import {fileURLToPath, pathToFileURL} from 'node:url'
@@ -51,15 +52,22 @@ function fsError(code: string, path: string): Error {
 interface Harness {
   readonly deps: KnowledgeDeps
   readonly stderr: string[]
+  readonly logged: LoggedLine[]
   readonly session: Client
+}
+
+interface LoggedLine {
+  readonly path: string
+  readonly line: string
 }
 
 /** An in-memory checkout: a path is a directory when a file sits directly beneath it. */
 function memoryDeps(
   files: Readonly<Record<string, string>>,
   overrides: Partial<KnowledgeDeps> = {},
-): {deps: KnowledgeDeps; stderr: string[]} {
+): {deps: KnowledgeDeps; stderr: string[]; logged: LoggedLine[]} {
   const stderr: string[] = []
+  const logged: LoggedLine[] = []
   const deps: KnowledgeDeps = {
     env: {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH},
     readDir: async path => {
@@ -76,11 +84,12 @@ function memoryDeps(
       return content
     },
     writeStderr: line => stderr.push(line),
+    appendCallLog: (path, line) => logged.push({path, line}),
     expand: defaultKnowledgeDeps().expand,
     searchSolutions: defaultKnowledgeDeps().searchSolutions,
     ...overrides,
   }
-  return {deps, stderr}
+  return {deps, stderr, logged}
 }
 
 const clients: Client[] = []
@@ -94,13 +103,13 @@ async function harness(
   files: Readonly<Record<string, string>> = FULL_CHECKOUT,
   overrides: Partial<KnowledgeDeps> = {},
 ): Promise<Harness> {
-  const {deps, stderr} = memoryDeps(files, overrides)
+  const {deps, stderr, logged} = memoryDeps(files, overrides)
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair()
   await serve({deps, createTransport: () => serverSide})
   const session = new Client({name: 'knowledge-mcp-test', version: '0.0.0'})
   clients.push(session)
   await session.connect(clientSide)
-  return {deps, stderr, session}
+  return {deps, stderr, logged, session}
 }
 
 async function call(
@@ -639,6 +648,166 @@ describe('a handler never throws and never echoes what it was given', () => {
       isError: true,
       text: errorText('unexpected'),
     })
+  })
+})
+
+describe('the call log', () => {
+  const LOG = '/work/temp/knowledge-mcp-calls-1-1-fro-bot.log'
+  const WITH_LOG = {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: LOG}
+  const line = (tool: string, code: string): LoggedLine => ({path: LOG, line: `${tool} ${code}\n`})
+
+  it.each([
+    ['wiki_search', {query: 'runner fixture'}, FULL_CHECKOUT, 'ok'],
+    ['wiki_search', {query: 'zzzzqqqq nonexistent'}, FULL_CHECKOUT, 'ok'],
+    ['wiki_linked', {}, FULL_CHECKOUT, 'ok'],
+    ['solutions_search', {query: 'cache invalidation region rotation'}, FULL_CHECKOUT, 'ok'],
+    ['wiki_search', {query: 'wiki'}, FULL_CHECKOUT, 'invalid-query'],
+    ['solutions_search', {query: '../x'}, FULL_CHECKOUT, 'invalid-query'],
+    ['wiki_search', {query: 'runner fixture'}, {'metadata/repos.yaml': 'repos: []\n'}, 'corpus-unavailable'],
+    [
+      'solutions_search',
+      {query: 'cache region rotation'},
+      {'metadata/repos.yaml': 'repos: []\n'},
+      'corpus-unavailable',
+    ],
+    ['wiki_linked', {}, {[HANDOFF_PATH]: 'not json'}, 'handoff-malformed'],
+    ['wiki_linked', {}, {'metadata/repos.yaml': 'repos: []\n'}, 'no-handoff'],
+  ] as const)('%s appends exactly one line, and the code is %s', async (tool, args, files, code) => {
+    const h = await harness(files, {env: WITH_LOG})
+
+    await call(h, tool, args)
+
+    expect(h.logged).toEqual([line(tool, code)])
+  })
+
+  it('records no-handoff when the handoff path is unset', async () => {
+    const h = await harness(FULL_CHECKOUT, {env: {KNOWLEDGE_MCP_CALL_LOG: LOG}})
+
+    await call(h, 'wiki_linked')
+
+    expect(h.logged).toEqual([line('wiki_linked', 'no-handoff')])
+  })
+
+  it.each([
+    ['wiki_search', {query: 'runner fixture'}],
+    ['wiki_linked', {}],
+    ['solutions_search', {query: 'cache region rotation'}],
+  ] as const)('records unexpected when a dependency throws under %s', async (tool, args) => {
+    const boom = async (): Promise<never> => {
+      throw new Error('boom')
+    }
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG, expand: boom, searchSolutions: boom})
+
+    await call(h, tool, args)
+
+    expect(h.logged).toEqual([line(tool, 'unexpected')])
+  })
+
+  it('appends one line per call, in call order', async () => {
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
+
+    await call(h, 'wiki_search', {query: 'runner fixture'})
+    await call(h, 'wiki_search', {query: 'wiki'})
+    await call(h, 'wiki_linked')
+
+    expect(h.logged).toEqual([
+      line('wiki_search', 'ok'),
+      line('wiki_search', 'invalid-query'),
+      line('wiki_linked', 'ok'),
+    ])
+  })
+
+  it.each([
+    ['unset', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH}],
+    ['empty', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: ''}],
+    ['a bare file name', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
+    ['a relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
+    ['a parent-relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
+  ])('writes no log when KNOWLEDGE_MCP_CALL_LOG is %s', async (_label, env) => {
+    const h = await harness(FULL_CHECKOUT, {env})
+
+    const outcome = await call(h, 'wiki_search', {query: 'runner fixture'})
+    await call(h, 'wiki_search', {query: 'wiki'})
+
+    expect(outcome.isError).toBe(false)
+    expect(h.logged).toEqual([])
+  })
+
+  it('records nothing for a call the schema rejects before the handler runs', async () => {
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
+
+    await expect(h.session.callTool({name: 'wiki_search', arguments: {}})).rejects.toBeInstanceOf(McpError)
+
+    expect(h.logged).toEqual([])
+  })
+
+  it('records a non-string query that reaches the handler as invalid-query', async () => {
+    const {deps, logged} = memoryDeps(FULL_CHECKOUT, {env: WITH_LOG})
+    const command = buildKnowledgeCli(deps).commands.find(candidate => candidate.name === 'solutions_search')
+
+    await command?.commandAction?.({query: 5})
+
+    expect(logged).toEqual([line('solutions_search', 'invalid-query')])
+  })
+
+  it('writes nothing from the query, the path or the result to the log', async () => {
+    const sentinel = 'sentinel-query-9b2f'
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
+
+    await call(h, 'wiki_search', {query: `runner fixture ${sentinel}`})
+    await call(h, 'solutions_search', {query: `cache ${sentinel} rotation`})
+    await call(h, 'wiki_search', {query: `${sentinel}/etc`})
+    await call(h, 'wiki_linked')
+
+    expect(h.logged.length).toBe(4)
+    for (const entry of h.logged) {
+      expect(entry.line).toMatch(/^(wiki_search|wiki_linked|solutions_search) [a-z-]+\n$/u)
+      expect(entry.line).not.toContain(sentinel)
+      expect(entry.line).not.toContain('knowledge/')
+      expect(entry.line).not.toContain(HANDOFF_PATH)
+    }
+  })
+
+  it('swallows an append failure: the result and stderr are what they would be without a log', async () => {
+    const appendCallLog = vi.fn<KnowledgeDeps['appendCallLog']>(() => {
+      throw new Error('ENOSPC: no space left on /work/temp')
+    })
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG, appendCallLog})
+
+    const ok = await call(h, 'wiki_search', {query: 'runner fixture'})
+    const bad = await call(h, 'wiki_search', {query: 'wiki'})
+
+    expect(appendCallLog).toHaveBeenCalledTimes(2)
+    expect(ok.isError).toBe(false)
+    expect(JSON.parse(ok.text)).toMatchObject({status: 'ok', mode: 'query'})
+    expect(bad).toEqual({isError: true, text: errorText('invalid-query')})
+    expect(h.stderr).toEqual(['knowledge-mcp: ready\n', 'knowledge-mcp: error:invalid-query\n'])
+  })
+
+  it('swallows a thrown non-error from the append', async () => {
+    const h = await harness(FULL_CHECKOUT, {
+      env: WITH_LOG,
+      appendCallLog: () => {
+        throw LOG
+      },
+    })
+
+    expect((await call(h, 'wiki_linked')).isError).toBe(false)
+  })
+
+  it('appends to the file the variable names, line by line, through the default deps', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'knowledge-mcp-call-log-'))
+    try {
+      const path = join(dir, 'calls.log')
+      const {appendCallLog} = defaultKnowledgeDeps()
+
+      appendCallLog(path, 'wiki_search ok\n')
+      appendCallLog(path, 'wiki_linked no-handoff\n')
+
+      expect(readFileSync(path, 'utf8')).toBe('wiki_search ok\nwiki_linked no-handoff\n')
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
   })
 })
 

@@ -434,6 +434,78 @@ describe('knowledge MCP server: the composite command, spawned', () => {
   })
 })
 
+describe('knowledge MCP server: the call log, spawned', () => {
+  it('appends one `<tool> <code>` line per tools/call, and nothing the model sent', async () => {
+    // #given the composite's environment variable naming an absolute log path
+    const cwd = await makeCheckout()
+    const log = join(cwd, 'knowledge-mcp-calls.log')
+    const sentinel = 'sentinel-query-3c7a'
+    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
+
+    // #when a client makes real calls, one of them with a sentinel in the query
+    await callTool(session, 'wiki_search', {query: 'octokit github api access'})
+    await callTool(session, 'wiki_search', {query: `octokit ${sentinel}`})
+    await callTool(session, 'wiki_search', {query: 'wiki'})
+    await callTool(session, 'solutions_search', {query: 'cache invalidation region rotation'})
+    await callTool(session, 'solutions_search', {query: '../x'})
+    await callTool(session, 'wiki_linked')
+
+    // #then the file holds exactly those calls' tool names and codes, and the sentinel is nowhere
+    const text = await readFile(log, 'utf8')
+    expect(text).toBe(
+      [
+        'wiki_search ok',
+        'wiki_search ok',
+        'wiki_search invalid-query',
+        'solutions_search ok',
+        'solutions_search invalid-query',
+        'wiki_linked no-handoff',
+        '',
+      ].join('\n'),
+    )
+    expect(text).not.toContain(sentinel)
+    expect(session.stderr()).not.toContain(sentinel)
+  })
+
+  it('records the other fixed codes: corpus-unavailable and handoff-malformed', async () => {
+    const cwd = await makeCheckout({wiki: false, solutions: false})
+    const log = join(cwd, 'knowledge-mcp-calls.log')
+    const handoff = join(cwd, 'handoff.json')
+    await writeFile(handoff, '{"selectedPaths": "not-an-array"}')
+    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+
+    await callTool(session, 'wiki_search', {query: 'octokit github api access'})
+    await callTool(session, 'solutions_search', {query: 'cache region rotation'})
+    await callTool(session, 'wiki_linked')
+
+    expect(await readFile(log, 'utf8')).toBe(
+      'wiki_search corpus-unavailable\nsolutions_search corpus-unavailable\nwiki_linked handoff-malformed\n',
+    )
+  })
+
+  it('writes no file when the path is not absolute, and still answers', async () => {
+    const cwd = await makeCheckout()
+    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: 'relative-calls.log'}})
+
+    const outcome = await callTool(session, 'wiki_search', {query: 'octokit github api access'})
+
+    expect(outcome.isError).toBe(false)
+    await expect(readFile(join(cwd, 'relative-calls.log'), 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
+  })
+
+  it('answers and writes only fixed stderr lines when the log cannot be written', async () => {
+    const cwd = await makeCheckout()
+    const log = join(cwd, 'no-such-directory', 'calls.log')
+    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
+
+    const outcome = await callTool(session, 'wiki_search', {query: 'octokit github api access'})
+
+    expect(outcome.isError).toBe(false)
+    expect(JSON.parse(outcome.text)).toMatchObject({status: 'ok', mode: 'query'})
+    expect(stderrLines(session)).toEqual([READY_LINE])
+  })
+})
+
 /**
  * A Bun preload that hooks the load of the server module (`packages/wiki-ops/src/knowledge-mcp.ts`, reached
  * as `@fro-bot/wiki-ops/knowledge-mcp`). `onLoad` runs when the shim imports that module, so whatever
