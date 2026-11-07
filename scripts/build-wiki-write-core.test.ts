@@ -3,7 +3,9 @@ import {execFileSync as execFileSyncReal} from 'node:child_process'
 import {createHash, type Hash} from 'node:crypto'
 import {writeFileSync} from 'node:fs'
 import {
+  appendFile,
   chmod,
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -59,64 +61,74 @@ import {
   writeGateContractMarker,
 } from './build-wiki-write-core.ts'
 
-// The guard installed by the `vi.mock('node:fs/promises')` above, pinned. Every path used here is a nonexistent
-// child of the repository root, so without the guard each call would fail with ENOENT (or, for `rm` with `force`,
-// succeed) and never touch a file; the assertion is on the guard's own message.
-describe('the file-system guard', () => {
-  const outside = (...segments: string[]): string => join(repositoryRoot(), 'no-such-directory', ...segments)
-  const refused = 'refusing to touch a path outside the OS temp directory'
-
-  it.each([
-    ['writeFile', async () => writeFile(outside('file'), 'x')],
-    ['mkdir', async () => mkdir(outside('directory'), {recursive: true})],
-    ['mkdtemp', async () => mkdtemp(outside('prefix-'))],
-    ['rm', async () => rm(outside('file'), {force: true, recursive: true})],
-    ['rename (source)', async () => rename(outside('file'), join(tmpdir(), 'wiki-write-core-guard-target'))],
-    ['rename (target)', async () => rename(join(tmpdir(), 'wiki-write-core-guard-source'), outside('file'))],
-    ['symlink', async () => symlink('target', outside('link'))],
-    ['chmod', async () => chmod(outside('file'), 0o644)],
-    ['utimes', async () => utimes(outside('file'), new Date(), new Date())],
-  ] as const)('refuses %s on a path outside the OS temp directory', async (_name, operation) => {
-    await expect(operation()).rejects.toThrow(refused)
-  })
-
-  it('refuses a relative path, which would resolve against the checkout', async () => {
-    await expect(writeFile('relative-guard-probe.txt', 'x')).rejects.toThrow(refused)
-  })
-
-  it('refuses a sibling of the temp directory whose name merely starts with it', async () => {
-    await expect(writeFile(`${tmpdir()}-sibling/file`, 'x')).rejects.toThrow(refused)
-  })
-
-  it('lets a path under the OS temp directory through', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
-    try {
-      await writeFile(join(directory, 'file'), 'x')
-      await expect(readFile(join(directory, 'file'), 'utf8')).resolves.toBe('x')
-    } finally {
-      await rm(directory, {force: true, recursive: true})
-    }
-  })
-})
-
 // Fail closed. `runBuild` and `stagePackage` write through `node:fs/promises` with paths from option defaults
 // (`options.markerDirectory ?? markerDirectory()`), and a Stryker mutant or a hand edit that swaps one default in
-// points the write at the real `packages/wiki-write-core/dist/` before any assertion has run. These wrappers
-// refuse every mutating call whose path is not under the OS temp directory, so a swapped default throws instead of
-// touching the checkout. The module is mocked for the whole file: the build code and the package verifier import
-// it by name, and none of them takes the file-system functions as an option.
+// points the write at the real `packages/wiki-write-core/dist/` before any assertion has run. The guard below
+// refuses every mutating call unless its path sits inside a directory this file allocated itself: a `mkdtemp`
+// under the OS temp directory registers the directory it returns, and only paths inside a registered directory
+// pass. "Under the temp directory" is deliberately not enough: a checkout at `/tmp/repo` is under it too.
+//
+// `createFsGuard` is pure (no I/O) and takes the temp roots as an argument, so the tests below can place a
+// simulated checkout under a simulated temp directory and prove it is refused wherever the real one lives.
+const {createFsGuard} = await vi.hoisted(async () => {
+  const nodePath = await import('node:path')
+
+  interface FsGuard {
+    /** Throws unless `target` is an absolute path inside a registered fixture directory. */
+    assertWritable: (target: unknown) => void
+    /** Throws unless `prefix` is a `mkdtemp` prefix directly in a temp root or inside a registered directory. */
+    assertCreatable: (prefix: unknown) => void
+    register: (directory: string) => void
+    unregister: (directory: string) => void
+    isRegistered: (directory: string) => boolean
+  }
+
+  function createFsGuard(options: {readonly tempRoots: readonly string[]}): FsGuard {
+    const tempRoots = options.tempRoots.map(root => nodePath.resolve(root))
+    const registered = new Set<string>()
+    const isInside = (root: string, path: string): boolean => path === root || path.startsWith(`${root}${nodePath.sep}`)
+    // A relative path is refused before anything resolves it: it would resolve against the working directory,
+    // which is the checkout.
+    const absolute = (target: unknown): string => {
+      const text = target instanceof URL ? target.pathname : String(target)
+      if (!nodePath.isAbsolute(text)) throw new Error(`refusing a relative path: ${text}`)
+      return nodePath.resolve(text)
+    }
+    const inRegistered = (path: string): boolean => [...registered].some(root => isInside(root, path))
+    return {
+      assertWritable(target) {
+        const path = absolute(target)
+        if (!inRegistered(path)) {
+          throw new Error(`refusing to touch a path outside a test-owned fixture directory: ${path}`)
+        }
+      },
+      assertCreatable(prefix) {
+        const path = absolute(prefix)
+        if (!tempRoots.includes(nodePath.dirname(path)) && !inRegistered(path)) {
+          throw new Error(`refusing to create a directory outside a temp root or a test-owned fixture: ${path}`)
+        }
+      },
+      register(directory) {
+        registered.add(nodePath.resolve(directory))
+      },
+      unregister(directory) {
+        registered.delete(nodePath.resolve(directory))
+      },
+      isRegistered(directory) {
+        return registered.has(nodePath.resolve(directory))
+      },
+    }
+  }
+
+  return {createFsGuard}
+})
+
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   const {tmpdir: osTmpdir} = await import('node:os')
-  const nodePath = await import('node:path')
-  const roots = [nodePath.resolve(osTmpdir()), await actual.realpath(osTmpdir())]
-  const assertInsideTemp = (target: unknown): void => {
-    const path = target instanceof URL ? target.pathname : String(target)
-    const absolute = nodePath.resolve(path)
-    if (!roots.some(root => absolute === root || absolute.startsWith(`${root}${nodePath.sep}`))) {
-      throw new Error(`refusing to touch a path outside the OS temp directory: ${path}`)
-    }
-  }
+  const guard = createFsGuard({tempRoots: [osTmpdir(), await actual.realpath(osTmpdir())]})
+  type Operation = (...args: unknown[]) => Promise<unknown>
+  const real = actual as unknown as Record<string, Operation>
   // The index of every path argument that names something the call creates, changes or removes.
   const guarded = {
     appendFile: [0],
@@ -125,9 +137,7 @@ vi.mock('node:fs/promises', async importOriginal => {
     cp: [1],
     link: [1],
     mkdir: [0],
-    mkdtemp: [0],
     rename: [0, 1],
-    rm: [0],
     rmdir: [0],
     symlink: [1],
     truncate: [0],
@@ -137,13 +147,183 @@ vi.mock('node:fs/promises', async importOriginal => {
   } as const satisfies Record<string, readonly number[]>
   const wrapped: Record<string, unknown> = {...actual}
   for (const [name, indexes] of Object.entries(guarded)) {
-    const original = (actual as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[name]
     wrapped[name] = async (...args: unknown[]) => {
-      for (const index of indexes) assertInsideTemp(args[index])
-      return original?.(...args)
+      for (const index of indexes) guard.assertWritable(args[index])
+      return real[name]?.(...args)
     }
   }
+  // `mkdtemp` is how a fixture directory is allocated: it may create directly in a temp root, and what it returns
+  // becomes writable. `rm` of a registered directory itself retires it, so a later write to the same path fails.
+  wrapped.mkdtemp = async (prefix: unknown, ...rest: unknown[]) => {
+    guard.assertCreatable(prefix)
+    const directory = (await real.mkdtemp?.(prefix, ...rest)) as string
+    guard.register(directory)
+    guard.register(await actual.realpath(directory))
+    return directory
+  }
+  wrapped.rm = async (target: unknown, ...rest: unknown[]) => {
+    guard.assertWritable(target)
+    const result = await real.rm?.(target, ...rest)
+    const path = String(target)
+    if (guard.isRegistered(path)) guard.unregister(path)
+    return result
+  }
   return {...wrapped, default: wrapped}
+})
+
+// A path that cannot be created: a child of a regular file (`package.json`, present in the checkout, a Stryker
+// sandbox and any copy of either). A broken guard therefore fails with ENOTDIR instead of leaving a file behind,
+// wherever the checkout lives; `discard` still removes whatever a broken guard did manage to create.
+describe('the file-system guard', () => {
+  const unreachable = (...segments: string[]): string => join(repositoryRoot(), 'package.json', ...segments)
+  const refusedOutside = 'refusing to touch a path outside a test-owned fixture directory'
+  const discard = async (...paths: string[]): Promise<void> => {
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    for (const path of paths) await real.rm(path, {force: true, recursive: true}).catch(() => undefined)
+  }
+  const probe = async (path: string, operation: () => Promise<unknown>, message: string | RegExp): Promise<void> => {
+    try {
+      await expect(operation()).rejects.toThrow(message)
+    } finally {
+      await discard(path)
+    }
+  }
+
+  it.each([
+    ['writeFile', (p: string) => async () => writeFile(p, 'x')],
+    ['appendFile', (p: string) => async () => appendFile(p, 'x')],
+    ['mkdir', (p: string) => async () => mkdir(p, {recursive: true})],
+    ['rm', (p: string) => async () => rm(p, {force: true, recursive: true})],
+    ['symlink', (p: string) => async () => symlink('target', p)],
+    ['chmod', (p: string) => async () => chmod(p, 0o644)],
+    ['utimes', (p: string) => async () => utimes(p, new Date(), new Date())],
+  ] as const)('refuses %s on a checkout path', async (_name, operation) => {
+    const path = unreachable('probe')
+    await probe(path, operation(path), refusedOutside)
+  })
+
+  it('refuses mkdtemp with a prefix inside the checkout', async () => {
+    const prefix = unreachable('prefix-')
+    await probe(prefix, async () => mkdtemp(prefix), /refusing to create a directory outside/u)
+  })
+
+  it('refuses a checkout path on either side of a rename, copy or link', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    const outsidePath = unreachable('probe')
+    try {
+      await writeFile(join(fixture, 'file'), 'x')
+      await probe(outsidePath, async () => rename(join(fixture, 'file'), outsidePath), refusedOutside)
+      await probe(outsidePath, async () => rename(outsidePath, join(fixture, 'moved')), refusedOutside)
+      await probe(outsidePath, async () => copyFile(join(fixture, 'file'), outsidePath), refusedOutside)
+      await expect(readFile(join(fixture, 'file'), 'utf8')).resolves.toBe('x')
+    } finally {
+      await rm(fixture, {force: true, recursive: true})
+    }
+  })
+
+  it('refuses a relative path before resolving it against the working directory', async () => {
+    const relativeProbe = join('package.json', 'relative-probe')
+    await probe(resolve(relativeProbe), async () => writeFile(relativeProbe, 'x'), /refusing a relative path/u)
+    await probe(resolve(relativeProbe), async () => mkdtemp(relativeProbe), /refusing a relative path/u)
+  })
+
+  it('refuses a sibling of a fixture directory whose name merely starts with it', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    const sibling = `${fixture}-sibling`
+    try {
+      await probe(sibling, async () => writeFile(join(sibling, 'file'), 'x'), refusedOutside)
+    } finally {
+      await rm(fixture, {force: true, recursive: true})
+    }
+  })
+
+  it('refuses the temp directory itself and a path that climbs out of a fixture directory', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    try {
+      // `writeFile` onto a directory fails with EISDIR even when the guard is broken: nothing here can delete the
+      // temp directory, and there is nothing to discard.
+      await expect(writeFile(tmpdir(), 'x')).rejects.toThrow(refusedOutside)
+      const climb = join(fixture, '..', 'wiki-write-core-guard-escape')
+      await probe(climb, async () => writeFile(climb, 'x'), refusedOutside)
+    } finally {
+      await rm(fixture, {force: true, recursive: true})
+    }
+  })
+
+  it('lets a registered fixture directory through, and stops once it is removed', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'wiki-write-core-guard-'))
+    await writeFile(join(fixture, 'file'), 'x')
+    await expect(readFile(join(fixture, 'file'), 'utf8')).resolves.toBe('x')
+    await rm(fixture, {force: true, recursive: true})
+    await probe(fixture, async () => writeFile(join(fixture, 'file'), 'y'), refusedOutside)
+  })
+})
+
+// The same rules without any file system, with the checkout simulated beneath the temp directory.
+describe('createFsGuard with a checkout beneath the temp directory', () => {
+  const tempRoot = join(sep, 'sim', 'tmp')
+  const checkout = join(tempRoot, 'repo')
+  const marker = join(checkout, 'packages', 'wiki-write-core', 'dist', 'gate-contract.json')
+  const fixture = join(tempRoot, 'wiki-write-core-runbuild-AbC123')
+  const make = (): ReturnType<typeof createFsGuard> => createFsGuard({tempRoots: [tempRoot]})
+
+  it('refuses the checkout, although it sits under the temp directory', () => {
+    const guard = make()
+    expect(() => guard.assertWritable(marker)).toThrow('outside a test-owned fixture directory')
+    expect(() =>
+      guard.assertCreatable(join(checkout, 'packages', 'wiki-write-core', '.wiki-write-core-dist-')),
+    ).toThrow('refusing to create a directory outside')
+    guard.register(fixture)
+    expect(() => guard.assertWritable(marker)).toThrow('outside a test-owned fixture directory')
+  })
+
+  it('allows a directory made directly in the temp root, and only what is inside it once registered', () => {
+    const guard = make()
+    expect(() => guard.assertCreatable(join(tempRoot, 'wiki-write-core-runbuild-'))).not.toThrow()
+    expect(() => guard.assertWritable(join(fixture, 'dist', 'gate-contract.json'))).toThrow()
+    guard.register(fixture)
+    expect(() => guard.assertWritable(fixture)).not.toThrow()
+    expect(() => guard.assertWritable(join(fixture, 'dist', 'gate-contract.json'))).not.toThrow()
+    expect(() => guard.assertCreatable(join(fixture, 'stage', '.wiki-write-core-stage-'))).not.toThrow()
+  })
+
+  it.each([
+    ['a sibling whose name starts with the fixture name', `${fixture}-sibling`],
+    ['the temp root itself', tempRoot],
+    ['a path that climbs out of the fixture into the checkout', join(fixture, '..', 'repo', 'x')],
+    ['a path that climbs out of the fixture', join(fixture, '..', 'other')],
+    ['the filesystem root', sep],
+  ])('refuses %s', (_name, path) => {
+    const guard = make()
+    guard.register(fixture)
+    expect(() => guard.assertWritable(path)).toThrow('outside a test-owned fixture directory')
+  })
+
+  it.each(['relative.txt', join('dist', 'gate-contract.json'), '.', '', join('..', 'repo', 'x')])(
+    'refuses the relative path %j before resolving it',
+    path => {
+      const guard = make()
+      guard.register(fixture)
+      expect(() => guard.assertWritable(path)).toThrow('refusing a relative path')
+      expect(() => guard.assertCreatable(path)).toThrow('refusing a relative path')
+    },
+  )
+
+  it('stops allowing a fixture directory once it is unregistered', () => {
+    const guard = make()
+    guard.register(fixture)
+    expect(guard.isRegistered(fixture)).toBe(true)
+    guard.unregister(fixture)
+    expect(guard.isRegistered(fixture)).toBe(false)
+    expect(() => guard.assertWritable(join(fixture, 'file'))).toThrow('outside a test-owned fixture directory')
+  })
+
+  it('accepts a URL path and refuses it the same way', () => {
+    const guard = make()
+    guard.register(fixture)
+    expect(() => guard.assertWritable(new URL(`file://${join(fixture, 'file')}`))).not.toThrow()
+    expect(() => guard.assertWritable(new URL(`file://${marker}`))).toThrow('outside a test-owned fixture directory')
+  })
 })
 
 // Pure and cheap, so first: the mutants of `publishedExports` and its helpers die here, not after the real `tsc` tests.
