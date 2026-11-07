@@ -27,19 +27,20 @@ Agents get knowledge context only from fixed pre-step excerpts and one `wiki-con
 - R7. No credential. The server strips `OPENCODE_PASSWORD` and `OPENCODE_CONFIG_CONTENT` at startup, and its cwd is the checkout root. (Units 2, 3)
 - R8. One composite action builds `opencode-config` for the four chosen jobs. (Units 3, 4)
 - R9. The excerpts are unchanged. (Unit 4)
-- R10. Jobs whose triggers all keep MCP use the tools in place of the bash recipe. The main job keeps the recipe. (Unit 4)
+- R10. The three Fro Bot jobs prefer the tools and keep the bash recipe as the fallback. Survey mentions the two search tools. (Unit 4)
 - R11. A fro-bot/agent request for credential-free local servers on withheld triggers. (Operational notes)
-- R12. The main job drops the recipe once a release with R11 is pinned. (Deferred)
+- R12. The recipe goes once a release with R11 is pinned. (Deferred)
 
 ## Scope Boundaries
 
 - capture-learnings, capture-patterns and draft-solutions keep the raw `OPENCODE_CONFIG` secret (see origin R8).
 - No GitHub-read tools, no other CLIs, no retirement of the excerpts, no OpenCode permission rules (see origin Scope Boundaries).
-- No change to the private-name filters. Privacy rests on the node-ID presence and promotion gates (see origin Key Decisions).
+- No change to the private-name filters. On default-branch and `data`-overlay runs, privacy rests on the node-ID presence and promotion gates (see origin Key Decisions). On PR-checkout runs, `docs/solutions/` and any PR-added pages are the PR's own content, which `SOLUTIONS_CONTEXT` already reads today.
 
 ### Deferred to Separate Tasks
 
-- R12, dropping the main job's bash recipe: after a fro-bot/agent release with R11 is pinned and checked on each trigger class.
+- R12, dropping the bash recipe from the three Fro Bot jobs: after a fro-bot/agent release with R11 is pinned and checked on each trigger class.
+- The main job's `pull_request_review_comment` branch has no fork check (`.github/workflows/fro-bot.yaml:514-520`), unlike its `pull_request` branch. The agent already runs in a fork's checkout there. This plan only keeps the server out of it.
 - `solutions-query.ts` treats only boolean `private: true` as private, while `wiki-context-expand.ts:246` also accepts `'true'`. This is inert today, because every private owner is redacted. Align it when the filter next changes.
 - `solutions-query.ts` duplicates `SOLUTION_SUBDIRS` from `solution-docs-paths.ts`.
 
@@ -68,7 +69,7 @@ Agents get knowledge context only from fixed pre-step excerpts and one `wiki-con
   - `runStepWithStubs` from `@fro-bot/test-kit/workflow-step` runs the step under real bash
   - tests check that the secret never appears in the output
 - `scripts/fro-bot-workflow-wiki-handoff.test.ts` iterates every agent job and pins the exact bash recipe. `scripts/wiki-ops-flows.test.ts` also references it.
-- fro-bot/agent v0.136.0 applies `opencode-config` with a shallow `Object.assign` (`src/services/setup/ci-config.ts:414`) and does not mask it (`src/harness/config/inputs.ts:238-258`).
+- fro-bot/agent v0.136.0 spreads `opencode-config` shallowly in V2 (`src/services/setup/ci-config-v2.ts:242-248`) and does not mask it (`src/harness/config/inputs.ts:238-258`).
 
 ### Institutional Learnings
 
@@ -140,14 +141,22 @@ Agents get knowledge context only from fixed pre-step excerpts and one `wiki-con
 ## Key Technical Decisions
 
 - **Server lives in `@fro-bot/wiki-ops`.** Both wrapped modules are there, so the package graph gains no edge. Entry is a six-line `scripts/knowledge-mcp.ts` shim guarded by `import.meta.main`.
-- **Server name `knowledge`; command names `wiki_search`, `wiki_linked`, `solutions_search`.** Tool ids read `knowledge_<command>`. The composite fails when the secret already defines `knowledge`.
-- **Env strip happens in the shim before any import.** The shim deletes the two variables, then dynamically imports the server module, so no dependency's module code sees them.
-- **Linked expansion checks the handoff first.** A missing path, file or valid shape returns a fixed error before the corpus loads (origin R5). This is a deliberate break from CLI parity, where those cases are empty results. Survey has no handoff, so it always gets the "no handoff for this run" error.
+- **Server name `knowledge`; command names `wiki_search`, `wiki_linked`, `solutions_search`.** Tool ids read `knowledge_<command>`. The composite fails when the secret already defines `knowledge` under either spelling.
+- **The query is a required `--query` option, not a positional.** `@goke/mcp` gives positionals a plain string schema, while an option carries its zod schema and the adapter enforces presence.
+- **The shim starts the server without argv parsing.** It deletes the two variables, dynamically imports the server module, and calls the `createMcpAction` callback directly. With an empty argv, goke would match no command and exit, and the server would never speak JSON-RPC. The shim has no static import, so no module code runs before the delete. The strip covers the server's in-process view only. The same uid can still read `/proc/<pid>/environ`, which predates this work.
+- **Handlers never throw.** `@goke/mcp` returns a plain value as a success and a thrown error's message verbatim (`cli-to-mcp.ts:233-261`, `:466-478`). Each handler wraps its whole body and returns either the JSON result or `{isError: true}` with one fixed code. The codes are `no-handoff`, `handoff-malformed`, `invalid-query`, `corpus-unavailable` and `unexpected`. `runWikiContextExpandCli` exit 1 maps to `invalid-query`, and its `no-corpus` reason maps to `corpus-unavailable`.
+- **Linked expansion checks the handoff first.** A missing path, a missing file or an invalid shape returns a fixed error before the corpus loads (origin R5). This is a deliberate break from CLI parity, where those cases are empty results. Survey has no handoff, so its linked calls always return `no-handoff`.
 - **Solutions search validates with `validateQuery` and maps the query to `event.title`.** That reuses the hardened agent-query rules and the existing title weighting. It is stricter than the env-driven ranking, which accepts any token of 3 or more characters.
-- **Config merge is shell plus `jq` in a composite, following `resolve-public-repo`.** It merges into the secret's own `mcp` object rather than replacing the key, because the agent assigns top-level keys shallowly. It adds the server under the spelling the secret already uses (`mcp.servers` when present, otherwise `mcp.<name>`), masks the compact merged JSON with `::add-mask::` before writing the output, and prints only fixed messages.
+- **Config merge is shell plus `jq` in a composite, following `resolve-public-repo`.**
+  - It merges into the secret's own `mcp` object rather than replacing the key, because the agent spreads `opencode-config` shallowly (`src/services/setup/ci-config-v2.ts:242-248`).
+  - It adds the server under `mcp.servers` only when that key is a native map, using the agent's own rule: a `servers` entry carrying `type` is a server named `servers` (`src/services/setup/mcp-servers-v2.ts:13-15`, `:231`). Otherwise it writes `mcp.knowledge`.
+  - `command` is the array `["bun", "scripts/knowledge-mcp.ts"]`. The agent rejects a string and fails setup (`mcp-servers-v2.ts:171-180`, `:312-316`).
+  - Every type is checked before `keys` or iteration, and jq's stderr goes to `/dev/null`, because jq prints the offending value on a type error.
+  - It masks the compact merged JSON with `::add-mask::`, escaping `%`, CR and LF as the runner's command format requires, and then writes the output.
+- **Fork PR runs get the raw secret.** When `github.event.pull_request.head.repo.fork` is true, the composite passes the secret through unchanged. Otherwise a review-comment mention on a fork PR would launch fork-authored server code.
 - **Server `cwd` and handoff path are absolute literals the composite computes from `GITHUB_WORKSPACE` and its input.** No `{env:}` reference is ever written, so the definition stays valid if R11 lands.
-- **Config errors fail the job; runtime server failure degrades.** A bad secret or a name collision fails the composite on every trigger. A server that fails to start or crashes leaves the agent with excerpts and, in the main job, the bash recipe.
-- **New dependencies are exact pins.** wiki-ops adds `goke` 6.18.0 and `@goke/mcp` 0.1.2, plus `@modelcontextprotocol/sdk` 1.32.2 as a dev dependency for the test client. All clear the 3-day floor. The lockfile change needs approval at the push gate.
+- **Config errors fail the job; runtime server failure degrades.** A bad secret or a name collision fails the composite on every trigger, PR runs included. The operator controls the secret, so this is an accepted new failure mode. A server that fails to start or crashes leaves the agent with excerpts and the bash recipe.
+- **New dependencies are exact pins.** wiki-ops adds `goke` 6.18.0, `@goke/mcp` 0.1.2 and `zod` 4.6.7, matching core's pins, plus `@modelcontextprotocol/sdk` 1.32.2 as a dev dependency for the test client. All clear the 3-day floor, and the lock must resolve one SDK copy. The lockfile change needs approval at the push gate.
 
 ## Open Questions
 
@@ -159,12 +168,12 @@ Agents get knowledge context only from fixed pre-step excerpts and one `wiki-con
 - Host package and naming: see Key Technical Decisions.
 - Which jobs: main `fro-bot`, Remediate, Observe and the three survey attempts.
 - `@goke/mcp` and the core runner: the server owns a separate goke instance and never touches `runCli`.
+- Error surfacing and MCP spellings: see Key Technical Decisions.
 
 ### Deferred to Implementation
 
-- How `@goke/mcp` 0.1.2 surfaces a failed command to the client (thrown error, exit code, or `isError`). Map fixed error codes onto whatever shape it produces.
-- Whether `opencode-logs` records MCP tool calls. The live Observe readback checks this. If it doesn't record them, use the agent's session output instead.
-- How the jq merge handles a secret that uses both MCP spellings at once.
+- Whether `opencode-logs` records MCP tool calls or the server's stderr. The server writes one fixed `knowledge-mcp: ready` line at startup as the live signal. If the artifact captures neither, use the agent's session output for the readback.
+- Whether goke 6.18.0 options support `.required()`, or presence needs a zod-level check instead.
 
 ## High-Level Technical Design
 
@@ -177,16 +186,16 @@ sequenceDiagram
   participant AG as fro-bot/agent
   participant OC as OpenCode
   participant S as scripts/knowledge-mcp.ts
-  WF->>CA: OPENCODE_CONFIG (env), handoff path
-  CA->>CA: parse, collision check, add mcp.knowledge, add-mask
+  WF->>CA: OPENCODE_CONFIG (env), handoff path, fork flag
+  CA->>CA: parse, type checks, collision check, add knowledge, add-mask
   CA-->>WF: opencode-config output
   WF->>AG: opencode-config
   AG->>AG: keep or drop mcp by event
   AG->>OC: config
-  OC->>S: spawn (cwd, environment)
-  S->>S: strip env, import server
+  OC->>S: spawn (command array, cwd, environment)
+  S->>S: strip env, import server, serve without argv
   OC->>S: tools/list, tools/call
-  S-->>OC: result or fixed error
+  S-->>OC: result or isError with a fixed code
 ```
 
 ## Implementation Units
@@ -245,13 +254,17 @@ sequenceDiagram
 
 **Approach:**
 
-- `knowledge-mcp.ts` exposes the allowlist (a function returning the three command names) and a builder. The builder registers each command on a fresh goke instance with zod-typed options, and serves the instance through `createMcpAction` with `commandFilter` set to the allowlist.
-- `wiki_search` takes `query`. It calls `runWikiContextExpandCli` with argv `['query', query]`, the checkout-root readers, an env holding only the handoff path, and no-op writers.
-- `wiki_linked` takes no arguments. It checks the configured handoff path and file with `parseHandoffContent` before calling linked mode.
-- `solutions_search` takes `query` and calls the Unit 1 entry.
-- Every handler returns the JSON result as text, or a fixed error code such as `no-handoff`, `handoff-malformed`, `invalid-query`, `corpus-unavailable` or `unexpected`.
-- The server writes nothing to stdout outside the transport. Its stderr is fixed lines only.
-- The shim strips `OPENCODE_PASSWORD` and `OPENCODE_CONFIG_CONTENT`, then dynamically imports and starts the server. It loads cleanly under Test Scripts Load without starting anything.
+- `knowledge-mcp.ts` exposes:
+  - the allowlist, a function returning the three command names
+  - a builder that registers each command on a fresh goke instance, with `query` as a required zod-typed `--query` option where it applies
+  - a `serve` function that calls the `createMcpAction({cli, commandFilter})` callback directly
+- `wiki_search` calls `runWikiContextExpandCli` with argv `['query', query]`, the checkout-root readers, an env holding only the handoff path, and no-op writers.
+- `wiki_linked` takes no options. It checks the configured handoff path and file with `parseHandoffContent` before calling linked mode.
+- `solutions_search` calls the Unit 1 entry with a no-op warning sink.
+- Each handler wraps its whole body. It returns the JSON result as text, or `{isError: true}` with one fixed code, and never throws (see Key Technical Decisions for the codes and mappings).
+- The server writes nothing to stdout outside the transport. Its stderr is the fixed `knowledge-mcp: ready` line plus fixed error lines.
+- The shim strips `OPENCODE_PASSWORD` and `OPENCODE_CONFIG_CONTENT`, then dynamically imports the server module and calls `serve`. It has no static import and loads cleanly under Test Scripts Load without starting anything.
+- A sentinel probe for the env test is a test-only export, not an env switch in the shipped module.
 
 **Execution note:** Implement test-first. Write the spawned-server contract test before the handlers.
 
@@ -262,27 +275,31 @@ sequenceDiagram
 
 **Test scenarios:**
 
-- Happy path: a spawned server over stdio with an SDK client against a temp fixture checkout lists exactly `wiki_search`, `wiki_linked` and `solutions_search`.
+- Integration: spawning the composite's exact `command` array with no extra argv, from a temp fixture checkout as cwd, then connecting an SDK client, lists exactly `wiki_search`, `wiki_linked` and `solutions_search`. Stderr carries the ready line.
 - Happy path: `wiki_search` for a fixture page title returns the same result `wiki-context-expand query` gives.
 - Edge case: the query `-foo bar` gives the same result as the CLI's `query "-foo bar"`.
+- Error path: a call without `query` is rejected before the handler runs.
+- Error path: an empty or rejected query returns `invalid-query` as an error result.
+- Error path: a fixture checkout with no `knowledge/wiki` makes `wiki_search` return `corpus-unavailable`, not an empty match.
 - Happy path: `wiki_linked` with a valid handoff returns linked pages.
-- Error path: with no handoff path configured, the tool returns `no-handoff`, and neither the result nor stderr carries a path.
+- Error path: with no handoff path configured, `wiki_linked` returns `no-handoff`.
+- Error path: with a handoff path pointing at a missing file, it returns `no-handoff`, and neither the result nor stderr carries the path.
 - Error path: a malformed handoff file returns `handoff-malformed`, even when the corpus is also missing.
-- Happy path: `solutions_search` returns the matching fixture doc.
-- Error path: a rejected query returns `invalid-query`.
+- Happy path: `solutions_search` returns the matching fixture doc, and stderr holds only the ready line.
 - Error path: with the corpus missing, `solutions_search` returns `corpus-unavailable`.
+- Error path: a dependency stubbed to throw an error whose message holds a path and a query yields `unexpected`, and the result text contains neither string.
 - Edge case: a page tagged with a non-redacted private repository in the fixture's `metadata/repos.yaml` is left out of `wiki_search`, matching the CLI.
-- Integration: when the server is spawned with sentinel values for `OPENCODE_PASSWORD`, `OPENCODE_CONFIG_CONTENT` and `GITHUB_TOKEN`, a debug-only probe reports all three absent from the handler's view. Neither stdout nor stderr ever contains a sentinel.
+- Integration: the server is spawned with sentinel values for `OPENCODE_PASSWORD`, `OPENCODE_CONFIG_CONTENT` and `GITHUB_TOKEN`. The probe reports the first two absent from the handler's view, and no sentinel appears in stdout, stderr or any result.
 - Error path: across every error case, stderr contains only lines from the fixed set.
 - The allowlist equals the three names and contains none of `resolve-private`, `enumerate-existing-leaks` or any name `defineCommand` marks `readOnly: false` anywhere under `packages/*/src`.
-- Integration: importing `scripts/knowledge-mcp.ts` without running it as the main module starts no server.
+- The shim contains no static `import` statement, and importing it without running it as the main module starts no server.
 
 **Verification:**
 
 - The spawned-server tests pass under Bun.
 - Test Scripts Load loads `knowledge-mcp.ts` and the shim.
 - `bun run check:mutation-guards` is clean.
-- `scripts/package-layout.test.ts` passes with the new dependencies declared.
+- `scripts/package-layout.test.ts` passes with the new dependencies declared, and the lock resolves one `@modelcontextprotocol/sdk` copy.
 
 - [ ] **Unit 3: `knowledge-mcp-config` composite action**
 
@@ -299,13 +316,18 @@ sequenceDiagram
 
 **Approach:**
 
-- Inputs `opencode-config` (the secret) and optional `handoff-path` reach the shell through `env:` only.
-- The step parses the secret, treating empty as `{}`. It fails with a fixed message when the value is not a JSON object, when `mcp` is present but not an object, or when `knowledge` already exists under either spelling.
-- It adds `knowledge` as `type: local` with:
-  - command `bun scripts/knowledge-mcp.ts`
+- Inputs `opencode-config` (the secret), optional `handoff-path` and `fork` reach the shell through `env:` only.
+- When `fork` is `true`, the step writes the secret through unchanged and adds nothing.
+- Otherwise it parses the secret, treating empty as `{}`. It fails with a fixed message when:
+  - the value is not a JSON object
+  - `mcp` is present but not an object
+  - `knowledge` already exists under either spelling
+- It type-checks before any `keys` or iteration, and discards jq's stderr.
+- It adds `knowledge` under the spelling the Key Technical Decisions define, as `type: local` with:
+  - `command` as the array `["bun", "scripts/knowledge-mcp.ts"]`
   - `cwd` set to `GITHUB_WORKSPACE`
   - `environment.WIKI_CONTEXT_HANDOFF_PATH`, only when the handoff path is non-empty
-- It emits compact single-line JSON, masks it, then writes the output once.
+- It emits compact single-line JSON, masks it with an escaped `::add-mask::` line, then writes the output once.
 
 **Patterns to follow:**
 
@@ -314,12 +336,16 @@ sequenceDiagram
 
 **Test scenarios:**
 
-- Happy path: an empty secret yields `{"mcp":{"knowledge":{…}}}` with the handoff path and an absolute `cwd`.
+- Happy path: an empty secret yields `mcp.knowledge` with an array `command`, the handoff path and an absolute `cwd`.
 - Happy path: a secret with other keys and another `mcp` server keeps both unchanged and adds `knowledge`.
-- Happy path: a secret using `mcp.servers` gets `knowledge` under `mcp.servers`.
+- Happy path: a secret with a native `mcp.servers` map gets `knowledge` under it. A legacy server named `servers` that carries `type` gets `knowledge` beside it as `mcp.knowledge`.
 - Edge case: an empty `handoff-path` writes no `environment.WIKI_CONTEXT_HANDOFF_PATH`.
-- Error path: malformed JSON, a non-object value, an `mcp` that isn't an object, a `knowledge` collision under each spelling. Each fails with its fixed message and writes no output.
-- Error path: the secret's raw text never appears in stdout, stderr or the output file, except inside the single `::add-mask::` line that precedes the output.
+- Edge case: `fork: true` writes the secret unchanged.
+- Integration: the emitted server entry passes a copy of the agent's local-server shape rules (`mcp-servers-v2.ts:171-192`): `command` is a non-empty string array, `cwd` is a string, and `environment` is a string map. A string `command` fails those rules.
+- Error path: malformed JSON, a non-object value, an `mcp` that isn't an object, and a `knowledge` collision under each spelling. Each fails with its fixed message and writes no output.
+- Error path: a sentinel placed inside a wrong-typed `mcp` value never appears in stdout or stderr.
+- Error path: the secret's raw text never appears in stdout or stderr outside the mask line. The output file carries the merged value only on its output line.
+- Edge case: a secret containing `%0A` and `%25` sequences produces a mask line whose decoded value equals the emitted output.
 - The step env map is exact, no `run:` contains `${{`, and the output contains no `{env:` or `{file:` reference.
 
 **Verification:** The action tests pass under real bash and jq, and actionlint is clean.
@@ -343,9 +369,9 @@ sequenceDiagram
 
 **Approach:**
 
-- Each of the three `fro-bot.yaml` agent jobs gains a config step before its agent step. The step takes the job's `WIKI_CONTEXT_HANDOFF_PATH` and the agent step reads its output as `opencode-config`.
+- Each of the three `fro-bot.yaml` agent jobs gains a config step before its agent step. The step takes the job's `WIKI_CONTEXT_HANDOFF_PATH` and the PR's fork flag, and the agent step reads its output as `opencode-config`.
 - survey adds one config step with no handoff path, and all three attempts read its output.
-- Remediate and Observe replace the `<wiki_context_expansion>` bash recipe with tool guidance. The main job keeps the recipe and says to prefer the `knowledge_*` tools when the run has them. Survey prompts gain the same tool guidance as an optional aid.
+- The three Fro Bot jobs share one guidance block: use the `knowledge_*` tools when the run lists them, otherwise run the existing bash recipe. Survey prompts name only the two search tools as an optional aid.
 - Excerpt steps and the other agent steps are untouched.
 
 **Patterns to follow:** `scripts/data-sync-callers.test.ts`, an explicit caller table.
@@ -354,9 +380,9 @@ sequenceDiagram
 
 - Happy path: each of the four jobs has the config step before its agent step, with the expected inputs, and its agent step's `opencode-config` reads that step's output.
 - capture-learnings, capture-patterns and draft-solutions still pass `secrets.OPENCODE_CONFIG` directly.
-- Remediate and Observe prompts name the three tool ids and no longer contain the bash recipe.
-- The main job's prompt still contains the exact recipe and mentions the tools.
-- Handoff wiring per job is unchanged, with the split replacing the shared `describe.each`.
+- Each of the three Fro Bot prompts names the three tool ids and still contains the exact bash recipe as the fallback.
+- Survey prompts name `knowledge_wiki_search` and `knowledge_solutions_search` and not `knowledge_wiki_linked`.
+- Handoff wiring per job is unchanged.
 - The excerpt steps (`wiki-query`, `solutions-query`) and their env are unchanged in every job.
 
 **Verification:** The workflow tests pass, actionlint is clean, and `bun run test` passes.
@@ -364,23 +390,25 @@ sequenceDiagram
 ## System-Wide Impact
 
 - **Interaction graph:**
-  - The four agent steps now depend on the composite and on `scripts/knowledge-mcp.ts` existing in their checkout. On a PR, the main job runs the PR's version of both, which is the same trust as the PR's workflow file.
+  - The four agent steps now depend on the composite and on `scripts/knowledge-mcp.ts` existing in their checkout. On a same-repo PR, the main job runs the PR's version of both, which is the same trust as the PR's workflow file. Fork PRs get the raw secret and no server.
   - Remediate restores `knowledge/` to HEAD after syncing, so its tools read main's wiki rather than `data`'s. This matches what its bash recipe reads today.
 - **Error propagation:**
-  - A composite failure fails the job before the agent starts, on every trigger. This includes `pull_request`, where the agent would drop `mcp` anyway.
-  - A server failure surfaces only to the model.
+  - A composite failure fails the job before the agent starts, on every trigger. This includes `pull_request`, where the agent would drop `mcp` anyway. It is an accepted new failure mode.
+  - A server failure surfaces only to the model, which falls back to the recipe.
 - **API surface parity:** the `wiki-context-expand` and `solutions-query` CLIs keep byte-identical behaviour.
 - **Unchanged invariants:**
   - Credentials by trigger, `persist-credentials` settings and excerpt injection stay as they are.
   - The `workflow_call` secret declarations stay as they are.
   - The other five agent steps stay as they are.
+  - Survey's agent checkout keeps no `ref`. Only an operator dispatches it, and dispatching from a branch is intended for testing.
 
 ## Risks & Dependencies
 
 | Risk | Mitigation |
 | --- | --- |
-| `@goke/mcp` 0.1.2 is young and drives goke internals | Exact pins, the spawned-server contract test, and the infra precedent on the same versions |
-| The merged config leaks through a log | `::add-mask::` before output, a test that scans for the secret, fixed messages only |
+| `@goke/mcp` 0.1.2 is young and drives goke internals | Exact pins, the spawned-server contract test on the composite's exact command, and the infra precedent |
+| The server never registers its tools in a live run | The spawned-server test uses the composite's exact command, cwd and empty argv. The startup line gives a live signal |
+| The merged config or a secret fragment leaks through a log | Escaped `::add-mask::` before output, type checks before jq walks a value, jq stderr discarded, fixed messages, sentinel tests |
 | A dependency logs to stdout and corrupts JSON-RPC | The spawned-server test runs every tool over the real transport |
 | `OPENCODE_CONFIG` already defines a `knowledge` server | The composite fails with a fixed message naming the collision |
 | The lockfile gains about 93 transitive packages | Dependency approval at the push gate, plus `bun audit` and `check:override-floors` on the real lock |
@@ -389,6 +417,7 @@ sequenceDiagram
 
 - **Upstream (R11):** the fro-bot/agent request is drafted. Filing it is a separate approval gate.
 - **Live proof:** read the next scheduled Observe and Remediate runs after merge.
+  - The server's `knowledge-mcp: ready` line or the listed `knowledge_*` tools show the server registered.
   - The agent's log or session output shows `knowledge_*` calls.
   - The config step logs no secret.
   - A `pull_request_review_comment` mention has the tools, and a `pull_request` review behaves as before.
