@@ -1,5 +1,6 @@
 import {Buffer} from 'node:buffer'
-import {spawnSync} from 'node:child_process'
+import {spawnSync, type spawn} from 'node:child_process'
+import {EventEmitter} from 'node:events'
 import {chmodSync, fstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -11,7 +12,9 @@ import {
   hasFlagAfterCommand,
   parseRoute,
   RouteStderrUsageError,
+  runCommand,
   runRouteStderr,
+  type CommandResult,
   type Route,
   type RouteStderrPlan,
 } from './route-stderr.ts'
@@ -246,6 +249,236 @@ describe('buildSummary in all mode', () => {
   })
 })
 
+// Every `runCommand` test below drives a fake child: no process, no timer, no I/O, so a mutant that makes the
+// command never settle fails the test in 500 ms rather than waiting out the 10 s default. The real-process
+// tests further down are the killers for what a fake cannot show: inherited descriptors, the environment, the
+// working directory, PATH lookup, large stderr, signals and exit codes.
+const FAKE = {timeout: 500}
+
+interface FakeChild extends EventEmitter {
+  readonly stderr: EventEmitter
+}
+
+interface SpawnCall {
+  readonly file: string
+  readonly args: readonly string[]
+  readonly options: unknown
+}
+
+/**
+ * Runs `runCommand` against a fake child. `script` runs once the listeners are attached; an exception it throws
+ * (an `emit` rethrows what a listener throws) rejects the result, so a listener that blows up fails the test at once.
+ */
+async function runFake(
+  script: (child: FakeChild) => void,
+  command: readonly string[] = ['tool'],
+  env: Record<string, string | undefined> = {},
+): Promise<{readonly result: CommandResult; readonly calls: readonly SpawnCall[]}> {
+  const calls: SpawnCall[] = []
+  return new Promise((resolve, reject) => {
+    const spawnProcess = ((file: string, args: readonly string[], options: unknown) => {
+      calls.push({file, args, options})
+      const child: FakeChild = Object.assign(new EventEmitter(), {stderr: new EventEmitter()})
+      queueMicrotask(() => {
+        try {
+          script(child)
+        } catch (error: unknown) {
+          reject(error)
+        }
+      })
+      return child
+    }) as unknown as typeof spawn
+    runCommand(command, env, spawnProcess).then(result => {
+      resolve({result, calls})
+    }, reject)
+  })
+}
+
+function startError(code: string): Error {
+  return Object.assign(new Error(`spawn failed: ${code}`), {code})
+}
+
+const startLine = (code: string): string => `route-stderr: could not start the wrapped command (${code})\n`
+
+describe('runCommand with a fake spawn', () => {
+  it('starts the file with its arguments, the supplied environment and inherited stdin and stdout', FAKE, async () => {
+    const env = {PATH: '/bin', DROPPED: undefined}
+    const {calls} = await runFake(child => child.emit('close', 0, null), ['tool', 'a', '--b', ''], env)
+    expect(calls).toStrictEqual([
+      {file: 'tool', args: ['a', '--b', ''], options: {env, stdio: ['inherit', 'inherit', 'pipe']}},
+    ])
+  })
+
+  it('passes the supplied environment object through, not a copy', FAKE, async () => {
+    const env = {PATH: '/bin'}
+    const {calls} = await runFake(child => child.emit('close', 0, null), ['tool'], env)
+    expect((calls[0]?.options as {env: unknown}).env).toBe(env)
+  })
+
+  it('resolves the exit code and every stderr chunk, in order', FAKE, async () => {
+    const {result} = await runFake(child => {
+      child.stderr.emit('data', Buffer.from('ab'))
+      child.stderr.emit('data', Buffer.from('c\n'))
+      child.emit('close', 3, null)
+    })
+    expect(result.code).toBe(3)
+    expect(result.stderr.toString('utf8')).toBe('abc\n')
+  })
+
+  it('resolves an empty buffer for a command that wrote nothing', FAKE, async () => {
+    const {result} = await runFake(child => child.emit('close', 0, null))
+    expect(result.code).toBe(0)
+    expect(Buffer.isBuffer(result.stderr)).toBe(true)
+    expect(result.stderr.length).toBe(0)
+  })
+
+  it.each([
+    ['SIGHUP', 129],
+    ['SIGINT', 130],
+    ['SIGKILL', 137],
+    ['SIGTERM', 143],
+  ] as const)('exits 128 plus the number of %s when a signal ends the command', FAKE, async (signal, expected) => {
+    const {result} = await runFake(child => {
+      child.stderr.emit('data', Buffer.from('partial'))
+      child.emit('close', null, signal)
+    })
+    expect(result.code).toBe(expected)
+    expect(result.stderr.toString('utf8')).toBe('partial')
+  })
+
+  it('keeps an exit code of 0 and does not read the signal', FAKE, async () => {
+    const {result} = await runFake(child => child.emit('close', 0, 'SIGTERM'))
+    expect(result.code).toBe(0)
+  })
+
+  it.each([
+    ['ENOENT', 127],
+    ['EACCES', 126],
+    ['EPERM', 126],
+  ] as const)('resolves %s as exit %j with a fixed line that does not name the command', FAKE, async (code, exit) => {
+    const {result} = await runFake(
+      child => {
+        child.emit('error', startError(code))
+        child.emit('close', -2, null)
+      },
+      ['secret-tool', 'secret-arg'],
+    )
+    expect(result.code).toBe(exit)
+    expect(result.stderr.toString('utf8')).toBe(startLine(code))
+    expect(result.stderr.toString('utf8')).not.toContain('secret')
+  })
+
+  it('keeps the first outcome when an error follows a close', FAKE, async () => {
+    const {result} = await runFake(child => {
+      child.stderr.emit('data', Buffer.from('out'))
+      child.emit('close', 1, null)
+      child.emit('error', startError('ENOENT'))
+    })
+    expect(result.code).toBe(1)
+    expect(result.stderr.toString('utf8')).toBe('out')
+  })
+
+  it('keeps the first outcome when a close follows an error', FAKE, async () => {
+    const {result} = await runFake(child => {
+      child.stderr.emit('data', Buffer.from('out'))
+      child.emit('error', startError('EACCES'))
+      child.emit('close', 1, null)
+    })
+    expect(result.code).toBe(126)
+    expect(result.stderr.toString('utf8')).toBe(startLine('EACCES'))
+  })
+
+  it.each([
+    ['ERR_INVALID_ARG_VALUE', 126],
+    ['ENOENT', 127],
+  ] as const)('resolves a spawn that throws %s as exit %j', FAKE, async (code, exit) => {
+    const spawnProcess = (() => {
+      throw startError(code)
+    }) as unknown as typeof spawn
+    const result = await runCommand(['tool'], {}, spawnProcess)
+    expect(result.code).toBe(exit)
+    expect(result.stderr.toString('utf8')).toBe(startLine(code))
+  })
+})
+
+describe('runRouteStderr plan validation', () => {
+  // A command that cannot start resolves with exit 127 after a failed `spawn`, with no process left running, so
+  // these accept cases are cheap and the validation mutants die in the first tests of the file. They go through
+  // `runRouteStderr` and the real `spawn`, so they keep the default timeout: only the fake-spawn tests above are
+  // free of I/O and safe to hold to 500 ms.
+  const MISSING = 'route-stderr-no-such-command'
+
+  it('accepts a plan of two routes with different prefixes', async () => {
+    const ran = await run(childPlan({routes: [WARNING, FINDING], command: [MISSING]}), baseEnv())
+    expect(ran.code).toBe(127)
+  })
+
+  it.each([[1], [255]])('accepts the conflict exit code %j', async exitCode => {
+    const ran = await run(childPlan({conflict: {exitCode, output: 'conflict'}, command: [MISSING]}), baseEnv())
+    expect(ran.code).toBe(127)
+    expect(ran.output).toBe('')
+  })
+
+  it.each([['a'], ['Z'], ['5'], ['_'], ['-'], ['Page_conflict-2']])('accepts the output name %j', async output => {
+    const ran = await run(childPlan({conflict: {exitCode: 127, output}, command: [MISSING]}), baseEnv())
+    expect(ran.output).toBe(`${output}=true\n`)
+  })
+
+  it.each([['a=b'], ['a b'], ['a\nb'], [''], ['a<<b']])(
+    'rejects the output name %j before the command runs',
+    async output => {
+      const argvFile = join(dir, 'argv.json')
+      await expect(
+        run(childPlan({conflict: {exitCode: 3, output}}), baseEnv({CASE_EXIT: '3', CASE_ARGV_FILE: argvFile})),
+      ).rejects.toThrow('--conflict-output must be made of letters, digits, _ and -')
+      expect(() => readFileSync(argvFile)).toThrow()
+    },
+  )
+
+  it.each([[0], [256], [-1], [1.5], [Number.NaN]])(
+    'rejects the exit code %j before the command runs',
+    async exitCode => {
+      const argvFile = join(dir, 'argv.json')
+      await expect(
+        run(childPlan({conflict: {exitCode, output: 'conflict'}}), baseEnv({CASE_ARGV_FILE: argvFile})),
+      ).rejects.toThrow('--conflict-exit must be an integer from 1 to 255')
+      expect(() => readFileSync(argvFile)).toThrow()
+    },
+  )
+
+  describe('usage', () => {
+    const cases: [string, RouteStderrPlan, string][] = [
+      ['no command', childPlan({command: []}), 'a command to run is required'],
+      ['no route', childPlan({routes: []}), 'at least one --route is required'],
+      [
+        'all mode with two routes',
+        childPlan({routes: [WARNING, FINDING], summary: 'all'}),
+        '--summary all takes exactly one --route',
+      ],
+      [
+        'a repeated prefix',
+        childPlan({routes: [WARNING, {prefix: WARNING.prefix, heading: 'Other'}]}),
+        'each --route prefix may appear once',
+      ],
+    ]
+
+    it.each(cases)('rejects %s before the command runs', async (_name, plan, message) => {
+      const argvFile = join(dir, 'argv.json')
+      await expect(run(plan, baseEnv({CASE_ARGV_FILE: argvFile}))).rejects.toThrow(message)
+      expect(() => readFileSync(argvFile)).toThrow()
+    })
+
+    it('is a RouteStderrUsageError', async () => {
+      await expect(run(childPlan({command: []}), baseEnv())).rejects.toBeInstanceOf(RouteStderrUsageError)
+    })
+
+    it('accepts all mode with exactly one route', async () => {
+      const ran = await run(childPlan({summary: 'all'}), baseEnv({CASE_STDERR: 'x\n'}))
+      expect(ran.code).toBe(0)
+    })
+  })
+})
+
 describe('runRouteStderr', () => {
   it('returns the exit code of the command, and replays its stderr unchanged', async () => {
     for (const exit of ['0', '1', '2', '3', '255']) {
@@ -364,28 +597,6 @@ describe('runRouteStderr', () => {
       const ran = await runRouteStderr(childPlan({conflict}), {env, replay: () => undefined})
       expect(ran).toBe(1)
     })
-
-    it.each([['a=b'], ['a b'], ['a\nb'], [''], ['a<<b']])(
-      'rejects the output name %j before the command runs',
-      async output => {
-        const argvFile = join(dir, 'argv.json')
-        await expect(
-          run(childPlan({conflict: {exitCode: 3, output}}), baseEnv({CASE_EXIT: '3', CASE_ARGV_FILE: argvFile})),
-        ).rejects.toThrow('--conflict-output must be made of letters, digits, _ and -')
-        expect(() => readFileSync(argvFile)).toThrow()
-      },
-    )
-
-    it.each([[0], [256], [-1], [1.5], [Number.NaN]])(
-      'rejects the exit code %j before the command runs',
-      async exitCode => {
-        const argvFile = join(dir, 'argv.json')
-        await expect(
-          run(childPlan({conflict: {exitCode, output: 'conflict'}}), baseEnv({CASE_ARGV_FILE: argvFile})),
-        ).rejects.toThrow('--conflict-exit must be an integer from 1 to 255')
-        expect(() => readFileSync(argvFile)).toThrow()
-      },
-    )
 
     it.each([[1], [255]])('accepts the exit code %j', async exitCode => {
       const ran = await run(
@@ -556,36 +767,15 @@ describe('runRouteStderr', () => {
       expect(ran.code).toBe(143)
     })
   })
+})
 
-  describe('usage', () => {
-    const cases: [string, RouteStderrPlan, string][] = [
-      ['no command', childPlan({command: []}), 'a command to run is required'],
-      ['no route', childPlan({routes: []}), 'at least one --route is required'],
-      [
-        'all mode with two routes',
-        childPlan({routes: [WARNING, FINDING], summary: 'all'}),
-        '--summary all takes exactly one --route',
-      ],
-      [
-        'a repeated prefix',
-        childPlan({routes: [WARNING, {prefix: WARNING.prefix, heading: 'Other'}]}),
-        'each --route prefix may appear once',
-      ],
-    ]
-
-    it.each(cases)('rejects %s before the command runs', async (_name, plan, message) => {
-      const argvFile = join(dir, 'argv.json')
-      await expect(run(plan, baseEnv({CASE_ARGV_FILE: argvFile}))).rejects.toThrow(message)
-      expect(() => readFileSync(argvFile)).toThrow()
+// Last on purpose: this is a real process, and the fake-spawn tests above settle every other outcome.
+describe('runCommand with the real spawn', () => {
+  it('is the default spawn, with no seam injected', async () => {
+    const result = await runCommand([process.execPath, '-e', 'process.stderr.write("real"); process.exit(4)'], {
+      PATH: process.env.PATH,
     })
-
-    it('is a RouteStderrUsageError', async () => {
-      await expect(run(childPlan({command: []}), baseEnv())).rejects.toBeInstanceOf(RouteStderrUsageError)
-    })
-
-    it('accepts all mode with exactly one route', async () => {
-      const ran = await run(childPlan({summary: 'all'}), baseEnv({CASE_STDERR: 'x\n'}))
-      expect(ran.code).toBe(0)
-    })
+    expect(result.code).toBe(4)
+    expect(result.stderr.toString('utf8')).toBe('real')
   })
 })

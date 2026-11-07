@@ -259,7 +259,7 @@ C4Container
 
   System_Boundary(repo, "fro-bot/.github") {
     Container(workflows, "Workflows", "GitHub Actions YAML", "Schedules and events; run scripts/<name>.ts")
-    Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, the build and release scripts, wiki-lockfile-gates and the four wiki-write-core wrappers")
+    Container(scripts, "scripts/", "TypeScript on Bun", "Entrypoints, the build and release scripts, wiki-lockfile-gates (a shim over wiki-lockfile-gates-core) and the four wiki-write-core wrappers")
     Container(core, "@fro-bot/core", "Private package", "guards, output, json, retry, github, cli, env")
     Container(privacy, "@fro-bot/privacy", "Private package", "Private-leak scan, wiki-presence gate, public-output gate, token loaders, operator tools")
     Container(registry, "@fro-bot/registry", "Private package", "Metadata writers, reconcile, invitations, survey results, data-branch merges")

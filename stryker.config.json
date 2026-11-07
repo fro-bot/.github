@@ -50,7 +50,7 @@
     "packages/wiki-write-core/src/corrections.ts",
     "packages/wiki-write-core/src/private-leak.ts",
     "scripts/build-wiki-write-core.ts",
-    "scripts/wiki-lockfile-gates.ts"
+    "scripts/wiki-lockfile-gates-core.ts"
   ],
   "testFiles": [
     "packages/ci-checks/src/barrel-exports.test.ts",
