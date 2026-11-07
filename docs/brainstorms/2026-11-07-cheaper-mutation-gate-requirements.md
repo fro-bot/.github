@@ -32,7 +32,7 @@ None of these mutants time out. All four are `Killed` or `Ignored`. Static mutan
 
 **Speed**
 
-- R1. Full mutation runs get measurably faster on CI, compared on runners of similar speed (similar dry-run time). The original target, a p90 of 700 s or less, is out of reach for this approach. The four targets cut the report's summed mutant `duration` from 1041 s to 595 s, but `duration` counts only test bodies across 4 concurrent runners. It leaves out the per-run worker start, import and collection cost, which takes about 80% of runner time. Measured on #4138: a Stryker mutant phase of 9:39 against 11:37–13:58 on fast runners, and 15:06 against 17:29 on slow runners, which is about 15–20% faster.
+- R1. Full mutation runs get measurably faster on CI, compared on runners of similar speed (similar dry-run time). The original target, a p90 of 700 s or less, is out of reach for this approach. The four targets cut the report's summed mutant `duration` from 1041 s to 595 s, but `duration` counts only test bodies across 4 concurrent runners. It leaves out the per-run worker start, import and collection cost, which takes about 80% of runner time. Measured on #4138, the Stryker mutant phase divided by the dry-run time (to normalize for runner speed) was 17.5–18.1 on three runs, against 20.3–21.5 on seven earlier runs. That is about 13% faster.
 - R2. Each of the four targets gets cheaper through changes to its tests or through restructuring its source. Restructuring includes moving module-level code into functions.
 
 **Guarantees kept**

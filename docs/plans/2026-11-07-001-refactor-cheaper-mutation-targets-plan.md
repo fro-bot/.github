@@ -304,7 +304,7 @@ None of these mutants times out today. Static mutants run against every covering
 - Run the pre-merge check after `bun run bootstrap`, so every configured test file loads in the dry run.
 - On the PR's own CI runs, compare Stryker's mutant phase (`Done in` in the job log) and dry-run time against recent PR runs.
 
-**Result:** The four targets' summed `duration` fell from 684 s to 91 s, and the report's from 1041 s to 595 s. The Stryker mutant phase was 9:39 against 11:37–13:58 on runners with a 32–41 s dry run, and 15:06 against 17:29 on runners with a 50–51 s dry run, which is about 15–20% faster. The 9 static mutants in `packages/core/src/cli.ts` rose from 7.8 s to 101 s summed, because their killing tests now run later. The ≤ 700 s p90 is out of reach. Most runner time is per-run overhead that this plan does not touch.
+**Result:** The four targets' summed `duration` fell from 684 s to 91 s, and the report's from 1041 s to 595 s. The Stryker mutant phase took 9:39, 15:06 and 11:38 on the PR's three runs (dry runs of 32, 50 and 40 s), against 11:37–17:29 on seven earlier runs. Dividing the phase by the dry-run time to normalize for runner speed gives 17.5–18.1 against 20.3–21.5, which is about 13% faster. The 9 static mutants in `packages/core/src/cli.ts` rose from 7.8 s to 101 s summed, because their killing tests now run later. The ≤ 700 s p90 is out of reach. Most runner time is per-run overhead that this plan does not touch.
 
 **Verification:** The pre-merge report shows the four targets at 100% with no static mutants in `repository-root.ts` or the lockfile core module, and a clean verdict.
 
@@ -323,7 +323,7 @@ None of these mutants times out today. Static mutants run against every covering
 | A fake makes a mutant survive by masking real behaviour | Every seam has a test proving the injected fake is used, and a test proving the real default works. |
 | A short fake-child timeout flakes under CI load | Fake tests do no I/O. Widen the timeout if repeated loaded runs flake. |
 | A build-script mutant writes to a real path in the Stryker sandbox | Fixtures use test-owned temporary roots, and no new code reads argv or environment. |
-| The wall-clock gain is smaller than the summed-duration gain | Confirmed: about 15–20% on CI. The per-run overhead is separate work. |
+| The wall-clock gain is smaller than the summed-duration gain | Confirmed: about 13% on CI. The per-run overhead is separate work. |
 
 ## Documentation / Operational Notes
 
