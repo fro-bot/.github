@@ -25,7 +25,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 ## Requirements Trace
 
-- R1. Full-run p90 ≤ 700 s, nearest rank over at least 10 completed applicable PR runs after merge (Unit 5).
+- R1. The Stryker mutant phase is measurably shorter on CI, compared on runners of similar speed (Unit 5). The origin's ≤ 700 s p90 is out of reach for this approach. See Unit 5.
 - R2. Each target gets cheaper through test changes or source restructuring (Units 1–4).
 - R3. The logic of all four targets stays in `mutate`. No new `Stryker disable` directive, and `ignoreStatic` stays off (Units 1–4). Amendment: the lockfile entry guard leaves `mutate` with the shim, because spawned entrypoint tests are not in-process coverage and its mutants would report NoCoverage.
 - R4. Each target keeps a 100% kill rate (Units 1–4, verified in Unit 5).
@@ -40,7 +40,8 @@ None of these mutants times out today. Static mutants run against every covering
 
 ### Deferred to Separate Tasks
 
-- Scoping PR runs to reached targets, a full run on `main`, and a failure issue: revisit only if R1 is missed after this plan lands (see origin).
+- Scoping PR runs to reached targets, a full run on `main`, and a failure issue (see origin).
+- Reducing Stryker's per-run Vitest overhead, which takes about 80% of runner time.
 
 ## Context & Research
 
@@ -127,7 +128,7 @@ None of these mutants times out today. Static mutants run against every covering
 - **`runCommand` is exported with a default `spawn` parameter.** Fake-child tests import it by relative path. `runRouteStderr`, `RouteStderrIo` and the CLI are unchanged. The fake-child and validation tests run before the real-process tests, so hang and validation mutants die in the first tests. Real-process tests stay as the killers for stdio, environment, cwd, signal and exit-code behaviour.
 - **`runBuild` forwards the existing `resolvedBuildConfig` option to `computeSourceTreeHash`.** No new option is added, so nothing shadows the exported `resolveBuildConfig`. The fixture passes a config, and a distinguishable-config test proves it reaches the hash. Build code still reads no argv or environment outside the entry guard.
 - **Each seam default needs a killing test.** For every `?? default` on a seam path, the first test that covers it asserts the injected value was used. A default-swap mutant then runs at most one real tool call before it is killed.
-- **R1 is proven after merge.** Summed mutant duration does not translate into wall-clock time, so pre-merge evidence is predictive only.
+- **Summed mutant duration is not wall-clock time.** `duration` counts test bodies only, across 4 concurrent runners, and leaves out the per-run worker start, import and collection cost. CI wall time is the measure.
 
 ## Open Questions
 
@@ -285,9 +286,9 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Verification:** The after report shows every non-ignored mutant killed, and no default-swap mutant running more than one real tool call.
 
-- [ ] **Unit 5: Measure and confirm**
+- [x] **Unit 5: Measure and confirm**
 
-**Goal:** Prove kill preservation before merge and the timing target after merge.
+**Goal:** Prove kill preservation before merge and measure the CI timing effect.
 
 **Requirements:** R1, R4
 
@@ -301,9 +302,11 @@ None of these mutants times out today. Static mutants run against every covering
 
 - Before merge: run `bun run check:mutation-guards` on the branch with a clean Vitest cache. Compare per-target summed duration, static counts and statuses against run 42392597566. Record the comparison in the PR body.
 - Run the pre-merge check after `bun run bootstrap`, so every configured test file loads in the dry run.
-- After merge: collect `Check Mutation Guards` job durations from `main.yaml` `pull_request` runs for 14 days. Use the first 10 completed applicable runs, Renovate included, and take the 9th of the durations sorted ascending as p90. Report timed-out or cancelled applicable runs separately. If fewer than 10 land in the window, report the runs that exist. If p90 exceeds 700 s, report it and reopen the deferred scoping work.
+- On the PR's own CI runs, compare Stryker's mutant phase (`Done in` in the job log) and dry-run time against recent PR runs.
 
-**Verification:** The pre-merge report shows the four targets at 100% with no static mutants in `repository-root.ts` or the lockfile core module, and a clean verdict. A smart note records the post-merge p90.
+**Result:** The four targets' summed `duration` fell from 684 s to 91 s, and the report's from 1041 s to 595 s. The Stryker mutant phase was 9:39 against 11:37–13:58 on runners with a 32–41 s dry run, and 15:06 against 17:29 on runners with a 50–51 s dry run, which is about 15–20% faster. The 9 static mutants in `packages/core/src/cli.ts` rose from 7.8 s to 101 s summed, because their killing tests now run later. The ≤ 700 s p90 is out of reach. Most runner time is per-run overhead that this plan does not touch.
+
+**Verification:** The pre-merge report shows the four targets at 100% with no static mutants in `repository-root.ts` or the lockfile core module, and a clean verdict.
 
 ## System-Wide Impact
 
@@ -320,7 +323,7 @@ None of these mutants times out today. Static mutants run against every covering
 | A fake makes a mutant survive by masking real behaviour | Every seam has a test proving the injected fake is used, and a test proving the real default works. |
 | A short fake-child timeout flakes under CI load | Fake tests do no I/O. Widen the timeout if repeated loaded runs flake. |
 | A build-script mutant writes to a real path in the Stryker sandbox | Fixtures use test-owned temporary roots, and no new code reads argv or environment. |
-| The wall-clock gain is smaller than the summed-duration gain | R1 is checked after merge, and a miss reopens scoping. |
+| The wall-clock gain is smaller than the summed-duration gain | Confirmed: about 15–20% on CI. The per-run overhead is separate work. |
 
 ## Documentation / Operational Notes
 

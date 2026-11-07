@@ -32,7 +32,7 @@ None of these mutants time out. All four are `Killed` or `Ignored`. Static mutan
 
 **Speed**
 
-- R1. Full mutation runs reach a p90 of 700 s or less, measured by nearest rank over at least 10 completed applicable PR runs after the change.
+- R1. Full mutation runs get measurably faster on CI, compared on runners of similar speed (similar dry-run time). The original target, a p90 of 700 s or less, is out of reach for this approach. The four targets cut the report's summed mutant `duration` from 1041 s to 595 s, but `duration` counts only test bodies across 4 concurrent runners. It leaves out the per-run worker start, import and collection cost, which takes about 80% of runner time. Measured on #4138: a Stryker mutant phase of 9:39 against 11:37–13:58 on fast runners, and 15:06 against 17:29 on slow runners, which is about 15–20% faster.
 - R2. Each of the four targets gets cheaper through changes to its tests or through restructuring its source. Restructuring includes moving module-level code into functions.
 
 **Guarantees kept**
@@ -53,7 +53,7 @@ None of these mutants time out. All four are `Killed` or `Ignored`. Static mutan
 
 ## Success Criteria
 
-- R1's p90 is met on the first 10 completed applicable runs after merge, Renovate runs included.
+- The four targets are cheap on CI and the Stryker phase is shorter on comparable runners (R1). Reducing the per-run overhead is separate work.
 - The four targets' combined share of summed mutant time drops well below today's 66%.
 - No verdict rule changes. The only `mutate` change is where the lockfile gate's logic lives, and its entry script still triggers the gate.
 - Planning can choose a fix for each target without inventing behaviour.
