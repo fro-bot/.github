@@ -550,7 +550,7 @@ describe('solutions-query (bun; fro-bot.yaml:614)', () => {
 
 // ─── wiki-context-expand (hand-parsed) ───────────────────────────────────────────────────────────
 
-describe('wiki-context-expand (agent shell; fro-bot.yaml:657-658, README.md:402)', () => {
+describe('wiki-context-expand (operator CLI; the knowledge server calls the same module in-process)', () => {
   const HANDOFF = JSON.stringify({selectedPaths: ['knowledge/wiki/repos/acme--widgets.md']})
 
   it('linked reads the handoff the baseline query wrote and returns the linked page', async () => {

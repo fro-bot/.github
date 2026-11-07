@@ -474,7 +474,7 @@
     },
     {
       "path": "packages/wiki-ops/src/wiki-query.ts",
-      "reason": "The baseline wiki context query: it scores the wiki pages against the event, trims the excerpt to the byte budget on a character boundary, appends `excerpt`, `selected-paths` and `byte-length` to `$GITHUB_OUTPUT`, writes the owner-only selected-path handoff, and fails soft on a corpus or handoff-write error. Pinned by packages/wiki-ops/src/wiki-query.test.ts (scoring, budget, multi-byte truncation, the handoff mode and write failure, and the real shim run against a malformed or unreadable corpus) and by scripts/fro-bot-workflow-wiki-handoff.test.ts, which feeds the handoff file to wiki-context-expand. It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
+      "reason": "The baseline wiki context query: it scores the wiki pages against the event, trims the excerpt to the byte budget on a character boundary, appends `excerpt`, `selected-paths` and `byte-length` to `$GITHUB_OUTPUT`, writes the owner-only selected-path handoff, and fails soft on a corpus or handoff-write error. Pinned by packages/wiki-ops/src/wiki-query.test.ts (scoring, budget, multi-byte truncation, the handoff mode and write failure, and the real shim run against a malformed or unreadable corpus) and by scripts/fro-bot-workflow-wiki-handoff.test.ts, which pins that each agent job's wiki-query step and agent step declare the same handoff path. It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
     },
     {
       "path": "packages/wiki-ops/src/wiki-query-cli.ts",
@@ -538,7 +538,7 @@
     },
     {
       "path": "scripts/wiki-context-expand.ts",
-      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-context-expand-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-context-expand.ts, pinned by packages/wiki-ops/src/wiki-context-expand.test.ts and scripts/fro-bot-workflow-wiki-handoff.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-context-expand-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-context-expand.ts, pinned by packages/wiki-ops/src/wiki-context-expand.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },
     {
       "path": "scripts/correction-lifecycle.ts",
