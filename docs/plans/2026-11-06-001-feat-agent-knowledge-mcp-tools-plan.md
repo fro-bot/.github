@@ -200,7 +200,7 @@ sequenceDiagram
 
 ## Implementation Units
 
-- [ ] **Unit 1: Solutions query entry for in-process callers**
+- [x] **Unit 1: Solutions query entry for in-process callers**
 
 **Goal:** A query-taking entry into `solutions-query` that a tool can call without writing paths to stderr.
 
