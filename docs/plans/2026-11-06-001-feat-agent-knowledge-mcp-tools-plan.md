@@ -232,7 +232,7 @@ sequenceDiagram
 
 **Verification:** The CLI parity captures match. The new entry never calls `process.stderr`.
 
-- [ ] **Unit 2: `knowledge` MCP server**
+- [x] **Unit 2: `knowledge` MCP server**
 
 **Goal:** The allowlisted three-tool server and its entrypoint.
 
