@@ -17,8 +17,8 @@ Four `mutate` targets account for 66% of summed mutant time in `Check Mutation G
 Full mutation runs take a median of 949 s and a p90 of 1165 s against the job's 1200 s cap. Renovate is 36 of the 48 applicable runs, and those always run in full, so per-target speed is the lever that helps every run. In run 42392597566 the measured causes were:
 
 - **`packages/ci-checks/src/repository-root.ts`:** 4 static mutants, 36–40 s each. `check-mutation-guards.ts` calls `findRepositoryRoot()` at module load (`:12-15`), and so does `mutation-guards-reach.test.ts:25`.
-- **`scripts/wiki-lockfile-gates.ts`:** the module-level self-invoke guard (`:497`) has 4 static mutants, 38–42 s each. Importing the file in its test evaluates the guard.
-- **`packages/wiki-ops/src/route-stderr.ts`:** 8 mutants in `runCommand` (`:166-188`) hang their first test until Vitest's 10 s `testTimeout` (92 s total). Validation mutants are killed only by tests that run after about 44 real-process tests (56 s total).
+- **`scripts/wiki-lockfile-gates.ts`:** the module-level self-invoke guard (`:497`) carries 5 mutants, 4 of them static at 38–42 s each. Importing the file in its test evaluates the guard.
+- **`packages/wiki-ops/src/route-stderr.ts`:** 8 mutants in `runCommand` (`:166-188`) hang their first test until Vitest's 10 s `testTimeout` (about 80 s total), and a ninth takes about 12 s. Validation mutants are killed only by tests that run after about 44 real-process tests (about 53 s total).
 - **`scripts/build-wiki-write-core.ts`:** every `runBuild` test runs real `bunx tsc --showConfig` through `computeSourceTreeHash`. Mutants that swap a seam default (`?? → &&`) run real builds and `npm pack`.
 
 None of these mutants times out today. Static mutants run against every covering test, in an order that depends on scheduling, so their cost cannot be reproduced locally.
@@ -27,9 +27,9 @@ None of these mutants times out today. Static mutants run against every covering
 
 - R1. Full-run p90 ≤ 700 s, nearest rank over at least 10 completed applicable PR runs after merge (Unit 5).
 - R2. Each target gets cheaper through test changes or source restructuring (Units 1–4).
-- R3. The logic of all four targets stays in `mutate`. No new `Stryker disable` directive, and `ignoreStatic` stays off (Units 1–4).
+- R3. The logic of all four targets stays in `mutate`. No new `Stryker disable` directive, and `ignoreStatic` stays off (Units 1–4). Amendment: the lockfile entry guard leaves `mutate` with the shim, because spawned entrypoint tests are not in-process coverage and its mutants would report NoCoverage.
 - R4. Each target keeps a 100% kill rate (Units 1–4, verified in Unit 5).
-- R5. Behaviour is unchanged for callers, including CLI exit codes, output and self-invoke. The one intended change is that an entrypoint path containing a space or `#` now runs (Unit 2).
+- R5. Runtime behaviour is unchanged for callers, including CLI exit codes, output and self-invoke. The one intended change is that an entrypoint path the URL form escapes (a space, `#` or `%`) now runs (Unit 2). Export shape changes are listed under System-Wide Impact.
 - R6. Trigger set, verdict rules and full-run behaviour are unchanged (Units 1, 2).
 
 ## Scope Boundaries
@@ -46,9 +46,9 @@ None of these mutants times out today. Static mutants run against every covering
 
 ### Relevant Code and Patterns
 
-- Entry shims: six-line `scripts/<name>.ts` files that import `main` and guard on `import.meta.main` (`scripts/check-mutation-guards.ts`, `scripts/route-stderr.ts`, `scripts/knowledge-mcp.ts`). These are registered `not-mutated` in `mutation-guards.json` with a reason.
+- Entry shims: six-line `scripts/<name>.ts` files that import `main` and guard on `import.meta.main`. `scripts/check-mutation-guards.ts` and `scripts/knowledge-mcp.ts` are registered `not-mutated` in `mutation-guards.json` with a reason. The lockfile shim must be registered too, because `mutation-guards-config.test.ts` Test 2 name-matches `wiki-*-gates.ts`.
 - Shim parity tests spawn the real entrypoint with `@fro-bot/test-kit/spawn-entrypoint` and live outside `testFiles` (`scripts/registry-entrypoints.test.ts`, `scripts/privacy-entrypoints.test.ts`). `scripts/registry-entrypoints.test.ts:331-370` is the "importing a shim runs nothing" harness.
-- Seams: options-object injection on `runBuild` (`runTypeScriptBuild`, `verifyPackage`, `spawn`, `write`); the default-parameter seam `runBunAudit(exec = execFileSync)` in `packages/ci-checks/src/check-override-floors.ts`.
+- Seams: options-object injection on `runBuild` (`runTypeScriptBuild`, `verifyPackage`, `write`), the `{spawn}` option of `resolveBuildConfig` in `scripts/build-wiki-write-core.ts`, the existing `resolvedBuildConfig` option of `computeSourceTreeHash`, and the default-parameter seam `runBunAudit(exec = execFileSync)` in `packages/ci-checks/src/check-override-floors.ts`.
 - `vi.hoisted` + `vi.mock('node:child_process')` as a default-deny guard: `packages/ci-checks/src/check-mutation-guards-cli.test.ts:12-13`, `packages/core/src/wiki-authority.test.ts:17-21`.
 
 ### Institutional Learnings
@@ -122,11 +122,11 @@ None of these mutants times out today. Static mutants run against every covering
 
 - **Lazy root lookup, no new module.** `check-mutation-guards.ts` exposes `strykerConfigPath()` and `mutationReportPath()` as functions, and the reach test resolves the root inside its helper. Only the gate and its tests use the two exports.
 - **The lockfile logic moves to `scripts/wiki-lockfile-gates-core.ts`.** `scripts/wiki-lockfile-gates.ts` becomes a shim that imports `main` and runs it under `import.meta.main`, with no re-exports. Its one test importer moves to the core module. The `mutate` entry moves to the core path. The shim goes into `mutation-guards.json` as `not-mutated`, and into `FIXED_TRIGGER_FILES`, so a shim-only PR still runs the full gate. The core stays a relative sibling import because `publish-wiki.yaml` runs the script with `bun --no-install` before dependencies are installed.
-- **The guard predicate is no longer mutated.** Its four mutants are replaced by spawned entrypoint tests, as with the other shims.
-- **`import.meta.main` fixes a silent no-op.** A path containing a space or `#` used to exit 0 without running. This is the only intended behaviour change.
-- **`runCommand` gets a default-parameter spawn seam.** Fast fake-child tests and the validation tests run before the real-process tests, so hang and validation mutants die in the first tests. Real-process tests stay as the killers for stdio, environment, cwd, signal and exit-code behaviour.
-- **`runBuild` gets a `resolveBuildConfig` seam**, forwarded to `computeSourceTreeHash`. The fixture injects a fake. A distinguishable-fake test kills the new default-swap mutant. Build code still reads no argv or environment outside the entry guard.
-- **Each new seam default needs a killing test.** For every `?? default` a seam introduces, the first test that covers it asserts the injected fake was used. A default-swap mutant then fails before it can run real tools.
+- **The guard predicate is no longer mutated.** Its five mutants go with it. Spawned entrypoint tests pin the entry behaviour, as with the other shims. This is the recorded amendment to R3.
+- **`import.meta.main` fixes a silent no-op.** A path the URL form escapes (a space, `#` or `%`) used to exit 0 without running. This is the only intended behaviour change.
+- **`runCommand` is exported with a default `spawn` parameter.** Fake-child tests import it by relative path. `runRouteStderr`, `RouteStderrIo` and the CLI are unchanged. The fake-child and validation tests run before the real-process tests, so hang and validation mutants die in the first tests. Real-process tests stay as the killers for stdio, environment, cwd, signal and exit-code behaviour.
+- **`runBuild` forwards the existing `resolvedBuildConfig` option to `computeSourceTreeHash`.** No new option is added, so nothing shadows the exported `resolveBuildConfig`. The fixture passes a config, and a distinguishable-config test proves it reaches the hash. Build code still reads no argv or environment outside the entry guard.
+- **Each seam default needs a killing test.** For every `?? default` on a seam path, the first test that covers it asserts the injected value was used. A default-swap mutant then runs at most one real tool call before it is killed.
 - **R1 is proven after merge.** Summed mutant duration does not translate into wall-clock time, so pre-merge evidence is predictive only.
 
 ## Open Questions
@@ -134,12 +134,12 @@ None of these mutants times out today. Static mutants run against every covering
 ### Resolved During Planning
 
 - Lockfile shim exports: none. The test imports the core module.
-- Whether `knowledge-mcp.test.ts` is the only killer of a `repository-root` mutant: no. `repository-root.test.ts` kills all four directly, and a run without `knowledge-mcp.test.ts` still killed them.
+- Seam for the router: an exported `runCommand` with a default `spawn`, the seam the prototype used (214 of 214 killed). An `io.spawn` field is not needed.
 - Where the lockfile logic lives: in `scripts/`, not a package, so it still runs without installed dependencies.
 
 ### Deferred to Implementation
 
-- Whether `route-stderr` still has meaningful cost on `:117`, `:123`, `:205` and `:207` after the seam. Measure first; add an `io.spawn` seam only if the measurement shows cost.
+- Who kills the `repository-root` mutants once they stop being static. In the baseline, `knowledge-mcp.test.ts` killed one and the reach tests killed three, while `repository-root.test.ts` only covered them. A local run without `knowledge-mcp.test.ts` still killed all four, but that is unverified in CI. Unit 1 records the killers.
 - Whether `build-wiki-write-core` needs the default-deny `node:child_process` mock after the seam. Add it only if default-swap mutants still run real tools in the after report.
 - The exact fake-child timeout. Start from 500 ms; widen it if repeated loaded runs flake.
 
@@ -162,8 +162,8 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Approach:**
 
-- Replace the module-level root and derived path constants with functions. Call them at each former use site, including default parameters.
-- Update the two test files mechanically. Move the reach test's root lookup inside `toRepoRelative`.
+- Replace the module-level root binding and the two path constants with functions. Every use of the root, `strykerConfigPath` and `mutationReportPath` becomes a call, including default parameters.
+- Update the two test files the same way: every value read of the two exports becomes a call, including the reach test's reads at `:418` and `:427`. Move the reach test's root lookup inside `toRepoRelative`.
 - `check-mutation-guards.test.ts:1666` and `mutation-guards-config.test.ts:15` are outside `testFiles` and stay as they are.
 
 **Patterns to follow:** the "function, not a module-level const" comments in `repository-root.ts` and `check-mutation-guards-cli.ts`.
@@ -172,9 +172,10 @@ None of these mutants times out today. Static mutants run against every covering
 
 - Happy path: `strykerConfigPath()` and `mutationReportPath()` return absolute paths under the repository root.
 - Happy path: the report-path override behaviour (`check-mutation-guards.test.ts:1461-1492`) is unchanged.
-- Integration: a Stryker run on `repository-root.ts` reports its 4 mutants as non-static and `Killed`, by `repository-root.test.ts` or the reach tests.
+- Integration: a Stryker run on `repository-root.ts` reports its 4 mutants as non-static and `Killed`, with each mutant's `killedBy` recorded.
+- Integration: if a mutant's only killer is `knowledge-mcp.test.ts`, add a direct assertion in `repository-root.test.ts` that kills it.
 
-**Verification:** The after report shows no static mutants in `repository-root.ts`, 4 of 4 killed, and the gate's own tests pass.
+**Verification:** The after report shows no static mutants in `repository-root.ts`, 4 of 4 killed with named killers, and the gate's own tests pass.
 
 - [ ] **Unit 2: Split the lockfile gate into core and shim**
 
@@ -194,7 +195,8 @@ None of these mutants times out today. Static mutants run against every covering
 - Modify: `mutation-guards.json` (shim `not-mutated` entry with a reason)
 - Modify: `packages/ci-checks/src/check-mutation-guards.ts` (`FIXED_TRIGGER_FILES` gains the shim)
 - Modify: `packages/ci-checks/src/check-mutation-guards.test.ts` (trigger test for the shim)
-- Modify: `.github/copilot-instructions.md`, `README.md`, and `docs/solutions/workflow-issues/lockfiles-are-advisory-until-gated-2026-07-11.md` where they name the file's role
+- Modify: `.github/copilot-instructions.md` (the `scripts/` contract sentence gains `wiki-lockfile-gates-core.ts` and the reason: `publish-wiki.yaml` runs the gate before dependencies are installed)
+- Modify: `README.md` (the `scripts/` container description) and `docs/solutions/workflow-issues/lockfiles-are-advisory-until-gated-2026-07-11.md` (the file reference)
 
 **Approach:**
 
@@ -210,7 +212,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 - Happy path: spawning the shim as `bun --no-install --no-env-file <path> coverage` from a foreign cwd with a cwd-local `yaml` succeeds with the same stdout as today. The same holds for `integrity`.
 - Error path: an unknown mode, no mode or extra argv exits 2 with today's message. A rejected lockfile exits 1. A missing or malformed input, or missing `yaml`, exits 2.
-- Edge case: a shim path containing a space or `#` runs the gate. This is the intended change; today it exits 0 without running.
+- Edge case: a shim path containing a space, `#` or `%` runs the gate, with the core module copied beside the shim in the fixture. This is the intended change; today it exits 0 without running.
 - Edge case: importing the shim under Node and under Bun runs nothing and leaves the exit code unset.
 - Integration: a PR changing only `scripts/wiki-lockfile-gates.ts` is applicable to the mutation gate. A PR changing only an unrelated doc stays `not-applicable`.
 - Integration: the core module's mutants are all `Killed`, none static, and `main()`'s branches are killed by the direct tests.
@@ -232,7 +234,7 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Approach:**
 
-- `runCommand` gains a spawn parameter defaulting to the real `spawn`. `runRouteStderr` and the CLI call it unchanged.
+- Export `runCommand` with a `spawn` parameter defaulting to the real `spawn`. `runRouteStderr` and the CLI call it unchanged. The fake-child tests import `runCommand` by relative path.
 - A fake-child group runs first, with a short per-test timeout. Next come the usage and conflict-validation groups. The real-process tests run last and keep the default timeout.
 
 **Execution note:** Write the fake-child tests first and confirm each fails against the corresponding hand mutation before relying on it.
@@ -264,24 +266,24 @@ None of these mutants times out today. Static mutants run against every covering
 
 **Approach:**
 
-- `RunBuildOptions` and the source-tree hash options gain an optional `resolveBuildConfig`. `runBuild` forwards it, and an explicit `resolvedBuildConfig` still wins.
-- `makeRunBuildFixture` injects a fake resolver.
+- `RunBuildOptions` gains the optional `resolvedBuildConfig` that `computeSourceTreeHash` already accepts, and `runBuild` forwards it.
+- `makeRunBuildFixture` passes a config. The expected-hash computation in the source-tree hash test (`scripts/build-wiki-write-core.test.ts:1239-1243`) passes the same config.
 - Move the cheap, decisive tests for each seam ahead of slow ones.
 - Leave the entry guard and its existing directive alone.
 
-**Execution note:** Add the distinguishable-fake test first and confirm it fails when the new default is swapped by hand.
+**Execution note:** Add the distinguishable-config test first and confirm it fails when the forwarding is removed by hand.
 
-**Patterns to follow:** the existing `runTypeScriptBuild`, `verifyPackage` and `spawn` options on `RunBuildOptions`.
+**Patterns to follow:** the existing `runTypeScriptBuild` and `verifyPackage` options on `RunBuildOptions`, and `resolvedBuildConfig` on `computeSourceTreeHash`.
 
 **Test scenarios:**
 
-- Happy path: the fake resolver is called with the configured `buildConfigPath`, and its return value changes the source-tree hash.
-- Edge case: an explicit `resolvedBuildConfig` takes precedence over the resolver.
+- Happy path: two distinguishable `resolvedBuildConfig` values passed to `runBuild` produce different source-tree hashes in the marker.
+- Edge case: without `resolvedBuildConfig`, `computeSourceTreeHash` resolves the config at `buildConfigPath`.
 - Integration: one test still runs the real default resolution against the repository's config.
 - Integration: the existing real `--check --verify --stage`, safe-stage refusal and import-has-no-side-effects tests still pass.
 - Error path: no test path lets a mutant resolve a stage or output target outside a test-owned temporary directory.
 
-**Verification:** The after report shows every non-ignored mutant killed, including the `buildConfigPath && buildConfig()` mutant, and no default-swap mutant running a real build.
+**Verification:** The after report shows every non-ignored mutant killed, and no default-swap mutant running more than one real tool call.
 
 - [ ] **Unit 5: Measure and confirm**
 
@@ -298,9 +300,10 @@ None of these mutants times out today. Static mutants run against every covering
 **Approach:**
 
 - Before merge: run `bun run check:mutation-guards` on the branch with a clean Vitest cache. Compare per-target summed duration, static counts and statuses against run 42392597566. Record the comparison in the PR body.
-- After merge: collect the first 10 completed applicable PR runs, Renovate included. Take the 9th of the durations sorted ascending as p90, and report timed-out or cancelled applicable runs separately. If p90 exceeds 700 s, report it and reopen the deferred scoping work.
+- Run the pre-merge check after `bun run bootstrap`, so every configured test file loads in the dry run.
+- After merge: collect `Check Mutation Guards` job durations from `main.yaml` `pull_request` runs for 14 days. Use the first 10 completed applicable runs, Renovate included, and take the 9th of the durations sorted ascending as p90. Report timed-out or cancelled applicable runs separately. If fewer than 10 land in the window, report the runs that exist. If p90 exceeds 700 s, report it and reopen the deferred scoping work.
 
-**Verification:** The pre-merge report shows the four targets at 100% with no static mutants in `repository-root.ts` or the lockfile core module, and a clean verdict. A follow-up records the post-merge p90.
+**Verification:** The pre-merge report shows the four targets at 100% with no static mutants in `repository-root.ts` or the lockfile core module, and a clean verdict. A smart note records the post-merge p90.
 
 ## System-Wide Impact
 
