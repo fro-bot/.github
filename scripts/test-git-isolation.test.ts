@@ -14,6 +14,7 @@ describe('git in the test process', () => {
   it('sees no global or system settings from a child git', () => {
     // `--system` reads the system file even under GIT_CONFIG_NOSYSTEM, so the check is on what git loads.
     const listed = spawnSync('git', ['config', '--show-scope', '--list'], {cwd: '/', encoding: 'utf8'})
+    expect(listed.status, listed.stderr).toBe(0)
     const scopes = new Set(listed.stdout.split('\n').map(line => line.split('\t')[0]))
     expect(scopes.has('global')).toBe(false)
     expect(scopes.has('system')).toBe(false)
