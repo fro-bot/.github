@@ -141,8 +141,8 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 ## Dependencies / Assumptions
 
-- *Spike before planning:* one CI agent run lists a skill from `.agents/skills/`. OpenCode documents that directory as a project source, but no run has shown it.
-- *Spike before planning:* `FRO_BOT_PAT` creates and deletes a throwaway user Project. The token already edits Project 1 and is documented with `project` scope.
+- The CI agent does not load `.agents/skills/`. The Action sets `OPENCODE_DISABLE_PROJECT_CONFIG=1` (fro-bot/agent `packages/runtime/src/agent/server-v2.ts:413`), and OpenCode then skips the project walk. That flag stays, because it keeps a fork checkout from adding config. Until fro-bot/agent#2129 loads repo skills on trusted runs, every CI prompt that needs the program skill tells the agent to read its `SKILL.md` by path. Local harnesses already load `.agents/skills/`.
+- `FRO_BOT_PAT` is documented with `project` scope and already edits Project 1. Implementation confirms it can create a user Project the first time it does so.
 - Gateway launches can open PRs in this repo through the brokered push path. Planning confirms that this covers starting a program.
 
 ---
@@ -159,4 +159,4 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 ## Next Steps
 
--> Run the two spikes, then `/ce:plan`.
+-> `/ce:plan`.
