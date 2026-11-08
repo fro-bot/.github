@@ -51,7 +51,7 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 **Wake**
 
 - R5. A change to a Project item's status, readiness, gate or labels wakes the tracker, unless the tracker itself made the change in its previous run.
-- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. An operator comment or edit stays pending until a later Fro Bot reply links it, so each version is answered once.
+- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. The tracker records which version of each operator comment it answered, so each version is answered once, and an edit made during a run is answered by the next run.
 
 **Self-check**
 
@@ -84,11 +84,11 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
   - keeping the program current
   - closing it out
 - R16. The skill draws on #3512's history: what worked, what drifted and what the operator corrected. It links the tracker's code and docs rather than restating them.
-- R17. A program starts from a credentialed request to Fro Bot. That is a gateway launch from Discord or the dashboard, or a `workflow_dispatch`, never an issue comment. The skill leads Fro Bot through these steps:
+- R17. A program starts from a credentialed request to Fro Bot: a `fro-bot.yaml` dispatch from the CLI, the Actions UI or Discord `/fro-bot dispatch`. It never starts from an issue comment. The skill leads Fro Bot through these steps:
   1. find any existing program that covers the request
-  2. propose the repo list and ask the operator to confirm it
-  3. after confirmation, open the tracker issue, create the Project and its items, and open the PR that adds the config entry
-- R18. A program covers public repos only. The tracker refuses to add an item from a private repo and says why.
+  2. propose the public repo list in a PR that adds the config entry, after creating the tracker issue and an empty Project
+  3. once the operator merges that PR, which is the confirmation, file one issue per repo and add it to the Project
+- R18. A program covers public repos only. The tracker leaves items from private repos out of every public surface without naming them.
 
 ---
 
