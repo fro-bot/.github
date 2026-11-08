@@ -107,6 +107,38 @@ essentially complete, and the genuinely-open north-star threads are R2 inline ac
 (other repos), R3's editable path, and the Tier-3 frontier, plus the one open spine
 deploy-verification.
 
+## Reconciliation (2026-11-08)
+
+A grounding pass against live state on 2026-11-08 found four statuses stale:
+
+- **S1:** deployed. Gateway v0.136.4 went live through marcusrbrown/infra#1847, and the
+  operator contract is 1.15.0. Authenticated end-to-end acceptance is still tracked in
+  `fro-bot/.github#3512`.
+- **R1:** the operator accepted the interactive approve, deny and question flows on
+  v0.136.4 (#3512 Gate 4). Cold boot, policy grace, SSE reconnect and cookie replay are
+  still open in #3512.
+- **R2:** decided against. `fro-bot/agent#1917` was closed as not planned on 2026-11-05.
+  Push notifications stay deep-link only, because the payload carries no tool or command
+  and iOS ignores notification action buttons.
+- **R3 editable:** built. `docs/plans/2026-08-29-001-feat-editable-wiki-path-plan.md` is
+  complete, and the editor and save path shipped in fro-bot/dashboard. Whether the Edit
+  affordance is enabled in production is unverified.
+
+A3, C4 and O8 run, but only A3 is scheduled, and its green runs do not show that a
+dispatch succeeded end to end. F1 and F2 have not started.
+
+The open threads are now:
+
+- the S1/S2 and R1 live acceptance in #3512, which fro-bot/agent, fro-bot/dashboard and
+  marcusrbrown/infra own;
+- live enablement of R3's editable path;
+- the Tier-3 frontier.
+
+Two control-plane pushes follow from this pass. The A2 status-truth loop should reconcile
+this doc's status claims against live state, since the doc drifted in four places in four
+months. F1 needs a work-offer substrate, and `packages/dispatch`'s hash-bound receipts are
+the natural base. F1 needs its own brainstorm first.
+
 ## Current state (verified 2026-06-15)
 
 Grounded against live source, not aspiration:
@@ -160,8 +192,8 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   gateway today is outbound-only (`POST /v1/announce`); S1 adds authenticated inbound
   command endpoint(s), a state retrieval/stream path, and an internal command/work-unit
   model. _Owner: agent. Depends on: new gateway surface (not just the existing announce
-  path) + the S2 auth model. Effort/risk: H._ Status: shipped in source, `fro-bot/agent#907`
-  closed, contract v1.6.0, deploy-verification open.
+  path) + the S2 auth model. Effort/risk: H._ Status: deployed (Gateway v0.136.4,
+  contract 1.15.0); authenticated end-to-end acceptance open in #3512.
 - **S2 — Operator identity & web auth.** A real user-auth model (vs the current
   shared-secret HMAC) so a human can authenticate to the control surface from a browser.
   _Owner: agent + infra. Depends on: S1. Effort/risk: M._ Status: live in production
@@ -171,18 +203,19 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
 
 - **R1 — Authenticated dashboard PWA.** Manage installations, track issues across repos,
   launch "missions," see agent state — Hermes/OpenClaw-style. _Owner: dashboard (new) +
-  infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: Phase 1 deployed live;
-  interactive surface substantially built, flag-gated.
+  infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: live; interactive approve,
+  deny and question accepted on v0.136.4; remaining live gates in #3512.
 - **R2 — Push notifications with action handling.** Surface critical events and let the
   operator respond/approve from the notification. _Owner: dashboard + agent. Depends on:
-  S1, S2, R1. Effort/risk: M._ Status: in-progress — transport shipped, inline actions
-  remain.
+  S1, S2, R1. Effort/risk: M._ Status: push transport shipped; inline actions decided
+  against (`fro-bot/agent#1917`, not planned). Notifications deep-link to the dashboard.
 - **R3 — Web-viewable/editable wiki.** The Obsidian-based Karpathy wiki rendered on the
   web, with operator edits that flow back through the `data`-branch authority model.
   _Owner: control plane + dashboard. Depends on: R1 (for the editable path; read-only
   view is independent). Effort/risk: M._ Status: read-only view SHIPPED — live at
   `fro.bot/.github` (Quartz v5, pinned-SHA fetch-at-build, fail-closed plugin-lockfile
-  gate, emergency unpublish). Editable path not started.
+  gate, emergency unpublish). Editable path built (plan 2026-08-29-001 complete); production
+  enablement unverified.
 
 ### Tier 2 — Autonomy depth (mostly control-plane-native)
 
@@ -364,8 +397,8 @@ acute near-term pain, per the stated motivation.
   `launchWork`/`runMention` run engine, `registry.handleDecision` (the sole approval gate),
   and `QuestionRegistry`. Neither surface adds its own policy. Binding and repo housekeeping
   (add-project, clear-queue, locks, checkout recovery) are Discord-only by design. Open
-  parity gaps: cancel is web-only, so `/fro-bot cancel` is a follow-up; push notifications
-  carry no actions, while R2 wants inline actions. (Raised by design review.)
+  parity gaps: cancel is web-only, so `/fro-bot cancel` is a follow-up. Push notifications
+  carry no actions by decision (R2). (Raised by design review.)
 - **D3 — Spine trust boundary (Phase 2):** S1's inbound control surface widens the trust
   boundary the current outbound-only announce model avoids. Web-launched missions MUST route
   through the same fail-closed approval gate as Discord-triggered work, and operator wiki
@@ -381,7 +414,6 @@ acute near-term pain, per the stated motivation.
 
 ## Next step
 
-As of 2026-08-29, the genuinely open north-star threads are R2 inline notification actions
-(requirements complete in `fro-bot/agent`, awaiting planning there), R3's editable wiki path
-(control plane + dashboard — the next control-plane brainstorm), the #3512 spine deploy-verification
-tail, and the Tier-3 frontier.
+As of 2026-11-08, the open north-star threads are the #3512 live acceptance tail (S1/S2/R1),
+R3 editable-path enablement, and the Tier-3 frontier. The next control-plane moves are
+status-truth reconciliation of this doc and an F1 work-offer brainstorm.
