@@ -918,6 +918,8 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards-cli.ts')).toBe(true)
     expect(triggerSet.files.has('scripts/mutation-shard.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/mutation-shard-cli.ts')).toBe(true)
+    expect(triggerSet.files.has('scripts/mutation-merge.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/mutation-merge-cli.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/mutation-guards-config.test.ts')).toBe(true)
     expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
@@ -2162,6 +2164,8 @@ describe('the gate classifies the real tree after the move', {timeout: 60_000}, 
       'packages/ci-checks/src/check-mutation-guards-cli.ts',
       'scripts/mutation-shard.ts',
       'packages/ci-checks/src/mutation-shard-cli.ts',
+      'scripts/mutation-merge.ts',
+      'packages/ci-checks/src/mutation-merge-cli.ts',
       'packages/ci-checks/src/repository-root.ts',
       'packages/ci-checks/src/mutation-guards-config.test.ts',
     ]) {

@@ -81,7 +81,8 @@ export function shardReportFileName(): string {
   return 'mutation.json'
 }
 
-function describeValue(value: string | undefined): string {
+/** An environment value for a message: `unset`, or the value quoted. */
+export function describeEnvValue(value: string | undefined): string {
   return value === undefined ? 'unset' : JSON.stringify(value)
 }
 
@@ -95,18 +96,18 @@ export function parseShardEnv(env: Readonly<Record<string, string | undefined>>)
   // unset branch is needed (one would be an equivalent mutant).
   const shardText = env.MUTATION_SHARD
   if (!/^[1-9]\d*$/u.test(String(shardText))) {
-    return {ok: false, message: `MUTATION_SHARD must be a positive integer (got ${describeValue(shardText)})`}
+    return {ok: false, message: `MUTATION_SHARD must be a positive integer (got ${describeEnvValue(shardText)})`}
   }
   const eventSha = env.MUTATION_SHARD_EVENT_SHA
   if (!/^[0-9a-f]{40}$/u.test(String(eventSha))) {
     return {
       ok: false,
-      message: `MUTATION_SHARD_EVENT_SHA must be a 40-character lowercase hex commit SHA (got ${describeValue(eventSha)})`,
+      message: `MUTATION_SHARD_EVENT_SHA must be a 40-character lowercase hex commit SHA (got ${describeEnvValue(eventSha)})`,
     }
   }
   const outputDir = env.MUTATION_SHARD_OUTPUT_DIR
   if (outputDir === undefined || outputDir === '') {
-    return {ok: false, message: `MUTATION_SHARD_OUTPUT_DIR must be set (got ${describeValue(outputDir)})`}
+    return {ok: false, message: `MUTATION_SHARD_OUTPUT_DIR must be set (got ${describeEnvValue(outputDir)})`}
   }
   return {ok: true, input: {shard: Number(shardText), eventSha: String(eventSha), outputDir}}
 }

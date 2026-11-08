@@ -426,9 +426,11 @@ describe('the shard and merge modules are fixed triggers', () => {
     const clis = walkNonTestTsFiles(join(packagesRoot, 'ci-checks', 'src'), 'packages/ci-checks/src').filter(path =>
       SHARD_CLI_PATTERN.test(path),
     )
-    // The scans are not vacuous: the shard entrypoint and CLI exist.
+    // The scans are not vacuous: the shard and merge entrypoints and CLIs exist.
     expect(shims).toContain('scripts/mutation-shard.ts')
     expect(clis).toContain('packages/ci-checks/src/mutation-shard-cli.ts')
+    expect(shims).toContain('scripts/mutation-merge.ts')
+    expect(clis).toContain('packages/ci-checks/src/mutation-merge-cli.ts')
 
     const fixed = new Set(FIXED_TRIGGER_FILES.map(normalizePath))
     const missing = [...shims, ...clis].filter(path => !fixed.has(path))

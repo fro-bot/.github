@@ -1524,6 +1524,8 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
   'packages/ci-checks/src/check-mutation-guards-cli.ts',
   'scripts/mutation-shard.ts',
   'packages/ci-checks/src/mutation-shard-cli.ts',
+  'scripts/mutation-merge.ts',
+  'packages/ci-checks/src/mutation-merge-cli.ts',
   'packages/ci-checks/src/repository-root.ts',
   'packages/ci-checks/src/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',
@@ -1635,7 +1637,7 @@ export interface ChangedFileGateDeps {
 
 const defaultChangedFileGateDeps: ChangedFileGateDeps = {readPullRequestContext, fetchChangedFiles}
 
-function triggerGateSentinel(
+export function triggerGateSentinel(
   verdict: 'not-applicable' | 'instrumentation-failed',
   status: string,
   reason: string,
@@ -1761,6 +1763,23 @@ export async function runMutationGuardCheck(
   rmSync(reportPath, {force: true})
   spawner()
 
+  return classifyReportFile(config, reportPath, reporterConfig)
+}
+
+/**
+ * The classification half of a run, split out so the merge step of the sharded PR gate classifies a merged report
+ * through exactly the path a single run takes after its spawn: read the report at `reportPath`, scan the directives of
+ * the `mutate` files under the repository root, check the missing files, and classify with the full config. Returns the
+ * result and prints nothing; the caller prints it once.
+ *
+ * `reporterConfig` is what the config's `reporters` and `jsonReporter.fileName` resolve to by default; a test passes one
+ * that agrees with a temp `reportPath`.
+ */
+export function classifyReportFile(
+  config: StrykerConfigShape,
+  reportPath: string,
+  reporterConfig?: ReporterConfig,
+): ClassificationResult {
   const {json: reportJson, readError} = readMutationReport(reportPath)
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot())
   const directiveViolations = scanDirectiveViolations(directiveFiles)
