@@ -1977,7 +1977,8 @@ describe('buildHandoffFromGitIndex, git invocations and writes', () => {
 })
 
 describe('buildHandoffFromGitIndex, size cap', () => {
-  const smallPolicy: HandoffPolicy = {...draftedSolutionsHandoffPolicy(), maxTotalBytes: 10}
+  // Built per call, not at describe scope: a collection-time call into the mutated module counts as static coverage.
+  const smallPolicy = (): HandoffPolicy => ({...draftedSolutionsHandoffPolicy(), maxTotalBytes: 10})
   const entries =
     rawEntry('A', '100644', SHA_A, 'docs/solutions/best-practices/a.md') +
     rawEntry('A', '100644', SHA_B, 'docs/solutions/best-practices/b.md')
@@ -1988,7 +1989,7 @@ describe('buildHandoffFromGitIndex, size cap', () => {
       cwd: `${T}/repo`,
       outDir: `${T}/out`,
       pathspec: 'docs/solutions',
-      policy: smallPolicy,
+      policy: smallPolicy(),
       runGit,
       ...io,
     })
