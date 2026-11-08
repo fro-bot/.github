@@ -1026,7 +1026,8 @@ describe('failures inside goke itself', () => {
 })
 
 describe('runCliMain', () => {
-  const config: CliConfig = {
+  // A function, not a constant: see `NO_COLOR around the goke import`.
+  const config = (): CliConfig => ({
     name: 'x',
     commands: [
       defineCommand({
@@ -1039,12 +1040,12 @@ describe('runCliMain', () => {
         },
       }),
     ],
-  }
+  })
 
   it('writes the result to the given streams and sets process.exitCode without exiting', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
     const written: string[] = []
-    await runCliMain(config, {
+    await runCliMain(config(), {
       argv: ['--code', '4'],
       stdout: text => {
         written.push(`stdout:${text}`)
@@ -1074,7 +1075,7 @@ describe('runCliMain', () => {
     const stdoutWrite = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     try {
-      await runCliMain(config)
+      await runCliMain(config())
     } finally {
       process.argv = originalArgv
     }
@@ -1228,7 +1229,9 @@ function gatedImport(seen: (string | undefined)[], gate: Promise<void>) {
 }
 
 describe('NO_COLOR around the goke import', () => {
-  const EMPTY: CliConfig = {name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]}
+  // A function, not a constant: a describe-scope `defineCommand` call runs at collection, which Stryker
+  // counts as static coverage, so every `defineCommand` mutant would run the whole suite.
+  const empty = (): CliConfig => ({name: 'x', commands: [defineCommand({readOnly: true, action: () => {}})]})
 
   it.each([
     ['absent', undefined],
@@ -1246,9 +1249,9 @@ describe('NO_COLOR around the goke import', () => {
     const importGoke = gatedImport(seen, gate)
 
     const pending = Promise.all([
-      runCli(EMPTY, {argv: [], importGoke}),
-      runCli(EMPTY, {argv: [], importGoke}),
-      runCli(EMPTY, {argv: [], importGoke}),
+      runCli(empty(), {argv: [], importGoke}),
+      runCli(empty(), {argv: [], importGoke}),
+      runCli(empty(), {argv: [], importGoke}),
     ])
     await Promise.resolve()
     open()
@@ -1267,8 +1270,8 @@ describe('NO_COLOR around the goke import', () => {
     const gate = new Promise<void>(resolve => {
       open = resolve
     })
-    const fast = runCli(EMPTY, {argv: [], importGoke: async () => import('goke')})
-    const slow = runCli(EMPTY, {
+    const fast = runCli(empty(), {argv: [], importGoke: async () => import('goke')})
+    const slow = runCli(empty(), {
       argv: [],
       importGoke: async () => {
         await gate
@@ -1295,7 +1298,7 @@ describe('NO_COLOR around the goke import', () => {
     vi.resetModules()
     const fresh = await import('./cli.ts')
 
-    await Promise.all([fresh.runCli(EMPTY, {argv: []}), fresh.runCli(EMPTY, {argv: []})])
+    await Promise.all([fresh.runCli(empty(), {argv: []}), fresh.runCli(empty(), {argv: []})])
 
     if (initial === undefined) expect('NO_COLOR' in process.env).toBe(false)
     else expect(process.env.NO_COLOR).toBe(initial)
@@ -1319,10 +1322,10 @@ describe('NO_COLOR around the goke import', () => {
     try {
       vi.resetModules()
       const fresh = await import('./cli.ts')
-      await fresh.runCli(EMPTY, {argv: []})
+      await fresh.runCli(empty(), {argv: []})
       expect(writes).toEqual(['set 1', 'set kept'])
-      await fresh.runCli(EMPTY, {argv: []})
-      await Promise.all([fresh.runCli(EMPTY, {argv: []}), fresh.runCli(EMPTY, {argv: []})])
+      await fresh.runCli(empty(), {argv: []})
+      await Promise.all([fresh.runCli(empty(), {argv: []}), fresh.runCli(empty(), {argv: []})])
       expect(writes).toEqual(['set 1', 'set kept'])
     } finally {
       process.env = realEnvironment
@@ -1336,8 +1339,8 @@ describe('NO_COLOR around the goke import', () => {
       calls.push(calls.length)
       return import('goke')
     }
-    await runCli(EMPTY, {argv: [], importGoke})
-    await runCli(EMPTY, {argv: [], importGoke})
+    await runCli(empty(), {argv: [], importGoke})
+    await runCli(empty(), {argv: [], importGoke})
     expect(calls).toEqual([0, 1])
   })
 })

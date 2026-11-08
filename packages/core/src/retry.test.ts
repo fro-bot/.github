@@ -387,8 +387,9 @@ describe('retry: delays', () => {
     await vi.advanceTimersByTimeAsync(999)
     expect(settled).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
-    await expect(pending).resolves.toBe(2)
+    // Before awaiting: a default sleep that never resolves would leave `pending` hanging to the 10 s test timeout.
     expect(settled).toBe(true)
+    await expect(pending).resolves.toBe(2)
   })
 
   it('looks the timer up when it sleeps, so a test that fakes timers later still controls it', async () => {
