@@ -35,8 +35,6 @@ function recordingConstructor(): {
 }
 
 describe('createOctokit: what reaches the constructor', () => {
-  const LOG = noopLog()
-
   it('passes only the token when no option is given', async () => {
     const {constructed, Constructor} = recordingConstructor()
     const client = await createOctokit<FakeClient>('tok', {loadConstructor: async () => Constructor})
@@ -56,12 +54,13 @@ describe('createOctokit: what reaches the constructor', () => {
 
   it('passes the token, a 15 s timeout and the no-op logger through when asked', async () => {
     const {constructed, Constructor} = recordingConstructor()
+    const log = noopLog()
     await createOctokit<FakeClient>('tok', {
       timeoutMs: 15_000,
-      log: LOG,
+      log,
       loadConstructor: async () => Constructor,
     })
-    expect(constructed).toStrictEqual([{auth: 'tok', request: {timeout: 15_000}, log: LOG}])
+    expect(constructed).toStrictEqual([{auth: 'tok', request: {timeout: 15_000}, log}])
   })
 
   it('passes a timeout without a logger', async () => {
@@ -72,8 +71,9 @@ describe('createOctokit: what reaches the constructor', () => {
 
   it('passes a logger without a timeout', async () => {
     const {constructed, Constructor} = recordingConstructor()
-    await createOctokit<FakeClient>('tok', {log: LOG, loadConstructor: async () => Constructor})
-    expect(constructed).toStrictEqual([{auth: 'tok', log: LOG}])
+    const log = noopLog()
+    await createOctokit<FakeClient>('tok', {log, loadConstructor: async () => Constructor})
+    expect(constructed).toStrictEqual([{auth: 'tok', log}])
   })
 
   it('keeps a timeout of 0, which is not "unset"', async () => {
@@ -158,8 +158,6 @@ describe('createOctokit: a token that must exist', () => {
 })
 
 describe('createOctokit: the default constructor is the real @octokit/rest', () => {
-  const LOG = noopLog()
-
   it('builds a working client with the rest namespaces', async () => {
     const client = await createOctokit('tok')
     expect(typeof client.rest.repos.get).toBe('function')
@@ -167,7 +165,7 @@ describe('createOctokit: the default constructor is the real @octokit/rest', () 
   })
 
   it('applies a request timeout to the real client without throwing', async () => {
-    const client = await createOctokit('tok', {timeoutMs: 1234, log: LOG})
+    const client = await createOctokit('tok', {timeoutMs: 1234, log: noopLog()})
     expect(typeof client.rest.issues.create).toBe('function')
   })
 })
