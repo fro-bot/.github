@@ -1508,7 +1508,7 @@ export function buildImportClosure(
  * `quartz-site/tsconfig.json` is deliberately excluded — it configures an unrelated
  * documentation-site build, not anything Stryker mutates or runs.
  */
-const FIXED_TRIGGER_FILES: readonly string[] = [
+export const FIXED_TRIGGER_FILES: readonly string[] = [
   'stryker.config.json',
   'mutation-guards.json',
   'vitest.config.ts',

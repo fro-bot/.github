@@ -10,6 +10,7 @@ import {
   readStrykerConfig,
 } from './check-mutation-guards.ts'
 import {normalizePath, treeOf} from './mutation-guards-reach.ts'
+import {findShardPartitionViolations, readMutationShards} from './mutation-shard-lists.ts'
 import {findRepositoryRoot} from './repository-root.ts'
 
 const repositoryRoot = findRepositoryRoot()
@@ -377,6 +378,39 @@ describe('mutation guard enumeration', () => {
         ? undefined
         : `path(s) listed in both mutate and not-mutated: ${overlap.map(entry => entry.path).join(', ')}`,
     ).toEqual([])
+  })
+})
+
+describe('mutation shard lists', () => {
+  it('Test 8: the shards in mutation-guards.json are an exact partition of mutate', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const violations = findShardPartitionViolations(mutate, readMutationShards(mutationGuardsPath))
+
+    expect(violations, violations.length === 0 ? undefined : `shard partition: ${violations.join('; ')}`).toEqual([])
+  })
+
+  it('Test 8b: an entry moved out of every shard fails and is named (AE5)', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const shards = readMutationShards(mutationGuardsPath)
+    const moved = mutate[0]
+    expect(moved).toBeDefined()
+
+    const without = shards.map(shard => shard.filter(entry => entry !== moved))
+    expect(findShardPartitionViolations(mutate, without)).toEqual([`${String(moved)}: in no shard`])
+  })
+
+  it('Test 8c: an entry added to a second shard fails and is named', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const shards = readMutationShards(mutationGuardsPath)
+    const first = shards[0]?.[0]
+    expect(first).toBeDefined()
+
+    const doubled = [shards[0] ?? [], [...(shards[1] ?? []), String(first)], shards[2] ?? []]
+    expect(findShardPartitionViolations(mutate, doubled)).toEqual([`${String(first)}: in shards 1 and 2`])
+  })
+
+  it('Test 8d: there are exactly three shard lists', () => {
+    expect(readMutationShards(mutationGuardsPath)).toHaveLength(3)
   })
 })
 

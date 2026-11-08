@@ -21,6 +21,7 @@
     "./install-renovate": "./src/install-renovate.ts",
     "./install-renovate-cli": "./src/install-renovate-cli.ts",
     "./mutation-guards-reach": "./src/mutation-guards-reach.ts",
+    "./mutation-shard-lists": "./src/mutation-shard-lists.ts",
     "./renovate-runtime": "./src/renovate-runtime.ts",
     "./repository-root": "./src/repository-root.ts"
   },
