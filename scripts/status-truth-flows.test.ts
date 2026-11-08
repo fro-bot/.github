@@ -153,7 +153,17 @@ describe('rollout-tracker-snapshot (bun; gateway-rollout-tracker.yaml and status
 
   it('delivers a result of more than 300 KB complete when it is piped (no process.exit on the success path)', async () => {
     const items = Array.from({length: 900}, (_, index) => item(1000 + index))
-    const result = await run('rollout-tracker-snapshot', {env: snapshotEnv(items)})
+    // The marker no longer carries the snapshot, so two long external signals (each in its own env
+    // var, under the 128 KiB per-variable limit on Linux) lift the result past 300 KB.
+    const result = await run('rollout-tracker-snapshot', {
+      env: snapshotEnv(items, {
+        ROLLOUT_TRACKER_RELEASES_JSON: JSON.stringify({
+          agent: {tag_name: `v${'1'.repeat(100_000)}`},
+          dashboard: {tag_name: 'v4.5.6'},
+        }),
+        ROLLOUT_TRACKER_HEALTH_JSON: JSON.stringify({contractVersion: '2'.repeat(100_000)}),
+      }),
+    })
     expect(result.exitCode).toBe(0)
     expect(result.stdout.length).toBeGreaterThan(300_000)
     expect(result.stdout.endsWith('\n')).toBe(true)

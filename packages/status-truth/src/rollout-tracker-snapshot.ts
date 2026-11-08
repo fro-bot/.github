@@ -63,12 +63,12 @@ export interface RolloutSnapshot {
 }
 
 /**
- * The data embedded in the HTML marker comment. Only `hash` is required to parse; the snapshot is
- * informational and `last_mention_id` is null when the marker carries no valid value.
+ * The data embedded in the HTML marker comment. Only `hash` is required to parse, and
+ * `last_mention_id` is null when the marker carries no valid value. Markers written before the
+ * snapshot was dropped from them still carry a `snapshot` field; it is ignored on read.
  */
 export interface MarkerData {
   hash: string
-  snapshot: unknown
   /** The highest operator `@fro-bot` comment ID the tracker has answered; null when absent or invalid. */
   last_mention_id: number | null
 }
@@ -341,7 +341,6 @@ export function extractPreviousMarker(body: string): MarkerData | null {
     const lastMentionId = parsed.last_mention_id
     return {
       hash: parsed.hash,
-      snapshot: parsed.snapshot,
       last_mention_id:
         typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
           ? lastMentionId
@@ -431,12 +430,14 @@ export function scanOperatorMentions(
 }
 
 /**
- * Build the complete marker string. `<`, `>` and `&` are escaped inside the JSON so Project text or
- * labels containing `-->` can neither close the HTML comment early nor break the parse; JSON.parse
- * restores them.
+ * Build the complete marker string: the hash and the last answered mention ID, nothing else. The
+ * snapshot stays out because it grows with the Project and would push the comment past GitHub's
+ * 65,536-character limit; the preflight result carries it on stdout instead. `<`, `>` and `&` are
+ * escaped inside the JSON so text containing `-->` can neither close the HTML comment early nor
+ * break the parse; JSON.parse restores them.
  */
-export function buildMarker(hash: string, snapshot: RolloutSnapshot, lastMentionId: number): string {
-  const json = JSON.stringify({hash, snapshot, last_mention_id: lastMentionId})
+export function buildMarker(hash: string, lastMentionId: number): string {
+  const json = JSON.stringify({hash, last_mention_id: lastMentionId})
     .replaceAll('<', String.raw`\u003c`)
     .replaceAll('>', String.raw`\u003e`)
     .replaceAll('&', String.raw`\u0026`)
@@ -846,7 +847,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
-    marker: buildMarker(hash, snapshot, lastMentionId),
+    marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
   }
 

@@ -426,14 +426,13 @@ describe('extractPreviousMarker', () => {
   })
 
   it('extracts marker data from an HTML comment', () => {
-    const markerData: MarkerData = {hash: 'abc123', snapshot: {items: []}, last_mention_id: 0}
+    const markerData: MarkerData = {hash: 'abc123', last_mention_id: 0}
     const body = `Some text\n<!-- ${MARKER_PREFIX}${JSON.stringify(markerData)} -->\nMore text`
 
     const result = extractPreviousMarker(body)
 
     expect(result).not.toBeNull()
     expect(result?.hash).toBe('abc123')
-    expect(result?.snapshot).toEqual({items: []})
     expect(result?.last_mention_id).toBe(0)
   })
 
@@ -453,8 +452,8 @@ describe('extractPreviousMarker', () => {
   })
 
   it('extracts the LAST marker when multiple are present (latest wins)', () => {
-    const first: MarkerData = {hash: 'first', snapshot: {items: []}, last_mention_id: 0}
-    const second: MarkerData = {hash: 'second', snapshot: {items: []}, last_mention_id: 0}
+    const first: MarkerData = {hash: 'first', last_mention_id: 0}
+    const second: MarkerData = {hash: 'second', last_mention_id: 0}
     const body = [
       `<!-- ${MARKER_PREFIX}${JSON.stringify(first)} -->`,
       'Some prose in between',
@@ -538,7 +537,7 @@ describe('decideComment', () => {
 
   it('same hash as previous marker => should_comment:false with no gating transition reason', () => {
     const hash = hashSnapshot(baseSnapshot)
-    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot, last_mention_id: 0}
+    const previousMarker: MarkerData = {hash, last_mention_id: 0}
 
     const result = decideComment(baseSnapshot, hash, previousMarker, [])
 
@@ -586,7 +585,7 @@ describe('decideComment', () => {
     }
     const oldHash = hashSnapshot(oldSnapshot)
     const newHash = hashSnapshot(newSnapshot)
-    const previousMarker: MarkerData = {hash: oldHash, snapshot: oldSnapshot, last_mention_id: 0}
+    const previousMarker: MarkerData = {hash: oldHash, last_mention_id: 0}
 
     const result = decideComment(newSnapshot, newHash, previousMarker, [])
 
@@ -597,7 +596,7 @@ describe('decideComment', () => {
 
   it('returns hash and snapshot in result regardless of should_comment value', () => {
     const hash = hashSnapshot(baseSnapshot)
-    const previousMarker: MarkerData = {hash, snapshot: baseSnapshot, last_mention_id: 0}
+    const previousMarker: MarkerData = {hash, last_mention_id: 0}
 
     const result = decideComment(baseSnapshot, hash, previousMarker, [])
 
@@ -1046,7 +1045,6 @@ describe('scanOperatorMentions', () => {
   const mention = (id: number): TrackerComment => comment(id, 'marcusrbrown', `@fro-bot claim ${id}`)
   const marked = (lastMentionId: number | null): MarkerData => ({
     hash: 'h',
-    snapshot: {},
     last_mention_id: lastMentionId,
   })
   const markerComment = (id: number, fields: string): TrackerComment =>
@@ -1244,8 +1242,9 @@ describe('marker round trip', () => {
   const snapshot = buildSnapshot(items, issues, EXTERNAL)
   const hash = hashSnapshot(snapshot)
 
-  it('keeps Project text containing --> from closing the HTML comment', () => {
-    const marker = buildMarker(hash, snapshot, 4321)
+  it('keeps text containing --> from closing the HTML comment', () => {
+    const hostile = 'blocked --> see <b>&</b>'
+    const marker = buildMarker(hostile, 4321)
 
     const inner = marker.slice('<!-- '.length, -' -->'.length)
 
@@ -1253,13 +1252,13 @@ describe('marker round trip', () => {
     expect(marker.endsWith(' -->')).toBe(true)
     expect(inner).not.toMatch(/[<>&]/)
     expect(inner).toContain(String.raw`\u003e`)
+    expect(extractPreviousMarker(marker)?.hash).toBe(hostile)
   })
 
-  it('round-trips the hash, snapshot and last_mention_id through extractPreviousMarker', () => {
-    const parsed = extractPreviousMarker(`reply text\n${buildMarker(hash, snapshot, 4321)}`)
+  it('round-trips the hash and last_mention_id through extractPreviousMarker', () => {
+    const parsed = extractPreviousMarker(`reply text\n${buildMarker(hash, 4321)}`)
 
-    expect(parsed).toEqual({hash, snapshot, last_mention_id: 4321})
-    expect((parsed?.snapshot as RolloutSnapshot).items[0]?.gate).toBe('blocked --> see <b>&</b>')
+    expect(parsed).toEqual({hash, last_mention_id: 4321})
   })
 
   it('reads an absent or invalid last_mention_id as null and keeps a valid 0', () => {
@@ -1296,7 +1295,7 @@ describe('marker round trip', () => {
 describe('decideComment with pending operator mentions', () => {
   const snapshot = buildSnapshot([makeProjectItem()], [makeIssueState()], EXTERNAL)
   const hash = hashSnapshot(snapshot)
-  const previous: MarkerData = {hash, snapshot, last_mention_id: 0}
+  const previous: MarkerData = {hash, last_mention_id: 0}
 
   it('wakes with an unchanged hash and says why', () => {
     const decision = decideComment(snapshot, hash, previous, [41])
@@ -1511,7 +1510,7 @@ describe('pending operator mentions through the CLI', () => {
 
   it('anchors on an earlier marker when the latest one is damaged', () => {
     const seeded = runCliFixture({items, issues})
-    const earlier = buildMarker(seeded.hash, seeded.snapshot, 3000)
+    const earlier = buildMarker(seeded.hash, 3000)
     const damaged = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: seeded.hash, last_mention_id: '3010'})} -->`
 
     const result = runCliFixture({
@@ -1542,8 +1541,8 @@ describe('pending operator mentions through the CLI', () => {
 
     const parsed = extractPreviousMarker(result.marker)
 
-    expect(parsed).toMatchObject({hash: result.hash, last_mention_id: 77})
-    expect((parsed?.snapshot as RolloutSnapshot).external).toEqual(EXTERNAL)
+    expect(parsed).toEqual({hash: result.hash, last_mention_id: 77})
+    expect(result.snapshot.external).toEqual(EXTERNAL)
   })
 })
 
@@ -2097,6 +2096,12 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('skip the body write and say so in your tracker comment')
     })
 
+    it('leaves the marker alone when the body write is skipped, so the next run retries', () => {
+      expect(flat).toContain(
+        'In that case, do not write the new marker and leave the existing marker comment as it is, so the next run wakes and retries',
+      )
+    })
+
     it('answers exactly the pending mention IDs, fetching each by ID', () => {
       expect(flat).toContain('Answer exactly the pending mention IDs and no others')
       expect(flat).toContain('fetch each one by ID')
@@ -2150,12 +2155,13 @@ function fakeProjectGhSource(): string {
     "  id: 'PVTI_' + (index + 1),",
     "  content: {number: index + 1, repository: 'fro-bot/agent', type: 'Issue'},",
     "  status: 'In Progress',",
+    "  title: 'x'.repeat(Number(process.env.FAKE_GH_PROJECT_PAD ?? 0)),",
     '}))',
     'process.stdout.write(JSON.stringify({items, totalCount: total}))',
   ].join('\n')
 }
 
-function runCliWithLiveProject(total: number): CliResult {
+function runCliWithLiveProject(total: number, padBytes = 0): CliResult {
   const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-project-'))
   try {
     writeFileSync(join(dir, 'gh'), fakeProjectGhSource())
@@ -2167,6 +2173,7 @@ function runCliWithLiveProject(total: number): CliResult {
       ROLLOUT_TRACKER_COMMENT_BODY: undefined,
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       FAKE_GH_PROJECT_TOTAL: String(total),
+      FAKE_GH_PROJECT_PAD: String(padBytes),
     })
   } finally {
     rmSync(dir, {recursive: true, force: true})
@@ -2209,5 +2216,42 @@ describe('live Project read covers every item', () => {
     expect(result.status).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('may be truncated')
+  })
+
+  it('reads a Project response larger than 1 MiB with fewer items than the read limit', () => {
+    const total = 900
+    const result = runCliWithLiveProject(total, 1200)
+
+    expect(result.status).toBe(0)
+    expect((JSON.parse(result.stdout) as PreflightResult).snapshot.items).toHaveLength(total)
+  })
+})
+
+describe('the marker stays under the GitHub comment limit', () => {
+  const commentLimit = 65_536
+
+  it('carries only the hash and last_mention_id, with no snapshot', () => {
+    const result = JSON.parse(runCliWithLiveProject(5).stdout) as PreflightResult
+    const body = result.marker.slice(`<!-- ${MARKER_PREFIX}`.length, -' -->'.length)
+
+    expect(Object.keys(JSON.parse(body) as Record<string, unknown>).sort()).toEqual(['hash', 'last_mention_id'])
+    expect(result.marker).not.toContain('snapshot')
+  })
+
+  it('stays well under 65,536 characters for a 999-item Project, while stdout still carries the snapshot', () => {
+    const result = JSON.parse(runCliWithLiveProject(999).stdout) as PreflightResult
+
+    expect(result.marker.length).toBeLessThan(commentLimit / 10)
+    expect(result.snapshot.items).toHaveLength(999)
+    expect(extractPreviousMarker(result.marker)?.hash).toBe(result.hash)
+  })
+
+  it('still parses an old marker that carries a snapshot', () => {
+    const old = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'old-hash', snapshot: {items: [{content_number: 1}]}, last_mention_id: 77})} -->`
+
+    const parsed = extractPreviousMarker(old)
+
+    expect(parsed?.hash).toBe('old-hash')
+    expect(parsed?.last_mention_id).toBe(77)
   })
 })
