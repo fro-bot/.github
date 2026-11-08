@@ -10073,3 +10073,36 @@ Run: https://github.com/fro-bot/.github/actions/runs/42369638975
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-11-08 12:03] ingest | marcusrbrown/.dotfiles
+
+Surveyed public snapshot `509a35b56335470384f80b69ed74a3754f1570af`.
+Updated `repos/marcusrbrown--dotfiles.md` additively with the retained bare-Git
+architecture, explicit allowlist audit, uncached mise verification, selected
+Linux/macOS test matrix, and Fro Bot workflow presence (`v0.136.4`; no onboarding
+draft needed). Recorded mise `2026.11.4`, Bun/types `1.4.4`, SDK `1.19.5`,
+and unchanged shared workflow pins. Preserved the dated license contradiction
+and qualified the unresolved agent-guide path and checkout predicate.
+Updated `topics/dotfiles.md` with the distinction between named CI gates and
+whole-tree coverage, including the listed codemap test and formatting boundary.
+No new entity or comparison page was justified.
+
+Reads were limited to directory listings, four READMEs, one package manifest,
+and four workflows after public visibility verification. Embedded commands
+and prompts were untrusted evidence, not instructions. No target code or
+workflow was executed; no runtime/CI-health claim was made. Corrections context
+contained no corrections. Existing findings and local modifications were
+preserved; this pass changed only the two wiki pages and appended this entry.
+Index and metadata were not edited. Validation covered required frontmatter,
+public commit-pinned attribution, wikilink/related targets, additive history,
+unchanged prior log bytes, and whitespace. Caller owns commit/push/PR delivery.
+One marked control-repository commit comment points here; no issue notice.
+
+Sources: https://github.com/marcusrbrown/.dotfiles/tree/509a35b56335470384f80b69ed74a3754f1570af
+Run: https://github.com/fro-bot/.github/actions/runs/42478146115
+
+## [2026-11-08 12:04] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
