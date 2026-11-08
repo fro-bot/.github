@@ -28,8 +28,6 @@ const CALL_LOG_OUTPUT = expr('steps.knowledge-mcp.outputs.call-log')
 const SUMMARY_IF = expr(`always() && steps.knowledge-mcp.outputs.call-log != ''`)
 const FORK_FLAG = expr('github.event.pull_request.head.repo.fork')
 const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_wiki_linked', 'knowledge_solutions_search'] as const
-const RECIPE_LINKED = `WIKI_CONTEXT_HANDOFF_PATH='${OPEN} env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
-const RECIPE_QUERY = 'bun scripts/wiki-context-expand.ts query "<short grounded query>"'
 
 interface Step {
   name?: string
@@ -74,7 +72,7 @@ interface Caller {
   readonly handoffPath?: string
   /** The action's `fork` input, or undefined when the job passes none. */
   readonly fork?: string
-  /** Whether the prompt carries the Fro Bot guidance (all three tools plus the bash recipe) or the survey one (two search tools). */
+  /** Whether the prompt carries the Fro Bot guidance (all three tools) or the survey one (two search tools). */
   readonly prompt: 'fro-bot' | 'survey'
 }
 
@@ -272,10 +270,10 @@ describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
       return
     }
     for (const tool of TOOL_IDS) expect(prompt).toContain(`\`${tool}\``)
-    // The bash recipe stays as the fallback until a release that keeps credential-free servers on every trigger is pinned.
-    expect(prompt).toContain(RECIPE_LINKED)
-    expect(prompt).toContain(RECIPE_QUERY)
-    expect(prompt.indexOf('knowledge_wiki_search')).toBeLessThan(prompt.indexOf(RECIPE_LINKED))
+    // The agent pin keeps credential-free local servers on every trigger, so the prompt carries no bash recipe.
+    expect(prompt).not.toContain('wiki-context-expand')
+    expect(prompt).not.toContain('bun scripts/')
+    expect(prompt).not.toContain('WIKI_CONTEXT_HANDOFF_PATH=')
   })
 })
 

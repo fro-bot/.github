@@ -668,24 +668,14 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally look further.
 
-            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
-            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            Use the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`. `knowledge_wiki_search` takes a short grounded
             `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
             the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
             and returns documented solutions. A tool that fails returns a short error code, not
-            content; an empty result means nothing matched.
-
-            When the run does not list them, run one of:
-
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
-            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
-
-            Run the linked command exactly as written, including the inline
-            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
-            assignment is what points linked mode at the baseline-selected pages. Query mode
-            needs no handoff variable. Do not print or echo that path, its file contents, the
-            query text, returned excerpts, or any token/env values into your output or logs. Use
-            returned wiki paths only to ground a recommendation.
+            content; an empty result means nothing matched. Do not print or echo the query text,
+            returned excerpts, or any token/env values into your output or logs. Use returned
+            wiki paths only to ground a recommendation.
             </wiki_context_expansion>
 
             <knowledge_persistence>
@@ -949,24 +939,14 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally look further.
 
-            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
-            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            Use the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`. `knowledge_wiki_search` takes a short grounded
             `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
             the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
             and returns documented solutions. A tool that fails returns a short error code, not
-            content; an empty result means nothing matched.
-
-            When the run does not list them, run one of:
-
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
-            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
-
-            Run the linked command exactly as written, including the inline
-            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
-            assignment is what points linked mode at the baseline-selected pages. Query mode
-            needs no handoff variable. Do not print or echo that path, its file contents, the
-            query text, returned excerpts, or any token/env values into your output or logs. Use
-            returned wiki paths only to ground a recommendation.
+            content; an empty result means nothing matched. Do not print or echo the query text,
+            returned excerpts, or any token/env values into your output or logs. Use returned
+            wiki paths only to ground a recommendation.
             </wiki_context_expansion>
 
             <knowledge_persistence>
@@ -1137,24 +1117,14 @@ jobs:
             expand by default. If baseline context is insufficient, following linked pages would
             help, or you have a short grounded query, you may optionally look further.
 
-            When this run lists the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
-            `knowledge_solutions_search`, use them. `knowledge_wiki_search` takes a short grounded
+            Use the tools `knowledge_wiki_search`, `knowledge_wiki_linked` and
+            `knowledge_solutions_search`. `knowledge_wiki_search` takes a short grounded
             `query` and returns wiki pages. `knowledge_wiki_linked` takes no arguments and returns
             the pages linked from the baseline pages. `knowledge_solutions_search` takes a `query`
             and returns documented solutions. A tool that fails returns a short error code, not
-            content; an empty result means nothing matched.
-
-            When the run does not list them, run one of:
-
-            `WIKI_CONTEXT_HANDOFF_PATH='${{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked`
-            `bun scripts/wiki-context-expand.ts query "<short grounded query>"`
-
-            Run the linked command exactly as written, including the inline
-            `WIKI_CONTEXT_HANDOFF_PATH=...` assignment; your shell does not inherit it, so the
-            assignment is what points linked mode at the baseline-selected pages. Query mode
-            needs no handoff variable. Do not print or echo that path, its file contents, the
-            query text, returned excerpts, or any token/env values into your output or logs. Use
-            returned wiki paths only to ground a recommendation.
+            content; an empty result means nothing matched. Do not print or echo the query text,
+            returned excerpts, or any token/env values into your output or logs. Use returned
+            wiki paths only to ground a recommendation.
             </wiki_context_expansion>
 
             <knowledge_persistence>

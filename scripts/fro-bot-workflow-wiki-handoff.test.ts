@@ -1,19 +1,13 @@
-import {execFileSync} from 'node:child_process'
 import {readFileSync} from 'node:fs'
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
-import {tmpdir} from 'node:os'
-import {dirname, join, resolve} from 'node:path'
-import process from 'node:process'
-import {writeSelectedPathsHandoff} from '@fro-bot/wiki-ops/wiki-query'
+import {resolve} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-// Regression guard: the baseline wiki-query step must write the run-local handoff
-// file, and the agent must be able to REACH it. The Action scrubs the OpenCode
-// server child's environment to an allowlist, so a step-level `env:` entry never
-// reaches the agent's shell — the prompt therefore carries the path as an inline
-// assignment on the linked-mode command. The workflow must never log the handoff
-// path or selected paths content.
+// Regression guard: the baseline wiki-query step must write the run-local handoff file, and each agent
+// job must declare the identical path so the `knowledge` MCP server's `wiki_linked` tool can read it (the
+// path reaches the server through the `knowledge-mcp-config` composite, pinned in
+// knowledge-mcp-callers.test.ts). The prompts name the three `knowledge_*` tools and carry no bash recipe.
+// The workflow must never log the handoff path or selected paths content.
 
 interface WorkflowStep {
   name?: string
@@ -45,10 +39,7 @@ function assertFroBotWorkflow(value: unknown): asserts value is {
 
 const AGENT_USES_PREFIX = 'fro-bot/agent@'
 const HANDOFF_VAR = 'WIKI_CONTEXT_HANDOFF_PATH'
-// Literal GitHub Actions expression syntax — split to dodge eslint's no-template-curly-in-string rule.
-const EXPECTED_LINKED_COMMAND =
-  "WIKI_CONTEXT_HANDOFF_PATH='" + '$' + "{{ env.WIKI_CONTEXT_HANDOFF_PATH }}' bun scripts/wiki-context-expand.ts linked"
-const EXPRESSION = /\$\{\{ ([^}]+?) \}\}/gu
+const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_wiki_linked', 'knowledge_solutions_search'] as const
 
 interface AgentJobWiring {
   readonly jobKey: string
@@ -85,27 +76,14 @@ function collectAgentJobs(jobs: Record<string, WorkflowJob>): AgentJobWiring[] {
   return wirings
 }
 
-/** Render `${{ … }}` expressions from a fixed context; any expression outside it is a test error. */
-function render(template: string, context: Readonly<Record<string, string>>): string {
-  return template.replaceAll(EXPRESSION, (_match, expression: string) => {
-    const value = context[expression]
-    if (value === undefined) {
-      throw new TypeError(`unsupported workflow expression in test renderer: ${expression}`)
-    }
-    return value
-  })
-}
-
-/** The raw (unrendered) backtick-delimited command line in the prompt that ends with `linked`. */
-function extractCommandLine(prompt: string, suffix: string): string {
-  const line = prompt
-    .split('\n')
-    .map(candidate => candidate.trim())
-    .find(candidate => candidate.startsWith('`') && candidate.endsWith(`${suffix}\``))
-  if (line === undefined) {
-    throw new TypeError(`prompt has no command line ending with ${suffix}`)
+/** The text between the `<wiki_context_expansion>` tags of a prompt. */
+function expansionBlock(prompt: string): string {
+  const open = prompt.indexOf('<wiki_context_expansion>')
+  const close = prompt.indexOf('</wiki_context_expansion>')
+  if (open === -1 || close === -1 || close < open) {
+    throw new TypeError('prompt has no <wiki_context_expansion> block')
   }
-  return line.slice(1, -1)
+  return prompt.slice(open, close)
 }
 
 describe('fro-bot.yaml baseline wiki handoff wiring', () => {
@@ -134,39 +112,27 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
       expect(wiring.consumerPath).toBe(wiring.producerPath)
     })
 
-    it('the prompt hands the agent the linked command with an inline path assignment', () => {
-      // #when reading the linked-mode command exactly as the model will see it (pre-render)
-      const command = extractCommandLine(wiring.prompt, 'linked')
+    it('the prompt names the three knowledge tools inside the expansion block', () => {
+      const block = expansionBlock(wiring.prompt)
 
-      // #then the path travels on the command itself — the agent shell does not inherit step env
-      expect(command).toBe(EXPECTED_LINKED_COMMAND)
+      for (const tool of TOOL_IDS) {
+        expect(block, `job ${wiring.jobKey}`).toContain(`\`${tool}\``)
+      }
     })
 
-    it('the rendered inline path is byte-identical to the rendered producer path', () => {
-      // #given the expressions both sides use, rendered with one concrete context
-      const context = {'runner.temp': '/runner/tmp', 'github.run_id': '4242', 'github.run_attempt': '3'}
-      const producerRendered = render(wiring.producerPath, context)
-      const command = extractCommandLine(wiring.prompt, 'linked')
-
-      // #when the prompt's `env.WIKI_CONTEXT_HANDOFF_PATH` resolves against the agent step's own env
-      const commandRendered = render(command, {
-        ...context,
-        'env.WIKI_CONTEXT_HANDOFF_PATH': render(wiring.consumerPath, context),
-      })
-
-      // #then the path the agent is told to read is the path the producer wrote
-      expect(commandRendered).toBe(`${HANDOFF_VAR}='${producerRendered}' bun scripts/wiki-context-expand.ts linked`)
+    it('the prompt carries no bash recipe and no recipe fallback', () => {
+      expect(wiring.prompt).not.toContain('wiki-context-expand')
+      expect(wiring.prompt).not.toContain('bun scripts/')
+      expect(wiring.prompt).not.toContain(`${HANDOFF_VAR}=`)
+      expect(wiring.prompt).not.toContain('does not list them')
+      expect(wiring.prompt).not.toContain('When this run lists the tools')
     })
 
-    it('query mode takes no handoff variable and the no-echo guidance is kept', () => {
-      const queryCommand = extractCommandLine(wiring.prompt, '"<short grounded query>"')
-      expect(queryCommand).toBe('bun scripts/wiki-context-expand.ts query "<short grounded query>"')
-      expect(wiring.prompt).toContain('Do not print or echo that path')
-      expect(wiring.prompt.toLowerCase()).toContain('optional')
-    })
+    it('keeps the optional-expansion and no-echo guidance', () => {
+      const block = expansionBlock(wiring.prompt)
 
-    it('does not imply the variable is inherited from the environment', () => {
-      expect(wiring.prompt).not.toMatch(/reads the baseline-selected pages from the path in/u)
+      expect(block).toContain('Do not print or echo')
+      expect(block.toLowerCase()).toContain('optionally')
     })
   })
 
@@ -197,139 +163,5 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
     for (const pattern of forbiddenPatterns) {
       expect(pattern.test(raw)).toBe(false)
     }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Subprocess: run the prompt's commands the way the agent shell would — with the
-// handoff variable absent from the inherited environment.
-// ---------------------------------------------------------------------------
-
-const SCRIPT_RELATIVE = 'scripts/wiki-context-expand.ts'
-const SCRIPT_ABSOLUTE = resolve(import.meta.dirname, 'wiki-context-expand.ts')
-
-const AGENT_PAGE = [
-  '---',
-  'type: repo',
-  'title: Fro Bot Agent',
-  'tags: [agent]',
-  '---',
-  '',
-  'Fro Bot Agent links to [[vitest]] for its workflow scripts.',
-  '',
-].join('\n')
-
-const VITEST_PAGE = [
-  '---',
-  'type: topic',
-  'title: Vitest',
-  'tags: [testing]',
-  '---',
-  '',
-  'Vitest is the repo test runner and exercises octokit github api access wrappers.',
-  '',
-].join('\n')
-
-interface ExpandStdout {
-  readonly status: string
-  readonly mode: string
-  readonly excerpt: string
-}
-
-function parseExpandStdout(stdout: string): ExpandStdout {
-  const value: unknown = JSON.parse(stdout)
-  if (typeof value !== 'object' || value === null) {
-    throw new TypeError('wiki-context-expand stdout is not a JSON object')
-  }
-  const record = value as Record<string, unknown>
-  return {status: String(record.status), mode: String(record.mode), excerpt: String(record.excerpt)}
-}
-
-/** Run a shell command line with an environment that deliberately lacks the handoff variable. */
-function runInAgentShell(command: string, cwd: string): ExpandStdout {
-  const env: Record<string, string> = {PATH: process.env.PATH ?? ''}
-  expect(HANDOFF_VAR in env).toBe(false)
-  const stdout = execFileSync('sh', ['-c', command.replace(SCRIPT_RELATIVE, SCRIPT_ABSOLUTE)], {
-    cwd,
-    env,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  return parseExpandStdout(stdout)
-}
-
-async function withFixture(run: (dir: string) => Promise<void>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'wiki-handoff-subprocess-'))
-  try {
-    await mkdir(join(dir, 'knowledge/wiki/repos'), {recursive: true})
-    await mkdir(join(dir, 'knowledge/wiki/topics'), {recursive: true})
-    await mkdir(join(dir, 'metadata'), {recursive: true})
-    await writeFile(join(dir, 'knowledge/wiki/repos/fro-bot--agent.md'), AGENT_PAGE)
-    await writeFile(join(dir, 'knowledge/wiki/topics/vitest.md'), VITEST_PAGE)
-    await writeFile(join(dir, 'metadata/repos.yaml'), 'repos: []\n')
-    await run(dir)
-  } finally {
-    await rm(dir, {recursive: true, force: true})
-  }
-}
-
-describe('wiki-context-expand as the agent shell runs it (handoff variable not inherited)', () => {
-  const workflowRaw = readFileSync(resolve(import.meta.dirname, '../.github/workflows/fro-bot.yaml'), 'utf8')
-  const parsedWorkflow: unknown = parse(workflowRaw)
-  assertFroBotWorkflow(parsedWorkflow)
-  const agentJobs = collectAgentJobs(parsedWorkflow.jobs)
-
-  it.each(agentJobs)(
-    'linked expansion works for job $jobKey when only the inline assignment supplies the path',
-    async wiring => {
-      await withFixture(async dir => {
-        // #given the producer wrote its handoff at the path the producer step declares
-        const context = {'runner.temp': dir, 'github.run_id': '4242', 'github.run_attempt': '3'}
-        const producerRendered = render(wiring.producerPath, context)
-        await mkdir(dirname(producerRendered), {recursive: true})
-        await writeSelectedPathsHandoff(producerRendered, ['knowledge/wiki/repos/fro-bot--agent.md'])
-
-        // #when the rendered prompt command runs with the variable absent from the inherited env
-        const command = render(extractCommandLine(wiring.prompt, 'linked'), {
-          ...context,
-          'env.WIKI_CONTEXT_HANDOFF_PATH': render(wiring.consumerPath, context),
-        })
-        const result = runInAgentShell(command, dir)
-
-        // #then the handoff was found and the first-hop page was expanded
-        expect(result.mode).toBe('linked')
-        expect(result.status).toBe('ok')
-        expect(result.excerpt).toContain('Vitest')
-      })
-    },
-  )
-
-  it('control: bare linked command without the inline assignment cannot find the handoff', async () => {
-    await withFixture(async dir => {
-      // #given a valid handoff exists, but the command does not point at it
-      await writeSelectedPathsHandoff(join(dir, 'handoff.json'), ['knowledge/wiki/repos/fro-bot--agent.md'])
-
-      // #when the pre-fix command shape runs with the variable absent
-      const result = runInAgentShell(`bun ${SCRIPT_RELATIVE} linked`, dir)
-
-      // #then it degrades to an empty result — the bug the inline assignment fixes
-      expect(result.mode).toBe('linked')
-      expect(result.status).toBe('empty')
-    })
-  })
-
-  it('query mode works with no handoff variable at all', async () => {
-    await withFixture(async dir => {
-      // #given the prompt's query command with a concrete grounded query substituted
-      const queryTemplate = extractCommandLine(agentJobs[0]?.prompt ?? '', '"<short grounded query>"')
-      const command = queryTemplate.replace('<short grounded query>', 'octokit github api access')
-
-      // #when run with the variable absent
-      const result = runInAgentShell(command, dir)
-
-      // #then query expansion succeeds without a handoff
-      expect(result.mode).toBe('query')
-      expect(result.status).toBe('ok')
-    })
   })
 })
