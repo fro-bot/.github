@@ -916,6 +916,8 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('scripts/wiki-lockfile-gates.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/check-mutation-guards-cli.ts')).toBe(true)
+    expect(triggerSet.files.has('scripts/mutation-shard.ts')).toBe(true)
+    expect(triggerSet.files.has('packages/ci-checks/src/mutation-shard-cli.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/mutation-guards-config.test.ts')).toBe(true)
     expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
@@ -1292,6 +1294,26 @@ describe('closure-based trigger set against the real config', () => {
       expect(result.mutants[0]?.reason).toContain('EACCES: permission denied (simulated, via runMutationGuardCheck)')
     } finally {
       rmSync(dirname(tempReportPath), {recursive: true, force: true})
+    }
+  })
+})
+
+describe('runMutationGuardCheck runs the whole config: the local run is a single full run (AE6)', () => {
+  it('calls the spawner with no argument, so Stryker gets no --mutate and the full mutate list', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-mutation-guards-full-run-'))
+    const reportPath = join(dir, 'mutation.json')
+    const spawner = vi.fn()
+    try {
+      await runMutationGuardCheck(
+        spawner,
+        reportPath,
+        {reporters: ['json'], resolvedJsonReportPath: reportPath},
+        NOT_A_PULL_REQUEST_ENV,
+      )
+      expect(spawner).toHaveBeenCalledTimes(1)
+      expect(spawner).toHaveBeenCalledWith()
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
     }
   })
 })
@@ -2064,6 +2086,38 @@ describe(
       }
     })
 
+    it('appends extra argv after the config argument and changes nothing else (a shard passes --mutate)', () => {
+      mockSpawnSync.mockReturnValue({error: undefined, status: 0})
+      try {
+        defaultStrykerSpawner(['--mutate', 'a.ts,b.ts'])
+        const call = mockSpawnSync.mock.calls.at(-1) as [string, string[], {cwd?: string; stdio?: string}] | undefined
+        expect(call?.[0]).toBe('bunx')
+        expect(call?.[1]).toEqual([
+          '--no-install',
+          'stryker',
+          'run',
+          join(root, 'stryker.config.json'),
+          '--mutate',
+          'a.ts,b.ts',
+        ])
+        expect(call?.[2].cwd).toBe(root)
+        expect(call?.[2].stdio).toBe('inherit')
+      } finally {
+        mockSpawnSync.mockReset()
+      }
+    })
+
+    it('spawns with the bare argv for an empty extra-args list, as the local run does', () => {
+      mockSpawnSync.mockReturnValue({error: undefined, status: 0})
+      try {
+        defaultStrykerSpawner([])
+        const call = mockSpawnSync.mock.calls.at(-1) as [string, string[]] | undefined
+        expect(call?.[1]).toEqual(['--no-install', 'stryker', 'run', join(root, 'stryker.config.json')])
+      } finally {
+        mockSpawnSync.mockReset()
+      }
+    })
+
     it('lists the manifest of every package that exists under the root, ci-checks included', () => {
       const triggerSet = buildTriggerSet(readStrykerConfig(strykerConfigPath()))
       const manifests = readdirSync(join(root, 'packages'), {withFileTypes: true})
@@ -2106,6 +2160,8 @@ describe('the gate classifies the real tree after the move', {timeout: 60_000}, 
       'scripts/check-mutation-guards.ts',
       'packages/ci-checks/src/check-mutation-guards.ts',
       'packages/ci-checks/src/check-mutation-guards-cli.ts',
+      'scripts/mutation-shard.ts',
+      'packages/ci-checks/src/mutation-shard-cli.ts',
       'packages/ci-checks/src/repository-root.ts',
       'packages/ci-checks/src/mutation-guards-config.test.ts',
     ]) {

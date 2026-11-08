@@ -1,0 +1,1683 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": {"high": 100, "low": 100, "break": null},
+  "projectRoot": "/repo",
+  "framework": {"name": "Stryker", "version": "10.1.1"},
+  "config": {
+    "mutate": [
+      "packages/ci-checks/src/barrel-exports.ts",
+      "packages/ci-checks/src/check-override-floors-cli.ts",
+      "packages/ci-checks/src/check-override-floors.ts",
+      "packages/ci-checks/src/check-solutions-examples-cli.ts",
+      "packages/ci-checks/src/install-renovate.ts",
+      "packages/core/src/cli.ts",
+      "packages/core/src/env.ts",
+      "packages/core/src/guards.ts",
+      "packages/core/src/output.ts",
+      "packages/knowledge/src/capture-learnings-open-cli.ts",
+      "packages/knowledge/src/capture-patterns-cluster-cli.ts",
+      "packages/knowledge/src/capture-patterns-open-cli.ts",
+      "packages/knowledge/src/drafted-solutions-harvest-cli.ts",
+      "packages/knowledge/src/drafted-solutions-validate-rows-cli.ts",
+      "packages/privacy/src/check-wiki-private-presence-cli.ts",
+      "packages/registry/src/merge-back-data-cli.ts",
+      "packages/registry/src/merge-back-data.ts",
+      "packages/reports/src/gateway-announce-cli.ts",
+      "packages/reports/src/improvement-metrics-report-cli.ts",
+      "packages/wiki-ops/src/route-stderr.ts",
+      "packages/wiki-ops/src/wiki-change-detect-core.ts",
+      "packages/wiki-ops/src/wiki-context-safety.ts",
+      "packages/wiki-write-core/src/corrections.ts",
+      "packages/wiki-write-core/src/private-leak.ts",
+      "scripts/build-wiki-write-core.ts"
+    ],
+    "testFiles": [
+      "packages/ci-checks/src/barrel-exports.test.ts",
+      "packages/ci-checks/src/check-md-links-cli.test.ts",
+      "packages/ci-checks/src/check-mutation-guards-cli.test.ts",
+      "packages/ci-checks/src/check-override-floors-cli.test.ts",
+      "packages/ci-checks/src/check-override-floors.test.ts",
+      "packages/ci-checks/src/check-renovate-config-cli.test.ts",
+      "packages/ci-checks/src/check-renovate-ranges-cli.test.ts",
+      "packages/ci-checks/src/check-solutions-examples-cli.test.ts",
+      "packages/ci-checks/src/install-renovate-cli.test.ts",
+      "packages/ci-checks/src/mutation-guards-reach.test.ts",
+      "packages/ci-checks/src/repository-root.test.ts",
+      "packages/core/src/cli.test.ts",
+      "packages/core/src/env.test.ts",
+      "packages/core/src/github-loader.test.ts",
+      "packages/core/src/github.test.ts",
+      "packages/core/src/guards.test.ts",
+      "packages/core/src/json.test.ts",
+      "packages/core/src/output.test.ts",
+      "packages/core/src/retry.test.ts",
+      "packages/core/src/wiki-authority-cli.test.ts",
+      "packages/core/src/wiki-authority.test.ts",
+      "packages/knowledge/src/capture-learnings-harvest-cli.test.ts",
+      "packages/knowledge/src/capture-learnings-open-cli.test.ts",
+      "packages/knowledge/src/capture-patterns-cluster-cli.test.ts",
+      "packages/knowledge/src/capture-patterns-open-cli.test.ts",
+      "packages/knowledge/src/drafted-solutions-handoff-build-cli.test.ts",
+      "packages/knowledge/src/drafted-solutions-harvest-cli.test.ts",
+      "packages/knowledge/src/drafted-solutions-publish-cli.test.ts",
+      "packages/knowledge/src/drafted-solutions-validate-rows-cli.test.ts",
+      "packages/privacy/src/check-private-leak-cli.test.ts",
+      "packages/privacy/src/check-private-leak.test.ts",
+      "packages/privacy/src/check-wiki-private-presence-cli.test.ts",
+      "packages/privacy/src/check-wiki-private-presence.test.ts",
+      "packages/registry/src/merge-back-data-cli.test.ts",
+      "packages/registry/src/merge-back-data.test.ts",
+      "packages/reports/src/daily-digest-counts-cli.test.ts",
+      "packages/reports/src/gateway-announce-cli.test.ts",
+      "packages/reports/src/gateway-announce.test.ts",
+      "packages/reports/src/improvement-metrics-detect-cli.test.ts",
+      "packages/reports/src/improvement-metrics-report-cli.test.ts",
+      "packages/wiki-ops/src/knowledge-mcp.test.ts",
+      "packages/wiki-ops/src/route-stderr.test.ts",
+      "packages/wiki-ops/src/wiki-change-detect-core.test.ts",
+      "packages/wiki-ops/src/wiki-change-detect.test.ts",
+      "packages/wiki-ops/src/wiki-context-safety.test.ts",
+      "packages/wiki-ops/src/wiki-handoff-core-defaults.test.ts",
+      "packages/wiki-ops/src/wiki-handoff-core.test.ts",
+      "packages/wiki-write-core/src/corrections-survival.test.ts",
+      "packages/wiki-write-core/src/corrections.test.ts",
+      "packages/wiki-write-core/src/private-leak-adapter.test.ts",
+      "packages/wiki-write-core/src/private-leak.test.ts",
+      "packages/wiki-write-core/src/wiki-write-core.test.ts",
+      "scripts/build-wiki-write-core.test.ts",
+      "scripts/wiki-lockfile-gates.test.ts"
+    ],
+    "reporters": ["json", "clear-text"],
+    "jsonReporter": {"fileName": "reports/mutation/shard2.json"}
+  },
+  "files": {
+    "packages/wiki-ops/src/wiki-change-detect-core.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1506",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 32, "line": 218}, "end": {"column": 34, "line": 218}},
+          "statusReason": "the one variant seeds a placeholder that the allowlist filter below drops unread"
+        },
+        {
+          "id": "1389",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 56, "line": 58}, "end": {"column": 2, "line": 60}},
+          "statusReason": "The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView. Received undefined",
+          "killedBy": ["1739"],
+          "coveredBy": ["1739"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "1392",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 100, "line": 64}, "end": {"column": 2, "line": 84}},
+          "statusReason": "Cannot read properties of undefined (reading 'exitCode')",
+          "killedBy": ["1739"],
+          "coveredBy": ["1739"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/wiki-write-core/src/corrections.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1623",
+          "mutatorName": "StringLiteral",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 35, "line": 156}, "end": {"column": 48, "line": 156}},
+          "statusReason": "swallowed by the catch below; isCorrectionsFile only exposes a boolean, so this string is never observable."
+        },
+        {
+          "id": "1700",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 23, "line": 197}, "end": {"column": 63, "line": 197}},
+          "statusReason": "whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below."
+        },
+        {
+          "id": "1701",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 23, "line": 197}, "end": {"column": 63, "line": 197}},
+          "statusReason": "whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below."
+        },
+        {
+          "id": "1702",
+          "mutatorName": "LogicalOperator",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 23, "line": 197}, "end": {"column": 63, "line": 197}},
+          "statusReason": "whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below."
+        },
+        {
+          "id": "1703",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 23, "line": 197}, "end": {"column": 42, "line": 197}},
+          "statusReason": "whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below."
+        },
+        {
+          "id": "1705",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 46, "line": 197}, "end": {"column": 63, "line": 197}},
+          "statusReason": "whole-condition true / && to || / either operand true are no-ops (`<` against undefined below is false); whole-condition false is a real kill this directive also hides, re-proven live by the end<start comparison's own mutants below."
+        },
+        {
+          "id": "1950",
+          "mutatorName": "StringLiteral",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 61, "line": 330}, "end": {"column": 85, "line": 330}},
+          "statusReason": "parseCorrections only throws Error subclasses, so this non-Error fallback text is unreachable."
+        },
+        {
+          "id": "1584",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 56}, "end": {"column": 4, "line": 61}},
+          "statusReason": "corrections.corrections[0].id: expected non-empty string",
+          "killedBy": ["1597"],
+          "coveredBy": ["1477"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "1582",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 62, "line": 50}, "end": {"column": 2, "line": 62}},
+          "statusReason": "corrections.corrections[0]: expected object",
+          "killedBy": ["1597"],
+          "coveredBy": ["1477"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "scripts/build-wiki-write-core.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "2798",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 5, "line": 637}, "end": {"column": 21, "line": 637}},
+          "statusReason": "→ true spawns a real tsc build on import; → false and removing a call are no-ops under test since no test invokes the CLI path."
+        },
+        {
+          "id": "2799",
+          "mutatorName": "ConditionalExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 5, "line": 637}, "end": {"column": 21, "line": 637}},
+          "statusReason": "→ true spawns a real tsc build on import; → false and removing a call are no-ops under test since no test invokes the CLI path."
+        },
+        {
+          "id": "2800",
+          "mutatorName": "CallExpression",
+          "status": "Ignored",
+          "static": false,
+          "location": {"start": {"column": 23, "line": 637}, "end": {"column": 69, "line": 637}},
+          "statusReason": "→ true spawns a real tsc build on import; → false and removing a call are no-ops under test since no test invokes the CLI path."
+        },
+        {
+          "id": "2262",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 42, "line": 16}, "end": {"column": 2, "line": 18}},
+          "statusReason": "The \"path\" argument must be of type string. Received undefined",
+          "killedBy": ["184"],
+          "coveredBy": ["184"],
+          "testsCompleted": 1,
+          "duration": 1.1175839999923483
+        },
+        {
+          "id": "2264",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 44, "line": 20}, "end": {"column": 2, "line": 22}},
+          "statusReason": "The \"path\" argument must be of type string. Received undefined",
+          "killedBy": ["228"],
+          "coveredBy": ["228"],
+          "testsCompleted": 1,
+          "duration": 2.2390829999931157
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/barrel-exports.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "3",
+          "mutatorName": "Regex",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 11}, "end": {"column": 116, "line": 11}},
+          "statusReason": "expected false to be true // Object.is equality",
+          "killedBy": ["2014"],
+          "coveredBy": ["2012"],
+          "testsCompleted": 3,
+          "duration": 3.705792000004294
+        },
+        {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 44, "line": 10}, "end": {"column": 2, "line": 12}},
+          "statusReason": "expected false to be true // Object.is equality",
+          "killedBy": ["2012"],
+          "coveredBy": ["2012"],
+          "testsCompleted": 1,
+          "duration": 3.1869580000020505
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/check-override-floors-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "79",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 93, "line": 18}, "end": {"column": 2, "line": 28}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2556"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "83",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 21, "line": 22}, "end": {"column": 8, "line": 25}},
+          "statusReason": "expected undefined to be true // Object.is equality",
+          "killedBy": ["2556"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 1,
+          "duration": 3.9878329999992275
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/check-override-floors.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "87",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 50, "line": 29}, "end": {"column": 2, "line": 31}},
+          "statusReason": "expected 'Cannot read properties of undefined (…' to be 'check-override-floors: left-pad: advi…' // Object.is equality",
+          "killedBy": ["2558"],
+          "coveredBy": ["2150"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "88",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 30}, "end": {"column": 30, "line": 30}},
+          "statusReason": "expected 'check-override-floors: left-pad: advi…' to be 'check-override-floors: left-pad: advi…' // Object.is equality",
+          "killedBy": ["2558"],
+          "coveredBy": ["2150"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/check-solutions-examples-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "243",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 56, "line": 16}, "end": {"column": 2, "line": 26}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2482"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "244",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 17}, "end": {"column": 4, "line": 25}},
+          "statusReason": "expected undefined to be 'check-solutions-examples' // Object.is equality",
+          "killedBy": ["2482"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/install-renovate.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "251",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 18, "line": 19}, "end": {"column": 2, "line": 25}},
+          "statusReason": "expected { Object (exitCode, stdout, ...) } to deeply equal { exitCode: +0, …(2) }",
+          "killedBy": ["2406"],
+          "coveredBy": ["2406"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "255",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 13, "line": 24}, "end": {"column": 26, "line": 24}},
+          "statusReason": "expected { exitCode: +0, stdout: '', …(1) } to deeply equal { exitCode: +0, …(2) }",
+          "killedBy": ["2406"],
+          "coveredBy": ["2406"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/core/src/cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "256",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 52, "line": 117}, "end": {"column": 2, "line": 119}},
+          "statusReason": "expected 'error: undefined\\nx\\n\\nUsage:\\n  $ x …' to contain 'error: limit: '",
+          "killedBy": ["821"],
+          "coveredBy": ["821"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "257",
+          "mutatorName": "ArrowFunction",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 27, "line": 118}, "end": {"column": 79, "line": 118}},
+          "statusReason": "expected 'error: \\nx\\n\\nUsage:\\n  $ x [options]…' to contain 'error: limit: '",
+          "killedBy": ["821"],
+          "coveredBy": ["821"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/core/src/env.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "640",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 11, "line": 18}, "end": {"column": 2, "line": 24}},
+          "statusReason": "expected undefined to be 'abc' // Object.is equality",
+          "killedBy": ["2777"],
+          "coveredBy": ["2777"],
+          "testsCompleted": 1,
+          "duration": 2.3132079999995767
+        },
+        {
+          "id": "641",
+          "mutatorName": "ConditionalExpression",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 7, "line": 20}, "end": {"column": 42, "line": 20}},
+          "statusReason": "TOKEN is required",
+          "killedBy": ["2777"],
+          "coveredBy": ["2777"],
+          "testsCompleted": 1,
+          "duration": 1.3807500000039
+        }
+      ],
+      "source": ""
+    },
+    "packages/core/src/guards.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "655",
+          "mutatorName": "ConditionalExpression",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 10}, "end": {"column": 53, "line": 10}},
+          "statusReason": "expected true to be false // Object.is equality",
+          "killedBy": ["2620"],
+          "coveredBy": ["2615"],
+          "testsCompleted": 8,
+          "duration": 3.4752079999962007
+        },
+        {
+          "id": "654",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 59, "line": 9}, "end": {"column": 2, "line": 11}},
+          "statusReason": "expected undefined to be true // Object.is equality",
+          "killedBy": ["2615"],
+          "coveredBy": ["2615"],
+          "testsCompleted": 1,
+          "duration": 2.1964999999981956
+        }
+      ],
+      "source": ""
+    },
+    "packages/core/src/output.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "683",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 46, "line": 37}, "end": {"column": 2, "line": 39}},
+          "statusReason": "invalid GITHUB_OUTPUT name: \"scan_result\"",
+          "killedBy": ["2182"],
+          "coveredBy": ["2182"],
+          "testsCompleted": 1,
+          "duration": 1.333041999998386
+        },
+        {
+          "id": "684",
+          "mutatorName": "Regex",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 38}, "end": {"column": 21, "line": 38}},
+          "statusReason": "expected [Function] to throw an error",
+          "killedBy": ["2200"],
+          "coveredBy": ["2182"],
+          "testsCompleted": 17,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/knowledge/src/capture-learnings-open-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "762",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 54, "line": 15}, "end": {"column": 2, "line": 27}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2678"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "763",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 16}, "end": {"column": 4, "line": 26}},
+          "statusReason": "expected undefined to be 'capture-learnings-open' // Object.is equality",
+          "killedBy": ["2678"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/knowledge/src/capture-patterns-cluster-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "772",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 11, "line": 16}, "end": {"column": 37, "line": 16}},
+          "statusReason": "expected '' to be 'capture-patterns-cluster' // Object.is equality",
+          "killedBy": ["2590"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "770",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 56, "line": 14}, "end": {"column": 2, "line": 26}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2590"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/knowledge/src/capture-patterns-open-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "778",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 53, "line": 14}, "end": {"column": 2, "line": 26}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2703"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "781",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 15, "line": 17}, "end": {"column": 6, "line": 24}},
+          "statusReason": "expected [] to have a length of 1 but got +0",
+          "killedBy": ["2703"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/knowledge/src/drafted-solutions-harvest-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "786",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 57, "line": 14}, "end": {"column": 2, "line": 28}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2600"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "787",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 15}, "end": {"column": 4, "line": 27}},
+          "statusReason": "expected undefined to be 'drafted-solutions-harvest' // Object.is equality",
+          "killedBy": ["2600"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/knowledge/src/drafted-solutions-validate-rows-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "796",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 62, "line": 14}, "end": {"column": 2, "line": 24}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2381"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "797",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 15}, "end": {"column": 4, "line": 23}},
+          "statusReason": "expected undefined to be 'drafted-solutions-validate-rows' // Object.is equality",
+          "killedBy": ["2381"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/privacy/src/check-wiki-private-presence-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "804",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 58, "line": 11}, "end": {"column": 2, "line": 27}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2520"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "805",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 12}, "end": {"column": 4, "line": 26}},
+          "statusReason": "expected undefined to be 'check-wiki-private-presence' // Object.is equality",
+          "killedBy": ["2520"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/registry/src/merge-back-data-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "825",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 12}, "end": {"column": 4, "line": 20}},
+          "statusReason": "expected false to be true // Object.is equality",
+          "killedBy": ["1801"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "824",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 47, "line": 11}, "end": {"column": 2, "line": 21}},
+          "statusReason": "expected false to be true // Object.is equality",
+          "killedBy": ["1801"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/registry/src/merge-back-data.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "832",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 105, "line": 48}, "end": {"column": 2, "line": 56}},
+          "statusReason": "parseEntry is not a function or its return value is not iterable",
+          "killedBy": ["1401"],
+          "coveredBy": ["1401"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "833",
+          "mutatorName": "ConditionalExpression",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 7, "line": 50}, "end": {"column": 46, "line": 50}},
+          "statusReason": "merge-back-data: TREE_MALFORMED",
+          "killedBy": ["1401"],
+          "coveredBy": ["1401"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/reports/src/gateway-announce-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1146",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 49, "line": 19}, "end": {"column": 2, "line": 34}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2349"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "1147",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 20}, "end": {"column": 4, "line": 33}},
+          "statusReason": "expected undefined to be 'gateway-announce' // Object.is equality",
+          "killedBy": ["2349"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/reports/src/improvement-metrics-report-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1157",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 58, "line": 18}, "end": {"column": 2, "line": 30}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')",
+          "killedBy": ["2571"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        },
+        {
+          "id": "1158",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 19}, "end": {"column": 4, "line": 29}},
+          "statusReason": "expected undefined to be 'improvement-metrics-report' // Object.is equality",
+          "killedBy": ["2571"],
+          "coveredBy": ["1801"],
+          "testsCompleted": 2,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/wiki-ops/src/route-stderr.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1165",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 47, "line": 60}, "end": {"column": 2, "line": 62}},
+          "statusReason": "expected '' to be '--route needs <prefix>=<heading>, wit…' // Object.is equality",
+          "killedBy": ["1880"],
+          "coveredBy": ["1875"],
+          "testsCompleted": 2,
+          "duration": 4.385874999978114
+        },
+        {
+          "id": "1166",
+          "mutatorName": "ConditionalExpression",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 10, "line": 61}, "end": {"column": 54, "line": 61}},
+          "statusReason": "--route needs <prefix>=<heading>, with a non-empty prefix and heading on one line",
+          "killedBy": ["1875"],
+          "coveredBy": ["1875"],
+          "testsCompleted": 1,
+          "duration": 2.3285000000032596
+        }
+      ],
+      "source": ""
+    },
+    "packages/wiki-ops/src/wiki-context-safety.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1537",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 26, "line": 39}, "end": {"column": 2, "line": 56}},
+          "statusReason": "expected true to be false // Object.is equality",
+          "killedBy": ["1808"],
+          "coveredBy": ["1808"],
+          "testsCompleted": 1,
+          "duration": 5
+        },
+        {
+          "id": "1538",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 67, "line": 40}, "end": {"column": 69, "line": 40}},
+          "statusReason": "expected { Object (status, mode, ...) } to match object { status: 'ok', mode: 'query', …(1) }\n(4 matching properties omitted from actual)",
+          "killedBy": ["1808"],
+          "coveredBy": ["1808"],
+          "testsCompleted": 1,
+          "duration": 5
+        }
+      ],
+      "source": ""
+    },
+    "packages/wiki-write-core/src/private-leak.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "2112",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 16, "line": 29}, "end": {"column": 2, "line": 170}},
+          "statusReason": "expected undefined to deeply equal { ok: true }",
+          "killedBy": ["1679"],
+          "coveredBy": ["1679"],
+          "testsCompleted": 1,
+          "duration": 2.7609579999989364
+        },
+        {
+          "id": "2113",
+          "mutatorName": "ConditionalExpression",
+          "status": "Killed",
+          "static": false,
+          "location": {"start": {"column": 7, "line": 30}, "end": {"column": 52, "line": 30}},
+          "statusReason": "expected { ok: true } to deeply equal { ok: false, …(1) }",
+          "killedBy": ["1680"],
+          "coveredBy": ["1679"],
+          "testsCompleted": 2,
+          "duration": 4.103290999977617
+        }
+      ],
+      "source": ""
+    }
+  },
+  "testFiles": {
+    "packages/privacy/src/check-private-leak.test.ts": {
+      "tests": [
+        {
+          "id": "0",
+          "name": "largeOutputMaxBufferBytes() — exact value > is exactly 32 MiB (32 * 1024 * 1024), not a mis-multiplied/mis-divided value",
+          "location": {"start": {"column": 3, "line": 87}}
+        },
+        {
+          "id": "1",
+          "name": "checkPrivateLeak — pure function > passes when there are no private names to scan against",
+          "location": {"start": {"column": 3, "line": 102}}
+        }
+      ]
+    },
+    "scripts/build-wiki-write-core.test.ts": {
+      "tests": [
+        {
+          "id": "184",
+          "name": "the file-system guard > refuses writeFile on a checkout path",
+          "location": {"start": {"column": 14, "line": 223}}
+        },
+        {
+          "id": "185",
+          "name": "the file-system guard > refuses appendFile on a checkout path",
+          "location": {"start": {"column": 14, "line": 223}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/wiki-handoff-core.test.ts": {
+      "tests": [
+        {
+          "id": "348",
+          "name": "isAllowedWikiHandoffPath > allows knowledge/index.md and knowledge/log.md exactly",
+          "location": {"start": {"column": 3, "line": 77}}
+        },
+        {
+          "id": "349",
+          "name": "isAllowedWikiHandoffPath > allows any .md file under knowledge/wiki/",
+          "location": {"start": {"column": 3, "line": 82}}
+        }
+      ]
+    },
+    "packages/privacy/src/check-wiki-private-presence.test.ts": {
+      "tests": [
+        {
+          "id": "568",
+          "name": "detectPrivateWikiLeaks > happy path — no leaks > returns empty array when all data pages are in publicSlugMap (with attribution)",
+          "location": {"start": {"column": 5, "line": 80}}
+        },
+        {
+          "id": "569",
+          "name": "detectPrivateWikiLeaks > happy path — no leaks > returns empty array when data pages are empty",
+          "location": {"start": {"column": 5, "line": 98}}
+        }
+      ]
+    },
+    "scripts/wiki-lockfile-gates.test.ts": {
+      "tests": [
+        {
+          "id": "689",
+          "name": "checkLockfileCoverage > passes when every enabled github plugin has a matching lock entry (N==N)",
+          "location": {"start": {"column": 3, "line": 30}}
+        },
+        {
+          "id": "690",
+          "name": "checkLockfileCoverage > fails when an enabled remote plugin has no lock entry",
+          "location": {"start": {"column": 3, "line": 47}}
+        }
+      ]
+    },
+    "packages/core/src/cli.test.ts": {
+      "tests": [
+        {
+          "id": "790",
+          "name": "config validation > rejects a CLI that runs for no argv but has no root command",
+          "location": {"start": {"column": 3, "line": 64}}
+        },
+        {
+          "id": "791",
+          "name": "config validation > rejects two root commands",
+          "location": {"start": {"column": 3, "line": 69}}
+        }
+      ]
+    },
+    "packages/core/src/wiki-authority.test.ts": {
+      "tests": [
+        {
+          "id": "1068",
+          "name": "checkWikiAuthority > author is an allowed Fro Bot identity > allows fro-bot[bot] editing a guarded metadata yaml",
+          "location": {"start": {"column": 5, "line": 65}}
+        },
+        {
+          "id": "1069",
+          "name": "checkWikiAuthority > author is an allowed Fro Bot identity > allows fro-bot user editing a guarded wiki page",
+          "location": {"start": {"column": 5, "line": 79}}
+        }
+      ]
+    },
+    "packages/reports/src/gateway-announce.test.ts": {
+      "tests": [
+        {
+          "id": "1264",
+          "name": "announce > happy path: POSTs to correct URL with all 3 required headers and returns posted:true",
+          "location": {"start": {"column": 3, "line": 63}}
+        },
+        {
+          "id": "1265",
+          "name": "announce > HMAC vector: signature equals createHmac(sha256,secret).update(ts).update(\".\").update(body).digest(hex)",
+          "location": {"start": {"column": 3, "line": 93}}
+        }
+      ]
+    },
+    "packages/registry/src/merge-back-data.test.ts": {
+      "tests": [
+        {
+          "id": "1401",
+          "name": "mergeBackData: the ownership merge > takes owned paths from data and everything else from main (AE2)",
+          "location": {"start": {"column": 3, "line": 144}}
+        },
+        {
+          "id": "1402",
+          "name": "mergeBackData: the ownership merge > writes the commit with parents [main, data], the App as author and committer, and a non-force ref update",
+          "location": {"start": {"column": 3, "line": 179}}
+        }
+      ]
+    },
+    "packages/wiki-write-core/src/corrections.test.ts": {
+      "tests": [
+        {
+          "id": "1475",
+          "name": "corrections sidecar > requires lifecycle-specific fields at compile time",
+          "location": {"start": {"column": 3, "line": 43}}
+        },
+        {
+          "id": "1476",
+          "name": "corrections sidecar > assertCorrectionSpan rejects text whose normalized form is empty — corrections-survival.ts relies on this to avoid ''.includes('')",
+          "location": {"start": {"column": 3, "line": 63}}
+        }
+      ]
+    },
+    "packages/wiki-write-core/src/corrections-survival.test.ts": {
+      "tests": [
+        {
+          "id": "1594",
+          "name": "correction survival verification > uses the shared storage normalizer rather than a private duplicate",
+          "location": {"start": {"column": 3, "line": 53}}
+        },
+        {
+          "id": "1595",
+          "name": "correction survival verification > accepts an active correction that survives in the regenerated page",
+          "location": {"start": {"column": 3, "line": 62}}
+        }
+      ]
+    },
+    "packages/wiki-write-core/src/private-leak.test.ts": {
+      "tests": [
+        {
+          "id": "1679",
+          "name": "checkPrivateLeak — override bypass > bypasses detection ONLY when both titlePrefixed and isOperator are true",
+          "location": {"start": {"column": 3, "line": 20}}
+        },
+        {
+          "id": "1680",
+          "name": "checkPrivateLeak — override bypass > does NOT bypass when only titlePrefixed is true (requires both, not either)",
+          "location": {"start": {"column": 3, "line": 30}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/wiki-change-detect.test.ts": {
+      "tests": [
+        {
+          "id": "1736",
+          "name": "hashWikiScopeSnapshot (pure) > is a deterministic function of its input",
+          "location": {"start": {"column": 3, "line": 86}}
+        },
+        {
+          "id": "1737",
+          "name": "hashWikiScopeSnapshot (pure) > differs when a path or a hash differs",
+          "location": {"start": {"column": 3, "line": 94}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/knowledge-mcp.test.ts": {
+      "tests": [
+        {
+          "id": "1800",
+          "name": "knowledge tool surface > names exactly the three tools",
+          "location": {"start": {"column": 3, "line": 133}}
+        },
+        {
+          "id": "1801",
+          "name": "knowledge tool surface > never names a write-marked command, resolve-private or enumerate-existing-leaks",
+          "location": {"start": {"column": 3, "line": 137}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/route-stderr.test.ts": {
+      "tests": [
+        {
+          "id": "1875",
+          "name": "parseRoute > splits a spec at the first equals sign",
+          "location": {"start": {"column": 3, "line": 82}}
+        },
+        {
+          "id": "1876",
+          "name": "parseRoute > rejects \"\" with a fixed message that does not echo the spec",
+          "location": {"start": {"column": 5, "line": 96}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/mutation-guards-reach.test.ts": {
+      "tests": [
+        {
+          "id": "2001",
+          "name": "normalizePath > normalizes \"./scripts/x\" to \"scripts/x\"",
+          "location": {"start": {"column": 5, "line": 94}}
+        },
+        {
+          "id": "2002",
+          "name": "normalizePath > normalizes \"./packages/x\" to \"packages/x\"",
+          "location": {"start": {"column": 5, "line": 94}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/wiki-handoff-core-defaults.test.ts": {
+      "tests": [
+        {
+          "id": "2073",
+          "name": "createGitRunner against a real repository > runs git in the given directory and returns stdout as bytes",
+          "location": {"start": {"column": 3, "line": 116}}
+        },
+        {
+          "id": "2074",
+          "name": "createGitRunner against a real repository > passes the argv through unchanged",
+          "location": {"start": {"column": 3, "line": 125}}
+        }
+      ]
+    },
+    "packages/core/src/retry.test.ts": {
+      "tests": [
+        {
+          "id": "2093",
+          "name": "retry: success and the attempt number > returns the first result without sleeping and passes attempt 1",
+          "location": {"start": {"column": 3, "line": 30}}
+        },
+        {
+          "id": "2094",
+          "name": "retry: success and the attempt number > passes the 1-based attempt number to every call",
+          "location": {"start": {"column": 3, "line": 38}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-override-floors.test.ts": {
+      "tests": [
+        {
+          "id": "2136",
+          "name": "parseAuditOutput > fails closed on output that is not valid JSON",
+          "location": {"start": {"column": 3, "line": 29}}
+        },
+        {
+          "id": "2137",
+          "name": "parseAuditOutput > fails closed on empty output",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/core/src/output.test.ts": {
+      "tests": [
+        {
+          "id": "2182",
+          "name": "writeGithubOutputs > writes a single-line value as name=value",
+          "location": {"start": {"column": 3, "line": 34}}
+        },
+        {
+          "id": "2183",
+          "name": "writeGithubOutputs > writes nothing and returns false for no entries, so true always means a write happened",
+          "location": {"start": {"column": 3, "line": 40}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/wiki-change-detect-core.test.ts": {
+      "tests": [
+        {
+          "id": "2245",
+          "name": "ordering > sorts the snapshot by path in UTF-16 code unit order, whatever order the directory lists",
+          "location": {"start": {"column": 3, "line": 54}}
+        },
+        {
+          "id": "2246",
+          "name": "the stat of a scope root and of a walked entry > skips a scope root that does not exist, whether the error is an Error or a plain object",
+          "location": {"start": {"column": 3, "line": 71}}
+        }
+      ]
+    },
+    "packages/core/src/github.test.ts": {
+      "tests": [
+        {
+          "id": "2266",
+          "name": "createOctokit: what reaches the constructor > passes only the token when no option is given",
+          "location": {"start": {"column": 3, "line": 40}}
+        },
+        {
+          "id": "2267",
+          "name": "createOctokit: what reaches the constructor > passes only the token when no options object is given",
+          "location": {"start": {"column": 3, "line": 50}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-mutation-guards-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2292",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 33}}
+        },
+        {
+          "id": "2293",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 43}}
+        }
+      ]
+    },
+    "packages/privacy/src/check-private-leak-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2313",
+          "name": "the config > is named for the script and declares one writing command with one flag",
+          "location": {"start": {"column": 3, "line": 44}}
+        },
+        {
+          "id": "2314",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 56}}
+        }
+      ]
+    },
+    "packages/reports/src/gateway-announce-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2349",
+          "name": "the config > is one root command that takes no argument and one option, and is not read-only because it POSTs",
+          "location": {"start": {"column": 3, "line": 21}}
+        },
+        {
+          "id": "2350",
+          "name": "the config > exits 0 for usage, help and a thrown error, so no outcome fails a step",
+          "location": {"start": {"column": 3, "line": 32}}
+        }
+      ]
+    },
+    "packages/wiki-ops/src/wiki-context-safety.test.ts": {
+      "tests": [
+        {
+          "id": "2371",
+          "name": "evaluateCandidateSafety > marks a candidate safe when no field contains a private token",
+          "location": {"start": {"column": 3, "line": 13}}
+        },
+        {
+          "id": "2372",
+          "name": "evaluateCandidateSafety > excludes a candidate whose body contains a private token — mutation gate proof (body)",
+          "location": {"start": {"column": 3, "line": 30}}
+        }
+      ]
+    },
+    "packages/knowledge/src/drafted-solutions-validate-rows-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2381",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 24}}
+        },
+        {
+          "id": "2382",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 34}}
+        }
+      ]
+    },
+    "packages/wiki-write-core/src/private-leak-adapter.test.ts": {
+      "tests": [
+        {
+          "id": "2396",
+          "name": "GitHub private-leak adapter > passes public-only content without requiring workflow context",
+          "location": {"start": {"column": 3, "line": 84}}
+        },
+        {
+          "id": "2397",
+          "name": "GitHub private-leak adapter > accepts the unwrapped Octokit GraphQL response shape",
+          "location": {"start": {"column": 3, "line": 97}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/install-renovate-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2403",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 47}}
+        },
+        {
+          "id": "2404",
+          "name": "the config > prefixes a thrown error with the CLI name and ends it with a newline",
+          "location": {"start": {"column": 3, "line": 57}}
+        }
+      ]
+    },
+    "packages/reports/src/daily-digest-counts-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2419",
+          "name": "the config > is one read-only root command with two optional positionals, the path then the date, and no option",
+          "location": {"start": {"column": 3, "line": 42}}
+        },
+        {
+          "id": "2420",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 55}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/barrel-exports.test.ts": {
+      "tests": [
+        {
+          "id": "2433",
+          "name": "firstAtOrAfter > [] with target 5 is at index 0",
+          "location": {"start": {"column": 5, "line": 81}}
+        },
+        {
+          "id": "2434",
+          "name": "firstAtOrAfter > [3] with target 3 is at index 0",
+          "location": {"start": {"column": 5, "line": 81}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-solutions-examples-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2482",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 44}}
+        },
+        {
+          "id": "2483",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 54}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-renovate-ranges-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2497",
+          "name": "the config > is one read-only root command with one variadic positional, the config paths, and no option",
+          "location": {"start": {"column": 3, "line": 40}}
+        },
+        {
+          "id": "2498",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 50}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-renovate-config-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2508",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 40}}
+        },
+        {
+          "id": "2509",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 50}}
+        }
+      ]
+    },
+    "packages/privacy/src/check-wiki-private-presence-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2520",
+          "name": "the config > is named for the script and declares one read-only command with one flag",
+          "location": {"start": {"column": 3, "line": 31}}
+        },
+        {
+          "id": "2521",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 43}}
+        }
+      ]
+    },
+    "packages/reports/src/improvement-metrics-detect-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2533",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 26}}
+        },
+        {
+          "id": "2534",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 36}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-md-links-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2543",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 44}}
+        },
+        {
+          "id": "2544",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 55}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/check-override-floors-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2556",
+          "name": "the config > is one read-only root command with no positional and no option",
+          "location": {"start": {"column": 3, "line": 24}}
+        },
+        {
+          "id": "2557",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 34}}
+        }
+      ]
+    },
+    "packages/reports/src/improvement-metrics-report-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2571",
+          "name": "the config > is one root command that takes no argument and no option, and is not read-only because it writes an issue",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2572",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/knowledge/src/capture-learnings-harvest-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2581",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2582",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/knowledge/src/capture-patterns-cluster-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2590",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2591",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/knowledge/src/drafted-solutions-harvest-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2600",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2601",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/core/src/guards.test.ts": {
+      "tests": [
+        {"id": "2615", "name": "isObject > accepts {}", "location": {"start": {"column": 105, "line": 9}}},
+        {"id": "2616", "name": "isObject > accepts {\"a\":1}", "location": {"start": {"column": 105, "line": 9}}}
+      ]
+    },
+    "packages/knowledge/src/capture-learnings-open-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2678",
+          "name": "the config > is one writing root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2679",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/knowledge/src/drafted-solutions-publish-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2689",
+          "name": "the config > is one writing root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2690",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/knowledge/src/capture-patterns-open-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2703",
+          "name": "the config > is one writing root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2704",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/wiki-write-core/src/wiki-write-core.test.ts": {
+      "tests": [
+        {
+          "id": "2714",
+          "name": "wiki write core > renders manual-edit operations distinctly in the append-only log",
+          "location": {"start": {"column": 3, "line": 12}}
+        },
+        {
+          "id": "2715",
+          "name": "wiki write core > returns a rendering finding for scriptable HTML",
+          "location": {"start": {"column": 3, "line": 44}}
+        }
+      ]
+    },
+    "packages/core/src/wiki-authority-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2721",
+          "name": "the config > is named for the script and declares one read-only command with no options",
+          "location": {"start": {"column": 3, "line": 26}}
+        },
+        {
+          "id": "2722",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 37}}
+        }
+      ]
+    },
+    "packages/knowledge/src/drafted-solutions-handoff-build-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2731",
+          "name": "the config > is one read-only root command that takes no argument and no option",
+          "location": {"start": {"column": 3, "line": 23}}
+        },
+        {
+          "id": "2732",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 33}}
+        }
+      ]
+    },
+    "packages/registry/src/merge-back-data-cli.test.ts": {
+      "tests": [
+        {
+          "id": "2741",
+          "name": "the config > is named for the script and declares one root command with no options",
+          "location": {"start": {"column": 3, "line": 25}}
+        },
+        {
+          "id": "2742",
+          "name": "the config > builds a fresh object on every call",
+          "location": {"start": {"column": 3, "line": 37}}
+        }
+      ]
+    },
+    "packages/core/src/github-loader.test.ts": {
+      "tests": [
+        {
+          "id": "2751",
+          "name": "loadOctokitConstructor against a mocked @octokit/rest > returns the Octokit export when it is a function",
+          "location": {"start": {"column": 3, "line": 26}}
+        },
+        {
+          "id": "2752",
+          "name": "loadOctokitConstructor against a mocked @octokit/rest > accepts a plain function export, which `new` can still call",
+          "location": {"start": {"column": 3, "line": 34}}
+        }
+      ]
+    },
+    "packages/core/src/json.test.ts": {
+      "tests": [
+        {
+          "id": "2760",
+          "name": "formatJsonLine > is compact JSON followed by one newline by default",
+          "location": {"start": {"column": 3, "line": 12}}
+        },
+        {
+          "id": "2761",
+          "name": "formatJsonLine > indents by the given number of spaces, still ending in one newline",
+          "location": {"start": {"column": 3, "line": 16}}
+        }
+      ]
+    },
+    "packages/ci-checks/src/repository-root.test.ts": {
+      "tests": [
+        {
+          "id": "2773",
+          "name": "findRepositoryRoot > is the directory three levels above the package source directory",
+          "location": {"start": {"column": 3, "line": 13}}
+        },
+        {
+          "id": "2774",
+          "name": "findRepositoryRoot > is an absolute path with no trailing separator",
+          "location": {"start": {"column": 3, "line": 17}}
+        }
+      ]
+    },
+    "packages/core/src/env.test.ts": {
+      "tests": [
+        {
+          "id": "2777",
+          "name": "requiredEnv > returns the value of a set variable",
+          "location": {"start": {"column": 3, "line": 6}}
+        },
+        {
+          "id": "2778",
+          "name": "requiredEnv > returns a whitespace-only value, which is set",
+          "location": {"start": {"column": 3, "line": 10}}
+        }
+      ]
+    }
+  }
+}

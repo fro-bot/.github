@@ -884,13 +884,13 @@ export function readMutateFileContents(mutate: readonly string[], root: string):
   return {files, missing}
 }
 
-interface MutationReportRead {
+export interface MutationReportRead {
   readonly json: unknown
   /** The raw error message from the read/parse attempt, or `undefined` on success. */
   readonly readError: string | undefined
 }
 
-function readMutationReport(path: string): MutationReportRead {
+export function readMutationReport(path: string): MutationReportRead {
   try {
     return {json: JSON.parse(readFileSync(path, 'utf8')) as unknown, readError: undefined}
   } catch (error) {
@@ -952,9 +952,12 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * Runs `stryker run` via `spawnSync`; the return value is used only to detect "Stryker did
  * not run at all" for an informational message — the verdict is always derived from the
  * JSON report, never this return value. Exported as an injectable seam for testing.
+ *
+ * `extraArgs` follow the config argument. The local run passes none; a PR shard passes `--mutate <its list>` and
+ * nothing else, so `testFiles` and the rest of the config stay the full config's.
  */
-export function defaultStrykerSpawner(): void {
-  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath()], {
+export function defaultStrykerSpawner(extraArgs: readonly string[] = []): void {
+  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath(), ...extraArgs], {
     cwd: repositoryRoot(),
     stdio: 'inherit',
     env: buildStrykerSpawnEnv(),
@@ -1519,6 +1522,8 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
   'scripts/wiki-lockfile-gates.ts',
   'packages/ci-checks/src/check-mutation-guards.ts',
   'packages/ci-checks/src/check-mutation-guards-cli.ts',
+  'scripts/mutation-shard.ts',
+  'packages/ci-checks/src/mutation-shard-cli.ts',
   'packages/ci-checks/src/repository-root.ts',
   'packages/ci-checks/src/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',

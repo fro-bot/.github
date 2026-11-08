@@ -34,6 +34,7 @@ Everything in this package that reads text a pull request controls is linear in 
 | `@fro-bot/ci-checks/check-mutation-guards`, `-cli` | `runMutationGuardCheck`, `classifyMutationReport`, `buildTriggerSet`, `evaluateTriggerGate`, `buildImportClosure`, `markVitestTypeArguments`, `inlineLiteralInterpolations`, `exitCodeFor`, `printResult`, `VERDICTS`, ...; `checkMutationGuardsCli`, `main` | One file of 1,600 lines. Not in `mutate`: a directive scanner cannot describe its own grammar in comments without matching it. |
 | `@fro-bot/ci-checks/barrel-exports` | `stripBarrelExports`, `firstAtOrAfter` | Mutated. The three barrel re-export forms removed from a source in linear time; `mutation-guards-reach` calls it. |
 | `@fro-bot/ci-checks/mutation-guards-reach` | `findMutateEntriesWithoutSourceReach`, `isPureReexportBarrel`, `sourceReachTransitive`, `normalizePath`, `treeOf` | Mutated. The strict, barrel-excluding reach the enumeration test uses. |
+| `@fro-bot/ci-checks/mutation-shard`, `-cli` | `runMutationShard`, `parseShardEnv`, `parseShardManifest`, `defaultShardDeps`, `shardArtifactName`; `mutationShardCli`, `main` | `mutation-shard` is mutated; the CLI is not. One PR shard: applicability from the full config, Stryker on the shard list, `manifest.json` and `mutation.json` out. |
 | `@fro-bot/ci-checks/mutation-shard-lists` | `readMutationShards`, `parseMutationShards`, `findShardPartitionViolations` | Mutated. The `shards` key of `mutation-guards.json`: three ordered `mutate` lists, one per PR shard job. The reader checks the shape; `findShardPartitionViolations` checks that the lists are an exact partition of `mutate`. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
 | `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md` and `docs/**/*.md` of the working directory. |
@@ -83,6 +84,8 @@ C4Component
     Component(install_renovate, "install-renovate", "TypeScript", "Installs the pinned Renovate into a scratch prefix")
     Component(install_renovate_cli, "install-renovate-cli", "TypeScript", "goke CLI; read-only; runs under Node")
     Component(mutation_guards_reach, "mutation-guards-reach", "TypeScript", "Strict barrel-excluding reach used by the enumeration test")
+    Component(mutation_shard, "mutation-shard", "TypeScript", "Runs one PR shard: applicability from the full config, Stryker on the shard list, manifest and report out")
+    Component(mutation_shard_cli, "mutation-shard-cli", "TypeScript", "goke CLI; read-only; exit 0 once the shard output is written")
     Component(mutation_shard_lists, "mutation-shard-lists", "TypeScript", "Reads the shard lists of mutation-guards.json and checks that they partition mutate")
     Component(renovate_runtime, "renovate-runtime", "TypeScript", "Pin parsing, scratch install and loading of the pinned Renovate")
     Component(repository_root, "repository-root", "TypeScript", "The repository root, three levels above this package source")
@@ -119,6 +122,11 @@ C4Component
   Rel(mutation_guards_reach, barrel_exports, "imports")
   Rel(mutation_guards_reach, check_mutation_guards, "imports")
   Rel(mutation_guards_reach, repository_root, "imports")
+  Rel(entrypoints, mutation_shard_cli, "main")
+  Rel(mutation_shard, check_mutation_guards, "imports")
+  Rel(mutation_shard, mutation_shard_lists, "imports")
+  Rel(mutation_shard, repository_root, "imports")
+  Rel(mutation_shard_cli, mutation_shard, "imports")
   Rel(mutation_shard_lists, mutation_guards_reach, "imports")
   Rel(mutation_shard_lists, repository_root, "imports")
   Rel(renovate_runtime, check_renovate_ranges, "types with")
@@ -135,11 +143,15 @@ C4Component
   Rel(check_solutions_examples, typescript, "imports")
   Rel(check_solutions_examples_cli, core, "runs on")
   Rel(install_renovate_cli, core, "runs on")
+  Rel(mutation_shard, core, "imports")
+  Rel(mutation_shard_cli, core, "runs on")
   Rel(mutation_shard_lists, core, "imports")
   Rel(renovate_runtime, core, "imports")
   Rel(renovate_runtime, yaml, "imports")
   Rel(check_mutation_guards, github, "reads")
   Rel(check_mutation_guards, stryker, "spawns")
+  Rel(mutation_shard, github, "reads")
+  Rel(mutation_shard, stryker, "spawns")
   Rel(renovate_runtime, renovate, "installs and loads")
   Rel(check_renovate_config, renovate, "validates with")
 

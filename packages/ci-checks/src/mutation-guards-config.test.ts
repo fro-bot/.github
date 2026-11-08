@@ -4,6 +4,7 @@ import {join, relative} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 import {
+  FIXED_TRIGGER_FILES,
   froBotPackageSourceFiles,
   isLiteralPath,
   reachedModulesTransitive,
@@ -411,6 +412,27 @@ describe('mutation shard lists', () => {
 
   it('Test 8d: there are exactly three shard lists', () => {
     expect(readMutationShards(mutationGuardsPath)).toHaveLength(3)
+  })
+})
+
+describe('the shard and merge modules are fixed triggers', () => {
+  // Tests 1 and 2 enumerate by name and do not match `mutation-shard*` or `mutation-merge*`. A new shim or CLI that is
+  // in no list would leave a pull request that changes only it not-applicable, and that file is gate input.
+  const SHARD_SHIM_PATTERN = /^scripts\/mutation-(?:shard|merge)[^/]*\.ts$/u
+  const SHARD_CLI_PATTERN = /^packages\/ci-checks\/src\/mutation-(?:shard|merge)-cli\.ts$/u
+
+  it('lists every scripts/mutation-shard*.ts and scripts/mutation-merge*.ts, and every mutation-{shard,merge}-cli.ts', () => {
+    const shims = walkNonTestTsFiles(scriptsDir, 'scripts').filter(path => SHARD_SHIM_PATTERN.test(path))
+    const clis = walkNonTestTsFiles(join(packagesRoot, 'ci-checks', 'src'), 'packages/ci-checks/src').filter(path =>
+      SHARD_CLI_PATTERN.test(path),
+    )
+    // The scans are not vacuous: the shard entrypoint and CLI exist.
+    expect(shims).toContain('scripts/mutation-shard.ts')
+    expect(clis).toContain('packages/ci-checks/src/mutation-shard-cli.ts')
+
+    const fixed = new Set(FIXED_TRIGGER_FILES.map(normalizePath))
+    const missing = [...shims, ...clis].filter(path => !fixed.has(path))
+    expect(missing, missing.length === 0 ? undefined : `not in FIXED_TRIGGER_FILES: ${missing.join(', ')}`).toEqual([])
   })
 })
 
