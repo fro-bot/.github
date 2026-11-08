@@ -739,6 +739,83 @@
     {
       "path": "packages/ci-checks/src/renovate-runtime.ts",
       "reason": "Locates, installs and loads the pinned scratch Renovate (pin parsing, prefix resolution, install-command shape, fail-loud version and RE2 checks). CI tooling, not a security boundary, autonomous write, persisted trust state or generated executable artifact. Measured: a targeted Stryker pass over this module with renovate-runtime.test.ts and install-renovate-cli.test.ts (vitest runner, test-owned temp prefixes, Node 24.22.0) scored 56.54% (121 of 214 killed, 25 survivors, 68 without coverage; the no-coverage mutants are the RE2 build and real-module-load paths that need a real Renovate scratch install and a native binding, which the Test Renovate Gate and `check:renovate-config` exercise in CI)."
+    },
+    {
+      "path": "packages/ci-checks/src/mutation-shard-cli.ts",
+      "reason": "The goke wiring of the shard step: it reads the environment, calls runMutationShard (mutation-shard.ts, in mutate) and prints its outcome with an exit code. mutation-shard-cli.test.ts pins the output and exit code per outcome, but the module is a thin printer, like the other new CLI wrappers of this package, and its entrypoint guard is covered by a spawned test that no mutant run counts."
+    },
+    {
+      "path": "scripts/mutation-shard.ts",
+      "reason": "A six-line import.meta.main shim that calls main from @fro-bot/ci-checks/mutation-shard-cli. Its one line of logic is the entry guard, which no in-process mutant covers; mutation-shard-cli.test.ts spawns it from a directory with a space to pin the guard, and it is a fixed trigger, so a PR that changes only the shim still runs the gate."
+    },
+    {
+      "path": "packages/ci-checks/src/mutation-merge-cli.ts",
+      "reason": "The goke wiring of the final job: it reads the environment, calls runMutationMerge (mutation-merge.ts, in mutate), prints the result with printResult and exits with exitCodeFor(verdict). mutation-merge-cli.test.ts pins the output, the step summary and the exit code per verdict; the module is a thin printer like the other CLI wrappers of this package, and its entrypoint guard is covered by a spawned test that no mutant run counts."
+    },
+    {
+      "path": "scripts/mutation-merge.ts",
+      "reason": "A six-line import.meta.main shim that calls main from @fro-bot/ci-checks/mutation-merge-cli. Its one line of logic is the entry guard, which no in-process mutant covers; mutation-merge-cli.test.ts spawns it from a directory with a space to pin the guard, and it is a fixed trigger, so a PR that changes only the shim still runs the gate."
     }
+  ],
+  "shards": [
+    [
+      "packages/ci-checks/src/check-md-links-cli.ts",
+      "packages/ci-checks/src/check-override-floors-cli.ts",
+      "packages/ci-checks/src/check-renovate-ranges-cli.ts",
+      "packages/ci-checks/src/install-renovate.ts",
+      "packages/ci-checks/src/mutation-guards-reach.ts",
+      "packages/ci-checks/src/mutation-shard-lists.ts",
+      "packages/core/src/wiki-authority-cli.ts",
+      "packages/core/src/wiki-authority.ts",
+      "packages/knowledge/src/capture-patterns-cluster-cli.ts",
+      "packages/knowledge/src/capture-patterns-open-cli.ts",
+      "packages/knowledge/src/drafted-solutions-harvest-cli.ts",
+      "packages/knowledge/src/drafted-solutions-publish-cli.ts",
+      "packages/registry/src/merge-back-data.ts",
+      "packages/wiki-ops/src/route-stderr.ts",
+      "packages/wiki-ops/src/wiki-handoff-core.ts",
+      "packages/wiki-write-core/src/private-leak.ts",
+      "scripts/wiki-lockfile-gates-core.ts"
+    ],
+    [
+      "packages/ci-checks/src/barrel-exports.ts",
+      "packages/ci-checks/src/check-renovate-config-cli.ts",
+      "packages/ci-checks/src/check-solutions-examples-cli.ts",
+      "packages/ci-checks/src/repository-root.ts",
+      "packages/core/src/cli.ts",
+      "packages/core/src/guards.ts",
+      "packages/core/src/retry.ts",
+      "packages/knowledge/src/capture-learnings-harvest-cli.ts",
+      "packages/knowledge/src/capture-learnings-open-cli.ts",
+      "packages/knowledge/src/drafted-solutions-validate-rows-cli.ts",
+      "packages/privacy/src/check-wiki-private-presence.ts",
+      "packages/reports/src/daily-digest-counts-cli.ts",
+      "packages/reports/src/gateway-announce-cli.ts",
+      "packages/reports/src/gateway-announce.ts",
+      "packages/wiki-ops/src/knowledge-mcp.ts",
+      "packages/wiki-ops/src/wiki-context-safety.ts",
+      "packages/wiki-write-core/src/corrections-survival.ts",
+      "scripts/build-wiki-write-core.ts"
+    ],
+    [
+      "packages/ci-checks/src/check-mutation-guards-cli.ts",
+      "packages/ci-checks/src/check-override-floors.ts",
+      "packages/ci-checks/src/install-renovate-cli.ts",
+      "packages/ci-checks/src/mutation-merge.ts",
+      "packages/ci-checks/src/mutation-shard.ts",
+      "packages/core/src/env.ts",
+      "packages/core/src/github.ts",
+      "packages/core/src/json.ts",
+      "packages/core/src/output.ts",
+      "packages/knowledge/src/drafted-solutions-handoff-build-cli.ts",
+      "packages/privacy/src/check-private-leak-cli.ts",
+      "packages/privacy/src/check-private-leak.ts",
+      "packages/privacy/src/check-wiki-private-presence-cli.ts",
+      "packages/registry/src/merge-back-data-cli.ts",
+      "packages/reports/src/improvement-metrics-detect-cli.ts",
+      "packages/reports/src/improvement-metrics-report-cli.ts",
+      "packages/wiki-ops/src/wiki-change-detect-core.ts",
+      "packages/wiki-write-core/src/corrections.ts"
+    ]
   ]
 }

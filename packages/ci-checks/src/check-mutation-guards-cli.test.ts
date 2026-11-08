@@ -5,7 +5,7 @@ import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest'
 import {checkMutationGuardsCli, main} from './check-mutation-guards-cli.ts'
-import {runMutationGuardCheck, VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
+import {printResult, runMutationGuardCheck, VERDICTS, type ClassificationResult} from './check-mutation-guards.ts'
 
 // Nothing here may spawn Stryker or call `gh`: the mock replaces both child-process entry points the module graph
 // reaches (`spawnSync` in the gate, `execFileSync` in the changed-file fetch of @fro-bot/core/wiki-authority).
@@ -216,5 +216,42 @@ describe('main, with the real guard against the real stryker.config.json and a s
     expect(process.exitCode).toBe(1)
     expect(output.stdout).toMatch(/^trigger-gate:0:0 trigger-gate ChangedFileGateFailed\ninstrumentation-failed\n$/u)
     expect(mockSpawnSync).not.toHaveBeenCalled()
+  })
+})
+
+describe('the single run after the classification seam was split out', () => {
+  // `runMutationGuardCheck` hands its post-spawn work to `classifyReportFile`, which prints nothing. The CLI is the one
+  // printer, so the located list and the verdict reach stdout once and the step summary once.
+  it('prints the result once to stdout and appends it once to the step summary', async () => {
+    const summary = join(root, 'summary-once.md')
+    writeFileSync(summary, 'earlier\n')
+    vi.stubEnv('GITHUB_STEP_SUMMARY', summary)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    // A test-owned report path: the guard clears it before the spawn, and a stub spawner writes nothing, so the run
+    // ends in the unreadable-report verdict without a real Stryker run.
+    const reportPath = join(root, 'once-report.json')
+    const spawner = vi.fn()
+
+    const outcome = await runCli(
+      checkMutationGuardsCli(
+        async () =>
+          runMutationGuardCheck(
+            spawner,
+            reportPath,
+            {reporters: ['json'], resolvedJsonReportPath: reportPath},
+            {eventName: 'push'},
+          ),
+        printResult,
+      ),
+      {argv: [], env: {}},
+    )
+
+    expect(spawner).toHaveBeenCalledTimes(1)
+    expect(outcome.exitCode).toBe(1)
+    expect(stdout).toHaveBeenCalledTimes(1)
+    const printed = String(stdout.mock.calls[0]?.[0])
+    expect(printed).toMatch(/instrumentation-failed\n$/u)
+    expect(printed.match(/instrumentation-failed/gu)).toHaveLength(1)
+    expect(readFileSync(summary, 'utf8')).toBe(`earlier\n${printed}`)
   })
 })

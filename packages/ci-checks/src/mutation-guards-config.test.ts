@@ -4,12 +4,14 @@ import {join, relative} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 import {
+  FIXED_TRIGGER_FILES,
   froBotPackageSourceFiles,
   isLiteralPath,
   reachedModulesTransitive,
   readStrykerConfig,
 } from './check-mutation-guards.ts'
 import {normalizePath, treeOf} from './mutation-guards-reach.ts'
+import {findShardPartitionViolations, readMutationShards} from './mutation-shard-lists.ts'
 import {findRepositoryRoot} from './repository-root.ts'
 
 const repositoryRoot = findRepositoryRoot()
@@ -377,6 +379,65 @@ describe('mutation guard enumeration', () => {
         ? undefined
         : `path(s) listed in both mutate and not-mutated: ${overlap.map(entry => entry.path).join(', ')}`,
     ).toEqual([])
+  })
+})
+
+describe('mutation shard lists', () => {
+  it('Test 8: the shards in mutation-guards.json are an exact partition of mutate', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const violations = findShardPartitionViolations(mutate, readMutationShards(mutationGuardsPath))
+
+    expect(violations, violations.length === 0 ? undefined : `shard partition: ${violations.join('; ')}`).toEqual([])
+  })
+
+  it('Test 8b: an entry moved out of every shard fails and is named (AE5)', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const shards = readMutationShards(mutationGuardsPath)
+    const moved = mutate[0]
+    expect(moved).toBeDefined()
+
+    const without = shards.map(shard => shard.filter(entry => entry !== moved))
+    expect(findShardPartitionViolations(mutate, without)).toEqual([`${String(moved)}: in no shard`])
+  })
+
+  it('Test 8c: an entry added to a second shard fails and is named', () => {
+    const {mutate} = readStrykerConfig(strykerConfigPath)
+    const shards = readMutationShards(mutationGuardsPath)
+    const first = shards[0]?.[0]
+    expect(first).toBeDefined()
+
+    const doubled = [shards[0] ?? [], [...(shards[1] ?? []), String(first)], shards[2] ?? []]
+    expect(findShardPartitionViolations(mutate, doubled)).toEqual([`${String(first)}: in shards 1 and 2`])
+  })
+
+  it('Test 8d: there are exactly three shard lists', () => {
+    expect(readMutationShards(mutationGuardsPath)).toHaveLength(3)
+  })
+})
+
+describe('the shard and merge modules and the shard composite are fixed triggers', () => {
+  // Tests 1 and 2 enumerate by name and do not match `mutation-shard*` or `mutation-merge*`. A new shim or CLI that is
+  // in no list would leave a pull request that changes only it not-applicable, and that file is gate input.
+  const SHARD_SHIM_PATTERN = /^scripts\/mutation-(?:shard|merge)[^/]*\.ts$/u
+  const SHARD_CLI_PATTERN = /^packages\/ci-checks\/src\/mutation-(?:shard|merge)-cli\.ts$/u
+
+  it('lists every scripts/mutation-shard*.ts and scripts/mutation-merge*.ts, and every mutation-{shard,merge}-cli.ts', () => {
+    const shims = walkNonTestTsFiles(scriptsDir, 'scripts').filter(path => SHARD_SHIM_PATTERN.test(path))
+    const clis = walkNonTestTsFiles(join(packagesRoot, 'ci-checks', 'src'), 'packages/ci-checks/src').filter(path =>
+      SHARD_CLI_PATTERN.test(path),
+    )
+    // The scans are not vacuous: the shard and merge entrypoints and CLIs exist.
+    expect(shims).toContain('scripts/mutation-shard.ts')
+    expect(clis).toContain('packages/ci-checks/src/mutation-shard-cli.ts')
+    expect(shims).toContain('scripts/mutation-merge.ts')
+    expect(clis).toContain('packages/ci-checks/src/mutation-merge-cli.ts')
+
+    const composite = '.github/actions/mutation-shard/action.yaml'
+    expect(existsSync(join(repositoryRoot, composite))).toBe(true)
+
+    const fixed = new Set(FIXED_TRIGGER_FILES.map(normalizePath))
+    const missing = [...shims, ...clis, composite].filter(path => !fixed.has(path))
+    expect(missing, missing.length === 0 ? undefined : `not in FIXED_TRIGGER_FILES: ${missing.join(', ')}`).toEqual([])
   })
 })
 

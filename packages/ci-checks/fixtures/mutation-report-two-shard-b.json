@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": {"high": 100, "low": 100, "break": null},
+  "framework": {"name": "Stryker", "version": "10.1.1"},
+  "config": {
+    "mutate": [
+      "packages/ci-checks/src/install-renovate.ts",
+      "packages/ci-checks/src/check-override-floors-cli.ts",
+      "packages/wiki-ops/src/wiki-change-detect-core.ts"
+    ],
+    "testFiles": [
+      "packages/ci-checks/src/barrel-exports.test.ts",
+      "packages/ci-checks/src/check-md-links-cli.test.ts",
+      "packages/ci-checks/src/check-mutation-guards-cli.test.ts",
+      "packages/ci-checks/src/check-override-floors-cli.test.ts"
+    ],
+    "reporters": ["json", "clear-text"],
+    "jsonReporter": {"fileName": "reports/mutation/mutation.json"}
+  },
+  "files": {
+    "packages/ci-checks/src/install-renovate.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "251",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 18, "line": 19}},
+          "statusReason": "expected { Object (exitCode, stdout, ...) } to deeply equal { exitCode: +0, …(2) }"
+        },
+        {
+          "id": "253",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "location": {"start": {"column": 13, "line": 23}},
+          "statusReason": "expected { exitCode: +0, …(2) } to deeply equal { exitCode: +0, …(2) }"
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/check-override-floors-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "79",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 93, "line": 18}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')"
+        },
+        {
+          "id": "80",
+          "mutatorName": "ObjectLiteral",
+          "status": "Killed",
+          "location": {"start": {"column": 10, "line": 19}},
+          "statusReason": "expected undefined to be 'check-override-floors' // Object.is equality"
+        }
+      ],
+      "source": ""
+    },
+    "packages/wiki-ops/src/wiki-change-detect-core.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "1506",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Ignored",
+          "location": {"start": {"column": 32, "line": 218}},
+          "statusReason": "the one variant seeds a placeholder that the allowlist filter below drops unread"
+        },
+        {
+          "id": "1389",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 56, "line": 58}},
+          "statusReason": "The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView. Received undefined"
+        },
+        {
+          "id": "1390",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "location": {"start": {"column": 21, "line": 59}},
+          "statusReason": "Digest method not supported"
+        }
+      ],
+      "source": ""
+    }
+  },
+  "testFiles": {
+    "packages/ci-checks/src/barrel-exports.test.ts": {
+      "tests": [{"id": "2433", "name": "firstAtOrAfter > [] with target 5 is at index 0"}]
+    },
+    "packages/ci-checks/src/check-md-links-cli.test.ts": {
+      "tests": [{"id": "2543", "name": "the config > is one read-only root command with no positional and no option"}]
+    },
+    "packages/ci-checks/src/check-mutation-guards-cli.test.ts": {
+      "tests": [{"id": "2292", "name": "the config > is one read-only root command with no positional and no option"}]
+    },
+    "packages/ci-checks/src/check-override-floors-cli.test.ts": {
+      "tests": [{"id": "2556", "name": "the config > is one read-only root command with no positional and no option"}]
+    }
+  }
+}

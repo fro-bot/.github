@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "thresholds": {"high": 100, "low": 100, "break": null},
+  "framework": {"name": "Stryker", "version": "10.1.1"},
+  "config": {
+    "mutate": [
+      "packages/ci-checks/src/repository-root.ts",
+      "packages/ci-checks/src/check-md-links-cli.ts",
+      "packages/privacy/src/check-private-leak.ts"
+    ],
+    "testFiles": [
+      "packages/ci-checks/src/barrel-exports.test.ts",
+      "packages/ci-checks/src/check-md-links-cli.test.ts",
+      "packages/ci-checks/src/check-mutation-guards-cli.test.ts",
+      "packages/ci-checks/src/check-override-floors-cli.test.ts"
+    ],
+    "reporters": ["json", "clear-text"],
+    "jsonReporter": {"fileName": "reports/mutation/mutation.json"}
+  },
+  "files": {
+    "packages/ci-checks/src/repository-root.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "112",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 46, "line": 14}},
+          "statusReason": "expected 1 to be +0 // Object.is equality"
+        },
+        {
+          "id": "114",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "location": {"start": {"column": 45, "line": 15}},
+          "statusReason": "expected 1 to be +0 // Object.is equality"
+        }
+      ],
+      "source": ""
+    },
+    "packages/ci-checks/src/check-md-links-cli.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "3",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Killed",
+          "location": {"start": {"column": 15, "line": 19}},
+          "statusReason": "expected [] to have a length of 1 but got +0"
+        },
+        {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 52, "line": 16}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')"
+        }
+      ],
+      "source": ""
+    },
+    "packages/privacy/src/check-private-leak.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "531",
+          "mutatorName": "ArrayDeclaration",
+          "status": "Ignored",
+          "location": {"start": {"column": 79, "line": 282}},
+          "statusReason": "the only variant is a non-empty placeholder array"
+        },
+        {
+          "id": "599",
+          "mutatorName": "StringLiteral",
+          "status": "Ignored",
+          "location": {"start": {"column": 10, "line": 376}},
+          "statusReason": "the one variant (`'Stryker was here!'`) is observable"
+        },
+        {
+          "id": "453",
+          "mutatorName": "BlockStatement",
+          "status": "Killed",
+          "location": {"start": {"column": 34, "line": 125}},
+          "statusReason": "process.exit called"
+        },
+        {
+          "id": "454",
+          "mutatorName": "StringLiteral",
+          "status": "Killed",
+          "location": {"start": {"column": 10, "line": 126}},
+          "statusReason": "process.exit called"
+        }
+      ],
+      "source": ""
+    }
+  },
+  "testFiles": {
+    "packages/ci-checks/src/barrel-exports.test.ts": {
+      "tests": [{"id": "2433", "name": "firstAtOrAfter > [] with target 5 is at index 0"}]
+    },
+    "packages/ci-checks/src/check-md-links-cli.test.ts": {
+      "tests": [{"id": "2543", "name": "the config > is one read-only root command with no positional and no option"}]
+    },
+    "packages/ci-checks/src/check-mutation-guards-cli.test.ts": {
+      "tests": [{"id": "2292", "name": "the config > is one read-only root command with no positional and no option"}]
+    },
+    "packages/ci-checks/src/check-override-floors-cli.test.ts": {
+      "tests": [{"id": "2556", "name": "the config > is one read-only root command with no positional and no option"}]
+    }
+  }
+}

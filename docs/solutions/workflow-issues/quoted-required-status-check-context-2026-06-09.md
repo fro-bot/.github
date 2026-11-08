@@ -125,11 +125,23 @@ risk: a silent pass that validates nothing. Before adding a job name to
 - Check that existing required jobs run under the same trigger and checkout ref, or justify the
   difference.
 
-`Check Mutation Guards` is built this way. Its job-level condition is only
+`Check Mutation Guards` is built this way. It is the final job of three parallel shard jobs
+(`Mutation Shard 1` to `3`), and only it is the required context. The shard jobs carry
 `github.event_name == 'pull_request'`, because a push to `main` has no PR to diff against. The
-changed-file gate lives in `packages/ci-checks/src/check-mutation-guards.ts`: an unmatched change set returns
-`not-applicable`, which maps to exit code `0`. A job-level skip would also report Success, but with
-no record of why validation did not run; the in-script gate leaves that decision in the job's output.
+changed-file gate lives in `packages/ci-checks/src/check-mutation-guards.ts` and is evaluated by every
+shard on the full config: an unmatched change set returns `not-applicable`, which each shard records in
+its manifest, and the final job maps three not-applicable manifests to exit code `0`. A job-level skip would
+also report Success, but with no record of why validation did not run; the in-script gate leaves that
+decision in the job's output.
+
+A job that needs other jobs adds a second way to skip: when a needed job fails or is cancelled, the
+dependent job is skipped, and a skipped required job reports Success. The final job therefore runs
+`if: always() && github.event_name == 'pull_request'`, receives every `needs.<shard>.result` through
+`env:`, and fails closed on any result that is not exactly `success`, naming the shard. The workflow
+test pins that `if` as a literal string and the `needs` list entry by entry, because the test-kit
+expression evaluator has no status functions; whether a cancelled shard fails the check is verified live
+on the pull request. A cancelled whole run still leaves the check cancelled, since `always()` cannot make a
+cancelled run's final job complete.
 
 ### A second worked example: a job-level `if:` that skips on purpose
 

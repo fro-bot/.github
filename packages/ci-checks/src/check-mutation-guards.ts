@@ -884,13 +884,13 @@ export function readMutateFileContents(mutate: readonly string[], root: string):
   return {files, missing}
 }
 
-interface MutationReportRead {
+export interface MutationReportRead {
   readonly json: unknown
   /** The raw error message from the read/parse attempt, or `undefined` on success. */
   readonly readError: string | undefined
 }
 
-function readMutationReport(path: string): MutationReportRead {
+export function readMutationReport(path: string): MutationReportRead {
   try {
     return {json: JSON.parse(readFileSync(path, 'utf8')) as unknown, readError: undefined}
   } catch (error) {
@@ -952,9 +952,11 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * Runs `stryker run` via `spawnSync`; the return value is used only to detect "Stryker did
  * not run at all" for an informational message — the verdict is always derived from the
  * JSON report, never this return value. Exported as an injectable seam for testing.
+ *
+ * `extraArgs` follow the config argument: none for the local run, `--mutate <list>` for a PR shard.
  */
-export function defaultStrykerSpawner(): void {
-  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath()], {
+export function defaultStrykerSpawner(extraArgs: readonly string[] = []): void {
+  const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath(), ...extraArgs], {
     cwd: repositoryRoot(),
     stdio: 'inherit',
     env: buildStrykerSpawnEnv(),
@@ -1508,7 +1510,7 @@ export function buildImportClosure(
  * `quartz-site/tsconfig.json` is deliberately excluded — it configures an unrelated
  * documentation-site build, not anything Stryker mutates or runs.
  */
-const FIXED_TRIGGER_FILES: readonly string[] = [
+export const FIXED_TRIGGER_FILES: readonly string[] = [
   'stryker.config.json',
   'mutation-guards.json',
   'vitest.config.ts',
@@ -1519,10 +1521,15 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
   'scripts/wiki-lockfile-gates.ts',
   'packages/ci-checks/src/check-mutation-guards.ts',
   'packages/ci-checks/src/check-mutation-guards-cli.ts',
+  'scripts/mutation-shard.ts',
+  'packages/ci-checks/src/mutation-shard-cli.ts',
+  'scripts/mutation-merge.ts',
+  'packages/ci-checks/src/mutation-merge-cli.ts',
   'packages/ci-checks/src/repository-root.ts',
   'packages/ci-checks/src/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',
   '.github/actions/setup/action.yaml',
+  '.github/actions/mutation-shard/action.yaml',
   'packages/wiki-write-core/package.json',
   'tsconfig.json',
   'packages/wiki-write-core/tsconfig.build.json',
@@ -1630,7 +1637,7 @@ export interface ChangedFileGateDeps {
 
 const defaultChangedFileGateDeps: ChangedFileGateDeps = {readPullRequestContext, fetchChangedFiles}
 
-function triggerGateSentinel(
+export function triggerGateSentinel(
   verdict: 'not-applicable' | 'instrumentation-failed',
   status: string,
   reason: string,
@@ -1756,6 +1763,18 @@ export async function runMutationGuardCheck(
   rmSync(reportPath, {force: true})
   spawner()
 
+  return classifyReportFile(config, reportPath, reporterConfig)
+}
+
+/**
+ * The classification half of a run: reads the report at `reportPath`, scans the `mutate` files for directives and
+ * classifies against the full config. Prints nothing. `reporterConfig` defaults to the config's own reporters and path.
+ */
+export function classifyReportFile(
+  config: StrykerConfigShape,
+  reportPath: string,
+  reporterConfig?: ReporterConfig,
+): ClassificationResult {
   const {json: reportJson, readError} = readMutationReport(reportPath)
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot())
   const directiveViolations = scanDirectiveViolations(directiveFiles)
