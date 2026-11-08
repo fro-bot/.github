@@ -259,7 +259,7 @@ C4Component
 
 Add `src/<name>.ts` and an `exports` entry in `package.json`. A CLI adds `src/<name>-cli.ts`, which is the only kind of module that imports `@fro-bot/core/cli`, and a six-line `scripts/<name>.ts` that calls its `main`. Tests sit beside the module and import it by relative path. Then do all of these:
 
-- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with the test that really pins it). A test that must kill mutants imports the module by relative path.
+- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with the test that really pins it). A `mutate` entry also joins exactly one list under `shards` in `mutation-guards.json`. A test that must kill mutants imports the module by relative path.
 - A test that reaches a file write passes only test-owned temp paths, as the working directory and the target, because a Stryker mutant once deleted the Node binary through an unguarded filesystem call.
 - Time any regex that GitHub-controlled or agent-controlled text reaches in `src/regex-scaling.test.ts`, with a long run and with many separate matches in one document.
 - Update this diagram, the root `README.md` graph and `llms.txt`.

@@ -1,6 +1,6 @@
 # `@fro-bot/ci-checks`
 
-The repository checks of the Fro Bot control plane: the mutation gate, the markdown, advisory and `docs/solutions` lints, and the Renovate tooling. Every CLI here runs in pull-request CI (`check:mutation-guards`, `check:renovate-config`, `check:override-floors`, `check:md-links`, `check:solutions-examples`), so a pull request is its own proof that they run. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
+The repository checks of the Fro Bot control plane: the mutation gate, the markdown, advisory and `docs/solutions` lints, and the Renovate tooling. Every CLI here runs in pull-request CI (the `mutation-shard` and `mutation-merge` jobs, `check:renovate-config`, `check:override-floors`, `check:md-links`, `check:solutions-examples`), so a pull request is its own proof that they run. `check:mutation-guards` is the same gate as one full local run. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
 It depends on `@fro-bot/core` (guards, retry, the goke runner and the pull-request event reader of `wiki-authority`), `@fro.bot/wiki-write-core` (`markdown-links`), `typescript` and `yaml`. It imports no domain package. Tests also import `@fro-bot/test-kit`.
 
@@ -12,11 +12,68 @@ The gate fails closed in these ways, each pinned by a test:
 
 - **No config.** A missing, unparseable or ill-shaped `stryker.config.json` throws before anything runs, exit 1. A listed `mutate` file that is missing, a `reporters` list without `json`, and a `jsonReporter.fileName` that is not the report path the gate reads are `instrumentation-failed`.
 - **No event, no list.** On a `pull_request`, an unreadable event, a missing `base.repo.full_name` or a failing `gh api` is `instrumentation-failed`, never `not-applicable`.
-- **A closed trigger set.** A changed file is a trigger when it is a `mutate` or `testFiles` entry, is in the import closure of one (relative imports, `@fro.bot/wiki-write-core` subpaths and `@fro-bot/<pkg>` names through each package's `exports` map), is a fixed infrastructure file, or is a package manifest. The fixed files include the gate itself: the `scripts/check-mutation-guards.ts` entrypoint, `check-mutation-guards.ts`, `check-mutation-guards-cli.ts`, `repository-root.ts` and `mutation-guards-config.test.ts`. A docs-only change is `not-applicable`; a change to `packages/core/src/guards.ts` is applicable.
+- **A closed trigger set.** A changed file is a trigger when it is a `mutate` or `testFiles` entry, is in the import closure of one (relative imports, `@fro.bot/wiki-write-core` subpaths and `@fro-bot/<pkg>` names through each package's `exports` map), is a fixed infrastructure file, or is a package manifest. The fixed files include the gate itself: the `scripts/check-mutation-guards.ts` entrypoint, `check-mutation-guards.ts`, `check-mutation-guards-cli.ts`, `repository-root.ts` and `mutation-guards-config.test.ts`, and the sharded PR gate's own unmutated files: the `scripts/mutation-shard.ts` and `scripts/mutation-merge.ts` shims, their two `-cli.ts` modules and the `.github/actions/mutation-shard/action.yaml` composite. A config test pins that every `scripts/mutation-shard*.ts`, `scripts/mutation-merge*.ts` and `mutation-{shard,merge}-cli.ts` file and the composite is in `FIXED_TRIGGER_FILES`. A docs-only change is `not-applicable`; a change to `packages/core/src/guards.ts` is applicable.
 - **A guard that runs.** `scripts/check-mutation-guards.ts` uses `import.meta.main`, not the `file://${process.argv[1]}` comparison of the other entrypoints: a path the URL form escapes would make that comparison false, and the gate would end in exit 0 without running.
 - **The report is cleared first.** A Stryker that dies before writing leaves no stale `clean` behind.
 
 `mutation-guards-config.test.ts` enumerates `packages/*/src` and the `scripts/` entrypoints against `stryker.config.json` and `mutation-guards.json`, so a module nobody classified fails the build. Deleting `mutation-guards.json` fails that test; deleting `stryker.config.json` fails the gate.
+
+## Sharded PR gate
+
+On a pull request the gate is not one job. `main.yaml` runs three parallel shard jobs (`Mutation Shard 1`, `2`, `3`) and a final job, `Check Mutation Guards`, which is the only required status check. `.github/settings.yml` is unchanged. The local `bun run check:mutation-guards` stays one full Stryker run.
+
+```mermaid
+flowchart LR
+  subgraph shard["Mutation Shard 1..3 (composite action)"]
+    C[checkout head SHA] --> S[setup] --> G{trigger gate<br/>on the full config}
+    G -- gate failed --> E[exit 1, no manifest]
+    G -- not-applicable --> M1[manifest only]
+    G -- applicable --> R[stryker --mutate shard list] --> M2[manifest and report]
+    M1 --> U[upload mutation-shard-n]
+    M2 --> U
+  end
+  U --> F
+  subgraph F["Check Mutation Guards (always on a pull request)"]
+    N{every result is success?} -- no --> X[instrumentation-failed<br/>names the shard]
+    N -- yes --> K[ten checks on the artifacts] --> MG[merge] --> CL[classify against the full config] --> UP[upload mutation-report]
+  end
+```
+
+**Where the lists live.** `mutation-guards.json` holds a `shards` key: three ordered lists of `mutate` entries. They are an exact partition of `mutate`, and `mutation-guards-config.test.ts` fails when an entry is in no list, is in two, is in a list but not in `mutate`, or when there are not three lists. `mutation-shard-lists.ts` reads them for the shard CLI, the merge CLI and that test.
+
+**What a shard does.** It decides applicability with `evaluateTriggerGate` on the full `stryker.config.json`, not on its list, and acts on the verdict. Only an explicit `not-applicable` writes a not-applicable manifest. A `ChangedFileGateFailed` result, a trigger fetch error or any other result exits non-zero and writes no manifest, so a failed fetch cannot make all three shards agree on not-applicable. An applicable shard clears the report, spawns Stryker with `--mutate <its list>` and nothing else, so every shard keeps the full `testFiles`, and copies the report into its output directory. It exits 0 once `manifest.json` and `mutation.json` are written, whatever Stryker's exit code was: a survivor is the final job's verdict. The manifest holds the shard number, `git rev-parse HEAD`, the event head SHA and the applicability. The directory is uploaded as `mutation-shard-<n>` with `overwrite: true`, only when the step succeeded.
+
+**What the final job does.** It never classifies a merged report when a check fails; each check fails as `instrumentation-failed` with a fixed status and the shard involved (`mutation-shard-2:0:0 shard-merge ShardResultNotSuccess`). In order:
+
+1. every shard job result is exactly `success` (a skipped, cancelled or unset result fails; no artifact file is read before this passes);
+2. every `mutation-shard-<n>` directory exists (a pattern download that matched nothing fails every shard);
+3. every manifest is valid and names its directory's shard;
+4. every manifest's `HEAD` and event SHA equal the pull request head SHA, so a shard that fell back to the merge commit fails;
+5. the shards agree on applicability: three not-applicable manifests give `not-applicable`, a mix fails;
+6. the lists are still an exact partition of `mutate`;
+7. every report is present and parseable;
+8. no entry is in two reports;
+9. every report's `files` keys are exactly its shard's list;
+10. every configured literal test file has a non-empty entry in every report (`TestFileNotExecuted` otherwise).
+
+Then it merges (`files` is the union; each test file keeps the entry of the shard that ran it fewest times), writes the merged report to `reports/mutation/mutation.json` and classifies it through `classifyReportFile`, the same function a single run uses after its spawn. `main.yaml` uploads that file as `mutation-report`; the raw shard reports stay in the `mutation-shard-<n>` artifacts. Re-running failed jobs merges fresh evidence only: a shard that failed has no trusted artifact, and the final job checks every result first.
+
+**Adding a `mutate` entry.** Put the new path in exactly one list under `shards`. Prefer the lightest list; the test names the entry if you forget. The shard and merge modules themselves are `mutate` entries and sit in the lists like any other.
+
+**Rebalancing.** The lists are balanced by estimated cost: for each `mutate` entry, the sum of its mutants' `duration` in seconds plus 0.45 s per mutant (the fixed per-mutant overhead of a Stryker test run). The initial split came from one full run's report, balanced greedily into three, within 0.1% of each other. Rebalance when one shard job runs more than 20% over the mean of the three: take `reports/mutation/mutation.json` from a local `bun run check:mutation-guards`, or the `mutation-report` artifact of a CI run (kept 7 days), compute the cost per entry, and move entries between the lists until the three sums are within 10% of each other.
+
+```ts
+// Estimated cost in seconds of each mutate entry, from a Stryker JSON report.
+import {readFileSync} from 'node:fs'
+
+const report = JSON.parse(readFileSync('reports/mutation/mutation.json', 'utf8'))
+for (const [file, {mutants}] of Object.entries(report.files)) {
+  const seconds = mutants.reduce((sum, mutant) => sum + (mutant.duration ?? 0), 0) / 1000
+  console.log(file, (seconds + 0.45 * mutants.length).toFixed(1))
+}
+```
+
+A move changes timing only: the partition test, not the shard times, decides whether the lists are valid. `fixtures/` holds trimmed real reports for the merge tests; its README says how they were cut.
 
 ## Regexes and scans
 
@@ -48,11 +105,13 @@ Everything in this package that reads text a pull request controls is linear in 
 
 ## CLIs
 
-Each command declares `readOnly`, a static capability: `true` unless the command can mutate GitHub, `data`, an external service, or a tracked path in the checkout. Writes to `reports/mutation/`, `.stryker-tmp`, the step summary and the `RENOVATE_PREFIX` scratch install are tool output and do not count, so all seven are `true`.
+Each command declares `readOnly`, a static capability: `true` unless the command can mutate GitHub, `data`, an external service, or a tracked path in the checkout. Writes to `reports/mutation/`, `.stryker-tmp`, the step summary and the `RENOVATE_PREFIX` scratch install are tool output and do not count, so all nine are `true`.
 
 | CLI | Caller and argv | `readOnly` | Outputs and exit codes |
 | --- | --- | --- | --- |
-| `check-mutation-guards` | `main.yaml` via `bun run check:mutation-guards`, job-if `pull_request`; no argv | `true` | Exit `exitCodeFor(verdict)`: 0 for `clean` and `not-applicable`, 1 for every other verdict and for a throw. Stdout and the step summary carry the located mutants and the verdict; `reports/mutation/mutation.json` is uploaded `if: always()`. |
+| `check-mutation-guards` | `bun run check:mutation-guards`, the local single full run; no argv | `true` | Exit `exitCodeFor(verdict)`: 0 for `clean` and `not-applicable`, 1 for every other verdict and for a throw. Stdout and the step summary carry the located mutants and the verdict; `reports/mutation/mutation.json` holds the report. CI does not run this CLI: it runs the shard and merge jobs below. |
+| `mutation-shard` | The `.github/actions/mutation-shard` composite, once per shard job; no argv. Env: `MUTATION_SHARD`, `MUTATION_SHARD_EVENT_SHA`, `MUTATION_SHARD_OUTPUT_DIR` | `true` | Exit 0 once `manifest.json` (and, when applicable, `mutation.json`) is written, 1 on a usage error or an infrastructure failure, with the reason on stderr. Never judges a mutant. |
+| `mutation-merge` | The final job of `main.yaml`, `bun scripts/mutation-merge.ts`; no argv. Env: `MUTATION_ARTIFACT_DIR`, `MUTATION_EVENT_SHA`, `MUTATION_SHARD_<n>_RESULT` per shard | `true` | Exit `exitCodeFor(verdict)`, the same contract as `check-mutation-guards`. Stdout and the step summary carry the located mutants and the verdict once. |
 | `check-md-links` | `bun run check:md-links`, link one of `lint` (`&&`); no argv | `true` | Exit 1 with `path:line -> target` on stderr. |
 | `check-override-floors` | `bun run check:override-floors`, link two of `lint`; the agent prompt in `fro-bot.yaml` (`bun scripts/check-override-floors.ts`); no argv | `true` | Exit 1 on a high or critical advisory or on anything uninterpretable, `check-override-floors: ...` on stderr; 0 otherwise. The prompt acts on exit 0. |
 | `check-solutions-examples` | `bun run check:solutions-examples`, link three of `lint`; no argv | `true` | Exit 1 with `path:line -> reason` on stderr; the `verify:` markers use `findSignature`. |
@@ -215,7 +274,7 @@ C4Component
 
 Add `src/<name>.ts` and an `exports` entry in `package.json`. A CLI adds `src/<name>-cli.ts`, which is the only kind of module that imports `@fro-bot/core/cli`, and a six-line `scripts/<name>.ts` that calls its `main`. Tests sit beside the module and import it by relative path. Then do all of these:
 
-- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with a measured score). Add it to `FIXED_TRIGGER_FILES` in `check-mutation-guards.ts` if a change to it changes what the gate enforces.
+- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with a measured score). Add it to `FIXED_TRIGGER_FILES` in `check-mutation-guards.ts` if a change to it changes what the gate enforces. A `mutate` entry also goes into exactly one list under `shards` in `mutation-guards.json`, as [Sharded PR gate](#sharded-pr-gate) describes.
 - Every filesystem call in a test targets a test-owned temp root. A test never calls `runMutationGuardCheck` with the default report path, because it removes that file.
 - Time any regex that markdown, a `verify:` marker, audit JSON, Renovate output or a git diff name reaches, with a long run and with many separate matches in one document.
 - Update this diagram, the root `README.md` graph and `llms.txt`.

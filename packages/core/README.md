@@ -69,7 +69,7 @@ Where callers need different behavior, the primitive takes the difference as an 
 
 ### Mutation coverage
 
-`guards`, `output`, `json`, `retry`, `github`, `cli`, `env`, `wiki-authority` and `wiki-authority-cli` are in the `mutate` set of `stryker.config.json` and held at 100% kills by `bun run check:mutation-guards`. Their tests import them by relative path, because the Stryker sandbox links `node_modules` to the real tree and a package-name import would run against the un-mutated file. Core's tests must kill core's mutants on their own: a consumer's tests never run against them.
+`guards`, `output`, `json`, `retry`, `github`, `cli`, `env`, `wiki-authority` and `wiki-authority-cli` are in the `mutate` set of `stryker.config.json` and held at 100% kills by `bun run check:mutation-guards`, which is one full local run; in CI the same check runs as three shards and a merge job. Their tests import them by relative path, because the Stryker sandbox links `node_modules` to the real tree and a package-name import would run against the un-mutated file. Core's tests must kill core's mutants on their own: a consumer's tests never run against them.
 
 ## Package diagram
 
@@ -133,5 +133,5 @@ C4Component
 1. Add `src/<name>.ts` and its subpath to `exports` in `package.json`. Use erasable TypeScript syntax only: Node strip-only loads the file, and Test Scripts Load fails on `enum`, `namespace` and parameter properties.
 2. Add `src/<name>.test.ts` and import the module by relative path.
 3. Keep regexes and other constants whose mutants matter inside functions. Stryker covers a mutant in a module-level constant with no test, so it survives.
-4. List the module in `stryker.config.json` `mutate` (and its test in `testFiles`), or in `mutation-guards.json` `not-mutated` with a reason. `packages/ci-checks/src/mutation-guards-config.test.ts` fails an unlisted module.
+4. List the module in `stryker.config.json` `mutate` (and its test in `testFiles`), or in `mutation-guards.json` `not-mutated` with a reason. `packages/ci-checks/src/mutation-guards-config.test.ts` fails an unlisted module. A `mutate` entry also joins exactly one list under `shards` in `mutation-guards.json`; the same test fails an entry in no list or in two.
 5. Update the diagram above and the package graph in the root `README.md`.

@@ -206,7 +206,7 @@ C4Component
 
 Add `src/<name>.ts` and an `exports` entry in `package.json`. A CLI adds `src/<name>-cli.ts`, which is the only kind of module that imports `@fro-bot/core/cli`, and a six-line `scripts/<name>.ts` that calls its `main`. Tests sit beside the module and import it by relative path. Then do all of these:
 
-- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with a measured score).
+- Classify the module in `stryker.config.json` (`mutate`) or `mutation-guards.json` (`not-mutated`, with a measured score). A `mutate` entry also joins exactly one list under `shards` in `mutation-guards.json`.
 - A test that reaches a file write or a git call passes only test-owned temp paths, as the working directory and the target. A function that accepts `cwd` passes it to every child process it starts.
 - Time any regex that GitHub-controlled or agent-controlled text reaches in `src/regex-scaling.test.ts`, with a long run and with many separate matches in one document, and prove each input reaches the code under test.
 - Update this diagram, the root `README.md` graph and `llms.txt`.

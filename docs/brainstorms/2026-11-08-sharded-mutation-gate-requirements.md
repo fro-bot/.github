@@ -78,6 +78,8 @@ On the current single job, `Check Mutation Guards` took 712–925 s in runs 4239
 - On the implementing PR's own CI runs, the gate's wall time (first shard start to final job end) is at least 30% below the median of the single-job runs 42392597566, 42411246900 and 42422641309 (858 s). Runs with a dry run within 10 s of each other count as comparable. The PR body records the numbers.
 - Verdicts do not change: the PR's merged report classifies `clean`, and a deliberately broken guard in any shard fails the final job.
 
+Status (2026-11-08): built locally in Units 1 to 5 of `docs/plans/2026-11-08-001-refactor-sharded-mutation-gate-plan.md`. The second criterion is covered by tests that run a survivor through each of the three shards (`mutation-merge.test.ts`). The wall-time criterion and the re-run behaviour are measured on the pull request's own runs (Unit 6) and are not yet verified.
+
 ---
 
 ## Scope Boundaries
