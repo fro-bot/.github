@@ -63,16 +63,19 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
   "candidates": [
     { "path_or_symbol": ".github/workflows/fro-bot.yaml#OBSERVE_OUTPUT", "description": "Daily report creation, predecessor closing and body structure", "disposition": "extend" },
     { "path_or_symbol": ".github/workflows/fro-bot.yaml#AGENT_NOTES", "description": "Cold-start note format for deferred work", "disposition": "reuse" },
-    { "path_or_symbol": ".github/settings.yml#labels", "description": "Declared repo labels synced by Update Repo Settings", "disposition": "extend" }
+    { "path_or_symbol": ".github/settings.yml#labels", "description": "Declared repo labels synced by Update Repo Settings", "disposition": "extend" },
+    { "path_or_symbol": "packages/status-truth", "description": "Labeled tracking issues opened by deterministic code and closed when they clear", "disposition": "insufficient", "insufficiency_reason": "Its tracking issues come from structured claim detection. Attention items are agent judgments from the daily pass, so the lifecycle is reused as a pattern only." }
   ]
 }
 ```
 
 ## Key Technical Decisions
 
-- **New duties go in one `ATTENTION_RULES` block inside `OBSERVE_OUTPUT`.** It sits next to the report structure, so a single block owns the section.
+- **The new duties are text inside the `OBSERVE_OUTPUT` string.** They are not a separate env key: `format()` at about `fro-bot.yaml:1090` drops keys that aren't composed, so a separate key would vanish without warning. Keeping the duties next to the report structure means one block owns the section.
+- **Every item renders its key.** Each attention item ends with a `key:` line holding the URL, path or repo/workflow. Each tracking issue body starts with the same line. Walk-back, the three-report count, reuse and the readback all match on that rendered line.
 - **The label is `attention-tracking`.** It is declared in `.github/settings.yml`, so Update Repo Settings creates it.
-- **Category 5 gets an explicit exception** for applying and removing `attention-tracking`. The rest of category 5 stays report-only.
+- **Category 5 gets an explicit exception.** The agent may create, label, edit and close issues labeled `attention-tracking`. The rest of category 5 stays report-only.
+- **Visibility comes from `gh repo view <owner/repo> --json visibility`.** The repo counts as public only when that call returns `PUBLIC`. Any other result, including an error, is treated as private. The same rule applies to item text, "could not re-check" sources and tracking issues.
 - **Predecessor order is fixed in the prompt:** find the open predecessor, read it, create today's report, read today's report back, then close the predecessor. This replaces the current "before or after creating it" wording.
 - **Closing evidence goes into an edit of the issue body.** It is not posted as a comment.
 
@@ -95,7 +98,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Requirements:** R1–R13
 
-**Dependencies:** None
+**Dependencies:** Unit 2. Both units ship in one PR. Until Update Repo Settings creates the label after merge, the agent skips escalation and says so in the run summary.
 
 **Files:**
 
@@ -107,14 +110,14 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 1. Split bundled bullets so each item covers one problem.
 2. Key each item to the object its next action works on: an issue, PR or Project item URL, a normalized repo path, or a repo plus workflow file. Runs, comments and documents are cited as evidence only.
 3. Give each item an owner, which is a handle or "you", plus one next action and an observed or inferred tag.
-4. Just before publishing, re-read each key. Drop the item if the key has resolved. If only the evidence has resolved, refresh the evidence and keep the item. If the read fails, mark the item "could not re-check" and name the source.
+4. Just before publishing, re-read each key. Drop the item if the key has resolved. If only the evidence has resolved, refresh the evidence and keep the item. If the read fails, mark the item "could not re-check", naming the source only if its repo is public.
 5. Take first-seen from the oldest consecutive prior report that lists the same key. If no prior report has the key, use today. Never guess a date.
 6. Put operator-only items first, under "Awaiting you", each with its exact step.
 7. Escalate a key that is live on three consecutive reports:
    - Search `attention-tracking` issues, open and closed, for the same key. Reuse an open one. If the operator closed it as not planned, do not refile, and report the item once as declined.
    - Otherwise file a tracking issue in the `AGENT NOTES` format.
    - Do not escalate keys that are already issues, items that are already tracked, "Awaiting you" items, or Renovate-owned fixes.
-   - Show each escalated item as one line linking its issue.
+   - Show each escalated item as one line linking its issue, ending with its `key:` line.
 8. On every run, close any open `attention-tracking` issue whose key has resolved. Record the evidence in the issue body.
 9. Name only public repos. A problem in a private repo is reported without its name. If a repo's visibility can't be confirmed, treat it as private.
 
@@ -135,6 +138,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 - Happy path: the predecessor order reads find, read, create, read back, close, and the old "Before or after creating it" wording is gone.
 - Happy path: category 5 names the `attention-tracking` exception and keeps "Do NOT modify individual issues/PRs" for everything else.
 - Edge case: existing pins on "Needs Human Attention" routing (`SCOPE CAP`, `TRUSTED AUTHORS`, `AGENT NOTES`) and on the report title still hold.
+- Happy path: the composed agent prompt (after `format()`) contains the duties, the `key:` line rule and the visibility rule. The test asserts on the composed prompt, not only on the env value.
 
 **Verification:** the prompt contract tests pass.
 
@@ -153,7 +157,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Test scenarios:**
 
-- Happy path: the effective label set includes `attention-tracking` with a color and description.
+- Happy path: a new `it` asserts that the effective label set includes `attention-tracking` with a color and description. The existing test pins only the labels declared in code.
 
 **Verification:** the settings tests pass. After merge, the Update Repo Settings run creates the label.
 
