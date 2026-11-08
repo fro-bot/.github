@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-10-24
+updated: 2026-11-08
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: e9a6bde10dac023db36e608273d8bc4d55709691
+    accessed: 2026-11-08
   - url: https://github.com/fro-bot/agent
     sha: 8c8be73287a61a0cd55a9c6183abfcc56a9a8542
     accessed: 2026-10-24
@@ -161,6 +164,73 @@ against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
 
 ## Overview
+
+### Bounded source snapshot (2026-11-08)
+
+Public `main` resolves to `e9a6bde10dac023db36e608273d8bc4d55709691`.
+The complete tree listing now has **six workspace package manifests** and
+**thirteen workflows**, superseding October 24's five/twelve counts. Root
+pins Bun **1.4.4**, legacy OpenCode SDK **1.19.5**, Vitest **5.1.0**, ESLint
+**10.14.0**, and TypeScript **6.0.3**. These are source declarations, not
+installed versions or published releases. The older Bun installer-pin split
+was not revalidated: setup-action definitions and Dockerfiles were not read.
+
+**The Action default and workspace default now intentionally diverge.** Root
+README documents stock OpenCode V2 as the Action default, with digest-verified,
+source-pinned installation; explicit V1/harness pins remain the rollback path.
+It documents API-key-only auth, warnings when legacy permission/tool/update/depth
+config fields are stripped, and a first-run V1-history import that waits up to
+300 seconds. V2 persists under separate cache/S3 keys and leaves V1 data intact;
+rolling back does not expose V2-created sessions to V1. This supersedes the
+historical claim below that the harness is the default for every Fro Bot run.
+The legacy SDK dependency alone is not evidence that the Action still runs V1.
+
+In contrast, `deploy/README.md` explicitly retains the workspace Dockerfile's
+V1 harness default and selects V2 through a pinned build argument. The gateway
+chooses its execution loop from `/readyz`'s `opencodeVersion`; a V2-capable
+gateway must precede or accompany a V2 workspace. V2 workspace spawns recreate
+their database, so workspace restarts lose OpenCode history even though the
+Action retains cross-run sessions. The actual V2 pin file was outside the read
+allowlist; no exact default binary version or production rollout is asserted.
+
+**A second publishable package.** `packages/opencode-plugin` declares
+`@fro.bot/opencode-plugin`, Node >=24, ESM exports, public provenance publishing,
+and peers `@opencode/plugin ^2.2.0` / `effect ^4.0.0` (development pins 2.2.5 /
+4.0.6). The README documents workspace session-history tools limited to the
+active post-compaction context, plus a `subagent`/`sessionID` reuse guard. This
+supersedes both the harness-only publishable-member claim and the gateway-only
+Effect claim below: the gateway still declares Effect 3.22.4, while the plugin
+relies on host-supplied Effect 4. See [[opencode-plugins]] for the load-status and
+test-evidence boundary.
+
+**Documentation contradictions remain visible.** Deploy documentation still
+describes the V2 guard as `task` reuse, whereas the plugin README names
+`subagent` and `sessionID`; treat the latter as its current documented interface,
+not proof of implementation behavior. The workspace README's bearer-less
+`/clone` example still conflicts with deploy's authenticated :9100 contract.
+The early testing-only “no S3 calls” guidance still conflicts with the later
+operator-session persistence/self-test requirements recorded October 24.
+
+**Operator contract advances to 1.15.0.** Deploy documentation now requires
+repo/run listings to return typed `503 redaction-policy-unavailable` after a
+cold start without usable policy or expiry of the 30-minute last-known-good
+grace window. Per-run routes retain generic 404; operator health stays 200,
+so a green health probe does not prove listings work. Since 1.14.0, running SSE
+status may carry transient `waitReason`. The gateway and [[fro-bot--dashboard]]
+must deploy/roll back together with matching contract support. This supersedes
+October's producer contract 1.13.0, not an independently checked dashboard pin.
+
+**Fro Bot workflow remains present.** `fro-bot.yaml` still self-invokes `uses: ./`
+for daily reporting, Sunday wiki maintenance, manual and reusable dispatch.
+It now queues session-store writers with `cancel-in-progress: false` and
+`queue: max`. No missing-workflow follow-up is warranted. CI declares separate
+V1/V2 image checks and credential positive/negative controls; see
+[[github-actions-ci]]. No target code, embedded commands, tests, or workflows
+were executed, and no runtime health or release state was checked.
+
+Sources: root/workspace manifests; root, deploy, workspace-agent, harness and
+plugin READMEs; `.github/workflows/{ci,fro-bot,opencode-plugin-release}.yaml`
+at [e9a6bde1](https://github.com/fro-bot/agent/tree/e9a6bde10dac023db36e608273d8bc4d55709691).
 
 ### Bounded source snapshot (2026-10-24)
 

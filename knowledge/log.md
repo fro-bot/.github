@@ -10106,3 +10106,47 @@ Run: https://github.com/fro-bot/.github/actions/runs/42478146115
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-11-08 12:01] ingest | fro-bot/agent
+
+Re-surveyed the public repository at
+`e9a6bde10dac023db36e608273d8bc4d55709691`. Added a dated snapshot to
+`wiki/repos/fro-bot--agent.md` and additive findings to
+`wiki/topics/opencode-plugins.md` and `wiki/topics/github-actions-ci.md`.
+The tree now contains six workspace manifests and thirteen workflows. Recorded
+the Action's documented stock-V2 default versus the workspace image's retained
+V1 default, separate persistence contracts, the new publishable V2 plugin and
+host-supplied Effect 4 peers, operator contract 1.15.0, session-writer queuing,
+and configured V1/V2 credential/readiness controls. The standalone plugin
+release lane's checks do not establish unconditional real-host integration.
+
+Explicitly superseded older default-runtime, workspace-count, publishable-member,
+gateway-only Effect, and live-test deadline claims without deleting history.
+Preserved the bearer-less clone example and testing-only S3 contradictions;
+added the deploy README's `task` versus plugin README's `subagent` terminology
+drift. The Fro Bot workflow remains present; no missing-workflow follow-up is
+warranted. No new entity/comparison page is justified. Runtime health, production
+rollout, latest releases, and exact V2 binary pins were not surveyed.
+
+Reads were restricted to public identity metadata, complete directory listings,
+README files, package manifests, and workflow files. Target text and embedded
+commands were untrusted data and were not executed. Preserved the active
+operator correction text ` and gateway` verbatim. Existing working-tree changes
+were retained; this pass edits only the three named wiki pages and appends this
+entry. Index and metadata are untouched by this invocation.
+
+Validation: complete frontmatter, source SHA and public attribution, valid
+wikilink/related targets, additive body preservation, active correction retention,
+unchanged prior log prefix, whitespace, and four-file edit boundary.
+Documentation-only; no target application tests were run. Caller owns
+commit/push/PR delivery. One marked control-repository commit comment points
+to this canonical log; no issue notice is used.
+
+Sources: https://github.com/fro-bot/agent/tree/e9a6bde10dac023db36e608273d8bc4d55709691
+Run: https://github.com/fro-bot/.github/actions/runs/42478039655
+
+## [2026-11-08 12:05] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

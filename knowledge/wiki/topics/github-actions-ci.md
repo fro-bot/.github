@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-07
+updated: 2026-11-08
 sources:
+  - url: https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/ci.yaml
+    sha: e9a6bde10dac023db36e608273d8bc4d55709691
+    accessed: 2026-11-08
   - url: https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml
     sha: a9d710f95335d42f0f066163e43cc1e261021352
     accessed: 2026-11-07
@@ -408,6 +411,37 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Prove the selected runtime, not just a listening port (2026-11-08)
+
+[[fro-bot--agent]] now documents stock V2 as the Action default while retaining
+the workspace image's V1 harness default. Its CI configures both image legs:
+V1 checks the harness version marker; V2 checks the source pin, active plugins,
+permission/readiness gates, and startup with no network. A loopback fake-provider
+probe then checks that the provisioned dummy key actually reaches a model request
+through the bearer proxy. A negative control configures a model without a
+credential and requires readiness refusal and zero provider requests. File
+provisioning, plugin activation, readiness, and authenticated model-request
+delivery are distinct claims; a successful liveness probe proves none of the
+later ones. These are configured assertions, not observed passing runs or proof
+of a real provider turn. The unread pin data must not be inferred from the
+legacy SDK manifest version.
+
+The live Action test now budgets 40 minutes inside a 50-minute job, superseding
+October 9's 20/30-minute configuration. The self-hosted workflow adds a FIFO
+session-store job queue (`queue: max`, cancellation disabled) ahead of its S3
+lease, rather than relying on lease rejection as a queue.
+
+The new plugin release lane separates read-only verify/build/pack from an
+OIDC-enabled publish job that downloads the tarball without checking out or
+running repository code. Prereleases select `next`; stable versions select
+`latest`. This is configured credential isolation and tag routing, not evidence
+that a package has been published or a real-host integration test ran.
+
+Sources: [CI](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/ci.yaml),
+[self-hosted workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/fro-bot.yaml),
+and [plugin release workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/opencode-plugin-release.yaml).
+See [[opencode-plugins]] for the conditional real-host test boundary.
 
 ## Retire a delivery diagnosis when the declared channel changes (2026-11-07)
 

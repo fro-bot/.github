@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-04
+updated: 2026-11-08
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: e9a6bde10dac023db36e608273d8bc4d55709691
+    accessed: 2026-11-08
   - url: https://github.com/marcusrbrown/systematic
     sha: c312aeb5407461d345bcf50fc299794fd4d75582
     accessed: 2026-11-04
@@ -115,6 +118,29 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-08: load status and host identity are separate gates
+
+[[fro-bot--agent]] now includes the publishable `@fro.bot/opencode-plugin`.
+Its manifest peers on `@opencode/plugin ^2.2.0` and `effect ^4.0.0`, rather than
+bundling a second host copy. Its README documents session-history tools over
+the active post-compaction window and rejects `subagent` calls carrying
+`sessionID`. Deploy documentation still calls the V2 guard a `task` reuse
+check: that terminology drift is unresolved by this bounded source survey.
+
+The README warns that V2 keeps serving when a plugin fails to load; dependent
+consumers must check `/api/plugin` for id `fro-bot.opencode-plugin` with status
+`active`. Server liveness alone does not establish tool or guard availability.
+Its real-host integration test is documented as conditional on a built bundle
+and `FRO_BOT_OPENCODE_V2_BIN`; the standalone release workflow runs tests before
+building and does not set that variable. Do not mistake its unit/build/import
+allowlist checks for an unconditional real-host integration gate. Image-level
+plugin checks are configured separately in [[github-actions-ci]].
+
+Sources: [plugin README](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/packages/opencode-plugin/README.md),
+[manifest](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/packages/opencode-plugin/package.json),
+[release workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/opencode-plugin-release.yaml),
+and deploy README at the same SHA. These are declared contracts, not executed tests.
 
 ## 2026-11-04: dual-line support needs separate host evidence
 
