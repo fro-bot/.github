@@ -473,14 +473,14 @@ describe('runMutationMerge: the artifacts', () => {
     const b = build({2: {manifest: false}})
     const result = resultOf(runMutationMerge(b.env, b.deps))
     expect(located(result)).toEqual(['mutation-shard-2|ShardManifestUnreadable'])
-    expect(result.mutants[0]?.reason).toContain('manifest.json could not be read: ENOENT')
+    expect(result.mutants[0]?.reason).toBe('manifest.json could not be read: ENOENT')
   })
 
   it('fails and names the shard for a manifest that is not JSON', () => {
     const b = build({3: {manifest: '{ nope'}})
     const result = resultOf(runMutationMerge(b.env, b.deps))
     expect(located(result)).toEqual(['mutation-shard-3|ShardManifestUnreadable'])
-    expect(result.mutants[0]?.reason).toMatch(/^manifest\.json could not be read: .*JSON/iu)
+    expect(result.mutants[0]?.reason).toBe('manifest.json could not be read: invalid JSON')
   })
 
   it.each([
@@ -576,18 +576,26 @@ describe('runMutationMerge: the lists and the reports', () => {
     )
   })
 
+  it('never echoes the content of an unparseable manifest or report in the failure reason', () => {
+    const b = build({1: {manifest: 'secret-token-123 {'}, 2: {report: 'secret-token-456 {'}})
+    const first = resultOf(runMutationMerge(b.env, b.deps))
+    expect(JSON.stringify(first)).not.toContain('secret-token')
+    const c = build({2: {report: 'secret-token-456 {'}})
+    expect(JSON.stringify(resultOf(runMutationMerge(c.env, c.deps)))).not.toContain('secret-token')
+  })
+
   it('fails and names the shard for a missing report', () => {
     const b = build({2: {report: false}})
     const result = resultOf(runMutationMerge(b.env, b.deps))
     expect(located(result)).toEqual(['mutation-shard-2|ShardReportUnreadable'])
-    expect(result.mutants[0]?.reason).toContain('mutation.json could not be read: ENOENT')
+    expect(result.mutants[0]?.reason).toBe('mutation.json could not be read: ENOENT')
   })
 
   it('fails and names the shard for a report that is not JSON', () => {
     const b = build({1: {report: '{ nope'}})
     const result = resultOf(runMutationMerge(b.env, b.deps))
     expect(located(result)).toEqual(['mutation-shard-1|ShardReportUnreadable'])
-    expect(result.mutants[0]?.reason).toMatch(/^mutation\.json could not be read: .*JSON/iu)
+    expect(result.mutants[0]?.reason).toBe('mutation.json could not be read: invalid JSON')
   })
 
   it.each([
@@ -802,6 +810,17 @@ describe('runMutationMerge: every configured test file ran in every shard', () =
     expect(resultOf(runMutationMerge(b.env, b.deps)).verdict).toBe('clean')
   })
 
+  it('counts a null or empty test file entry as zero tests instead of throwing', () => {
+    const report = shardReport(1, r => {
+      ;(r.testFiles as Record<string, unknown>)[testFile] = null
+      ;(r.testFiles as Record<string, unknown>)[fixtureConfig.testFiles[1] ?? ''] = {}
+    })
+    const b = build({1: {report}})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.mutants.map(m => m.file).toSorted()).toEqual([testFile, fixtureConfig.testFiles[1] ?? ''].toSorted())
+    expect(result.mutants.every(m => m.status === 'TestFileNotExecuted')).toBe(true)
+  })
+
   it('compares test file keys with a single leading ./ stripped', () => {
     const report = shardReport(2, r => {
       r.testFiles[`./${testFile}`] = r.testFiles[testFile] ?? {tests: []}
@@ -887,7 +906,7 @@ describe('mergeShardReports', () => {
     expect((merged.config as {jsonReporter: object}).jsonReporter).toEqual({fileName: 'x'})
   })
 
-  it('keeps each test file entry from the report that ran it the fewest times', () => {
+  it('unions the qualified test definitions of every shard for each test file', () => {
     const merged = mergeShardReports(
       [
         reportOf({'a.ts': 1}, {'t1.test.ts': 5, 't2.test.ts': 2}),
@@ -896,21 +915,154 @@ describe('mergeShardReports', () => {
       [['a.ts'], ['b.ts']],
     )
     const testFiles = merged.testFiles as Record<string, {tests: {id: string}[]}>
-    expect(testFiles['t1.test.ts']?.tests).toHaveLength(3)
-    expect(testFiles['t2.test.ts']?.tests).toHaveLength(2)
+    expect(testFiles['t1.test.ts']?.tests).toHaveLength(8)
+    expect(testFiles['t2.test.ts']?.tests).toHaveLength(6)
     expect(Object.keys(testFiles)).toEqual(['t1.test.ts', 't2.test.ts'])
   })
 
-  it('keeps the first report entry on a tie, and the ids as written', () => {
-    const first = reportOf({'a.ts': 1}, {'t.test.ts': 2})
-    const second = reportOf({'b.ts': 1}, {'t.test.ts': 2})
-    ;(first.testFiles as Record<string, object>)['t.test.ts'] = {from: 'first', tests: [{id: 'x#0'}, {id: 'x#1'}]}
-    ;(second.testFiles as Record<string, object>)['t.test.ts'] = {from: 'second', tests: [{id: 'y#0'}, {id: 'y#1'}]}
-    const merged = mergeShardReports([first, second], [['a.ts'], ['b.ts']])
-    expect((merged.testFiles as Record<string, unknown>)['t.test.ts']).toEqual({
-      from: 'first',
-      tests: [{id: 'x#0'}, {id: 'x#1'}],
+  it('qualifies every test id by its shard, in shard order', () => {
+    const merged = mergeShardReports(
+      [reportOf({'a.ts': 1}, {'t.test.ts': 2}), reportOf({'b.ts': 1}, {'t.test.ts': 1})],
+      [['a.ts'], ['b.ts']],
+    )
+    const tests = (merged.testFiles as Record<string, {tests: {id: string}[]}>)['t.test.ts']?.tests
+    expect(tests?.map(test => test.id)).toEqual(['s1:t.test.ts#0', 's1:t.test.ts#1', 's2:t.test.ts#0'])
+  })
+
+  describe('with colliding and reordered ids', () => {
+    // Stryker numbers test ids per run, so the same id means different tests in different shards.
+    const shard1 = {
+      files: {'a.ts': {mutants: [{id: '0', status: 'Killed', killedBy: ['1'], coveredBy: ['0', '1', '2']}]}},
+      testFiles: {
+        't.test.ts': {
+          tests: [
+            {id: '0', name: 'one-a'},
+            {id: '1', name: 'one-b'},
+          ],
+        },
+        'u.test.ts': {tests: [{id: '2', name: 'u-a'}]},
+      },
+    }
+    const shard2 = {
+      files: {
+        'b.ts': {mutants: [{id: '0', status: 'Killed', killedBy: ['2'], coveredBy: ['0', '1', '2']}]},
+        'c.ts': {mutants: [{id: '1', status: 'NoCoverage'}]},
+      },
+      testFiles: {
+        'u.test.ts': {tests: [{id: '0', name: 'u-a'}]},
+        't.test.ts': {
+          tests: [
+            {id: '1', name: 'one-a'},
+            {id: '2', name: 'one-b'},
+          ],
+        },
+      },
+    }
+    const sources = [shard1, shard2].map(report => ({
+      ...report,
+      config: {mutate: Object.keys(report.files)},
+    }))
+    interface Mutant {
+      killedBy?: string[]
+      coveredBy?: string[]
+      status: string
+    }
+    // Built inside each test: assertions at collection time are not attributed to a test, so no mutant would be killed.
+    const mergeBoth = () => {
+      const merged = mergeShardReports(sources, [['a.ts'], ['b.ts', 'c.ts']])
+      const mergedFiles = merged.files as Record<string, {mutants: Mutant[]}>
+      const definitions = new Map<string, {name: string; file: string}>()
+      const entries = Object.entries(merged.testFiles as Record<string, {tests: {id: string; name: string}[]}>)
+      for (const [file, entry] of entries) {
+        for (const test of entry.tests) {
+          expect(definitions.has(test.id), `duplicate id ${test.id}`).toBe(false)
+          definitions.set(test.id, {name: test.name, file})
+        }
+      }
+      return {mergedFiles, definitions}
+    }
+
+    it('keeps every merged test id unique', () => {
+      const {definitions} = mergeBoth()
+      expect(definitions.size).toBe(6)
     })
+
+    it('resolves every killedBy and coveredBy id to a definition', () => {
+      const {mergedFiles, definitions} = mergeBoth()
+      for (const entry of Object.values(mergedFiles)) {
+        for (const mutant of entry.mutants) {
+          for (const id of [...(mutant.killedBy ?? []), ...(mutant.coveredBy ?? [])]) {
+            expect(definitions.has(id), `unresolved id ${id}`).toBe(true)
+          }
+        }
+      }
+    })
+
+    it('resolves each id to the same test name and file as the shard-local test it came from', () => {
+      const {mergedFiles, definitions} = mergeBoth()
+      const local = (report: typeof shard1 | typeof shard2) => {
+        const byId = new Map<string, {name: string; file: string}>()
+        for (const [file, entry] of Object.entries(report.testFiles)) {
+          for (const test of entry.tests) byId.set(test.id, {name: test.name, file})
+        }
+        return byId
+      }
+      const expectResolved = (mutant: Mutant, byId: Map<string, {name: string; file: string}>, shard: string) => {
+        for (const id of mutant.killedBy ?? []) expect(definitions.get(`${shard}:${id}`)).toEqual(byId.get(id))
+        for (const id of mutant.coveredBy ?? []) expect(definitions.get(`${shard}:${id}`)).toEqual(byId.get(id))
+      }
+      const mutants1 = shard1.files['a.ts'].mutants
+      const mutants2 = shard2.files['b.ts'].mutants
+      // The merged mutants carry qualified ids; map them back by stripping the shard prefix.
+      const strip = (mutant: Mutant, shard: string): Mutant => ({
+        ...mutant,
+        killedBy: mutant.killedBy?.map(id => id.slice(shard.length + 1)),
+        coveredBy: mutant.coveredBy?.map(id => id.slice(shard.length + 1)),
+      })
+      const merged1 = mergedFiles['a.ts']?.mutants[0] ?? {status: ''}
+      const merged2 = mergedFiles['b.ts']?.mutants[0] ?? {status: ''}
+      expect(merged1.killedBy).toEqual(['s1:1'])
+      expect(merged2.killedBy).toEqual(['s2:2'])
+      expect(merged1.coveredBy).toEqual(['s1:0', 's1:1', 's1:2'])
+      expect(strip(merged1, 's1')).toEqual(mutants1[0])
+      expect(strip(merged2, 's2')).toEqual(mutants2[0])
+      expectResolved(strip(merged1, 's1'), local(shard1), 's1')
+      expectResolved(strip(merged2, 's2'), local(shard2), 's2')
+    })
+
+    it('leaves the other fields of a mutant, and a mutant without id arrays, as written', () => {
+      const {mergedFiles} = mergeBoth()
+      expect(mergedFiles['c.ts']?.mutants).toEqual([{id: '1', status: 'NoCoverage'}])
+      expect(mergedFiles['a.ts']?.mutants[0]?.status).toBe('Killed')
+    })
+
+    it('does not change the reports it was given', () => {
+      mergeBoth()
+      expect(shard1.files['a.ts'].mutants[0]?.killedBy).toEqual(['1'])
+      expect(shard1.testFiles['t.test.ts'].tests[0]?.id).toBe('0')
+    })
+  })
+
+  it('passes a non-object test file entry and a non-object test through unchanged', () => {
+    const first = reportOf({'a.ts': 1}, {})
+    ;(first.testFiles as Record<string, unknown>)['n.test.ts'] = null
+    ;(first.testFiles as Record<string, unknown>)['m.test.ts'] = {tests: ['plain']}
+    const merged = mergeShardReports([first, reportOf({'b.ts': 1}, {})], [['a.ts'], ['b.ts']])
+    const testFiles = merged.testFiles as Record<string, unknown>
+    expect(testFiles['n.test.ts']).toEqual({tests: []})
+    expect(testFiles['m.test.ts']).toEqual({tests: ['plain']})
+  })
+
+  it('passes a non-object mutant and a file entry without mutants through unchanged', () => {
+    const first = reportOf({'a.ts': 1}, {})
+    ;(first.files as Record<string, unknown>)['a.ts'] = {mutants: ['plain', null, {id: '1', killedBy: 'not-an-array'}]}
+    ;(first.files as Record<string, unknown>)['odd.ts'] = 'text'
+    ;(first.files as Record<string, unknown>)['empty.ts'] = {language: 'ts'}
+    const merged = mergeShardReports([first, reportOf({'b.ts': 1}, {})], [['a.ts', 'odd.ts', 'empty.ts'], ['b.ts']])
+    const files = merged.files as Record<string, unknown>
+    expect(files['a.ts']).toEqual({mutants: ['plain', null, {id: '1', killedBy: 'not-an-array'}]})
+    expect(files['odd.ts']).toBe('text')
+    expect(files['empty.ts']).toEqual({language: 'ts'})
   })
 
   it('keeps a test file only one report has', () => {
@@ -921,11 +1073,18 @@ describe('mergeShardReports', () => {
     expect(Object.keys(merged.testFiles as object).toSorted()).toEqual(['only-a.test.ts', 'only-b.test.ts'])
   })
 
-  it('treats a report entry with no tests array as zero tests', () => {
+  it('adds no definitions for a report entry with no tests array, and keeps the other fields of the first entry', () => {
     const odd = reportOf({'b.ts': 1}, {})
     ;(odd.testFiles as Record<string, unknown>)['t.test.ts'] = {}
-    const merged = mergeShardReports([reportOf({'a.ts': 1}, {'t.test.ts': 2}), odd], [['a.ts'], ['b.ts']])
-    expect((merged.testFiles as Record<string, unknown>)['t.test.ts']).toEqual({})
+    const first = reportOf({'a.ts': 1}, {'t.test.ts': 2})
+    ;(first.testFiles as Record<string, {from?: string}>)['t.test.ts'] = {
+      ...(first.testFiles['t.test.ts'] as object),
+      from: 'first',
+    }
+    const merged = mergeShardReports([first, odd], [['a.ts'], ['b.ts']])
+    const entry = (merged.testFiles as Record<string, {from?: string; tests: {id: string}[]}>)['t.test.ts']
+    expect(entry?.from).toBe('first')
+    expect(entry?.tests.map(test => test.id)).toEqual(['s1:t.test.ts#0', 's1:t.test.ts#1'])
   })
 })
 
@@ -960,6 +1119,17 @@ describe('two real shard reports merge to the verdict and output of the single r
     }
     expect(printed(fromMerged)).toBe(printed(fromBaseline))
     expect(Object.keys(merged.files as object).toSorted()).toEqual(Object.keys(baselineReport.files).toSorted())
+
+    // Mutant ids and test ids differ between runs by design; everything else the classifier reads must match.
+    const statuses = (files: Record<string, {mutants: {mutatorName: string; status: string; location: unknown}[]}>) =>
+      Object.entries(files)
+        .flatMap(([file, entry]) =>
+          entry.mutants.map(m => `${file}|${m.mutatorName}|${JSON.stringify(m.location)}|${m.status}`),
+        )
+        .toSorted()
+    expect(statuses(merged.files as Parameters<typeof statuses>[0])).toEqual(
+      statuses(baselineReport.files as unknown as Parameters<typeof statuses>[0]),
+    )
   })
 })
 

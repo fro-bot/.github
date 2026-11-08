@@ -29,6 +29,17 @@ export function mutationMergeCli(
             return 1
           }
           print(outcome.result)
+          // printResult drops the reason, so the detail of a merge check goes to stderr, one line per failure.
+          if (outcome.result.verdict === 'instrumentation-failed') {
+            for (const mutant of outcome.result.mutants) {
+              if (
+                mutant.reason !== undefined &&
+                (mutant.mutator === 'shard-merge' || mutant.mutator === 'vitest-config')
+              ) {
+                stderr(`mutation-merge: ${mutant.file}: ${mutant.status}: ${mutant.reason}\n`)
+              }
+            }
+          }
           return exitCodeFor(outcome.result.verdict)
         },
       }),

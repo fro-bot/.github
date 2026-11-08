@@ -106,7 +106,9 @@ function readJsonFile(path: string): JsonRead {
   try {
     return {ok: true, value: JSON.parse(readFileSync(path).toString()) as unknown}
   } catch (error) {
-    return {ok: false, message: (error as Error).message}
+    // A JSON.parse message quotes the file, so only a fixed phrase or the fs error code is reported.
+    const code = (error as {code?: unknown}).code
+    return {ok: false, message: error instanceof SyntaxError ? 'invalid JSON' : String(code)}
   }
 }
 
@@ -127,10 +129,34 @@ function fileKeys(report: ShardReportJson): string[] {
   return Object.keys(report.files).map(normalizePath)
 }
 
+function qualifyId(shard: number, id: unknown): string {
+  return `s${String(shard)}:${String(id)}`
+}
+
+function qualifyMutant(shard: number, mutant: unknown): unknown {
+  if (!isRecord(mutant)) return mutant
+  const qualified = ['killedBy', 'coveredBy']
+    .filter(key => Array.isArray(mutant[key]))
+    .map(key => [key, (mutant[key] as unknown[]).map(id => qualifyId(shard, id))])
+  return {...mutant, ...Object.fromEntries(qualified)}
+}
+
+function qualifiedFileEntry(shard: number, entry: unknown): unknown {
+  if (!isRecord(entry) || !Array.isArray(entry.mutants)) return entry
+  return {...entry, mutants: entry.mutants.map(mutant => qualifyMutant(shard, mutant))}
+}
+
+function qualifiedTests(shard: number, entry: unknown): unknown[] {
+  const tests: unknown[] = isRecord(entry) && Array.isArray(entry.tests) ? entry.tests : []
+  return tests.map(test => (isRecord(test) ? {...test, id: qualifyId(shard, test.id)} : test))
+}
+
 /**
- * Merges shard reports. `files` is the union (the caller has checked that no entry is in two). Each test file keeps the
- * entry of the report that ran it fewest times, the first on a tie. Other top-level fields come from the first report;
- * `config.mutate` is `lists` flattened.
+ * Merges shard reports; report `i` is shard `i + 1`. Stryker numbers test ids per run, so every test id is rewritten to
+ * `s<shard>:<id>`, in the `testFiles` definitions and in the mutants' `killedBy` and `coveredBy`. `files` is the union
+ * (the caller has checked that no entry is in two). Each test file's `tests` is the union of all shards' qualified
+ * definitions, and its other fields come from the first shard that has it. Other top-level fields come from the first
+ * report; `config.mutate` is `lists` flattened.
  */
 export function mergeShardReports(
   reports: readonly ShardReportJson[],
@@ -139,17 +165,26 @@ export function mergeShardReports(
   const top: Record<string, unknown> = Object.fromEntries(
     reports.toReversed().flatMap(report => Object.entries(report)),
   )
-  const files = Object.fromEntries(reports.flatMap(report => Object.entries(report.files)))
+  const files = Object.fromEntries(
+    reports.flatMap((report, index) =>
+      Object.entries(report.files).map(([file, entry]) => [file, qualifiedFileEntry(index + 1, entry)]),
+    ),
+  )
 
-  const fewest = new Map<string, unknown>()
-  for (const report of reports) {
-    for (const [key, entry] of Object.entries(report.testFiles)) {
-      if (!fewest.has(key) || testCount(entry) < testCount(fewest.get(key))) fewest.set(key, entry)
+  const byFile = new Map<string, {readonly entry: unknown; readonly tests: readonly unknown[]}>()
+  for (const [index, report] of reports.entries()) {
+    for (const [file, entry] of Object.entries(report.testFiles)) {
+      const tests = qualifiedTests(index + 1, entry)
+      const current = byFile.get(file)
+      byFile.set(file, {entry: current?.entry ?? entry, tests: [...(current?.tests ?? []), ...tests]})
     }
   }
+  const testFiles = Object.fromEntries(
+    [...byFile].map(([file, {entry, tests}]) => [file, {...(isRecord(entry) ? entry : {}), tests}]),
+  )
 
   const config = top.config as Record<string, unknown> | undefined
-  return {...top, config: {...config, mutate: lists.flat()}, files, testFiles: Object.fromEntries(fewest)}
+  return {...top, config: {...config, mutate: lists.flat()}, files, testFiles}
 }
 
 /**

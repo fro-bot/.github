@@ -29,10 +29,10 @@
           "statusReason": "expected 1 to be +0 // Object.is equality"
         },
         {
-          "id": "113",
+          "id": "114",
           "mutatorName": "StringLiteral",
           "status": "Killed",
-          "location": {"start": {"column": 39, "line": 15}},
+          "location": {"start": {"column": 45, "line": 15}},
           "statusReason": "expected 1 to be +0 // Object.is equality"
         }
       ],
@@ -49,11 +49,11 @@
           "statusReason": "expected [] to have a length of 1 but got +0"
         },
         {
-          "id": "4",
-          "mutatorName": "ObjectLiteral",
+          "id": "0",
+          "mutatorName": "BlockStatement",
           "status": "Killed",
-          "location": {"start": {"column": 21, "line": 20}},
-          "statusReason": "expected undefined to be true // Object.is equality"
+          "location": {"start": {"column": 52, "line": 16}},
+          "statusReason": "Cannot read properties of undefined (reading 'name')"
         }
       ],
       "source": ""

@@ -136,6 +136,85 @@ describe('the exit code', () => {
   })
 })
 
+describe('failure details on stderr', () => {
+  const detail = (file: string, mutator: string, status: string, reason?: string) => ({
+    file,
+    line: 0,
+    col: 0,
+    mutator,
+    status,
+    ...(reason === undefined ? {} : {reason}),
+  })
+
+  it('writes one stderr line per merge failure with its status and reason, and leaves stdout and the exit code alone', async () => {
+    const failed: ClassificationResult = {
+      verdict: 'instrumentation-failed',
+      mutants: [
+        detail(
+          'mutation-shard-2',
+          'shard-merge',
+          'ShardFilesMismatch',
+          'files keys differ from the shard list: missing a.ts; unexpected b.ts',
+        ),
+        detail(
+          'mutation-shard-3',
+          'shard-merge',
+          'ShardResultNotSuccess',
+          'the job result is "cancelled", not "success"',
+        ),
+        detail(
+          'packages/x.test.ts',
+          'vitest-config',
+          'TestFileNotExecuted',
+          'shard 1 ran no tests from this configured test file',
+        ),
+      ],
+    }
+    const print = vi.fn()
+    const outcome = await runCli(
+      mutationMergeCli(async () => ({kind: 'result', result: failed}), print),
+      {argv: [], env: {}},
+    )
+    expect(outcome.exitCode).toBe(1)
+    expect(outcome.stdout).toBe('')
+    expect(outcome.stderr).toBe(
+      'mutation-merge: mutation-shard-2: ShardFilesMismatch: files keys differ from the shard list: missing a.ts; unexpected b.ts\n' +
+        'mutation-merge: mutation-shard-3: ShardResultNotSuccess: the job result is "cancelled", not "success"\n' +
+        'mutation-merge: packages/x.test.ts: TestFileNotExecuted: shard 1 ran no tests from this configured test file\n',
+    )
+    expect(print).toHaveBeenCalledTimes(1)
+    expect(print).toHaveBeenCalledWith(failed)
+  })
+
+  it('skips a mutant with no reason, and any mutant that did not come from a merge check', async () => {
+    const result: ClassificationResult = {
+      verdict: 'instrumentation-failed',
+      mutants: [
+        detail('mutation-shard-1', 'shard-merge', 'ShardArtifactMissing'),
+        detail('/x/mutation.json', 'ReportUnreadable', 'RuntimeError', 'Unexpected token in JSON at position 0'),
+      ],
+    }
+    const outcome = await runCli(
+      mutationMergeCli(async () => ({kind: 'result', result}), vi.fn()),
+      {argv: [], env: {}},
+    )
+    expect(outcome.stderr).toBe('')
+  })
+
+  it('writes nothing to stderr for a verdict that is not instrumentation-failed', async () => {
+    const result: ClassificationResult = {
+      verdict: 'mutants-survived',
+      mutants: [detail('a.ts', 'shard-merge', 'Survived', 'a reason')],
+    }
+    const outcome = await runCli(
+      mutationMergeCli(async () => ({kind: 'result', result}), vi.fn()),
+      {argv: [], env: {}},
+    )
+    expect(outcome.stderr).toBe('')
+    expect(outcome.exitCode).toBe(1)
+  })
+})
+
 describe('the real printer', () => {
   it('prints the located mutants and the verdict once to stdout, and appends them once to the step summary', async () => {
     const summary = join(root, 'summary.md')
