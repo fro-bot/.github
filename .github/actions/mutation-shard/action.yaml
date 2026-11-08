@@ -1,0 +1,41 @@
+name: Mutation Shard
+description: Run one shard of the PR mutation gate on its list of mutate entries and upload its manifest and report
+
+inputs:
+  shard:
+    description: One-based shard number, 1 to 3. The shard list is mutation-guards.json `shards[shard - 1]`.
+    required: true
+  event-sha:
+    description: The pull request head SHA. The shard records it with `git rev-parse HEAD`, and the final job fails on a mismatch.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: 📦 Setup
+      uses: ./.github/actions/setup
+
+    - name: 🧬 Run Mutation Shard
+      # The shard decides applicability from the full config, then runs Stryker on its own list with the full testFiles.
+      # It exits 0 once its manifest (and report, when applicable) is written, and non-zero only on an infrastructure
+      # failure. A survivor is the final job's verdict. GH_TOKEN is for the changed-file fetch of the trigger gate; the
+      # spawner removes it from the Stryker child's environment.
+      env:
+        GH_TOKEN: ${{ github.token }}
+        MUTATION_SHARD: ${{ inputs.shard }}
+        MUTATION_SHARD_EVENT_SHA: ${{ inputs.event-sha }}
+        MUTATION_SHARD_OUTPUT_DIR: ${{ runner.temp }}/mutation-shard-${{ inputs.shard }}
+      run: bun scripts/mutation-shard.ts
+      shell: bash
+
+    - name: ⬆ Upload shard artifact
+      # Only a shard that succeeded uploads, so a failed shard never leaves evidence for the final job to trust, and
+      # `overwrite` lets a re-run attempt replace what the first attempt uploaded.
+      if: success()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: mutation-shard-${{ inputs.shard }}
+        path: ${{ runner.temp }}/mutation-shard-${{ inputs.shard }}
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 7

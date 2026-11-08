@@ -923,6 +923,7 @@ describe('buildTriggerSet', () => {
     expect(triggerSet.files.has('packages/ci-checks/src/repository-root.ts')).toBe(true)
     expect(triggerSet.files.has('packages/ci-checks/src/mutation-guards-config.test.ts')).toBe(true)
     expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
+    expect(triggerSet.files.has('.github/actions/mutation-shard/action.yaml')).toBe(true)
     expect(triggerSet.files.has('packages/wiki-write-core/package.json')).toBe(true)
     expect(triggerSet.files.has('tsconfig.json')).toBe(true)
     expect(triggerSet.files.has('packages/wiki-write-core/tsconfig.build.json')).toBe(true)
@@ -2166,6 +2167,7 @@ describe('the gate classifies the real tree after the move', {timeout: 60_000}, 
       'packages/ci-checks/src/mutation-shard-cli.ts',
       'scripts/mutation-merge.ts',
       'packages/ci-checks/src/mutation-merge-cli.ts',
+      '.github/actions/mutation-shard/action.yaml',
       'packages/ci-checks/src/repository-root.ts',
       'packages/ci-checks/src/mutation-guards-config.test.ts',
     ]) {

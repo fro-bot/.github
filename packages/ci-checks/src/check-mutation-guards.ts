@@ -1530,6 +1530,7 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
   'packages/ci-checks/src/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',
   '.github/actions/setup/action.yaml',
+  '.github/actions/mutation-shard/action.yaml',
   'packages/wiki-write-core/package.json',
   'tsconfig.json',
   'packages/wiki-write-core/tsconfig.build.json',

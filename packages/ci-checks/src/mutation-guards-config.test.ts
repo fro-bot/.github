@@ -415,7 +415,7 @@ describe('mutation shard lists', () => {
   })
 })
 
-describe('the shard and merge modules are fixed triggers', () => {
+describe('the shard and merge modules and the shard composite are fixed triggers', () => {
   // Tests 1 and 2 enumerate by name and do not match `mutation-shard*` or `mutation-merge*`. A new shim or CLI that is
   // in no list would leave a pull request that changes only it not-applicable, and that file is gate input.
   const SHARD_SHIM_PATTERN = /^scripts\/mutation-(?:shard|merge)[^/]*\.ts$/u
@@ -432,8 +432,11 @@ describe('the shard and merge modules are fixed triggers', () => {
     expect(shims).toContain('scripts/mutation-merge.ts')
     expect(clis).toContain('packages/ci-checks/src/mutation-merge-cli.ts')
 
+    const composite = '.github/actions/mutation-shard/action.yaml'
+    expect(existsSync(join(repositoryRoot, composite))).toBe(true)
+
     const fixed = new Set(FIXED_TRIGGER_FILES.map(normalizePath))
-    const missing = [...shims, ...clis].filter(path => !fixed.has(path))
+    const missing = [...shims, ...clis, composite].filter(path => !fixed.has(path))
     expect(missing, missing.length === 0 ? undefined : `not in FIXED_TRIGGER_FILES: ${missing.join(', ')}`).toEqual([])
   })
 })
