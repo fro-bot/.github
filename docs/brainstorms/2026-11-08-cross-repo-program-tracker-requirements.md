@@ -7,26 +7,32 @@ topic: cross-repo-program-tracker
 
 ## Summary
 
-Fro Bot learns to run a cross-repo program from start to finish, and fro-bot/.github#3512 is the first program. The rollout tracker becomes one workflow driven by a per-program config. It keeps itself current: it wakes on outside changes, runs on time, checks its own output, links evidence for every gate, and lists the live acceptance steps it still needs from the operator for the build that is deployed. A repo skill captures how to run such a program, so the operator can ask Fro Bot for a new one in one sentence and get a tracker issue, a Project and the first wiring PR.
+The rollout tracker becomes one workflow that can serve more than one cross-repo program, with fro-bot/.github#3512 as the first program. It keeps itself current. It wakes on outside changes and on the operator's edits, re-checks what it wrote, ticks a gate only on operator-authored or linked evidence, and lists the live acceptance steps it still needs from the operator for the deployed build. A repo skill captures how to run such a program. A credentialed request to Fro Bot can then start a new program after Fro Bot confirms the repo list with the operator. Starting a program means opening a tracker issue, a Project and the first wiring PR.
 
 ---
 
 ## Problem Frame
 
-#3512 tracks the Gateway operator control-surface rollout across fro-bot/agent, fro-bot/dashboard, marcusrbrown/infra and this repo. It has 146 Project items and 12 open acceptance sections. Its owner is `.github/workflows/gateway-rollout-tracker.yaml`. A preflight builds a snapshot and a hash (`packages/status-truth/src/rollout-tracker-snapshot.ts`), and an agent job then rewrites the body and the Project fields. A check against the source on 2026-11-08 found these gaps:
+#3512 tracks the Gateway operator control-surface rollout across fro-bot/agent, fro-bot/dashboard, marcusrbrown/infra and this repo. It has 146 Project items and 12 open acceptance sections. `.github/workflows/gateway-rollout-tracker.yaml` owns it: a preflight builds a snapshot and a wake hash (`packages/status-truth/src/rollout-tracker-snapshot.ts`), and an agent job rewrites the body and the Project fields.
 
-- **The snapshot reads only the first 100 Project items.** It calls `gh project item-list` with `--limit 100` (`rollout-tracker-snapshot.ts:706`), and the Project has 146 items. The other 46 never reach the hash, so changes to them never wake the tracker.
-- **Project fields never wake it.** The wake hash nulls each item's status, readiness, gate, labels and close date (`toGatingEvidence`, `rollout-tracker-snapshot.ts:265-287`, unchanged since #3517). This probably keeps the tracker's own field writes from waking it, but changes made by the operator or another repo's agent are missed too.
-- **Comment edits never wake it.** `rollout-tracker-mention.yaml` fires only on new comments.
-- **The daily run is late.** The `0 6 * * *` cron has landed between 12:42 and 15:13Z on every scheduled run from 11-01 to 11-07.
-- **Nothing checks its own output.** The marker stores the snapshot hash. Nothing compares the body or the Project fields to the snapshot after the write.
-- **Gates are ticked on judgment.** The prompt says to "check off a gate when the evidence supports it", but gates don't link the evidence.
-- **It waits for the operator.** Most of the 12 open sections need live runs on the operator's devices, Discord or production. The tracker records reports when they arrive but never says which run comes next for the deployed build.
-- **#4018 is observed, not asserted.** `data` survived the 11-02 promotions, but `merge-data.yaml` has no step that asserts it.
+Two defects are being fixed separately in `fix/rollout-tracker-item-cap`. The snapshot read only the first 100 Project items. The body is 64,575 bytes against GitHub's 65,536-byte limit. A review of the source and recent runs found these gaps that remain:
 
-The tracker is also wired to this one program. The issue number, Project 1 and the gateway-specific evidence are hardcoded in the workflow prompt (`gateway-rollout-tracker.yaml:102-167`) and in the snapshot code. The evidence is the agent and dashboard releases, the infra deploy runs and the dashboard health contract. Starting a second program would mean copying about 1,000 lines. The operator plans one next: OpenCode v2 compatibility and broader harness support across his OpenCode plugins.
+- **Project-field changes never wake the tracker.** The wake hash nulls status, readiness, gate, labels and close date (`toGatingEvidence`, `rollout-tracker-snapshot.ts:265-287`). The marker stores the hash from before the run's own writes, so counting those fields as-is would make each run wake the next one. User-owned Projects get no `projects_v2_item` webhook, and a Project item has no last-editor field.
+- **Operator edits are missed.** `rollout-tracker-mention.yaml` fires only on new comments that contain `@fro-bot`, and the snapshot only counts comment IDs above its baseline. Comment `6717940148` was edited at 06:30Z on 11-08, and the edit reached the body at 13:06Z, on the next scheduled run.
+- **Nothing checks what the tracker wrote.** Nothing compares the body or the Project fields to the snapshot after the write.
+- **Evidence is not bound to anyone.** #3512 is public and unlocked. The prompt treats "the operator's posted acceptance runs" as evidence, but nothing checks who wrote a comment. A comment that the workflow dispatches as `comment_id` joins the pending set without an author check (`rollout-tracker-snapshot.ts:427`).
+- **The tracker waits on the operator.** Most open sections need live runs on the operator's devices, Discord or production. The tracker records results when they are reported, but it never says which run comes next for the deployed build.
+- **It serves one program only.** #3512 and Project 1 are hardcoded in four places:
+  - the mention workflow (`rollout-tracker-mention.yaml:24`)
+  - the content job's exclusion (`fro-bot.yaml:520-525`)
+  - the agent prompt (`gateway-rollout-tracker.yaml:102-167`)
+  - the snapshot (`rollout-tracker-snapshot.ts:684-706`)
 
-This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/brainstorms/2026-06-15-fro-bot-personal-agent-north-star-requirements.md`, applied to the program-management surface Fro Bot already owns. Project memory 12220 sets the direction: fix trigger routing, prompt duties and acceptance coverage so Fro Bot verifies, acts and reports on its own, without adding a state file, a writer layer or new comment syntax.
+  The external evidence is also gateway-only: agent and dashboard releases, infra deploy runs and the dashboard health contract. The operator's next program is OpenCode v2 compatibility and broader harness support across his OpenCode plugins.
+
+Scheduled runs are a known limit, not a requirement here. All 15 scheduled runs checked landed 5h01m to 9h14m after the nominal 06:00Z, and GitHub documents schedules as best-effort. This doc relies on event wakes instead.
+
+This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/brainstorms/2026-06-15-fro-bot-personal-agent-north-star-requirements.md`, applied to a surface Fro Bot already owns. Project memory 12220 sets the direction: fix trigger routing, prompt duties and acceptance coverage so Fro Bot verifies, acts and reports on its own, without a state file, a writer layer or new comment syntax.
 
 ---
 
@@ -34,95 +40,110 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 **One tracker, per-program config**
 
-- R1. One tracker workflow and one snapshot serve every program. Each program is a config entry naming its tracker issue, its GitHub Project, the operator who may drive it, and the evidence sources that count for it: releases, deploy runs, health endpoints or checks.
-- R2. #3512 becomes the first config entry, and its tracker behaves as it does today except where this document changes it.
-- R3. Adding a program changes only its config entry and its tracker issue. It needs no new workflow and no change to the snapshot code.
+- R1. Each program is a config entry naming:
+  - its tracker issue
+  - its GitHub Project
+  - its operator, the one login whose comments drive it
+- R2. The mention workflow, the content job's exclusion, the agent prompt and the snapshot all read the program from config. Nothing hardcodes #3512 or Project 1.
+- R3. #3512 is the first entry, and its tracker behaves as it does today except where this doc changes it.
+- R4. Adding a program whose evidence is GitHub issue and PR state changes only its config entry and its tracker issue. Program-specific external evidence, such as #3512's releases, deploy runs and health contract, keeps its current form until program #2 shows what a general form needs.
 
-**Wake and cadence**
+**Wake**
 
-- R4. The snapshot reads every Project item, and fails rather than truncating silently.
-- R5. A change to a Project item's status, readiness, gate or labels wakes the tracker, unless the tracker made that change itself.
-- R6. An edit by the program's operator to their own comment on the tracker issue wakes the tracker, just as a new comment does.
-- R7. The scheduled run starts within an hour of its nominal time on most days.
+- R5. A change to a Project item's status, readiness, gate or labels wakes the tracker, unless the tracker itself made the change in its previous run.
+- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. The tracker answers each edit once.
 
-**Self-check and evidence**
+**Self-check**
 
-- R8. After writing, the tracker re-reads its issue body and Project fields in the same run and corrects any drift from the snapshot before it finishes. This is Fro Bot's own duty, not a separate verifier.
-- R9. Every gate the tracker ticks from now on links its evidence: a comment, a run, a PR or a release. A gate it can't link stays open and says what evidence is missing. Gates already accepted stay ticked.
-- R10. Each gate entry still says whether it is operator-reported or agent-verified. Visual evidence such as a screenshot or a recording attached to an operator comment counts as operator-reported evidence and is linked.
+- R7. Before a run finishes, the tracker re-reads its issue body and Project fields and corrects any drift from the snapshot. Drift here means dependency rows and Project field values. This is Fro Bot's own duty, not a separate verifier.
+
+**Evidence**
+
+- R8. A gate is ticked only on evidence:
+  - a comment written by the program's operator, judged by the API author
+  - a run, a PR or a release that the tracker links
+
+  Comments from anyone else are data, never evidence.
+- R9. Every gate ticked from now on links its evidence. Gates already accepted stay ticked.
+- R10. Each gate still says whether it is operator-reported or agent-verified. A screenshot or recording in an operator comment is linked by comment ID. The tracker never transcribes text from an image.
+- R11. A comment ID that triggers a run counts as pending only if the program's operator wrote it.
 
 **Driving acceptance**
 
-- R11. When a program's deployed build changes (a new release, deploy or contract version), the tracker publishes the list of live acceptance steps still open for that build. Each step names its gate, what to run and what passes.
-- R12. The list lives in one place on the tracker issue and is replaced, not appended, so the issue doesn't fill with stale lists.
-- R13. The tracker never marks a step done from the list alone. Steps close only through the evidence rules in R9 and R10.
+- R12. When a program's deployed build changes, the tracker publishes the list of live acceptance steps still open for that build. A build changes on a new release, a deploy or a contract version. The list comes from the Project's `Gate` field. Each step names its gate, what to run and what passes.
+- R13. The list lives in one place on the tracker issue and is replaced, not appended. Open gates carry forward across builds until they close.
+- R14. A step closes only through R8 and R9, never because it appeared on the list.
 
 **Program skill**
 
-- R14. A repo skill in `.agents/skills/` holds the guidance for running a cross-repo program in this repo:
-  - opening the tracker issue and the Project with its fields;
-  - adding dependencies across repos;
-  - defining acceptance gates and the evidence each needs, including visual evidence;
-  - handing live steps to the operator;
-  - keeping the program current;
-  - closing it out.
-- R15. When the operator asks Fro Bot in this repo for a new cross-repo program in one sentence, the skill leads Fro Bot to:
-  - open the tracker issue with an initial body;
-  - create the Project, or reuse one if the operator names it;
-  - open the first PR that adds the program's config entry.
-- R16. The skill draws on #3512's history: what worked, what drifted and what the operator corrected. It also links the tracker's code and docs rather than restating them.
-
-**Data branch survival (#4018)**
-
-- R17. `merge-data` fails when `data` is missing after a promotion, or when its tip no longer contains the commits it had before the promotion.
+- R15. A repo skill in `.agents/skills/` holds the guidance for running a cross-repo program in this repo:
+  - opening the tracker issue and the Project with its fields
+  - adding cross-repo dependencies
+  - defining acceptance gates and the evidence each needs
+  - handing live steps to the operator
+  - keeping the program current
+  - closing it out
+- R16. The skill draws on #3512's history: what worked, what drifted and what the operator corrected. It links the tracker's code and docs rather than restating them.
+- R17. A program starts from a credentialed request to Fro Bot. That is a gateway launch from Discord or the dashboard, or a `workflow_dispatch`, never an issue comment. The skill leads Fro Bot through these steps:
+  1. find any existing program that covers the request
+  2. propose the repo list and ask the operator to confirm it
+  3. after confirmation, open the tracker issue, create the Project and its items, and open the PR that adds the config entry
+- R18. A program covers public repos only. The tracker refuses to add an item from a private repo and says why.
 
 ---
 
 ## Acceptance Examples
 
-- AE1. **Covers R4, R5.** The operator moves a Project item past the 100th from "In Progress" to "Done". The next preflight wakes the tracker with that item as the reason.
+- AE1. **Covers R5.** The operator moves a Project item from "In Progress" to "Done". The next preflight wakes the tracker and names that item as the reason.
 - AE2. **Covers R5.** The tracker sets an item's readiness to "waiting" during a run. The next preflight does not wake on that change.
-- AE3. **Covers R6.** The operator edits an earlier #3512 comment to add a passing G2c result. The tracker wakes and replies to that comment.
-- AE4. **Covers R8.** The tracker's body write drops a dependency row. Before the run ends, the same run notices that the body has fewer rows than the snapshot and restores the row.
-- AE5. **Covers R9.** An operator comment says "G4c pass" with no run, screenshot or link. The tracker leaves G4c open and asks for the run ID or a screenshot.
-- AE6. **Covers R11, R12.** Gateway v0.136.5 is deployed. The tracker replaces the acceptance list with the steps still open on v0.136.5, each naming its gate and pass criteria.
-- AE7. **Covers R14, R15.** The operator tells Fro Bot here: "Let's ensure OpenCode v2 compatibility across my OpenCode plugins and broaden harness support". Fro Bot opens a tracker issue, a Project with one item per plugin repo, and a PR adding the program's config entry.
-- AE8. **Covers R17.** A promotion run leaves `data` missing. The run fails and names the missing branch.
+- AE3. **Covers R6.** The operator edits an earlier #3512 comment to add a passing G2c result, without `@fro-bot`. The tracker wakes and answers that edit once.
+- AE4. **Covers R7.** The tracker's body write drops a dependency row. Before the run ends, the tracker finds the row missing from the body and restores it.
+- AE5. **Covers R8.** A third party comments "G4c pass" on #3512. G4c stays open, and the tracker treats the comment as data.
+- AE6. **Covers R8, R9.** The operator comments "G4c pass". The tracker ticks G4c as operator-reported and links that comment.
+- AE7. **Covers R12, R13.** Gateway v0.136.5 is deployed while two gates from v0.136.4 are still open. The new list names those two gates and every other gate still open for v0.136.5.
+- AE8. **Covers R17.** The operator asks Fro Bot through the gateway: "Let's ensure OpenCode v2 compatibility across my OpenCode plugins and broaden harness support". Fro Bot finds no existing program and proposes a list of plugin repos. Once the operator confirms the list, it opens the tracker issue, the Project with one item per repo, and the config PR.
+- AE9. **Covers R18.** A dependency points at a private repo. The tracker leaves it out and notes the refusal in its run comment, without naming the repo.
 
 ---
 
 ## Success Criteria
 
-- For two weeks after it ships, every #3512 body and Project change that #3512's history shows comes from a tracker run that linked its evidence.
-- The operator no longer has to work out which acceptance run to do next: the list on #3512 names it.
-- The OpenCode v2 plugin program starts from one operator sentence and reaches an open tracker, a Project and a first PR without the operator writing any of them.
+- Two weeks after release, every gate the tracker has ticked links operator-authored evidence or a run, PR or release. Any gate without one is a defect.
+- An operator edit or Project change reaches #3512 within one run of its wake. It no longer waits for the next scheduled run.
+- #3512 always shows which acceptance steps come next for the deployed build.
+- The OpenCode v2 plugin program goes from one operator request to an open tracker issue, a Project and a config PR. The operator only confirms the repo list.
 
 ---
 
 ## Scope Boundaries
 
-- The tracker does not run acceptance steps itself. Most need the operator's devices, Discord or production faults.
+- The tracker does not run acceptance steps. Most of them need the operator's devices, Discord or production faults.
 - Code fixes for #3512's open sections stay in fro-bot/agent, fro-bot/dashboard and marcusrbrown/infra.
-- No harness plugin. The guidance ships as a repo skill.
-- No new state file, writer layer or comment syntax. The existing marker and Project fields carry the state.
-- Programs outside fro-bot and marcusrbrown repos are out of scope.
+- The skill is a repo skill, not a harness plugin.
+- The existing marker and Project fields carry all state, with no new state file, writer layer or comment syntax.
+- The external-evidence schema is deferred until program #2.
+- Programs that cover private repos are out of scope.
+- Scheduled-run timing is out of scope (see Problem Frame).
+- #4018: ruleset `25556841` ("data branch: no deletion", no bypass) already prevents `data` from being deleted, so this doc adds no merge-data assertion. #3512's #4018 dependency can close on that ruleset as evidence.
+- The tracker filing missing dependency issues in the owning repos is a natural next push. It is a follow-up, not part of this doc.
 
 ---
 
 ## Key Decisions
 
-- **Generalize now.** The OpenCode v2 plugin program is a concrete second user, and copying about 1,000 lines per program costs more than one config schema.
-- **The self-check is the agent's own duty.** Per memory 12220, Fro Bot verifies its own surface. There is no trusted-writer layer.
-- **The acceptance list is replaced, not appended,** to keep #3512 readable.
-- **Evidence links apply from now on.** Past operator acceptances are not reopened.
+- **Generalize the routing now, defer the evidence schema.** Program #2 is real, so routing by config pays now. Its evidence isn't known yet, so a general evidence shape would be a guess.
+- **The tracker excludes its own writes using its own marker.** After writing, it rebuilds the snapshot and stores that hash. This needs no state file. The cost is that an operator change landing in the moments between write and rehash is absorbed. The next operator change or edit still wakes it.
+- **Operator-authored comments are evidence.** The API author is the identity check. This settles AE5 and AE6 and closes the public-issue forgery path, without treating Fro Bot as an untrusted proposer.
+- **Starting a program is credentialed and confirmed.** Comment runs carry no write credential. The confirmation step keeps a guessed repo list from creating junk issues and Projects.
+- **Declined:** narrowing the content job to the operator only. That would be a lockdown, contrary to memory 12220.
 
 ---
 
 ## Dependencies / Assumptions
 
-- *Unverified:* the Fro Bot agent's OpenCode loads repo skills from `.agents/skills/`. Planning must confirm this, or name where the skill must live.
-- *Unverified:* the tracker's `FRO_BOT_PAT` can create a user Project and add items for a new program. Today it only edits Project 1.
-- Scheduled-run lateness is GitHub's queueing. Moving off the top of the hour is the usual fix and needs measuring.
+- *Spike before planning:* one CI agent run lists a skill from `.agents/skills/`. OpenCode documents that directory as a project source, but no run has shown it.
+- *Spike before planning:* `FRO_BOT_PAT` creates and deletes a throwaway user Project. The token already edits Project 1 and is documented with `project` scope.
+- Gateway launches can open PRs in this repo through the brokered push path. Planning confirms that this covers starting a program.
 
 ---
 
@@ -130,14 +151,12 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 ### Deferred to Planning
 
-- [Affects R5][Technical] How to tell the tracker's own field writes from other writers without a state file. For example, the marker could record the hash of the fields as written, or the Project item's last editor could be checked.
-- [Affects R1, R3][Technical] Where the per-program config lives and what shape the evidence sources take. Gateway evidence is releases, deploy runs and a health contract. Plugin evidence is likely CI runs and releases across many repos.
-- [Affects R6][Technical] Whether comment edits arrive through `issue_comment: edited` on the mention workflow, or through a preflight check of `updated_at`.
-- [Affects R11][Needs research] Where the open live steps for a build come from: the gate list in the body, or a per-gate field.
-- [Affects R14][Technical] The skill's name and structure, and which #3512 history it cites.
+- [Affects R6][Technical] Where the "answered edits" watermark lives in the existing marker, and how the tracker skips edits to its own marker comment.
+- [Affects R12][Technical] How the `Gate` field values map to runnable steps and pass criteria.
+- [Affects R15][Technical] The skill's name, structure, and which #3512 history it cites.
 
 ---
 
 ## Next Steps
 
--> `/ce:plan` for structured implementation planning.
+-> Run the two spikes, then `/ce:plan`.
