@@ -2080,6 +2080,23 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('agent-verified')
     })
 
+    it('lists only the dependencies that are not Done and counts the rest with a Project link', () => {
+      expect(flat).toContain('list only the dependencies whose Project status is not Done')
+      expect(flat).toContain(
+        'one line that counts the Done dependencies and links the full list at https://github.com/users/fro-bot/projects/1',
+      )
+      expect(flat).toContain('Project 1 is the source of truth for every item')
+      expect(flat).toContain('Never parse prose tables as state')
+    })
+
+    it('measures the body in UTF-8 bytes before each write and gates it at 60,000 and 65,000', () => {
+      expect(flat).toContain('Before each write of the body, measure it in UTF-8 bytes')
+      expect(flat).toContain('over 60,000 bytes, shorten the oldest prose in "Current state" and "Still open"')
+      expect(flat).toContain('Every unmet gate and every open item stays')
+      expect(flat).toContain('Never write a body over 65,000 bytes')
+      expect(flat).toContain('skip the body write and say so in your tracker comment')
+    })
+
     it('answers exactly the pending mention IDs, fetching each by ID', () => {
       expect(flat).toContain('Answer exactly the pending mention IDs and no others')
       expect(flat).toContain('fetch each one by ID')
