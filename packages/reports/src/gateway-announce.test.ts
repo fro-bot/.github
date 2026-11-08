@@ -1270,8 +1270,9 @@ describe('announce status floor, fixed stderr lines and the real wait', () => {
     await vi.advanceTimersByTimeAsync(4999)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
-    expect(await pending).toEqual({posted: true, status: 200})
+    // Before awaiting: a default sleep that never resolves would leave `pending` hanging to the 10 s test timeout.
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(await pending).toEqual({posted: true, status: 200})
   })
 })
 
