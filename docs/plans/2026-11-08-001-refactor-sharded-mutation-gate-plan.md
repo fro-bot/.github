@@ -467,6 +467,7 @@ flowchart LR
 
 - On the PR's own runs, record each shard's duration, the final job's duration and the end-to-end wall time, from the first shard's start to the final job's end. Compare against the 858 s median. Runs with a dry run within 10 s of each other count as comparable.
 - After the first CI run, rebalance the lists if one shard runs more than 20% over the mean of the three.
+- Confirm the composite's nested `uses: ./.github/actions/setup` resolves on the first run. No composite in the repo nested a local action before this one.
 - Verify the re-run behaviour live, before the PR is called done:
   - cancel one shard, then use "re-run failed jobs", and confirm the final job sees the right `needs` results and merges the fresh artifact;
   - confirm the re-run attempt downloads the `latest` artifact of each name;
