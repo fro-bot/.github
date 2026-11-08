@@ -409,11 +409,10 @@ function reference(body: string): MarkerData | null {
     const parsed: unknown = JSON.parse(jsonStr)
     if (typeof parsed !== 'object' || parsed === null || typeof (parsed as {hash?: unknown}).hash !== 'string')
       return null
-    const record = parsed as {hash: string; snapshot?: unknown; last_mention_id?: unknown}
+    const record = parsed as {hash: string; last_mention_id?: unknown}
     const lastMentionId = record.last_mention_id
     return {
       hash: record.hash,
-      snapshot: record.snapshot,
       last_mention_id:
         typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
           ? lastMentionId

@@ -63,12 +63,12 @@ export interface RolloutSnapshot {
 }
 
 /**
- * The data embedded in the HTML marker comment. Only `hash` is required to parse; the snapshot is
- * informational and `last_mention_id` is null when the marker carries no valid value.
+ * The data embedded in the HTML marker comment. Only `hash` is required to parse, and
+ * `last_mention_id` is null when the marker carries no valid value. Markers written before the
+ * snapshot was dropped from them still carry a `snapshot` field; it is ignored on read.
  */
 export interface MarkerData {
   hash: string
-  snapshot: unknown
   /** The highest operator `@fro-bot` comment ID the tracker has answered; null when absent or invalid. */
   last_mention_id: number | null
 }
@@ -341,7 +341,6 @@ export function extractPreviousMarker(body: string): MarkerData | null {
     const lastMentionId = parsed.last_mention_id
     return {
       hash: parsed.hash,
-      snapshot: parsed.snapshot,
       last_mention_id:
         typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
           ? lastMentionId
@@ -431,12 +430,14 @@ export function scanOperatorMentions(
 }
 
 /**
- * Build the complete marker string. `<`, `>` and `&` are escaped inside the JSON so Project text or
- * labels containing `-->` can neither close the HTML comment early nor break the parse; JSON.parse
- * restores them.
+ * Build the complete marker string: the hash and the last answered mention ID, nothing else. The
+ * snapshot stays out because it grows with the Project and would push the comment past GitHub's
+ * 65,536-character limit; the preflight result carries it on stdout instead. `<`, `>` and `&` are
+ * escaped inside the JSON so text containing `-->` can neither close the HTML comment early nor
+ * break the parse; JSON.parse restores them.
  */
-export function buildMarker(hash: string, snapshot: RolloutSnapshot, lastMentionId: number): string {
-  const json = JSON.stringify({hash, snapshot, last_mention_id: lastMentionId})
+export function buildMarker(hash: string, lastMentionId: number): string {
+  const json = JSON.stringify({hash, last_mention_id: lastMentionId})
     .replaceAll('<', String.raw`\u003c`)
     .replaceAll('>', String.raw`\u003e`)
     .replaceAll('&', String.raw`\u0026`)
@@ -651,6 +652,12 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
+/**
+ * The `--limit` of the Project read. `gh project item-list` pages internally but cuts off at this
+ * count without saying so, so a result of exactly this size is treated as possibly truncated.
+ */
+const PROJECT_ITEM_LIMIT = 1000
+
 /** The env a run reads: what the runner hands the action, `process.env` in production. */
 type Env = Readonly<Record<string, string | undefined>>
 
@@ -703,10 +710,10 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     let rawItems: string
     try {
       const {execSync} = await import('node:child_process')
-      rawItems = execSync(`gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit 100`, {
-        encoding: 'utf8',
-        timeout: 60_000,
-      })
+      rawItems = execSync(
+        `gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit ${PROJECT_ITEM_LIMIT}`,
+        {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
+      )
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       io.stderr(`rollout-tracker-snapshot: FATAL — failed to read Project ${projectUrl}: ${detail}\n`)
@@ -721,6 +728,13 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
         parsed !== null && typeof parsed === 'object' && 'items' in parsed
           ? (parsed as {items: unknown[]}).items
           : (parsed as unknown[])
+      // `gh project item-list` stops silently at --limit, so a full page may be a cut one.
+      if (rawArr.length >= PROJECT_ITEM_LIMIT) {
+        io.stderr(
+          `rollout-tracker-snapshot: FATAL — Project item list reached the read limit of ${PROJECT_ITEM_LIMIT} items and may be truncated; refusing to treat a partial read as no-drift; exiting 1\n`,
+        )
+        return 1
+      }
       items = (rawArr as Record<string, unknown>[]).map(raw => normaliseRawProjectItem(raw))
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -833,7 +847,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
-    marker: buildMarker(hash, snapshot, lastMentionId),
+    marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
   }
 

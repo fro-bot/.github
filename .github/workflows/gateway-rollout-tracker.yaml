@@ -142,6 +142,20 @@ jobs:
            evidence that has not been acknowledged, and link it back to
            fro-bot/.github#3512.
 
+        Body size. GitHub rejects an issue body over 65,536 bytes. In the
+        cross-repo dependency matrix, list only the dependencies whose Project
+        status is not Done. After them, add one line that counts the Done
+        dependencies and links the full list at
+        https://github.com/users/fro-bot/projects/1. Project 1 is the source
+        of truth for every item.
+        Before each write of the body, measure it in UTF-8 bytes. If it is
+        over 60,000 bytes, shorten the oldest prose in "Current state" and
+        "Still open". Every unmet gate and every open item stays. Never write
+        a body over 65,000 bytes. If the body still does not fit, skip the
+        body write and say so in your tracker comment. In that case, do not
+        write the new marker and leave the existing marker comment as it is,
+        so the next run wakes and retries.
+
         Replies. When any pending mention ID is listed above, post one reply on
         fro-bot/.github#3512 that covers all of them: what you verified, what
         you accepted, what you rejected or flagged and why, and what you
