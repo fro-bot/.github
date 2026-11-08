@@ -51,7 +51,7 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 **Wake**
 
 - R5. A change to a Project item's status, readiness, gate or labels wakes the tracker, unless the tracker itself made the change in its previous run.
-- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. The tracker answers each edit once.
+- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. An operator comment or edit stays pending until a later Fro Bot reply links it, so each version is answered once.
 
 **Self-check**
 
@@ -70,8 +70,8 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 **Driving acceptance**
 
-- R12. When a program's deployed build changes, the tracker publishes the list of live acceptance steps still open for that build. A build changes on a new release, a deploy or a contract version. The list comes from the Project's `Gate` field. Each step names its gate, what to run and what passes.
-- R13. The list lives in one place on the tracker issue and is replaced, not appended. Open gates carry forward across builds until they close.
+- R12. When a program's deployed build changes, the tracker publishes the list of live acceptance steps still open for that build. The deployed build is the latest successful deploy run. The list comes from the open "Acceptance criteria" checkboxes in the issue body, because the Project's gate field is free text. Each step names its gate, what to run and what passes.
+- R13. The list lives in one comment on the tracker issue and is replaced, not appended, because the body has no room for it. Open gates carry forward across builds until they close.
 - R14. A step closes only through R8 and R9, never because it appeared on the list.
 
 **Program skill**
@@ -108,8 +108,8 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 ## Success Criteria
 
-- Two weeks after release, every gate the tracker has ticked links operator-authored evidence or a run, PR or release. Any gate without one is a defect.
-- An operator edit or Project change reaches #3512 within one run of its wake. It no longer waits for the next scheduled run.
+- Two weeks after release, every gate the tracker has ticked since release links operator-authored evidence or a run, PR or release. Any gate without one is a defect.
+- An operator comment or edit is answered by the run its relay dispatches. A Project field change is picked up on the next poll.
 - #3512 always shows which acceptance steps come next for the deployed build.
 - The OpenCode v2 plugin program goes from one operator request to an open tracker issue, a Project and a config PR. The operator only confirms the repo list.
 
@@ -143,7 +143,7 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 - The CI agent does not load `.agents/skills/`. The Action sets `OPENCODE_DISABLE_PROJECT_CONFIG=1` (fro-bot/agent `packages/runtime/src/agent/server-v2.ts:413`), and OpenCode then skips the project walk. That flag stays, because it keeps a fork checkout from adding config. Until fro-bot/agent#2129 loads repo skills on trusted runs, every CI prompt that needs the program skill tells the agent to read its `SKILL.md` by path. Local harnesses already load `.agents/skills/`.
 - `FRO_BOT_PAT` is documented with `project` scope and already edits Project 1. Implementation confirms it can create a user Project the first time it does so.
-- Gateway launches can open PRs in this repo through the brokered push path. Planning confirms that this covers starting a program.
+- A gateway launch carries no GitHub credential, and brokered push covers only an existing PR head. Discord's `/fro-bot dispatch` already dispatches `fro-bot.yaml` with a prompt, and that run holds `FRO_BOT_PAT`, so programs start there. A dashboard dispatch route and a denylist gate on `/fro-bot dispatch` are tracked in fro-bot/agent#2130.
 
 ---
 

@@ -10,81 +10,107 @@ origin: docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md
 
 ## Overview
 
-The rollout tracker becomes one workflow that serves every cross-repo program. Each program has a config entry and a labeled tracker issue, and #3512 is the first. The tracker:
+The rollout tracker becomes one workflow that serves every cross-repo program. Each program has a config entry and a labeled tracker issue, and #3512 is the first.
 
-- wakes on Project field changes and on the operator's edits;
-- re-checks what it wrote;
-- ticks a gate only when the operator posted the evidence or a linked run, PR or release backs it;
-- lists the live acceptance steps still open for the deployed build.
+The tracker:
 
-A trusted post job writes the marker from a rehash of live state. A repo skill describes how to run a program. Starting a program from a gateway launch depends on a fro-bot/agent change, so that unit is gated.
+- answers every operator comment and edit it has not yet replied to;
+- wakes on Project field changes on its next poll;
+- checks its own writes;
+- ticks a gate only on the operator's own comments or on linked runs, PRs or releases;
+- keeps one comment listing the acceptance steps still open for the deployed build.
+
+A deterministic post job writes the wake hash. A repo skill describes how to run a program. A program starts from Discord's `/fro-bot dispatch` or `gh workflow run`, and the operator confirms it by merging the config PR that the start run opens.
 
 ## Problem Frame
 
-See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md`. PR #4146 is a prerequisite: it reads every Project item, keeps #3512's body under the size limit, and drops the snapshot from the marker. This plan builds on it.
+See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md`. PR #4146 is a prerequisite. It reads every Project item, keeps #3512's body under the size limit and drops the snapshot from the marker. This plan builds on its merged tree.
 
 ## Requirements Trace
 
 | Requirement | Units |
 | --- | --- |
-| R1–R4: per-program config, routing, #3512 as the first entry, gateway evidence kept as is | 1, 2 |
-| R5: Project field changes wake the tracker, except its own writes | 3 |
-| R6: operator edits wake the tracker | 4 |
+| R1–R4: per-program config, routing, #3512 as the first entry, gateway evidence kept | 1, 2 |
+| R5: Project field changes wake the tracker, its own writes don't | 3 |
+| R6: operator edits are answered | 4 |
 | R7: self-check | 5 |
-| R8–R11: evidence rules and operator-authored triggers | 3, 5 |
+| R8–R10: evidence rules and the reported/verified label | 5 |
+| R11: authorized trigger comments | 2 |
 | R12–R14: acceptance list | 5 |
 | R15–R16: program skill | 6 |
-| R17: credentialed program start | 7 (gated) |
-| R18: public repos only | 5, 7 |
+| R17: program start | 7 |
+| R18: public repos only | 3, 7 |
+
+| Acceptance example | Covered by |
+| --- | --- |
+| AE1, AE2 | Unit 3 |
+| AE3 | Unit 4 |
+| AE4 | Unit 5 (self-check) |
+| AE5, AE6 | Unit 5 (evidence) |
+| AE7 | Unit 5 (acceptance comment) |
+| AE8 | Unit 7 |
+| AE9 | Unit 3 (preflight visibility) |
 
 ## Scope Boundaries
 
-- Each program's external evidence keeps its current form. Only #3512 has any, and that is gateway evidence. A general evidence schema waits for program #2.
-- No new state file or comment syntax. The marker gains one field, and a deterministic post job writes it.
-- This plan changes no fro-bot/agent code. It files the gateway-dispatch request (Unit 7).
+- External evidence keeps its current shape. Only #3512 has any, and it is gateway evidence. A general evidence schema waits for program #2.
+- No new state file and no new comment syntax:
+  - The marker shrinks to `{hash}`, plus the legacy `last_mention_id`.
+  - "Answered" is read from the reply links Fro Bot already writes.
+- This plan changes no fro-bot/agent code.
 
 ### Deferred to Separate Tasks
 
-- Program start from a gateway launch: Unit 7 is blocked on the fro-bot/agent issue for credentialed workflow dispatch from a gateway launch.
-- Filing missing dependency issues in owning repos, outside program start: a follow-up.
-- Loading repo skills natively in CI: fro-bot/agent#2129. Until then, prompts read the skill by path.
+- Starting programs from the dashboard, and the denylist gate on `/fro-bot dispatch`: fro-bot/agent#2130.
+- Loading repo skills natively in CI: fro-bot/agent#2129. Until it ships, prompts read the skill by path.
+- Filing missing dependency issues in owning repos outside program start: a follow-up.
 
 ## Context & Research
 
 ### Relevant Code and Patterns
 
-- **Tracker workflows.** `.github/workflows/gateway-rollout-tracker.yaml` runs a preflight job and then the agent through `fro-bot.yaml` with `workflow_call`. `.github/workflows/rollout-tracker-mention.yaml` is a credential-free relay that dispatches it.
-- **Content-job exclusion.** `.github/workflows/fro-bot.yaml` (around lines 520–525) excludes the operator's #3512 comments from the content job. The daily prompt mentions #3512 and Project 1 again around lines 426–432.
-- **Snapshot.** `packages/status-truth/src/rollout-tracker-snapshot.ts` holds these pieces:
-  - `OPERATOR_LOGIN`, `GATE_FIELD_NAME`, the `ROLLOUT_TRACKER_ISSUE` default, and Project number 1 with owner `fro-bot`.
-  - `hashSnapshot` and `toGatingEvidence`. These null the status, readiness, gate, labels and close date.
-  - `extractPreviousMarker`. Its linear scan is pinned by `detect-extract-linear.test.ts`.
-  - `scanOperatorMentions` and `fetchTrackerComments`.
-- **Snapshot without a program.** `.github/workflows/status-truth.yaml` (around lines 73–95) runs the snapshot with no program selected, so a default program must remain.
-- **Agent job then trusted publisher.** This repo already follows the pattern in several places:
-  - `capture-learnings.yaml`
-  - `capture-patterns.yaml`
-  - `draft-solutions.yaml`
-  - `survey-repo.yaml` (`survey-persist`)
-  - `fro-bot.yaml` (`fro-bot-observe-announce`, which recomputes values on the trusted side)
-- **Root JSON config with a guard test.** `mutation-guards.json` and `packages/ci-checks/src/mutation-guards-config.test.ts`.
-- **Label routing in the event payload.** `fro-bot.yaml` around line 643, and `cross-repo-dispatch.yaml` around line 34.
-- **Public repo check.** `.github/actions/resolve-public-repo` (reuse it for R18).
-- **Skill shape.** `.agents/skills/generating-project-docs/SKILL.md`, listed in `.agents/README.md`.
-- **Workflow test helpers.** `@fro-bot/test-kit` provides `workflow-step` (`runStepWithStubs`) and `workflow-expression`. `scripts/rollout-tracker-mention-workflow.test.ts` pins the relay.
+**Tracker workflows**
+- `.github/workflows/gateway-rollout-tracker.yaml` runs a preflight job, then the agent through `fro-bot.yaml` with `workflow_call`. Its concurrency group is `gateway-rollout-tracker`.
+- `.github/workflows/rollout-tracker-mention.yaml` is the credential-free relay.
+- `.github/workflows/fro-bot.yaml`:
+  - the content job's tracker exclusion is at about lines 520–525;
+  - its `issues` branch is at about 503–507 and has no tracker exclusion;
+  - the daily prompt mentions #3512 at about 426–432;
+  - `fro-bot-remediate` checks out with the PAT and without `persist-credentials: false` at about 822–826. Do not copy that.
+
+**Snapshot** (`packages/status-truth/src/rollout-tracker-snapshot.ts`)
+- `OPERATOR_LOGIN`, `GATE_FIELD_NAME`, and Project number and owner are literals.
+- `toGatingEvidence` nulls the item fields.
+- `extractPreviousMarker` uses a linear scan that `detect-extract-linear.test.ts` pins.
+- `scanOperatorMentions` adds a dispatched trigger ID to the pending set without checking author or issue (about lines 426–427).
+- `fetchTrackerComments` returns id, login and body.
+- Its CLI (`rollout-tracker-snapshot-cli.ts`) is `readOnly: true` with zero argv, and tests pin that.
+- `status-truth.yaml` (about lines 73–95) reads the snapshot's stdout `.snapshot` with no program selected.
+
+**Reusable patterns**
+- **Agent job, then trusted publisher job that recomputes:** `survey-repo.yaml` (`survey-persist`) and `fro-bot.yaml` (`fro-bot-observe-announce`).
+- **Root JSON config plus a guard test:** `mutation-guards.json` and `packages/ci-checks/src/mutation-guards-config.test.ts`.
+- **Label routing from the event payload:** `fro-bot.yaml` around line 643.
+- **Public-repo check:** `.github/actions/resolve-public-repo`.
+- **Skill shape:** `.agents/skills/generating-project-docs/SKILL.md`, listed in `.agents/README.md`.
+- **Test helpers:** `@fro-bot/test-kit` `workflow-step` (`runStepWithStubs`).
+- **Program-start path:** `/fro-bot dispatch` dispatches the bound repo's `fro-bot.yaml` with a prompt. The run holds `FRO_BOT_PAT` and defaults to `branch-pr` for custom prompts (fro-bot/agent `discord/commands/dispatch.ts`).
 
 ### Institutional Learnings
 
-- `docs/solutions/workflow-issues/autonomous-rollout-tracker-workflow-2026-06-17.md`: this is the tracker's design. It has a single writer, takes state from the Project and never parses prose tables back as state.
-- `docs/brainstorms/2026-10-22-rollout-tracker-autonomy-requirements.md` and its plan record the 10-22 autonomy change. Do not edit them.
-- Project memory 12220 sets the direction: Fro Bot verifies its own surfaces, with no lockdown or writer layer. The post job does bookkeeping that the agent cannot get right deterministically. It does not judge the agent's content.
+- `docs/solutions/workflow-issues/autonomous-rollout-tracker-workflow-2026-06-17.md`: single writer, state taken from the Project, never parse prose tables back as state.
+- `docs/plans/2026-10-22-001-feat-rollout-tracker-autonomy-plan.md`, status complete. That plan's tracker is the one this plan generalizes.
+- Project memory 12220: Fro Bot verifies its own surfaces. The post job does bookkeeping the agent can't do deterministically, and it never judges the agent's content.
 
-### Facts the research surfaced
+### Facts the research established
 
-- Project 1 is user-owned. User-owned Projects emit no `projects_v2_item` webhook, and a Project item has no last-editor field. Field changes are therefore found by polling.
-- The `Gateway Unit Gate` field is free text on every item. The structured gate list is the set of checkboxes under "Acceptance criteria" in the issue body: 147 checkboxes, 66 of them open.
-- A gateway-launched agent's environment has no GitHub token. Brokered push only reaches an existing same-repo PR head on `issue_comment`, and its path allowlist excludes `.github` and `scripts`.
-- `fro-bot.yaml` declares no `workflow_call` outputs. The post job needs none: it recomputes everything.
+- User-owned Projects emit no `projects_v2_item` webhook, and an item has no last-editor field. Field changes are found by polling.
+- Scheduled runs have landed 5 to 9 hours late, so a poll is best-effort.
+- The `Gateway Unit Gate` field is free text. The structured gate list is the "Acceptance criteria" checkboxes in the body (147, of which 66 are open).
+- #3512's body is 64.5K characters, which leaves no room for an acceptance list.
+- Comment edits bump `updated_at`. Reactions do not: comment 4758484951's reactions postdate its `updated_at`.
+- Fro Bot's tracker replies already open with "Replying only to [<id>](<comment url>)". That convention works as an answered record with no new syntax.
+- `findLatestMarkerComment` skips comments without a marker, so a bare marker comment from the post job becomes the target.
 
 ## Prior-Art Survey
 
@@ -92,60 +118,88 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
 {
   "schema_version": 2,
   "verdict": "extend",
-  "scope": "fro-bot/.github (workflows, packages/status-truth, packages/dispatch, packages/registry, metadata/, common-settings.yaml, .github/actions); fro-bot/agent@28c55ed gateway launch path (read-only)",
+  "scope": "fro-bot/.github (workflows, packages/status-truth, packages/dispatch, packages/registry, metadata/, common-settings.yaml, .github/actions); fro-bot/agent@28c55ed gateway launch and dispatch paths (read-only)",
   "freshness": { "vcs_reference": "6ad9d7b" },
-  "budget": { "max_search_passes": 14, "max_candidate_inspections": 22, "exhausted": false },
+  "budget": { "max_search_passes": 16, "max_candidate_inspections": 26, "exhausted": false },
   "candidates": [
-    { "path_or_symbol": "packages/status-truth/src/rollout-tracker-snapshot.ts#runRolloutTrackerSnapshot", "description": "Preflight snapshot, gating hash, marker and pending-mention scan; reads the tracker issue from env with a #3512 default and hardcodes Project 1", "disposition": "extend" },
-    { "path_or_symbol": ".github/workflows/gateway-rollout-tracker.yaml", "description": "Preflight job, then the agent through fro-bot.yaml with a #3512 and Project 1 prompt", "disposition": "extend" },
-    { "path_or_symbol": ".github/workflows/rollout-tracker-mention.yaml#dispatch-tracker", "description": "Credential-free issue_comment relay with a literal issue number and operator", "disposition": "extend" },
-    { "path_or_symbol": ".github/workflows/fro-bot.yaml#fro-bot", "description": "Content job with an inline exclusion of the operator's #3512 comments", "disposition": "extend" },
-    { "path_or_symbol": "metadata/repos.yaml", "description": "Per-repo entity config on the data branch", "disposition": "insufficient", "insufficiency_reason": "Wrong entity, and its path is automatically labeled for merge on promotion, so an operator identity there would bypass human review." },
-    { "path_or_symbol": "packages/dispatch", "description": "Goal coordination issue with an HTML state marker", "disposition": "insufficient", "insufficiency_reason": "One issue per goal, with constants in code and no Project or operator config; only its marker discipline is reused." },
-    { "path_or_symbol": "common-settings.yaml", "description": "Probot repository settings", "disposition": "insufficient", "insufficiency_reason": "No workflow reads it, and its schema has no notion of a program." },
+    { "path_or_symbol": "packages/status-truth/src/rollout-tracker-snapshot.ts#runRolloutTrackerSnapshot", "description": "Preflight snapshot, gating hash, marker and pending-mention scan, hardcoded to #3512 and Project 1", "disposition": "extend" },
+    { "path_or_symbol": ".github/workflows/gateway-rollout-tracker.yaml", "description": "Preflight job, then the agent through fro-bot.yaml", "disposition": "extend" },
+    { "path_or_symbol": ".github/workflows/rollout-tracker-mention.yaml#dispatch-tracker", "description": "Credential-free issue_comment relay with literal issue and operator", "disposition": "extend" },
+    { "path_or_symbol": ".github/workflows/fro-bot.yaml#fro-bot", "description": "Content job with an inline tracker exclusion", "disposition": "extend" },
+    { "path_or_symbol": "metadata/repos.yaml", "description": "Per-repo entity config on the data branch", "disposition": "insufficient", "insufficiency_reason": "Wrong entity, and its path is labeled for auto-merge on promotion, so an operator identity there would bypass human review." },
+    { "path_or_symbol": "packages/dispatch", "description": "Goal coordination issue with an HTML state marker", "disposition": "insufficient", "insufficiency_reason": "One issue per goal with constants in code and no Project or operator config; only its marker discipline is reused." },
     { "path_or_symbol": "mutation-guards.json", "description": "Root JSON config held in line by a guard test", "disposition": "reuse" },
     { "path_or_symbol": ".github/actions/resolve-public-repo", "description": "Succeeds only when GitHub reports a repository as definitively public", "disposition": "reuse" },
     { "path_or_symbol": "survey-repo.yaml#survey-persist", "description": "Agent job followed by a trusted publisher job that recomputes state", "disposition": "reuse" },
-    { "path_or_symbol": "fro-bot/agent packages/gateway launchWork", "description": "Gateway launch of a run in a bound repo checkout", "disposition": "insufficient", "insufficiency_reason": "The launched agent has no GitHub token and cannot dispatch a credentialed workflow; Unit 7 waits on an agent change." }
+    { "path_or_symbol": "fro-bot/agent discord/commands/dispatch.ts", "description": "/fro-bot dispatch: dispatches the bound repo's fro-bot.yaml with a prompt; the run holds FRO_BOT_PAT", "disposition": "reuse" },
+    { "path_or_symbol": "fro-bot/agent packages/gateway launchWork", "description": "Gateway launch in a bound checkout with no GitHub credential", "disposition": "insufficient", "insufficiency_reason": "No GitHub credential in the child env; program start uses /fro-bot dispatch instead." }
   ]
 }
 ```
 
 ## Key Technical Decisions
 
-- **Route by label, describe the program in config.**
+- **One routing predicate: the label plus the operator's ID.**
   - Tracker issues carry the `program-tracker` label.
-  - The relay and the content-job exclusion read that label from the event payload, combined with the operator check from config. A label alone is not enough, since anyone with triage access can set one.
-  - A root JSON file, `program-trackers.json`, maps each tracker issue to its Project owner and number, gate field name, operator login and evidence kind. Today only #3512 has an evidence kind, `gateway`.
-  - A guard test keeps the file valid and checks that every entry's issue carries the label.
-- **The relay reads config through the contents API.** It keeps no checkout. A step fetches `program-trackers.json` at the default branch, decides in shell and dispatches with the program key and comment ID. Permissions become `contents: read` and `actions: write`.
-- **The content-job exclusion stays expression-only.** It skips `issue_comment` events on issues labeled `program-tracker` whose author is the configured operator. The operator's login is checked against a literal that a drift test ties to the config. That is the repo's existing drift-guard pattern, and it avoids putting a route job in front of every event.
-- **A post job writes the marker.**
-  - It runs after the agent job when the agent succeeds. It re-runs the snapshot, writes `{hash, last_mention_id, last_edit_at}` to the marker comment (editing the latest one, or creating it when none exists), and is the only writer of the marker.
-  - The agent no longer copies a marker.
-  - When the agent fails, the old marker stays, so the next poll retries.
-  - Rehashing after the agent's writes means those writes don't wake the next run. An operator change that lands in the seconds between the agent's write and the rehash is absorbed. This is accepted.
-- **The hash covers the fields people change.** It now includes status, readiness, gate, labels and close date. The first run after the change wakes once.
-- **Poll every three hours.** The cron is `23 */3 * * *`. The preflight is cheap, and the agent starts only on a change or pending input.
-- **Answer the latest version of each edit.** An operator-authored comment counts as pending when it has been edited and its `updated_at` is later than the marker's `last_edit_at`. The run answers the latest version, and the post job advances `last_edit_at` only to the versions that run actually answered. Delivery is at least once.
-- **Authorize the trigger comment.** The preflight fetches the dispatched `comment_id`. It counts it as pending only when the program's operator wrote it on that program's tracker issue.
-- **Build the acceptance list from the body's checkboxes.** The agent owns the "Acceptance criteria" checkboxes and lists the open ones for the deployed build. The deployed build is the latest successful deploy run among the program's evidence. The list replaces itself in one section.
-- **Skill read by path.** CI prompts that need it say to read `.agents/skills/cross-repo-program/SKILL.md`, until fro-bot/agent#2129 ships.
+  - `program-trackers.json` holds each program's numeric operator user ID and login.
+  - Three places apply the same predicate (label present, and author ID equal to the configured operator):
+    - the relay, using the contents API plus `jq`;
+    - the content job's exclusion, as an expression, with a drift test that ties the literal to the config;
+    - the tracker, which answers only on its labeled, configured issue.
+  - A labeled issue that is missing from the config fails the relay run. That is visible, never silent.
+  - The content job also skips `issues` events by the operator on labeled issues, so the operator's edits to the body don't get a generic reply.
+- **"Answered" means a later Fro Bot reply links it.**
+  - An operator comment on the tracker issue is pending when no Fro Bot comment created after its `updated_at` links its URL.
+  - This covers new comments and edits, needs no watermark, and limits re-answers after any failure. The worst case is one repeat reply after a failure between reply and record, which is now impossible because the reply itself is the record.
+  - The legacy `last_mention_id` stays readable as a floor, so older comments answered before the link convention are never re-answered.
+  - Because the predicate is a pure function, it goes in a mutated module.
+- **The post job only rehashes.**
+  - A new `rollout-tracker-marker-cli` (`readOnly: false`, zero argv, with its own shim) re-runs the snapshot in-process and writes `{hash}` to the latest Fro Bot marker comment, creating a bare marker comment if none exists.
+  - It runs only when the agent job succeeds, uses `FRO_BOT_PAT` with `persist-credentials: false`, and reads nothing the agent produced.
+  - The agent writes no marker.
+- **The hash covers the fields people change.** It now includes status, readiness, gate, labels and close date. The first run after this change wakes once.
+- **The preflight wakes on four signals:**
+  - a changed hash;
+  - a pending operator comment;
+  - a live body over 60,000 bytes, the deterministic retry for a skipped body write;
+  - a missing acceptance comment.
+- **The preflight polls every configured program.**
+  - A `programs` job reads the config and fans out one preflight per program key.
+  - The cron is `23 */3 * * *`, best-effort.
+  - Dispatch runs carry the program key. The concurrency group is `program-tracker-<key>`, and the key defaults to `gateway`.
+- **The acceptance list lives in its own comment.**
+  - It is one Fro Bot comment, replaced in place, listing the open "Acceptance criteria" checkboxes for the latest successful deploy run. Each line names its gate, what to run and what passes.
+  - The body keeps the checkboxes. The comment is the operator-facing "what next".
+- **Evidence comes from a list, not a judgment.**
+  - The preflight passes the IDs of the operator's comments on the tracker issue into the prompt.
+  - An operator-reported tick must cite one of those IDs. An agent-verified tick must link a run, PR or release.
+  - Each tick says which of the two it is.
+- **Private items never reach the snapshot.** The preflight resolves each item's repo visibility and leaves out anything that is not definitively public. It reports a count of omitted items without naming them.
+- **The skill is read by path.** Prompts that need it say to read `.agents/skills/cross-repo-program/SKILL.md`, until fro-bot/agent#2129 ships.
+- **Program start, with merge as confirmation.**
+  - A `/fro-bot dispatch` or `gh workflow run` of `fro-bot.yaml` with a program-start prompt runs only when `github.triggering_actor` is the operator.
+  - It reads the skill, proposes public repos by node ID, and opens three things:
+    - the labeled tracker issue;
+    - an empty Project with the standard fields;
+    - a `branch-pr` PR adding the config entry.
+  - Merging that PR is the confirmation. The tracker's first run then files one issue per confirmed repo and adds each to the Project.
+  - If the PR is closed unmerged, the next tracker poll closes the issue and deletes the empty Project.
 
 ## Open Questions
 
 ### Resolved During Planning
 
-- Where config lives: a root JSON file, not `metadata/`, `common-settings.yaml` or `vars`.
-- How the tracker skips its own writes: the post job rehashes after them.
-- Which gate source to use: the body's checkboxes, because the Project field is free text.
-- Where program start begins: on a gateway launch, gated on an agent change (Unit 7).
+- Where config lives: a root JSON file, with CODEOWNERS set to the operator.
+- How "answered" is recorded: by the existing reply links.
+- How the tracker skips its own writes: a post-job rehash that writes only the hash.
+- Where the acceptance list lives: its own comment, built from the body's checkboxes.
+- How a program starts: `/fro-bot dispatch`, confirmed by a merge.
+- Whether reactions count as edits: they don't bump `updated_at`.
 
 ### Deferred to Implementation
 
-- Whether reactions bump a comment's `updated_at`. Check on a live comment. If they do, the preflight also compares body text against the last answered version, which the post job records.
-- The exact step shape of the relay's config read: `gh api` contents plus `jq`.
-- Byte headroom once the acceptance list and evidence links are added, measured on #3512 after #4146.
+- Whether the `issue_comment` payload carries `issue.labels` on a live event. The research expects it to, but this is unverified. Check it on the first relay run.
+- Whether `FRO_BOT_PAT` can create a user Project. It is first exercised by Unit 7's start run, and failure makes that run stop and report.
 
 ## High-Level Technical Design
 
@@ -154,26 +208,28 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
 ```mermaid
 sequenceDiagram
   participant Op as Operator
-  participant Relay as rollout-tracker-mention (no credential)
-  participant Pre as preflight (snapshot)
-  participant Agent as tracker agent (fro-bot.yaml)
-  participant Post as marker post job
-  Op->>Relay: comment created/edited on a program-tracker issue
-  Relay->>Relay: read program-trackers.json, check label + operator
-  Relay->>Pre: workflow_dispatch(program, comment_id)
-  Note over Pre: also every 3h by cron
-  Pre->>Pre: snapshot all items, hash incl. fields, pending mentions + edits
-  Pre-->>Agent: should_comment, pending ids, program identity
-  Agent->>Agent: update body, Project, acceptance list; self-check; reply
+  participant Relay as relay (no credential)
+  participant Prog as programs job
+  participant Pre as preflight[key]
+  participant Agent as tracker agent
+  participant Post as marker job
+  Op->>Relay: comment created/edited on labeled issue
+  Relay->>Relay: config lookup; label + operator ID
+  Relay->>Prog: dispatch(program, comment_id)
+  Note over Prog: also cron 23 */3
+  Prog->>Pre: one preflight per program key
+  Pre->>Pre: snapshot (public items only), hash, unanswered operator comments,<br/>body size, acceptance comment present
+  Pre-->>Agent: should_comment + operator comment IDs + pending IDs
+  Agent->>Agent: body, Project, acceptance comment, self-check, reply linking each answered ID
   Agent-->>Post: success
-  Post->>Post: re-run snapshot, write marker {hash, last_mention_id, last_edit_at}
+  Post->>Post: re-run snapshot, write marker {hash}
 ```
 
 ## Implementation Units
 
-- [ ] **Unit 1: Program config and label**
+- [ ] **Unit 1: Program config, label and trust predicates**
 
-**Goal:** Add `program-trackers.json` with #3512 as its first entry, label #3512 `program-tracker`, and make the snapshot load its program from config.
+**Goal:** Add `program-trackers.json` with #3512 as its first entry, label #3512, add a mutated module of pure routing and trust predicates, and make the snapshot load its program from config.
 
 **Requirements:** R1, R3, R4
 
@@ -181,41 +237,39 @@ sequenceDiagram
 
 **Files:**
 
-- Create: `program-trackers.json`
-- Create: `packages/status-truth/src/program-trackers.ts`, which loads and validates the file and returns the entry for a key or an issue
-- Modify: `packages/status-truth/src/rollout-tracker-snapshot.ts`. Replace `OPERATOR_LOGIN`, `GATE_FIELD_NAME`, the Project owner and number, and the issue default with the loaded entry. The program is selected by `ROLLOUT_TRACKER_PROGRAM`. `status-truth.yaml`, which selects none, defaults to the single `gateway` program.
-- Modify: `packages/status-truth/package.json` (exports), `mutation-guards.json` (put `program-trackers.ts` in `mutate` and assign it to a shard), `stryker.config.json`
-- Test: `packages/status-truth/src/program-trackers.test.ts`, and update `rollout-tracker-snapshot.test.ts`
-- Docs: `packages/status-truth/README.md`, plus the key configuration files table in the root `README.md`
+- Create:
+  - `program-trackers.json`
+  - `packages/status-truth/src/program-trackers.ts`, which loads and validates the config and holds the pure predicates: `isOperatorComment`, `isAnswered(comment, froBotComments, legacyFloor)` and `isTrackerIssue`
+  - `packages/status-truth/src/program-trackers.test.ts`
+- Modify:
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`: the entry replaces the literals. The program comes from `ROLLOUT_TRACKER_PROGRAM` and defaults to the single `gateway` entry for `status-truth.yaml`.
+  - `.github/CODEOWNERS`: `program-trackers.json @marcusrbrown`
+  - `packages/status-truth/package.json`: exports
+  - `stryker.config.json`: `mutate` gains `program-trackers.ts`
+  - `mutation-guards.json`: add a shard assignment, and update the snapshot's `not-mutated` reason
+  - `rollout-tracker-snapshot.test.ts`
+- Docs: `packages/status-truth/README.md`, and the root `README.md` key configuration files table
 
 **Approach:**
 
-- An entry holds:
-  - `key`
-  - `issue` (`owner/repo#n`)
-  - `project` (`owner`, `number`, `gateField`)
-  - `operator` (login)
-  - `evidence` (`gateway` or `none`)
-- When the evidence is `none`, the snapshot skips the external signals.
-- Apply the label to #3512 once, through the API. That is an operator-approved write.
+- An entry has `key`, `issue` (`owner/repo#n`), `project` (`owner`, `number`, `gateField`), `operator` (`id`, `login`) and `evidence` (`gateway` or `none`).
+- Apply the label to #3512 once, through the API, as an operator-approved write.
 
-**Execution note:** characterize the snapshot's current output for #3512 first. With the config loaded, the stdout JSON and the hash must be byte-identical before Unit 3 changes the hash.
-
-**Patterns to follow:** `mutation-guards.json` and its guard test.
+**Execution note:** characterize first. With the config loaded, #3512's stdout snapshot and hash must be byte-identical to before.
 
 **Test scenarios:**
 
-- Happy path: loading by key and by issue returns the #3512 entry.
-- Happy path: the snapshot run with the config gives the same stdout and hash as before.
-- Error path: a missing file, malformed JSON, a duplicate key or issue, or an unknown program key each makes the CLI exit 1 with a fixed message.
-- Edge case: with no program selected and exactly one `gateway` entry, the snapshot uses that entry (the `status-truth.yaml` case).
-- Edge case: an entry with `evidence: none` produces an empty `external` and makes no external reads.
+- Happy path: the snapshot, run with the config, produces the same stdout and hash as before.
+- Happy path: `isAnswered` is true when a Fro Bot comment created after the operator comment's `updated_at` links its URL. It is false when the only link predates an edit. It is true when the ID is at or below the legacy floor.
+- Error path: a missing file, malformed JSON, a duplicate key or issue, a non-numeric operator ID, or an unknown program key exits 1 with a fixed message.
+- Edge case: with no program selected and one `gateway` entry, the snapshot uses it.
+- Edge case: `evidence: none` produces an empty `external` and makes no external reads.
 
-**Verification:** #3512's snapshot output is unchanged, the config guard test passes, and the new module scores 100% under Stryker.
+**Verification:** #3512's output is unchanged, and `program-trackers.ts` scores 100% under Stryker.
 
-- [ ] **Unit 2: Config-driven routing**
+- [ ] **Unit 2: Config-driven routing and authorized triggers**
 
-**Goal:** The relay, the content-job exclusion, the tracker prompt and the daily prompt get the program from config and the label, not from literals.
+**Goal:** The relay, the content job, the tracker prompt and the daily prompt take the program from config and the label, and a trigger comment counts only when it is authorized.
 
 **Requirements:** R2, R11
 
@@ -224,74 +278,70 @@ sequenceDiagram
 **Files:**
 
 - Modify:
-  - `.github/workflows/rollout-tracker-mention.yaml`: label check, then a config read, then the operator check, then a dispatch with `program` and `comment_id`
-  - `.github/workflows/gateway-rollout-tracker.yaml`: a `program` input, and a prompt built from preflight outputs (issue, Project URL, operator)
-  - `.github/workflows/fro-bot.yaml`: the content-job exclusion moves to the label plus operator form, and the daily prompt mentions the tracker by label
+  - `.github/workflows/rollout-tracker-mention.yaml`: `types: [created, edited]`. A step checks the label, reads the config through the contents API, checks the operator ID and dispatches with `program` and `comment_id`. Permissions are `contents: read` and `actions: write`. A labeled but unconfigured issue fails the step.
+  - `.github/workflows/gateway-rollout-tracker.yaml`: a `program` input; a `programs` fan-out job for the cron; the concurrency group `program-tracker-<key>`; and a prompt templated from preflight outputs.
+  - `.github/workflows/fro-bot.yaml`: the content job excludes `issue_comment` and `issues` events by the operator on `program-tracker`-labeled issues; the daily prompt mentions the tracker by label.
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`: a dispatched `comment_id` is pending only if it is the operator's comment on this program's issue (check `issue_url` and author ID).
 - Test:
-  - `scripts/rollout-tracker-mention-workflow.test.ts`, moving from the expression pin to `runStepWithStubs` with a stub `gh`
-  - `scripts/fro-bot-workflow.test.ts`, for the exclusion pin
-  - a drift test showing the exclusion's operator literal equals the config
-  - the prompt contracts in `rollout-tracker-snapshot.test.ts`
+  - `scripts/rollout-tracker-mention-workflow.test.ts` (stub `gh`, `runStepWithStubs`)
+  - `scripts/fro-bot-workflow.test.ts`
+  - a drift test that ties the content job's literal to the config
+  - the snapshot trigger tests
+  - prompt contracts
 - Docs: the root `README.md` automation rows, and `docs/status.md`
-
-**Approach:**
-
-- The relay passes the comment body only through `env`.
-- The tracker workflow keeps its `concurrency` group. The group name gains the program key.
 
 **Test scenarios:**
 
-- Happy path: an operator comment with `@fro-bot` on a labeled tracker issue dispatches once, with the right program key and comment ID.
-- Edge case: a comment on an unlabeled issue, or by a non-operator on a labeled one, does not dispatch.
-- Edge case: a labeled issue that is missing from the config does not dispatch, and the step writes a fixed warning.
-- Error path: if the config read fails, the step fails and nothing is dispatched.
-- Integration: the content job's `if` skips the operator's comment on a labeled tracker issue and still runs for every other comment.
-- Integration: the prompt names the issue and Project from outputs, and no `#3512` literal remains in the prompt.
+- Happy path: the operator's created or edited comment on a labeled, configured issue dispatches once, with the program key and comment ID.
+- Edge case: a comment on an unlabeled issue, or by anyone else, does not dispatch.
+- Error path: a labeled issue that isn't configured fails the relay step. A failed config read fails it too.
+- Error path: a dispatched `comment_id` written by someone else, or on another issue, is not pending.
+- Integration: the content job skips the operator's comments and body edits on labeled issues and still runs for everything else.
+- Integration: a cron run fans out to every configured key.
 
-**Verification:** `grep` finds `3512` only in the config and in tests, `actionlint` is clean, and the workflow tests pass.
+**Verification:** `3512` appears only in the config and tests, `actionlint` is clean, and the workflow tests pass.
 
-- [ ] **Unit 3: Field-aware hash, post-job marker and authorized trigger**
+- [ ] **Unit 3: Field-aware hash, wake signals, public-only snapshot and the marker job**
 
-**Goal:** Project field changes wake the tracker and its own writes do not. The marker is written by a deterministic post job, and trigger comments are authorized.
+**Goal:** Field changes wake the tracker and its own writes don't. The marker holds only the hash. Private items stay out of the snapshot.
 
-**Requirements:** R5, R11
+**Requirements:** R5, R18
 
 **Dependencies:** Unit 2
 
 **Files:**
 
-- Modify: `packages/status-truth/src/rollout-tracker-snapshot.ts`:
-  - `toGatingEvidence` includes the fields;
-  - `buildMarker` adds `last_edit_at`;
-  - the trigger comment is fetched and its author checked;
-  - a `--write-marker` mode in the CLI writes the marker comment, editing the latest one or creating it.
-- Modify: `packages/status-truth/src/rollout-tracker-snapshot-cli.ts` and its shim, if the mode needs an argument. Keep the zero-option contract by using env.
-- Modify: `.github/workflows/gateway-rollout-tracker.yaml`:
-  - a new `publish-marker` job with `needs: [preflight, update-rollout-tracker]` and `if: needs.update-rollout-tracker.result == 'success'`, which uses `FRO_BOT_PAT`;
-  - the prompt drops the marker-copy instruction;
-  - the cron becomes `23 */3 * * *`.
-- Test: `rollout-tracker-snapshot.test.ts`. The three tests that pin "field changes do not change the hash" are replaced. Also update the workflow tests.
-
-**Approach:**
-
-- The post job's rehash uses the same snapshot code as the preflight.
-- The agent's reply comment no longer carries a marker. The post job edits the latest Fro Bot marker comment, or creates one.
+- Create:
+  - `packages/status-truth/src/rollout-tracker-marker-cli.ts` (`readOnly: false`, zero argv)
+  - `scripts/rollout-tracker-marker.ts` (a six-line shim)
+  - `packages/status-truth/src/rollout-tracker-marker-cli.test.ts`
+- Modify:
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`:
+    - `toGatingEvidence` includes the fields;
+    - `buildMarker` writes `{hash}`, while `extractPreviousMarker` still reads a legacy `last_mention_id`;
+    - wake signals for body size and a missing acceptance comment;
+    - item repo visibility, which leaves non-public items out and counts them.
+  - `.github/workflows/gateway-rollout-tracker.yaml`: the `publish-marker` job has `needs: [preflight, update-rollout-tracker]` and `if: needs.update-rollout-tracker.result == 'success'`. Its checkout sets `persist-credentials: false`, and it uses `FRO_BOT_PAT`. The prompt drops all marker instructions, including #4146's skip rule, since the body-size signal replaces it.
+  - `mutation-guards.json`: the new CLI and shim become `not-mutated`, and the snapshot's reason no longer says read-only. `package.json` exports.
+- Test: `rollout-tracker-snapshot.test.ts`. Replace the three tests that pin "field changes do not change the hash", update the workflow tests, and add the shim import-safety test.
 
 **Test scenarios:**
 
 - Happy path: a status change on any item changes the hash.
-- Happy path: after the post job writes the marker, a preflight with no further change does not wake (AE2).
-- Happy path: an operator status change made after the post job wakes the next preflight and names the item (AE1).
-- Error path: when the agent job fails, the post job is skipped, the old marker stays, and the next preflight wakes.
-- Error path: a dispatched `comment_id` written by a non-operator, or on another issue, is not pending.
-- Edge case: a legacy marker with `snapshot` and without `last_edit_at` still parses, and `last_edit_at` reads as null.
-- Integration: the workflow test pins the `publish-marker` job's needs, `if` and secret, and checks that the agent prompt has no marker text.
+- Happy path: after the marker job runs, a preflight with no further change does not wake (AE2). The test drives the tracker's own field write followed by the rehash.
+- Happy path: an operator status change made after the marker job wakes the next preflight and names the item (AE1).
+- Happy path: a body over 60,000 bytes wakes with that reason.
+- Happy path: a missing acceptance comment wakes with that reason.
+- Error path: when the agent job fails, the marker job is skipped, and the next preflight wakes from the unchanged hash or the pending comments.
+- Edge case: an item from a private or unresolvable repo is absent from the snapshot and the marker, and the count of omitted items is reported (AE9).
+- Edge case: a legacy marker carrying `snapshot` and `last_mention_id` still parses.
+- Integration: the workflow test pins the marker job's needs, `if`, secret and `persist-credentials: false`.
 
-**Verification:** the wake tests pass, `actionlint` is clean, and the first live run after merge wakes once and then stays quiet.
+**Verification:** the wake tests pass, and `actionlint` is clean. The first live run after merge wakes once, then stays quiet until something changes.
 
-- [ ] **Unit 4: Operator edit wake**
+- [ ] **Unit 4: Unanswered comments and edits**
 
-**Goal:** An edit the operator makes to their own comment wakes the tracker and gets answered.
+**Goal:** Every operator comment or edit that has no later Fro Bot reply linking it is pending and gets answered, including on edit-only wakes.
 
 **Requirements:** R6
 
@@ -299,115 +349,138 @@ sequenceDiagram
 
 **Files:**
 
-- Modify: `packages/status-truth/src/rollout-tracker-snapshot.ts` (`fetchTrackerComments` returns `created_at` and `updated_at`, and the preflight lists pending edits)
-- Modify: `.github/workflows/rollout-tracker-mention.yaml` (`types: [created, edited]`; an edit dispatches even without `@fro-bot`)
-- Modify: `.github/workflows/gateway-rollout-tracker.yaml` (the prompt answers the pending edits, and the post job advances `last_edit_at`)
-- Test: the snapshot tests and the relay workflow test
+- Modify:
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`: `fetchTrackerComments` returns `created_at`, `updated_at` and user ID. Pending comes from `isAnswered` instead of the mention baseline, with the legacy floor.
+  - `.github/workflows/gateway-rollout-tracker.yaml`: the prompt replies to every pending ID, edits included, and each reply links the comment it answers.
+- Test: the snapshot tests and prompt contracts.
 
 **Test scenarios:**
 
-- Happy path: the operator edits an answered comment without `@fro-bot`. That comment's latest version is pending, and it is answered once (AE3).
-- Edge case: two edits before a run produce one answer, to the latest version.
-- Edge case: an edit by `fro-bot`, including to its own marker comment, is never pending.
-- Error path: when the run fails after replying, the post job doesn't advance `last_edit_at`, so the next run may answer again. That is at-least-once delivery, and it is documented.
-- Edge case: a reaction alone does not make a comment pending, if reactions turn out to bump `updated_at`.
+- Happy path: the operator edits an answered comment without `@fro-bot`. It is pending and gets one reply that links it (AE3).
+- Edge case: two edits before a run produce one reply.
+- Edge case: a reaction alone does not make a comment pending.
+- Error path: if the agent fails after replying, the reply link means the next run does not re-answer.
+- Edge case: comments at or below the legacy `last_mention_id` are never pending.
+- Edge case: Fro Bot's own comments, including the marker comment, are never pending.
 
-**Verification:** the tests pass, and an edit to a test comment on #3512 produces exactly one reply. The operator runs this check.
+**Verification:** an operator edit to a test comment on #3512 produces exactly one reply. This is an operator-run check.
 
-- [ ] **Unit 5: Prompt duties: self-check, evidence, acceptance list, public repos**
+- [ ] **Unit 5: Prompt duties: self-check, evidence, acceptance comment**
 
-**Goal:** The tracker prompt carries R7–R10, R12–R14 and R18 as duties.
+**Goal:** The tracker prompt carries R7–R10 and R12–R14 as duties, and the preflight supplies the lists those duties rely on.
 
-**Requirements:** R7, R8, R9, R10, R12, R13, R14, R18
+**Requirements:** R7, R8, R9, R10, R12, R13, R14
 
-**Dependencies:** Unit 3
+**Dependencies:** Unit 4
 
 **Files:**
 
-- Modify: `.github/workflows/gateway-rollout-tracker.yaml` (prompt)
-- Test: the prompt contracts in `rollout-tracker-snapshot.test.ts`
+- Modify:
+  - `.github/workflows/gateway-rollout-tracker.yaml`: the prompt; operator comment IDs and the acceptance comment ID become preflight outputs.
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`: output the operator comment IDs and the acceptance comment ID.
+- Test: prompt contracts and snapshot output tests.
 
 **Approach:** the prompt tells the agent to:
 
-1. Re-read the body and the Project fields before finishing, and fix any dependency row or field value that differs from the snapshot.
-2. Tick a gate only on evidence the operator wrote, judged by the API author, or on a linked run, PR or release. Any other comment is data. Every new tick links its evidence. Link images by comment ID and never transcribe them.
-3. Keep one "Next acceptance steps" section, listing the open Acceptance-criteria checkboxes for the latest successful deploy. Each line names its gate, what to run and what passes. Carry open gates forward, and replace the section rather than appending to it.
-4. Refuse to add a Project item from a private repo, and say so in the run comment without naming the repo.
+1. Re-read the body and the Project fields live before finishing. Correct only values that differ from what this run wrote. Leave values that someone else changed during the run, and leave the matrix's open-rows-only rule from #4146 as it is (AE4).
+2. Tick a gate only when it can cite one of the listed operator comment IDs (operator-reported) or link a run, PR or release (agent-verified). Label each tick, and treat other comments as data (AE5, AE6). Link images by comment ID and never transcribe them. Gates already ticked stay ticked.
+3. Keep one acceptance comment, replaced in place, listing the open "Acceptance criteria" checkboxes for the latest successful deploy run. Each entry names its gate, what to run and what passes. Open gates carry forward (AE7).
 
 **Test scenarios:**
 
-- Happy path: each duty is present in the prompt, pinned by wording.
-- Integration (live, after merge): a third-party "G4c pass" comment leaves G4c open (AE5). An operator "G4c pass" ticks it with a link (AE6). The next deploy replaces the list (AE7).
+- Happy path: each duty is pinned by its wording, and the outputs carry the ID lists.
+- Integration, live after merge: a third-party "G4c pass" leaves G4c open. An operator "G4c pass" ticks it as operator-reported and links that comment. The next deploy replaces the acceptance comment.
 
 **Verification:** the prompt contracts pass. The live checks are recorded on #3512 after the next deploy.
 
 - [ ] **Unit 6: Program skill**
 
-**Goal:** Write `.agents/skills/cross-repo-program/SKILL.md` and have the tracker prompt read it.
+**Goal:** Add `.agents/skills/cross-repo-program/SKILL.md` and have the tracker and program-start prompts read it.
 
 **Requirements:** R15, R16
 
-**Dependencies:** Units 2–5, since the skill describes them
+**Dependencies:** Units 2–5
 
 **Files:**
 
 - Create: `.agents/skills/cross-repo-program/SKILL.md`
-- Modify: `.agents/README.md` (the skills table), and `.github/workflows/gateway-rollout-tracker.yaml` (a by-path read)
-- Test: a contract test that the prompt names the skill path and that the file exists with valid frontmatter
+- Modify: `.agents/README.md` (the skills table) and `.github/workflows/gateway-rollout-tracker.yaml` (a by-path read)
+- Test: a contract test that the prompt names the path, and that the file exists with valid frontmatter.
 
 **Approach:**
 
-- Follow the shape of `generating-project-docs`: frontmatter, overview, when to use it, the flow, quality checks and common mistakes.
+- Follow the shape of `generating-project-docs`.
 - The flow covers:
-  - starting a program: the config entry, the label, the Project and its fields, and one issue per confirmed public repo;
+  - starting a program (Unit 7's dispatch, confirmation by merge, one issue per repo);
+  - the label and config entry;
+  - Project fields;
   - dependencies;
-  - acceptance gates with evidence;
+  - acceptance gates and evidence rules;
+  - the acceptance comment;
   - handing steps to the operator;
-  - staying current;
-  - closing out.
-- Draw on #3512's history: the item-cap and body-size defects, operator corrections, the edit gap and the evidence rules.
-- Link the code and docs rather than restating them.
+  - closing a program out.
+- Draw on #3512's history: the item cap, body size and marker size defects, the edit gap, evidence by operator ID, and the operator's corrections.
+- Link the code rather than restating it.
 
 **Test scenarios:**
 
 - Happy path: the prompt contains the path, and the file parses with `name` and `description`.
 
-**Verification:** `bun run lint` passes on the skill, and a local OpenCode session lists it.
+**Verification:** lint passes, and a local OpenCode session lists the skill.
 
-- [ ] **Unit 7: Program start from a gateway launch (gated)**
+- [ ] **Unit 7: Program start**
 
-**Goal:** One operator request through the gateway proposes a program, gets confirmation, and opens the tracker issue, the Project, one issue per repo and the config PR.
+**Goal:** One operator request starts a program. The operator confirms it by merging the config PR, and the tracker then files one issue per repo.
 
 **Requirements:** R17, R18
 
-**Dependencies:** a fro-bot/agent change that lets a gateway launch start an allowlisted credentialed workflow run in fro-bot/.github. The issue is to be filed. Also depends on Unit 6.
+**Dependencies:** Unit 6
 
-**Files:** to plan once the agent contract exists. Expect a `workflow_dispatch` entry on `fro-bot.yaml` or a dedicated workflow with `branch-pr`, plus the skill's start flow.
+**Files:**
+
+- Modify:
+  - `.github/workflows/fro-bot.yaml`: custom-prompt runs that start a program are gated on `github.triggering_actor` being the operator. The prompt preamble names the skill path for program requests.
+  - `.github/workflows/gateway-rollout-tracker.yaml`: the first run for a new entry files the per-repo issues and adds them to the Project. A closed, unmerged start PR makes the next poll close the issue and delete the empty Project.
+  - `packages/status-truth/src/rollout-tracker-snapshot.ts`: an entry with zero items and a confirmed repo list produces a bootstrap wake.
+  - `program-trackers.json` schema: optional `repos` (node IDs) for bootstrap.
+- Test: workflow tests for the actor gate, snapshot tests for the bootstrap wake, and prompt contracts.
 
 **Approach:**
 
-- The gateway carries the request.
-- The credentialed run proposes a list of repos, checked as public through `resolve-public-repo`, on the request surface and waits.
-- After the operator confirms, a second credentialed run:
-  1. searches for an existing program and stops if it finds one;
-  2. creates the issue, the Project with its fields, and one issue per repo;
-  3. opens the config PR.
+- The start run, from `/fro-bot dispatch` or `gh workflow run`, in `branch-pr` mode:
+  1. reads the skill;
+  2. searches for an existing program and stops if it finds one;
+  3. resolves each proposed repo as public through `resolve-public-repo`, using node IDs;
+  4. opens the labeled tracker issue, an empty Project with the standard fields, and a PR adding the config entry with its `repos`.
+- The merge is the confirmation.
 
-**Test scenarios:** deferred until the agent contract exists.
+**Test scenarios:**
 
-**Verification:** AE8 on the OpenCode v2 plugin program.
+- Error path: a dispatch from anyone other than the operator does not start a program.
+- Edge case: an existing program for the same repos makes the run stop and link that program.
+- Edge case: a private repo in the request is left out without being named (R18).
+- Happy path: after merge, the first tracker run files one issue per repo and adds each to the Project.
+- Edge case: a closed, unmerged start PR leads to the issue being closed and the empty Project deleted on the next poll.
+
+**Verification:** AE8 runs live on the OpenCode v2 plugin program.
 
 ## System-Wide Impact
 
-- **Interaction graph:** the relay, the tracker workflow, `fro-bot.yaml`'s content job and daily prompt, and `status-truth.yaml`, which uses the snapshot's default program.
+- **Interaction graph:** the relay, the tracker workflow (`programs`, preflight, agent and marker jobs), `fro-bot.yaml`'s content job, daily prompt and custom-prompt runs, and `status-truth.yaml`.
 - **Error propagation:**
-  - A config read failure fails the relay or the preflight; it is never treated as "no program".
-  - An agent failure leaves the marker unchanged.
-  - A post-job failure leaves the old marker, and the next poll wakes the tracker.
-- **State lifecycle:** the marker gains `last_edit_at`, legacy markers still parse, and the first run after Unit 3 wakes once.
+  - A failed config read fails the relay or the preflight; it never means "no program".
+  - A failed agent run leaves the marker in place.
+  - A failed marker job leaves the old hash, and the next poll wakes again without re-answering, because replies record themselves.
+- **Behavior changes for #3512 (R3):**
+  - polls go from 1 to 8 a day;
+  - agent-verified ticks need a link;
+  - the marker moves to a bare comment holding only the hash;
+  - the acceptance list moves to its own comment;
+  - edits get answered;
+  - private items are left out.
 - **Unchanged invariants:**
-  - the tracker is the single writer of the #3512 body and Project fields;
-  - Project 1 is the source of truth for items;
+  - the tracker is the single writer of the body and the Project fields;
+  - Project 1 is the item source;
   - the gateway evidence sources;
   - `status-truth.yaml`'s use of `.snapshot`.
 
@@ -415,15 +488,16 @@ sequenceDiagram
 
 | Risk | Mitigation |
 | --- | --- |
-| The label is set on a non-tracker issue | Routing also needs a config entry and the operator check. The guard test checks that configured issues carry the label. |
-| Polling every 3 h uses runner minutes | The preflight takes about a minute, and the agent runs only on a change. |
-| Reactions bump `updated_at` | Checked in Unit 4. If they do, compare body text as well. |
-| Prompt duties drift | Prompt contract tests, plus the live checks in Units 4 and 5. |
-| Gateway dispatch never ships | Units 1–6 stand alone. Unit 7 waits. |
+| Someone with triage access labels an issue that isn't a tracker | Routing also requires a config entry and the operator ID. A labeled issue that isn't configured fails the relay visibly. |
+| Replies fail to link the comment they answer | A prompt contract pins the link, and a missing link only costs one repeat reply. |
+| Polling costs runner minutes | About 8 short preflights a day per program, and the agent runs only on a wake. |
+| Prompt duties drift | Prompt contracts, plus the live checks in Units 4, 5 and 7. |
+| Body size with acceptance and evidence links | The acceptance list lives in a comment, and the body-size wake retries a trim. |
+| `FRO_BOT_PAT` cannot create a Project | Unit 7's start run stops and reports, and the fix is a token-scope change by the operator. |
 
 ## Sources & References
 
 - **Origin document:** `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md`
-- Related past work: `docs/plans/2026-10-22-001-feat-rollout-tracker-autonomy-plan.md`, status complete. This plan generalizes that tracker and adds the wakes it lacks.
-- Related PRs and issues: #4146, fro-bot/agent#2129, #3512, #3517.
-- Research: `.context/program-tracker-plan/lanes/` (local, untracked).
+- Related past work: `docs/plans/2026-10-22-001-feat-rollout-tracker-autonomy-plan.md`, status complete. This plan generalizes that tracker.
+- Related PRs and issues: #4146, #3512, #3517, fro-bot/agent#2129, fro-bot/agent#2130.
+- Research: `.context/program-tracker-plan/` (local, untracked).
