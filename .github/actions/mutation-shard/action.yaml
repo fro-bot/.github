@@ -16,10 +16,7 @@ runs:
       uses: ./.github/actions/setup
 
     - name: 🧬 Run Mutation Shard
-      # The shard decides applicability from the full config, then runs Stryker on its own list with the full testFiles.
-      # It exits 0 once its manifest (and report, when applicable) is written, and non-zero only on an infrastructure
-      # failure. A survivor is the final job's verdict. GH_TOKEN is for the changed-file fetch of the trigger gate; the
-      # spawner removes it from the Stryker child's environment.
+      # GH_TOKEN is for the trigger gate's changed-file fetch; the spawner removes it from Stryker's environment.
       env:
         GH_TOKEN: ${{ github.token }}
         MUTATION_SHARD: ${{ inputs.shard }}
@@ -29,8 +26,7 @@ runs:
       shell: bash
 
     - name: ⬆ Upload shard artifact
-      # Only a shard that succeeded uploads, so a failed shard never leaves evidence for the final job to trust, and
-      # `overwrite` lets a re-run attempt replace what the first attempt uploaded.
+      # Only a successful shard uploads; overwrite replaces an earlier attempt's artifact.
       if: success()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:

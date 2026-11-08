@@ -953,8 +953,7 @@ function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
  * not run at all" for an informational message — the verdict is always derived from the
  * JSON report, never this return value. Exported as an injectable seam for testing.
  *
- * `extraArgs` follow the config argument. The local run passes none; a PR shard passes `--mutate <its list>` and
- * nothing else, so `testFiles` and the rest of the config stay the full config's.
+ * `extraArgs` follow the config argument: none for the local run, `--mutate <list>` for a PR shard.
  */
 export function defaultStrykerSpawner(extraArgs: readonly string[] = []): void {
   const run = spawnSync('bunx', ['--no-install', 'stryker', 'run', strykerConfigPath(), ...extraArgs], {
@@ -1768,13 +1767,8 @@ export async function runMutationGuardCheck(
 }
 
 /**
- * The classification half of a run, split out so the merge step of the sharded PR gate classifies a merged report
- * through exactly the path a single run takes after its spawn: read the report at `reportPath`, scan the directives of
- * the `mutate` files under the repository root, check the missing files, and classify with the full config. Returns the
- * result and prints nothing; the caller prints it once.
- *
- * `reporterConfig` is what the config's `reporters` and `jsonReporter.fileName` resolve to by default; a test passes one
- * that agrees with a temp `reportPath`.
+ * The classification half of a run: reads the report at `reportPath`, scans the `mutate` files for directives and
+ * classifies against the full config. Prints nothing. `reporterConfig` defaults to the config's own reporters and path.
  */
 export function classifyReportFile(
   config: StrykerConfigShape,

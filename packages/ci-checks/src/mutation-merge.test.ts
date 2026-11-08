@@ -365,6 +365,77 @@ describe('runMutationMerge: the job results', () => {
   })
 })
 
+describe('runMutationMerge: an empty or miscounted shard list never turns failed jobs green', () => {
+  const all = (spec: ShardSpec): Partial<Record<1 | 2 | 3, ShardSpec>> => ({1: spec, 2: spec, 3: spec})
+  const na = {applicability: 'not-applicable'} as const
+
+  it('checks the three named job results without reading the lists or the config', () => {
+    const readShards = vi.fn((): readonly (readonly string[])[] => {
+      throw new Error('lists must not be read')
+    })
+    const readConfig = vi.fn((): StrykerConfigShape => {
+      throw new Error('config must not be read')
+    })
+    const b = build({2: {result: 'failure'}}, {readShards, readConfig})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(located(result)).toEqual(['mutation-shard-2|ShardResultNotSuccess'])
+    expect(readShards).not.toHaveBeenCalled()
+    expect(readConfig).not.toHaveBeenCalled()
+  })
+
+  it('fails all three shards for shards: [] when the three jobs failed', () => {
+    const b = build(all({result: 'failure'}), {readShards: () => []})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(located(result)).toEqual([
+      'mutation-shard-1|ShardResultNotSuccess',
+      'mutation-shard-2|ShardResultNotSuccess',
+      'mutation-shard-3|ShardResultNotSuccess',
+    ])
+  })
+
+  it('fails shards: [] when the three jobs succeeded but left no artifacts', () => {
+    const b = build(all({dir: false}), {readShards: () => []})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(located(result)).toEqual(['mutation-guards.json|ShardListsInvalid'])
+    expect(result.mutants[0]?.reason).toContain('expected 3 shards, found 0')
+    expect(b.classify).not.toHaveBeenCalled()
+  })
+
+  it('fails shards: [] even when the three manifests are valid not-applicable ones', () => {
+    const b = build(all(na), {readShards: () => []})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(located(result)).toEqual(['mutation-guards.json|ShardListsInvalid'])
+  })
+
+  it.each([
+    ['two lists', () => [LISTS[0] ?? [], [...(LISTS[1] ?? []), ...(LISTS[2] ?? [])]], 2],
+    ['four lists', () => [LISTS[0] ?? [], LISTS[1] ?? [], LISTS[2] ?? [], []], 4],
+  ])('fails with %s and valid not-applicable manifests', (_name, lists, count) => {
+    const b = build(all(na), {readShards: lists})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants[0]?.status).toBe('ShardListsInvalid')
+    expect(result.mutants[0]?.reason).toContain(`expected 3 shards, found ${String(count)}`)
+  })
+
+  it('checks the partition before it looks for any directory', () => {
+    const lists = [LISTS[0] ?? [], (LISTS[1] ?? []).slice(1), LISTS[2] ?? []]
+    const b = build({2: {dir: false}}, {readShards: () => lists})
+    expect(located(resultOf(runMutationMerge(b.env, b.deps)))).toEqual(['mutation-guards.json|ShardListsInvalid'])
+  })
+
+  it('checks the partition before it decides applicability', () => {
+    const lists = [LISTS[0] ?? [], (LISTS[1] ?? []).slice(1), LISTS[2] ?? []]
+    const b = build(all(na), {readShards: () => lists})
+    const result = resultOf(runMutationMerge(b.env, b.deps))
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(located(result)).toEqual(['mutation-guards.json|ShardListsInvalid'])
+  })
+})
+
 describe('runMutationMerge: the artifacts', () => {
   it('fails and names every shard when the pattern download matched nothing', () => {
     const b = build({1: {dir: false}, 2: {dir: false}, 3: {dir: false}})

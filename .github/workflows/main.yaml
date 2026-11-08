@@ -230,14 +230,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bun scripts/check-wiki-authority.ts
 
-  # The PR mutation gate runs as three parallel Stryker shards and one final job. Each shard reads its list of `mutate`
-  # entries from mutation-guards.json (`shards`), keeps the full `testFiles`, and uploads a manifest and its report.
-  # `Check Mutation Guards` is the required status check: it checks the three artifacts, merges the reports and
-  # classifies the merged report against the full config, so a survivor in any shard fails it. The local
-  # `bun run check:mutation-guards` stays one full run.
+  # Three parallel Stryker shards, then the required `Check Mutation Guards` job (see packages/ci-checks/README.md).
   mutation-shard-1:
     name: Mutation Shard 1
-    # Only pull_request events carry a PR whose changed files can be compared against the trigger set.
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -302,9 +297,7 @@ jobs:
   check-mutation-guards:
     name: Check Mutation Guards
     needs: [mutation-shard-1, mutation-shard-2, mutation-shard-3]
-    # `always()` so the required check is never skipped when a shard fails or is cancelled: the job then fails, naming
-    # the shard. Only pull_request events carry a PR; a post-merge push run on `main` has no PR to diff against, so this
-    # job does not run there at all. A cancelled whole run leaves the check cancelled, as before.
+    # always(): a failed or cancelled shard must fail this required check, not skip it into Success.
     if: always() && github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -320,9 +313,7 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # A pattern download matches zero artifacts without failing; the merge step reads that as a failure naming every
-      # shard. Without `merge-multiple` each shard keeps its own `mutation-shard-<n>` directory, and the raw reports sit
-      # outside reports/mutation/, so only the merged report reaches the `mutation-report` upload below.
+      # Without merge-multiple each shard keeps its own mutation-shard-<n> directory, outside reports/mutation/.
       - name: 📥 Download shard artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -330,6 +321,8 @@ jobs:
           path: ${{ runner.temp }}/mutation-shards
 
       - name: 🧬 Check Mutation Guards
+        # always(): a failed download still reaches the merge, which names the shards involved.
+        if: always()
         env:
           MUTATION_ARTIFACT_DIR: ${{ runner.temp }}/mutation-shards
           MUTATION_EVENT_SHA: ${{ github.event.pull_request.head.sha }}

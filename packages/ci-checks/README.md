@@ -1,6 +1,6 @@
 # `@fro-bot/ci-checks`
 
-The repository checks of the Fro Bot control plane: the mutation gate, the markdown, advisory and `docs/solutions` lints, and the Renovate tooling. Every CLI here runs in pull-request CI (the `mutation-shard` and `mutation-merge` jobs, `check:renovate-config`, `check:override-floors`, `check:md-links`, `check:solutions-examples`), so a pull request is its own proof that they run. `check:mutation-guards` is the same gate as one full local run. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
+The repository checks of the Fro Bot control plane: the mutation gate, the markdown, advisory and `docs/solutions` lints, and the Renovate tooling. Most of the CLIs run in pull-request CI: `mutation-shard` and `mutation-merge` (the mutation gate), `check:md-links`, `check:override-floors` and `check:solutions-examples` (through `lint`), and `install-renovate` and `check-renovate-config` (the `Check Workflows` job). `check-renovate-ranges` runs only inside `check-renovate-config` and its tests, and `check-mutation-guards` is the same gate as one full local run, which CI does not run. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
 It depends on `@fro-bot/core` (guards, retry, the goke runner and the pull-request event reader of `wiki-authority`), `@fro.bot/wiki-write-core` (`markdown-links`), `typescript` and `yaml`. It imports no domain package. Tests also import `@fro-bot/test-kit`.
 
@@ -43,15 +43,15 @@ flowchart LR
 
 **What a shard does.** It decides applicability with `evaluateTriggerGate` on the full `stryker.config.json`, not on its list, and acts on the verdict. Only an explicit `not-applicable` writes a not-applicable manifest. A `ChangedFileGateFailed` result, a trigger fetch error or any other result exits non-zero and writes no manifest, so a failed fetch cannot make all three shards agree on not-applicable. An applicable shard clears the report, spawns Stryker with `--mutate <its list>` and nothing else, so every shard keeps the full `testFiles`, and copies the report into its output directory. It exits 0 once `manifest.json` and `mutation.json` are written, whatever Stryker's exit code was: a survivor is the final job's verdict. The manifest holds the shard number, `git rev-parse HEAD`, the event head SHA and the applicability. The directory is uploaded as `mutation-shard-<n>` with `overwrite: true`, only when the step succeeded.
 
-**What the final job does.** It never classifies a merged report when a check fails; each check fails as `instrumentation-failed` with a fixed status and the shard involved (`mutation-shard-2:0:0 shard-merge ShardResultNotSuccess`). In order:
+**What the final job does.** Its merge step runs with `if: always()`, so a failed download still reaches the diagnostics. It never classifies a merged report when a check fails; each check fails as `instrumentation-failed` with a fixed status and the shard involved (`mutation-shard-2:0:0 shard-merge ShardResultNotSuccess`). In order:
 
-1. every shard job result is exactly `success` (a skipped, cancelled or unset result fails; no artifact file is read before this passes);
-2. every `mutation-shard-<n>` directory exists (a pattern download that matched nothing fails every shard);
-3. every manifest is valid and names its directory's shard;
-4. every manifest's `HEAD` and event SHA equal the pull request head SHA, so a shard that fell back to the merge commit fails;
-5. the shards agree on applicability: three not-applicable manifests give `not-applicable`, a mix fails;
-6. the lists are still an exact partition of `mutate`;
-7. every report is present and parseable;
+1. the three job results (`MUTATION_SHARD_1..3_RESULT`) are exactly `success` (a skipped, cancelled or unset result fails; checked first, on their own, before any list or artifact is read);
+2. the shard lists are an exact partition of `mutate` into three (an empty or miscounted list fails here, never as not-applicable);
+3. every `mutation-shard-<n>` directory exists (a pattern download that matched nothing fails every shard);
+4. every manifest is valid and names its directory's shard;
+5. every manifest's `HEAD` and event SHA equal the pull request head SHA, so a shard that fell back to the merge commit fails;
+6. the shards agree on applicability: three not-applicable manifests give `not-applicable`, a mix fails;
+7. every report is present and parseable, with `files` and `testFiles` maps;
 8. no entry is in two reports;
 9. every report's `files` keys are exactly its shard's list;
 10. every configured literal test file has a non-empty entry in every report (`TestFileNotExecuted` otherwise).

@@ -3,7 +3,12 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {findShardPartitionViolations, parseMutationShards, readMutationShards} from './mutation-shard-lists.ts'
+import {
+  findShardPartitionViolations,
+  mutationShardCount,
+  parseMutationShards,
+  readMutationShards,
+} from './mutation-shard-lists.ts'
 
 const threeShards = [['a.ts', 'b.ts'], ['c.ts'], ['d.ts']]
 
@@ -86,6 +91,12 @@ describe('readMutationShards', () => {
     const shards = readMutationShards()
     expect(shards).toHaveLength(3)
     expect(shards.every(shard => shard.length > 0)).toBe(true)
+  })
+})
+
+describe('mutationShardCount', () => {
+  it('is three', () => {
+    expect(mutationShardCount()).toBe(3)
   })
 })
 

@@ -17,18 +17,16 @@ import {readMutationShards} from './mutation-shard-lists.ts'
 import {findRepositoryRoot} from './repository-root.ts'
 
 /**
- * One shard of the PR mutation gate. A shard decides whether the gate applies from the FULL Stryker config (a
- * shard's own subset would decide differently), then either writes a not-applicable manifest or runs Stryker on its
- * list from `mutation-guards.json` and writes the manifest and the report it produced. The merge step
- * (`mutation-merge.ts`) reads those two files and nothing else.
+ * One shard of the PR mutation gate. It decides applicability from the FULL Stryker config, then writes a
+ * not-applicable manifest or runs Stryker on its list (`--mutate` only, so `testFiles` stay whole) and writes the
+ * manifest and the report.
  *
- * Artifact contract, shared with the merge step: the output directory is uploaded as `mutation-shard-<n>` and holds
- * `manifest.json` (a `ShardManifest`) and, when the gate applied, `mutation.json` (Stryker's own report, byte for byte).
+ * Output directory, uploaded as `mutation-shard-<n>`: `manifest.json` (a `ShardManifest`) and, when applicable,
+ * `mutation.json` (Stryker's report, copied as written). `mutation-merge.ts` reads the directory together with the shard
+ * lists and the Stryker config.
  *
- * A shard exits non-zero only on an infrastructure failure: a gate result that is neither "applicable" nor an
- * explicit `not-applicable`, a spawn that threw, or a report that is missing or unreadable after the spawn. It never
- * judges a mutant: a survivor, a timeout and a non-zero Stryker exit with a readable report are the merge step's
- * verdict, as the verdict of a single run is derived from the report and not from Stryker's exit code.
+ * A shard fails (non-zero) only on infrastructure: a gate result other than applicable or `not-applicable`, a spawn that
+ * threw, or a missing or unreadable report. Stryker's exit code and the mutant statuses are the merge step's verdict.
  */
 
 /** The shard's applicability for this pull request, as decided from the full config. */
@@ -58,7 +56,7 @@ export type ShardResult =
   | {readonly kind: 'usage'; readonly message: string}
   | {readonly kind: 'failed'; readonly reason: string}
 
-/** What a shard run touches. Every effect is here, so a test drives all of them without starting Stryker. */
+/** The effects of a shard run. */
 export interface ShardDeps {
   readonly readShards: () => readonly (readonly string[])[]
   readonly readConfig: () => StrykerConfigShape
@@ -87,9 +85,9 @@ export function describeEnvValue(value: string | undefined): string {
 }
 
 /**
- * Reads the three inputs of a shard from the environment: `MUTATION_SHARD` (a positive integer), `MUTATION_SHARD_EVENT_SHA`
- * (a 40-character lowercase hex SHA) and `MUTATION_SHARD_OUTPUT_DIR` (non-empty). Reports the first one that is wrong.
- * Whether the shard number names a list is checked once the lists are read.
+ * Reads `MUTATION_SHARD` (positive integer), `MUTATION_SHARD_EVENT_SHA` (40 lowercase hex) and
+ * `MUTATION_SHARD_OUTPUT_DIR` (non-empty); reports the first that is wrong. The shard number is checked against the
+ * lists later.
  */
 export function parseShardEnv(env: Readonly<Record<string, string | undefined>>): ShardEnvParse {
   // `String(...)` turns an unset variable into the text "undefined", which neither pattern matches, so no separate
@@ -136,11 +134,8 @@ function writeManifest(outputDir: string, manifest: ShardManifest): void {
 }
 
 /**
- * Runs one shard end to end: validates its inputs, applies the trigger gate to the full config, and writes the
- * output directory. Returns what happened and prints nothing; the CLI prints and sets the exit code.
- *
- * Nothing is written to `outputDir` on a usage error or a failure, and a stale manifest or report left there by an
- * earlier attempt is removed before a new one is written, so a half-written directory never reads as a result.
+ * Runs one shard and returns the outcome; the CLI prints. Nothing is written on a usage error or a failure, and a stale
+ * manifest or report in `outputDir` is removed before new ones are written.
  */
 export async function runMutationShard(
   env: Readonly<Record<string, string | undefined>>,
@@ -157,8 +152,7 @@ export async function runMutationShard(
       return {kind: 'usage', message: `MUTATION_SHARD must be one of 1-${String(shards.length)} (got ${String(shard)})`}
     }
 
-    // The full config, not the shard's subset: a docs-only pull request is not-applicable to every shard, and a pull
-    // request that touches any mutated file is applicable to every shard, whichever list that file is on.
+    // The full config, not the shard's subset: every shard reaches the same applicability.
     const config = deps.readConfig()
     const gate = await deps.evaluateGate(config)
     if (gate !== undefined && gate.verdict !== 'not-applicable') {
@@ -181,7 +175,7 @@ export async function runMutationShard(
       return {kind: 'written', manifest}
     }
 
-    // The report is cleared first: a Stryker that dies before it writes must not leave an earlier run's report to copy.
+    // Cleared first, so a Stryker that dies before writing leaves no earlier report to copy.
     const reportPath = deps.reportPath()
     rmSync(reportPath, {force: true})
     deps.spawn(['--mutate', list.join(',')])
@@ -204,7 +198,7 @@ export async function runMutationShard(
   }
 }
 
-/** The real effects: the repository's lists and config, its full trigger gate, `git rev-parse HEAD` and the Stryker spawner. */
+/** The real effects. */
 export function defaultShardDeps(): ShardDeps {
   return {
     readShards: () => readMutationShards(),

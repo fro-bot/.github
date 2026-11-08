@@ -6,13 +6,9 @@ import {normalizePath} from './mutation-guards-reach.ts'
 import {findRepositoryRoot} from './repository-root.ts'
 
 /**
- * The shard lists of the PR mutation gate: the `shards` key of `mutation-guards.json`, an ordered list of
- * `mutate` entries per Stryker shard. Shard `n` (one-based) is `shards[n - 1]`. The shard CLI, the merge CLI and
- * the coverage test all read them through here, so a malformed file fails the same way in each.
- *
- * Returns the lists in file order or throws. It checks the shape only: that the lists partition `mutate` is
- * `findShardPartitionViolations`'s job, so a reader that is called on a half-edited file still names the
- * shape error instead of a partition one.
+ * The `shards` key of `mutation-guards.json`: ordered lists of `mutate` entries, shard `n` (one-based) being
+ * `shards[n - 1]`. Returns them in file order, or throws on a bad shape (not an array of non-empty string arrays).
+ * `findShardPartitionViolations` checks the partition and the count.
  */
 export function parseMutationShards(parsed: unknown, source: string): readonly (readonly string[])[] {
   const shards = isRecord(parsed) ? parsed.shards : undefined
@@ -34,9 +30,8 @@ export function parseMutationShards(parsed: unknown, source: string): readonly (
 }
 
 /**
- * Reads and parses the `shards` key of `mutation-guards.json` (default: the repository's own file). The text comes
- * from `Buffer#toString()`, which is UTF-8: an encoding argument to `readFileSync` has a variant (`""`) that
- * returns the same bytes as a Buffer, which `JSON.parse` stringifies identically, so no test could kill it.
+ * Reads the `shards` key of `mutation-guards.json` (default: the repository's own file). `Buffer#toString()` replaces an
+ * encoding argument whose `""` variant is equivalent and cannot be killed.
  */
 export function readMutationShards(
   path: string = join(findRepositoryRoot(), 'mutation-guards.json'),
@@ -45,17 +40,20 @@ export function readMutationShards(
   return parseMutationShards(parsed, path)
 }
 
+/** The number of PR shards. */
+export function mutationShardCount(): number {
+  return 3
+}
+
 /**
- * Where `shards` fails to be an exact partition of `mutate` into three lists: a shard count other than three,
- * a `mutate` entry in no shard or in more than one, an entry listed twice in one shard, and a shard path that
- * is not a `mutate` entry. Paths compare with a single leading `./` stripped, as everywhere else in the gate.
- * Empty when the lists are an exact partition.
+ * Where `shards` is not an exact partition of `mutate` into `mutationShardCount()` lists: a wrong count, an entry in no
+ * shard, in several, or twice in one, or a shard path outside `mutate`. Paths compare without a leading `./`.
  */
 export function findShardPartitionViolations(
   mutate: readonly string[],
   shards: readonly (readonly string[])[],
 ): string[] {
-  const expectedShardCount = 3
+  const expectedShardCount = mutationShardCount()
   const violations: string[] = []
   if (shards.length !== expectedShardCount) {
     violations.push(`expected ${String(expectedShardCount)} shards, found ${String(shards.length)}`)

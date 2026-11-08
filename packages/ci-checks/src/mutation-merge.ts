@@ -14,7 +14,7 @@ import {
   type StrykerConfigShape,
 } from './check-mutation-guards.ts'
 import {normalizePath} from './mutation-guards-reach.ts'
-import {findShardPartitionViolations, readMutationShards} from './mutation-shard-lists.ts'
+import {findShardPartitionViolations, mutationShardCount, readMutationShards} from './mutation-shard-lists.ts'
 import {
   describeEnvValue,
   parseShardManifest,
@@ -25,26 +25,20 @@ import {
 } from './mutation-shard.ts'
 
 /**
- * The final job of the PR mutation gate: three shard artifacts in, one verdict out. It checks what the shards left
- * behind, merges the reports and classifies the merged report against the FULL config through the same classifier a
- * single run uses (`classifyReportFile`), so the verdict rules are not restated here.
+ * The final job of the PR mutation gate: checks the shard artifacts, merges the reports and classifies the merge against
+ * the full config with `classifyReportFile`. A failed check ends the run as `instrumentation-failed` with a fixed status
+ * and the shard involved (`mutation-shard-<n>` as the located file); no merged report is classified then. In order:
  *
- * Every check before the merge is fail-closed and fails as `instrumentation-failed` with a fixed status, a fixed reason
- * and the shard that is involved (as the `file` of the located mutant, `mutation-shard-<n>`), and a failed check
- * ends the run: a merged report is never classified when one fails. The checks, in order:
- *
- *  1. every shard's job result is exactly `success` (no artifact is read before this passes);
- *  2. every `mutation-shard-<n>` directory exists;
- *  3. every manifest is present and valid, and says the shard its directory names;
- *  4. every manifest's `HEAD` and event SHA equal the pull request head SHA this job was given;
- *  5. the shards agree on applicability (all not-applicable is a not-applicable result);
- *  6. the shard lists are an exact partition of the full config's `mutate` list;
- *  7. every report is present, parseable, and has `files` and `testFiles` maps;
+ *  1. the three job results (`MUTATION_SHARD_1..3_RESULT`) are exactly `success`, checked before anything else is read;
+ *  2. the shard lists are an exact partition of `mutate` into three;
+ *  3. every `mutation-shard-<n>` directory exists;
+ *  4. every manifest is valid and names its directory's shard;
+ *  5. every manifest's `HEAD` and event SHA equal the pull request head SHA;
+ *  6. the shards agree on applicability (all not-applicable is a not-applicable result);
+ *  7. every report is parseable and has `files` and `testFiles` maps;
  *  8. no entry is in two reports;
- *  9. every report's `files` keys are exactly its shard list;
- * 10. every configured literal test file has a non-empty entry in every report.
- *
- * A missing directory is never read as not-applicable: only three valid not-applicable manifests are.
+ *  9. every report's `files` keys are exactly its list;
+ * 10. every configured literal test file has tests in every report.
  */
 
 export interface MergeInput {
@@ -58,11 +52,11 @@ export type MergeEnvParse =
 export type MergeOutcome =
   {readonly kind: 'usage'; readonly message: string} | {readonly kind: 'result'; readonly result: ClassificationResult}
 
-/** What a merge run touches. A test replaces the repository reads and the classification. */
+/** The effects of a merge run. */
 export interface MergeDeps {
   readonly readShards: () => readonly (readonly string[])[]
   readonly readConfig: () => StrykerConfigShape
-  /** Where the merged report is written and read back: the report path of the full config. */
+  /** Where the merged report is written and classified from. */
   readonly reportPath: () => string
   readonly classify: (config: StrykerConfigShape, reportPath: string) => ClassificationResult
 }
@@ -73,17 +67,13 @@ export type ShardReportJson = Readonly<Record<string, unknown>> & {
   readonly testFiles: Readonly<Record<string, unknown>>
 }
 
-/**
- * Reads `MUTATION_ARTIFACT_DIR` (non-empty) and `MUTATION_EVENT_SHA` (a 40-character lowercase hex SHA) from the
- * environment, reporting the first that is wrong. The per-shard results are read once the shard count is known.
- */
+/** Reads `MUTATION_ARTIFACT_DIR` (non-empty) and `MUTATION_EVENT_SHA` (40 lowercase hex); reports the first that is wrong. */
 export function parseMergeEnv(env: Readonly<Record<string, string | undefined>>): MergeEnvParse {
   const artifactDir = env.MUTATION_ARTIFACT_DIR
   if (artifactDir === undefined || artifactDir === '') {
     return {ok: false, message: `MUTATION_ARTIFACT_DIR must be set (got ${describeEnvValue(artifactDir)})`}
   }
   const eventSha = env.MUTATION_EVENT_SHA
-  // `String(...)` turns an unset variable into the text "undefined", which the pattern does not match.
   if (!/^[0-9a-f]{40}$/u.test(String(eventSha))) {
     return {
       ok: false,
@@ -116,7 +106,6 @@ function readJsonFile(path: string): JsonRead {
   try {
     return {ok: true, value: JSON.parse(readFileSync(path).toString()) as unknown}
   } catch (error) {
-    // Only `readFileSync` and `JSON.parse` throw here, and both throw an Error.
     return {ok: false, message: (error as Error).message}
   }
 }
@@ -139,11 +128,9 @@ function fileKeys(report: ShardReportJson): string[] {
 }
 
 /**
- * Merges shard reports into one report in the shape of a single run's. `files` is the union of the reports' `files`
- * (the caller has checked that no entry is in two). `testFiles` keeps, for each test file, the entry of the report that
- * ran it the fewest times, the first report on a tie. Test ids are kept as written: they are stable across shards
- * because every shard runs the same test files in the same order. Every other top-level field is the first report's,
- * and `config.mutate` is the full list, `lists` flattened in shard order.
+ * Merges shard reports. `files` is the union (the caller has checked that no entry is in two). Each test file keeps the
+ * entry of the report that ran it fewest times, the first on a tie. Other top-level fields come from the first report;
+ * `config.mutate` is `lists` flattened.
  */
 export function mergeShardReports(
   reports: readonly ShardReportJson[],
@@ -166,24 +153,19 @@ export function mergeShardReports(
 }
 
 /**
- * Runs the final job end to end and returns what the CLI prints. A usage error is the only non-result outcome; an
- * unreadable config or shard list throws, like any other unreadable config, and the CLI exits 1.
- *
- * The merged report is written to the configured report path (the one `main.yaml` uploads as `mutation-report`) and
- * classified from there, so the classifier reads it exactly as it reads a single run's report.
+ * Runs the final job and returns what the CLI prints. A usage error is the only non-result outcome; an unreadable config
+ * or list throws. The merged report is written to the configured report path, which `main.yaml` uploads, and classified
+ * from there.
  */
 export function runMutationMerge(env: Readonly<Record<string, string | undefined>>, deps: MergeDeps): MergeOutcome {
   const parsed = parseMergeEnv(env)
   if (!parsed.ok) return {kind: 'usage', message: parsed.message}
   const {artifactDir, eventSha} = parsed.input
 
-  const lists = deps.readShards()
-  const config = deps.readConfig()
-  const shards = lists.map((list, index) => ({shard: index + 1, list}))
-
-  const resultFailures = shards
-    .filter(({shard}) => env[`MUTATION_SHARD_${String(shard)}_RESULT`] !== 'success')
-    .map(({shard}) =>
+  // First and on their own: an empty or miscounted list cannot hide a failed job.
+  const resultFailures = Array.from({length: mutationShardCount()}, (_, index) => index + 1)
+    .filter(shard => env[`MUTATION_SHARD_${String(shard)}_RESULT`] !== 'success')
+    .map(shard =>
       shardFailure(
         shard,
         'ShardResultNotSuccess',
@@ -191,6 +173,21 @@ export function runMutationMerge(env: Readonly<Record<string, string | undefined
       ),
     )
   if (resultFailures.length > 0) return failed(resultFailures)
+
+  const lists = deps.readShards()
+  const config = deps.readConfig()
+  const partitionViolations = findShardPartitionViolations(config.mutate, lists)
+  if (partitionViolations.length > 0) {
+    return failed([
+      locatedFailure(
+        'mutation-guards.json',
+        'shard-merge',
+        'ShardListsInvalid',
+        `the shard lists are not a partition of the mutate list: ${partitionViolations.join('; ')}`,
+      ),
+    ])
+  }
+  const shards = lists.map((list, index) => ({shard: index + 1, list}))
 
   const shardDirectory = (shard: number): string => join(artifactDir, shardArtifactName(shard))
   const missingDirectories = shards
@@ -270,18 +267,6 @@ export function runMutationMerge(env: Readonly<Record<string, string | undefined
     )
   }
 
-  const partitionViolations = findShardPartitionViolations(config.mutate, lists)
-  if (partitionViolations.length > 0) {
-    return failed([
-      locatedFailure(
-        'mutation-guards.json',
-        'shard-merge',
-        'ShardListsInvalid',
-        `the shard lists are not a partition of the mutate list: ${partitionViolations.join('; ')}`,
-      ),
-    ])
-  }
-
   const reportFailures: LocatedMutant[] = []
   const reports: {readonly shard: number; readonly list: readonly string[]; readonly report: ShardReportJson}[] = []
   for (const {shard, list} of loaded) {
@@ -304,8 +289,7 @@ export function runMutationMerge(env: Readonly<Record<string, string | undefined
   }
   if (reportFailures.length > 0) return failed(reportFailures)
 
-  // Overlap is checked before the exact-keys check: an entry in two reports is named as an overlap, and the exact-keys
-  // check then sees only keys that no other report claims.
+  // Before the exact-keys check, so an entry in two reports is named as an overlap.
   const owners = new Map<string, number[]>()
   for (const {shard, report} of reports) {
     for (const key of fileKeys(report)) owners.set(key, [...(owners.get(key) ?? []), shard])
@@ -367,7 +351,7 @@ export function runMutationMerge(env: Readonly<Record<string, string | undefined
   return {kind: 'result', result: deps.classify(config, reportPath)}
 }
 
-/** The real effects: the repository's lists and config, the configured report path and the single-run classifier. */
+/** The real effects. */
 export function defaultMergeDeps(): MergeDeps {
   return {
     readShards: () => readMutationShards(),

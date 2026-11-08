@@ -1,22 +1,13 @@
 /**
- * The `scripts/mutation-shard.ts` entrypoint on the goke runner: one shard of the PR mutation gate. One read-only
- * root command with no argument and no option; it reads `MUTATION_SHARD`, `MUTATION_SHARD_EVENT_SHA` and
- * `MUTATION_SHARD_OUTPUT_DIR` from the environment, runs the shard (`mutation-shard.ts`) and writes the output
- * directory that the workflow uploads as `mutation-shard-<n>`.
- *
- * Exit 0 when the output is written, whether the shard applied or not. Exit 1 on a usage error, on any failure
- * (stderr names it) and on a throw, so the shard never ends in 0 without its output. It never judges a mutant: the
- * merge step does. Argv that matches nothing declared, `--help` included, is a usage error: exit 1, usage on stderr,
- * no Stryker run.
+ * The `scripts/mutation-shard.ts` entrypoint: one PR shard. Reads `MUTATION_SHARD`, `MUTATION_SHARD_EVENT_SHA` and
+ * `MUTATION_SHARD_OUTPUT_DIR` from the environment; takes no arguments. Exit 0 once the output is written, applicable or
+ * not; exit 1 on a usage error or a failure, with the reason on stderr.
  */
 
 import {defineCommand, runCliMain, type CliConfig} from '@fro-bot/core/cli'
 import {defaultShardDeps, runMutationShard, type ShardResult} from './mutation-shard.ts'
 
-/**
- * `run` is the one effect a test replaces: a real run reads the repository and may spawn Stryker. A function rather
- * than a top-level constant, so every mutant in the config is exercised when a test builds it.
- */
+/** `run` is the seam a test replaces; a real run may spawn Stryker. */
 export function mutationShardCli(
   run: (env: Readonly<Record<string, string | undefined>>) => Promise<ShardResult> = async env =>
     runMutationShard(env, defaultShardDeps()),

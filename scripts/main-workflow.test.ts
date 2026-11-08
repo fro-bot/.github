@@ -111,6 +111,11 @@ describe('main.yaml check-mutation-guards job (the final, required job)', () => 
     expect(checkout?.with?.ref).toBe(HEAD_SHA)
   })
 
+  it('does not persist the checkout credentials', () => {
+    const checkout = job?.steps?.find(step => step.uses?.startsWith('actions/checkout@') === true)
+    expect(checkout?.with?.['persist-credentials']).toBe(false)
+  })
+
   it('uses the shared setup action', () => {
     expect(job?.steps?.find(step => step.uses === './.github/actions/setup')).toBeDefined()
   })
@@ -136,6 +141,11 @@ describe('main.yaml check-mutation-guards job (the final, required job)', () => 
       MUTATION_SHARD_2_RESULT: `${EXPRESSION_START} needs.mutation-shard-2.result }}`,
       MUTATION_SHARD_3_RESULT: `${EXPRESSION_START} needs.mutation-shard-3.result }}`,
     })
+  })
+
+  it('runs the merge step with if: always(), so a failed download still reaches the shard diagnostics', () => {
+    const merge = job?.steps?.find(step => step.run === 'bun scripts/mutation-merge.ts')
+    expect(merge?.if).toBe('always()')
   })
 
   it('runs the merge after the download and before the upload', () => {
@@ -185,6 +195,12 @@ describe('main.yaml mutation shard jobs', () => {
 
   it.each(SHARD_JOBS)('%s has a timeout of 20 minutes', id => {
     expect(parsed.jobs[id]?.['timeout-minutes']).toBe(20)
+  })
+
+  it.each(SHARD_JOBS)('%s does not persist the checkout credentials', id => {
+    const checkouts = (parsed.jobs[id]?.steps ?? []).filter(step => step.uses?.startsWith('actions/checkout@') === true)
+    expect(checkouts).toHaveLength(1)
+    expect(checkouts[0]?.with?.['persist-credentials']).toBe(false)
   })
 
   it.each(SHARD_JOBS)('%s checks out the pull request head SHA, then runs the composite', id => {
