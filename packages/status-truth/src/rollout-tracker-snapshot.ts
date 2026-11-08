@@ -651,6 +651,12 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
 
+/**
+ * The `--limit` of the Project read. `gh project item-list` pages internally but cuts off at this
+ * count without saying so, so a result of exactly this size is treated as possibly truncated.
+ */
+const PROJECT_ITEM_LIMIT = 1000
+
 /** The env a run reads: what the runner hands the action, `process.env` in production. */
 type Env = Readonly<Record<string, string | undefined>>
 
@@ -703,10 +709,10 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     let rawItems: string
     try {
       const {execSync} = await import('node:child_process')
-      rawItems = execSync(`gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit 100`, {
-        encoding: 'utf8',
-        timeout: 60_000,
-      })
+      rawItems = execSync(
+        `gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit ${PROJECT_ITEM_LIMIT}`,
+        {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
+      )
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       io.stderr(`rollout-tracker-snapshot: FATAL — failed to read Project ${projectUrl}: ${detail}\n`)
@@ -721,6 +727,13 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
         parsed !== null && typeof parsed === 'object' && 'items' in parsed
           ? (parsed as {items: unknown[]}).items
           : (parsed as unknown[])
+      // `gh project item-list` stops silently at --limit, so a full page may be a cut one.
+      if (rawArr.length >= PROJECT_ITEM_LIMIT) {
+        io.stderr(
+          `rollout-tracker-snapshot: FATAL — Project item list reached the read limit of ${PROJECT_ITEM_LIMIT} items and may be truncated; refusing to treat a partial read as no-drift; exiting 1\n`,
+        )
+        return 1
+      }
       items = (rawArr as Record<string, unknown>[]).map(raw => normaliseRawProjectItem(raw))
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)

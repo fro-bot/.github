@@ -2113,3 +2113,84 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     })
   })
 })
+
+// ─── Live Project read: every item, or fail closed ───────────────────────────
+
+// Fake `gh project item-list` that behaves like the real one: it returns at most `--limit` items
+// (30 when the flag is absent) out of FAKE_GH_PROJECT_TOTAL, and reports the true `totalCount`.
+function fakeProjectGhSource(): string {
+  return [
+    `#!${process.execPath}`,
+    'const args = process.argv.slice(2)',
+    "if (args[0] !== 'project' || args[1] !== 'item-list') {",
+    "  console.error('unexpected gh command: ' + args.join(' '))",
+    '  process.exit(1)',
+    '}',
+    "const flag = args.indexOf('--limit')",
+    'const limit = flag === -1 ? 30 : Number(args[flag + 1])',
+    'const total = Number(process.env.FAKE_GH_PROJECT_TOTAL)',
+    'const items = Array.from({length: Math.min(total, limit)}, (_, index) => ({',
+    "  id: 'PVTI_' + (index + 1),",
+    "  content: {number: index + 1, repository: 'fro-bot/agent', type: 'Issue'},",
+    "  status: 'In Progress',",
+    '}))',
+    'process.stdout.write(JSON.stringify({items, totalCount: total}))',
+  ].join('\n')
+}
+
+function runCliWithLiveProject(total: number): CliResult {
+  const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-project-'))
+  try {
+    writeFileSync(join(dir, 'gh'), fakeProjectGhSource())
+    chmodSync(join(dir, 'gh'), 0o755)
+    return runCliRaw({
+      ...fixtureEnv({items: [], issues: []}),
+      ROLLOUT_TRACKER_ITEMS_JSON: undefined,
+      ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+      ROLLOUT_TRACKER_COMMENT_BODY: undefined,
+      PATH: `${dir}:${process.env.PATH ?? ''}`,
+      FAKE_GH_PROJECT_TOTAL: String(total),
+    })
+  } finally {
+    rmSync(dir, {recursive: true, force: true})
+  }
+}
+
+describe('live Project read covers every item', () => {
+  // The read limit the preflight passes to `gh project item-list`; a result of exactly this size
+  // may be truncated and must fail closed.
+  const readLimit = 1000
+
+  it('reads all items of a Project with more than 100', () => {
+    const result = runCliWithLiveProject(146)
+
+    expect(result.status).toBe(0)
+    const decision = JSON.parse(result.stdout) as PreflightResult
+    expect(decision.snapshot.items).toHaveLength(146)
+  })
+
+  it('reads a Project one item short of the read limit', () => {
+    const result = runCliWithLiveProject(readLimit - 1)
+
+    expect(result.status).toBe(0)
+    expect((JSON.parse(result.stdout) as PreflightResult).snapshot.items).toHaveLength(readLimit - 1)
+  })
+
+  it('fails closed when the result is exactly the read limit', () => {
+    const result = runCliWithLiveProject(readLimit)
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      `rollout-tracker-snapshot: FATAL — Project item list reached the read limit of ${readLimit} items and may be truncated; refusing to treat a partial read as no-drift; exiting 1\n`,
+    )
+  })
+
+  it('fails closed when the Project holds more than the read limit', () => {
+    const result = runCliWithLiveProject(readLimit * 5)
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('may be truncated')
+  })
+})
