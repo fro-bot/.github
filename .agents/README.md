@@ -20,6 +20,7 @@ Each `SKILL.md` declares two required fields in YAML frontmatter:
 
 | Skill | Description |
 | --- | --- |
+| [`cross-repo-program`](skills/cross-repo-program/SKILL.md) | Start, run or close out a cross-repo program: one tracker issue, one Project and one operator, kept current by the program tracker |
 | [`generating-project-docs`](skills/generating-project-docs/SKILL.md) | Create or refresh `README.md`, `SECURITY.md`, AI-assistant guidance, and subdirectory READMEs against the live repo |
 
 ## When to add a skill here

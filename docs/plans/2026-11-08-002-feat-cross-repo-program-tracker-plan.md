@@ -188,7 +188,7 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
 
 ## Implementation Units
 
-- [ ] **Unit 1: Program skill**
+- [x] **Unit 1: Program skill**
 
 **Goal:** `.agents/skills/cross-repo-program/SKILL.md` describes how to start and run a program.
 
