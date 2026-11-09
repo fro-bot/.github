@@ -7,84 +7,107 @@ topic: promotion-self-merge
 
 ## Summary
 
-Fro Bot merges its own `data` → `main` promotions without an operator step, under the existing `main` protection. When a knowledge/metadata-only promotion passes every required check on its current head, a deterministic job approves it as `fro-bot` and the App enables auto-merge. Any change to `main` protection made outside the settings automation is reported within minutes.
+The `Merge Data Branch` run now finishes the promotion itself, and it runs daily instead of weekly. The run already does the merge-back, the promotion gates and the PR. When the PR's live diff touches only `knowledge/` and `metadata/`, the run also waits for the required checks on that exact head, approves as the `fro-bot` user and merges pinned to that head. Changes to `main` protection made outside the settings automation are reported within minutes.
 
 ---
 
 ## Problem Frame
 
-`Merge Data Branch` opens one promotion PR per run, authored by the Fro Bot App (`packages/registry/src/merge-data-pr.ts`). It labels the PR `automerge` when every changed path is under `knowledge/` or `metadata/`, and `needs-review` otherwise. Nothing reads either label. The operator approved and merged the last ten promotions by hand. They stayed open from minutes to six days, and on #4088 every merge-back push dismissed his approval.
+`Merge Data Branch` (`.github/workflows/merge-data.yaml`, weekly on Sundays plus dispatch) does the following:
 
-`main` protection is declared in `common-settings.yaml`, merged with `.github/settings.yml`. It requires one approval, code-owner review, approval of the most recent push, and the dismissal of stale approvals. `fro-bot` is a user account, so the repo can't name bypass actors. The operator confirmed this from the live rule.
+- merges `main` back into `data`;
+- runs the promotion leak gates as steps;
+- opens or updates one PR from `data` into `main`, authored by the Fro Bot App (`packages/registry/src/merge-data-pr.ts`).
 
-Five Renovate PRs merged with no review between 2026-11-07 and 2026-11-08: #4108, #4135, #4134, #4142 and #4137. Scorecard's `branch_protection_rule` runs show two edits to `main` protection by the user `fro-bot`, at 06:06:34Z and 13:13:25Z on 11-07. Each landed seconds before `fro-bot` merged #4132 or #4133. Each edit removed the review requirement until the next daily settings run restored it, at 10:59Z on 11-07 and 11:13Z on 11-08. All five merges fall inside those two windows. Nothing reported the drift.
+It labels the PR `automerge` when every changed path is under `knowledge/` or `metadata/`, and `needs-review` otherwise. Nothing reads either label. The operator approved and merged the last ten promotions by hand, and they stayed open anywhere from minutes to six days.
+
+`main` protection requires all of the following:
+
+- one approval;
+- code-owner review;
+- approval of the most recent push;
+- dismissal of stale approvals;
+- branches up to date before merge (`strict: true`).
+
+`main` takes several merges a day, so a promotion PR falls behind within hours. Only the next weekly run brings it up to date. `fro-bot` is a user account, so the repo cannot name bypass actors. The operator confirmed this from the live rule.
+
+Five Renovate PRs merged with no review between 2026-11-07 and 2026-11-08: #4108, #4135, #4134, #4142 and #4137. Scorecard's `branch_protection_rule` runs show two edits to `main` protection by the user `fro-bot`, at 06:06:34Z and 13:13:25Z on 11-07. Each edit landed seconds before `fro-bot` merged #4132 or #4133. The daily settings runs at 10:59Z on 11-07 and 11:13Z on 11-08 rewrote protection.
+
+The five merges fall inside the windows those edits open. That the edits removed the review requirement is inferred, not verified: #4125 waited for an approval inside the second window. Nothing reported either edit.
 
 ---
 
 ## Requirements
 
-**Promotion approval**
+**Self-merge in the promotion run**
 
-- R1. A promotion qualifies for self-merge only when every changed path is under `knowledge/` or `metadata/`. This is the same rule that picks the `automerge` label today. A promotion that does not qualify keeps `needs-review` and waits for the operator, as it does now.
-- R2. For a qualifying promotion, Fro Bot approves the PR as the `fro-bot` user only after every required status check has passed on the PR's current head, including `Security: Private Leak Scan`. The approval names that head commit.
-- R3. The approval comes from a deterministic job with no agent or LLM step. The job's only inputs are the PR's author, base, head commit, changed paths, labels and check results.
-- R4. The job approves only PRs opened by the Fro Bot App from `data` into `main` that carry the `automerge` label. It ignores every other PR, whatever its paths.
-- R5. After approving, Fro Bot enables squash auto-merge on the PR, so GitHub merges it once protection is satisfied.
-- R6. When the head moves after approval, for example after a merge-back push, the stale approval is dismissed as it is today. Fro Bot approves again after the required checks pass on the new head, without waiting for the next scheduled promotion run.
-- R7. If any required check fails on the current head, Fro Bot does not approve. The PR stays open with its failure visible. The promotion gates keep failing closed.
-- R8. Each approval says why it was given, in one line naming the head commit and the rule it met. It never claims that anyone reviewed the content.
+- R1. A promotion qualifies when the PR's live diff against `main`, read in the same run, changes only paths under `knowledge/` or `metadata/`. Both the old and the new path of a rename count. A diff the API truncates does not qualify. Labels never decide qualification. The run sets exactly one of `automerge` and `needs-review` and removes the other.
+- R2. A qualifying promotion is merged only after the promotion gates pass in the same run, on the commit that becomes the PR head.
+- R3. After the gates pass, the run waits a bounded time for the required checks on that head. It reads the required checks from the branch's live protection. Each must be success, skipped or neutral. If they do not settle in time, the run leaves the PR open and stops without merging.
+- R4. The run approves the PR as the `fro-bot` user, pinned to that head commit. The review body is one line naming the commit and the rule it met. It never claims anyone read the content.
+- R5. The run then merges the PR, pinned to that head commit. If the head has moved, GitHub refuses the merge and the run stops without retrying.
+- R6. Every decision is deterministic. No agent or LLM step is involved.
+- R7. A promotion that does not qualify, or whose gates or checks fail, stays open with the failure visible and waits for the operator, as today.
+- R8. `Merge Data Branch` runs daily instead of weekly. A behind or moved promotion is then caught up and merged by the next day's run.
 
 **Protection drift**
 
-- R9. When `main` protection changes and the actor is anyone other than the settings automation, Fro Bot opens an issue in fro-bot/.github within minutes. The issue names the actor, the time and the link to the settings run that restores the protection.
-- R10. Changes made by the settings automation itself do not raise an issue.
+- R9. When `main` protection changes and the actor is not the settings automation, Fro Bot opens an issue in fro-bot/.github within 15 minutes. The issue names the actor, the time, the change GitHub reports, and the settings workflow that will restore protection.
+- R10. The settings automation is identified by actor type and numeric ID, not by login. The `fro-bot` user is always reported.
 - R11. The drift report does not block or revert the change. Restoration stays with the existing daily settings run.
-- R12. Repeated drift reuses the open drift issue and adds a comment, rather than opening a new issue each time.
+- R12. Further drift while an issue is open adds a comment to it. The issue closes on its own after the settings automation next rewrites `main` protection.
 
 ---
 
 ## Acceptance Examples
 
-- AE1. **Covers R1, R2, R5.** A Sunday promotion changes only `knowledge/` and `metadata/` files. All required checks pass. Fro Bot approves the PR as `fro-bot`, enables auto-merge, and the PR merges with no operator action.
-- AE2. **Covers R1.** A promotion changes a file outside `knowledge/` and `metadata/`. It is labeled `needs-review` and Fro Bot never approves it.
-- AE3. **Covers R6.** After approval, merge-back pushes a new commit to `data`. GitHub dismisses the approval. When the checks pass on the new head, Fro Bot approves again and the PR merges.
-- AE4. **Covers R7.** The leak scan fails on a promotion's head. Fro Bot does not approve, and the PR stays open with the failed check.
-- AE5. **Covers R4.** A PR from any other branch touches only `knowledge/`. Fro Bot does not approve it.
-- AE6. **Covers R9, R10.** The user `fro-bot` turns off required reviews in the web UI. Within minutes an issue names `fro-bot`, the time and the restoring run. The next daily settings run restores protection without opening a second issue.
+- AE1. **Covers R1–R5.** A daily run promotes changes only to `knowledge/` and `metadata/`. The gates pass and the required checks settle. The run approves as `fro-bot` and merges, with no operator action.
+- AE2. **Covers R1, R7.** A promotion includes a file outside `knowledge/` and `metadata/`. The run labels it `needs-review`, removes `automerge`, and does not approve.
+- AE3. **Covers R1.** A promotion renames `scripts/x.ts` to `knowledge/x.md`. The old path disqualifies it.
+- AE4. **Covers R2, R7.** The leak gate fails. The run does not open or update the PR for merge, and nothing is approved.
+- AE5. **Covers R3, R8.** The required checks have not settled when the wait ends. The PR stays open, and the next day's run catches it up and merges it.
+- AE6. **Covers R5.** `data` moves between the approval and the merge. The merge is refused, and the next run handles the new head.
+- AE7. **Covers R9, R10, R12.** The user `fro-bot` turns off required reviews in the web UI. Within 15 minutes an issue names `fro-bot`, the time and the change. The next settings run rewrites protection, and the issue closes.
 
 ---
 
 ## Success Criteria
 
-- The next four scheduled promotions merge with no operator action, unless one fails a check.
-- No promotion with a path outside `knowledge/` or `metadata/` is approved by Fro Bot.
-- The next manual edit to `main` protection produces a drift issue within 15 minutes.
+- Over the next four weeks, every qualifying promotion merges with no operator action, unless a gate or check fails.
+- Fro Bot approves no promotion that has a path outside `knowledge/` or `metadata/`.
+- The next manual edit to `main` protection opens a drift issue within 15 minutes, and that issue closes after the next settings run.
 
 ---
 
 ## Scope Boundaries
 
-- Renovate PRs, both a review brief and any automatic approval. These get a separate brainstorm.
-- Drafted-solution PRs from `draft-solutions.yaml`, which stay manual.
-- Changing `main` protection itself. No bypass, no lower approval count, no new required check.
+- Renovate PRs, both a review brief and any automatic approval. They get a separate brainstorm.
+- Drafted-solution PRs from `draft-solutions.yaml`. These stay manual.
+- Changing `main` protection itself: no bypass, no lower approval count, no change to `strict`.
+- Rulesets and repository-level settings drift. Only the `main` branch protection rule is watched.
 - Restoring drifted protection immediately. The daily settings run stays the restorer.
+- Content review of `knowledge/` and `metadata/`. Qualification is by path, and the existing promotion gates are the content check.
 
 ---
 
 ## Key Decisions
 
-- **A deterministic approval from the `fro-bot` user, not a bypass.** A personal repo can't name bypass actors, and the operator keeps the review rule. `fro-bot` is a code owner. The App pushes promotion heads, so a `fro-bot` approval meets the last-push rule with no protection change. fro-bot/agent#1520 recorded that App-authored PRs keep manual review, because the review agent can't approve its own App's PRs. This design adds no agent review. It is a gate-bound approval from a non-agent job.
-- **The approval follows the head, not the run.** Promotions run weekly, so an approval tied to the promotion run would leave a merge-back-moved head waiting a week. The approval reacts to check completion on the PR.
-- **Report drift, don't block it.** Drift so far has come from the operator merging through the web session. A report keeps that path open and makes the gap visible.
-- Prior work: the self-merge idea is recorded as unexplored in `docs/ideation/2026-11-07-open-ideation.md`. That proposal assumed an App bypass, which a personal repo cannot have. The drafted-solution manual-review rule in `docs/plans/2026-10-09-002-feat-drafted-solution-docs-plan.md` (complete) stays in force.
+- **The promotion run merges; no separate approver.** The strong leak gates run as steps in that run, not as PR checks. No event fires reliably after all required checks finish on an Actions-authored head. GitHub also refuses to arm auto-merge on a PR that is already clean. Merging in the run binds the approval and the merge to the head the gates checked.
+- **A `fro-bot` approval, not a bypass.** A personal repo cannot name bypass actors, and the operator keeps the review rule. `fro-bot` is a code owner. Only the App pushes `data`, so a `fro-bot` approval satisfies the last-push rule.
+- **Daily cadence.** `strict: true` makes a promotion fall behind within hours. A daily run brings it up to date and merges it within a day, instead of up to a week.
+- **Report drift, don't block it.** The known drift came from merges in the web session. A report keeps that path open and makes the gap visible.
+- **Prior work.**
+  - `docs/ideation/2026-11-07-open-ideation.md` records the self-merge idea as unexplored. That proposal assumed an App bypass.
+  - fro-bot/agent#1520 recorded that App-authored PRs keep manual review because the review agent cannot approve its own App's PRs. This design adds no agent review.
+  - The drafted-solution manual-review rule in `docs/plans/2026-10-09-002-feat-drafted-solution-docs-plan.md` (complete) stays in force.
 
 ---
 
 ## Dependencies / Assumptions
 
-- `FRO_BOT_PAT` can submit a PR review as `fro-bot`. It already posts Fro Bot's PR reviews.
-- The `branch_protection_rule` event reaches workflows in this repo with the actor. Scorecard already runs on it, and its run records show the actor.
-- The promotion leak gates in `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md` stay required checks on the PR.
+- `FRO_BOT_PAT` can submit an approving review as `fro-bot` on an App-authored PR, and that approval counts as a code-owner approval. Verify this with one live approval before relying on it.
+- Each `branch_protection_rule` event carries the rule name, the sender and the reported changes.
+- A write token can read the required checks from `GET /repos/{owner}/{repo}/branches/main`.
 
 ---
 
@@ -92,8 +115,9 @@ Five Renovate PRs merged with no review between 2026-11-07 and 2026-11-08: #4108
 
 ### Deferred to Planning
 
-- [Affects R2, R6][Technical] Which event triggers the approval job: check-suite or workflow-run completion on the PR head, or a short poll. How it confirms every required context, given that the list lives in settings.
-- [Affects R9][Technical] Whether drift detection runs on `branch_protection_rule` alone. How it tells settings writes (`settings[bot]`, `fro-bot[bot]`) apart from other actors.
+- [Affects R3][Technical] The wait bound, and how the run tells a check that has not started from one that never will.
+- [Affects R8][Technical] Whether a run with nothing to promote should still update a behind PR.
+- [Affects R9][Technical] How to confirm a write came from the settings automation: by actor ID alone, or matched against an active settings run.
 
 ---
 
