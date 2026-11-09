@@ -111,6 +111,7 @@ jobs:
       marker: ${{ steps.snapshot.outputs.marker }}
       marker_comment_id: ${{ steps.snapshot.outputs.marker_comment_id }}
       operator_comment_ids: ${{ steps.snapshot.outputs.operator_comment_ids }}
+      bootstrap_repos: ${{ steps.snapshot.outputs.bootstrap_repos }}
       program: ${{ steps.snapshot.outputs.program }}
       tracker_issue: ${{ steps.snapshot.outputs.tracker_issue }}
       tracker_repo: ${{ steps.snapshot.outputs.tracker_repo }}
@@ -167,6 +168,7 @@ jobs:
           MARKER="$(echo "$RESULT" | jq -r '.marker')"
           MARKER_COMMENT_ID="$(echo "$RESULT" | jq -r '.marker_comment_id // ""')"
           OPERATOR_COMMENT_IDS="$(echo "$RESULT" | jq -c '.operator_comment_ids')"
+          BOOTSTRAP_REPOS="$(echo "$RESULT" | jq -c '.bootstrap_repos')"
           PROGRAM="$(echo "$RESULT" | jq -r '.program.key')"
           TRACKER_ISSUE="$(echo "$RESULT" | jq -r '.program.issue')"
           TRACKER_REPO="$(echo "$RESULT" | jq -r '.program.repo')"
@@ -179,6 +181,7 @@ jobs:
             echo "pending_mention_ids=${PENDING_MENTION_IDS}"
             echo "marker_comment_id=${MARKER_COMMENT_ID}"
             echo "operator_comment_ids=${OPERATOR_COMMENT_IDS}"
+            echo "bootstrap_repos=${BOOTSTRAP_REPOS}"
             echo "program=${PROGRAM}"
             echo "tracker_issue=${TRACKER_ISSUE}"
             echo "tracker_repo=${TRACKER_REPO}"
@@ -269,6 +272,17 @@ jobs:
         that differs from what this run set. Restore or correct it. Done rows
         are absent from the matrix on purpose and are not drift. Leave alone
         anything someone else changed during the run.
+
+        Bootstrap. Confirmed repos that have no Project item yet (JSON array
+        of nameWithOwner and nodeId, empty when none):
+        ${{ needs.preflight.outputs.bootstrap_repos }}
+        Only the repos listed there need work. When the list is not empty, add
+        the label program-tracker to the tracker issue when it lacks it, and
+        create the label first when the repository has none. Then, for each
+        listed repo, file one issue in that repo that links back to the tracker
+        issue and add it to the Project. Skip a listed repo that already has a
+        Project item. If an issue cannot be filed in a repo, say so in your
+        tracker comment.
 
         Body size. GitHub rejects an issue body over 65,536 bytes. In the
         cross-repo dependency matrix, list only the dependencies whose Project

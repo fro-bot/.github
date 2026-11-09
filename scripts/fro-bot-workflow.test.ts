@@ -1476,3 +1476,55 @@ describe('fro-bot.yaml content-job tracker exclusion matches program-trackers.js
     }
   })
 })
+
+describe('fro-bot.yaml: program requests read the program skill', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const note = flat(env.PROGRAM_REQUEST_NOTE ?? '')
+
+  it('names the skill by path and limits itself to program requests', () => {
+    expect(note).toContain('A request to start, run or close out a cross-repo program')
+    expect(note).toContain('.agents/skills/cross-repo-program/SKILL.md')
+    expect(note).toContain('Read it before you act on such a request')
+    expect(note).toContain('It does not apply to any other request')
+  })
+
+  it.each(['fro-bot-remediate', 'fro-bot-observe'])(
+    'puts the note ahead of the task in the %s agent prompt',
+    jobName => {
+      const step = froBotParsed.jobs[jobName]?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+      const prompt = String(step?.with?.prompt ?? '')
+      const noteReference = '$' + '{{ env.PROGRAM_NOTE }}'
+      const taskReference = '$' + '{{ env.TASK_PROMPT }}'
+
+      expect(prompt).toContain(noteReference)
+      expect(prompt.indexOf(noteReference)).toBeLessThan(prompt.indexOf(taskReference))
+      expect(prompt.indexOf(noteReference)).toBeGreaterThan(prompt.indexOf('</persona>'))
+    },
+  )
+
+  it.each(['fro-bot-remediate', 'fro-bot-observe'])(
+    'adds the note to a custom dispatch prompt and to nothing else in %s',
+    jobName => {
+      const step = froBotParsed.jobs[jobName]?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+      const expression = String(step?.env?.PROGRAM_NOTE ?? '')
+      const inner = /\$\{\{([\s\S]*)\}\}/.exec(expression)?.[1] ?? ''
+      const context = (eventName: string, prompt: string): unknown => ({
+        github: {event_name: eventName, event: {inputs: {prompt}}},
+        env: {PROGRAM_REQUEST_NOTE: 'NOTE'},
+        inputs: {prompt: ''},
+      })
+
+      expect(evaluateExpressionValue(inner, context('workflow_dispatch', 'start a program for X'))).toBe('NOTE')
+      expect(evaluateExpressionValue(inner, context('workflow_dispatch', ''))).toBe('')
+      expect(evaluateExpressionValue(inner, context('schedule', ''))).toBe('')
+      expect(evaluateExpressionValue(inner, context('schedule', 'x'))).toBe('')
+    },
+  )
+
+  it('does not touch the prompt of the content-trigger job', () => {
+    const step = froBotParsed.jobs['fro-bot']?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+
+    expect(String(step?.with?.prompt ?? '')).not.toContain('PROGRAM_NOTE')
+    expect(step?.env?.PROGRAM_NOTE).toBeUndefined()
+  })
+})

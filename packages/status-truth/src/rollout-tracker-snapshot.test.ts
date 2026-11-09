@@ -742,6 +742,8 @@ interface FakeGhParams {
   apiFail?: boolean
   agentRelease?: unknown
   gatewayRuns?: unknown
+  /** Further env for the run, such as a program config. */
+  extraEnv?: Record<string, string | undefined>
   /** Repositories whose visibility read answers private, internal, 404, 502, a network error or nothing. */
   visibility?: {
     private?: string[]
@@ -792,6 +794,7 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: s
       ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
       // Health is the only read that is not served through `gh`; the fixture keeps the run offline.
       ROLLOUT_TRACKER_HEALTH_JSON: JSON.stringify(SIGNAL_FIXTURES.health),
+      ...params.extraEnv,
     })
     return {
       ...result,
@@ -2198,7 +2201,13 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     }
     const run = String(preflight.steps?.find(step => step.id === 'snapshot')?.run ?? '')
 
-    for (const name of ['pending_mention_ids', 'marker', 'marker_comment_id', 'operator_comment_ids']) {
+    for (const name of [
+      'pending_mention_ids',
+      'marker',
+      'marker_comment_id',
+      'operator_comment_ids',
+      'bootstrap_repos',
+    ]) {
       expect(preflight.outputs?.[name]).toBe(expr(`steps.snapshot.outputs.${name}`))
       expect(run).toContain(`${name}`)
       expect(prompt).toContain(expr(`needs.preflight.outputs.${name}`))
@@ -2325,6 +2334,25 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
 
     it('does not label operator-reported evidence by what a comment claims', () => {
       expect(flat).not.toContain("(from the operator's posted acceptance runs)")
+    })
+
+    it('lists the confirmed repos without a Project item and bootstraps only those', () => {
+      expect(flat).toContain(expr('needs.preflight.outputs.bootstrap_repos'))
+      expect(flat).toContain('Bootstrap. Confirmed repos that have no Project item yet')
+      expect(flat).toContain('Only the repos listed there need work')
+    })
+
+    it('labels the tracker issue program-tracker when it lacks the label, creating the label if needed', () => {
+      expect(flat).toContain('add the label program-tracker to the tracker issue when it lacks it')
+      expect(flat).toContain('create the label first when the repository has none')
+    })
+
+    it('files one issue for each listed repo, links it back, adds it to the Project and reports a failure', () => {
+      expect(flat).toContain(
+        'file one issue in that repo that links back to the tracker issue and add it to the Project',
+      )
+      expect(flat).toContain('Skip a listed repo that already has a Project item')
+      expect(flat).toContain('If an issue cannot be filed in a repo, say so in your tracker comment')
     })
 
     it('does not anchor on thread order', () => {
@@ -2594,11 +2622,12 @@ describe('the program config in a snapshot run', () => {
     }
   }
 
-  /** The result without the fields added after the golden output was recorded: `program` and `operator_comment_ids`. */
+  /** The result without the fields added after the golden output was recorded: `program`, `operator_comment_ids` and `bootstrap_repos`. */
   function withoutProgram(stdout: string): string {
     const result = JSON.parse(stdout) as Record<string, unknown>
     delete result.program
     delete result.operator_comment_ids
+    delete result.bootstrap_repos
     return `${JSON.stringify(result)}\n`
   }
 
@@ -2608,6 +2637,7 @@ describe('the program config in a snapshot run', () => {
     expect(result.status).toBe(0)
     expect(withoutProgram(result.stdout)).toBe(goldenStdout)
     expect((JSON.parse(result.stdout) as PreflightResult).operator_comment_ids).toEqual([101, 103, 104])
+    expect((JSON.parse(result.stdout) as PreflightResult).bootstrap_repos).toEqual([])
     expect((JSON.parse(result.stdout) as PreflightResult).program).toEqual({
       key: 'gateway',
       issue: 'fro-bot/.github#3512',
@@ -3089,5 +3119,255 @@ describe('operator_comment_ids', () => {
     })
 
     expect((JSON.parse(result.stdout) as PreflightResult).operator_comment_ids).toEqual([7])
+  })
+})
+
+// ─── Program start: the bootstrap wake ────────────────────────────────────────
+
+/** The confirmed repos each bootstrap config file was written with, so a run can answer public for them. */
+const configuredRepos = new Map<string, readonly {nameWithOwner: string}[]>()
+
+function bootstrapConfig(repos: readonly {nameWithOwner: string; nodeId: string}[] | undefined): string {
+  const path = writeConfig([
+    programEntry({
+      key: 'plugins',
+      issue: 'fro-bot/.github#4200',
+      project: {owner: 'marcusrbrown', number: 9, gateField: 'Gate'},
+      evidence: 'none',
+      ...(repos === undefined ? {} : {repos}),
+    }),
+  ])
+  configuredRepos.set(path, repos ?? [])
+  return path
+}
+
+function bootstrapPreflight(params: {
+  configPath: string
+  items: ProjectItem[]
+  comments?: TrackerComment[]
+  visibility?: Record<string, string | null>
+}): PreflightResult {
+  const result = runCliRaw({
+    ...fixtureEnv({
+      items: params.items,
+      issues: params.items.map(item => makeIssueState({number: item.content_number, repo: item.content_repo})),
+      comments: params.comments ?? [],
+      visibility: {
+        ...Object.fromEntries(
+          (configuredRepos.get(params.configPath) ?? []).map(repo => [repo.nameWithOwner, 'public']),
+        ),
+        ...params.visibility,
+      },
+    }),
+    ROLLOUT_TRACKER_CONFIG: params.configPath,
+    ROLLOUT_TRACKER_PROGRAM: 'plugins',
+  })
+  if (result.status !== 0) throw new Error(`run failed (${result.status}): ${result.stderr}`)
+  return JSON.parse(result.stdout) as PreflightResult
+}
+
+/** A quiet thread: the marker the run for `items` would write, from a reply by the bot. */
+function quietThread(configPath: string, items: ProjectItem[]): TrackerComment[] {
+  return [comment(100, 'fro-bot', bootstrapPreflight({configPath, items}).marker)]
+}
+
+describe('the bootstrap wake', () => {
+  const repoA = {nameWithOwner: 'marcusrbrown/plugin-a', nodeId: 'R_a'}
+  const repoB = {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'}
+  const repoC = {nameWithOwner: 'marcusrbrown/plugin-c', nodeId: 'R_c'}
+  const itemOf = (repo: {nameWithOwner: string}, number = 1): ProjectItem =>
+    makeProjectItem({id: `PVTI_${repo.nameWithOwner}`, content_number: number, content_repo: repo.nameWithOwner})
+  const issueOf = (repo: {nameWithOwner: string}, number = 1): IssueState =>
+    makeIssueState({number, repo: repo.nameWithOwner})
+
+  it('wakes with reason bootstrap, naming the confirmed repos that have no item', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemOf(repoA)]
+
+    const result = bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.reason).toMatch(/^bootstrap /)
+    expect(result.reason).toContain('1 confirmed repo')
+    expect(result.bootstrap_repos).toEqual([repoB])
+    expect(result.pending_mention_ids).toEqual([])
+  })
+
+  it('wakes for a program whose Project is still empty', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+
+    const result = bootstrapPreflight({configPath, items: [], comments: quietThread(configPath, [])})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.bootstrap_repos).toEqual([repoA, repoB])
+  })
+
+  it('does not wake once every confirmed repo has an item', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemOf(repoA), itemOf(repoB)]
+
+    const result = bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)})
+
+    expect(result.should_comment).toBe(false)
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it('wakes again after a partial bootstrap, for the remaining repos only', () => {
+    const configPath = bootstrapConfig([repoA, repoB, repoC])
+    const items = [itemOf(repoA), itemOf(repoB)]
+
+    const result = bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.bootstrap_repos).toEqual([repoC])
+  })
+
+  it.each([
+    ['private', 'private'],
+    ['internal', 'internal'],
+    ['a 404', null],
+  ])('does not bootstrap a confirmed repo that is %s now', (_name, visibility) => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemOf(repoA)]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      visibility: {[repoB.nameWithOwner]: visibility, [repoA.nameWithOwner]: 'public'},
+    })
+
+    expect(result.should_comment).toBe(false)
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it('reports no bootstrap repos for a program with no confirmed repos', () => {
+    const configPath = bootstrapConfig(undefined)
+    const items = [itemOf(repoA)]
+
+    const result = bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)})
+
+    expect(result.should_comment).toBe(false)
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it('adds the bootstrap to the reason when the hash changed too', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const before = [itemOf(repoA)]
+    const comments = quietThread(configPath, before)
+
+    const result = bootstrapPreflight({configPath, items: [itemOf(repoA), itemOf(repoA, 2)], comments})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.reason).toContain('gating transition detected')
+    expect(result.reason).toContain('bootstrap pending (1)')
+    expect(result.bootstrap_repos).toEqual([repoB])
+  })
+
+  it('leaves a cold start reading as a cold start', () => {
+    const configPath = bootstrapConfig([repoA])
+
+    const result = bootstrapPreflight({configPath, items: []})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.reason).toContain('cold start')
+    expect(result.bootstrap_repos).toEqual([repoA])
+  })
+
+  it('fails closed when the visibility of a confirmed repo cannot be read', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+
+    const result = runCliRaw({
+      ...fixtureEnv({items: [itemOf(repoA)], issues: [issueOf(repoA)], comments: []}),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({[repoA.nameWithOwner]: 'public'}),
+      ROLLOUT_TRACKER_CONFIG: configPath,
+      ROLLOUT_TRACKER_PROGRAM: 'plugins',
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('failed to read repository visibility')
+  })
+
+  describe('through gh', () => {
+    it('reads the visibility of a confirmed repo that has no item, once', () => {
+      const configPath = bootstrapConfig([repoA, repoB])
+      const items = [itemOf(repoA)]
+
+      const result = runCliWithFakeGh({
+        items,
+        issues: [issueOf(repoA)],
+        comments: [],
+        extraEnv: {
+          ROLLOUT_TRACKER_CONFIG: configPath,
+          ROLLOUT_TRACKER_PROGRAM: 'plugins',
+          ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+        },
+      })
+
+      expect(result.status).toBe(0)
+      expect([...result.visibilityReads].sort()).toEqual([repoA.nameWithOwner, repoB.nameWithOwner])
+      expect((JSON.parse(result.stdout) as PreflightResult).bootstrap_repos).toEqual([repoB])
+    })
+
+    it('does not bootstrap a confirmed repo that answers 404, and exits 1 on a 5xx', () => {
+      const configPath = bootstrapConfig([repoA, repoB])
+      const items = [itemOf(repoA)]
+      const extraEnv = {
+        ROLLOUT_TRACKER_CONFIG: configPath,
+        ROLLOUT_TRACKER_PROGRAM: 'plugins',
+        ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+      }
+
+      const hidden = runCliWithFakeGh({
+        items,
+        issues: [issueOf(repoA)],
+        comments: [],
+        extraEnv,
+        visibility: {notFound: [repoB.nameWithOwner]},
+      })
+      const failing = runCliWithFakeGh({
+        items,
+        issues: [issueOf(repoA)],
+        comments: [],
+        extraEnv,
+        visibility: {error: [repoB.nameWithOwner]},
+      })
+
+      expect((JSON.parse(hidden.stdout) as PreflightResult).bootstrap_repos).toEqual([])
+      expect(failing.status).toBe(1)
+      expect(failing.stdout).toBe('')
+    })
+  })
+})
+
+describe('decideComment with a bootstrap list', () => {
+  const snapshot: RolloutSnapshot = {items: [], external: {}}
+  const repo = {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'}
+  const previous = {hash: 'h'.repeat(64), last_mention_id: 0}
+
+  it('wakes on a bootstrap list alone, with a reason that starts with bootstrap', () => {
+    const decision = decideComment(snapshot, 'h'.repeat(64), previous, [], [repo])
+
+    expect(decision.should_comment).toBe(true)
+    expect(decision.reason).toBe('bootstrap — 1 confirmed repo has no Project item yet')
+  })
+
+  it('counts several repos', () => {
+    const decision = decideComment(snapshot, 'h'.repeat(64), previous, [], [repo, repo])
+
+    expect(decision.reason).toBe('bootstrap — 2 confirmed repos have no Project item yet')
+  })
+
+  it('skips with no pending mention and an empty list', () => {
+    expect(decideComment(snapshot, 'h'.repeat(64), previous, [], []).should_comment).toBe(false)
+  })
+
+  it('names a pending mention before the bootstrap when both are pending', () => {
+    const decision = decideComment(snapshot, 'h'.repeat(64), previous, [5], [repo])
+
+    expect(decision.should_comment).toBe(true)
+    expect(decision.reason).toContain('operator mention pending (1)')
+    expect(decision.reason).toContain('bootstrap pending (1)')
   })
 })

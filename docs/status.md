@@ -6,7 +6,7 @@ This page carries machine-verifiable status claims. The [Status Truth workflow](
 
 The Gateway operator rollout tracker #3512 is open.
 
-The cross-repo programs the tracker serves are listed in [`program-trackers.json`](../program-trackers.json); the Gateway rollout is the first entry.
+The cross-repo programs the tracker serves are listed in [`program-trackers.json`](../program-trackers.json); the Gateway rollout is the first entry. A program starts from a `fro-bot.yaml` dispatch whose prompt asks for one: Fro Bot opens a PR that adds the config entry, and merging it confirms the repo list and starts the tracker.
 
 ## Plans
 

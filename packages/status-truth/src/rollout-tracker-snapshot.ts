@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto'
 import process from 'node:process'
 import {fileURLToPath} from 'node:url'
 import {
+  confirmedReposMissing,
   isAuthorizedTrigger,
   isOperatorComment,
   isPublicVisibility,
@@ -10,6 +11,7 @@ import {
   loadProgramTrackers,
   selectProgram,
   type CommentEvent,
+  type ConfirmedRepo,
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
@@ -111,6 +113,8 @@ export interface PreflightResult extends CommentDecision {
    * an operator-reported gate only on a comment from this list.
    */
   operator_comment_ids: number[]
+  /** The confirmed repos that are still public and have no Project item yet; the tracker files an issue in each. */
+  bootstrap_repos: ConfirmedRepo[]
   /** The program this run served, from `program-trackers.json`; the tracker prompt is templated from it. */
   program: {
     key: string
@@ -506,6 +510,8 @@ export function buildMarker(hash: string, lastMentionId: number): string {
  * - Different hash: state changed, wake.
  * - Same hash with pending operator mentions: wake to answer them. The pending IDs stay out of the
  *   hash, so answering them never changes the next comparison.
+ * - Same hash with confirmed repos that still have no Project item: wake to bootstrap them. The list
+ *   comes from the Project, so a run that stops partway is finished by the next one.
  * - Same hash, nothing pending: no gating transition, skip.
  */
 export function decideComment(
@@ -513,6 +519,7 @@ export function decideComment(
   hash: string,
   previousMarker: MarkerData | null,
   pendingMentionIds: readonly number[],
+  bootstrapRepos: readonly ConfirmedRepo[] = [],
 ): CommentDecision {
   if (previousMarker === null) {
     return {
@@ -524,11 +531,12 @@ export function decideComment(
   }
 
   const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
+  const bootstrap = bootstrapRepos.length > 0 ? `; bootstrap pending (${bootstrapRepos.length})` : ''
 
   if (hash !== previousMarker.hash) {
     return {
       should_comment: true,
-      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}`,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}`,
       hash,
       snapshot,
     }
@@ -537,7 +545,17 @@ export function decideComment(
   if (pendingMentionIds.length > 0) {
     return {
       should_comment: true,
-      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID`,
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (bootstrapRepos.length > 0) {
+    const noun = bootstrapRepos.length === 1 ? 'repo has' : 'repos have'
+    return {
+      should_comment: true,
+      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet`,
       hash,
       snapshot,
     }
@@ -922,7 +940,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   let publicRepos: Set<string>
   try {
     publicRepos = readPublicRepos(
-      items.map(item => item.content_repo),
+      [...items.map(item => item.content_repo), ...(entry.repos ?? []).map(repo => repo.nameWithOwner)],
       env,
     )
   } catch {
@@ -1019,13 +1037,15 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
   const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
-  const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
+  const bootstrapRepos = confirmedReposMissing(entry, items, publicRepos)
+  const decision = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos)
   const result: PreflightResult = {
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
     marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+    bootstrap_repos: bootstrapRepos,
     operator_comment_ids: comments
       .filter(candidate => isOperatorComment(candidate, entry))
       .map(candidate => candidate.id)

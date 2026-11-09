@@ -333,7 +333,7 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 
 **Verification:** the prompt contracts pass, and the live checks are recorded on #3512.
 
-- [ ] **Unit 6: Program start**
+- [x] **Unit 6: Program start**
 
 **Goal:** One dispatch proposes a program as a config PR. Merging it starts the program and fills it.
 

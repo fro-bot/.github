@@ -110,6 +110,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Added ahead of a custom prompt dispatched by hand, so a request to run a cross-repo program starts from the skill.
+  PROGRAM_REQUEST_NOTE: |
+    A request to start, run or close out a cross-repo program (one tracker issue and one Project that span several
+    repos) follows .agents/skills/cross-repo-program/SKILL.md. Read it before you act on such a request. It does not
+    apply to any other request.
+
   PR_REVIEW_PROMPT: |
     You are a skeptical reviewer for fro-bot/.github (org control center).
     Focus on correctness, security, and automation safety. Prefer false positives
@@ -983,6 +989,7 @@ jobs:
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
+          PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -999,6 +1006,8 @@ jobs:
             <persona>
             ${{ env.PERSONA }}
             </persona>
+
+            ${{ env.PROGRAM_NOTE }}
 
             ${{ env.TASK_PROMPT }}
 
@@ -1159,6 +1168,7 @@ jobs:
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
+          PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -1177,6 +1187,8 @@ jobs:
             <persona>
             ${{ env.PERSONA }}
             </persona>
+
+            ${{ env.PROGRAM_NOTE }}
 
             ${{ env.TASK_PROMPT }}
 

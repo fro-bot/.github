@@ -262,6 +262,7 @@ describe('gateway-rollout-tracker.yaml: the preflight job', () => {
       ['operator_login', '.program.operator_login'],
       ['evidence', '.program.evidence'],
       ['operator_comment_ids', '.operator_comment_ids'],
+      ['bootstrap_repos', '.bootstrap_repos'],
     ] as const) {
       expect(preflight?.outputs?.[output]).toBe(expr(`steps.snapshot.outputs.${output}`))
       expect(run).toContain(field)
