@@ -60,6 +60,15 @@ on:
         required: false
         type: string
         default: working-dir
+      concurrency-key:
+        description: >-
+          Concurrency group suffix this caller needs, used ahead of the event-based
+          group. A caller that passes none keeps the group of its triggering event,
+          so schedule and workflow_dispatch callers share fro-bot-daily. The program
+          tracker passes one per program so its runs do not queue behind the daily pass.
+        required: false
+        type: string
+        default: ''
     secrets:
       FRO_BOT_PAT:
         description: GitHub PAT for Fro Bot write-tier actions
@@ -91,6 +100,7 @@ permissions:
 concurrency:
   group: >-
     fro-bot-${{
+      inputs.concurrency-key ||
       github.event.issue.number ||
       github.event.pull_request.number ||
       github.event.discussion.number ||
@@ -100,6 +110,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Added ahead of a custom prompt dispatched by hand, so a request to run a cross-repo program starts from the skill.
+  PROGRAM_REQUEST_NOTE: |
+    A request to start, run or close out a cross-repo program (one tracker issue and one Project that span several
+    repos) follows .agents/skills/cross-repo-program/SKILL.md. Read it before you act on such a request. It does not
+    apply to any other request.
+
   PR_REVIEW_PROMPT: |
     You are a skeptical reviewer for fro-bot/.github (org control center).
     Focus on correctness, security, and automation safety. Prefer false positives
@@ -424,11 +440,11 @@ env:
        green precisely while this is stalled. Report under "Progressive
        Improvement"; make no changes here.
 
-    8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
-       Review awareness only. Compare #3512's checklist/status claims with the
-       corresponding GitHub Project 1 item status and the latest rollout evidence
-       in managed repositories; report any mismatch with both values. Summarize
-       drift in the Daily Fro Bot Report if found. Do not post tracker
+    8. PROGRAM TRACKERS
+       Review awareness only. For each program in program-trackers.json, compare
+       its tracker issue's checklist/status claims with the corresponding items on its GitHub Project
+       and the latest rollout evidence in managed repositories; report any mismatch with both values.
+       Summarize drift in the Daily Fro Bot Report if found. Do not post tracker
        comments or edit Project fields from this daily report path; the dedicated
        Gateway Rollout Tracker workflow owns tracker writes.
 
@@ -558,7 +574,13 @@ jobs:
       # handed-off pages against it.
       agent-base-sha: ${{ steps.sync-wiki.outputs.data-sha }}
     if: >-
-      (
+      !(
+        github.event.issue.pull_request == null &&
+        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
+        (
+          (github.event.issue.number == 3512 && github.event.sender.id == 831617)
+        )
+      ) && (
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
@@ -583,12 +605,6 @@ jobs:
            github.event_name == 'discussion_comment') &&
           contains(github.event.comment.body || '', '@fro-bot') &&
           (github.event.comment.user.login || '') != 'fro-bot' &&
-          !(
-            github.event_name == 'issue_comment' &&
-            github.event.issue.number == 3512 &&
-            github.event.issue.pull_request == null &&
-            github.event.comment.user.login == 'marcusrbrown'
-          ) &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
         )
       )
@@ -973,6 +989,7 @@ jobs:
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
+          PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -989,6 +1006,8 @@ jobs:
             <persona>
             ${{ env.PERSONA }}
             </persona>
+
+            ${{ env.PROGRAM_NOTE }}
 
             ${{ env.TASK_PROMPT }}
 
@@ -1149,6 +1168,7 @@ jobs:
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
+          PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -1167,6 +1187,8 @@ jobs:
             <persona>
             ${{ env.PERSONA }}
             </persona>
+
+            ${{ env.PROGRAM_NOTE }}
 
             ${{ env.TASK_PROMPT }}
 

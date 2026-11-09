@@ -56,9 +56,13 @@ class ExpressionEvaluator {
   }
 
   evaluate(): boolean {
+    return truthy(this.value())
+  }
+
+  value(): unknown {
     const result = this.parseOr()
     if (this.position !== this.tokens.length) throw new Error(`unparsed tokens from ${this.position}`)
-    return truthy(result)
+    return result
   }
 
   private peek(): string | undefined {
@@ -146,4 +150,9 @@ class ExpressionEvaluator {
 
 export function evaluateExpression(source: string, context: unknown): boolean {
   return new ExpressionEvaluator(source, context).evaluate()
+}
+
+/** The value an expression yields, not its truthiness: `a || b` is the first truthy operand, as in Actions. */
+export function evaluateExpressionValue(source: string, context: unknown): unknown {
+  return new ExpressionEvaluator(source, context).value()
 }

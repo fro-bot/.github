@@ -27,7 +27,8 @@ Each CLI keeps a `scripts/<name>.ts` entrypoint of six lines: `main` from the pa
 | `@fro-bot/status-truth/proposals-cli` | `runOpen`, `statusTruthProposalsCli`, `main` | The production composition and the goke CLI. |
 | `@fro-bot/status-truth/status-truth-prs` | `planStatusTruthPrActions`, `executeStatusTruthPrActions`, `fetchExistingCorrectionPrs`, `fetchTerminalFingerprints`, `isPrExecutionArmed`, `runPrsCore`, `runPrs`, `buildEnvBackedRunPrsCoreDeps`, `GRADUATED_CLAIM_KINDS` | Planner, executor and the testable core. |
 | `@fro-bot/status-truth/prs-cli` | `statusTruthPrsCli`, `main` | The goke CLI. |
-| `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. |
+| `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. Takes its tracker issue, Project and operator from the program config. |
+| `program-trackers` (relative import, not exported) | `parseProgramTrackers`, `loadProgramTrackers`, `selectProgram`, `issueRef`, `isOperatorComment`, `isAuthorizedTrigger`, `confirmedReposMissing`, `isPublicVisibility`, the entry types | Reads and validates [`program-trackers.json`](../../program-trackers.json) and holds the pure predicates the snapshot uses. Every failure is an `Error` with a fixed message. Mutated by Stryker. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot-cli` | `rolloutTrackerSnapshotCli`, `main` | The goke CLI. |
 
 ## CLIs
@@ -39,11 +40,42 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `status-truth-detect` | `status-truth.yaml`: no argv | Bun | `true` | The report file, uploaded `if: always()`, and the summary keys `.status .scan_complete .counts.{total,current,drifted,unresolved,unsafe,proposal_eligible}`; a counts-only line on stdout. A missing `STATUS_TRUTH_REPORT_PATH`, a malformed `GITHUB_REPOSITORY` and an unwritable report print one message and exit 1. |
 | `status-truth-proposals` | `status-truth.yaml`: no argv, job `if: always()` | Bun | `false` | The result file `.dryRun .labelGateFailed .counts.* .plannedCounts.* .outcomeCounts.* .plannedCountsByKind .outcomeCountsByKind`, also printed on stdout. Exit 1 on a missing report path, an unreadable, unparsable or invalid report, a token-load failure, a missing token on a live run, and a failed issue fetch on a live run. |
 | `status-truth-prs` | `status-truth.yaml`: no argv, only on a manual dispatch | Bun | `false` | The result file `.armed .dryRun .plannedCounts.* .executedCounts.* .terminalFingerprint* .error`, also printed on stdout. The exit code is 1 on an early failure, with a closed-vocabulary `error`. |
-| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id` for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
+| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id .operator_comment_ids .bootstrap_repos .bootstrap_blocked .public_items .program.{key,issue,repo,project_url,operator_login,evidence}` for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
 
 Every CLI declares one root command with no positional and no option. Any argument, `--help` and `--help=false` included, is a usage error: exit 1, usage on stderr, and nothing is read or written. Before the runner an argument was ignored and the step ran.
 
 A thrown error prints its message and exits 1; no stack trace reaches stderr.
+
+## The program config
+
+`program-trackers.json` at the repository root maps each cross-repo program to its tracker issue, its Project and its operator. #3512 is the `gateway` entry. `rollout-tracker-snapshot` reads the entry named by `ROLLOUT_TRACKER_PROGRAM` (default `gateway`) from the file at `ROLLOUT_TRACKER_CONFIG` (default: the committed file). A missing file, malformed JSON, a duplicate key or issue, a bad field or an unknown program key prints `rollout-tracker-snapshot: FATAL — program config: <fixed message>` and exits 1 before any read.
+
+An empty `programs` array is valid: it is what closing out the last program leaves. The fan-out job then logs `program-trackers.json lists no program; nothing to dispatch` and succeeds, and an explicit request for a removed program still fails with `unknown program key`. The operator is matched by numeric user ID when a comment carries one (the relay routes by ID, and a login can change case); the login, compared ignoring case, is the fallback for a comment with no ID. When a bootstrap is due, the preflight reads `program-trackers.json` from the tracker repository's default branch through the contents API (`ROLLOUT_TRACKER_DEFAULT_CONFIG` replaces the read in tests) and keeps only the repos that branch still confirms for the same program key, by name and node ID. A re-run of an old revision therefore cannot bootstrap a program that has been removed since. A failed or unparsable read exits 1 with `failed to read the default-branch program config`.
+
+`status-truth.yaml` passes `ROLLOUT_TRACKER_PROGRAM=gateway` itself. When that key is gone from the config (a closed-out program), the snapshot step prints `program gateway is not in program-trackers.json; rollout-tracker claims are skipped` and produces no snapshot, so those claims stay unresolved and no proposal is made. This is the existing unavailable-snapshot path with a different log line; the consumer has no separate "closed" verdict.
+
+| Field | Meaning |
+| --- | --- |
+| `key` | The program name. Lowercase letters, digits and hyphens |
+| `issue` | The tracker issue as `owner/repo#n` |
+| `project` | `owner`, `number` and `gateField`, the name of the free-text gate column |
+| `operator` | The numeric `id` and the `login` of the one person whose comments drive the program |
+| `evidence` | `gateway` reads #3512's releases, deploys and health contract. `none` reads nothing outside GitHub, and `snapshot.external` is `{}` |
+| `repos` | Optional. The confirmed repos (`nameWithOwner`, `nodeId`) |
+
+The file is owned by `@marcusrbrown` in `.github/CODEOWNERS`. The operator comment check compares the login, and also the numeric ID when the comment carries one.
+
+## Starting a program
+
+A program enters `program-trackers.json` through a PR that lists its confirmed `repos`. Once that PR is on `main`, `rollout-tracker-snapshot` returns `bootstrap_repos`: the confirmed repos that are still public and have no Project item, in config order. A non-empty list wakes the tracker with a reason that starts with `bootstrap`, even when the hash and the mentions are unchanged, and the tracker prompt files one issue in each listed repo and adds it to the Project. A run that stops partway is finished by the next one, because the list is recomputed from the Project every time. A confirmed repo that has turned private, or answers 404, is never listed. A confirmed repo with issues disabled (`has_issues` is read with the visibility, in one call per repo) is left out of `bootstrap_repos` and listed in `bootstrap_blocked` instead. It never wakes the tracker; the prompt lists it once, as an operator step, whenever the tracker wakes for another reason. The visibility of every confirmed repo is read like the repos of the Project items, and a read that fails for any other reason exits 1.
+
+## Evidence the tracker may tick on
+
+`operator_comment_ids` lists every comment the program's operator wrote on the tracker issue, ascending, judged by the API author (the login and, when the comment carries one, the numeric user ID). The tracker prompt ticks a gate only when the tick cites one of those IDs (operator-reported) or links a run, a pull request or a release (agent-verified), and says which kind it is. A comment by anyone else is data. A comment ID that triggers a run is pending only when the operator wrote it on the tracker issue: a created comment must also mention `@fro-bot`, and an edit needs no mention and is pending even when its ID is below the last answered mention. `ROLLOUT_TRACKER_COMMENT_EVENT` (`created`, `edited` or empty) carries the event kind from the relay.
+
+## Public repos only
+
+`public_items` carries the items that survived this filter, as keys only (`item_id`, `repo`, `number`, sorted by repo and number; drafts are not in it). The tracker prompt takes it as the only set of Project items the agent may name, count or describe in the body, the matrix and comments, so the agent cannot read a private item live and write it back. An item outside the set stays out silently. A program covers public repos only. After the Project items are read, `rollout-tracker-snapshot` reads each distinct repo's visibility once (`gh api repos/<owner>/<repo> --jq .visibility`) and keeps an item only when the answer is `public`. A private or internal repo, and a 404 (which covers a repo the token cannot see and a deleted one), leave their items out of the snapshot, the hash, the marker and the prompt, with no count and no name, and the issue state of an omitted item is never read. Any other failure (a 5xx, a rate limit, a network error, an answer that is none of the three visibilities) prints one message that names no repo and exits 1, so an outage cannot empty the snapshot. `ROLLOUT_TRACKER_VISIBILITY_JSON` (`{"owner/repo": "public" | "private" | "internal" | null}`) replaces the reads in tests; a repo it lacks fails the run.
 
 ## The dry-run default
 
@@ -74,6 +106,7 @@ C4Component
     Component(proposalscli, "proposals-cli", "TypeScript", "goke CLI: plan and apply proposals")
     Component(prscli, "prs-cli", "TypeScript", "goke CLI: bounded correction PRs")
     Component(model, "report-model", "TypeScript", "Claim kinds, finding and report types, fingerprint, artifact validator")
+    Component(programs, "program-trackers", "TypeScript", "Program config parser and the operator, trigger and bootstrap predicates")
     Component(snapshot, "rollout-tracker-snapshot", "TypeScript", "Tracker preflight: snapshot, hash, wake decision")
     Component(snapshotcli, "rollout-tracker-snapshot-cli", "TypeScript", "goke CLI: print the preflight result")
     Component(prs, "status-truth-prs", "TypeScript", "Correction-PR planner, executor, env-backed deps")
@@ -105,6 +138,7 @@ C4Component
   Rel(rollout, extract, "imports")
   Rel(rollout, model, "imports")
   Rel(rollout, snapshot, "imports")
+  Rel(snapshot, programs, "imports")
   Rel(pexec, outcomes, "imports")
   Rel(pexec, pplan, "imports")
   Rel(pexec, labels, "imports")

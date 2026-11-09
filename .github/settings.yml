@@ -114,6 +114,9 @@ labels:
   - name: attention-tracking
     color: '#d93f0b'
     description: Tracks a Needs Human Attention item from the daily report
+  - name: program-tracker
+    color: '#1d76db'
+    description: Tracker issue for a cross-repo program in program-trackers.json
 
 # `data` is a persistent branch. A deletion-only ruleset with no bypass actors protects it.
 # To delete `data` on purpose, remove that ruleset from this file first.

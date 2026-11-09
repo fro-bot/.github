@@ -1,6 +1,23 @@
 import {execFileSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import process from 'node:process'
+import {fileURLToPath} from 'node:url'
+import {
+  confirmedReposMissing,
+  isAuthorizedTrigger,
+  isOperatorComment,
+  isPublicVisibility,
+  issueRef,
+  loadProgramTrackers,
+  parseProgramTrackers,
+  partitionBootstrapRepos,
+  reposConfirmedOnDefaultBranch,
+  selectProgram,
+  type CommentEvent,
+  type ConfirmedRepo,
+  type EvidenceKind,
+  type ProgramEntry,
+} from './program-trackers.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,10 +73,13 @@ export interface ExternalSignals {
   contract_version: string
 }
 
+/** The `external` of a program whose evidence is issue and PR state alone: it reads nothing outside GitHub. */
+export type NoExternalSignals = Record<string, never>
+
 /** The full rollout snapshot — only stable, gate-relevant fields. */
 export interface RolloutSnapshot {
   items: SnapshotItem[]
-  external: ExternalSignals
+  external: ExternalSignals | NoExternalSignals
 }
 
 /**
@@ -91,17 +111,40 @@ export interface PreflightResult extends CommentDecision {
   marker: string
   /** The REST ID of the latest comment carrying a parseable marker; null when none exists. */
   marker_comment_id: number | null
+  /**
+   * The IDs of the comments the program's operator wrote on the tracker issue, ascending. The tracker ticks
+   * an operator-reported gate only on a comment from this list.
+   */
+  operator_comment_ids: number[]
+  /** The confirmed repos that are still public and have no Project item yet; the tracker files an issue in each. */
+  bootstrap_repos: ConfirmedRepo[]
+  /** The confirmed repos that are public, have no Project item and have issues disabled. They never wake the tracker. */
+  bootstrap_blocked: ConfirmedRepo[]
+  /**
+   * The Project items that survived the visibility filter, as keys only: the Project item ID, the repo and
+   * the issue or PR number. The tracker writes only about items in this set. Draft items are not in it.
+   */
+  public_items: {item_id: string; repo: string; number: number}[]
+  /** The program this run served, from `program-trackers.json`; the tracker prompt is templated from it. */
+  program: {
+    key: string
+    /** The tracker issue as `owner/repo#n`. */
+    issue: string
+    /** The tracker issue's repository. */
+    repo: string
+    project_url: string
+    operator_login: string
+    evidence: EvidenceKind
+  }
 }
 
 export interface TrackerComment {
   /** The REST comment ID. */
   id: number
-  author: {login: string}
+  /** `id` is the author's numeric user ID; fixtures and old callers may omit it. */
+  author: {login: string; id?: number}
   body: string
 }
-
-/** The only author whose `@fro-bot` mention on the tracker issue wakes the tracker. */
-export const OPERATOR_LOGIN = 'marcusrbrown'
 
 const RELEASE_REPOS = {agent: 'fro-bot/agent', dashboard: 'fro-bot/dashboard'} as const
 const INFRA_REPO = 'marcusrbrown/infra'
@@ -144,9 +187,13 @@ export const GATE_FIELD_NAME = 'gateway Unit Gate'
  * Normalise a raw `gh project item-list --format json` item into a ProjectItem.
  *
  * The gate value lives under the key `"gateway Unit Gate"` (with spaces), not
- * `"gate"`. Everything else follows the standard content/repository shape.
+ * `"gate"`. Everything else follows the standard content/repository shape. A program's config names
+ * its own gate field; #3512's name is the default.
  */
-export function normaliseRawProjectItem(raw: Record<string, unknown>): ProjectItem {
+export function normaliseRawProjectItem(
+  raw: Record<string, unknown>,
+  gateField: string = GATE_FIELD_NAME,
+): ProjectItem {
   const content = raw.content as Record<string, unknown> | null | undefined
   return {
     id: String(raw.id ?? ''),
@@ -154,7 +201,7 @@ export function normaliseRawProjectItem(raw: Record<string, unknown>): ProjectIt
     content_repo: String(content?.repository ?? raw.repository ?? ''),
     status: (raw.status as string | null) ?? null,
     readiness: (raw.readiness as string | null) ?? null,
-    gate: (raw[GATE_FIELD_NAME] as string | null) ?? null,
+    gate: (raw[gateField] as string | null) ?? null,
   }
 }
 
@@ -213,7 +260,11 @@ function filterSupportedProjectItems(items: ProjectItem[]): ProjectItem[] {
  * Unsupported items (`content_repo === ''` or `content_number === 0`) are
  * excluded from the snapshot with a stderr warning.
  */
-export function buildSnapshot(items: ProjectItem[], issues: IssueState[], external: ExternalSignals): RolloutSnapshot {
+export function buildSnapshot(
+  items: ProjectItem[],
+  issues: IssueState[],
+  external: ExternalSignals | NoExternalSignals,
+): RolloutSnapshot {
   // Build a lookup map: "repo#number" → IssueState
   const issueMap = new Map<string, IssueState>()
   for (const issue of issues) {
@@ -275,15 +326,21 @@ function toGatingEvidence(snapshot: RolloutSnapshot): RolloutSnapshot {
       issue_closed_at: null,
       issue_labels: [],
     })),
-    external: {
-      agent_release: external.agent_release,
-      dashboard_release: external.dashboard_release,
-      deploy_gateway: {run_id: external.deploy_gateway.run_id, head_sha: external.deploy_gateway.head_sha},
-      deploy_dashboard: {run_id: external.deploy_dashboard.run_id, head_sha: external.deploy_dashboard.head_sha},
-      deploy_router: {run_id: external.deploy_router.run_id, head_sha: external.deploy_router.head_sha},
-      contract_version: external.contract_version,
-    },
+    external: hasExternalSignals(external)
+      ? {
+          agent_release: external.agent_release,
+          dashboard_release: external.dashboard_release,
+          deploy_gateway: {run_id: external.deploy_gateway.run_id, head_sha: external.deploy_gateway.head_sha},
+          deploy_dashboard: {run_id: external.deploy_dashboard.run_id, head_sha: external.deploy_dashboard.head_sha},
+          deploy_router: {run_id: external.deploy_router.run_id, head_sha: external.deploy_router.head_sha},
+          contract_version: external.contract_version,
+        }
+      : {},
   }
+}
+
+function hasExternalSignals(external: ExternalSignals | NoExternalSignals): external is ExternalSignals {
+  return 'agent_release' in external
 }
 
 /**
@@ -388,18 +445,21 @@ export function selectLatestMarkerCommentBody(comments: TrackerComment[]): strin
  * comment of any kind, because a reply without a marker still answered the mentions before it. With
  * no such comment, every operator mention is pending.
  *
- * `triggerId` is the comment that dispatched the run. It is pending when it is above the baseline,
- * even if the comment list does not contain it yet; a trigger at or below the baseline is already
- * acknowledged and is ignored. `lastMentionId` advances only to the highest pending ID and otherwise
- * stays at the baseline, so it never moves over a mention that is outside the answer set.
+ * `trigger` is the comment that dispatched the run. It counts only when the comment list carries it
+ * and `isAuthorizedTrigger` accepts it: the program's operator wrote it, and a created comment
+ * mentions the bot. A created trigger is pending when above the baseline. An edited trigger is
+ * pending at any ID, because the operator may have changed an older, already answered comment.
+ * `lastMentionId` advances only to the highest pending ID and otherwise stays at the baseline, so it
+ * never moves over a mention that is outside the answer set.
  */
 export function scanOperatorMentions(
   comments: readonly TrackerComment[],
   previousMarker: MarkerData | null,
-  triggerId: number | null = null,
+  entry: ProgramEntry,
+  trigger: {id: number; event: CommentEvent} | null = null,
 ): {pendingIds: number[]; lastMentionId: number} {
   const mentionIds = comments
-    .filter(comment => comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body))
+    .filter(comment => isOperatorComment(comment, entry) && /@fro-bot/i.test(comment.body))
     .map(comment => comment.id)
 
   const recordedIds = [...listMarkerComments(comments).map(entry => entry.marker), previousMarker].flatMap(marker =>
@@ -416,14 +476,23 @@ export function scanOperatorMentions(
       ...comments
         .filter(
           (comment, index) =>
-            index < lastBotIndex && comment.author.login === OPERATOR_LOGIN && /@fro-bot/i.test(comment.body),
+            index < lastBotIndex && isOperatorComment(comment, entry) && /@fro-bot/i.test(comment.body),
         )
         .map(comment => comment.id),
     )
   }
 
   const pending = new Set(mentionIds.filter(id => id > baseline))
-  if (triggerId !== null && triggerId > baseline) pending.add(triggerId)
+  if (trigger !== null) {
+    const triggerComment = comments.find(comment => comment.id === trigger.id)
+    if (
+      triggerComment !== undefined &&
+      isAuthorizedTrigger(triggerComment, entry, trigger.event) &&
+      (trigger.event === 'edited' || trigger.id > baseline)
+    ) {
+      pending.add(trigger.id)
+    }
+  }
   const pendingIds = [...pending].sort((x, y) => x - y)
 
   return {pendingIds, lastMentionId: Math.max(baseline, ...pendingIds)}
@@ -451,6 +520,8 @@ export function buildMarker(hash: string, lastMentionId: number): string {
  * - Different hash: state changed, wake.
  * - Same hash with pending operator mentions: wake to answer them. The pending IDs stay out of the
  *   hash, so answering them never changes the next comparison.
+ * - Same hash with confirmed repos that still have no Project item: wake to bootstrap them. The list
+ *   comes from the Project, so a run that stops partway is finished by the next one.
  * - Same hash, nothing pending: no gating transition, skip.
  */
 export function decideComment(
@@ -458,6 +529,7 @@ export function decideComment(
   hash: string,
   previousMarker: MarkerData | null,
   pendingMentionIds: readonly number[],
+  bootstrapRepos: readonly ConfirmedRepo[] = [],
 ): CommentDecision {
   if (previousMarker === null) {
     return {
@@ -469,11 +541,12 @@ export function decideComment(
   }
 
   const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
+  const bootstrap = bootstrapRepos.length > 0 ? `; bootstrap pending (${bootstrapRepos.length})` : ''
 
   if (hash !== previousMarker.hash) {
     return {
       should_comment: true,
-      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}`,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}`,
       hash,
       snapshot,
     }
@@ -482,7 +555,17 @@ export function decideComment(
   if (pendingMentionIds.length > 0) {
     return {
       should_comment: true,
-      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID`,
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (bootstrapRepos.length > 0) {
+    const noun = bootstrapRepos.length === 1 ? 'repo has' : 'repos have'
+    return {
+      should_comment: true,
+      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet`,
       hash,
       snapshot,
     }
@@ -616,6 +699,109 @@ export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<Exter
   }
 }
 
+/** What the preflight needs to know about a repo: whether its items may be shown, and whether it takes issues. */
+interface RepoMetadata {
+  visibility: 'public' | 'hidden'
+  hasIssues: boolean
+}
+
+/**
+ * The visibility and the issues switch of one repo through `gh api`. `public` keeps the repo's items. A 404
+ * covers a repo the token cannot see and a deleted one, so it reads as `hidden`, the same as `private` and
+ * `internal`. Every other failure (a 5xx, a rate limit, a network error, an answer that is not a visibility
+ * and a boolean) throws: an outage must not empty the snapshot, and it names no repo.
+ */
+function readRepoMetadata(repo: string): RepoMetadata {
+  let output: string
+  try {
+    output = execFileSync('gh', ['api', `repos/${repo}`, '--jq', '[.visibility, .has_issues] | @tsv'], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+    if (stderr.includes('(HTTP 404)')) return {visibility: 'hidden', hasIssues: true}
+    throw new Error('visibility read failed', {cause: error})
+  }
+  const [visibility, hasIssues, ...extra] = output.trim().split('\t')
+  if (visibility === undefined || extra.length > 0 || (hasIssues !== 'true' && hasIssues !== 'false')) {
+    throw new Error('repository metadata is unrecognized')
+  }
+  return {visibility: classifyVisibility(visibility), hasIssues: hasIssues === 'true'}
+}
+
+/** A fixture answer: a visibility string, `null` for a 404, or an object that also sets `has_issues`. */
+function metadataFromFixture(value: unknown): RepoMetadata {
+  if (isRecord(value)) {
+    if (typeof value.has_issues !== 'boolean') throw new TypeError('has_issues is not a boolean')
+    return {visibility: classifyVisibility(value.visibility), hasIssues: value.has_issues}
+  }
+  return {visibility: classifyVisibility(value), hasIssues: true}
+}
+
+function classifyVisibility(value: unknown): 'public' | 'hidden' {
+  if (value === null) return 'hidden'
+  if (typeof value !== 'string') throw new TypeError('visibility is not a string')
+  if (isPublicVisibility(value)) return 'public'
+  if (/^(?:private|internal)$/i.test(value)) return 'hidden'
+  throw new Error('visibility is unrecognized')
+}
+
+/**
+ * The lower-cased names of the public repos among `repos`, and of those that have issues disabled, each
+ * distinct repo read once. A name that cannot be a GitHub repo is never requested and is not public. With
+ * `ROLLOUT_TRACKER_VISIBILITY_JSON` the answers come from that object (`public`, `private`, `internal`,
+ * `null` for a 404, or `{visibility, has_issues}`) and a repo it lacks throws, like a failed read.
+ */
+function readRepoFacts(repos: readonly string[], env: Env): {publicRepos: Set<string>; issuesDisabled: Set<string>} {
+  let fixture: Map<string, unknown> | undefined
+  if (env.ROLLOUT_TRACKER_VISIBILITY_JSON !== undefined) {
+    const parsed: unknown = JSON.parse(env.ROLLOUT_TRACKER_VISIBILITY_JSON)
+    if (!isRecord(parsed)) throw new TypeError('visibility fixture is not an object')
+    fixture = new Map(Object.entries(parsed).map(([name, value]) => [name.toLowerCase(), value]))
+  }
+
+  const publicRepos = new Set<string>()
+  const issuesDisabled = new Set<string>()
+  const seen = new Set<string>()
+  for (const repo of repos) {
+    const folded = repo.toLowerCase()
+    if (seen.has(folded) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) continue
+    seen.add(folded)
+    let metadata: RepoMetadata
+    if (fixture === undefined) {
+      metadata = readRepoMetadata(repo)
+    } else {
+      if (!fixture.has(folded)) throw new Error('visibility fixture lacks a repo')
+      metadata = metadataFromFixture(fixture.get(folded))
+    }
+    if (metadata.visibility === 'public') {
+      publicRepos.add(folded)
+      if (!metadata.hasIssues) issuesDisabled.add(folded)
+    }
+  }
+  return {publicRepos, issuesDisabled}
+}
+
+/**
+ * The text of `program-trackers.json` on the repository's default branch, through the contents API (no ref
+ * names the default branch). With `ROLLOUT_TRACKER_DEFAULT_CONFIG` the text comes from that variable.
+ */
+function readDefaultBranchConfig(repo: string, env: Env): string {
+  if (env.ROLLOUT_TRACKER_DEFAULT_CONFIG !== undefined) return env.ROLLOUT_TRACKER_DEFAULT_CONFIG
+  return execFileSync(
+    'gh',
+    ['api', '-H', 'Accept: application/vnd.github.raw', `repos/${repo}/contents/program-trackers.json`],
+    {encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe']},
+  )
+}
+
+/** The external signals a program's evidence kind reads: #3512's releases, deploys and health, or nothing. */
+async function loadEvidence(kind: EvidenceKind, env: NodeJS.ProcessEnv): Promise<ExternalSignals | NoExternalSignals> {
+  return kind === 'gateway' ? loadExternalSignals(env) : {}
+}
+
 /**
  * Read every comment on the tracker issue through the REST API, which carries the numeric comment
  * ID that `gh issue view --json comments` omits. `--jq` emits one compact JSON object per comment,
@@ -629,7 +815,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
       '--paginate',
       `repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
       '--jq',
-      '.[] | {id, login: (.user.login // ""), body: (.body // "")}',
+      '.[] | {id, login: (.user.login // ""), uid: (.user.id // 0), body: (.body // "")}',
     ],
     {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
   )
@@ -646,7 +832,12 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
       ) {
         throw new TypeError('comment has an unexpected shape')
       }
-      return {id: parsed.id, author: {login: parsed.login}, body: parsed.body}
+      const userId = typeof parsed.uid === 'number' && Number.isSafeInteger(parsed.uid) ? parsed.uid : undefined
+      return {
+        id: parsed.id,
+        author: userId === undefined ? {login: parsed.login} : {login: parsed.login, id: userId},
+        body: parsed.body,
+      }
     })
 }
 
@@ -671,7 +862,16 @@ export interface SnapshotIo {
  * Runs the preflight check using `gh` to fetch live data, and returns the exit code.
  *
  * Outputs JSON to stdout: { should_comment, reason, hash, snapshot, pending_mention_ids, last_mention_id, marker, marker_comment_id }
- * Returns 1 if Project #1 access fails (fail loudly, not silently).
+ * Returns 1 if the program's Project access fails (fail loudly, not silently).
+ *
+ * The tracker issue, Project, gate field, operator and evidence kind come from the program entry in
+ * `program-trackers.json`. A bad or missing config, or an unknown program, returns 1 before any read.
+ *   ROLLOUT_TRACKER_PROGRAM     — the program key; empty or unset selects `gateway`
+ *   ROLLOUT_TRACKER_CONFIG      — path of the config file; defaults to the committed `program-trackers.json`
+ *   ROLLOUT_TRACKER_DEFAULT_CONFIG — the text of the default branch's program-trackers.json, in place of the
+ *                                   contents API read that a bootstrap needs
+ *   ROLLOUT_TRACKER_VISIBILITY_JSON — {"owner/repo": "public" | "private" | "internal" | null}: the repository
+ *                                   visibility reads (`null` is a 404); a repo it lacks fails the run
  *
  * Accepts optional injected fixtures via environment variables for testing:
  *   ROLLOUT_TRACKER_ITEMS_JSON  — JSON array of ProjectItem[]
@@ -683,13 +883,29 @@ export interface SnapshotIo {
  *   ROLLOUT_TRACKER_RELEASES_JSON / _DEPLOYS_JSON / _HEALTH_JSON — external signal API responses
  *                                   (see loadExternalSignals)
  *   ROLLOUT_TRACKER_COMMENT_ID  — numeric ID of the comment that dispatched the run, or empty; it is
- *                                   pending when above the mention baseline and ignored otherwise
+ *                                   pending only when the program's operator wrote it (see scanOperatorMentions)
+ *   ROLLOUT_TRACKER_COMMENT_EVENT — `created`, `edited` or empty: the event that dispatched that comment
  *
  * A body fixture supplies no comment list, so it reports no pending mentions.
  */
 export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promise<number> {
-  const trackerIssue = env.ROLLOUT_TRACKER_ISSUE ?? 'fro-bot/.github#3512'
-  const projectUrl = env.ROLLOUT_TRACKER_PROJECT ?? 'https://github.com/users/fro-bot/projects/1'
+  let entry: ProgramEntry
+  try {
+    const configPath =
+      env.ROLLOUT_TRACKER_CONFIG ?? fileURLToPath(new URL('../../../program-trackers.json', import.meta.url))
+    const requested = env.ROLLOUT_TRACKER_PROGRAM
+    entry = selectProgram(
+      loadProgramTrackers(configPath),
+      requested === undefined || requested === '' ? 'gateway' : requested,
+    )
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    io.stderr(`rollout-tracker-snapshot: FATAL — program config: ${detail}\n`)
+    return 1
+  }
+  const {repo: trackerRepo, number: trackerNumber} = issueRef(entry)
+  const {owner: projectOwner, number: projectNumber, gateField} = entry.project
+  const projectUrl = `https://github.com/users/${projectOwner}/projects/${projectNumber}`
 
   const rawTriggerId = env.ROLLOUT_TRACKER_COMMENT_ID ?? ''
   if (!/^\d*$/.test(rawTriggerId)) {
@@ -698,20 +914,36 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   }
   const triggerId = rawTriggerId === '' ? null : Number(rawTriggerId)
 
+  const rawTriggerEvent = env.ROLLOUT_TRACKER_COMMENT_EVENT ?? ''
+  if (rawTriggerEvent !== '' && rawTriggerEvent !== 'created' && rawTriggerEvent !== 'edited') {
+    io.stderr('rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_COMMENT_EVENT must be created, edited or empty\n')
+    return 1
+  }
+  const triggerEvent: CommentEvent =
+    rawTriggerEvent === 'created' || rawTriggerEvent === 'edited' ? rawTriggerEvent : ''
+  const trigger = triggerId === null ? null : {id: triggerId, event: triggerEvent}
+
   let items: ProjectItem[]
   let issues: IssueState[]
 
   // Allow fixture injection for tests / dry-run
   if (env.ROLLOUT_TRACKER_ITEMS_JSON === undefined) {
-    // Fetch from GitHub Project via gh CLI
-    // Project number 1 for user fro-bot
-    const projectNumber = '1'
-    const projectOwner = 'fro-bot'
+    // Fetch from the program's GitHub Project via gh CLI
     let rawItems: string
     try {
-      const {execSync} = await import('node:child_process')
-      rawItems = execSync(
-        `gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit ${PROJECT_ITEM_LIMIT}`,
+      rawItems = execFileSync(
+        'gh',
+        [
+          'project',
+          'item-list',
+          String(projectNumber),
+          '--owner',
+          projectOwner,
+          '--format',
+          'json',
+          '--limit',
+          String(PROJECT_ITEM_LIMIT),
+        ],
         {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
       )
     } catch (error) {
@@ -735,7 +967,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
         )
         return 1
       }
-      items = (rawArr as Record<string, unknown>[]).map(raw => normaliseRawProjectItem(raw))
+      items = (rawArr as Record<string, unknown>[]).map(raw => normaliseRawProjectItem(raw, gateField))
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       io.stderr(`rollout-tracker-snapshot: failed to parse project items: ${detail}\n`)
@@ -750,6 +982,23 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       return 1
     }
   }
+
+  // Only items from repos GitHub reports as public reach the snapshot, the marker and the prompt. A hidden
+  // repo leaves no count and no name. A draft item (no repo) stays, to be warned about as before.
+  let facts: ReturnType<typeof readRepoFacts>
+  try {
+    facts = readRepoFacts(
+      [...items.map(item => item.content_repo), ...(entry.repos ?? []).map(repo => repo.nameWithOwner)],
+      env,
+    )
+  } catch {
+    io.stderr(
+      'rollout-tracker-snapshot: FATAL — failed to read repository visibility; refusing to treat an access failure as no-drift; exiting 1\n',
+    )
+    return 1
+  }
+  const {publicRepos, issuesDisabled} = facts
+  items = items.filter(item => item.content_repo === '' || publicRepos.has(item.content_repo.toLowerCase()))
 
   if (env.ROLLOUT_TRACKER_ISSUES_JSON === undefined) {
     items = filterSupportedProjectItems(items)
@@ -810,13 +1059,8 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     }
     latestCommentBody = selectLatestMarkerCommentBody(comments)
   } else if (env.ROLLOUT_TRACKER_COMMENT_BODY === undefined) {
-    const [trackerRepo, trackerNumStr] = trackerIssue.split('#')
-    if (trackerRepo === undefined || trackerNumStr === undefined) {
-      io.stderr(`rollout-tracker-snapshot: invalid ROLLOUT_TRACKER_ISSUE format: ${trackerIssue}\n`)
-      return 1
-    }
     try {
-      comments = fetchTrackerComments(trackerRepo, trackerNumStr)
+      comments = fetchTrackerComments(trackerRepo, String(trackerNumber))
       latestCommentBody = selectLatestMarkerCommentBody(comments)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -828,9 +1072,9 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     latestCommentBody = env.ROLLOUT_TRACKER_COMMENT_BODY
   }
 
-  let external: ExternalSignals
+  let external: ExternalSignals | NoExternalSignals
   try {
-    external = await loadExternalSignals(env)
+    external = await loadEvidence(entry.evidence, env)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     io.stderr(`rollout-tracker-snapshot: FATAL — failed to read external signals: ${detail}\n`)
@@ -841,14 +1085,50 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const snapshot = buildSnapshot(items, issues, external)
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
-  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, triggerId)
-  const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
+  // A run can be built from an old revision (a re-run of a partial bootstrap), so the authority to file
+  // comes from the default branch, not from the config this run checked out. A failed read fails the run.
+  let missing = confirmedReposMissing(entry, items, publicRepos)
+  if (missing.length > 0) {
+    try {
+      missing = reposConfirmedOnDefaultBranch(
+        missing,
+        parseProgramTrackers(readDefaultBranchConfig(trackerRepo, env)),
+        entry.key,
+      )
+    } catch {
+      io.stderr(
+        'rollout-tracker-snapshot: FATAL — failed to read the default-branch program config; refusing to bootstrap on a stale revision; exiting 1\n',
+      )
+      return 1
+    }
+  }
+  const {ready: bootstrapRepos, blocked: bootstrapBlocked} = partitionBootstrapRepos(missing, issuesDisabled)
+  const decision = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos)
   const result: PreflightResult = {
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
     marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+    bootstrap_repos: bootstrapRepos,
+    bootstrap_blocked: bootstrapBlocked,
+    public_items: items
+      .filter(item => item.content_repo !== '')
+      .map(item => ({item_id: item.id, repo: item.content_repo, number: item.content_number}))
+      .sort((x, y) => x.repo.toLowerCase().localeCompare(y.repo.toLowerCase()) || x.number - y.number),
+    operator_comment_ids: comments
+      .filter(candidate => isOperatorComment(candidate, entry))
+      .map(candidate => candidate.id)
+      .sort((x, y) => x - y),
+    program: {
+      key: entry.key,
+      issue: entry.issue,
+      repo: trackerRepo,
+      project_url: projectUrl,
+      operator_login: entry.operator.login,
+      evidence: entry.evidence,
+    },
   }
 
   io.stdout(`${JSON.stringify(result)}\n`)

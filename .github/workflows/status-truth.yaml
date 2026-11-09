@@ -78,6 +78,8 @@ jobs:
           ROLLOUT_TRACKER_SNAPSHOT_PATH: ${{ runner.temp }}/rollout-snapshot.json
           # Only .snapshot is consumed here; an empty body skips the ~1 MB tracker-comment fetch.
           ROLLOUT_TRACKER_COMMENT_BODY: ''
+          # The claims in docs/status.md are about the gateway rollout. Name it, so the default cannot move it.
+          ROLLOUT_TRACKER_PROGRAM: gateway
         run: |
           set -euo pipefail
           snapshot_path="$ROLLOUT_TRACKER_SNAPSHOT_PATH"
@@ -90,6 +92,10 @@ jobs:
             item_count=$(jq '.items | length' "$snapshot_path" 2>/dev/null || echo 0)
             echo "rollout-snapshot: loaded snapshot with ${item_count} item(s)"
             echo "snapshot_path=${snapshot_path}" >> "$GITHUB_OUTPUT"
+          elif grep -q 'program config: unknown program key' "$snapshot_error"; then
+            # The program was closed out and left the config. Its claims have no snapshot to check; they
+            # stay unresolved, the same verdict as an unavailable snapshot, and nothing is proposed.
+            echo "rollout-snapshot: program gateway is not in program-trackers.json; rollout-tracker claims are skipped"
           else
             echo "rollout-snapshot: snapshot command unavailable; rollout-tracker claims will be unresolved"
           fi
