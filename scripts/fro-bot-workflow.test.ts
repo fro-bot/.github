@@ -542,6 +542,7 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain('close an open issue labeled `attention-tracking` and authored by `fro-bot`')
     expect(output).toContain('only on affirmative evidence that its problem is resolved')
     expect(output).toContain('for an issue or PR key, it is closed or merged')
+    expect(output).toContain('for a Project item key, its Status is Done or the item was removed')
     expect(output).toContain('for a workflow key, the last 3 runs on the default branch succeeded')
     expect(output).toContain('for a file or path key, the default branch no longer shows the cited problem')
     expect(output).toContain('A failed re-check, one passing run, or a finding that is merely absent is not resolution')

@@ -521,7 +521,8 @@ env:
       be applied, skip escalation and say so in the Run Summary.
     - On every run, close an open issue labeled `attention-tracking` and
       authored by `fro-bot` only on affirmative evidence that its problem is
-      resolved: for an issue or PR key, it is closed or merged; for a workflow
+      resolved: for an issue or PR key, it is closed or merged; for a Project
+      item key, its Status is Done or the item was removed; for a workflow
       key, the last 3 runs on the default branch succeeded; for a file or path
       key, the default branch no longer shows the cited problem. A failed
       re-check, one passing run, or a finding that is merely absent is not
