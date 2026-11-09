@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-10-20
+updated: 2026-11-04
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: c312aeb5407461d345bcf50fc299794fd4d75582
+    accessed: 2026-11-04
   - url: https://github.com/marcusrbrown/systematic
     sha: 041aeaf9e74c70b048dfd86d6e9bcd170a6ec064
     accessed: 2026-10-20
@@ -84,6 +87,100 @@ node_id: R_kgDORAJegA
 Compound-engineering workflow system for AI coding harnesses. Published to npm as `@fro.bot/systematic`. Adapted from the [Compound Engineering Plugin (CEP)](https://github.com/EveryInc/compound-engineering-plugin) for Claude Code, now evolving independently.
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
+
+## 2026-11-04 bounded snapshot
+
+Public `main` at **`c312aeb5407461d345bcf50fc299794fd4d75582`**. This
+snapshot uses a complete, non-truncated directory listing, the root and eval
+READMEs, root/docs package manifests, and seven selected workflows. No target
+code was executed. Source implementations, host-pin data, lock contents,
+published packages, live workflow results, issues, and branch protection were
+not read. Workflow declarations below are intended checks, not passing runs.
+
+### One package now declares two OpenCode API lines
+
+The README explicitly supports OpenCode **v1 >=1.18.29** with `plugin` and
+**v2 >=2.2.0** with `plugins`. It also states that setup/OCX installation still
+writes the **v1 key only**. This is a documented installer limitation, not
+evidence that v2 installation was tested in this survey. The manifest now has
+**four optional peers**: `@opencode-ai/plugin >=1.18.29`,
+`@opencode/plugin >=2.2.0`, Pi `^1.0.0`, and typebox `^1.1.38`. This supersedes
+the October snapshot's three-peer inventory without changing the three
+advertised harness families. See [[opencode-plugins]] and [[pi-coding-agent]].
+
+The Node engine floor is now **>=20.11**, superseding the historical >=18
+description. The build externalizes both OpenCode plugin packages, retains a
+Node-targeted Pi entry, and adds `build-pi-package-agents.ts`. The Pi manifest
+now declares `subagents.agents: ["./dist/pi-subagents/agents"]` alongside its
+extension and skill entries. The directory listing alone does not establish
+the generated agents' contents or successful installation.
+
+**The prior Node smoke-test export contract is superseded:** `main.yaml` now
+requires the plugin default to be an **object**, with a string `id` and
+function-valued `setup` and `server`. It calls `server`, runs its config hook,
+and requires nonempty agent/command maps. Pi's default must still be a
+function, but this smoke step does not invoke it; the CLI is imported and
+checked for nonempty exports, not exercised as a binary.
+
+### Host coverage separates v2 shards from v1 smoke profiles
+
+The October four-shard description is now incomplete. `main.yaml` declares
+**four v2 shards plus v1-floor and v1-current jobs**. Its comments describe
+v2 as the full contract and the two v1 profiles as a smoke subset. All build
+first. The v2 CLI is installed into a local npm prefix, invoked by absolute
+path, and version-checked before testing; v1 uses version-checked `bunx`
+launches. Host versions come from `scripts/opencode-host-pins.json`, which was
+not read: development dependency pins are not measurements of those host pins.
+
+The always-reporting `Host Contract` aggregator separately guards reports for
+`v2`, `v1-floor`, and `v1-current`, then requires every corresponding job result
+to succeed when the suite is required. Missing reports are declared violations.
+The PR path filter still fails closed on malformed output, and main pushes
+still explicitly skip the suite. A green aggregator on main is therefore not
+evidence that any host profile ran there. Build now invokes a single
+`surfaces:drift` orchestrator after content integrity and Claude bundle checks;
+the manifest also declares `surfaces:regen` and `surfaces:affected`. Neither the
+orchestrator's inventory nor its implementation was inspected.
+
+### Catalog reconciliation and automation continuity
+
+- **The README count contradiction is resolved in this snapshot:** it says
+  **33 skills / 37 agents**, matching 33 immediate `skills/` directories and
+  37 agent Markdown files after excluding the review README. The listing
+  includes `skills/pr-attachments/`, consistent with the November 2 downstream
+  route addition in [[fro-bot--systematic]]. Counts do not prove registry
+  membership or behavioral parity.
+- The Claude publisher explicitly requires executable
+  `bin/systematic-search` and `bin/systematic-validate-review-artifact` files
+  before packing its bundle. This establishes an artifact admission check,
+  not search semantics or proof that a published bundle passed it.
+- **Fro Bot is present**, now pinned to **v0.134.0**
+  (`0bc826865d59b458b887e8cb2721ff70a01b66a2`); no onboarding draft is needed.
+  Daily/empty-autoheal dispatch `branch-pr` routing, `timeout: 0`, brokered
+  extra paths `skills,agents,tests,registry`, and the approval-dismissal backstop
+  remain declared. No workflow execution health was measured.
+- The listing still contains **12 workflow files**. Release Gate still names
+  twelve checks and a Wednesday/Sunday **15:00 UTC** schedule. The inspected
+  release/docs/Claude workflows retain their separated build/publish jobs;
+  current environment and approval configuration remain unverified.
+- Manifest pins now include Biome **2.6.4**, OpenCode v1 plugin/SDK **1.19.5**,
+  v2 client/plugin/SDK **2.2.5**, Pi **1.4.0**, and agent-browser **0.39.4**.
+  TypeScript **7.0.2**, zod **4.6.7**, and `@types/bun: latest` persist.
+  The docs workspace declares Astro `^7.2.10`, Starlight `^0.42.0`, and
+  Playwright **1.64.1**; these are declared requirements, not installed versions.
+- The eval README still documents OpenCode-only local cases and explicitly
+  disclaims OS isolation, Pi/Claude coverage, and CI orchestration. That is a
+  separate surface from the expanded Host Contract workflow.
+
+Sources at this commit:
+[README](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/README.md),
+[manifest](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/package.json),
+[docs manifest](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/docs/package.json),
+[Main](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/main.yaml),
+[Claude publisher](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/publish-claude-code-plugin.yaml),
+[Fro Bot](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/fro-bot.yaml),
+[Release Gate](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/release-gate.yaml),
+and [eval README](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/evals/README.md).
 
 ## 2026-10-20 bounded snapshot
 

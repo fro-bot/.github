@@ -2,8 +2,29 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-10-31
+updated: 2026-11-08
 sources:
+  - url: https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/ci.yaml
+    sha: e9a6bde10dac023db36e608273d8bc4d55709691
+    accessed: 2026-11-08
+  - url: https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml
+    sha: a9d710f95335d42f0f066163e43cc1e261021352
+    accessed: 2026-11-07
+  - url: https://github.com/marcusrbrown/infra/blob/149b77b7719447be1425a0e2cb2013dbf4c392b8/.github/workflows/release.yaml
+    sha: 149b77b7719447be1425a0e2cb2013dbf4c392b8
+    accessed: 2026-11-07
+  - url: https://github.com/marcusrbrown/systematic/blob/7b35b9a35dc331f426c35945e475856a8a657260/.github/workflows/docs.yaml
+    sha: 7b35b9a35dc331f426c35945e475856a8a657260
+    accessed: 2026-11-06
+  - url: https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows
+    sha: e98c474da8b6c8edc85866a78305b02c616068d8
+    accessed: 2026-11-05
+  - url: https://github.com/marcusrbrown/marcusrbrown/blob/7f122f47982071febfb13bb0c1730a0385017473/pnpm-workspace.yaml
+    sha: 7f122f47982071febfb13bb0c1730a0385017473
+    accessed: 2026-11-05
+  - url: https://github.com/marcusrbrown/marcusrbrown/blob/7f122f47982071febfb13bb0c1730a0385017473/.github/workflows/update-profile.yaml
+    sha: 7f122f47982071febfb13bb0c1730a0385017473
+    accessed: 2026-11-05
   - url: https://github.com/bfra-me/works/blob/c4513522011cf0cc0adaef695381b4761157ce43/docs/package.json
     sha: c4513522011cf0cc0adaef695381b4761157ce43
     accessed: 2026-10-31
@@ -391,6 +412,86 @@ related:
 
 # GitHub Actions CI
 
+## Prove the selected runtime, not just a listening port (2026-11-08)
+
+[[fro-bot--agent]] now documents stock V2 as the Action default while retaining
+the workspace image's V1 harness default. Its CI configures both image legs:
+V1 checks the harness version marker; V2 checks the source pin, active plugins,
+permission/readiness gates, and startup with no network. A loopback fake-provider
+probe then checks that the provisioned dummy key actually reaches a model request
+through the bearer proxy. A negative control configures a model without a
+credential and requires readiness refusal and zero provider requests. File
+provisioning, plugin activation, readiness, and authenticated model-request
+delivery are distinct claims; a successful liveness probe proves none of the
+later ones. These are configured assertions, not observed passing runs or proof
+of a real provider turn. The unread pin data must not be inferred from the
+legacy SDK manifest version.
+
+The live Action test now budgets 40 minutes inside a 50-minute job, superseding
+October 9's 20/30-minute configuration. The self-hosted workflow adds a FIFO
+session-store job queue (`queue: max`, cancellation disabled) ahead of its S3
+lease, rather than relying on lease rejection as a queue.
+
+The new plugin release lane separates read-only verify/build/pack from an
+OIDC-enabled publish job that downloads the tarball without checking out or
+running repository code. Prereleases select `next`; stable versions select
+`latest`. This is configured credential isolation and tag routing, not evidence
+that a package has been published or a real-host integration test ran.
+
+Sources: [CI](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/ci.yaml),
+[self-hosted workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/fro-bot.yaml),
+and [plugin release workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/opencode-plugin-release.yaml).
+See [[opencode-plugins]] for the conditional real-host test boundary.
+
+## Retire a delivery diagnosis when the declared channel changes (2026-11-07)
+
+At `a9d710f9`, [[marcusrbrown--vbs]] explicitly selects `branch-pr` for
+scheduled and autoheal-dispatch runs, and `working-dir` otherwise. This
+supersedes the October 23 observation of an unset delivery input and qualifies
+the September discarded-self-repair case below: the historical failures remain
+evidence of that earlier revision, not proof of today's missing channel.
+The action remains the final step and checkout still disables credential
+persistence. Neither fact alone demonstrates failure once the action is
+explicitly assigned delivery ownership. Actual publication and credential
+behavior remain unmeasured in this source-only pass.
+
+The same workflow now requests one combined daily pass at 03:30 UTC, one dated
+report issue, deduplication, root-cause branch reuse, and a review-backlog cap.
+It also forbids scheduled workflow edits, unlike the historical self-repair
+carve-out. These are prompt-level policies, not proof of enforcement or a
+measured throughput gain. Keep delivery selection, agent policy, and observed
+publication separate when comparing revisions. The comment-trigger jq fallback
+defect and Renovate admission predicate previously documented here persist;
+fixing one boundary does not establish that neighboring guards were repaired.
+
+Source: [Fro Bot workflow](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml),
+[Renovate caller](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/renovate.yaml).
+
+## Verify registry visibility after a publish reports success (2026-11-07)
+
+At `149b77b7`, [[marcusrbrown--infra]] adds a consumer-visible postcondition after
+Changesets reports `published=true`: the published-package payload must be a
+nonempty JSON array, and each exact `name@version` must resolve from the explicit
+public npm registry. The workflow uses online-preferred queries and bounded
+exponential backoff: 13 attempts, with 12 waits totaling at most 285 seconds per
+package. Missing visibility fails the job instead of leaving a successful publish
+claim unsupported by the registry; resolved packages enter the step summary.
+
+The reusable distinction is **publisher acknowledgement versus consumer
+availability**. A downstream release consumer should not infer the second from
+the first. For this control plane's wiki-write-core release, evaluate an exact
+version visibility check after publishing rather than adding another version-bump
+mechanism. Registry lookup alone does not prove tarball contents, provenance,
+installability or runtime behavior, and this pattern does not replace the existing
+packed-package and artifact-integrity checks. This survey inspected workflow
+source only; it did not run the retry loop or establish a registry incident.
+
+## Validate inert artifacts before introducing publishing credentials (2026-11-06)
+
+At `7b35b9a3`, [[marcusrbrown--systematic]] separates its docs build from the credential-bearing deployment job. Before creating the App token, deployment rejects a missing artifact directory, case-insensitive `.git` entries, symlinks, and files that are neither regular files nor directories. The workflow explains the less obvious boundary: copying an artifact into an authenticated Git clone can make Git configuration such as `core.fsmonitor` executable on a later Git operation. A static-site artifact must therefore be inert, not merely produced by a separate build job. Ordinary dotfiles remain allowed.
+
+The same job queues only admitted builds with `cancel-in-progress: false` and `queue: max`, then rechecks freshness before publication. This extends the October 28 writer-serialization observation: an older build finishing late must not replace the newest release's pending deployment, then skip itself as stale and leave no current deployment queued. Apply the artifact check where content enters a credential-bearing clone; do not assume every Pages deployment has that same boundary. These are source-declared safeguards, not a malicious artifact test or scheduler/runtime verification performed by this survey.
+
 ## Parallel checks need individual exit-status aggregation (2026-10-31)
 
 At `c4513522`, [[bfra-me--works]]'s private docs manifest declares
@@ -512,6 +613,13 @@ read establishes a policy/comment mismatch, not present exposure or a runtime
 compatibility failure. The same repo's PR-generation selector omits this workspace
 manifest, so a workspace-only policy change does not independently select that
 regeneration job; it does not bypass the separate `Main` lint workflow.
+
+Rechecked **2026-11-05** at `7f122f47982071febfb13bb0c1730a0385017473`:
+the `<6` / `>=5.0.7` pair, patched-floor comment, and workspace-manifest omission
+from the profile-generation PR selector remain. A newer agent pin does not
+establish that a separate dependency policy or selector defect was repaired.
+This is source-level confirmation only; lockfile resolutions and workflow
+execution were outside the survey boundary.
 
 ## Cancellation admission, terminal state, and execution containment are separate proofs (2026-10-21)
 
@@ -965,6 +1073,22 @@ evidence only: an unchanged commit does not refresh check-run conclusions,
 environment reviewer settings, or actual delivery outcomes. Keep those live
 claims dated until measured independently; workflow presence alone needs no
 onboarding draft. Source: the pinned workflow directory linked above.
+
+**2026-11-05 revalidation:** [[marcusrbrown--mothership]] has advanced to
+`e98c474da8b6c8edc85866a78305b02c616068d8`; all eight workflow files were
+re-read. Fro Bot now pins v0.133.0 at
+`e3f7631de1b4f0ff377c50a27a61d2d86337edff`, but still ends at the agent
+step without explicit `output-mode` or downstream working-tree delivery.
+A newer agent pin alone is not evidence that the caller contract was repaired.
+The seven release job definitions and `success`/`skipped`/`neutral` acceptance
+set remain; signing, draft creation, and manifest promotion are separate stages,
+and promotion still retains draft status. Linux CI has no Rust compilation/test
+lane, while CodeQL still lists only `javascript-typescript` and `actions`.
+These are source-defined gates, not fresh measurements of reviewer settings,
+check outcomes, signed releases, or dropped fixes. Workflow presence needs no
+onboarding draft; delivery wiring is a separate follow-up.
+
+Source: [workflow directory at the new snapshot](https://github.com/marcusrbrown/mothership/tree/e98c474da8b6c8edc85866a78305b02c616068d8/.github/workflows).
 
 ## 2026-10-05 — a new metrics report does not repair a missing learning handoff
 

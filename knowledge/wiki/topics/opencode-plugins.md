@@ -2,8 +2,14 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-01
+updated: 2026-11-08
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: e9a6bde10dac023db36e608273d8bc4d55709691
+    accessed: 2026-11-08
+  - url: https://github.com/marcusrbrown/systematic
+    sha: c312aeb5407461d345bcf50fc299794fd4d75582
+    accessed: 2026-11-04
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-11-01
@@ -112,6 +118,58 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-08: load status and host identity are separate gates
+
+[[fro-bot--agent]] now includes the publishable `@fro.bot/opencode-plugin`.
+Its manifest peers on `@opencode/plugin ^2.2.0` and `effect ^4.0.0`, rather than
+bundling a second host copy. Its README documents session-history tools over
+the active post-compaction window and rejects `subagent` calls carrying
+`sessionID`. Deploy documentation still calls the V2 guard a `task` reuse
+check: that terminology drift is unresolved by this bounded source survey.
+
+The README warns that V2 keeps serving when a plugin fails to load; dependent
+consumers must check `/api/plugin` for id `fro-bot.opencode-plugin` with status
+`active`. Server liveness alone does not establish tool or guard availability.
+Its real-host integration test is documented as conditional on a built bundle
+and `FRO_BOT_OPENCODE_V2_BIN`; the standalone release workflow runs tests before
+building and does not set that variable. Do not mistake its unit/build/import
+allowlist checks for an unconditional real-host integration gate. Image-level
+plugin checks are configured separately in [[github-actions-ci]].
+
+Sources: [plugin README](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/packages/opencode-plugin/README.md),
+[manifest](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/packages/opencode-plugin/package.json),
+[release workflow](https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/opencode-plugin-release.yaml),
+and deploy README at the same SHA. These are declared contracts, not executed tests.
+
+## 2026-11-04: dual-line support needs separate host evidence
+
+[[marcusrbrown--systematic]] now declares optional peers for both OpenCode
+API lines: v1 `@opencode-ai/plugin >=1.18.29` and v2
+`@opencode/plugin >=2.2.0`. Its README distinguishes v1 `plugin` from v2
+`plugins`, while explicitly limiting setup/OCX output to the v1 key. A
+single package supporting both APIs does not establish installer parity.
+
+The workflow makes the evidence split explicit: four v2 full-contract shards
+plus two v1 smoke profiles (floor/current), each with checked CLI versions,
+and separate report guards under one always-reporting aggregator. Host pins
+are loaded from a data file not read in this survey; the manifest's v1
+**1.19.5** and v2 **2.2.5** development pins must not be substituted for them.
+Relevant PRs run the suite; main pushes do not. Neither the advertised peer
+range nor a green main-push aggregator proves full cross-version coverage.
+
+This also supersedes the October observation that the plugin smoke test
+expects a function default: the current step requires an object with
+`id`, `setup`, and `server`, invokes `server`, then verifies populated
+agent/command maps. Pi is still only import/shape-checked in that step.
+Export shape, installer configuration, host profile coverage, and successful
+execution are four different contracts. Keep them separate when assessing a
+migration; collapsing them into “supports v2” hides the unfinished edges.
+
+Sources: [README](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/README.md),
+[manifest](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/package.json),
+[Main workflow](https://github.com/marcusrbrown/systematic/blob/c312aeb5407461d345bcf50fc299794fd4d75582/.github/workflows/main.yaml).
+These are static declarations, not observed test results.
 
 ## 2026-10-26: development pins, peer promises, and host coverage differ
 

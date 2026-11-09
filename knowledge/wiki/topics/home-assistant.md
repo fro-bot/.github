@@ -2,7 +2,7 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-10-20
+updated: 2026-11-03
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: ef7ba24f126f6cca8dd6c8c7969056e3b529a600
     accessed: 2026-10-20
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 06f4a9db6d1993ae51c21ec5cdbd3143d82b9105
+    accessed: 2026-11-03
 tags: [home-assistant, iot, smart-home, yaml, automation, addon, supply-chain, tempio, builder, release-integrity]
 related:
   - marcusrbrown--ha-config
@@ -129,6 +132,23 @@ The generalizable shape for any add-on repo: **treat the add-on version as the r
 ### Custom Components
 
 Third-party integrations installed via HACS or manually into `custom_components/`. These are typically excluded from linting and pre-commit hooks since they are upstream-managed code.
+
+#### Integration dependencies are not Python requirements (2026-11-03)
+
+The ten integration manifests in [[marcusrbrown--ha-config]] distinguish
+`dependencies` (other HA integrations) from `requirements` (Python packages).
+Six declare nonempty Python requirements; four declare empty arrays. Bermuda
+`0.8.4`, for example, declares no Python requirements but depends on
+`bluetooth_adapters`, `device_tracker`, and `private_ble_device`. Browser mod
+`2.3.0` likewise has an empty requirements array while naming five HA integration
+dependencies. An empty array is not proof of a dependency-free component.
+
+The repo page records the complete manifest-version baseline. Treat it as
+vendored metadata: neither those versions nor the root ESPHome requirement prove
+what HA has loaded, what HACS has installed, or which dependencies Renovate
+currently services. The November workflow read also reconfirms the malformed
+version-output handoff and advisory Remark lint described above; it does not
+renew historical claims about the HA core pin or successful runtime validation.
 
 ### ESPHome Integration
 

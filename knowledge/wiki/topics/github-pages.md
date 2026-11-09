@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-11-01
+updated: 2026-11-07
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-11-07
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-11-06
+  - url: https://github.com/fro-bot/systematic
+    sha: b3c99bcd4b32614b10111bf84477d5a6dac8dfb9
+    accessed: 2026-11-02
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 9702a13da360d9bc7e21f24cb95d8d04aa9c0294
     accessed: 2026-11-01
@@ -89,6 +98,66 @@ related:
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Local Lighthouse evidence is not production monitoring (2026-11-07)
+
+The historical Performance Monitoring section below describes audits against
+the deployed portfolio. At the re-confirmed `8a1567df` revision,
+[[marcusrbrown--marcusrbrown-github-io]] actually builds its checkout and runs
+Lighthouse against four `localhost:4173` routes through `pnpm run preview`,
+three times per URL. Desktop/mobile settings emulate client conditions; they
+do not turn a local artifact into an observation of Pages hosting, TLS, DNS,
+redirects, or the current production content. Preserve the listed budgets as
+declared thresholds, not measured production results. Weekly scheduling is
+declared, but execution history was outside this survey.
+
+Its PR report also uses a green score threshold of 90 for both devices, despite
+the desktop assertion requiring 95, and selects the first matching report JSON
+rather than establishing a route/run aggregate. A green comment is therefore
+not the strict assertion verdict. Trace the audited URL, report selection, and
+assertion thresholds separately before interpreting a performance badge or
+summary. This is a source-contract qualification, not a measured regression;
+the underlying repository revision is unchanged from October 23.
+
+Source: [performance workflow](https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml).
+
+## A historical certificate expiry is not a current outage (2026-11-06)
+
+The complete root listing for [[fro-bot--fro-bot-github-io]] is still the
+single `CNAME` blob at `3e44653c4d185b239b44b3af12255d18c86463ab`, with no
+README, manifest, or repo-local Fro Bot workflow. This source observation
+does not resolve the certificate observation whose recorded expiry is today.
+That leaf was last measured on September 25; the October 7 renewal forecast
+has not been tested within the subsequent bounded source surveys.
+
+An expiry date crossing the calendar is not a new measurement. Preserve the
+old certificate evidence, explicitly mark current validity as unmeasured,
+and do not convert either the old expiry or an unchanged tree into an outage
+claim. Runtime TLS, DNS, and redirect checks require separate authorization
+when the survey permits only listings, READMEs, manifests, and workflows.
+Likewise, missing committed automation establishes a repo-local gap, not
+the absence of external monitoring or the failure of certificate renewal.
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
+
+## Generated route growth is not a registry measurement (2026-11-02)
+
+At `b3c99bcd`, [[fro-bot--systematic]] adds `guides/search/` and
+`reference/skills/pr-attachments/`, plus a matching `components/pr-attachments/`
+subtree, relative to its October 19 snapshot. Immediate guide, skill-reference,
+and component directory counts rise from 14/32/71 to 15/33/72. The complete
+directory comparison finds no removals; agent-reference and schema-version
+directory inventories persist.
+
+These are changes to rendered paths, not measured registry records or runtime
+capabilities. In particular, neither attachment behavior nor search semantics
+can be inferred from route names. Generated JSON and HTML bodies were outside
+the permitted reads, so version equality, schema equivalence, release timing,
+and live availability remain unmeasured. The target still has no `.github/`
+directory or committed workflow; that repo-local absence does not refresh the
+historically recorded upstream deployment contract.
+
+Source: [pinned output tree](https://github.com/fro-bot/systematic/tree/b3c99bcd4b32614b10111bf84477d5a6dac8dfb9).
 
 ## Printed build size is not a performance gate (2026-11-01)
 

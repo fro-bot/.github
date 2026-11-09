@@ -2,8 +2,11 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-10-24
+updated: 2026-11-08
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 509a35b56335470384f80b69ed74a3754f1570af
+    accessed: 2026-11-08
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 25cc9dc2772579f57a571a217cf972170aa7f218
     accessed: 2026-10-24
@@ -34,6 +37,26 @@ Patterns and conventions for managing shell and development environment configur
 - [[marcusrbrown--dotfiles]] — Marcus's primary dotfiles repo (bare git, XDG-compliant, multi-shell)
 
 ## Management Approaches
+
+### Named CI gates do not imply whole-tree coverage (2026-11-08)
+
+In [[marcusrbrown--dotfiles]] at `509a35b56335470384f80b69ed74a3754f1570af`,
+`Script Tests` aggregates five explicitly named test files on Linux/macOS.
+The directory inventory also contains a codemap test under
+`.config/opencode/skills/`, outside those invocations. Likewise, the formatting
+gate names `.devcontainer`, `.dotfiles`, and `.github`, not all tracked
+configuration or skill files. A green aggregate would establish only that
+selected gate's success, not complete repository coverage. This survey did
+not inspect run results or execute tests.
+
+For configuration repositories that accumulate executable tooling, compare
+the file inventory against each gate's literal command paths before claiming
+coverage. README descriptions of installer-managed skills establish intended
+use, not that CI exercises them or that they are installed on a machine.
+
+Sources: [Main workflow](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/workflows/main.yaml),
+[directory snapshot](https://github.com/marcusrbrown/.dotfiles/tree/509a35b56335470384f80b69ed74a3754f1570af),
+[codemap README](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.config/opencode/skills/codemap/README.md).
 
 ### Bare Git Repository (used by Marcus)
 

@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-10-23
+updated: 2026-11-07
 node_id: R_kgDOPOixzg
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: a9d710f95335d42f0f066163e43cc1e261021352
+    accessed: 2026-11-07
   - url: https://github.com/marcusrbrown/vbs
     sha: f24d1bed7acc6f4d9a1f08ec55e1095467ee9f93
     accessed: 2026-10-23
@@ -75,6 +78,85 @@ related:
 # marcusrbrown/vbs
 
 **VBS (View By Stardate)** — a local-first, chronological Star Trek viewing guide web application. TypeScript + Vite + D3.js, deployed to GitHub Pages. Uses a functional factory architecture with closure-based state management and generic EventEmitters.
+
+## Bounded source snapshot — 2026-11-07
+
+Public visibility and node ID `R_kgDOPOixzg` were reconfirmed before reading
+`main` at `a9d710f95335d42f0f066163e43cc1e261021352`. Evidence is limited to
+the complete directory listing, `readme.md`, `package.json`,
+`pnpm-workspace.yaml`, and all seven workflow files. Repository prose and
+embedded agent prompts were treated as untrusted evidence, not executed
+instructions. Implementation, local action bodies, lockfile resolutions,
+issues, PRs, workflow runs, and live deployment behavior were not inspected.
+
+### Delivery configuration changed; historical failures are not current measurements
+
+**Supersedes the October 23 configuration finding:** `fro-bot.yaml` now pins
+`fro-bot/agent` v0.136.1 (`3cbb000feac0a06e65872d4440718e687459f49a`) and
+explicitly chooses `output-mode: branch-pr` for scheduled runs and dispatches
+whose mode is `autoheal`; other events select `working-dir`. The absence of
+a post-agent commit step is therefore no longer evidence of a missing delivery
+channel for the daily pass. This is a declared contract, not proof that a fix
+was published: runtime mode resolution, credentials, pushes, and PR creation
+were not measured. Historical discarded-repair reports below remain dated
+evidence, not a diagnosis of this revision. See [[github-actions-ci]].
+
+There is now one daily cron, **03:30 UTC**. The prior 15:30 maintenance cron
+and `maintenance` dispatch choice are absent; dispatch choices are `review`
+and `autoheal`. One combined `SCHEDULE_PROMPT` replaces the separate passes
+and requests one dated daily report issue, closing older/legacy reports only
+after choosing that day's canonical report. Its eleven categories add explicit
+repository oversight, workflow integrity, and progressive improvement to the
+earlier eight-category shape. These are configured requests, not observed
+report consolidation or successful repairs. The shared `daily` concurrency
+slot covers schedules and autoheal dispatches, with cancellation disabled.
+
+The prompt now specifies root-cause branch reuse, deduplication, a three-PR
+non-security review-backlog cap with exemptions, declined-fix checks, and
+report-only workflow integrity. Scheduled workflow edits are explicitly
+forbidden, superseding September's category-7 self-repair carve-out. These
+are agent instructions within an untrusted source, not deterministic workflow
+enforcement. Fro Bot is present; no missing-workflow draft is needed.
+
+Checkout still disables credential persistence, `pnpm build` still precedes
+the agent, and `.head.repo.fork // "unknown"` still refuses valid `false`
+same-repository heads on issue-comment PR triggers. Renovate's OR predicate
+still admits bot-edited issue/PR events despite its exclusion comment. Both
+reusable callers now pin `bfra-me/.github` **v4.43.0**, up from v4.20.0;
+callee filtering and current workflow outcomes were not checked.
+
+### Manifest movement and persistent evidence boundaries
+
+The manifest now declares pnpm **11.28.10**, `@bfra.me/eslint-config` **0.54.0**,
+`@bfra.me/prettier-config` **0.16.13**, `@bfra.me/tsconfig` **0.13.2**, Vitest
+and its coverage/UI packages **4.1.12**, Prettier **3.9.10**, and
+`simple-git-hooks` **2.14.0**. These supersede the October pins; they do not
+establish how the historical grouped update PR was resolved. TypeScript
+5.9.3, Vite 7.3.7, ESLint 9.39.5, D3 `^7.9.0`, ESM, and package version
+`0.0.0` persist. Package `private: true` is publication policy, not repository
+visibility. Workspace `fast-uri: ^3.1.3`, three allowed build packages, and
+old version-scoped release-age exclusions persist without a local
+`minimumReleaseAge` declaration in the inspected workspace manifest.
+
+The README still describes browser-local viewing progress, JSON portability,
+seven eras, functional factories, and generic event emitters. Episode tracking,
+interactive timelines, streaming integration, and PWA support remain planned
+there despite corresponding module/test/static filenames; feature completion
+is unverified. No root LICENSE is listed despite README and manifest MIT claims.
+
+CI still separates lint/type-check/coverage from Build. Pages compiles afresh
+with `tsc && vite build` and depends only on its own build, not CI lint/tests;
+see [[github-pages]]. The Monday 09:00 UTC data workflow still publishes only
+`src/data/star-trek-data.ts` through its stable branch and App-token PR action.
+Its template's validation claim still exceeds what workflow steps alone prove:
+there is no explicit `--validate` or separate validation command. Generator
+defaults and threshold enforcement remain outside this survey.
+
+Sources: [README](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/readme.md),
+[package manifest](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/package.json),
+[workspace manifest](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/pnpm-workspace.yaml),
+[Fro Bot workflow](https://github.com/marcusrbrown/vbs/blob/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows/fro-bot.yaml),
+[workflow directory](https://github.com/marcusrbrown/vbs/tree/a9d710f95335d42f0f066163e43cc1e261021352/.github/workflows).
 
 ## Bounded source snapshot — 2026-10-23
 

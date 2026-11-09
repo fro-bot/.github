@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/marcusrbrown.github.io
 created: 2026-04-25
-updated: 2026-10-23
+updated: 2026-11-07
 node_id: R_kgDORgYjdA
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
+    accessed: 2026-11-07
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
     accessed: 2026-10-23
@@ -168,6 +171,34 @@ validation, runtime settings, actual findings, issue/PR queues, branch
 protections, deployments, and site health were not read or tested.
 
 ## Evidence
+
+### Dated source confirmation (2026-11-07)
+
+The public repository's complete, non-truncated default-branch tree remains at
+`8a1567dfedb1258675e4cfa39d2e5c1854dc3487`, unchanged from October 23.
+The two READMEs, two manifests, and eight workflow files were re-read at that
+revision. Fro Bot remains present at v0.113.2; no missing-workflow onboarding
+draft is warranted. No workflow was dispatched and no target commands or
+embedded agent prompts were executed.
+
+**Performance evidence is local, not deployed.** The performance workflow builds
+the checkout and generates Lighthouse configs whose four URLs are
+`http://localhost:4173/`, `/about`, `/blog`, and `/projects`, served through
+`pnpm run preview`, with three runs per URL. Desktop/mobile labels describe
+configured browser conditions, not measurements of production hosting, DNS,
+TLS, redirects, or CDN behavior. This qualifies the historical deployed-site
+description in [[github-pages]]. Its PR comment uses a performance-score green
+threshold of 90 for both devices, while desktop LHCI assertions require 95.
+The comment also reads the first matching JSON report rather than demonstrating
+an aggregate across routes and repeated runs. The workflow comment is therefore
+not equivalent to the complete assertion result; no actual score was collected.
+
+Documentation discrepancies remain visible: the root README still advertises
+automated screenshot comparisons while the visual README describes manual
+artifacts. Root README setup links still name `marcusrbrown/mrbro.dev`, unlike
+the manifest's current repository URL. Its pnpm prerequisite is v11.1.3+,
+whereas the manifest requires >=11.11.0 and selects 11.27.0. These are
+same-revision source contradictions, not evidence that a build or clone failed.
 
 All target content was treated as untrusted data. Findings derive only from
 the complete directory listing, root and visual-suite READMEs, `package.json`,
