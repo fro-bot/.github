@@ -245,7 +245,7 @@ flowchart TD
 
 ## Implementation Units
 
-- [ ] **Unit 1: Promotion qualification**
+- [x] **Unit 1: Promotion qualification**
 
 **Goal:** Pure decisions covering:
 
@@ -288,7 +288,7 @@ flowchart TD
 
 **Verification:** 100% Stryker on `promotion-qualify.ts`. `bun run check:mutation-guards` is clean.
 
-- [ ] **Unit 2: Workflow and PR step**
+- [x] **Unit 2: Workflow and PR step**
 
 **Goal:** Add the `decide` job, the daily and weekly schedules, a non-cancelling queue, the pinned commit through both gates, and a PR step that replaces labels and never moves the head.
 
@@ -338,7 +338,7 @@ flowchart TD
 
 **Verification:** actionlint is clean. The workflow and `merge-data-pr` tests pass.
 
-- [ ] **Unit 3: Self-merge step**
+- [x] **Unit 3: Self-merge step**
 
 **Goal:** Wait for the required checks at the pin, then approve as `fro-bot` and merge pinned to it, behind the kill switch and the per-PR hold.
 
@@ -400,7 +400,7 @@ flowchart TD
 - `promotion-self-merge.ts` has a 100% Stryker score, and `check:mutation-guards` is clean.
 - The workflow test pins `FRO_BOT_PAT` to this step only, and pins that no App token is used after the PR step.
 
-- [ ] **Unit 4: Protection drift watcher**
+- [x] **Unit 4: Protection drift watcher**
 
 **Goal:** Report any `main` rule that doesn't match the declared settings, or that was edited by a non-settings actor, and close the report when an event shows the rule restored.
 
@@ -444,7 +444,7 @@ flowchart TD
 
 **Verification:** `protection-drift.ts` scores 100% under Stryker, actionlint is clean, and the workflow test pins the trigger, the permissions, the concurrency and the absence of secrets.
 
-- [ ] **Unit 5: Docs**
+- [x] **Unit 5: Docs**
 
 **Goal:** Bring every surface that describes promotion cadence, tokens, merge path or operator controls in line with the new behaviour.
 

@@ -153,21 +153,22 @@ Every `data`-branch write, human or automated, now goes through an App installat
 PAT split summary:
 
 - `FRO_BOT_POLL_PAT`: invitation polling and acceptance, starring, reconcile's user-scoped reads, private-name resolution in `merge-data.yaml` and `check-private-leak.yaml`, and the survey agent's `gh` CLI in `survey-repo.yaml`. Required classic scopes: `repo`, `read:org`, `gist` — the minimum `gh auth login --with-token` needs — plus `user` (`read:user` for invitation polling, `user:invite` for acceptance). It is no longer used for `data`-branch metadata commits — those go through the App installation token described above.
-- `FRO_BOT_PAT`: agent execution, PR review, autoheal, branding. Write-capable across repos.
+- `FRO_BOT_PAT`: agent execution, PR review, autoheal, branding, and the `Merge Data Branch` self-merge step (approve and merge the promotion PR as `fro-bot`; step env on that step alone). Write-capable across repos.
 
 ### Workflow secret mapping
 
-| Workflow                  | Secrets passed (explicit, not inherited)                                                |
-| ------------------------- | --------------------------------------------------------------------------------------- |
-| `fro-bot.yaml`            | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`                 |
-| `fro-bot-autoheal.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                                            |
-| `apply-branding.yaml`     | Same 4 (via reusable call to `fro-bot.yaml`)                                            |
-| `poll-invitations.yaml`   | `FRO_BOT_POLL_PAT`, `GATEWAY_WEBHOOK_SECRET` (presence)                                 |
-| `survey-repo.yaml`        | `FRO_BOT_PAT`, `FRO_BOT_POLL_PAT`, `APPLICATION_*`, `GATEWAY_WEBHOOK_SECRET` (presence) |
-| `merge-data.yaml`         | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)                               |
-| `check-private-leak.yaml` | `GITHUB_TOKEN` (diff + status POST) + `FRO_BOT_POLL_PAT` (resolver subprocess only)     |
-| `reconcile-repos.yaml`    | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                       |
-| `update-metadata.yaml`    | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                                            |
+| Workflow | Secrets passed (explicit, not inherited) |
+| --- | --- |
+| `fro-bot.yaml` | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
+| `apply-branding.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT`, `GATEWAY_WEBHOOK_SECRET` (presence) |
+| `survey-repo.yaml` | `FRO_BOT_PAT`, `FRO_BOT_POLL_PAT`, `APPLICATION_*`, `GATEWAY_WEBHOOK_SECRET` (presence) |
+| `merge-data.yaml` | Fro Bot App token (merge-back and PR step), `FRO_BOT_POLL_PAT` (leak gate), `FRO_BOT_PAT` (self-merge step only) |
+| `protection-drift.yaml` | `GITHUB_TOKEN` (`contents: read`, `issues: write`); no secrets |
+| `check-private-leak.yaml` | `GITHUB_TOKEN` (diff + status POST) + `FRO_BOT_POLL_PAT` (resolver subprocess only) |
+| `reconcile-repos.yaml` | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
+| `update-metadata.yaml` | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
 
 ### Gateway presence (Discord)
 
@@ -225,7 +226,11 @@ git push origin data
 
 That last `git push origin data` now has to authenticate as the Fro Bot App: the `data`-branch ruleset in `.github/settings.yml` bypasses only the App's `Integration` actor, so pushing with a personal credential or `FRO_BOT_PAT` is rejected. Mint a short-lived App installation token (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`) and push with that, or land the edit through an App-authenticated workflow instead.
 
-The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. For faster turnaround, trigger it manually via `gh workflow run merge-data.yaml`.
+The `Merge Data Branch` workflow runs daily at 22:00 UTC (the Sunday run is the weekly run) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. A promotion whose tree diff touches only `knowledge/` and `metadata/` is then approved as the `fro-bot` user and squash-merged by the same run, pinned to the commit the privacy gates checked; any other promotion is labeled `needs-review`, and the daily runs leave its head alone so an operator's approval is not dismissed (the weekly run, or `gh workflow run merge-data.yaml -f refresh-review=true`, updates it). Operator controls: the repository variable `PROMOTION_SELF_MERGE` must be `on` for any approval or merge (unset or any other value is a dry run that logs what it would approve; `gh variable set PROMOTION_SELF_MERGE --body on` / `gh variable delete PROMOTION_SELF_MERGE`), a `hold-merge` label on the PR stops one promotion, and a promotion PR you close stays closed on scheduled runs until a dispatch with `refresh-review`. The self-merge step reads the variable through the API, so `FRO_BOT_PAT` needs permission to read repository variables, check runs and statuses, submit pull request reviews and merge pull requests.
+
+### Protection drift
+
+The `Protection Drift` workflow (`protection-drift.yaml`) runs on every `branch_protection_rule` event and compares the `main` rule in the event with the declared settings (`common-settings.yaml` for the review fields and `enforce_admins`, `.github/settings.yml` for the required contexts and `strict`). It opens one `protection-drift` issue when the actor is not the settings automation (the Fro Bot App bot, matched by type and numeric id 109017866, never by login; the `fro-bot` user is always reported), when the rule was deleted, or when a declared field is present and different. Further drift while the issue is open adds a comment. The issue closes itself on a later event from the settings automation in which every declared field is present and matching. A field the event does not report is neither drift nor a match: it is listed in the job summary, and it keeps the issue open, so if a field such as `require_last_push_approval` is never reported the operator closes the issue by hand. The workflow uses only `github.token` (`contents: read`, `issues: write`), reports and never reverts, and the daily `Update Repo Settings` run stays the restorer.
 
 ### The `data` branch lifecycle
 
