@@ -2733,6 +2733,15 @@ describe('selfMerge: an approval that fails in a way that does not say whether i
     expect(w.requests.merge).toBeUndefined()
   })
 
+  it('reads past a review whose author is gone, and says no approval was found when that is all there is', async () => {
+    const alone = world({...failApprove(apiError(502)), reviews: () => [{login: null}]})
+    const outcome = await selfMerge(alone.input())
+    expect(outcome.code).toBe('APPROVAL_UNKNOWN')
+    expect(outcome.summary).toContain('found no approval')
+    const beside = world({...failApprove(apiError(502)), reviews: () => [{login: null}, {}]})
+    expect(await selfMerge(beside.input())).toMatchObject(LIVE)
+  })
+
   it('finds the approval among several reviews', async () => {
     const w = world({
       ...failApprove(apiError(502)),
