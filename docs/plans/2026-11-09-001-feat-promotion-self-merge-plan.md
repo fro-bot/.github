@@ -158,9 +158,9 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
 ## Key Technical Decisions
 
 - **A `decide` job before the promotion job.**
-  - It checks out `main` and fetches `data`, then computes qualification from the tree diff `git diff --name-status -M origin/main origin/data`.
+  - It checks out `main` and fetches `data`. It takes the three-dot diff `git diff --name-status -M origin/main...origin/data`, then drops every path whose content at `origin/data` already equals `origin/main` (both blobs equal, or both absent). This is the same rule merge-back uses for unowned changes. Qualification is computed from what remains.
   - It outputs `run` (true or false) and `reason`. The promotion job has a job-level `if: needs.decide.outputs.run == 'true'`, so the gate steps keep no step-level `if:`.
-  - A tree diff, not three-dot, so content the operator already squash-merged doesn't count as changed. The local diff has no file cap and no truncation.
+  - Changes made on `main` since the last merge-back aren't in the three-dot diff. Content the operator already squash-merged drops out at the blob check. The local diff has no file cap and no truncation.
 - **The weekly run comes from the trigger, not the clock.**
   - Two schedule entries: `0 22 * * 0` is the weekly run and `0 22 * * 1-6` the daily runs. `github.event.schedule` says which one fired.
   - A `workflow_dispatch` input `refresh-review` (default false) and `repository_dispatch` count as daily runs.
@@ -178,18 +178,26 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
 - **Operator controls (origin R13).**
   - The repository variable `PROMOTION_SELF_MERGE` must be `on` for the step to approve or merge. Unset or any other value means a dry run that logs "would approve".
   - A `hold-merge` label on the PR stops approval for that promotion. The run doesn't remove it.
-  - A promotion PR the operator closed is not reopened or approved by daily runs. It is recreated only on the weekly run.
+  - When the newest promotion PR was closed unmerged, the operator closed it. No scheduled run recreates it. Only a dispatch with `refresh-review` does.
+  - The step reads the variable and the PR labels through the API at three points: before the wait, before the approval, and before the merge. A switch or label change made during the wait takes effect.
+  - A dry run waits and polls like a live run, then stops right before the approval call with "would approve".
 - **Wait loop.**
   - A time-bounded loop of 60 minutes inside a 90-minute job, with a `sleep` seam and per-read retry for transient 5xx.
   - Check runs use `filter=latest` with pagination, matched by context name and required app ID. Commit statuses are matched by context only, newest first, since statuses carry no app.
   - The PR head is re-read on every poll. A moved head means "stale" (exit 0), and a cancelled check on a superseded commit is ignored.
 - **Merge outcomes.**
   - 409 or a 405 where `mergeable_state` is `behind` means "open waiting" (exit 0).
-  - A 405 where `mergeable_state` is `blocked` after the approval means the approval didn't count or a change request is outstanding. That exits 1 so it stays visible, and it never produces a silent green.
+  - `mergeable_state` is computed lazily. While it reads `unknown`, the step re-reads it a few times.
+  - A 405 that stays `blocked` after those re-reads means the approval didn't count or a change request is outstanding. That exits 1 so it stays visible, and it never produces a silent green.
+  - A 422 on the approval because the head moved maps to "stale" (exit 0).
+  - A held run doesn't touch labels, and the weekly run sets them. The hold summary says the unowned-changes alert waits for the weekly run.
 - **The drift watcher is stateless.**
-  - On every `branch_protection_rule` event for `main`, it compares the event's full `rule` with the declared values: review count, code owners, dismiss stale and last push from `common-settings.yaml`; strict and a contexts superset from `.github/settings.yml`; and `enforce_admins`.
-  - If the actor is not `fro-bot[bot]` (type Bot, ID 109017866), or the rule doesn't match, it opens or comments on the open `protection-drift` issue. The report names the actor, the time, the event `changes`, the mismatched fields and the settings workflow that restores the rule.
-  - When the rule matches and an issue is open, it comments and closes, whoever the actor. A deleted rule counts as a mismatch.
+  - On every `branch_protection_rule` event for `main`, it compares the event's `rule` with the declared values. These include the review count, code owners, dismiss stale and last push from `common-settings.yaml`, plus strict and a contexts superset from `.github/settings.yml`. It also checks the enforcement levels `pull_request_reviews_enforcement_level` and `required_status_checks_enforcement_level`, which must not be `off`, and `enforce_admins`.
+  - Each field is either present and matching, present and different, or absent.
+  - It opens or comments on the open `protection-drift` issue when the actor is not `fro-bot[bot]` (type Bot, ID 109017866), or when any field is present and different. The report names the actor, the time, the event `changes`, the mismatched fields, any absent fields, and the settings workflow that restores the rule.
+  - It closes an open issue only on an event from the settings App in which every declared field is present and matching. A manual restore therefore closes the issue at the next daily settings write.
+  - An absent field is never drift and never a match. It is listed in the job summary.
+  - A deleted rule counts as drift.
   - One non-cancelling concurrency group serializes events.
 
 ## Open Questions
@@ -205,8 +213,7 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
 
 ### Deferred to Implementation
 
-- Whether `rule.require_last_push_approval` is present in real payloads. If it is absent, that field is compared as unknown and never matches, so the issue stays open until the operator closes it.
-- The exact set of `rule` field names. Pin them with a payload captured from a Scorecard `branch_protection_rule` run.
+- Which declared fields real payloads carry, `require_last_push_approval` in particular. The first daily settings write after Unit 4 merges lists any absent fields in its summary. If a field is always absent, the issue can never auto-close, and the operator closes it by hand. Unit 6 records which case applies.
 
 ## High-Level Technical Design
 
@@ -258,7 +265,7 @@ flowchart TD
 
 **Approach:**
 
-- Parse `git diff --name-status -M` output. Every path must be under `knowledge/` or `metadata/`, including both sides of a rename or copy.
+- Parse `git diff --name-status -M` three-dot output and drop paths whose blobs are equal on both sides, using a git seam. Every remaining path must be under `knowledge/` or `metadata/`, including both sides of a rename or copy.
 - An empty diff means "no changes".
 - Weekly is true for `schedule` with `0 22 * * 0`, or for dispatch with `refresh-review=true`.
 - Run is "no changes", "held", or "run".
@@ -271,6 +278,8 @@ flowchart TD
 **Test scenarios:**
 
 - Happy path: only `knowledge/` and `metadata/` paths gives `qualifies` and add `automerge`, remove `needs-review` (AE1).
+- Edge case: a three-dot path whose `data` content equals `main`, such as a squash-merged change or an unchanged file, is dropped before qualification.
+- Edge case: a `main`-only change since the last merge-back doesn't appear and doesn't disqualify.
 - Edge case: `R100 scripts/x.ts knowledge/x.md` doesn't qualify (AE3).
 - Edge case: the lookalike prefix `knowledgebase/x.md` doesn't qualify.
 - Edge case: an empty diff gives "no changes".
@@ -322,7 +331,7 @@ flowchart TD
 - Edge case: a held `decide` skips the promotion job entirely, and the run is green (AE9).
 - Edge case: on a weekly run with a mixed diff, the run merges back, updates the PR to `needs-review`, and removes `automerge` (AE2).
 - Edge case: given a pin, `merge-data-pr` never calls `updateBranch` and reports `behind`.
-- Edge case: a closed promotion PR stays closed on a daily run (AE10).
+- Edge case: a promotion PR the operator closed stays closed on daily and weekly scheduled runs. A dispatch with `refresh-review` recreates it (AE10).
 - Edge case: `hold-merge` survives the label replace.
 - Error path: a failed gate leaves the PR unchanged and fails the job (AE4).
 - Integration: the leak gate's diff resolves `origin/data` to the pin, even though `data` moved after the fetch.
@@ -375,7 +384,10 @@ flowchart TD
 - Edge case: a check run from another app is ignored.
 - Edge case: the newest commit status wins.
 - Edge case: the head moves mid-wait, giving exit 0 "stale" and no approval. A cancelled check on the old commit doesn't fail the run.
-- Edge case: switch unset gives a dry run with no approval, exit 0. With `hold-merge` there is no approval, exit 0.
+- Edge case: with the switch unset, the run waits and polls, logs "would approve", doesn't approve, and exits 0. With `hold-merge` it doesn't approve and exits 0.
+- Edge case: `hold-merge` added during the wait means no approval. The variable turned off between the approval and the merge means no merge.
+- Edge case: `mergeable_state` `unknown` and then `clean` merges. `unknown` and then `blocked` exits 1.
+- Edge case: a 422 on the approval because the head moved exits 0 "stale".
 - Edge case: a 409 merge, or a 405 while behind, gives exit 0 (AE6).
 - Error path: a 405 while blocked after the approval exits 1.
 - Error path: a failed required check exits 1. A 404, an empty list or a short list exits 1 (AE8).
@@ -418,9 +430,11 @@ flowchart TD
 
 - Happy path: the user `fro-bot` sets the review count to 0. An issue opens, naming the actor, the time, the changes and the mismatched fields (AE7).
 - Happy path: a later event by `fro-bot[bot]` with the declared values comments on the issue and closes it (AE7).
-- Happy path: the operator restores the rule by hand. The event matches, so the issue closes.
+- Happy path: the operator restores the rule by hand. That event is reported as a non-settings edit, and the next settings write closes the issue.
 - Edge case: the settings App writes a rule that is missing reviews, as with an `_extends` fallback. That is reported.
-- Edge case: a non-settings actor makes a change that still matches, such as an undeclared field. A comment records the edit, and nothing opens or stays open.
+- Edge case: a non-settings actor changes an undeclared field. That opens or comments on the issue, because the actor is not the settings App.
+- Edge case: a settings event with one field absent and the rest matching doesn't close the issue and doesn't report drift. The absent field is listed in the summary.
+- Edge case: unchecking "Require a pull request" shows up as a reviews enforcement level of `off` and is reported.
 - Edge case: the second drift event comments on the existing issue rather than opening another.
 - Edge case: after a manual close, new drift opens a new issue.
 - Edge case: a missing `require_last_push_approval` never counts as a match.

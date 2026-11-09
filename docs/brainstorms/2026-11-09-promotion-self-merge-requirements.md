@@ -49,15 +49,15 @@ The five merges fall inside the windows those edits open. That the edits removed
 - R6. Every decision is deterministic. No agent or LLM step is involved.
 - R7. A promotion that does not qualify, or whose gates or checks fail, stays open with the failure visible and waits for the operator, as today.
 - R8. `Merge Data Branch` runs daily instead of weekly. A behind or moved qualifying promotion is then caught up and merged by the next day's run.
-- R8a. The daily run does not move the head of an open `needs-review` promotion. Its merge-back and update stay on today's weekly run, which is the Sunday schedule or a dispatch that asks for it, so an operator approval is not dismissed daily. Qualification is decided from the `data`-versus-`main` tree diff before the merge-back, so content the operator already merged does not count.
+- R8a. The daily run does not move the head of an open `needs-review` promotion. Its merge-back and update stay on today's weekly run, which is the Sunday schedule or a dispatch that asks for it, so an operator approval is not dismissed daily. Qualification is decided before the merge-back from what `data` changes relative to `main`, ignoring content `main` already has.
 
 **Protection drift**
 
-- R13. The operator can stop self-merge without editing workflows: a repository variable must be `on` for any approval or merge, a `hold-merge` label stops it for one promotion, and a promotion PR the operator closed is not reopened by daily runs.
+- R13. The operator can stop self-merge without editing workflows: a repository variable must be `on` for any approval or merge, a `hold-merge` label stops it for one promotion, and a promotion PR the operator closed is not recreated by any scheduled run.
 - R9. When `main` protection changes and the actor is not the settings automation, or the resulting rule no longer matches the declared settings, Fro Bot opens an issue in fro-bot/.github within 15 minutes. The issue names the actor, the time, the change GitHub reports, and the settings workflow that will restore protection.
 - R10. The settings automation is identified by actor type and numeric ID, not by login. The `fro-bot` user is always reported.
 - R11. The drift report does not block or revert the change. Restoration stays with the existing daily settings run.
-- R12. Further drift while an issue is open adds a comment to it. The issue closes on its own when a later protection event shows the rule matching the declared settings again, whoever made that change. A field the event does not report never counts as matching.
+- R12. Further drift while an issue is open adds a comment to it. The issue closes on its own when a later write by the settings automation shows every declared setting present and matching. A field the event does not report never counts as matching or as drift.
 
 ---
 
@@ -71,7 +71,7 @@ The five merges fall inside the windows those edits open. That the edits removed
 - AE6. **Covers R5.** `data` moves between the approval and the merge. The merge is refused, and the next run handles the new head.
 - AE7. **Covers R9, R10, R12.** The user `fro-bot` turns off required reviews in the web UI. Within 15 minutes an issue names `fro-bot`, the time and the change. The next settings run re-enables required reviews, and the issue closes.
 - AE8. **Covers R3.** The live required-check list comes back empty. The run does not approve, and it says why in its summary.
-- AE10. **Covers R13.** The operator closes a promotion PR. The next daily run does not reopen or approve it. With the variable unset, a qualifying run logs what it would approve and merges nothing.
+- AE10. **Covers R13.** The operator closes a promotion PR. No scheduled run recreates or approves it. With the variable unset, a qualifying run logs what it would approve and merges nothing.
 - AE9. **Covers R8a.** A `needs-review` promotion has the operator's approval on a Tuesday. The Wednesday daily run does not push to `data`, and the approval stands.
 
 ---
