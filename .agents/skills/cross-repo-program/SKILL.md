@@ -30,13 +30,13 @@ The tracker is `.github/workflows/gateway-rollout-tracker.yaml`. It runs once fo
 
 A program starts from a credentialed request: `gh workflow run fro-bot.yaml -f prompt='...'` or the Actions UI. It never starts from an issue comment, because a comment run holds no write credential.
 
-1. **Look for an existing program.** Read `program-trackers.json`, then search open issues labeled `program-tracker`. If a program already covers the request, stop and link it.
+1. **Look for an existing program.** Read `program-trackers.json`, then search open issues labeled `program-tracker` that have an open start PR. A pending start counts as an existing program. If one already covers the request, stop and link it.
 2. **Resolve the repos.** Run `gh repo view <owner/repo> --json nameWithOwner,visibility,id` for each proposed repo. Keep `PUBLIC` ones, with their `nameWithOwner` and `id` (the `nodeId` in the config). Drop private, internal and 404 repos without naming them in any output. Any other failure (a 5xx, a rate limit, a network error) stops the run and reports the failure. A 404 also covers a deleted repo, so it cannot tell the two apart. Do not retry it.
-3. **Create the tracker issue and an empty Project.** Give the Project the fields in [The Project](#the-project). This is the one time something other than the tracker writes Project fields.
+3. **Create the tracker issue with the `program-tracker` label and an empty Project.** Routing comes from the config, so the label is safe to apply early, and it lets a repeated start find this one. Give the Project the fields in [The Project](#the-project). This is the one time something other than the tracker writes Project fields.
 4. **Open one PR** that adds the config entry (with `repos`) and one `(github.event.issue.number == <n> && github.event.sender.id == <operator id>)` clause to the exclusion at the top of the `fro-bot` job's `if` in `.github/workflows/fro-bot.yaml`. A test fails when those literals disagree with the config. Name the issue and the Project in the PR body, so they can be closed if the PR is rejected.
-5. **Stop.** Merging the PR is the operator's confirmation. The merge changes `program-trackers.json` on `main`, which dispatches the tracker for every program. The preflight lists the confirmed repos that are still public and have no Project item (`bootstrap_repos`) and wakes with reason `bootstrap`. The tracker's bootstrap duty labels the issue `program-tracker`, files one issue in each listed repo that links back to the tracker issue and adds each to the Project. A run that stops partway finishes on the next run, because the wake is "a confirmed repo has no item", not "the Project is empty". A confirmed repo that has turned private is never bootstrapped.
+5. **Stop.** Merging the PR is the operator's confirmation. The merge changes `program-trackers.json` on `main`, which dispatches the tracker for every program. The preflight lists the confirmed repos that are still public and have no Project item (`bootstrap_repos`) and wakes with reason `bootstrap`. The tracker's bootstrap duty labels the issue `program-tracker` if it lacks the label (an issue made before the start run applied it), then works through the listed repos. For each repo it rechecks that the repo is still `PUBLIC` right before it acts and skips a repo that is not, silently. It searches the repo for an open issue by `fro-bot` that links the tracker issue and reuses it, and otherwise files one issue that links back to the tracker issue. It adds the issue to the Project. A run that stops partway finishes on the next run, because the wake is "a confirmed repo has no item", not "the Project is empty". A confirmed repo that has turned private is never bootstrapped. A repo with issues disabled is listed once as an operator step and never wakes the tracker by itself.
 
-The start run creates an issue and a Project before confirmation. That costs at most one of each. Per-repo issues, the expensive part, wait for the merge.
+The start run creates an issue and a Project before confirmation. That costs at most one of each. Per-repo issues, the expensive part, wait for the merge. If a start PR is closed without merging, close its tracker issue and delete its Project. The PR body names both.
 
 ## The config entry
 
@@ -69,7 +69,7 @@ Add every dependency as an item. The snapshot reads up to 1,000 items and refuse
 
 A dependency is an issue or PR in another repo that the program waits on. Record it as a Project item. The tracker adds missing dependency items from the evidence it finds, and a dependency that closes or merges wakes the next run through the snapshot hash. The hash covers each item's identity and issue state. Status, readiness, gate, labels and close date are left out on purpose, so the tracker's own field writes never wake the next run.
 
-Items from repos that are not public never reach the snapshot, the body, a comment or the marker. They leave no count and no name.
+Items from repos that are not public never reach the snapshot, the body, a comment or the marker. They leave no count and no name. The tracker names, counts and describes only the items in the preflight's `public_items` set, even when the Project holds more, and it still updates the Project fields of an item in the set.
 
 ## Acceptance gates and evidence
 
@@ -81,6 +81,10 @@ Gates are the checkboxes in the tracker body's acceptance list. A gate ticks onl
 Each tick says which kind it is. A comment from anyone else is data. A screenshot or recording in an operator comment is linked by comment ID, never transcribed. Gates ticked before this rule stay ticked.
 
 #3512 is public and unlocked, which is why authorship is checked. A trigger comment counts as pending only when the operator wrote it on the tracker issue.
+
+## Requests
+
+Requests go in comments on the tracker issue. An edit to the issue body is never read as a request: the tracker owns the body and rewrites it, so the content job skips the operator's `issues` events on tracker issues. The tracker keeps a line at the top of the body that says so.
 
 ## Handing a step to the operator
 

@@ -1447,6 +1447,14 @@ describe('fro-bot.yaml content-job tracker exclusion matches program-trackers.js
     ...contentIf.matchAll(/github\.event\.issue\.number == (\d+) && github\.event\.sender\.id == (\d+)/g),
   ].map(match => `${match[1]}:${match[2]}`)
 
+  // An issue number no program names, so the "unrelated issue" case cannot collide with a configured one.
+  const configuredNumbers = new Set(config.programs.map(entry => issueRef(entry).number))
+  const unconfiguredIssueNumber = Math.max(0, ...configuredNumbers) + 1000
+
+  it('picks an unrelated issue number that no program uses', () => {
+    expect(configuredNumbers.has(unconfiguredIssueNumber)).toBe(false)
+  })
+
   it('carries one issue-number and operator-ID pair for each configured program, and no other', () => {
     const configured = config.programs.map(entry => `${issueRef(entry).number}:${entry.operator.id}`)
 
@@ -1465,7 +1473,7 @@ describe('fro-bot.yaml content-job tracker exclusion matches program-trackers.js
       const operator = commentEvent({issueNumber, login: entry.operator.login, userId: entry.operator.id})
       const stranger = commentEvent({issueNumber, login: entry.operator.login, userId: entry.operator.id + 1})
       const elsewhere = commentEvent({
-        issueNumber: issueNumber + 1,
+        issueNumber: unconfiguredIssueNumber,
         login: entry.operator.login,
         userId: entry.operator.id,
       })

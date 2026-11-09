@@ -80,6 +80,65 @@ describe('the cross-repo-program skill', () => {
     expect(body).toMatch(/agent-verified/)
   })
 
+  it('labels the tracker issue program-tracker when the start run creates it, and bootstrap keeps its own label step', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain('Create the tracker issue with the `program-tracker` label and an empty Project')
+    expect(text).toContain('Routing comes from the config, so the label is safe to apply early')
+    expect(text).toContain('labels the issue `program-tracker` if it lacks the label')
+  })
+
+  it('searches configured programs and open program-tracker issues that have an open start PR', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain(
+      'Read `program-trackers.json`, then search open issues labeled `program-tracker` that have an open start PR',
+    )
+    expect(text).toContain('A pending start counts as an existing program')
+  })
+
+  it('tells the operator to close the issue and delete the Project when a start PR is closed unmerged', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain(
+      'If a start PR is closed without merging, close its tracker issue and delete its Project. The PR body names both.',
+    )
+  })
+
+  it('says requests go in comments and a body edit is not read as a request', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain('Requests go in comments on the tracker issue')
+    expect(text).toContain('An edit to the issue body is never read as a request')
+    expect(text).toContain('the content job skips the operator')
+  })
+
+  it('has bootstrap search for and reuse an existing issue, recheck visibility and report blocked repos', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain(
+      'searches the repo for an open issue by `fro-bot` that links the tracker issue and reuses it',
+    )
+    expect(text).toContain('rechecks that the repo is still `PUBLIC` right before it acts')
+    expect(text).toContain(
+      'A repo with issues disabled is listed once as an operator step and never wakes the tracker by itself',
+    )
+  })
+
+  it('has the tracker write only about items in the public item set', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+
+    expect(text).toContain(
+      "The tracker names, counts and describes only the items in the preflight's `public_items` set",
+    )
+  })
+
   it('keeps plan, review and agent names out of the text', () => {
     const {body, frontmatter} = readSkill('cross-repo-program')
     const text = `${String(frontmatter.description)}\n${body}`
