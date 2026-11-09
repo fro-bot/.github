@@ -119,8 +119,8 @@ export function parseProgramTrackers(text: string): ProgramTrackers {
     throw new Error('program-trackers.json is not valid JSON')
   }
   const programs: unknown = isRecord(parsed) ? parsed.programs : undefined
-  if (!Array.isArray(programs) || programs.length === 0) {
-    throw new Error('program-trackers.json must hold a non-empty "programs" array')
+  if (!Array.isArray(programs)) {
+    throw new TypeError('program-trackers.json must hold a "programs" array')
   }
 
   const entries = programs.map((raw, index) => parseEntry(raw, index))
@@ -161,10 +161,14 @@ export function issueRef(entry: ProgramEntry): {repo: string; number: number} {
   return {repo: entry.issue.slice(0, at), number: Number(entry.issue.slice(at + 1))}
 }
 
-/** Whether the program's operator wrote the comment: the login, and the numeric ID when the comment carries one. */
+/**
+ * Whether the program's operator wrote the comment. The numeric user ID decides when the comment carries
+ * one: the relay routes by it, a login can change case or name, and an ID cannot. Without an ID the login
+ * decides, ignoring case, as GitHub does.
+ */
 export function isOperatorComment(comment: Pick<CommentLike, 'author'>, entry: ProgramEntry): boolean {
-  if (comment.author.login !== entry.operator.login) return false
-  return comment.author.id === undefined || comment.author.id === entry.operator.id
+  if (comment.author.id !== undefined) return comment.author.id === entry.operator.id
+  return comment.author.login.toLowerCase() === entry.operator.login.toLowerCase()
 }
 
 /**
@@ -192,6 +196,25 @@ export function confirmedReposMissing(
     const folded = repo.nameWithOwner.toLowerCase()
     return visible.has(folded) && !present.has(folded)
   })
+}
+
+/**
+ * The repos of `repos` that the config on the default branch still confirms for program `key`: the same
+ * repo (name ignoring case, and node ID, so a deleted and recreated repo is another repo) listed under the
+ * same key. A program that is absent there keeps nothing. A run built from an older revision, such as a
+ * re-run of a partial bootstrap, uses this to drop whatever has since been removed.
+ */
+export function reposConfirmedOnDefaultBranch(
+  repos: readonly ConfirmedRepo[],
+  config: ProgramTrackers,
+  key: string,
+): ConfirmedRepo[] {
+  const confirmed = config.programs.find(program => program.key === key)?.repos ?? []
+  return repos.filter(repo =>
+    confirmed.some(
+      other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase() && other.nodeId === repo.nodeId,
+    ),
+  )
 }
 
 /**

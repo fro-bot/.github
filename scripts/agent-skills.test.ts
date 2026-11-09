@@ -112,7 +112,9 @@ describe('the cross-repo-program skill', () => {
     const {body} = readSkill('cross-repo-program')
     const text = body.replaceAll(/\s+/g, ' ')
 
-    expect(text).toContain('Requests go in comments on the tracker issue')
+    expect(text).toContain(
+      'Requests go in comments on the tracker issue that mention `@fro-bot`. Edits to an earlier comment are read too.',
+    )
     expect(text).toContain('An edit to the issue body is never read as a request')
     expect(text).toContain('the content job skips the operator')
   })
@@ -124,7 +126,11 @@ describe('the cross-repo-program skill', () => {
     expect(text).toContain(
       'searches the repo for an open issue by `fro-bot` that links the tracker issue and reuses it',
     )
+    expect(text).toContain(
+      'rereads the config on the default branch and skips the repo, silently, unless the program and the repo are still confirmed there',
+    )
     expect(text).toContain('rechecks that the repo is still `PUBLIC` right before it acts')
+    expect(text).toContain('an empty `programs` array is valid')
     expect(text).toContain(
       'A repo with issues disabled is listed once as an operator step and never wakes the tracker by itself',
     )

@@ -9,7 +9,9 @@ import {
   isPublicVisibility,
   issueRef,
   loadProgramTrackers,
+  parseProgramTrackers,
   partitionBootstrapRepos,
+  reposConfirmedOnDefaultBranch,
   selectProgram,
   type CommentEvent,
   type ConfirmedRepo,
@@ -782,6 +784,19 @@ function readRepoFacts(repos: readonly string[], env: Env): {publicRepos: Set<st
   return {publicRepos, issuesDisabled}
 }
 
+/**
+ * The text of `program-trackers.json` on the repository's default branch, through the contents API (no ref
+ * names the default branch). With `ROLLOUT_TRACKER_DEFAULT_CONFIG` the text comes from that variable.
+ */
+function readDefaultBranchConfig(repo: string, env: Env): string {
+  if (env.ROLLOUT_TRACKER_DEFAULT_CONFIG !== undefined) return env.ROLLOUT_TRACKER_DEFAULT_CONFIG
+  return execFileSync(
+    'gh',
+    ['api', '-H', 'Accept: application/vnd.github.raw', `repos/${repo}/contents/program-trackers.json`],
+    {encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe']},
+  )
+}
+
 /** The external signals a program's evidence kind reads: #3512's releases, deploys and health, or nothing. */
 async function loadEvidence(kind: EvidenceKind, env: NodeJS.ProcessEnv): Promise<ExternalSignals | NoExternalSignals> {
   return kind === 'gateway' ? loadExternalSignals(env) : {}
@@ -853,6 +868,8 @@ export interface SnapshotIo {
  * `program-trackers.json`. A bad or missing config, or an unknown program, returns 1 before any read.
  *   ROLLOUT_TRACKER_PROGRAM     — the program key; empty or unset selects `gateway`
  *   ROLLOUT_TRACKER_CONFIG      — path of the config file; defaults to the committed `program-trackers.json`
+ *   ROLLOUT_TRACKER_DEFAULT_CONFIG — the text of the default branch's program-trackers.json, in place of the
+ *                                   contents API read that a bootstrap needs
  *   ROLLOUT_TRACKER_VISIBILITY_JSON — {"owner/repo": "public" | "private" | "internal" | null}: the repository
  *                                   visibility reads (`null` is a 404); a repo it lacks fails the run
  *
@@ -1069,10 +1086,24 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
   const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
-  const {ready: bootstrapRepos, blocked: bootstrapBlocked} = partitionBootstrapRepos(
-    confirmedReposMissing(entry, items, publicRepos),
-    issuesDisabled,
-  )
+  // A run can be built from an old revision (a re-run of a partial bootstrap), so the authority to file
+  // comes from the default branch, not from the config this run checked out. A failed read fails the run.
+  let missing = confirmedReposMissing(entry, items, publicRepos)
+  if (missing.length > 0) {
+    try {
+      missing = reposConfirmedOnDefaultBranch(
+        missing,
+        parseProgramTrackers(readDefaultBranchConfig(trackerRepo, env)),
+        entry.key,
+      )
+    } catch {
+      io.stderr(
+        'rollout-tracker-snapshot: FATAL — failed to read the default-branch program config; refusing to bootstrap on a stale revision; exiting 1\n',
+      )
+      return 1
+    }
+  }
+  const {ready: bootstrapRepos, blocked: bootstrapBlocked} = partitionBootstrapRepos(missing, issuesDisabled)
   const decision = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos)
   const result: PreflightResult = {
     ...decision,

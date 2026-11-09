@@ -313,3 +313,21 @@ describe('rollout-tracker-mention.yaml: privilege shape', () => {
     expect(job?.steps?.some(candidate => candidate.uses !== undefined)).toBe(false)
   })
 })
+
+describe('rollout-tracker-mention.yaml: operator login case and closed-out programs', () => {
+  it('dispatches by numeric user id, whatever case the configured login has', () => {
+    const run = relay({config: [{...gateway, operator: {id: 831617, login: 'MarcusRBrown'}}]})
+
+    expect(run.status).toBe(0)
+    expect(dispatches(run)).toEqual([
+      'gh workflow run gateway-rollout-tracker.yaml --ref main -f program=gateway -f comment_id=4301234567 -f comment_event=created',
+    ])
+  })
+
+  it('dispatches nothing, and exits 0, when no program is configured', () => {
+    const run = relay({config: []})
+
+    expect(run.status).toBe(0)
+    expect(dispatches(run)).toEqual([])
+  })
+})

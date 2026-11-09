@@ -62,8 +62,9 @@ jobs:
           set -euo pipefail
           KEYS="$(jq -r '.programs[].key' program-trackers.json)"
           if [ -z "$KEYS" ]; then
-            printf '::error::program-trackers.json lists no program\n' >&2
-            exit 1
+            # Every program has been closed out. Nothing to run is a success, not a failure.
+            printf '::notice::program-trackers.json lists no program; nothing to dispatch\n'
+            exit 0
           fi
           TOTAL=0
           FAILED=0
@@ -293,7 +294,13 @@ jobs:
         Only the repos listed there need work. When the list is not empty, add
         the label program-tracker to the tracker issue when it lacks it, and
         create the label first when the repository has none. Then work through
-        the listed repos one at a time. Immediately before each bootstrap
+        the listed repos one at a time. Before you file in each repo, reread
+        program-trackers.json from the default branch with gh api -H
+        'Accept: application/vnd.github.raw'
+        repos/${{ needs.preflight.outputs.tracker_repo }}/contents/program-trackers.json
+        and skip the repo silently unless the program
+        ${{ needs.preflight.outputs.program }} and the repo are still
+        confirmed there. Immediately before each bootstrap
         action in a repo, run gh repo view <repo> --json visibility. If the result is not PUBLIC,
         skip the repo silently and do not mention it. Before you file in a
         repo, search that repo for an open issue authored by fro-bot that links
@@ -313,7 +320,8 @@ jobs:
         issues there.
 
         Requests. Keep this line near the top of the body: Requests go in
-        comments on this issue. Edits to this body are not read as requests.
+        comments that mention @fro-bot on this issue; edits to an earlier
+        comment are read too. Edits to this body are not read as requests.
 
         Body size. GitHub rejects an issue body over 65,536 bytes. In the
         cross-repo dependency matrix, list only the dependencies whose Project

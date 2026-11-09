@@ -704,6 +704,13 @@ describe('rollout-tracker-snapshot CLI fixture path', () => {
 const FAKE_GH = [
   '#!/bin/sh',
   'if [ "$1" != api ]; then echo "unexpected gh command: $*" >&2; exit 1; fi',
+  // The default-branch program config, read through the contents API: `gh api -H <accept> repos/<repo>/contents/program-trackers.json`.
+  'case "$*" in',
+  '  *contents/program-trackers.json*)',
+  '    echo "$4" | sed "s#^repos/##; s#/contents/program-trackers.json##" >> "$FAKE_GH_CONFIG_LOG"',
+  '    [ -n "$FAKE_GH_CONFIG_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
+  '    cat "$FAKE_GH_DEFAULT_CONFIG_FILE"; exit 0 ;;',
+  'esac',
   // A repository visibility read: `gh api repos/<owner>/<repo> --jq .visibility`. It is answered before the
   // blanket API failure below, so a test can fail the signal reads and leave the visibility reads alone.
   'case "$2" in',
@@ -749,6 +756,10 @@ interface FakeGhParams {
   apiFail?: boolean
   agentRelease?: unknown
   gatewayRuns?: unknown
+  /** The text the default branch's `program-trackers.json` holds; defaults to the file named by `extraEnv`. */
+  defaultConfig?: string
+  /** Fails the default-branch config read. */
+  defaultConfigFail?: boolean
   /** Further env for the run, such as a program config. */
   extraEnv?: Record<string, string | undefined>
   /** Repositories whose visibility read answers private, internal, 404, 502, a network error or nothing. */
@@ -766,7 +777,7 @@ interface FakeGhParams {
   }
 }
 
-function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: string[]} {
+function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: string[]; configReads: string[]} {
   const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-gh-'))
   try {
     writeFileSync(join(dir, 'gh'), FAKE_GH)
@@ -780,11 +791,22 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: s
     writeFileSync(commentsFile, lines)
     const visibilityLog = join(dir, 'visibility.log')
     writeFileSync(visibilityLog, '')
+    const configLog = join(dir, 'config.log')
+    writeFileSync(configLog, '')
+    const configFile = join(dir, 'default-config.json')
+    const programConfig = params.extraEnv?.ROLLOUT_TRACKER_CONFIG
+    writeFileSync(
+      configFile,
+      params.defaultConfig ?? (programConfig === undefined ? '' : readFileSync(programConfig, 'utf8')),
+    )
     const visibility = params.visibility ?? {}
     const result = runCliRaw({
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       FAKE_GH_COMMENTS_FILE: commentsFile,
       FAKE_GH_VISIBILITY_LOG: visibilityLog,
+      FAKE_GH_CONFIG_LOG: configLog,
+      FAKE_GH_DEFAULT_CONFIG_FILE: configFile,
+      FAKE_GH_CONFIG_FAIL: params.defaultConfigFail === true ? '1' : '',
       FAKE_GH_VIS_PRIVATE: (visibility.private ?? []).join(' '),
       FAKE_GH_VIS_INTERNAL: (visibility.internal ?? []).join(' '),
       FAKE_GH_VIS_NOTFOUND: (visibility.notFound ?? []).join(' '),
@@ -812,6 +834,9 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: s
     return {
       ...result,
       visibilityReads: readFileSync(visibilityLog, 'utf8')
+        .split('\n')
+        .filter(line => line !== ''),
+      configReads: readFileSync(configLog, 'utf8')
         .split('\n')
         .filter(line => line !== ''),
     }
@@ -2391,6 +2416,15 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('If you find one, add that issue to the Project and do not file a new one')
     })
 
+    it('rereads the default-branch config before filing and skips a repo that is no longer confirmed there', () => {
+      expect(flat).toContain(
+        `Before you file in each repo, reread program-trackers.json from the default branch with gh api -H 'Accept: application/vnd.github.raw' repos/${expr('needs.preflight.outputs.tracker_repo')}/contents/program-trackers.json`,
+      )
+      expect(flat).toContain(
+        `skip the repo silently unless the program ${expr('needs.preflight.outputs.program')} and the repo are still confirmed there`,
+      )
+    })
+
     it('rechecks the repo is public right before each bootstrap action and skips it silently if not', () => {
       expect(flat).toContain(
         'Immediately before each bootstrap action in a repo, run gh repo view <repo> --json visibility',
@@ -2409,7 +2443,9 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     })
 
     it('says requests go in comments and that body edits are not read as requests', () => {
-      expect(flat).toContain('Requests go in comments on this issue. Edits to this body are not read as requests.')
+      expect(flat).toContain(
+        'Requests go in comments that mention @fro-bot on this issue; edits to an earlier comment are read too. Edits to this body are not read as requests.',
+      )
       expect(flat).toContain('Keep this line near the top of the body')
     })
 
@@ -3204,6 +3240,8 @@ function bootstrapConfig(repos: readonly {nameWithOwner: string; nodeId: string}
 
 function bootstrapPreflight(params: {
   configPath: string
+  /** The text of the default branch's config; defaults to the config file itself. */
+  defaultConfig?: string
   items: ProjectItem[]
   comments?: TrackerComment[]
   visibility?: Record<string, string | {visibility: string; has_issues: boolean} | null>
@@ -3222,6 +3260,7 @@ function bootstrapPreflight(params: {
     }),
     ROLLOUT_TRACKER_CONFIG: params.configPath,
     ROLLOUT_TRACKER_PROGRAM: 'plugins',
+    ROLLOUT_TRACKER_DEFAULT_CONFIG: params.defaultConfig ?? readFileSync(params.configPath, 'utf8'),
   })
   if (result.status !== 0) throw new Error(`run failed (${result.status}): ${result.stderr}`)
   return JSON.parse(result.stdout) as PreflightResult
@@ -3399,6 +3438,72 @@ describe('the bootstrap wake', () => {
       expect(failing.status).toBe(1)
       expect(failing.stdout).toBe('')
     })
+  })
+})
+
+describe('operator login case in the preflight', () => {
+  const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard'})]
+  const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
+  const mixed = (id: number, userId: number, body: string): TrackerComment => ({
+    id,
+    author: {login: 'MarcusRBrown', id: userId},
+    body,
+  })
+
+  it('answers a mention from the operator whose login has another case, matched by numeric id', () => {
+    const result = runCliFixture({items, issues, comments: [mixed(5, 831617, '@fro-bot hello')]})
+
+    expect(result.pending_mention_ids).toEqual([5])
+    expect(result.operator_comment_ids).toEqual([5])
+  })
+
+  it('answers an edited comment from that operator', () => {
+    const result = runCliFixture({
+      items,
+      issues,
+      comments: [mixed(5, 831617, 'G4c pass')],
+      triggerCommentId: '5',
+      triggerCommentEvent: 'edited',
+    })
+
+    expect(result.pending_mention_ids).toEqual([5])
+  })
+
+  it('does not accept the same login under another numeric id', () => {
+    const result = runCliFixture({items, issues, comments: [mixed(5, 1, '@fro-bot hello')]})
+
+    expect(result.pending_mention_ids).toEqual([])
+    expect(result.operator_comment_ids).toEqual([])
+  })
+
+  it('reads the author id from the live comment fetch', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-case-'))
+    try {
+      writeFileSync(
+        join(dir, 'gh'),
+        [
+          '#!/bin/sh',
+          'case "$*" in',
+          '  *comments*)',
+          '    echo \'{"id":9,"login":"MarcusRBrown","uid":831617,"body":"@fro-bot hi"}\'; exit 0 ;;',
+          'esac',
+          'echo "unexpected gh command: $*" >&2; exit 1',
+        ].join('\n'),
+      )
+      chmodSync(join(dir, 'gh'), 0o755)
+
+      const result = runCliRaw({
+        ...fixtureEnv({items, issues}),
+        ROLLOUT_TRACKER_COMMENTS_JSON: undefined,
+        ROLLOUT_TRACKER_COMMENT_BODY: undefined,
+        PATH: `${dir}:${process.env.PATH ?? ''}`,
+      })
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).pending_mention_ids).toEqual([9])
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
   })
 })
 
@@ -3597,5 +3702,181 @@ describe('repos with issues disabled', () => {
     expect(bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)}).bootstrap_blocked).toEqual(
       [],
     )
+  })
+})
+
+// ─── Fix round 2: bootstrap authority comes from the default branch ───────────
+
+describe('bootstrap authority on the default branch', () => {
+  const repoA = {nameWithOwner: 'marcusrbrown/plugin-a', nodeId: 'R_a'}
+  const repoB = {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'}
+  const repoC = {nameWithOwner: 'marcusrbrown/plugin-c', nodeId: 'R_c'}
+  const itemA = makeProjectItem({id: 'PVTI_a', content_number: 1, content_repo: repoA.nameWithOwner})
+
+  /** The text of a config whose only program is `plugins`, as the default branch would hold it. */
+  function mainConfig(repos: readonly {nameWithOwner: string; nodeId: string}[] | undefined, key = 'plugins'): string {
+    return JSON.stringify({
+      programs: [
+        {
+          key,
+          issue: 'fro-bot/.github#4200',
+          project: {owner: 'marcusrbrown', number: 9, gateField: 'Gate'},
+          operator: {id: 831617, login: 'marcusrbrown'},
+          evidence: 'none',
+          ...(repos === undefined ? {} : {repos}),
+        },
+      ],
+    })
+  }
+
+  it('wakes for a repo that is still confirmed on the default branch', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      defaultConfig: mainConfig([repoA, repoB]),
+    })
+
+    expect(result.should_comment).toBe(true)
+    expect(result.bootstrap_repos).toEqual([repoB])
+  })
+
+  it('gives no bootstrap and no wake when the program is gone from the default branch', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+
+    for (const defaultConfig of [JSON.stringify({programs: []}), mainConfig([repoA, repoB], 'other')]) {
+      const result = bootstrapPreflight({
+        configPath,
+        items,
+        comments: quietThread(configPath, items),
+        defaultConfig,
+      })
+
+      expect(result.should_comment).toBe(false)
+      expect(result.bootstrap_repos).toEqual([])
+      expect(result.bootstrap_blocked).toEqual([])
+    }
+  })
+
+  it('leaves out a repo that the default branch no longer confirms, and keeps the others', () => {
+    const configPath = bootstrapConfig([repoA, repoB, repoC])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      defaultConfig: mainConfig([repoA, repoC]),
+    })
+
+    expect(result.bootstrap_repos).toEqual([repoC])
+  })
+
+  it('does not wake when the default branch drops every missing repo', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      defaultConfig: mainConfig([repoA]),
+    })
+
+    expect(result.should_comment).toBe(false)
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it('does not list a blocked repo the default branch no longer confirms', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      visibility: {[repoB.nameWithOwner]: {visibility: 'public', has_issues: false}},
+      defaultConfig: mainConfig([repoA]),
+    })
+
+    expect(result.bootstrap_blocked).toEqual([])
+  })
+
+  it.each([
+    ['text that is not JSON', '{'],
+    ['a config the loader rejects', JSON.stringify({programs: [{key: 'plugins'}]})],
+  ])('fails the preflight on %s from the default branch, and never bootstraps anyway', (_name, defaultConfig) => {
+    const configPath = bootstrapConfig([repoA, repoB])
+
+    const result = runCliRaw({
+      ...fixtureEnv({items: [itemA], issues: [makeIssueState({number: 1, repo: repoA.nameWithOwner})], comments: []}),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({
+        [repoA.nameWithOwner]: 'public',
+        [repoB.nameWithOwner]: 'public',
+      }),
+      ROLLOUT_TRACKER_CONFIG: configPath,
+      ROLLOUT_TRACKER_PROGRAM: 'plugins',
+      ROLLOUT_TRACKER_DEFAULT_CONFIG: defaultConfig,
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'rollout-tracker-snapshot: FATAL — failed to read the default-branch program config; refusing to bootstrap on a stale revision; exiting 1\n',
+    )
+  })
+
+  describe('through gh', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const base = {
+      items: [itemA],
+      issues: [makeIssueState({number: 1, repo: repoA.nameWithOwner})],
+      comments: [],
+      extraEnv: {
+        ROLLOUT_TRACKER_CONFIG: configPath,
+        ROLLOUT_TRACKER_PROGRAM: 'plugins',
+        ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+      },
+    }
+
+    it('reads the config from the default branch of the tracker repository once, through the contents API', () => {
+      const result = runCliWithFakeGh({...base, defaultConfig: mainConfig([repoA, repoB])})
+
+      expect(result.status).toBe(0)
+      expect(result.configReads).toEqual(['fro-bot/.github'])
+      expect((JSON.parse(result.stdout) as PreflightResult).bootstrap_repos).toEqual([repoB])
+    })
+
+    it('gives no bootstrap when the default branch no longer has the program', () => {
+      const result = runCliWithFakeGh({...base, defaultConfig: JSON.stringify({programs: []})})
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).bootstrap_repos).toEqual([])
+    })
+
+    it('exits 1 with nothing on stdout when the read fails', () => {
+      const result = runCliWithFakeGh({...base, defaultConfigFail: true})
+
+      expect(result.status).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('failed to read the default-branch program config')
+    })
+
+    it('does not read the default branch when nothing needs a bootstrap', () => {
+      const quiet = bootstrapConfig([repoA])
+
+      const result = runCliWithFakeGh({
+        ...base,
+        extraEnv: {...base.extraEnv, ROLLOUT_TRACKER_CONFIG: quiet},
+        defaultConfigFail: true,
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.configReads).toEqual([])
+    })
   })
 })

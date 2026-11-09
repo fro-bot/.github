@@ -13,6 +13,7 @@ import {
   loadProgramTrackers,
   parseProgramTrackers,
   partitionBootstrapRepos,
+  reposConfirmedOnDefaultBranch,
   selectProgram,
   type ProgramEntry,
 } from './program-trackers.ts'
@@ -86,20 +87,36 @@ describe('parseProgramTrackers: a valid file', () => {
   })
 })
 
+describe('parseProgramTrackers: a config with every program closed out', () => {
+  it('accepts an empty programs array as no programs', () => {
+    expect(parseProgramTrackers('{"programs": []}')).toEqual({programs: []})
+  })
+
+  it('still names an explicit request for a removed program as unknown', () => {
+    expect(() => selectProgram(parseProgramTrackers('{"programs": []}'), 'gateway')).toThrow(
+      new Error('unknown program key'),
+    )
+  })
+})
+
 describe('parseProgramTrackers: rejects with a fixed message', () => {
-  const programsMessage = 'program-trackers.json must hold a non-empty "programs" array'
+  const programsMessage = 'program-trackers.json must hold a "programs" array'
 
   it.each([
     ['text that is not JSON', '{', 'program-trackers.json is not valid JSON'],
     ['an empty string', '', 'program-trackers.json is not valid JSON'],
-    ['a top-level array', '[]', programsMessage],
-    ['a top-level null', 'null', programsMessage],
-    ['a top-level string', '"x"', programsMessage],
-    ['an object without programs', '{}', programsMessage],
-    ['programs that is not an array', '{"programs": {}}', programsMessage],
-    ['an empty programs array', '{"programs": []}', programsMessage],
   ])('%s', (_name, text, message) => {
     expect(() => parseProgramTrackers(text)).toThrow(new Error(message))
+  })
+
+  it.each([
+    ['a top-level array', '[]'],
+    ['a top-level null', 'null'],
+    ['a top-level string', '"x"'],
+    ['an object without programs', '{}'],
+    ['programs that is not an array', '{"programs": {}}'],
+  ])('%s', (_name, text) => {
+    expect(() => parseProgramTrackers(text)).toThrow(new TypeError(programsMessage))
   })
 
   it.each([
@@ -421,20 +438,30 @@ describe('isOperatorComment', () => {
     expect(isOperatorComment({author: {login: 'marcusrbrown'}}, entry)).toBe(true)
   })
 
-  it('is false for anyone else, including the bot and a near match', () => {
-    for (const login of ['octocat', 'fro-bot', 'fro-bot[bot]', 'MarcusRBrown', 'marcusrbrown2', '']) {
+  it('is false, with no numeric id, for anyone else, including the bot and a near match', () => {
+    for (const login of ['octocat', 'fro-bot', 'fro-bot[bot]', 'marcusrbrown2', ' marcusrbrown', '']) {
       expect(isOperatorComment({author: {login}}, entry)).toBe(false)
     }
   })
 
-  it('also requires the numeric id when the comment carries one', () => {
+  it('compares the login ignoring case when the comment carries no numeric id', () => {
+    expect(isOperatorComment({author: {login: 'MarcusRBrown'}}, entry)).toBe(true)
+    expect(isOperatorComment({author: {login: 'MARCUSRBROWN'}}, entry)).toBe(true)
+  })
+
+  it('matches on the numeric id alone when the comment carries one', () => {
     expect(isOperatorComment({author: {login: 'marcusrbrown', id: 831617}}, entry)).toBe(true)
     expect(isOperatorComment({author: {login: 'marcusrbrown', id: 999}}, entry)).toBe(false)
     expect(isOperatorComment({author: {login: 'marcusrbrown', id: 0}}, entry)).toBe(false)
   })
 
-  it('does not accept the operator id under another login', () => {
-    expect(isOperatorComment({author: {login: 'octocat', id: 831617}}, entry)).toBe(false)
+  it('accepts the operator id under a mixed-case or renamed login', () => {
+    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 831617}}, entry)).toBe(true)
+    expect(isOperatorComment({author: {login: 'octocat', id: 831617}}, entry)).toBe(true)
+  })
+
+  it('does not accept the operator login under another id, whatever the case', () => {
+    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 1}}, entry)).toBe(false)
   })
 })
 
@@ -524,6 +551,57 @@ describe('confirmedReposMissing', () => {
     const items = [{content_repo: 'someone/else'}]
 
     expect(confirmedReposMissing(entry, items, allPublic)).toEqual(repos)
+  })
+})
+
+describe('reposConfirmedOnDefaultBranch', () => {
+  const a = {nameWithOwner: 'marcusrbrown/plugin-a', nodeId: 'R_a'}
+  const b = {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'}
+  const c = {nameWithOwner: 'marcusrbrown/plugin-c', nodeId: 'R_c'}
+  const onMain = (...programs: ReturnType<typeof entryOf>[]): {programs: ReturnType<typeof entryOf>[]} => ({programs})
+
+  it('keeps the repos that are still confirmed for the same program on the default branch, in order', () => {
+    const config = onMain(entryOf({repos: [c, a]}))
+
+    expect(reposConfirmedOnDefaultBranch([a, b, c], config, 'gateway')).toEqual([a, c])
+  })
+
+  it('returns nothing when the program is absent from the default branch', () => {
+    expect(reposConfirmedOnDefaultBranch([a, b], onMain(), 'gateway')).toEqual([])
+    expect(reposConfirmedOnDefaultBranch([a], onMain(entryOf({key: 'other', repos: [a]})), 'gateway')).toEqual([])
+  })
+
+  it('returns nothing when the program has no confirmed repos on the default branch', () => {
+    expect(reposConfirmedOnDefaultBranch([a], onMain(entryOf()), 'gateway')).toEqual([])
+    expect(reposConfirmedOnDefaultBranch([a], onMain(entryOf({repos: []})), 'gateway')).toEqual([])
+  })
+
+  it('matches repo names ignoring case', () => {
+    const config = onMain(entryOf({repos: [{nameWithOwner: 'MarcusRBrown/Plugin-A', nodeId: 'R_a'}]}))
+
+    expect(reposConfirmedOnDefaultBranch([a], config, 'gateway')).toEqual([a])
+  })
+
+  it('does not keep a repo whose node id changed, which is another repo under the same name', () => {
+    const config = onMain(entryOf({repos: [{nameWithOwner: a.nameWithOwner, nodeId: 'R_other'}]}))
+
+    expect(reposConfirmedOnDefaultBranch([a], config, 'gateway')).toEqual([])
+  })
+
+  it('does not keep a repo that shares a node id with a confirmed repo of another name', () => {
+    const config = onMain(entryOf({repos: [{nameWithOwner: 'marcusrbrown/plugin-z', nodeId: a.nodeId}]}))
+
+    expect(reposConfirmedOnDefaultBranch([a], config, 'gateway')).toEqual([])
+  })
+
+  it('returns nothing for an empty list', () => {
+    expect(reposConfirmedOnDefaultBranch([], onMain(entryOf({repos: [a]})), 'gateway')).toEqual([])
+  })
+
+  it('reads only the entry with the program key', () => {
+    const config = onMain(entryOf({key: 'other', issue: 'a/b#1', repos: [a]}), entryOf({repos: [b]}))
+
+    expect(reposConfirmedOnDefaultBranch([a, b], config, 'gateway')).toEqual([b])
   })
 })
 

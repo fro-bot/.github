@@ -79,6 +79,17 @@ describe('status-truth.yaml: rollout snapshot step', () => {
     expect(result.stdout).not.toContain('snapshot command unavailable')
   })
 
+  it('skips the snapshot, the same way, when every program has been closed out', () => {
+    const result = runStep({ROLLOUT_TRACKER_PROGRAM: 'gateway', ROLLOUT_TRACKER_CONFIG: writeConfig([])})
+
+    expect(result.status).toBe(0)
+    expect(result.outputs.snapshot_path).toBeUndefined()
+    expect(result.stdout).toContain(
+      'rollout-snapshot: program gateway is not in program-trackers.json; rollout-tracker claims are skipped',
+    )
+    expect(result.stdout).not.toContain('snapshot command unavailable')
+  })
+
   it('reports any other failure as an unavailable snapshot', () => {
     const result = runStep({
       ROLLOUT_TRACKER_PROGRAM: 'gateway',

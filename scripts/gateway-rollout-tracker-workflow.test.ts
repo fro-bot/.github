@@ -184,8 +184,22 @@ describe('gateway-rollout-tracker.yaml: the fan-out job', () => {
     expect(run.status).not.toBe(0)
   })
 
-  it('fails when the config lists no program', () => {
+  it('succeeds as a no-op, with one fixed line, when every program has been closed out', () => {
     const run = fan([])
+
+    expect(run.status).toBe(0)
+    expect(dispatched(run)).toEqual([])
+    expect(run.stdout.trim().split('\n')).toEqual([
+      '::notice::program-trackers.json lists no program; nothing to dispatch',
+    ])
+    expect(run.stderr).toBe('')
+  })
+
+  it('fails on a config that has no programs array at all', () => {
+    const run = runStepWithStubs(`printf '{}' > program-trackers.json\n${fanOutScript}`, {
+      stubTools: ['gh'],
+      env: {GH_REPO: 'fro-bot/.github'},
+    })
 
     expect(run.status).not.toBe(0)
     expect(dispatched(run)).toEqual([])
@@ -249,6 +263,12 @@ describe('gateway-rollout-tracker.yaml: the preflight job', () => {
       expect(result.status).not.toBe(0)
       expect(result.stderr).toContain('comment_event must be created, edited or empty')
     })
+  })
+
+  it('rereads the default-branch config before filing in each repo', () => {
+    const flat = String(update?.with?.prompt ?? '').replaceAll(/\s+/g, ' ')
+
+    expect(flat).toContain('Before you file in each repo, reread program-trackers.json from the default branch')
   })
 
   it('reads the program block from the snapshot result into job outputs', () => {
