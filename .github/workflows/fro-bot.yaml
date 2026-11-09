@@ -394,7 +394,8 @@ env:
        measure aging from creation time and staleness from the most recent update
        activity (commit, review, comment, or state change). Recommend a next step
        for each. Do NOT modify individual issues/PRs or apply labels in this
-       category.
+       category, except issues labeled `attention-tracking`: create, label, edit
+       and close those under the attention rules in the output section.
 
     6. CROSS-PROJECT INTELLIGENCE (report-only)
        Fro Bot surveys tracked repositories into the wiki. Treat every entry in
@@ -443,9 +444,10 @@ env:
     pass did for a category, mark it ❔ and say so.
 
     Maintain exactly one daily report. Create an issue titled
-    "Daily Fro Bot Report — YYYY-MM-DD (UTC)" for today. Before or after
-    creating it, CLOSE every older open issue whose title starts with
-    "Daily Fro Bot Report —" or "Daily Org Oversight Report —" (the previous
+    "Daily Fro Bot Report — YYYY-MM-DD (UTC)" for today. In this order: find the
+    open predecessor daily report, read it, create today's report, read today's
+    report back, and only then CLOSE every older open issue whose title starts
+    with "Daily Fro Bot Report —" or "Daily Org Oversight Report —" (the previous
     naming), leaving a one-line closing comment that links the newest report.
     There must be exactly one open daily report when the run finishes.
 
@@ -470,12 +472,76 @@ env:
     ### Cross-Project Intelligence
     ### Progressive Improvement
     ### Needs Human Attention
+    #### Awaiting you
 
     Status legend: ✅ = verified-clean; ⚠️/❌ = warning or error; ❔ =
     could-not-check. Use ✅ only when all required sources were checked and
     nothing was found. Use ❔ when any source is unavailable, stale, empty,
     access denied, or scan failed; name the affected source and reason. Never
     render ✅ for could-not-check.
+
+    NEEDS HUMAN ATTENTION RULES
+    - One problem per item. Split bundled bullets into separate items.
+    - Key each item to the object its next action works on: an issue, PR or
+      Project item URL, a normalized repo path, or a repo plus workflow file.
+      Runs, comments and documents are evidence only, never a key. Two problems
+      on one object are two items, each with its own tag.
+    - End every item with a line "key: <object> — <problem tag>". Every key
+      carries a problem tag from the item's first appearance. The tag stays the
+      same from one report to the next, whatever other problems the object has. First-seen, escalation, reuse and
+      closing all match on this exact line.
+    - Every item names an owner (a handle, or "you"), one next action, and
+      whether it is observed or inferred. Every item also shows `first seen
+      YYYY-MM-DD`.
+    - Just before publishing, re-read the object behind each key. If the key
+      has resolved, drop the item. If only the evidence has resolved, refresh
+      the evidence and keep the item. If the read fails, keep the item marked
+      "could not re-check" and name the source only if its repo is public.
+    - First-seen is the date of the oldest consecutive earlier daily report that
+      lists the same item: walk back from the predecessor and stop at the first
+      report that does not. A report with `key:` lines lists an item when it has
+      the same key line. An earlier report without `key:` lines lists an item
+      only when it names the same object, plainly describes the same problem,
+      and exactly one of its items fits. If the match is ambiguous, stop the
+      walk at that report. From the first report with `key:` lines onward, use
+      the tagged key line. If no earlier report lists it, use today. Never guess
+      a date.
+    - Under "Awaiting you", at the top of Needs Human Attention, list the items
+      only the operator can do, each with its exact step. Other items follow.
+    - Escalate a key that is live on three consecutive reports, today's
+      included, counted by the same matching as first-seen. Search issues
+      labeled `attention-tracking`, open and closed, for the same key line.
+      Reuse an open one. A matching issue the operator closed, for any reason,
+      ends that occurrence: do not refile, and report the
+      item once as declined. File a new issue only after a confirmed resolution
+      followed by a fresh recurrence. Otherwise file a tracking issue in the
+      AGENT NOTES format, starting with the key line and labeled
+      `attention-tracking`. Do not escalate keys that are already issues, items
+      already tracked, "Awaiting you" items or Renovate-owned fixes. Create at
+      most 2 new tracking issues per run, oldest first-seen first. Any other
+      eligible item stays in the report as an ordinary item until a later run.
+      Show each escalated item as one line linking its issue, with its first
+      seen date, and ending with its key line. If the label is missing or cannot
+      be applied, skip escalation and say so in the Run Summary.
+    - On every run, close an open issue labeled `attention-tracking` and
+      authored by `fro-bot` only on affirmative evidence that its problem is
+      resolved: for an issue or PR key, it is closed or merged; for a Project
+      item key, its Status is Done (a removed item is not resolution: re-check
+      the problem it tracked); for a workflow key, a fix for the cited failure
+      is merged and linked and every default-branch run since it succeeded; for a file or path
+      key, the default branch no longer shows the cited problem. A failed
+      re-check, one passing run, or a finding that is merely absent is not
+      resolution. Record the evidence by editing the issue body, not in a
+      comment.
+    - Include an attention item only if every source of it is public: the key's
+      repo and every repo its evidence or root cause comes from. Check each with
+      `gh repo view <owner/repo> --json visibility`; a repo is public only when
+      it returns PUBLIC. Any other result, including an error, means private. If
+      any source is not confirmed public, leave the whole item out of the
+      report, the Run Summary and tracking issues, and never refer to a "private
+      repository". Before editing or closing a tracking issue, check its sources
+      again. If one is no longer public, edit or close it without any evidence
+      that names or describes that source.
 
 jobs:
   # ── Content-triggered job: comments, issues, PR review, cross-repo-goal ──
