@@ -1422,6 +1422,28 @@ describe('selfMerge: the full text of every summary', () => {
       ),
     ],
     [
+      'required checks kept changing',
+      async () => {
+        let reads = 0
+        return selfMerge(
+          world({
+            protection: () => {
+              reads += 1
+              return protectionOf([...checksFor(DECLARED), {context: `Extra ${String(reads)}`, app_id: 15_368}])
+            },
+            runs: () => [
+              ...GREEN_RUNS,
+              ...Array.from({length: 10}, (_, index) => ({name: `Extra ${String(index + 1)}`})),
+            ],
+          }).input(),
+        )
+      },
+      summary(
+        'required checks kept changing',
+        'The required checks for `main` kept changing while the run waited, so the run stopped before it settled on a list. The pull request stays open and the next daily run starts again. Nothing was approved.',
+      ),
+    ],
+    [
       'failed checks',
       async () =>
         selfMerge(
@@ -2001,5 +2023,148 @@ describe('runSelfMerge: a summary for every early stop', () => {
     expect(await h.run()).toBe(0)
     expect(h.writes[0]).toContain('- Pinned commit: not available\n')
     expect(h.writes[0]).not.toContain('Pull request:')
+  })
+})
+
+describe('selfMerge: boundaries of the deadline and of the summaries', () => {
+  const HOUR = 60 * MINUTE
+  // Checks pending until the poll at minute 58, so the wait ends one or two minutes before its deadline.
+  const lateRuns = (poll: number): readonly RunState[] => (poll < 59 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)
+
+  it('gives the approval and the merge 15 minutes after the wait: a recheck ending at minute 74 still merges', async () => {
+    const w = world({
+      runs: lateRuns,
+      callCost: (name, count) => (name === 'getBranch' && count === 2 ? 16 * MINUTE : 0),
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('and not a minute more: a recheck ending after minute 75 times out', async () => {
+    const w = world({
+      runs: lateRuns,
+      callCost: (name, count) => (name === 'getBranch' && count === 2 ? 18 * MINUTE : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('time reserved for the approval and the merge ran out')
+    expect(w.log).toEqual([])
+  })
+
+  it('ends with TIMEOUT, not a protection failure, when the deadline passes as the protection is re-read', async () => {
+    const w = world({callCost: (name, count) => (name === 'listStatuses' && count === 1 ? 76 * MINUTE : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.getBranch).toHaveLength(1)
+  })
+
+  it('ends with TIMEOUT, not an unreadable switch, when the deadline passes as the switch is read', async () => {
+    const w = world({callCost: (name, count) => (name === 'getPull' && count === 2 ? 76 * MINUTE : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.getVariable).toBeUndefined()
+    expect(w.log).toEqual([])
+  })
+
+  it('ends with TIMEOUT when the deadline passes as the merge is looked up after a failed merge', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(500)
+      },
+      callCost: (name, count) => (name === 'merge' && count === 1 ? 76 * MINUTE : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('already submitted')
+  })
+
+  it('does not look the merge up again when the merge answers 200 and says it did not merge', async () => {
+    const w = world({
+      merge: () => ({data: {merged: false}}),
+      pulls: script<PullState>({}, {}, {}, {merged: true, state: 'closed'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_FAILED'})
+    expect(w.requests.getPull).toHaveLength(3)
+  })
+
+  it('says only that the wait ran out when no poll finished', async () => {
+    const w = world({callCost: name => (name === 'getBranch' ? HOUR + MINUTE : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome.summary).toBe(
+      [
+        '### Promotion self-merge: timed out',
+        '',
+        'The required checks did not settle within 60 minutes. The pull request stays open and the next daily run catches it up and merges it. Nothing was approved.',
+        '',
+        '- Pull request: #77',
+        `- Pinned commit: \`${PIN}\``,
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it.each(['a'.repeat(41), `!${'a'.repeat(40)}`, `${'a'.repeat(40)}!`, 'A'.repeat(40), 'g'.repeat(40), ''])(
+    'shows a pin that is not a commit id as not available (%j)',
+    async pin => {
+      const outcome = await selfMerge(world().input({pin, qualifies: false}))
+      expect(outcome.summary).toContain('- Pinned commit: not available\n')
+      expect(outcome.summary).not.toContain(pin === '' ? '`' + '`' : pin)
+    },
+  )
+
+  it('makes one poll and two protection reads for a check that failed, not a restart', async () => {
+    const w = world({
+      runs: () => [{name: 'Lint', conclusion: 'failure'}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}],
+    })
+    await selfMerge(w.input())
+    expect(w.polls()).toBe(1)
+    expect(w.requests.getBranch).toHaveLength(1)
+  })
+
+  it('makes no restart when the protection re-read fails', async () => {
+    const w = world({protection: script(protectionOf(checksFor(DECLARED)), protectionOf(checksFor(['Lint'])))})
+    await selfMerge(w.input())
+    expect(w.requests.getBranch).toHaveLength(2)
+    expect(w.polls()).toBe(1)
+  })
+})
+
+describe('selfMerge: the text after a submitted approval, exactly', () => {
+  const AFTER =
+    'The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.'
+  const facts = ['- Pull request: #77', `- Pinned commit: \`${PIN}\``, '']
+
+  it('drops "Nothing was approved." and adds the sentence, once', async () => {
+    const w = world({pulls: script<PullState>({}, {}, {labels: ['automerge', 'hold-merge']})})
+    expect((await selfMerge(w.input())).summary).toBe(
+      [
+        '### Promotion self-merge: held by hold-merge',
+        '',
+        `The pull request carries the \`hold-merge\` label, so it waits for the operator. ${AFTER}`,
+        '',
+        ...facts,
+      ].join('\n'),
+    )
+  })
+
+  it('drops "Nothing further was done." and adds the sentence, once', async () => {
+    const w = world({pulls: script<PullState | Error>({}, {}, apiError(404))})
+    expect((await selfMerge(w.input())).summary).toBe(
+      [
+        '### Promotion self-merge: GitHub API failure',
+        '',
+        `A GitHub API call failed, so the run stopped. ${AFTER}`,
+        '',
+        ...facts,
+      ].join('\n'),
+    )
+  })
+
+  it('starts the run waiting, so a deadline before the first poll reads as a wait that ran out', async () => {
+    const w = world()
+    let calls = 0
+    const outcome = await selfMerge(w.input({now: () => (calls++ === 0 ? 0 : 61 * MINUTE)}))
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('did not settle within 60 minutes')
+    expect(w.requests.getBranch).toBeUndefined()
   })
 })

@@ -261,12 +261,8 @@ function summaryFor(context: OutcomeContext, title: string, detail: string, code
   return [`### Promotion self-merge: ${title}`, '', said, '', ...facts, ''].join('\n')
 }
 
-class DeadlineError extends Error {
-  constructor() {
-    super('deadline')
-    this.name = 'DeadlineError'
-  }
-}
+/** Thrown by the deadline check; carries nothing, because the outcome is built from the run's state. */
+class DeadlineError extends Error {}
 
 /** The outcome of a run whose deadline passed: the wait ran out, or the time after it did. */
 function timeoutOutcome(state: RunState): SelfMergeOutcome {
@@ -617,7 +613,6 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     )
     return outcomeOf(state, merged.data.merged ? 'MERGED' : 'MERGE_FAILED')
   } catch (error: unknown) {
-    if (error instanceof DeadlineError) throw error
     const status = statusOf(error)
     if (status === 409) return outcomeOf(state, 'OPEN_WAITING')
     if (status === 405) {
@@ -672,7 +667,7 @@ export async function runSelfMerge(params: RunSelfMergeParams): Promise<number> 
   }
 
   // A value from the env is shown in a summary only after it has been checked, so a bad one is never echoed.
-  const pinText = env.PROMOTION_PIN ?? ''
+  const pinText = String(env.PROMOTION_PIN)
   const pin = /^[0-9a-f]{40}$/u.test(pinText) ? pinText : ''
   const prText = env.PROMOTION_PR ?? ''
   if (prText === '') return finish(outcomeOf({pullRequest: null, pin}, 'NO_PULL_REQUEST'))

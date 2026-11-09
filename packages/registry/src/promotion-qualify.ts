@@ -26,7 +26,6 @@ export type PromotionSide = 'base' | 'head'
 export class InvalidPathEncodingError extends Error {
   constructor() {
     super('invalid-path-encoding')
-    this.name = 'InvalidPathEncodingError'
   }
 }
 

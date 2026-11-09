@@ -1100,6 +1100,40 @@ describe('runProtectionDrift: reads are retried and writes are not', () => {
     expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
   })
 
+  it.each(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND'])('retries %s', async code => {
+    const world = issueWorld()
+    const original = world.octokit.rest.issues.listForRepo
+    let failed = false
+    ;(world.octokit.rest.issues as {listForRepo: unknown}).listForRepo = async (
+      ...args: Parameters<typeof original>
+    ) => {
+      if (!failed) {
+        failed = true
+        throw Object.assign(new Error('socket'), {code})
+      }
+      return original(...args)
+    }
+    const h = runner({event: DRIFT_EVENT, world})
+    expect(await h.run()).toBe(0)
+    expect(h.sleeps).toEqual([2000])
+  })
+
+  it.each([{code: 'EOTHER'}, {code: undefined}, {status: '503'}, {status: null}, 'text', null, undefined])(
+    'does not retry an error shaped like %j',
+    async thrown => {
+      const world = issueWorld()
+      let lists = 0
+      ;(world.octokit.rest.issues as {listForRepo: unknown}).listForRepo = async () => {
+        lists += 1
+        throw thrown
+      }
+      const h = runner({event: DRIFT_EVENT, world})
+      expect(await h.run()).toBe(1)
+      expect(lists).toBe(1)
+      expect(h.sleeps).toEqual([])
+    },
+  )
+
   it('retries a dropped connection', async () => {
     const world = issueWorld()
     const original = world.octokit.rest.issues.listForRepo
@@ -1243,6 +1277,23 @@ describe('runProtectionDrift: a summary on every path', () => {
   it('shows no event line for an action that is not text', async () => {
     const h = runner({event: {action: 5, rule: goodRule({name: 'dev'})}})
     await h.run()
-    expect(h.writes[0]?.content).not.toContain('- Event:')
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: ignored\n\nThe event is for a rule other than `main`. Nothing to do.\n',
+    )
+  })
+
+  it('titles the opened issue and the duplicate in the summary', async () => {
+    const opened = runner({event: DRIFT_EVENT})
+    await opened.run()
+    expect(opened.writes[0]?.content.startsWith('### Protection drift: issue opened\n\n')).toBe(true)
+    expect(opened.writes[0]?.content.endsWith('- Issue: https://github.com/fro-bot/.github/issues/900\n')).toBe(true)
+    const dup = runner({event: DRIFT_EVENT, world: issueWorld({afterCreate: [{number: 31}, {number: 900}]})})
+    await dup.run()
+    expect(dup.writes[0]?.content.startsWith('### Protection drift: issue opened, closed as a duplicate\n\n')).toBe(
+      true,
+    )
+    expect(
+      dup.writes[0]?.content.endsWith('- Issue: #900 was closed as a duplicate of #31, which carries this report.\n'),
+    ).toBe(true)
   })
 })
