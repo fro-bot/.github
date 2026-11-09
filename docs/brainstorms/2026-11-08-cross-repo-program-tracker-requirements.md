@@ -51,7 +51,7 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 **Wake**
 
 - R5. A change to a Project item's status, readiness, gate or labels wakes the tracker, unless the tracker itself made the change in its previous run.
-- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. Answering is best effort for now: an edit whose run is displaced by a newer pending run can be missed. Version-exact answering is deferred to the tracker delivery design issue, together with R5 and R12–R14.
+- R6. An edit by the program's operator to one of their own comments on the tracker issue wakes the tracker, even without `@fro-bot`. Answering is best effort for now: an edit whose run is displaced by a newer pending run can be missed. Version-exact answering is deferred to the tracker delivery design issue (#4152), together with R5 and R12–R14.
 
 **Self-check**
 

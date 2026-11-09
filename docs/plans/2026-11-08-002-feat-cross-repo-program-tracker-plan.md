@@ -60,7 +60,7 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
 
 ### Deferred to Separate Tasks
 
-- **Design issue: tracker delivery.** This covers:
+- **Design issue: tracker delivery (#4152).** This covers:
   - Project field changes waking the tracker (R5);
   - answering by exact comment version, including edits displaced by a newer pending run (R6);
   - a deterministic retry for a skipped body write;
