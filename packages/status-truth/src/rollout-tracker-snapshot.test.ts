@@ -140,16 +140,19 @@ interface FixtureParams {
   triggerCommentId?: string
   /** The event kind that dispatched it, as the workflow passes `inputs.comment_event`. */
   triggerCommentEvent?: string
-  /** Visibility per repository, `null` for a 404; every repository of `items` is public unless it is listed here. */
-  visibility?: Record<string, string | null>
+  /**
+   * Visibility per repository, `null` for a 404, or an object that also sets `has_issues`; every
+   * repository of `items` is public with issues enabled unless it is listed here.
+   */
+  visibility?: Record<string, string | {visibility: string; has_issues: boolean} | null>
 }
 
 /** The `ROLLOUT_TRACKER_VISIBILITY_JSON` fixture: public for every repository of the items, then the overrides. */
 function visibilityFixture(
   items: readonly {content_repo: string}[],
-  overrides: Record<string, string | null> = {},
+  overrides: Record<string, string | {visibility: string; has_issues: boolean} | null> = {},
 ): string {
-  const visibility: Record<string, string | null> = {}
+  const visibility: Record<string, string | {visibility: string; has_issues: boolean} | null> = {}
   for (const item of items) {
     if (item.content_repo !== '') visibility[item.content_repo] = 'public'
   }
@@ -711,10 +714,14 @@ const FAKE_GH = [
   '    case " $FAKE_GH_VIS_NOTFOUND " in *" $name "*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;; esac',
   '    case " $FAKE_GH_VIS_ERROR " in *" $name "*) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;; esac',
   '    case " $FAKE_GH_VIS_NETWORK " in *" $name "*) echo "error connecting to api.github.com" >&2; exit 1 ;; esac',
-  '    case " $FAKE_GH_VIS_PRIVATE " in *" $name "*) echo private; exit 0 ;; esac',
-  '    case " $FAKE_GH_VIS_INTERNAL " in *" $name "*) echo internal; exit 0 ;; esac',
+  // The code asks for `[.visibility, .has_issues] | @tsv`; the fake prints what that prints.
+  '    issues=true',
+  '    case " $FAKE_GH_VIS_NOISSUES " in *" $name "*) issues=false ;; esac',
+  String.raw`    case " $FAKE_GH_VIS_PRIVATE " in *" $name "*) printf "private\t%s\n" "$issues"; exit 0 ;; esac`,
+  String.raw`    case " $FAKE_GH_VIS_INTERNAL " in *" $name "*) printf "internal\t%s\n" "$issues"; exit 0 ;; esac`,
   '    case " $FAKE_GH_VIS_GARBLED " in *" $name "*) echo; exit 0 ;; esac',
-  '    echo public; exit 0 ;;',
+  '    case " $FAKE_GH_VIS_NOFIELD " in *" $name "*) echo public; exit 0 ;; esac',
+  String.raw`    printf "public\t%s\n" "$issues"; exit 0 ;;`,
   'esac',
   'case "$*" in',
   '  *--paginate*repos/fro-bot/.github/issues/3512/comments*)',
@@ -752,6 +759,10 @@ interface FakeGhParams {
     error?: string[]
     network?: string[]
     garbled?: string[]
+    /** Answers `public` with no has_issues field. */
+    noField?: string[]
+    /** Public repos with issues disabled. */
+    noIssues?: string[]
   }
 }
 
@@ -780,6 +791,8 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: s
       FAKE_GH_VIS_ERROR: (visibility.error ?? []).join(' '),
       FAKE_GH_VIS_NETWORK: (visibility.network ?? []).join(' '),
       FAKE_GH_VIS_GARBLED: (visibility.garbled ?? []).join(' '),
+      FAKE_GH_VIS_NOFIELD: (visibility.noField ?? []).join(' '),
+      FAKE_GH_VIS_NOISSUES: (visibility.noIssues ?? []).join(' '),
       ROLLOUT_TRACKER_VISIBILITY_JSON: undefined,
       FAKE_GH_FAIL: params.fail === true ? '1' : '',
       FAKE_GH_API_FAIL: params.apiFail === true ? '1' : '',
@@ -2207,6 +2220,8 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       'marker_comment_id',
       'operator_comment_ids',
       'bootstrap_repos',
+      'bootstrap_blocked',
+      'public_items',
     ]) {
       expect(preflight.outputs?.[name]).toBe(expr(`steps.snapshot.outputs.${name}`))
       expect(run).toContain(`${name}`)
@@ -2352,7 +2367,50 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
         'file one issue in that repo that links back to the tracker issue and add it to the Project',
       )
       expect(flat).toContain('Skip a listed repo that already has a Project item')
-      expect(flat).toContain('If an issue cannot be filed in a repo, say so in your tracker comment')
+      expect(flat).toContain(
+        'If an issue cannot be filed in a repo that is still public, say so in your tracker comment',
+      )
+    })
+
+    it('passes the public item set and writes only about items in it', () => {
+      expect(flat).toContain(expr('needs.preflight.outputs.public_items'))
+      expect(flat).toContain(
+        'Public item set. These are the only Project items you may name, count, describe or link in the body, the matrix, any comment or any reply',
+      )
+      expect(flat).toContain(
+        'A Project item outside that set stays out of everything you write: do not name it, count it, describe it or say that it exists',
+      )
+      expect(flat).toContain('You may still update the Project fields of an item in the set')
+      expect(flat).toContain('Use the Project items in the public item set as the tracked rollout source of truth')
+    })
+
+    it('searches for an open fro-bot issue that links the tracker before filing, and reuses it', () => {
+      expect(flat).toContain(
+        'Before you file in a repo, search that repo for an open issue authored by fro-bot that links the tracker issue URL',
+      )
+      expect(flat).toContain('If you find one, add that issue to the Project and do not file a new one')
+    })
+
+    it('rechecks the repo is public right before each bootstrap action and skips it silently if not', () => {
+      expect(flat).toContain(
+        'Immediately before each bootstrap action in a repo, run gh repo view <repo> --json visibility',
+      )
+      expect(flat).toContain('If the result is not PUBLIC, skip the repo silently and do not mention it')
+      expect(flat).toContain('Report a filing failure only for a repo that is still public')
+    })
+
+    it('lists the blocked repos once, as an operator step, when the tracker wakes for another reason', () => {
+      expect(flat).toContain(expr('needs.preflight.outputs.bootstrap_blocked'))
+      expect(flat).toContain('Blocked repos. Confirmed repos that have issues disabled')
+      expect(flat).toContain('Do not file in these repos')
+      expect(flat).toContain(
+        'end your tracker comment with one operator step that names each blocked repo once and asks the operator to enable issues there',
+      )
+    })
+
+    it('says requests go in comments and that body edits are not read as requests', () => {
+      expect(flat).toContain('Requests go in comments on this issue. Edits to this body are not read as requests.')
+      expect(flat).toContain('Keep this line near the top of the body')
     })
 
     it('does not anchor on thread order', () => {
@@ -2396,7 +2454,7 @@ function fakeProjectGhSource(): string {
     `#!${process.execPath}`,
     'const args = process.argv.slice(2)',
     "if (args[0] === 'api' && args[1] === 'repos/fro-bot/agent') {",
-    String.raw`  process.stdout.write('public\n')`,
+    String.raw`  process.stdout.write('public\ttrue\n')`,
     '  process.exit(0)',
     '}',
     "if (args[0] !== 'project' || args[1] !== 'item-list') {",
@@ -2628,6 +2686,8 @@ describe('the program config in a snapshot run', () => {
     delete result.program
     delete result.operator_comment_ids
     delete result.bootstrap_repos
+    delete result.bootstrap_blocked
+    delete result.public_items
     return `${JSON.stringify(result)}\n`
   }
 
@@ -3053,6 +3113,7 @@ describe('a snapshot of public repos only', () => {
       ['a 5xx', {error: ['fro-bot/agent']}],
       ['a network failure', {network: ['fro-bot/agent']}],
       ['an empty answer', {garbled: ['fro-bot/agent']}],
+      ['an answer without has_issues', {noField: ['fro-bot/agent']}],
     ])('exits 1 with nothing on stdout on %s from a visibility read', (_name, visibility) => {
       const result = runCliWithFakeGh({items, issues: allIssues, visibility})
 
@@ -3145,7 +3206,7 @@ function bootstrapPreflight(params: {
   configPath: string
   items: ProjectItem[]
   comments?: TrackerComment[]
-  visibility?: Record<string, string | null>
+  visibility?: Record<string, string | {visibility: string; has_issues: boolean} | null>
 }): PreflightResult {
   const result = runCliRaw({
     ...fixtureEnv({
@@ -3369,5 +3430,172 @@ describe('decideComment with a bootstrap list', () => {
     expect(decision.should_comment).toBe(true)
     expect(decision.reason).toContain('operator mention pending (1)')
     expect(decision.reason).toContain('bootstrap pending (1)')
+  })
+})
+
+// ─── Fix round 1: the public item set and blocked repos ───────────────────────
+
+describe('public_items', () => {
+  const publicItem = makeProjectItem({id: 'PVTI_b', content_number: 24, content_repo: 'fro-bot/dashboard'})
+  const other = makeProjectItem({id: 'PVTI_a', content_number: 9, content_repo: 'fro-bot/agent'})
+  const hidden = makeProjectItem({id: 'PVTI_h', content_number: 7, content_repo: 'secret-org/hidden-repo'})
+  const issues = [
+    makeIssueState({number: 24, repo: 'fro-bot/dashboard'}),
+    makeIssueState({number: 9, repo: 'fro-bot/agent'}),
+    makeIssueState({number: 7, repo: 'secret-org/hidden-repo', title: 'hidden title'}),
+  ]
+
+  it('lists the item id, repo and number of each item that survived the visibility filter, in a fixed order', () => {
+    const result = runCliFixture({items: [publicItem, other], issues})
+
+    expect(result.public_items).toEqual([
+      {item_id: 'PVTI_a', repo: 'fro-bot/agent', number: 9},
+      {item_id: 'PVTI_b', repo: 'fro-bot/dashboard', number: 24},
+    ])
+  })
+
+  it.each([['private'], ['internal'], [null]])(
+    'leaves out an item from a repo that is %s, and names none of it',
+    visibility => {
+      const result = runCliRaw(
+        fixtureEnv({items: [publicItem, hidden], issues, visibility: {'secret-org/hidden-repo': visibility}}),
+      )
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).public_items).toEqual([
+        {item_id: 'PVTI_b', repo: 'fro-bot/dashboard', number: 24},
+      ])
+      expect(result.stdout).not.toContain('PVTI_h')
+      expect(result.stdout).not.toContain('secret-org')
+    },
+  )
+
+  it('carries nothing but the three keys for each item', () => {
+    const result = runCliFixture({items: [publicItem], issues})
+
+    expect(Object.keys(result.public_items[0] ?? {})).toEqual(['item_id', 'repo', 'number'])
+  })
+
+  it('is empty for an empty Project, and leaves out a draft item with no repo', () => {
+    const draft = makeProjectItem({id: 'PVTI_draft', content_number: 0, content_repo: ''})
+
+    expect(runCliFixture({items: [], issues: []}).public_items).toEqual([])
+    expect(runCliFixture({items: [publicItem, draft], issues}).public_items).toEqual([
+      {item_id: 'PVTI_b', repo: 'fro-bot/dashboard', number: 24},
+    ])
+  })
+
+  it('does not change the hash', () => {
+    const withIds = runCliFixture({items: [publicItem], issues})
+    const renamed = runCliFixture({items: [{...publicItem, id: 'PVTI_other'}], issues})
+
+    expect(renamed.hash).toBe(withIds.hash)
+  })
+})
+
+describe('repos with issues disabled', () => {
+  const repoA = {nameWithOwner: 'marcusrbrown/plugin-a', nodeId: 'R_a'}
+  const repoB = {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'}
+  const noIssues = {visibility: 'public', has_issues: false}
+  const itemA = makeProjectItem({id: 'PVTI_a', content_number: 1, content_repo: repoA.nameWithOwner})
+
+  it('lists a confirmed repo with issues disabled as blocked, not as a bootstrap repo, and does not wake', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+    const comments = quietThread(configPath, items)
+
+    const result = bootstrapPreflight({configPath, items, comments, visibility: {[repoB.nameWithOwner]: noIssues}})
+
+    expect(result.should_comment).toBe(false)
+    expect(result.bootstrap_repos).toEqual([])
+    expect(result.bootstrap_blocked).toEqual([repoB])
+  })
+
+  it('still wakes for the repos that can take an issue', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const comments = quietThread(configPath, [])
+
+    const result = bootstrapPreflight({configPath, items: [], comments, visibility: {[repoB.nameWithOwner]: noIssues}})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.reason).toMatch(/^bootstrap — 1 confirmed repo has/)
+    expect(result.bootstrap_repos).toEqual([repoA])
+    expect(result.bootstrap_blocked).toEqual([repoB])
+  })
+
+  it('lists the blocked repo next to a wake for another reason', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+    const comments = [...quietThread(configPath, items), comment(200, 'marcusrbrown', '@fro-bot status?')]
+
+    const result = bootstrapPreflight({configPath, items, comments, visibility: {[repoB.nameWithOwner]: noIssues}})
+
+    expect(result.should_comment).toBe(true)
+    expect(result.reason).toContain('operator mention pending')
+    expect(result.bootstrap_blocked).toEqual([repoB])
+  })
+
+  it('does not list a repo with issues disabled that already has a Project item', () => {
+    const configPath = bootstrapConfig([repoA])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      visibility: {[repoA.nameWithOwner]: noIssues},
+    })
+
+    expect(result.bootstrap_blocked).toEqual([])
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it.each([
+    ['private', {visibility: 'private', has_issues: false}],
+    ['a 404', null],
+  ])('does not list a repo that is %s as blocked, so nothing about it is shown', (_name, visibility) => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const items = [itemA]
+
+    const result = bootstrapPreflight({
+      configPath,
+      items,
+      comments: quietThread(configPath, items),
+      visibility: {[repoB.nameWithOwner]: visibility},
+    })
+
+    expect(result.bootstrap_blocked).toEqual([])
+    expect(result.bootstrap_repos).toEqual([])
+  })
+
+  it('reads has_issues through gh and keeps the blocked repo out of the wake', () => {
+    const configPath = bootstrapConfig([repoA, repoB])
+    const extraEnv = {
+      ROLLOUT_TRACKER_CONFIG: configPath,
+      ROLLOUT_TRACKER_PROGRAM: 'plugins',
+      ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+    }
+
+    const result = runCliWithFakeGh({
+      items: [itemA],
+      issues: [makeIssueState({number: 1, repo: repoA.nameWithOwner})],
+      comments: [],
+      extraEnv,
+      visibility: {noIssues: [repoB.nameWithOwner]},
+    })
+
+    expect(result.status).toBe(0)
+    const decision = JSON.parse(result.stdout) as PreflightResult
+    expect(decision.bootstrap_repos).toEqual([])
+    expect(decision.bootstrap_blocked).toEqual([repoB])
+  })
+
+  it('has no blocked repos for a program without confirmed repos', () => {
+    const configPath = bootstrapConfig(undefined)
+    const items = [itemA]
+
+    expect(bootstrapPreflight({configPath, items, comments: quietThread(configPath, items)}).bootstrap_blocked).toEqual(
+      [],
+    )
   })
 })

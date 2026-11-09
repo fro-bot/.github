@@ -9,6 +9,7 @@ import {
   isPublicVisibility,
   issueRef,
   loadProgramTrackers,
+  partitionBootstrapRepos,
   selectProgram,
   type CommentEvent,
   type ConfirmedRepo,
@@ -115,6 +116,13 @@ export interface PreflightResult extends CommentDecision {
   operator_comment_ids: number[]
   /** The confirmed repos that are still public and have no Project item yet; the tracker files an issue in each. */
   bootstrap_repos: ConfirmedRepo[]
+  /** The confirmed repos that are public, have no Project item and have issues disabled. They never wake the tracker. */
+  bootstrap_blocked: ConfirmedRepo[]
+  /**
+   * The Project items that survived the visibility filter, as keys only: the Project item ID, the repo and
+   * the issue or PR number. The tracker writes only about items in this set. Draft items are not in it.
+   */
+  public_items: {item_id: string; repo: string; number: number}[]
   /** The program this run served, from `program-trackers.json`; the tracker prompt is templated from it. */
   program: {
     key: string
@@ -689,26 +697,45 @@ export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<Exter
   }
 }
 
+/** What the preflight needs to know about a repo: whether its items may be shown, and whether it takes issues. */
+interface RepoMetadata {
+  visibility: 'public' | 'hidden'
+  hasIssues: boolean
+}
+
 /**
- * The visibility of one repo through `gh api`. `public` keeps the repo's items. A 404 covers a repo the
- * token cannot see and a deleted one, so it reads as `hidden`, the same as `private` and `internal`.
- * Every other failure (a 5xx, a rate limit, a network error, an answer that is none of the three
- * visibilities) throws: an outage must not empty the snapshot, and it names no repo.
+ * The visibility and the issues switch of one repo through `gh api`. `public` keeps the repo's items. A 404
+ * covers a repo the token cannot see and a deleted one, so it reads as `hidden`, the same as `private` and
+ * `internal`. Every other failure (a 5xx, a rate limit, a network error, an answer that is not a visibility
+ * and a boolean) throws: an outage must not empty the snapshot, and it names no repo.
  */
-function readRepoVisibility(repo: string): 'public' | 'hidden' {
+function readRepoMetadata(repo: string): RepoMetadata {
   let output: string
   try {
-    output = execFileSync('gh', ['api', `repos/${repo}`, '--jq', '.visibility'], {
+    output = execFileSync('gh', ['api', `repos/${repo}`, '--jq', '[.visibility, .has_issues] | @tsv'], {
       encoding: 'utf8',
       timeout: 30_000,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
   } catch (error) {
     const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
-    if (stderr.includes('(HTTP 404)')) return 'hidden'
+    if (stderr.includes('(HTTP 404)')) return {visibility: 'hidden', hasIssues: true}
     throw new Error('visibility read failed', {cause: error})
   }
-  return classifyVisibility(output.trim())
+  const [visibility, hasIssues, ...extra] = output.trim().split('\t')
+  if (visibility === undefined || extra.length > 0 || (hasIssues !== 'true' && hasIssues !== 'false')) {
+    throw new Error('repository metadata is unrecognized')
+  }
+  return {visibility: classifyVisibility(visibility), hasIssues: hasIssues === 'true'}
+}
+
+/** A fixture answer: a visibility string, `null` for a 404, or an object that also sets `has_issues`. */
+function metadataFromFixture(value: unknown): RepoMetadata {
+  if (isRecord(value)) {
+    if (typeof value.has_issues !== 'boolean') throw new TypeError('has_issues is not a boolean')
+    return {visibility: classifyVisibility(value.visibility), hasIssues: value.has_issues}
+  }
+  return {visibility: classifyVisibility(value), hasIssues: true}
 }
 
 function classifyVisibility(value: unknown): 'public' | 'hidden' {
@@ -720,12 +747,12 @@ function classifyVisibility(value: unknown): 'public' | 'hidden' {
 }
 
 /**
- * The lower-cased names of the public repos among `repos`, each distinct repo read once. A name that
- * cannot be a GitHub repo is never requested and is not public. With `ROLLOUT_TRACKER_VISIBILITY_JSON`
- * the answers come from that object (`public`, `private`, `internal`, or `null` for a 404) and a repo
- * it lacks throws, like a failed read.
+ * The lower-cased names of the public repos among `repos`, and of those that have issues disabled, each
+ * distinct repo read once. A name that cannot be a GitHub repo is never requested and is not public. With
+ * `ROLLOUT_TRACKER_VISIBILITY_JSON` the answers come from that object (`public`, `private`, `internal`,
+ * `null` for a 404, or `{visibility, has_issues}`) and a repo it lacks throws, like a failed read.
  */
-function readPublicRepos(repos: readonly string[], env: Env): Set<string> {
+function readRepoFacts(repos: readonly string[], env: Env): {publicRepos: Set<string>; issuesDisabled: Set<string>} {
   let fixture: Map<string, unknown> | undefined
   if (env.ROLLOUT_TRACKER_VISIBILITY_JSON !== undefined) {
     const parsed: unknown = JSON.parse(env.ROLLOUT_TRACKER_VISIBILITY_JSON)
@@ -734,21 +761,25 @@ function readPublicRepos(repos: readonly string[], env: Env): Set<string> {
   }
 
   const publicRepos = new Set<string>()
+  const issuesDisabled = new Set<string>()
   const seen = new Set<string>()
   for (const repo of repos) {
     const folded = repo.toLowerCase()
     if (seen.has(folded) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) continue
     seen.add(folded)
-    let visibility: 'public' | 'hidden'
+    let metadata: RepoMetadata
     if (fixture === undefined) {
-      visibility = readRepoVisibility(repo)
+      metadata = readRepoMetadata(repo)
     } else {
       if (!fixture.has(folded)) throw new Error('visibility fixture lacks a repo')
-      visibility = classifyVisibility(fixture.get(folded))
+      metadata = metadataFromFixture(fixture.get(folded))
     }
-    if (visibility === 'public') publicRepos.add(folded)
+    if (metadata.visibility === 'public') {
+      publicRepos.add(folded)
+      if (!metadata.hasIssues) issuesDisabled.add(folded)
+    }
   }
-  return publicRepos
+  return {publicRepos, issuesDisabled}
 }
 
 /** The external signals a program's evidence kind reads: #3512's releases, deploys and health, or nothing. */
@@ -937,9 +968,9 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
 
   // Only items from repos GitHub reports as public reach the snapshot, the marker and the prompt. A hidden
   // repo leaves no count and no name. A draft item (no repo) stays, to be warned about as before.
-  let publicRepos: Set<string>
+  let facts: ReturnType<typeof readRepoFacts>
   try {
-    publicRepos = readPublicRepos(
+    facts = readRepoFacts(
       [...items.map(item => item.content_repo), ...(entry.repos ?? []).map(repo => repo.nameWithOwner)],
       env,
     )
@@ -949,6 +980,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     )
     return 1
   }
+  const {publicRepos, issuesDisabled} = facts
   items = items.filter(item => item.content_repo === '' || publicRepos.has(item.content_repo.toLowerCase()))
 
   if (env.ROLLOUT_TRACKER_ISSUES_JSON === undefined) {
@@ -1037,7 +1069,10 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
   const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
-  const bootstrapRepos = confirmedReposMissing(entry, items, publicRepos)
+  const {ready: bootstrapRepos, blocked: bootstrapBlocked} = partitionBootstrapRepos(
+    confirmedReposMissing(entry, items, publicRepos),
+    issuesDisabled,
+  )
   const decision = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos)
   const result: PreflightResult = {
     ...decision,
@@ -1046,6 +1081,11 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
     bootstrap_repos: bootstrapRepos,
+    bootstrap_blocked: bootstrapBlocked,
+    public_items: items
+      .filter(item => item.content_repo !== '')
+      .map(item => ({item_id: item.id, repo: item.content_repo, number: item.content_number}))
+      .sort((x, y) => x.repo.toLowerCase().localeCompare(y.repo.toLowerCase()) || x.number - y.number),
     operator_comment_ids: comments
       .filter(candidate => isOperatorComment(candidate, entry))
       .map(candidate => candidate.id)

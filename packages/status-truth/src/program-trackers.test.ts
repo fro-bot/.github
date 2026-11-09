@@ -12,6 +12,7 @@ import {
   issueRef,
   loadProgramTrackers,
   parseProgramTrackers,
+  partitionBootstrapRepos,
   selectProgram,
   type ProgramEntry,
 } from './program-trackers.ts'
@@ -523,6 +524,38 @@ describe('confirmedReposMissing', () => {
     const items = [{content_repo: 'someone/else'}]
 
     expect(confirmedReposMissing(entry, items, allPublic)).toEqual(repos)
+  })
+})
+
+describe('partitionBootstrapRepos', () => {
+  const repos = [
+    {nameWithOwner: 'marcusrbrown/plugin-a', nodeId: 'R_a'},
+    {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'},
+    {nameWithOwner: 'marcusrbrown/plugin-c', nodeId: 'R_c'},
+  ]
+
+  it('puts every repo in ready when none has issues disabled', () => {
+    expect(partitionBootstrapRepos(repos, new Set())).toEqual({ready: repos, blocked: []})
+  })
+
+  it('moves the repos with issues disabled to blocked, keeping config order on both sides', () => {
+    const result = partitionBootstrapRepos(repos, new Set(['marcusrbrown/plugin-b']))
+
+    expect(result).toEqual({ready: [repos[0], repos[2]], blocked: [repos[1]]})
+  })
+
+  it('matches names ignoring case', () => {
+    const result = partitionBootstrapRepos(repos, new Set(['MARCUSRBROWN/PLUGIN-A']))
+
+    expect(result).toEqual({ready: [repos[1], repos[2]], blocked: [repos[0]]})
+  })
+
+  it('blocks every repo when all have issues disabled, and handles an empty list', () => {
+    expect(partitionBootstrapRepos(repos, new Set(repos.map(repo => repo.nameWithOwner)))).toEqual({
+      ready: [],
+      blocked: repos,
+    })
+    expect(partitionBootstrapRepos([], new Set(['marcusrbrown/plugin-a']))).toEqual({ready: [], blocked: []})
   })
 })
 

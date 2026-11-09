@@ -112,6 +112,8 @@ jobs:
       marker_comment_id: ${{ steps.snapshot.outputs.marker_comment_id }}
       operator_comment_ids: ${{ steps.snapshot.outputs.operator_comment_ids }}
       bootstrap_repos: ${{ steps.snapshot.outputs.bootstrap_repos }}
+      bootstrap_blocked: ${{ steps.snapshot.outputs.bootstrap_blocked }}
+      public_items: ${{ steps.snapshot.outputs.public_items }}
       program: ${{ steps.snapshot.outputs.program }}
       tracker_issue: ${{ steps.snapshot.outputs.tracker_issue }}
       tracker_repo: ${{ steps.snapshot.outputs.tracker_repo }}
@@ -169,6 +171,8 @@ jobs:
           MARKER_COMMENT_ID="$(echo "$RESULT" | jq -r '.marker_comment_id // ""')"
           OPERATOR_COMMENT_IDS="$(echo "$RESULT" | jq -c '.operator_comment_ids')"
           BOOTSTRAP_REPOS="$(echo "$RESULT" | jq -c '.bootstrap_repos')"
+          BOOTSTRAP_BLOCKED="$(echo "$RESULT" | jq -c '.bootstrap_blocked')"
+          PUBLIC_ITEMS="$(echo "$RESULT" | jq -c '.public_items')"
           PROGRAM="$(echo "$RESULT" | jq -r '.program.key')"
           TRACKER_ISSUE="$(echo "$RESULT" | jq -r '.program.issue')"
           TRACKER_REPO="$(echo "$RESULT" | jq -r '.program.repo')"
@@ -182,6 +186,8 @@ jobs:
             echo "marker_comment_id=${MARKER_COMMENT_ID}"
             echo "operator_comment_ids=${OPERATOR_COMMENT_IDS}"
             echo "bootstrap_repos=${BOOTSTRAP_REPOS}"
+            echo "bootstrap_blocked=${BOOTSTRAP_BLOCKED}"
+            echo "public_items=${PUBLIC_ITEMS}"
             echo "program=${PROGRAM}"
             echo "tracker_issue=${TRACKER_ISSUE}"
             echo "tracker_repo=${TRACKER_REPO}"
@@ -233,6 +239,14 @@ jobs:
         (JSON array, ascending, empty when none):
         ${{ needs.preflight.outputs.operator_comment_ids }}
 
+        Public item set. These are the only Project items you may name, count,
+        describe or link in the body, the matrix, any comment or any reply
+        (JSON array of item_id, repo and number):
+        ${{ needs.preflight.outputs.public_items }}
+        A Project item outside that set stays out of everything you write: do
+        not name it, count it, describe it or say that it exists. You may
+        still update the Project fields of an item in the set.
+
         Evidence. Verify every claim against what you can read:
         - state of the linked issues and pull requests;
         - when the evidence kind is gateway:
@@ -242,8 +256,8 @@ jobs:
           - https://dashboard.fro.bot/operator/health (contractVersion);
         - the acceptance-run results the operator posts on
           ${{ needs.preflight.outputs.tracker_issue }}.
-        Use the Project items as the tracked rollout source of truth; do not
-        rely on a hardcoded issue list. Accept a claim when the evidence
+        Use the Project items in the public item set as the tracked rollout
+        source of truth; do not rely on a hardcoded issue list. Accept a claim when the evidence
         supports it. Otherwise reject or flag it, state the reason, and leave
         that item unchanged. Ticking a gate follows the evidence rules below.
 
@@ -278,11 +292,28 @@ jobs:
         ${{ needs.preflight.outputs.bootstrap_repos }}
         Only the repos listed there need work. When the list is not empty, add
         the label program-tracker to the tracker issue when it lacks it, and
-        create the label first when the repository has none. Then, for each
-        listed repo, file one issue in that repo that links back to the tracker
-        issue and add it to the Project. Skip a listed repo that already has a
-        Project item. If an issue cannot be filed in a repo, say so in your
-        tracker comment.
+        create the label first when the repository has none. Then work through
+        the listed repos one at a time. Immediately before each bootstrap
+        action in a repo, run gh repo view <repo> --json visibility. If the result is not PUBLIC,
+        skip the repo silently and do not mention it. Before you file in a
+        repo, search that repo for an open issue authored by fro-bot that links
+        the tracker issue URL. If you find one, add that issue to the Project
+        and do not file a new one. Otherwise file one issue in that repo that
+        links back to the tracker issue and add it to the Project. Skip a
+        listed repo that already has a Project item. If an issue cannot be
+        filed in a repo that is still public, say so in your tracker comment.
+        Report a filing failure only for a repo that is still public.
+
+        Blocked repos. Confirmed repos that have issues disabled (JSON array,
+        empty when none):
+        ${{ needs.preflight.outputs.bootstrap_blocked }}
+        Do not file in these repos. When the list is not empty and this run
+        woke for another reason, end your tracker comment with one operator
+        step that names each blocked repo once and asks the operator to enable
+        issues there.
+
+        Requests. Keep this line near the top of the body: Requests go in
+        comments on this issue. Edits to this body are not read as requests.
 
         Body size. GitHub rejects an issue body over 65,536 bytes. In the
         cross-repo dependency matrix, list only the dependencies whose Project

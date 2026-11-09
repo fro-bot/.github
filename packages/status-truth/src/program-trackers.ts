@@ -194,6 +194,19 @@ export function confirmedReposMissing(
   })
 }
 
+/**
+ * Split the confirmed repos that need a bootstrap into those the tracker can file in and those with issues
+ * disabled, which it cannot. Both lists keep config order; names compare ignoring case.
+ */
+export function partitionBootstrapRepos(
+  missing: readonly ConfirmedRepo[],
+  issuesDisabled: ReadonlySet<string>,
+): {ready: ConfirmedRepo[]; blocked: ConfirmedRepo[]} {
+  const disabled = new Set([...issuesDisabled].map(name => name.toLowerCase()))
+  const isBlocked = (repo: ConfirmedRepo): boolean => disabled.has(repo.nameWithOwner.toLowerCase())
+  return {ready: missing.filter(repo => !isBlocked(repo)), blocked: missing.filter(repo => isBlocked(repo))}
+}
+
 /** Whether a repository visibility value, from `gh api` or `gh repo view`, means public. */
 export function isPublicVisibility(value: string): boolean {
   return value.toLowerCase() === 'public'
