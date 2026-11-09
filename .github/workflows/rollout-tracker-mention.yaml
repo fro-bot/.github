@@ -2,30 +2,31 @@
 name: Rollout Tracker Mention
 
 # An `issue_comment` run is credential-withheld for the agent, so it can read
-# but not write. This workflow only decides whether to dispatch: an `@fro-bot`
-# comment by marcusrbrown on fro-bot/.github#3512 starts a
-# gateway-rollout-tracker.yaml run, which holds the credential. The dispatch
-# carries the comment ID as plain data; the tracker run reads the operator
-# comments itself. The Fro Bot content job skips these same comments, so the
-# operator gets one reply.
+# but not write. This workflow only decides whether to dispatch: a comment by a
+# program's operator on that program's tracker issue (a new comment that
+# mentions `@fro-bot`, or any edit of an operator comment) starts a
+# gateway-rollout-tracker.yaml run, which holds the credential. Which issue and
+# which operator belong to which program comes from program-trackers.json on the
+# default branch. The dispatch carries the program, the comment ID and the event
+# kind as plain data; the tracker run reads the operator comments itself. The
+# Fro Bot content job skips these same comments, so the operator gets one reply.
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions: {}
 
 jobs:
   dispatch-tracker:
-    name: Dispatch the rollout tracker
+    name: Dispatch the program tracker
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: >-
-      github.event.issue.number == 3512 &&
       github.event.issue.pull_request == null &&
-      github.event.comment.user.login == 'marcusrbrown' &&
-      contains(github.event.comment.body || '', '@fro-bot')
+      (github.event.action == 'edited' || contains(github.event.comment.body || '', '@fro-bot'))
     permissions:
+      contents: read
       actions: write
     steps:
       - name: Dispatch the tracker run
@@ -33,10 +34,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_USER_ID: ${{ github.event.comment.user.id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_EVENT: ${{ github.event.action }}
         run: |
           set -euo pipefail
           if ! [[ "$COMMENT_ID" =~ ^[0-9]+$ ]]; then
             printf '::error::comment id shape invalid\n' >&2
             exit 1
           fi
-          gh workflow run gateway-rollout-tracker.yaml --ref main -f comment_id="$COMMENT_ID"
+          if ! [[ "$COMMENT_USER_ID" =~ ^[0-9]+$ ]]; then
+            printf '::error::comment user id shape invalid\n' >&2
+            exit 1
+          fi
+          if ! [[ "$ISSUE_NUMBER" =~ ^[0-9]+$ ]]; then
+            printf '::error::issue number shape invalid\n' >&2
+            exit 1
+          fi
+          if [ "$COMMENT_EVENT" != created ] && [ "$COMMENT_EVENT" != edited ]; then
+            printf '::error::comment event invalid\n' >&2
+            exit 1
+          fi
+          # A failed read or a malformed file fails the run. It never means "no program".
+          CONFIG="$(gh api -H 'Accept: application/vnd.github.raw' "repos/${GH_REPO}/contents/program-trackers.json")"
+          PROGRAM="$(printf '%s' "$CONFIG" | jq -r --arg issue "${GH_REPO}#${ISSUE_NUMBER}" --argjson uid "$COMMENT_USER_ID" \
+            '[.programs[] | select((.issue | ascii_downcase) == ($issue | ascii_downcase) and .operator.id == $uid)] | .[0].key // empty')"
+          if [ -z "$PROGRAM" ]; then
+            printf '::notice::not a configured operator comment; nothing to dispatch\n'
+            exit 0
+          fi
+          if ! [[ "$PROGRAM" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            printf '::error::program key shape invalid\n' >&2
+            exit 1
+          fi
+          gh workflow run gateway-rollout-tracker.yaml --ref main \
+            -f program="$PROGRAM" -f comment_id="$COMMENT_ID" -f comment_event="$COMMENT_EVENT"

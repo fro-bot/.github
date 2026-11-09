@@ -13,9 +13,10 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
-import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
+import {evaluateExpression, evaluateExpressionValue} from '@fro-bot/test-kit/workflow-expression'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
+import {issueRef, parseProgramTrackers} from '../packages/status-truth/src/program-trackers.ts'
 
 interface WorkflowStep {
   name?: string
@@ -49,6 +50,7 @@ interface WorkflowInput {
 function assertWorkflowShape(value: unknown): asserts value is {
   on: Record<string, unknown>
   env?: Record<string, unknown>
+  concurrency?: unknown
   jobs: Record<string, WorkflowJob>
 } {
   if (
@@ -678,11 +680,16 @@ function pullRequestEvent({login, ref, fork = false, fullName = 'fro-bot/.github
   }
 }
 
+/** The operator of #3512: the content job leaves this user's tracker comments and issue edits to the tracker. */
+const OPERATOR_ID = 831617
+const STRANGER_ID = 4242
+
 function commentEvent(fixture: {
   eventName?: string
   issueNumber: number
   pullRequest?: boolean
   login: string
+  userId?: number
   body?: string
   association?: string
 }): unknown {
@@ -693,22 +700,29 @@ function commentEvent(fixture: {
         issue: {number: fixture.issueNumber, pull_request: fixture.pullRequest === true ? {url: 'pr'} : null},
         comment: {
           body: fixture.body ?? '@fro-bot status?',
-          user: {login: fixture.login},
+          user: {login: fixture.login, id: fixture.userId ?? STRANGER_ID},
           author_association: fixture.association ?? 'OWNER',
         },
+        sender: {login: fixture.login, id: fixture.userId ?? STRANGER_ID},
       },
     },
   }
 }
 
-function issuesEvent(fixture: {action: 'opened' | 'edited'; authorLogin: string; senderLogin: string}): unknown {
+function issuesEvent(fixture: {
+  action: 'opened' | 'edited'
+  authorLogin: string
+  senderLogin: string
+  senderId?: number
+  issueNumber?: number
+}): unknown {
   return {
     github: {
       event_name: 'issues',
       event: {
         action: fixture.action,
-        issue: {number: 3512, user: {login: fixture.authorLogin}, author_association: 'OWNER'},
-        sender: {login: fixture.senderLogin},
+        issue: {number: fixture.issueNumber ?? 3511, user: {login: fixture.authorLogin}, author_association: 'OWNER'},
+        sender: {login: fixture.senderLogin, id: fixture.senderId ?? STRANGER_ID},
       },
     },
   }
@@ -725,7 +739,13 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     // bypass appended to one clause — neither a substring/contains check on a single
     // clause would detect either. This is a static string comparison, not a live GHA evaluation.
     const expectedIf = `
-      (
+      !(
+        github.event.issue.pull_request == null &&
+        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
+        (
+          (github.event.issue.number == 3512 && github.event.sender.id == 831617)
+        )
+      ) && (
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
@@ -750,12 +770,6 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
            github.event_name == 'discussion_comment') &&
           contains(github.event.comment.body || '', '@fro-bot') &&
           (github.event.comment.user.login || '') != 'fro-bot' &&
-          !(
-            github.event_name == 'issue_comment' &&
-            github.event.issue.number == 3512 &&
-            github.event.issue.pull_request == null &&
-            github.event.comment.user.login == 'marcusrbrown'
-          ) &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
         )
       )
@@ -783,19 +797,24 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
 
   it.each([
     [
-      'a marcusrbrown mention on #3512 (the tracker mention workflow answers it)',
-      {issueNumber: 3512, login: 'marcusrbrown'},
+      'the operator mentioning on #3512 (the tracker mention workflow answers it)',
+      {issueNumber: 3512, login: 'marcusrbrown', userId: OPERATOR_ID},
       false,
     ],
     [
-      'a MarcusRBrown mention on #3512 (logins compare case-insensitively)',
-      {issueNumber: 3512, login: 'MarcusRBrown'},
+      'the operator under a different login case (the user id decides, not the login)',
+      {issueNumber: 3512, login: 'MarcusRBrown', userId: OPERATOR_ID},
       false,
     ],
-    ['a marcusrbrown mention on another issue', {issueNumber: 3511, login: 'marcusrbrown'}, true],
     [
-      'a marcusrbrown mention on pull request 3512',
-      {issueNumber: 3512, pullRequest: true, login: 'marcusrbrown'},
+      'a user who only borrows the operator login on #3512',
+      {issueNumber: 3512, login: 'marcusrbrown', userId: STRANGER_ID},
+      true,
+    ],
+    ['the operator mentioning on another issue', {issueNumber: 3511, login: 'marcusrbrown', userId: OPERATOR_ID}, true],
+    [
+      'the operator mentioning on pull request 3512',
+      {issueNumber: 3512, pullRequest: true, login: 'marcusrbrown', userId: OPERATOR_ID},
       true,
     ],
     [
@@ -804,14 +823,14 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
       true,
     ],
     [
-      'a marcusrbrown comment on #3512 without a mention',
-      {issueNumber: 3512, login: 'marcusrbrown', body: 'ack'},
+      'the operator commenting on #3512 without a mention',
+      {issueNumber: 3512, login: 'marcusrbrown', userId: OPERATOR_ID, body: 'ack'},
       false,
     ],
     ['an untrusted author mentioning on #3512', {issueNumber: 3512, login: 'octocat', association: 'NONE'}, false],
     [
-      'a marcusrbrown review comment on pull request 3512',
-      {eventName: 'pull_request_review_comment', issueNumber: 3512, login: 'marcusrbrown'},
+      'the operator reviewing a comment on pull request 3512',
+      {eventName: 'pull_request_review_comment', issueNumber: 3512, login: 'marcusrbrown', userId: OPERATOR_ID},
       true,
     ],
   ])('evaluates the comment predicate against a fixture: %s', (_name, fixture, expected) => {
@@ -826,7 +845,29 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   ] as const)(
     'evaluates the issues predicate against a fixture: %s',
     (_name, action, authorLogin, senderLogin, expected) => {
-      expect(evaluateExpression(contentIf, issuesEvent({action, authorLogin, senderLogin}))).toBe(expected)
+      const senderId = senderLogin === 'marcusrbrown' ? OPERATOR_ID : STRANGER_ID
+
+      expect(evaluateExpression(contentIf, issuesEvent({action, authorLogin, senderLogin, senderId}))).toBe(expected)
+    },
+  )
+
+  it.each([
+    ['the operator edits the body of a configured tracker issue', 'edited', 3512, OPERATOR_ID, false],
+    ['the operator opens a configured tracker issue', 'opened', 3512, OPERATOR_ID, false],
+    ['another user edits the body of a configured tracker issue', 'edited', 3512, STRANGER_ID, true],
+    ['the operator edits an issue that is no tracker', 'edited', 3511, OPERATOR_ID, true],
+  ] as const)(
+    'skips the operator issues events on a configured tracker issue only: %s',
+    (_name, action, issueNumber, senderId, expected) => {
+      const event = issuesEvent({
+        action,
+        authorLogin: 'marcusrbrown',
+        senderLogin: 'marcusrbrown',
+        senderId,
+        issueNumber,
+      })
+
+      expect(evaluateExpression(contentIf, event)).toBe(expected)
     },
   )
 
@@ -1331,5 +1372,107 @@ describe('fro-bot.yaml agent prompts leave knowledge/index.md to the trusted ing
 
   it.each(promptTexts.slice(1))('%s still permits knowledge/wiki/** and knowledge/log.md edits', (_name, text) => {
     expect(text.replaceAll(/\s+/g, ' ')).toContain('update only `knowledge/wiki/**` and `knowledge/log.md`')
+  })
+})
+
+describe('fro-bot.yaml concurrency group', () => {
+  const concurrency = froBotParsed.concurrency as {group?: string; 'cancel-in-progress'?: boolean} | undefined
+  const group = String(concurrency?.group)
+  const inner = /\$\{\{([\s\S]*)\}\}/.exec(group)?.[1] ?? ''
+  const groupFor = (context: unknown): string =>
+    `${group.slice(0, group.indexOf('$'))}${String(evaluateExpressionValue(inner, context))}`
+
+  it('declares a concurrency-key input for reusable callers, empty by default', () => {
+    const inputs = (froBotParsed.on.workflow_call as {inputs?: Record<string, WorkflowInput>}).inputs ?? {}
+
+    expect(inputs['concurrency-key']).toMatchObject({required: false, type: 'string', default: ''})
+  })
+
+  it("puts a caller that passes the key in that key's group, ahead of the daily group", () => {
+    const tracker = {
+      github: {event_name: 'workflow_dispatch', run_id: 55, event: {}},
+      inputs: {'concurrency-key': 'program-tracker-gateway'},
+    }
+
+    expect(groupFor(tracker)).toBe('fro-bot-program-tracker-gateway')
+    expect(groupFor({...tracker, github: {...tracker.github, event_name: 'schedule'}})).toBe(
+      'fro-bot-program-tracker-gateway',
+    )
+  })
+
+  it.each([
+    ['a scheduled run', {github: {event_name: 'schedule', run_id: 55, event: {}}, inputs: {}}, 'fro-bot-daily'],
+    [
+      'a manual dispatch',
+      {
+        github: {event_name: 'workflow_dispatch', run_id: 55, event: {}},
+        inputs: {prompt: 'x', 'output-mode': 'branch-pr'},
+      },
+      'fro-bot-daily',
+    ],
+    [
+      'a reusable caller that passes no key, from a dispatch',
+      {github: {event_name: 'workflow_dispatch', run_id: 55, event: {}}, inputs: {prompt: 'x', 'concurrency-key': ''}},
+      'fro-bot-daily',
+    ],
+    [
+      'a comment on issue 7',
+      {github: {event_name: 'issue_comment', run_id: 55, event: {issue: {number: 7}}}, inputs: {}},
+      'fro-bot-7',
+    ],
+    [
+      'a pull request 12',
+      {github: {event_name: 'pull_request', run_id: 55, event: {pull_request: {number: 12}}}, inputs: {}},
+      'fro-bot-12',
+    ],
+    [
+      'a discussion 3',
+      {github: {event_name: 'discussion_comment', run_id: 55, event: {discussion: {number: 3}}}, inputs: {}},
+      'fro-bot-3',
+    ],
+    ['an event with no number', {github: {event_name: 'push', run_id: 55, event: {}}, inputs: {}}, 'fro-bot-55'],
+  ])('keeps the group of %s', (_name, context, expected) => {
+    expect(groupFor(context)).toBe(expected)
+  })
+
+  it('never cancels a run in progress', () => {
+    expect(concurrency?.['cancel-in-progress']).toBe(false)
+  })
+})
+
+describe('fro-bot.yaml content-job tracker exclusion matches program-trackers.json', () => {
+  const contentIf = String(froBotParsed.jobs['fro-bot']?.if ?? '')
+  const config = parseProgramTrackers(readFileSync(resolve(import.meta.dirname, '../program-trackers.json'), 'utf8'))
+  const literalPairs = [
+    ...contentIf.matchAll(/github\.event\.issue\.number == (\d+) && github\.event\.sender\.id == (\d+)/g),
+  ].map(match => `${match[1]}:${match[2]}`)
+
+  it('carries one issue-number and operator-ID pair for each configured program, and no other', () => {
+    const configured = config.programs.map(entry => `${issueRef(entry).number}:${entry.operator.id}`)
+
+    expect(literalPairs.sort()).toEqual(configured.sort())
+  })
+
+  it('serves tracker issues of this repository only, because the job can only name an issue number', () => {
+    for (const entry of config.programs) {
+      expect(issueRef(entry).repo).toBe('fro-bot/.github')
+    }
+  })
+
+  it("skips each configured operator on that program's issue and no one else", () => {
+    for (const entry of config.programs) {
+      const issueNumber = issueRef(entry).number
+      const operator = commentEvent({issueNumber, login: entry.operator.login, userId: entry.operator.id})
+      const stranger = commentEvent({issueNumber, login: entry.operator.login, userId: entry.operator.id + 1})
+      const elsewhere = commentEvent({
+        issueNumber: issueNumber + 1,
+        login: entry.operator.login,
+        userId: entry.operator.id,
+      })
+
+      expect(evaluateExpression(contentIf, operator)).toBe(false)
+      expect(evaluateExpression(contentIf, stranger)).toBe(true)
+      expect(evaluateExpression(contentIf, elsewhere)).toBe(true)
+    }
   })
 })

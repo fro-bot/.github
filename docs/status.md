@@ -6,6 +6,8 @@ This page carries machine-verifiable status claims. The [Status Truth workflow](
 
 The Gateway operator rollout tracker #3512 is open.
 
+The cross-repo programs the tracker serves are listed in [`program-trackers.json`](../program-trackers.json); the Gateway rollout is the first entry.
+
 ## Plans
 
 docs/plans/2026-06-22-003-feat-enrich-capture-digest-plan.md is complete.

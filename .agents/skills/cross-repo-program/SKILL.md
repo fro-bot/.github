@@ -45,7 +45,7 @@ The start run creates an issue and a Project before confirmation. That costs at 
 | Field | Meaning |
 | --- | --- |
 | `key` | Short unique name. The tracker workflow takes it as `program` |
-| `issue` | `owner/repo#n` of the tracker issue |
+| `issue` | `owner/repo#n` of the tracker issue. It lives in `fro-bot/.github`, because the relay and the content job only see this repository's comments |
 | `project` | `owner`, `number` and the `gateField` name of the free-text gate column |
 | `operator` | Numeric `id` and `login` of the one person whose comments drive the program |
 | `evidence` | `gateway` for #3512's releases, deploys and health contract. `none` for a program whose evidence is issue and PR state |

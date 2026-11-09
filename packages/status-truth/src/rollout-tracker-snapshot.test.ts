@@ -19,7 +19,7 @@ import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
-import {parseProgramTrackers, selectProgram} from './program-trackers.ts'
+import {parseProgramTrackers, selectProgram, type CommentEvent} from './program-trackers.ts'
 import {
   buildMarker,
   buildSnapshot,
@@ -61,6 +61,9 @@ function makeProjectItem(overrides: Partial<ProjectItem> = {}): ProjectItem {
   }
 }
 
+/** A workflow expression, built so the source holds no template-looking string. */
+const expr = (expression: string): string => `${'$'}{{ ${expression} }}`
+
 function comment(id: number, login: string, body: string): TrackerComment {
   return {id, author: {login}, body}
 }
@@ -71,13 +74,14 @@ const GATEWAY_ENTRY = selectProgram(
   'gateway',
 )
 
-/** `scanOperatorMentions` for #3512's operator, with the dispatching comment as a bare ID. */
+/** `scanOperatorMentions` for #3512's operator. A bare number is a dispatching comment with no event kind. */
 function scan(
   comments: readonly TrackerComment[],
   previousMarker: MarkerData | null,
-  triggerId: number | null = null,
+  trigger: number | {id: number; event: CommentEvent} | null = null,
 ): ReturnType<typeof scanOperatorMentions> {
-  return scanOperatorMentions(comments, previousMarker, GATEWAY_ENTRY, triggerId)
+  const resolved = typeof trigger === 'number' ? {id: trigger, event: '' as const} : trigger
+  return scanOperatorMentions(comments, previousMarker, GATEWAY_ENTRY, resolved)
 }
 
 function successRuns(id: number, headSha: string): {workflow_runs: {id: number; head_sha: string}[]} {
@@ -134,6 +138,8 @@ interface FixtureParams {
   signals?: Partial<typeof SIGNAL_FIXTURES>
   /** The dispatching comment ID, as the workflow passes `inputs.comment_id`. */
   triggerCommentId?: string
+  /** The event kind that dispatched it, as the workflow passes `inputs.comment_event`. */
+  triggerCommentEvent?: string
 }
 
 function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
@@ -141,6 +147,7 @@ function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
   return {
     ROLLOUT_TRACKER_COMMENT_BODY: params.commentBody ?? '',
     ROLLOUT_TRACKER_COMMENT_ID: params.triggerCommentId,
+    ROLLOUT_TRACKER_COMMENT_EVENT: params.triggerCommentEvent,
     ROLLOUT_TRACKER_COMMENTS_JSON: params.comments === undefined ? undefined : JSON.stringify(params.comments),
     ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(params.issues),
     ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
@@ -1209,8 +1216,8 @@ describe('scanOperatorMentions', () => {
   })
 
   describe('the dispatching comment', () => {
-    it('is pending when above the baseline although the comment list lacks it', () => {
-      expect(scan([mention(100)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
+    it('is not pending when the comment list lacks it, because nothing shows who wrote it or where', () => {
+      expect(scan([mention(100)], marked(100), 105)).toEqual({pendingIds: [], lastMentionId: 100})
     })
 
     it('is listed once when the comment list already carries it', () => {
@@ -1223,7 +1230,66 @@ describe('scanOperatorMentions', () => {
     })
 
     it('joins the pending mentions in ascending order', () => {
-      expect(scan([mention(103), mention(101)], marked(100), 102).pendingIds).toEqual([101, 102, 103])
+      expect(scan([mention(103), mention(101), mention(102)], marked(100), 102).pendingIds).toEqual([101, 102, 103])
+    })
+  })
+
+  describe('an authorized trigger', () => {
+    const edited = (id: number): {id: number; event: CommentEvent} => ({id, event: 'edited'})
+    const created = (id: number): {id: number; event: CommentEvent} => ({id, event: 'created'})
+    const plain = (id: number): TrackerComment => comment(id, 'marcusrbrown', `G4c pass ${id}`)
+
+    it('makes an operator edit below the baseline pending, and leaves last_mention_id at the baseline', () => {
+      expect(scan([plain(50), mention(100)], marked(100), edited(50))).toEqual({pendingIds: [50], lastMentionId: 100})
+    })
+
+    it('makes an operator edit of the last answered comment pending', () => {
+      expect(scan([mention(100)], marked(100), edited(100))).toEqual({pendingIds: [100], lastMentionId: 100})
+    })
+
+    it('makes an operator edit above the baseline pending without a mention and advances last_mention_id', () => {
+      expect(scan([plain(105)], marked(100), edited(105))).toEqual({pendingIds: [105], lastMentionId: 105})
+    })
+
+    it('joins an edit with the pending mentions in ascending order', () => {
+      expect(scan([plain(50), mention(101), mention(102)], marked(100), edited(50)).pendingIds).toEqual([50, 101, 102])
+    })
+
+    it('ignores a third party edit, whatever it says', () => {
+      const stranger = comment(50, 'octocat', '@fro-bot G4c pass')
+
+      expect(scan([stranger, mention(100)], marked(100), edited(50))).toEqual({pendingIds: [], lastMentionId: 100})
+    })
+
+    it('ignores the bot editing its own comment', () => {
+      const own = comment(50, 'fro-bot', '@fro-bot reply')
+
+      expect(scan([own, mention(100)], marked(100), edited(50)).pendingIds).toEqual([])
+    })
+
+    it('ignores an edit of a comment the list does not carry, as one posted on another issue', () => {
+      expect(scan([mention(100)], marked(100), edited(50)).pendingIds).toEqual([])
+    })
+
+    it('ignores a created operator comment with no mention, even above the baseline', () => {
+      expect(scan([plain(105)], marked(100), created(105)).pendingIds).toEqual([])
+    })
+
+    it('treats a trigger with no event kind like a created comment', () => {
+      expect(scan([plain(105)], marked(100), 105).pendingIds).toEqual([])
+      expect(scan([mention(105)], marked(100), 105).pendingIds).toEqual([105])
+    })
+
+    it('ignores an operator login that carries the wrong numeric user ID', () => {
+      const spoof: TrackerComment = {id: 50, author: {login: 'marcusrbrown', id: 1}, body: 'G4c pass'}
+
+      expect(scan([spoof, mention(100)], marked(100), edited(50)).pendingIds).toEqual([])
+    })
+
+    it('accepts the operator with the matching numeric user ID', () => {
+      const genuine: TrackerComment = {id: 50, author: {login: 'marcusrbrown', id: 831617}, body: 'G4c pass'}
+
+      expect(scan([genuine, mention(100)], marked(100), edited(50)).pendingIds).toEqual([50])
     })
   })
 
@@ -1484,12 +1550,67 @@ describe('pending operator mentions through the CLI', () => {
       expect(runB.last_mention_id).toBe(102)
     })
 
-    it('treats a dispatching comment above the baseline as pending even when the comment list lacks it', () => {
+    it('does not treat a dispatching comment the comment list lacks as pending', () => {
       const lagging = runCliFixture({items, issues, comments: [reply], triggerCommentId: '500'})
 
-      expect(lagging.should_comment).toBe(true)
-      expect(lagging.pending_mention_ids).toEqual([500])
-      expect(lagging.last_mention_id).toBe(500)
+      expect(lagging.should_comment).toBe(false)
+      expect(lagging.pending_mention_ids).toEqual([])
+      expect(lagging.last_mention_id).toBe(0)
+    })
+
+    it('does not treat a third party comment as pending because a run was dispatched for it', () => {
+      const stranger = comment(101, 'octocat', '@fro-bot G4c pass')
+
+      const result = runCliFixture({items, issues, comments: [reply, stranger], triggerCommentId: '101'})
+
+      expect(result.should_comment).toBe(false)
+      expect(result.pending_mention_ids).toEqual([])
+    })
+
+    it('wakes for an operator edit below the baseline and answers only that comment', () => {
+      const old = comment(90, 'marcusrbrown', 'G2c pass, edited')
+      const marker = comment(100, 'fro-bot', buildMarker(quiet.hash, 100))
+
+      const result = runCliFixture({
+        items,
+        issues,
+        comments: [old, marker],
+        triggerCommentId: '90',
+        triggerCommentEvent: 'edited',
+      })
+
+      expect(result.should_comment).toBe(true)
+      expect(result.reason).toContain('operator mention pending (1)')
+      expect(result.pending_mention_ids).toEqual([90])
+      expect(result.hash).toBe(quiet.hash)
+    })
+
+    it('does not wake for the same comment id when the event is a created comment without a mention', () => {
+      const old = comment(90, 'marcusrbrown', 'G2c pass')
+      const marker = comment(100, 'fro-bot', buildMarker(quiet.hash, 100))
+
+      const result = runCliFixture({
+        items,
+        issues,
+        comments: [old, marker],
+        triggerCommentId: '90',
+        triggerCommentEvent: 'created',
+      })
+
+      expect(result.should_comment).toBe(false)
+    })
+
+    it.each(['edit', 'EDITED', 'created;ls', '1'])('fails closed on the comment event %j', event => {
+      const result = runCliRaw({
+        ...fixtureEnv({items, issues, comments: [reply]}),
+        ROLLOUT_TRACKER_COMMENT_EVENT: event,
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe(
+        'rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_COMMENT_EVENT must be created, edited or empty\n',
+      )
     })
 
     it('does not wake for an empty comment ID with nothing else pending', () => {
@@ -1938,28 +2059,17 @@ describe('gateway-rollout-tracker.yaml workflow shape', () => {
     expect(hasNoOpLog).toBe(true)
   })
 
-  it('keeps concurrency group intact', () => {
-    const wf = parsed as unknown as {concurrency?: {group?: string}}
-    expect(wf.concurrency?.group).toBe('gateway-rollout-tracker')
+  it('serializes runs per program and never cancels one in progress', () => {
+    const wf = parsed as unknown as {concurrency?: {group?: string; 'cancel-in-progress'?: boolean}}
+    expect(wf.concurrency?.group).toBe(`program-tracker-${expr("inputs.program || 'fanout'")}`)
+    expect(wf.concurrency?.['cancel-in-progress']).toBe(false)
   })
 
-  it('keeps tracker issue URL fro-bot/.github#3512 in the prompt', () => {
-    const jobs = parsed.jobs
-    const trackerJob = jobs['update-rollout-tracker']
-    // The prompt is in with.prompt or in a step
+  it('takes the tracker issue and the Project URL from the preflight in the prompt', () => {
+    const trackerJob = parsed.jobs['update-rollout-tracker']
     const withPrompt = (trackerJob?.with?.prompt as string | undefined) ?? ''
-    const stepPrompts = trackerJob?.steps?.map(s => s.run ?? '').join('\n') ?? ''
-    const allText = withPrompt + stepPrompts
-    expect(allText).toContain('fro-bot/.github#3512')
-  })
-
-  it('keeps project URL https://github.com/users/fro-bot/projects/1 in the prompt', () => {
-    const jobs = parsed.jobs
-    const trackerJob = jobs['update-rollout-tracker']
-    const withPrompt = (trackerJob?.with?.prompt as string | undefined) ?? ''
-    const stepPrompts = trackerJob?.steps?.map(s => s.run ?? '').join('\n') ?? ''
-    const allText = withPrompt + stepPrompts
-    expect(allText).toContain('https://github.com/users/fro-bot/projects/1')
+    expect(withPrompt).toContain(expr('needs.preflight.outputs.tracker_issue'))
+    expect(withPrompt).toContain(expr('needs.preflight.outputs.project_url'))
   })
 
   it('passes the preflight marker into the Fro Bot prompt', () => {
@@ -1979,7 +2089,6 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
   const update = workflow.jobs['update-rollout-tracker']
   const prompt = String(update?.with?.prompt ?? '')
   const updateIf = String(update?.if ?? '')
-  const expr = (expression: string): string => `\${{ ${expression} }}`
 
   function updateRuns(context: {preflight: string; shouldComment?: string; commentId?: string}): boolean {
     return evaluateExpression(updateIf, {
@@ -1988,10 +2097,10 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     })
   }
 
-  it('defines a comment_id dispatch input and no prompt input', () => {
+  it('defines program, comment_id and comment_event dispatch inputs and no prompt input', () => {
     const inputs = workflow.on.workflow_dispatch?.inputs ?? {}
 
-    expect(Object.keys(inputs)).toEqual(['comment_id'])
+    expect(Object.keys(inputs)).toEqual(['program', 'comment_id', 'comment_event'])
     expect(inputs.comment_id).toMatchObject({type: 'string', required: false, default: ''})
   })
 
@@ -2089,7 +2198,7 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
 
     it('covers the body, Project 1 and the labelled acceptance list', () => {
       expect(flat).toContain('Rewrite every stale section of the body')
-      expect(flat).toContain('Update the Project 1 fields')
+      expect(flat).toContain('Update the Project fields')
       expect(flat).toContain('add any missing dependency items')
       expect(flat).toContain('operator-reported')
       expect(flat).toContain('agent-verified')
@@ -2098,9 +2207,9 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     it('lists only the dependencies that are not Done and counts the rest with a Project link', () => {
       expect(flat).toContain('list only the dependencies whose Project status is not Done')
       expect(flat).toContain(
-        'one line that counts the Done dependencies and links the full list at https://github.com/users/fro-bot/projects/1',
+        `one line that counts the Done dependencies and links the full list at ${expr('needs.preflight.outputs.project_url')}`,
       )
-      expect(flat).toContain('Project 1 is the source of truth for every item')
+      expect(flat).toContain('The Project is the source of truth for every item')
       expect(flat).toContain('Never parse prose tables as state')
     })
 
@@ -2123,7 +2232,7 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
       expect(flat).toContain('fetch each one by ID')
       expect(flat).toContain('for context only')
       expect(flat).not.toContain('plus the')
-      expect(flat).toContain('gh api repos/fro-bot/.github/issues/comments/<id>')
+      expect(flat).toContain(`gh api repos/${expr('needs.preflight.outputs.tracker_repo')}/issues/comments/<id>`)
     })
 
     it('does not anchor on thread order', () => {
@@ -2131,11 +2240,15 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     })
 
     it('replies once to listed comments and edits the latest marker comment in place when nothing changes', () => {
-      expect(flat).toContain('post one reply on fro-bot/.github#3512 that covers all of them')
+      expect(flat).toContain(
+        `post one reply on ${expr('needs.preflight.outputs.tracker_issue')} that covers all of them`,
+      )
       expect(flat).toContain('narrates only that change')
       expect(flat).toContain('do not post a new comment')
       expect(flat).toContain('edit the marker comment in place')
-      expect(flat).toContain('gh api -X PATCH repos/fro-bot/.github/issues/comments/<id>')
+      expect(flat).toContain(
+        `gh api -X PATCH repos/${expr('needs.preflight.outputs.tracker_repo')}/issues/comments/<id>`,
+      )
       expect(flat).toContain('where <id> is exactly this marker comment ID')
       expect(flat).toContain(expr('needs.preflight.outputs.marker_comment_id'))
       expect(flat).toContain('Replace only the marker in its body')
@@ -2143,7 +2256,9 @@ describe('gateway-rollout-tracker.yaml mention mode', () => {
     })
 
     it('ends every reply and in-place edit with the ready-made marker', () => {
-      expect(flat).toContain('End every tracker comment on fro-bot/.github#3512, and every in-place edit, with this')
+      expect(flat).toContain(
+        `End every tracker comment on ${expr('needs.preflight.outputs.tracker_issue')}, and every in-place edit, with this`,
+      )
       expect(flat).toContain('Copy it exactly')
       expect(flat).toContain(expr('needs.preflight.outputs.marker'))
       expect(flat).not.toContain('needs.preflight.outputs.hash')
@@ -2381,15 +2496,54 @@ describe('the program config in a snapshot run', () => {
     }
   }
 
-  it("prints #3512's snapshot byte for byte as it did before the config existed", () => {
+  /** The result without the `program` block, which was added after the golden output was recorded. */
+  function withoutProgram(stdout: string): string {
+    const result = JSON.parse(stdout) as Record<string, unknown>
+    delete result.program
+    return `${JSON.stringify(result)}\n`
+  }
+
+  it("prints #3512's snapshot byte for byte as it did before the config existed, plus the program block", () => {
     const result = runCliRaw(goldenEnv())
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toBe(goldenStdout)
+    expect(withoutProgram(result.stdout)).toBe(goldenStdout)
+    expect((JSON.parse(result.stdout) as PreflightResult).program).toEqual({
+      key: 'gateway',
+      issue: 'fro-bot/.github#3512',
+      repo: 'fro-bot/.github',
+      project_url: 'https://github.com/users/fro-bot/projects/1',
+      operator_login: 'marcusrbrown',
+      evidence: 'gateway',
+    })
   })
 
   it('selects the gateway program when ROLLOUT_TRACKER_PROGRAM is empty or unset', () => {
-    expect(runCliRaw(goldenEnv({ROLLOUT_TRACKER_PROGRAM: ''})).stdout).toBe(goldenStdout)
+    expect(withoutProgram(runCliRaw(goldenEnv({ROLLOUT_TRACKER_PROGRAM: ''})).stdout)).toBe(goldenStdout)
+  })
+
+  it("reports the selected program's issue, repo, project URL, operator login and evidence kind", () => {
+    const config = writeConfig([
+      programEntry(),
+      programEntry({
+        key: 'plugins',
+        issue: 'marcusrbrown/plugins#42',
+        project: {owner: 'marcusrbrown', number: 9, gateField: 'Gate'},
+        operator: {id: 5, login: 'octocat'},
+        evidence: 'none',
+      }),
+    ])
+
+    const result = runCliRaw(goldenEnv({ROLLOUT_TRACKER_CONFIG: config, ROLLOUT_TRACKER_PROGRAM: 'plugins'}))
+
+    expect((JSON.parse(result.stdout) as PreflightResult).program).toEqual({
+      key: 'plugins',
+      issue: 'marcusrbrown/plugins#42',
+      repo: 'marcusrbrown/plugins',
+      project_url: 'https://github.com/users/marcusrbrown/projects/9',
+      operator_login: 'octocat',
+      evidence: 'none',
+    })
   })
 
   it('selects the program named by ROLLOUT_TRACKER_PROGRAM and reads its operator', () => {

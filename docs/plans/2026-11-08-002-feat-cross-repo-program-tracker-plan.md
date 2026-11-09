@@ -248,7 +248,7 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 
 **Verification:** #3512's output is unchanged, `program-trackers.ts` scores 100% under Stryker, and `bun run check:mutation-guards` is clean.
 
-- [ ] **Unit 3: Routing, edits relay, authorized triggers, fan-out and concurrency**
+- [x] **Unit 3: Routing, edits relay, authorized triggers, fan-out and concurrency**
 
 **Goal:** Routing comes from the config. Operator edits reach the tracker. Trigger comments must be authorized. The schedule and config pushes fan out one dispatch per program. Tracker runs stop sharing `fro-bot-daily`.
 

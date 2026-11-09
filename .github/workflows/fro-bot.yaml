@@ -60,6 +60,15 @@ on:
         required: false
         type: string
         default: working-dir
+      concurrency-key:
+        description: >-
+          Concurrency group suffix this caller needs, used ahead of the event-based
+          group. A caller that passes none keeps the group of its triggering event,
+          so schedule and workflow_dispatch callers share fro-bot-daily. The program
+          tracker passes one per program so its runs do not queue behind the daily pass.
+        required: false
+        type: string
+        default: ''
     secrets:
       FRO_BOT_PAT:
         description: GitHub PAT for Fro Bot write-tier actions
@@ -91,6 +100,7 @@ permissions:
 concurrency:
   group: >-
     fro-bot-${{
+      inputs.concurrency-key ||
       github.event.issue.number ||
       github.event.pull_request.number ||
       github.event.discussion.number ||
@@ -424,11 +434,11 @@ env:
        green precisely while this is stalled. Report under "Progressive
        Improvement"; make no changes here.
 
-    8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
-       Review awareness only. Compare #3512's checklist/status claims with the
-       corresponding GitHub Project 1 item status and the latest rollout evidence
-       in managed repositories; report any mismatch with both values. Summarize
-       drift in the Daily Fro Bot Report if found. Do not post tracker
+    8. PROGRAM TRACKERS
+       Review awareness only. For each program in program-trackers.json, compare
+       its tracker issue's checklist/status claims with the corresponding items on its GitHub Project
+       and the latest rollout evidence in managed repositories; report any mismatch with both values.
+       Summarize drift in the Daily Fro Bot Report if found. Do not post tracker
        comments or edit Project fields from this daily report path; the dedicated
        Gateway Rollout Tracker workflow owns tracker writes.
 
@@ -558,7 +568,13 @@ jobs:
       # handed-off pages against it.
       agent-base-sha: ${{ steps.sync-wiki.outputs.data-sha }}
     if: >-
-      (
+      !(
+        github.event.issue.pull_request == null &&
+        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
+        (
+          (github.event.issue.number == 3512 && github.event.sender.id == 831617)
+        )
+      ) && (
         github.event.pull_request == null ||
         (
           !github.event.pull_request.head.repo.fork &&
@@ -583,12 +599,6 @@ jobs:
            github.event_name == 'discussion_comment') &&
           contains(github.event.comment.body || '', '@fro-bot') &&
           (github.event.comment.user.login || '') != 'fro-bot' &&
-          !(
-            github.event_name == 'issue_comment' &&
-            github.event.issue.number == 3512 &&
-            github.event.issue.pull_request == null &&
-            github.event.comment.user.login == 'marcusrbrown'
-          ) &&
           contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
         )
       )

@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {evaluateExpression} from './workflow-expression.ts'
+import {evaluateExpression, evaluateExpressionValue} from './workflow-expression.ts'
 
 describe('evaluateExpression', () => {
   it('treats the number 0 as falsy, like Actions', () => {
@@ -31,5 +31,36 @@ describe('evaluateExpression', () => {
         github: {body: 'hi @fro-bot', actor: 'marcusrbrown'},
       }),
     ).toBe(true)
+  })
+})
+
+describe('evaluateExpressionValue', () => {
+  it('returns the first truthy operand of an || chain, as Actions does', () => {
+    expect(
+      evaluateExpressionValue("inputs.key || github.number || 'daily'", {inputs: {key: ''}, github: {number: 7}}),
+    ).toBe(7)
+    expect(
+      evaluateExpressionValue("inputs.key || github.number || 'daily'", {inputs: {key: 'k'}, github: {number: 7}}),
+    ).toBe('k')
+    expect(evaluateExpressionValue("inputs.key || 'daily'", {})).toBe('daily')
+  })
+
+  it('reads a property name that carries a hyphen', () => {
+    expect(evaluateExpressionValue('inputs.concurrency-key', {inputs: {'concurrency-key': 'program-tracker-x'}})).toBe(
+      'program-tracker-x',
+    )
+  })
+
+  it('returns the right operand of a truthy && and the left operand of a falsy one', () => {
+    expect(
+      evaluateExpressionValue("github.event_name == 'schedule' && 'daily'", {github: {event_name: 'schedule'}}),
+    ).toBe('daily')
+    expect(evaluateExpressionValue("github.event_name == 'schedule' && 'daily'", {github: {event_name: 'push'}})).toBe(
+      false,
+    )
+  })
+
+  it('rejects tokens it cannot parse', () => {
+    expect(() => evaluateExpressionValue("'a' 'b'", {})).toThrow(/unparsed tokens/)
   })
 })

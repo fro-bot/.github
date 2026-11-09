@@ -3,10 +3,12 @@ import {createHash} from 'node:crypto'
 import process from 'node:process'
 import {fileURLToPath} from 'node:url'
 import {
+  isAuthorizedTrigger,
   isOperatorComment,
   issueRef,
   loadProgramTrackers,
   selectProgram,
+  type CommentEvent,
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
@@ -103,6 +105,17 @@ export interface PreflightResult extends CommentDecision {
   marker: string
   /** The REST ID of the latest comment carrying a parseable marker; null when none exists. */
   marker_comment_id: number | null
+  /** The program this run served, from `program-trackers.json`; the tracker prompt is templated from it. */
+  program: {
+    key: string
+    /** The tracker issue as `owner/repo#n`. */
+    issue: string
+    /** The tracker issue's repository. */
+    repo: string
+    project_url: string
+    operator_login: string
+    evidence: EvidenceKind
+  }
 }
 
 export interface TrackerComment {
@@ -412,16 +425,18 @@ export function selectLatestMarkerCommentBody(comments: TrackerComment[]): strin
  * comment of any kind, because a reply without a marker still answered the mentions before it. With
  * no such comment, every operator mention is pending.
  *
- * `triggerId` is the comment that dispatched the run. It is pending when it is above the baseline,
- * even if the comment list does not contain it yet; a trigger at or below the baseline is already
- * acknowledged and is ignored. `lastMentionId` advances only to the highest pending ID and otherwise
- * stays at the baseline, so it never moves over a mention that is outside the answer set.
+ * `trigger` is the comment that dispatched the run. It counts only when the comment list carries it
+ * and `isAuthorizedTrigger` accepts it: the program's operator wrote it, and a created comment
+ * mentions the bot. A created trigger is pending when above the baseline. An edited trigger is
+ * pending at any ID, because the operator may have changed an older, already answered comment.
+ * `lastMentionId` advances only to the highest pending ID and otherwise stays at the baseline, so it
+ * never moves over a mention that is outside the answer set.
  */
 export function scanOperatorMentions(
   comments: readonly TrackerComment[],
   previousMarker: MarkerData | null,
   entry: ProgramEntry,
-  triggerId: number | null = null,
+  trigger: {id: number; event: CommentEvent} | null = null,
 ): {pendingIds: number[]; lastMentionId: number} {
   const mentionIds = comments
     .filter(comment => isOperatorComment(comment, entry) && /@fro-bot/i.test(comment.body))
@@ -448,7 +463,16 @@ export function scanOperatorMentions(
   }
 
   const pending = new Set(mentionIds.filter(id => id > baseline))
-  if (triggerId !== null && triggerId > baseline) pending.add(triggerId)
+  if (trigger !== null) {
+    const triggerComment = comments.find(comment => comment.id === trigger.id)
+    if (
+      triggerComment !== undefined &&
+      isAuthorizedTrigger(triggerComment, entry, trigger.event) &&
+      (trigger.event === 'edited' || trigger.id > baseline)
+    ) {
+      pending.add(trigger.id)
+    }
+  }
   const pendingIds = [...pending].sort((x, y) => x - y)
 
   return {pendingIds, lastMentionId: Math.max(baseline, ...pendingIds)}
@@ -723,7 +747,8 @@ export interface SnapshotIo {
  *   ROLLOUT_TRACKER_RELEASES_JSON / _DEPLOYS_JSON / _HEALTH_JSON — external signal API responses
  *                                   (see loadExternalSignals)
  *   ROLLOUT_TRACKER_COMMENT_ID  — numeric ID of the comment that dispatched the run, or empty; it is
- *                                   pending when above the mention baseline and ignored otherwise
+ *                                   pending only when the program's operator wrote it (see scanOperatorMentions)
+ *   ROLLOUT_TRACKER_COMMENT_EVENT — `created`, `edited` or empty: the event that dispatched that comment
  *
  * A body fixture supplies no comment list, so it reports no pending mentions.
  */
@@ -752,6 +777,15 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     return 1
   }
   const triggerId = rawTriggerId === '' ? null : Number(rawTriggerId)
+
+  const rawTriggerEvent = env.ROLLOUT_TRACKER_COMMENT_EVENT ?? ''
+  if (rawTriggerEvent !== '' && rawTriggerEvent !== 'created' && rawTriggerEvent !== 'edited') {
+    io.stderr('rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_COMMENT_EVENT must be created, edited or empty\n')
+    return 1
+  }
+  const triggerEvent: CommentEvent =
+    rawTriggerEvent === 'created' || rawTriggerEvent === 'edited' ? rawTriggerEvent : ''
+  const trigger = triggerId === null ? null : {id: triggerId, event: triggerEvent}
 
   let items: ProjectItem[]
   let issues: IssueState[]
@@ -898,7 +932,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const snapshot = buildSnapshot(items, issues, external)
   const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
-  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, triggerId)
+  const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
   const decision = decideComment(snapshot, hash, previousMarker, pendingIds)
   const result: PreflightResult = {
     ...decision,
@@ -906,6 +940,14 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     last_mention_id: lastMentionId,
     marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+    program: {
+      key: entry.key,
+      issue: entry.issue,
+      repo: trackerRepo,
+      project_url: projectUrl,
+      operator_login: entry.operator.login,
+      evidence: entry.evidence,
+    },
   }
 
   io.stdout(`${JSON.stringify(result)}\n`)
