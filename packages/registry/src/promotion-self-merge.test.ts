@@ -41,7 +41,7 @@ interface PullState {
 }
 
 interface ReviewState {
-  login?: string
+  login?: string | null
   state?: string
   commit?: string
 }
@@ -179,7 +179,7 @@ function world(scenario: Scenario = {}) {
           if (reviews instanceof Error) throw reviews
           return {
             data: reviews.map(review => ({
-              user: {login: review.login ?? 'fro-bot'},
+              user: review.login === null ? null : {login: review.login ?? 'fro-bot'},
               state: review.state ?? 'APPROVED',
               commit_id: review.commit ?? PIN,
             })),
@@ -2724,6 +2724,7 @@ describe('selfMerge: an approval that fails in a way that does not say whether i
     ['a dismissed approval', {state: 'DISMISSED'}],
     ['a change request', {state: 'CHANGES_REQUESTED'}],
     ['a pending review', {state: 'PENDING'}],
+    ['a review whose author is gone', {login: null}],
     ['a login that only starts with fro-bot', {login: 'fro-bot-two'}],
     ['a login that only ends with fro-bot', {login: 'not-fro-bot'}],
   ])('does not count %s as the approval', async (_name, review) => {

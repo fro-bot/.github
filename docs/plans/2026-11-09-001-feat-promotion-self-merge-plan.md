@@ -183,7 +183,7 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
   - A dry run waits and polls like a live run, then stops right before the approval call with "would approve".
 - **Wait loop.**
   - A time-bounded loop of 60 minutes inside a 90-minute job, with a `sleep` seam and per-read retry for transient 5xx.
-  - Check runs use `filter=latest` with pagination, matched by context name and required app ID. Commit statuses are matched by context only, newest first, since statuses carry no app.
+  - Check runs use `filter=latest` with pagination, matched by context name and required app ID. Commit statuses are matched by context only, newest first, since statuses carry no app. When a context has both a run and a status, both must pass: either failing fails it, either pending waits, and an absent one leaves the other to decide.
   - The PR head is re-read on every poll. A moved head means "stale" (exit 0), and a cancelled check on a superseded commit is ignored.
 - **Merge outcomes.**
   - 409 or a 405 where `mergeable_state` is `behind` means "open waiting" (exit 0).
