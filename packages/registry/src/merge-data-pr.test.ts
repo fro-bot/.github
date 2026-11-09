@@ -2230,20 +2230,66 @@ describe('mergeDataPr: a head that moved off the pin', () => {
     const octokit = pinnedOctokit({addLabels})
     const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
     expect(addLabels).toHaveBeenCalledTimes(1)
-    expect(result).toMatchObject({headMovedFromPin: false, label: 'automerge'})
+    expect(result).toMatchObject({headMovedFromPin: false, headUnverified: false, label: 'automerge'})
   })
 
-  it('applies the labels when the head could not be read, as an unreadable head says nothing', async () => {
+  it('leaves the labels alone when the head could not be read, and reports it', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const removeLabel = vi.fn(async () => ({data: []}))
+    const logger = mockLogger()
+    const octokit = mockOctokit({
+      getPullRequest: async () => {
+        throw statusError(503, 'down')
+      },
+      addLabels,
+      removeLabel,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger})
+    expect(addLabels).not.toHaveBeenCalled()
+    expect(removeLabel).not.toHaveBeenCalled()
+    expect(result).toMatchObject({headMovedFromPin: false, headUnverified: true, label: null, headSha: null})
+    expect(logger.warn).toHaveBeenCalledWith('PR #42 head could not be read; leaving its labels as they are.')
+  })
+
+  it('does not take the head from the create response as a read of the head', async () => {
     const addLabels = vi.fn(async () => ({data: []}))
     const octokit = mockOctokit({
+      createPullRequest: async () => ({data: {number: 42, html_url: 'u', head: {sha: PIN}}}),
       getPullRequest: async () => {
         throw statusError(503, 'down')
       },
       addLabels,
     })
     const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger: mockLogger()})
-    expect(addLabels).toHaveBeenCalledTimes(1)
-    expect(result.headMovedFromPin).toBe(false)
+    expect(addLabels).not.toHaveBeenCalled()
+    expect(result).toMatchObject({headUnverified: true, headSha: PIN})
+  })
+
+  it('leaves the labels alone on an existing PR found by branch whose head read failed', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests: async (params: unknown) => ({
+        data:
+          (params as {state: string}).state === 'open'
+            ? [{number: 77, html_url: 'u', state: 'open', head: {ref: 'data'}, base: {ref: 'main'}}]
+            : [],
+      }),
+      getPullRequest: async () => {
+        throw statusError(503, 'down')
+      },
+      addLabels,
+    })
+    const result = await mergeDataPr({
+      octokit,
+      now: NOW,
+      pin: PIN,
+      qualifies: true,
+      recreateClosedPullRequest: false,
+      logger: mockLogger(),
+    })
+    expect(result).toMatchObject({pullRequestNumber: 77, headUnverified: true, label: null})
+    expect(addLabels).not.toHaveBeenCalled()
   })
 
   it('never reports a mismatch without a pin', async () => {
@@ -2251,7 +2297,20 @@ describe('mergeDataPr: a head that moved off the pin', () => {
     const octokit = mockOctokit({getPullRequest: movedHead(), addLabels})
     const result = await mergeDataPr({octokit, now: NOW})
     expect(addLabels).toHaveBeenCalledTimes(1)
-    expect(result.headMovedFromPin).toBe(false)
+    expect(result).toMatchObject({headMovedFromPin: false, headUnverified: false})
+  })
+
+  it('labels an unpinned run whatever its head read says, as it always did', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({
+      getPullRequest: async () => {
+        throw statusError(503, 'down')
+      },
+      addLabels,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, logger: mockLogger()})
+    expect(addLabels).toHaveBeenCalledTimes(1)
+    expect(result.headUnverified).toBe(false)
   })
 
   it('also leaves the labels alone on a PR the run just created', async () => {

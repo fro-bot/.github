@@ -66,6 +66,8 @@ export interface MergeDataPrResult {
   closedPullRequestKept: boolean
   /** True when a pin was given and the PR head is another commit, so the labels were left as they were. */
   headMovedFromPin: boolean
+  /** True when a pin was given and the PR head could not be freshly read, so the labels were left as they were. */
+  headUnverified: boolean
 }
 
 /**
@@ -226,6 +228,7 @@ function emptyResult(params: {label: MergeLabel | null; staleAlertIssueNumber: n
     mergeableState: null,
     closedPullRequestKept: false,
     headMovedFromPin: false,
+    headUnverified: false,
   }
 }
 
@@ -253,14 +256,19 @@ async function settlePullRequest(
     logger,
     pin: context.pin,
   })
-  // The labels describe the commit the gates checked. A PR whose head is another commit keeps the labels it
-  // has; the self-merge step sees the mismatch and stops, and a later gated run labels the new head.
-  const liveHead = state.headSha ?? pullRequest.headSha ?? null
-  const headMoved = context.pin !== undefined && liveHead !== null && liveHead !== context.pin
+  // The labels describe the commit the gates checked. They apply only when the PR head was freshly read and
+  // is the pin. A head that is another commit, or one that could not be read (the create response is not a
+  // read), keeps the labels the PR has; the self-merge step stops on a mismatch, and a later gated run
+  // labels the new head.
+  const readHead = state.headSha
+  const headMoved = context.pin !== undefined && readHead !== null && readHead !== context.pin
+  const headUnverified = context.pin !== undefined && readHead === null
   if (headMoved) {
     logger.warn(
       `PR #${pullRequest.number} head is not the pinned commit the gates checked; leaving its labels as they are.`,
     )
+  } else if (headUnverified) {
+    logger.warn(`PR #${pullRequest.number} head could not be read; leaving its labels as they are.`)
   } else {
     await replaceLabel({octokit, owner, repo, issueNumber: pullRequest.number, label: context.label})
   }
@@ -291,7 +299,7 @@ async function settlePullRequest(
     createdPullRequest: true,
     pullRequestNumber: pullRequest.number,
     pullRequestUrl: pullRequest.html_url,
-    label: headMoved ? null : context.label,
+    label: headMoved || headUnverified ? null : context.label,
     journalIssueNumber: null,
     staleAlertIssueNumber: context.staleAlertIssueNumber,
     conflicted,
@@ -301,6 +309,7 @@ async function settlePullRequest(
     mergeableState: state.mergeableState,
     closedPullRequestKept: false,
     headMovedFromPin: headMoved,
+    headUnverified,
   }
 }
 
