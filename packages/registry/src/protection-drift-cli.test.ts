@@ -17,6 +17,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   process.exitCode = undefined
 })
 
@@ -46,10 +47,22 @@ describe('no argv (the workflow call)', () => {
     const params = mockRun.mock.calls[0]?.[0] as unknown as {
       env: unknown
       now: () => Date
+      sleep: (ms: number) => Promise<void>
       readFile: (path: string) => string
     }
     expect(params.env).toEqual(env)
     expect(Math.abs(params.now().getTime() - Date.now())).toBeLessThan(1000)
+    vi.useFakeTimers()
+    let slept = false
+    const sleeping = params.sleep(20).then(() => {
+      slept = true
+    })
+    await vi.advanceTimersByTimeAsync(19)
+    expect(slept).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await sleeping
+    expect(slept).toBe(true)
+    vi.useRealTimers()
     expect(params.readFile('common-settings.yaml')).toContain('required_status_checks')
     expect(params.readFile('.github/settings.yml')).toContain('required_status_checks')
   })

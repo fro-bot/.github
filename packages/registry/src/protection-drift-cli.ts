@@ -23,6 +23,10 @@ export function protectionDriftCli(): CliConfig {
             readFile: path => readFileSync(path, 'utf8'),
             createClient: async token => createOctokit(token),
             now: () => new Date(),
+            sleep: async ms =>
+              new Promise<void>(resolve => {
+                setTimeout(resolve, ms)
+              }),
             stdout: context.stdout,
             stderr: context.stderr,
           }),

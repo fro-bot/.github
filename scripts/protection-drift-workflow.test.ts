@@ -27,7 +27,7 @@ function assertDriftWorkflow(value: unknown): asserts value is {
   name: string
   on: Record<string, {types?: string[]} | null>
   permissions?: Record<string, string>
-  concurrency?: {group?: string; 'cancel-in-progress'?: boolean}
+  concurrency?: unknown
   jobs: Record<string, Job>
 } {
   if (typeof value !== 'object' || value === null) {
@@ -61,8 +61,11 @@ describe('protection-drift.yaml', () => {
     expect(job.if).toBeUndefined()
   })
 
-  it('serializes events in one group and never cancels one in flight', () => {
-    expect(parsed.concurrency).toEqual({group: 'protection-drift', 'cancel-in-progress': false})
+  it('has no concurrency group, so a burst of events cannot replace a pending run', () => {
+    expect(parsed.concurrency).toBeUndefined()
+    expect(job).not.toHaveProperty('concurrency')
+    expect(raw).not.toMatch(/^\s*concurrency:/mu)
+    expect(raw).not.toContain('cancel-in-progress')
   })
 
   it('uses no secret, no variable, no App token and no job env', () => {

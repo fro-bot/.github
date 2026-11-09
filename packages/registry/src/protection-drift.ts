@@ -11,12 +11,16 @@
  *   present and matching. A field the event does not report is neither drift nor a match: it is listed in
  *   the job summary, and it keeps the issue open.
  * - Nothing is reverted or blocked; the daily settings run restores the rule.
+ * - Runs are not serialized: a burst of events each get a run. Two runs that both open an issue are
+ *   reconciled afterwards, the later issue closing as a duplicate of the oldest, and a match closes every
+ *   open issue. Issue reads retry on a transient failure; writes are never retried blindly.
  * - Errors reach stderr as fixed codes, never an upstream message or token.
  */
 
 import type {Octokit} from '@octokit/rest'
 
 import {appendStepSummary} from '@fro-bot/core/output'
+import {retry} from '@fro-bot/core/retry'
 import {parse} from 'yaml'
 
 /** The slice of Octokit this module calls. */
@@ -257,60 +261,97 @@ export interface RunProtectionDriftParams {
   readonly readFile: (path: string) => string
   readonly createClient: (token: string) => Promise<ProtectionDriftOctokit>
   readonly now: () => Date
+  /** The wait between read retries; a test passes a recorder. */
+  readonly sleep: (ms: number) => Promise<void>
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
   /** Defaults to `appendFileSync`; a test passes a recorder. */
   readonly append?: (path: string, content: string) => void
 }
 
-/** The numbers of the open issues that carry the `protection-drift` label, pull requests excluded. */
-async function openIssueNumbers(octokit: ProtectionDriftOctokit): Promise<readonly number[]> {
+/** Whether a thrown GitHub error is worth another try: a 429, a 5xx, or a dropped connection. */
+function isTransient(error: unknown): boolean {
+  const status: unknown = Reflect.get(new Object(error), 'status')
+  if (typeof status === 'number') return status === 429 || status >= 500
+  const code: unknown = Reflect.get(new Object(error), 'code')
+  return code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'ENOTFOUND'
+}
+
+/** The numbers of the open issues that carry the `protection-drift` label, oldest first, pull requests excluded. */
+async function openIssueNumbers(
+  octokit: ProtectionDriftOctokit,
+  sleep: (ms: number) => Promise<void>,
+): Promise<readonly number[]> {
   const pageSize = 100
   const maxPages = 50
   let found = Array.of<number>()
   for (const page of Array.from({length: maxPages}, (_, index) => index + 1)) {
-    const response = await octokit.rest.issues.listForRepo({
-      owner: 'fro-bot',
-      repo: '.github',
-      state: 'open',
-      labels: 'protection-drift',
-      per_page: pageSize,
-      page,
-    })
+    const response = await retry(
+      async () =>
+        octokit.rest.issues.listForRepo({
+          owner: 'fro-bot',
+          repo: '.github',
+          state: 'open',
+          labels: 'protection-drift',
+          per_page: pageSize,
+          page,
+        }),
+      {attempts: 3, delayMs: attempt => attempt * 2000, shouldRetry: isTransient, sleep},
+    )
     found = found.concat(response.data.filter(issue => issue.pull_request === undefined).map(issue => issue.number))
     if (response.data.length < pageSize) break
   }
-  return found
+  return found.toSorted((left, right) => left - right)
+}
+
+function numbersText(numbers: readonly number[]): string {
+  return numbers.map(number => `#${String(number)}`).join(', ')
 }
 
 /**
  * The CLI body. Reads the event from `GITHUB_EVENT_PATH`, the declared settings from `common-settings.yaml`
  * and `.github/settings.yml`, and the token from `GITHUB_TOKEN`; opens, comments on or closes the
- * `protection-drift` issue; writes a job summary; returns the exit code.
+ * `protection-drift` issues; writes a job summary on every path; returns the exit code.
  */
 export async function runProtectionDrift(params: RunProtectionDriftParams): Promise<number> {
   const {env} = params
-  const fail = (code: string): number => {
+  /** The job summary: a title, what happened and what to do, then the event facts. */
+  const summarize = (title: string, detail: string, facts: readonly string[] = []): void => {
+    const lines = [`### Protection drift: ${title}`, '', detail, '', ...facts]
+    appendStepSummary(`${lines.join('\n')}${facts.length > 0 ? '\n' : ''}`, {
+      onMissing: 'skip',
+      env,
+      append: params.append,
+    })
+  }
+  const fail = (code: string, title: string, detail: string, facts: readonly string[] = []): number => {
+    summarize(title, detail, facts)
     params.stderr(`::error::protection-drift: ${code}\n`)
     return 1
-  }
-  const summarize = (markdown: string): void => {
-    appendStepSummary(markdown, {onMissing: 'skip', env, append: params.append})
   }
 
   let payload: unknown
   try {
     payload = JSON.parse(params.readFile(String(env.GITHUB_EVENT_PATH)))
   } catch {
-    return fail('EVENT_UNREADABLE')
+    return fail(
+      'EVENT_UNREADABLE',
+      'event unreadable',
+      'The event payload could not be read or parsed, so nothing was checked. Re-run the workflow for this event.',
+    )
   }
   const fields = recordOf(payload) ?? {}
+  const eventFacts = typeof fields.action === 'string' ? [`- Event: \`${inline(fields.action)}\``] : []
 
   let declared: DeclaredProtection
   try {
     declared = parseDeclaredProtection(params.readFile('common-settings.yaml'), params.readFile('.github/settings.yml'))
   } catch {
-    return fail('SETTINGS_UNREADABLE')
+    return fail(
+      'SETTINGS_UNREADABLE',
+      'settings unreadable',
+      '`common-settings.yaml` or `.github/settings.yml` could not be read or is incomplete, so the declared values are unknown. No issue was changed. Check both files on the default branch and re-run the workflow for this event.',
+    )
   }
 
   const event: DriftEvent = {
@@ -321,18 +362,39 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
   }
   const assessment = assessEvent(event, declared)
   if (assessment.kind === 'ignored') {
+    summarize(
+      'ignored',
+      assessment.reason === 'other-rule'
+        ? 'The event is for a rule other than `main`. Nothing to do.'
+        : 'The event action is not created, edited or deleted. Nothing to do.',
+      eventFacts,
+    )
     params.stdout(`protection-drift: ignored (${assessment.reason})\n`)
     return 0
   }
-  if (assessment.kind === 'malformed') return fail('MALFORMED_EVENT')
+  if (assessment.kind === 'malformed') {
+    return fail(
+      'MALFORMED_EVENT',
+      'malformed event',
+      'The event has no rule object, so nothing was checked. Re-run the workflow for this event.',
+      eventFacts,
+    )
+  }
 
   const token = env.GITHUB_TOKEN ?? ''
-  if (token === '') return fail('MISSING_TOKEN')
+  if (token === '') {
+    return fail(
+      'MISSING_TOKEN',
+      'no token',
+      'The workflow token is empty, so no issue was read or changed. Check the job permissions and re-run the workflow for this event.',
+      eventFacts,
+    )
+  }
 
+  const updatedAt: unknown = Reflect.get(new Object(event.rule), 'updated_at')
+  const at = typeof updatedAt === 'string' ? updatedAt : params.now().toISOString()
   try {
     const octokit = await params.createClient(token)
-    const updatedAt: unknown = Reflect.get(new Object(event.rule), 'updated_at')
-    const at = typeof updatedAt === 'string' ? updatedAt : params.now().toISOString()
     const report = renderReport({
       action: String(event.action),
       login: Reflect.get(new Object(event.sender), 'login'),
@@ -346,10 +408,8 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
       settingsActor: assessment.settingsActor,
     })
 
-    const open = await openIssueNumbers(octokit)
-    // The oldest open issue; `Math.min` of nothing is Infinity, which is no issue.
-    const oldest = Math.min(...open)
-    const action = planAction(assessment, Number.isFinite(oldest))
+    const open = await openIssueNumbers(octokit, params.sleep)
+    const action = planAction(assessment, open.length > 0)
     const target = {owner: 'fro-bot', repo: '.github'}
 
     if (action === 'open') {
@@ -359,31 +419,70 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
         body: report,
         labels: ['protection-drift'],
       })
-      summarize(`### Protection drift: issue opened\n\n${report}\n- Issue: ${created.data.html_url}\n`)
-      params.stdout(`protection-drift: opened #${String(created.data.number)}\n`)
+      // Runs are not serialized, so another run may have opened an issue at the same time: the oldest wins.
+      const older = (await openIssueNumbers(octokit, params.sleep)).find(number => number < created.data.number)
+      if (older === undefined) {
+        summarize('issue opened', `${report}\n- Issue: ${created.data.html_url}`)
+        params.stdout(`protection-drift: opened #${String(created.data.number)}\n`)
+      } else {
+        await octokit.rest.issues.createComment({...target, issue_number: older, body: report})
+        await octokit.rest.issues.createComment({
+          ...target,
+          issue_number: created.data.number,
+          body: `Duplicate of #${String(older)}: another run opened that issue for the same drift first, and this event is reported there.`,
+        })
+        await octokit.rest.issues.update({
+          ...target,
+          issue_number: created.data.number,
+          state: 'closed',
+          state_reason: 'not_planned',
+        })
+        summarize(
+          'issue opened, closed as a duplicate',
+          `${report}\n- Issue: #${String(created.data.number)} was closed as a duplicate of #${String(older)}, which carries this report.`,
+        )
+        params.stdout(
+          `protection-drift: opened #${String(created.data.number)}, closed as a duplicate of #${String(older)}\n`,
+        )
+      }
     } else if (action === 'comment') {
+      // The oldest report carries the comments; the list is oldest first, so it is the first.
+      const oldest = Math.min(...open)
       await octokit.rest.issues.createComment({...target, issue_number: oldest, body: report})
-      summarize(`### Protection drift: comment added\n\n${report}\n- Issue: #${String(oldest)}\n`)
+      summarize('comment added', `${report}\n- Issue: #${String(oldest)}`)
       params.stdout(`protection-drift: commented on #${String(oldest)}\n`)
     } else if (action === 'close') {
-      await octokit.rest.issues.createComment({
-        ...target,
-        issue_number: oldest,
-        body: `The settings automation wrote the \`main\` rule at ${at} and every declared setting is present and matching. Closing.`,
-      })
-      await octokit.rest.issues.update({...target, issue_number: oldest, state: 'closed', state_reason: 'completed'})
-      summarize(`### Protection drift: issue closed\n\n- Issue: #${String(oldest)}\n`)
-      params.stdout(`protection-drift: closed #${String(oldest)}\n`)
+      for (const number of open) {
+        await octokit.rest.issues.createComment({
+          ...target,
+          issue_number: number,
+          body: `The settings automation wrote the \`main\` rule at ${at} and every declared setting is present and matching. Closing.`,
+        })
+        await octokit.rest.issues.update({...target, issue_number: number, state: 'closed', state_reason: 'completed'})
+      }
+      summarize('issues closed', `- Issues: ${numbersText(open)}`)
+      params.stdout(`protection-drift: closed ${numbersText(open)}\n`)
     } else if (assessment.absent.length > 0) {
       summarize(
-        `### Protection drift: fields not reported\n\nThese declared fields were not reported by the event, so they count neither as drift nor as a match, and the issue cannot close on this write: ${assessment.absent.map(field => `\`${field}\``).join(', ')}.\n`,
+        'fields not reported',
+        `These declared fields were not reported by the event, so they count neither as drift nor as a match, and the issue cannot close on this write: ${assessment.absent.map(field => `\`${field}\``).join(', ')}.`,
       )
       params.stdout('protection-drift: absent fields, issue left as it is\n')
     } else {
+      summarize(
+        'no drift',
+        'The rule matches the declared settings and no `protection-drift` issue is open. Nothing to do.',
+        [...eventFacts, `- When: ${at}`],
+      )
       params.stdout('protection-drift: no drift\n')
     }
   } catch {
-    return fail('API_FAILED')
+    return fail(
+      'API_FAILED',
+      'GitHub API failure',
+      'A GitHub API call failed, so the state of the issues is not certain: one may have been opened, commented on or closed before the failure. Check the open `protection-drift` issues and re-run the workflow for this event.',
+      eventFacts,
+    )
   }
   return 0
 }

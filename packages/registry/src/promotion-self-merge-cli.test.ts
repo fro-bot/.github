@@ -17,6 +17,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   process.exitCode = undefined
 })
 
@@ -51,9 +52,17 @@ describe('no argv (the workflow call)', () => {
     }
     expect(params.env).toEqual(env)
     expect(Math.abs(params.now() - Date.now())).toBeLessThan(1000)
-    const started = Date.now()
-    await params.sleep(20)
-    expect(Date.now() - started).toBeGreaterThanOrEqual(15)
+    vi.useFakeTimers()
+    let slept = false
+    const sleeping = params.sleep(20).then(() => {
+      slept = true
+    })
+    await vi.advanceTimersByTimeAsync(19)
+    expect(slept).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await sleeping
+    expect(slept).toBe(true)
+    vi.useRealTimers()
     expect(params.readSettings()).toContain('required_status_checks')
   })
 

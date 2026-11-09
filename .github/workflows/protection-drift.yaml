@@ -7,14 +7,14 @@ name: Protection Drift
 # write by the settings automation (the Fro Bot App bot, matched by type and numeric id) shows every declared
 # setting present and matching. It never blocks or reverts the change: the daily `Update Repo Settings` run
 # restores the rule. The event runs the workflow definition on the default branch.
+#
+# There is no concurrency group on purpose: GitHub keeps one running and one pending run per group and replaces
+# a pending run when a third arrives, so a burst of events would lose the middle ones. Every event gets its own
+# run instead, and the script reconciles two runs that open an issue at the same time (the later issue closes
+# as a duplicate of the older one).
 on:
   branch_protection_rule:
     types: [created, edited, deleted]
-
-# One group, no cancellation: events are handled one at a time and an event in flight is never cut off.
-concurrency:
-  group: protection-drift
-  cancel-in-progress: false
 
 permissions:
   contents: read

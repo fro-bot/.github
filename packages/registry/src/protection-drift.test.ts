@@ -580,12 +580,32 @@ interface IssueRecord {
   pull_request?: unknown
 }
 
-function issueWorld(options: {open?: readonly IssueRecord[]; fail?: string; endless?: boolean} = {}) {
+interface IssueWorldOptions {
+  /** The open issues the first list returns. */
+  open?: readonly IssueRecord[]
+  /** What a list returns once an issue has been created; defaults to `open`. */
+  afterCreate?: readonly IssueRecord[]
+  /** The call that fails every time with a 500. */
+  fail?: string
+  /** A call that fails `times` times with `status` and then works. */
+  flaky?: {name: string; status: number; times: number}
+  /** A list that never ends. */
+  endless?: boolean
+}
+
+function issueWorld(options: IssueWorldOptions = {}) {
   const calls: {name: string; params: Record<string, unknown>}[] = []
+  const failures: Record<string, number> = {}
+  let created = false
   const guard = (name: string) => {
     if (options.fail === name) throw Object.assign(new Error('upstream body with a secret'), {status: 500})
+    if (options.flaky?.name === name) {
+      failures[name] = (failures[name] ?? 0) + 1
+      if (failures[name] <= options.flaky.times) {
+        throw Object.assign(new Error('upstream body with a secret'), {status: options.flaky.status})
+      }
+    }
   }
-  const open = options.open ?? []
   const octokit = {
     rest: {
       issues: {
@@ -597,11 +617,13 @@ function issueWorld(options: {open?: readonly IssueRecord[]; fail?: string; endl
           if (options.endless === true) {
             return {data: Array.from({length: size}, (_, index) => ({number: page * 1000 + index, pull_request: {}}))}
           }
+          const open = created ? (options.afterCreate ?? options.open ?? []) : (options.open ?? [])
           return {data: open.slice((page - 1) * size, page * size)}
         },
         create: async (params: Record<string, unknown>) => {
           calls.push({name: 'create', params})
           guard('create')
+          created = true
           return {data: {number: 900, html_url: 'https://github.com/fro-bot/.github/issues/900'}}
         },
         createComment: async (params: Record<string, unknown>) => {
@@ -635,6 +657,7 @@ function runner(options: {
   const stdout: string[] = []
   const writes: {path: string; content: string}[] = []
   const tokens: string[] = []
+  const sleeps: number[] = []
   const run = async () =>
     runProtectionDrift({
       env: {
@@ -658,11 +681,14 @@ function runner(options: {
         return world.octokit
       },
       now: () => new Date('2026-11-09T13:00:00Z'),
+      sleep: async ms => {
+        sleeps.push(ms)
+      },
       stdout: text => stdout.push(text),
       stderr: text => stderr.push(text),
       append: (path, content) => writes.push({path, content}),
     })
-  return {run, world, stderr, stdout, writes, tokens}
+  return {run, world, stderr, stdout, writes, tokens, sleeps}
 }
 
 const DRIFT_EVENT = event({
@@ -675,7 +701,7 @@ describe('runProtectionDrift: opening and commenting', () => {
   it('opens one labelled issue naming the actor, the time and the change when the fro-bot user turns reviews off (AE7)', async () => {
     const h = runner({event: DRIFT_EVENT})
     expect(await h.run()).toBe(0)
-    expect(h.world.names()).toEqual(['list', 'create'])
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
     expect(h.world.calls[0]?.params).toEqual({
       owner: 'fro-bot',
       repo: '.github',
@@ -744,15 +770,16 @@ describe('runProtectionDrift: opening and commenting', () => {
   it('reads at most 50 pages of open issues, then opens an issue if none of them is a real one', async () => {
     const h = runner({event: DRIFT_EVENT, world: issueWorld({endless: true})})
     expect(await h.run()).toBe(0)
-    expect(h.world.names().filter(name => name === 'list')).toHaveLength(50)
+    // 50 pages before the issue is created and 50 again when the run looks for an older one
+    expect(h.world.names().filter(name => name === 'list')).toHaveLength(100)
     expect(h.world.calls.findLast(call => call.name === 'list')?.params).toMatchObject({page: 50})
-    expect(h.world.names().at(-1)).toBe('create')
+    expect(h.world.names().indexOf('create')).toBe(50)
   })
 
   it('opens a new issue after a manual close, because only open issues count', async () => {
     const h = runner({event: DRIFT_EVENT, world: issueWorld({open: []})})
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'create'])
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
   })
 
   it('reports the operator restoring the rule by hand as a non-settings edit', async () => {
@@ -768,7 +795,7 @@ describe('runProtectionDrift: opening and commenting', () => {
       }),
     })
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'create'])
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
     expect((h.world.calls[1]?.params as {body: string}).body).toContain('after a write by the settings automation')
   })
 
@@ -777,13 +804,13 @@ describe('runProtectionDrift: opening and commenting', () => {
       event: event({rule: goodRule({allow_force_pushes_enforcement_level: 'everyone'}), sender: OPERATOR_USER}),
     })
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'create'])
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
   })
 
   it('reports a deleted rule', async () => {
     const h = runner({event: event({action: 'deleted', sender: SETTINGS_ACTOR})})
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'create'])
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
     expect((h.world.calls[1]?.params as {body: string}).body).toContain('(the rule no longer exists)')
   })
 })
@@ -805,7 +832,7 @@ describe('runProtectionDrift: closing', () => {
       state_reason: 'completed',
     })
     expect(h.stdout).toEqual(['protection-drift: closed #31\n'])
-    expect(h.writes[0]?.content).toBe('### Protection drift: issue closed\n\n- Issue: #31\n')
+    expect(h.writes[0]?.content).toBe('### Protection drift: issues closed\n\n- Issues: #31\n')
   })
 
   it('does nothing for a clean settings write with no issue open', async () => {
@@ -942,6 +969,7 @@ describe('runProtectionDrift: ignored and failing events', () => {
         throw new Error('bad token ghs_secret')
       },
       now: () => new Date(0),
+      sleep: async () => {},
       stdout: () => {},
       stderr: text => stderr.push(text),
       append: () => {},
@@ -959,5 +987,262 @@ describe('runProtectionDrift: ignored and failing events', () => {
     const outside = runner({event: DRIFT_EVENT, env: {GITHUB_STEP_SUMMARY: undefined}})
     await outside.run()
     expect(outside.writes).toEqual([])
+  })
+})
+
+describe('runProtectionDrift: two runs that race to open the issue', () => {
+  it('moves the report to the older issue and closes the one it created', async () => {
+    const h = runner({
+      event: DRIFT_EVENT,
+      world: issueWorld({open: [], afterCreate: [{number: 31}, {number: 900}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'comment', 'close'])
+    const [, , , onOlder, onNew, close] = h.world.calls
+    expect(onOlder?.params).toMatchObject({owner: 'fro-bot', repo: '.github', issue_number: 31})
+    expect((onOlder?.params as {body: string}).body).toContain('- Actor: `fro-bot` (type `User`, id `42`)')
+    expect((onOlder?.params as {body: string}).body).toContain('`required_approving_review_count` (was `1`)')
+    expect(onNew?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 900,
+      body: 'Duplicate of #31: another run opened that issue for the same drift first, and this event is reported there.',
+    })
+    expect(close?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 900,
+      state: 'closed',
+      state_reason: 'not_planned',
+    })
+    expect(h.stdout).toEqual(['protection-drift: opened #900, closed as a duplicate of #31\n'])
+    expect(h.writes[0]?.content).toContain('closed as a duplicate of #31')
+  })
+
+  it('picks the oldest of several older issues', async () => {
+    const h = runner({
+      event: DRIFT_EVENT,
+      world: issueWorld({afterCreate: [{number: 44}, {number: 31}, {number: 900}, {number: 950}]}),
+    })
+    await h.run()
+    expect(h.world.calls[3]?.params).toMatchObject({issue_number: 31})
+  })
+
+  it('keeps its own issue when the older ones are pull requests', async () => {
+    const h = runner({
+      event: DRIFT_EVENT,
+      world: issueWorld({afterCreate: [{number: 31, pull_request: {}}, {number: 900}]}),
+    })
+    await h.run()
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
+  })
+
+  it('keeps its own issue when only newer ones are open', async () => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({afterCreate: [{number: 900}, {number: 950}]})})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'create', 'list'])
+    expect(h.stdout).toEqual(['protection-drift: opened #900\n'])
+  })
+
+  it('does not look again when it commented on an existing issue', async () => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(h.world.names()).toEqual(['list', 'comment'])
+  })
+
+  it('fails when the second list fails, after the issue was created', async () => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({flaky: {name: 'list', status: 404, times: 99}})})
+    expect(await h.run()).toBe(1)
+  })
+})
+
+describe('runProtectionDrift: a match closes every open report', () => {
+  it('comments on and closes each open issue, oldest first', async () => {
+    const h = runner({event: event(), world: issueWorld({open: [{number: 60}, {number: 31}, {number: 44}]})})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'comment', 'close', 'comment', 'close', 'comment', 'close'])
+    const closed = h.world.calls.filter(call => call.name === 'close').map(call => call.params.issue_number)
+    expect(closed).toEqual([31, 44, 60])
+    const commented = h.world.calls.filter(call => call.name === 'comment').map(call => call.params.issue_number)
+    expect(commented).toEqual([31, 44, 60])
+    expect(h.stdout).toEqual(['protection-drift: closed #31, #44, #60\n'])
+    expect(h.writes[0]?.content).toBe('### Protection drift: issues closed\n\n- Issues: #31, #44, #60\n')
+  })
+
+  it('leaves every open issue when a field is absent', async () => {
+    const rule = goodRule()
+    delete rule.admin_enforced
+    const h = runner({event: event({rule}), world: issueWorld({open: [{number: 31}, {number: 44}]})})
+    await h.run()
+    expect(h.world.names()).toEqual(['list'])
+  })
+
+  it('stops at the first failure, with exit 1', async () => {
+    const h = runner({event: event(), world: issueWorld({open: [{number: 31}, {number: 44}], fail: 'close'})})
+    expect(await h.run()).toBe(1)
+    expect(h.world.names()).toEqual(['list', 'comment', 'close'])
+  })
+})
+
+describe('runProtectionDrift: reads are retried and writes are not', () => {
+  it.each([500, 502, 503, 429])('retries a %i on the issue list and goes on', async status => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({flaky: {name: 'list', status, times: 1}})})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'list', 'create', 'list'])
+    expect(h.sleeps).toEqual([2000])
+  })
+
+  it('backs off 2 s then 4 s, and gives up after the third failure', async () => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({flaky: {name: 'list', status: 503, times: 99}})})
+    expect(await h.run()).toBe(1)
+    expect(h.world.names()).toEqual(['list', 'list', 'list'])
+    expect(h.sleeps).toEqual([2000, 4000])
+    expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
+  })
+
+  it('retries a dropped connection', async () => {
+    const world = issueWorld()
+    const original = world.octokit.rest.issues.listForRepo
+    let failed = false
+    ;(world.octokit.rest.issues as {listForRepo: unknown}).listForRepo = async (
+      ...args: Parameters<typeof original>
+    ) => {
+      if (!failed) {
+        failed = true
+        throw Object.assign(new Error('socket'), {code: 'ECONNRESET'})
+      }
+      return original(...args)
+    }
+    const h = runner({event: DRIFT_EVENT, world})
+    expect(await h.run()).toBe(0)
+    expect(h.sleeps).toEqual([2000])
+  })
+
+  it.each([404, 403, 422])('does not retry a %i', async status => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({flaky: {name: 'list', status, times: 99}})})
+    expect(await h.run()).toBe(1)
+    expect(h.world.names()).toEqual(['list'])
+    expect(h.sleeps).toEqual([])
+  })
+
+  it('retries the second list too', async () => {
+    const world = issueWorld({afterCreate: [{number: 31}, {number: 900}]})
+    const original = world.octokit.rest.issues.listForRepo
+    let lists = 0
+    ;(world.octokit.rest.issues as {listForRepo: unknown}).listForRepo = async (
+      ...args: Parameters<typeof original>
+    ) => {
+      lists += 1
+      if (lists === 2) throw Object.assign(new Error('busy'), {status: 502})
+      return original(...args)
+    }
+    const h = runner({event: DRIFT_EVENT, world})
+    expect(await h.run()).toBe(0)
+    expect(h.sleeps).toEqual([2000])
+    expect(h.stdout).toEqual(['protection-drift: opened #900, closed as a duplicate of #31\n'])
+  })
+
+  it.each(['create', 'comment', 'close'])('does not retry a %s that fails with a 503', async name => {
+    const open = name === 'create' ? [] : [{number: 31}]
+    const driftEvent = name === 'close' ? event() : DRIFT_EVENT
+    const h = runner({event: driftEvent, world: issueWorld({open, flaky: {name, status: 503, times: 99}})})
+    expect(await h.run()).toBe(1)
+    expect(h.world.names().filter(call => call === name)).toHaveLength(1)
+    expect(h.sleeps).toEqual([])
+  })
+})
+
+describe('runProtectionDrift: a summary on every path', () => {
+  const failureFacts = (action = 'edited') => `- Event: \`${action}\`\n`
+
+  it('says an ignored event was ignored, and why', async () => {
+    const other = runner({event: event({rule: goodRule({name: 'develop'})})})
+    await other.run()
+    expect(other.writes).toEqual([
+      {
+        path: '/summary',
+        content: `### Protection drift: ignored\n\nThe event is for a rule other than \`main\`. Nothing to do.\n\n${failureFacts()}`,
+      },
+    ])
+    const renamed = runner({event: event({action: 'renamed'})})
+    await renamed.run()
+    expect(renamed.writes[0]?.content).toBe(
+      `### Protection drift: ignored\n\nThe event action is not created, edited or deleted. Nothing to do.\n\n${failureFacts('renamed')}`,
+    )
+  })
+
+  it('says a clean write found no drift', async () => {
+    const h = runner({event: event()})
+    await h.run()
+    expect(h.writes).toEqual([
+      {
+        path: '/summary',
+        content:
+          '### Protection drift: no drift\n\nThe rule matches the declared settings and no `protection-drift` issue is open. Nothing to do.\n\n- Event: `edited`\n- When: 2026-11-09T12:00:00Z\n',
+      },
+    ])
+  })
+
+  it.each([
+    [
+      'an unreadable event',
+      {readFailure: 'event' as const},
+      'EVENT_UNREADABLE',
+      'event unreadable',
+      'The event payload could not be read or parsed, so nothing was checked. Re-run the workflow for this event.',
+      '',
+    ],
+    [
+      'a payload with no rule',
+      {event: {action: 'edited'}},
+      'MALFORMED_EVENT',
+      'malformed event',
+      'The event has no rule object, so nothing was checked. Re-run the workflow for this event.',
+      failureFacts(),
+    ],
+    [
+      'unreadable settings',
+      {readFailure: 'common' as const},
+      'SETTINGS_UNREADABLE',
+      'settings unreadable',
+      '`common-settings.yaml` or `.github/settings.yml` could not be read or is incomplete, so the declared values are unknown. No issue was changed. Check both files on the default branch and re-run the workflow for this event.',
+      '',
+    ],
+    [
+      'a missing token',
+      {env: {GITHUB_TOKEN: ''}},
+      'MISSING_TOKEN',
+      'no token',
+      'The workflow token is empty, so no issue was read or changed. Check the job permissions and re-run the workflow for this event.',
+      failureFacts(),
+    ],
+    [
+      'an API failure',
+      {event: DRIFT_EVENT, world: issueWorld({fail: 'create'})},
+      'API_FAILED',
+      'GitHub API failure',
+      'A GitHub API call failed, so the state of the issues is not certain: one may have been opened, commented on or closed before the failure. Check the open `protection-drift` issues and re-run the workflow for this event.',
+      failureFacts(),
+    ],
+  ])('explains %s without echoing anything from upstream', async (_name, options, code, title, detail, facts) => {
+    const h = runner(options)
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([`::error::protection-drift: ${code}\n`])
+    expect(h.writes).toEqual([
+      {path: '/summary', content: `### Protection drift: ${title}\n\n${detail}\n${facts === '' ? '' : `\n${facts}`}`},
+    ])
+    expect(h.writes[0]?.content).not.toContain('secret')
+  })
+
+  it('shows an action from the event with backticks and line breaks removed', async () => {
+    const h = runner({event: {action: 'ed`\nited', rule: goodRule({name: 'dev'})}})
+    await h.run()
+    expect(h.writes[0]?.content).toContain('- Event: `ed ited`')
+  })
+
+  it('shows no event line for an action that is not text', async () => {
+    const h = runner({event: {action: 5, rule: goodRule({name: 'dev'})}})
+    await h.run()
+    expect(h.writes[0]?.content).not.toContain('- Event:')
   })
 })
