@@ -294,8 +294,8 @@ const CALLERS: readonly Caller[] = [
 const SHELL_EXEMPTIONS: readonly {workflow: string; step: string; reads: string}[] = [
   {
     workflow: 'merge-data.yaml',
-    step: '🔒 Fetch data ref for qualification',
-    reads: 'git fetch --no-tags --prune origin data',
+    step: '🔒 Probe and fetch data ref for qualification',
+    reads: 'git ls-remote --exit-code origin refs/heads/data',
   },
   {
     workflow: 'merge-data.yaml',

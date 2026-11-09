@@ -127,16 +127,20 @@ describe('merge-data.yaml decide job', () => {
     expect(decide.if).toBeUndefined()
   })
 
-  it('checks out main with full history, sets up, fetches data and qualifies, in that order', () => {
+  it('checks out main with full history, sets up, probes and fetches data, and qualifies, in that order', () => {
     expect(decideSteps.map(step => step.name)).toEqual([
       '⤵ Checkout Branch',
       '📦 Setup',
-      '🔒 Fetch data ref for qualification',
+      '🔒 Probe and fetch data ref for qualification',
       '🧮 Decide whether to promote',
     ])
     expect(decideSteps[0]?.with).toMatchObject({ref: 'main', 'fetch-depth': 0})
     expect(decideSteps[1]?.uses).toBe('./.github/actions/setup')
-    expect(decideSteps[2]?.run).toBe('git fetch --no-tags --prune origin data')
+    expect(decideSteps[2]?.id).toBe('probe')
+    expect(decideSteps[2]?.run).toContain('git ls-remote --exit-code origin refs/heads/data')
+    expect(decideSteps[2]?.run).toContain('git fetch --no-tags --prune origin data')
+    expect(decideSteps[2]?.['continue-on-error']).toBeUndefined()
+    expect(decideSteps[2]?.if).toBeUndefined()
   })
 
   it('runs the qualification with the trigger and no token', () => {
@@ -146,6 +150,7 @@ describe('merge-data.yaml decide job', () => {
     expect(qualify?.env).toEqual({
       PROMOTION_SCHEDULE: `${expressionStart} github.event.schedule }}`,
       PROMOTION_REFRESH_REVIEW: `${expressionStart} inputs.refresh-review }}`,
+      PROMOTION_DATA: `${expressionStart} steps.probe.outputs.data }}`,
     })
     expect(qualify?.['continue-on-error']).toBeUndefined()
     expect(qualify?.if).toBeUndefined()
@@ -450,6 +455,39 @@ describe('merge-data.yaml steps run for real against git', () => {
     const result = runStep(steps.find(step => step.id === 'pin')?.run ?? '', clone)
     expect(result.status).not.toBe(0)
     expect(result.output).toBe('')
+  })
+
+  const probeScript = decideSteps.find(step => step.id === 'probe')?.run ?? ''
+
+  it('the probe step fetches data and says it is present when the ref exists', () => {
+    const {clone, origin} = fixture()
+    const result = runStep(probeScript, clone)
+    expect(result.status).toBe(0)
+    expect(result.output).toBe('data=present\n')
+    expect(git(clone, 'rev-parse', 'origin/data')).toBe(git(origin, 'rev-parse', 'refs/heads/data'))
+  })
+
+  it('the probe step says data is absent, and succeeds, when the ref does not exist (exit 2)', () => {
+    const {clone} = fixture(false)
+    const result = runStep(probeScript, clone)
+    expect(result.status).toBe(0)
+    expect(result.output).toBe('data=absent\n')
+    expect(() => git(clone, 'rev-parse', '--verify', '-q', 'origin/data')).toThrow()
+  })
+
+  it('the probe step aborts with a fixed error, and writes no output, when the remote cannot be read', () => {
+    const {clone} = fixture()
+    git(clone, 'remote', 'set-url', 'origin', join(clone, '..', 'no-such-origin.git'))
+    const result = runStep(probeScript, clone)
+    expect(result.status).toBe(1)
+    expect(result.output).toBe('')
+    expect(result.stderr + result.stdout).toContain('::error::decide: DATA_PROBE_FAILED')
+  })
+
+  it('the probe step does not print the commit it found', () => {
+    const {clone, origin} = fixture()
+    const result = runStep(probeScript, clone)
+    expect(result.stdout).not.toContain(git(origin, 'rev-parse', 'refs/heads/data'))
   })
 
   it('the fetch step makes origin/data the pin even though data moved after the pin was read', () => {

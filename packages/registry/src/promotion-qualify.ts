@@ -56,7 +56,7 @@ export interface PromotionTrigger {
   readonly refreshReview?: string | undefined
 }
 
-export type RunReason = 'no-changes' | 'held-for-review' | 'qualifies' | 'weekly'
+export type RunReason = 'no-changes' | 'held-for-review' | 'qualifies' | 'weekly' | 'data-absent'
 
 export interface RunDecision {
   readonly run: boolean
@@ -181,12 +181,16 @@ export async function runPromotionQualify(params: RunPromotionQualifyParams): Pr
     return 1
   }
 
-  let qualification: Qualification
-  try {
-    qualification = await qualifyPromotion(params.git)
-  } catch {
-    params.stderr('promotion-qualify: GIT_FAILED\n')
-    return 1
+  // A `data` branch that does not exist yet (the probe step said so) has nothing to diff. The run goes on to
+  // the merge-back, which creates the branch from `main`, and the promotion job qualifies at the pin after it.
+  let qualification: Qualification | null = null
+  if (env.PROMOTION_DATA !== 'absent') {
+    try {
+      qualification = await qualifyPromotion(params.git)
+    } catch {
+      params.stderr('promotion-qualify: GIT_FAILED\n')
+      return 1
+    }
   }
 
   const weekly = isWeeklyRun({
@@ -194,14 +198,15 @@ export async function runPromotionQualify(params: RunPromotionQualifyParams): Pr
     schedule: env.PROMOTION_SCHEDULE,
     refreshReview: env.PROMOTION_REFRESH_REVIEW,
   })
-  const decision = decideRun(qualification, weekly)
+  const decision: RunDecision =
+    qualification === null ? {run: true, reason: 'data-absent'} : decideRun(qualification, weekly)
 
   try {
     writeGithubOutputs(
       {
         run: String(decision.run),
         reason: decision.reason,
-        qualifies: String(qualification.state === 'qualifies'),
+        qualifies: String(qualification?.state === 'qualifies'),
       },
       {onMissing: 'throw', env, append: params.append},
     )
@@ -220,6 +225,14 @@ function summaryFor(decision: RunDecision): string {
       '',
       'The `data` → `main` diff has a path outside `knowledge/` and `metadata/`, so the daily run leaves its head alone.',
       'The weekly run (Sunday 22:00 UTC) or a dispatch with `refresh-review` updates it. The unowned-changes alert also waits for the weekly run.',
+      '',
+    ].join('\n')
+  }
+  if (decision.reason === 'data-absent') {
+    return [
+      '### Promotion bootstrap',
+      '',
+      'The `data` branch does not exist yet, so this run goes on to the merge-back, which creates it from `main`. There is nothing to qualify.',
       '',
     ].join('\n')
   }

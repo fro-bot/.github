@@ -51,14 +51,31 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: 🔒 Fetch data ref for qualification
-        run: git fetch --no-tags --prune origin data
+      # `git ls-remote --exit-code` exits 0 when the ref exists, 2 when it does not and anything else on a
+      # failure to ask. Only 2 may continue: a missing `data` is the bootstrap case, where the promotion job
+      # reaches the merge-back, which creates the branch from `main`. Any other code (transport,
+      # authentication) stops the run, so an unreadable remote is never mistaken for a missing branch.
+      - id: probe
+        name: 🔒 Probe and fetch data ref for qualification
+        run: |
+          status=0
+          git ls-remote --exit-code origin refs/heads/data > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags --prune origin data
+            echo 'data=present' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'data=absent' >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::decide: DATA_PROBE_FAILED (exit $status)"
+            exit 1
+          fi
 
       - id: qualify
         name: 🧮 Decide whether to promote
         env:
           PROMOTION_SCHEDULE: ${{ github.event.schedule }}
           PROMOTION_REFRESH_REVIEW: ${{ inputs.refresh-review }}
+          PROMOTION_DATA: ${{ steps.probe.outputs.data }}
         run: bun scripts/promotion-qualify.ts
 
   merge-data:

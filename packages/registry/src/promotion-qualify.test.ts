@@ -511,3 +511,114 @@ describe('runPromotionQualify', () => {
     expect(stderr).toEqual(['promotion-qualify: OUTPUT_FAILED\n'])
   })
 })
+
+function absent(env: Record<string, string | undefined>) {
+  const outputs: {path: string; content: string}[] = []
+  const stderr: string[] = []
+  const calls: string[] = []
+  const run = async () =>
+    runPromotionQualify({
+      env: {GITHUB_OUTPUT: '/out', GITHUB_STEP_SUMMARY: '/summary', PROMOTION_DATA: 'absent', ...env},
+      git: {
+        diffNameStatus: async () => {
+          calls.push('diff')
+          throw new Error('fatal: ambiguous argument origin/main...origin/data')
+        },
+        entryAt: async () => {
+          calls.push('entry')
+          throw new Error('fatal: not a tree object')
+        },
+      },
+      stderr: text => stderr.push(text),
+      append: (path, content) => outputs.push({path, content}),
+    })
+  return {run, outputs, stderr, calls}
+}
+
+describe('runPromotionQualify: an absent data branch', () => {
+  it.each([
+    ['a daily run', {GITHUB_EVENT_NAME: 'schedule', PROMOTION_SCHEDULE: '0 22 * * 1-6'}],
+    ['the weekly run', {GITHUB_EVENT_NAME: 'schedule', PROMOTION_SCHEDULE: '0 22 * * 0'}],
+    ['a dispatch', {GITHUB_EVENT_NAME: 'workflow_dispatch'}],
+    ['a repository dispatch', {GITHUB_EVENT_NAME: 'repository_dispatch'}],
+  ])('runs the promotion job for %s so the merge-back can create the branch, and diffs nothing', async (_name, env) => {
+    const {run, outputs, stderr, calls} = absent(env)
+    expect(await run()).toBe(0)
+    expect(outputs.find(entry => entry.path === '/out')?.content).toBe(
+      'run=true\nreason=data-absent\nqualifies=false\n',
+    )
+    expect(calls).toEqual([])
+    expect(stderr).toEqual([])
+  })
+
+  it('writes a summary that says the branch is created by the merge-back', async () => {
+    const {run, outputs} = absent({GITHUB_EVENT_NAME: 'schedule', PROMOTION_SCHEDULE: '0 22 * * 1-6'})
+    await run()
+    expect(outputs.find(entry => entry.path === '/summary')?.content).toBe(
+      [
+        '### Promotion bootstrap',
+        '',
+        'The `data` branch does not exist yet, so this run goes on to the merge-back, which creates it from `main`. There is nothing to qualify.',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('still requires an event name', async () => {
+    const {run, stderr, outputs} = absent({})
+    expect(await run()).toBe(1)
+    expect(stderr).toEqual(['promotion-qualify: GITHUB_EVENT_NAME is required\n'])
+    expect(outputs).toEqual([])
+  })
+
+  it('fails with a fixed code when the output cannot be written', async () => {
+    const stderr: string[] = []
+    const code = await runPromotionQualify({
+      env: {GITHUB_EVENT_NAME: 'schedule', PROMOTION_DATA: 'absent'},
+      git: {diffNameStatus: async () => '', entryAt: async () => null},
+      stderr: text => stderr.push(text),
+    })
+    expect(code).toBe(1)
+    expect(stderr).toEqual(['promotion-qualify: OUTPUT_FAILED\n'])
+  })
+
+  it.each([undefined, '', 'present', 'Absent', 'absent '])('qualifies as usual when the probe says %j', async value => {
+    const outputs: {path: string; content: string}[] = []
+    const code = await runPromotionQualify({
+      env: {
+        GITHUB_OUTPUT: '/out',
+        GITHUB_STEP_SUMMARY: '/summary',
+        GITHUB_EVENT_NAME: 'schedule',
+        PROMOTION_SCHEDULE: '0 22 * * 1-6',
+        PROMOTION_DATA: value,
+      },
+      git: fakeGit({diff: nameStatus(['M', 'knowledge/a.md']), ...changed('knowledge/a.md')}),
+      stderr: () => {},
+      append: (path, content) => outputs.push({path, content}),
+    })
+    expect(code).toBe(0)
+    expect(outputs.find(entry => entry.path === '/out')?.content).toBe('run=true\nreason=qualifies\nqualifies=true\n')
+  })
+
+  it('fails closed with GIT_FAILED when the branch is not absent but the ref cannot be diffed', async () => {
+    const stderr: string[] = []
+    const code = await runPromotionQualify({
+      env: {
+        GITHUB_OUTPUT: '/out',
+        GITHUB_EVENT_NAME: 'schedule',
+        PROMOTION_SCHEDULE: '0 22 * * 1-6',
+        PROMOTION_DATA: 'present',
+      },
+      git: {
+        diffNameStatus: async () => {
+          throw new Error('fatal: bad revision')
+        },
+        entryAt: async () => null,
+      },
+      stderr: text => stderr.push(text),
+      append: () => {},
+    })
+    expect(code).toBe(1)
+    expect(stderr).toEqual(['promotion-qualify: GIT_FAILED\n'])
+  })
+})
