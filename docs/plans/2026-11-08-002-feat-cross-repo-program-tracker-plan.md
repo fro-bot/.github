@@ -308,7 +308,7 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 
 **Verification:** #3512's snapshot is unchanged; all four of its repos are public.
 
-- [ ] **Unit 5: Evidence and self-check duties**
+- [x] **Unit 5: Evidence and self-check duties**
 
 **Goal:** The tracker prompt carries R7–R10, built on the preflight's operator comment IDs.
 

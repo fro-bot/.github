@@ -106,6 +106,11 @@ export interface PreflightResult extends CommentDecision {
   marker: string
   /** The REST ID of the latest comment carrying a parseable marker; null when none exists. */
   marker_comment_id: number | null
+  /**
+   * The IDs of the comments the program's operator wrote on the tracker issue, ascending. The tracker ticks
+   * an operator-reported gate only on a comment from this list.
+   */
+  operator_comment_ids: number[]
   /** The program this run served, from `program-trackers.json`; the tracker prompt is templated from it. */
   program: {
     key: string
@@ -1021,6 +1026,10 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     last_mention_id: lastMentionId,
     marker: buildMarker(hash, lastMentionId),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+    operator_comment_ids: comments
+      .filter(candidate => isOperatorComment(candidate, entry))
+      .map(candidate => candidate.id)
+      .sort((x, y) => x - y),
     program: {
       key: entry.key,
       issue: entry.issue,

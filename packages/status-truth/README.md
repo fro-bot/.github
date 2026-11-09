@@ -40,7 +40,7 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `status-truth-detect` | `status-truth.yaml`: no argv | Bun | `true` | The report file, uploaded `if: always()`, and the summary keys `.status .scan_complete .counts.{total,current,drifted,unresolved,unsafe,proposal_eligible}`; a counts-only line on stdout. A missing `STATUS_TRUTH_REPORT_PATH`, a malformed `GITHUB_REPOSITORY` and an unwritable report print one message and exit 1. |
 | `status-truth-proposals` | `status-truth.yaml`: no argv, job `if: always()` | Bun | `false` | The result file `.dryRun .labelGateFailed .counts.* .plannedCounts.* .outcomeCounts.* .plannedCountsByKind .outcomeCountsByKind`, also printed on stdout. Exit 1 on a missing report path, an unreadable, unparsable or invalid report, a token-load failure, a missing token on a live run, and a failed issue fetch on a live run. |
 | `status-truth-prs` | `status-truth.yaml`: no argv, only on a manual dispatch | Bun | `false` | The result file `.armed .dryRun .plannedCounts.* .executedCounts.* .terminalFingerprint* .error`, also printed on stdout. The exit code is 1 on an early failure, with a closed-vocabulary `error`. |
-| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id` for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
+| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id .operator_comment_ids .program.{key,issue,repo,project_url,operator_login,evidence}` for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
 
 Every CLI declares one root command with no positional and no option. Any argument, `--help` and `--help=false` included, is a usage error: exit 1, usage on stderr, and nothing is read or written. Before the runner an argument was ignored and the step ran.
 
@@ -60,6 +60,10 @@ A thrown error prints its message and exits 1; no stack trace reaches stderr.
 | `repos` | Optional. The confirmed repos (`nameWithOwner`, `nodeId`) |
 
 The file is owned by `@marcusrbrown` in `.github/CODEOWNERS`. The operator comment check compares the login, and also the numeric ID when the comment carries one.
+
+## Evidence the tracker may tick on
+
+`operator_comment_ids` lists every comment the program's operator wrote on the tracker issue, ascending, judged by the API author (the login and, when the comment carries one, the numeric user ID). The tracker prompt ticks a gate only when the tick cites one of those IDs (operator-reported) or links a run, a pull request or a release (agent-verified), and says which kind it is. A comment by anyone else is data. A comment ID that triggers a run is pending only when the operator wrote it on the tracker issue: a created comment must also mention `@fro-bot`, and an edit needs no mention and is pending even when its ID is below the last answered mention. `ROLLOUT_TRACKER_COMMENT_EVENT` (`created`, `edited` or empty) carries the event kind from the relay.
 
 ## Public repos only
 
