@@ -9,6 +9,7 @@
  * runner's sinks.
  */
 
+import {execFileSync} from 'node:child_process'
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
@@ -260,6 +261,11 @@ describe('the Octokit-backed shims fail closed on missing input', () => {
     {name: 'merge-back-data', env: {}, stderr: '::error::merge-back-data: MISSING_TOKEN\n'},
     {name: 'merge-data-pr', env: {}, stderr: /mergeDataPr requires params\.octokit or GITHUB_TOKEN/u},
     {
+      name: 'promotion-qualify',
+      env: {GITHUB_EVENT_NAME: undefined},
+      stderr: 'promotion-qualify: GITHUB_EVENT_NAME is required\n',
+    },
+    {
       name: 'rename-tracked-repo',
       env: {},
       stderr: '::error::rename-tracked-repo: INVALID_INPUT (field=node_id)\n',
@@ -300,12 +306,83 @@ describe('the Octokit-backed shims fail closed on missing input', () => {
   })
 })
 
+/** A checkout whose `origin/main` and `origin/data` differ by `files`, which are added on `data`. */
+function promotionCheckout(files: readonly string[]): string {
+  const cwd = scratch('promotion')
+  const git = (...args: readonly string[]) =>
+    execFileSync(
+      'git',
+      ['-c', 'user.name=fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false', ...args],
+      {cwd, encoding: 'utf8'},
+    ).trim()
+  git('init', '-q', '-b', 'main')
+  writeFileSync(join(cwd, 'README.md'), 'base\n')
+  git('add', 'README.md')
+  git('commit', '-q', '-m', 'base')
+  git('checkout', '-q', '-b', 'data')
+  for (const file of files) {
+    mkdirSync(join(cwd, file, '..'), {recursive: true})
+    writeFileSync(join(cwd, file), 'x\n')
+    git('add', file)
+  }
+  git('commit', '-q', '--allow-empty', '-m', 'data')
+  git('update-ref', 'refs/remotes/origin/data', git('rev-parse', 'HEAD'))
+  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'main'))
+  return cwd
+}
+
+describe('promotion-qualify (bun, merge-data.yaml decide job)', () => {
+  const trigger = {GITHUB_EVENT_NAME: 'schedule', PROMOTION_SCHEDULE: '0 22 * * 1-6'}
+
+  it('writes run=true, reason=qualifies and qualifies=true for a knowledge-only promotion', async () => {
+    const result = await run('promotion-qualify', {
+      runtime: 'bun',
+      cwd: promotionCheckout(['knowledge/a.md']),
+      env: trigger,
+    })
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      githubOutput: 'run=true\nreason=qualifies\nqualifies=true\n',
+    })
+  })
+
+  it('holds a daily run whose promotion has a path outside the two prefixes', async () => {
+    const result = await run('promotion-qualify', {
+      runtime: 'bun',
+      cwd: promotionCheckout(['knowledge/a.md', 'scripts/x.ts']),
+      env: trigger,
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.githubOutput).toBe('run=false\nreason=held-for-review\nqualifies=false\n')
+    expect(result.stderr).toBe('')
+  })
+
+  it('runs the weekly schedule for the same promotion', async () => {
+    const result = await run('promotion-qualify', {
+      runtime: 'bun',
+      cwd: promotionCheckout(['knowledge/a.md', 'scripts/x.ts']),
+      env: {GITHUB_EVENT_NAME: 'schedule', PROMOTION_SCHEDULE: '0 22 * * 0'},
+    })
+    expect(result.githubOutput).toBe('run=true\nreason=weekly\nqualifies=false\n')
+  })
+
+  it('exits 1 with GIT_FAILED outside a repository and writes no output', async () => {
+    const result = await run('promotion-qualify', {runtime: 'bun', cwd: scratch('no-repo'), env: trigger})
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toBe('promotion-qualify: GIT_FAILED\n')
+    expect(result.githubOutput).toBe('')
+  })
+})
+
 describe('argv that matches nothing declared stops before the CLI body runs', () => {
   const shims = [
     'check-repo-onboarded',
     'handle-invitation',
     'merge-back-data',
     'merge-data-pr',
+    'promotion-qualify',
     'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
@@ -337,6 +414,7 @@ describe('importing a shim runs nothing', () => {
     'handle-invitation',
     'merge-back-data',
     'merge-data-pr',
+    'promotion-qualify',
     'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
