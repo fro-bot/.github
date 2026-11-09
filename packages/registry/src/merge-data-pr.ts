@@ -64,6 +64,8 @@ export interface MergeDataPrResult {
   mergeableState: string | null
   /** True when the run left the newest closed PR closed because the operator closed it. */
   closedPullRequestKept: boolean
+  /** True when a pin was given and the PR head is another commit, so the labels were left as they were. */
+  headMovedFromPin: boolean
 }
 
 /**
@@ -150,13 +152,18 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
     return settlePullRequest(settle, existingPullRequest)
   }
 
-  // A closed, unmerged promotion PR is the operator's decision: only a run that asked for a review
-  // refresh opens another.
-  if (
-    params.recreateClosedPullRequest === false &&
-    (await newestClosedPullRequestWasUnmerged({octokit, owner, repo, headBranch, baseBranch}))
-  ) {
-    return {...emptyResult({label: null, staleAlertIssueNumber}), closedPullRequestKept: true}
+  if (params.recreateClosedPullRequest === false) {
+    // The commit lookup can miss an open PR, so look by branch before the closed-PR rule can hide it.
+    const openByBranch = await findExistingPullRequestByBranch({octokit, owner, repo, headBranch, baseBranch})
+    if (openByBranch !== null) {
+      return settlePullRequest(settle, openByBranch)
+    }
+
+    // A closed, unmerged promotion PR is the operator's decision: only a run that asked for a review
+    // refresh opens another.
+    if (await newestClosedPullRequestWasUnmerged({octokit, owner, repo, headBranch, baseBranch})) {
+      return {...emptyResult({label: null, staleAlertIssueNumber}), closedPullRequestKept: true}
+    }
   }
 
   try {
@@ -218,6 +225,7 @@ function emptyResult(params: {label: MergeLabel | null; staleAlertIssueNumber: n
     headSha: null,
     mergeableState: null,
     closedPullRequestKept: false,
+    headMovedFromPin: false,
   }
 }
 
@@ -245,7 +253,17 @@ async function settlePullRequest(
     logger,
     pin: context.pin,
   })
-  await replaceLabel({octokit, owner, repo, issueNumber: pullRequest.number, label: context.label})
+  // The labels describe the commit the gates checked. A PR whose head is another commit keeps the labels it
+  // has; the self-merge step sees the mismatch and stops, and a later gated run labels the new head.
+  const liveHead = state.headSha ?? pullRequest.headSha ?? null
+  const headMoved = context.pin !== undefined && liveHead !== null && liveHead !== context.pin
+  if (headMoved) {
+    logger.warn(
+      `PR #${pullRequest.number} head is not the pinned commit the gates checked; leaving its labels as they are.`,
+    )
+  } else {
+    await replaceLabel({octokit, owner, repo, issueNumber: pullRequest.number, label: context.label})
+  }
 
   const conflicted = state.mergeableState === 'dirty'
   const mergeabilityUnavailable = state.mergeableState === 'unavailable'
@@ -273,7 +291,7 @@ async function settlePullRequest(
     createdPullRequest: true,
     pullRequestNumber: pullRequest.number,
     pullRequestUrl: pullRequest.html_url,
-    label: context.label,
+    label: headMoved ? null : context.label,
     journalIssueNumber: null,
     staleAlertIssueNumber: context.staleAlertIssueNumber,
     conflicted,
@@ -282,6 +300,7 @@ async function settlePullRequest(
     headSha: state.headSha ?? pullRequest.headSha ?? null,
     mergeableState: state.mergeableState,
     closedPullRequestKept: false,
+    headMovedFromPin: headMoved,
   }
 }
 

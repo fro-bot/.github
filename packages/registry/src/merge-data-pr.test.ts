@@ -1722,6 +1722,15 @@ describe('runMergeDataPr', () => {
 })
 
 const PIN = 'a'.repeat(40)
+
+/** An Octokit whose promotion PR head is the pin, as it is when nothing pushed after the gates. */
+function pinnedOctokit(overrides: Parameters<typeof mockOctokit>[0] = {}) {
+  return mockOctokit({
+    getPullRequest: async () => ({data: {mergeable_state: 'clean', head: {sha: PIN}}}),
+    ...overrides,
+  })
+}
+
 const OTHER_HEAD = 'b'.repeat(40)
 const NOW = new Date('2026-04-16T00:00:00.000Z')
 
@@ -1755,7 +1764,7 @@ describe('mergeDataPr with a pinned promotion', () => {
         total_commits: 1,
       },
     }))
-    const octokit = mockOctokit({compareCommitsWithBasehead: compare})
+    const octokit = pinnedOctokit({compareCommitsWithBasehead: compare})
 
     await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
 
@@ -1766,14 +1775,14 @@ describe('mergeDataPr with a pinned promotion', () => {
     const compare = vi.fn(async (_params: {owner: string; repo: string; basehead: string}) => ({
       data: {files: [], commits: [], ahead_by: 0, behind_by: 0, total_commits: 0},
     }))
-    await mergeDataPr({octokit: mockOctokit({compareCommitsWithBasehead: compare}), now: NOW})
+    await mergeDataPr({octokit: pinnedOctokit({compareCommitsWithBasehead: compare}), now: NOW})
     expect(compare.mock.calls[0]?.[0].basehead).toBe('main...data')
   })
 
   it('sets automerge and removes needs-review for a qualifying promotion, whatever the file list says', async () => {
     const addLabels = vi.fn(async () => ({data: []}))
     const removeLabel = vi.fn(async () => ({data: []}))
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       compareCommitsWithBasehead: async () => ({
         data: {
           files: [{filename: 'scripts/x.ts'}],
@@ -1808,7 +1817,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   it('sets needs-review and removes automerge for a non-qualifying promotion (AE2)', async () => {
     const addLabels = vi.fn(async () => ({data: []}))
     const removeLabel = vi.fn(async () => ({data: []}))
-    const octokit = mockOctokit({addLabels, removeLabel})
+    const octokit = pinnedOctokit({addLabels, removeLabel})
 
     const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: false})
 
@@ -1830,7 +1839,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   it('touches no label but the two it owns, so hold-merge survives', async () => {
     const addLabels = vi.fn(async (_params: {labels: string[]}) => ({data: []}))
     const removeLabel = vi.fn(async (_params: {name: string}) => ({data: []}))
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       listPullRequestsAssociatedWithCommit: async () => openPullRequestFor(55),
       addLabels,
       removeLabel,
@@ -1844,7 +1853,7 @@ describe('mergeDataPr with a pinned promotion', () => {
 
   it('adds the new label before it removes the old one, so the promotion is never unlabeled', async () => {
     const order: string[] = []
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       addLabels: async () => {
         order.push('add')
         return {data: []}
@@ -1859,7 +1868,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('ignores a 404 from removing a label the PR does not carry', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       removeLabel: async () => {
         throw statusError(404, 'Label does not exist')
       },
@@ -1869,7 +1878,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('fails when removing the old label fails for any other reason', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       removeLabel: async () => {
         throw statusError(403, 'forbidden')
       },
@@ -1880,7 +1889,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('fails when adding the label fails', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       addLabels: async () => {
         throw statusError(500, 'down')
       },
@@ -1892,7 +1901,7 @@ describe('mergeDataPr with a pinned promotion', () => {
 
   it('never calls updateBranch for a PR that is behind, and reports behind', async () => {
     const updateBranch = vi.fn(async () => ({data: {}}))
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       listPullRequestsAssociatedWithCommit: async () => openPullRequestFor(55),
       getPullRequest: async () => ({data: {mergeable_state: 'behind', head: {sha: PIN}}}),
       updateBranch,
@@ -1907,7 +1916,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('reports the head of an existing PR as read from the API', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       listPullRequestsAssociatedWithCommit: async () => openPullRequestFor(55),
       getPullRequest: async () => ({data: {mergeable_state: 'clean', head: {sha: OTHER_HEAD}}}),
     })
@@ -1918,7 +1927,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('reports the head of a PR it created', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       createPullRequest: async () => ({
         data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42', head: {sha: PIN}},
       }),
@@ -1929,7 +1938,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('falls back to the head from the create response when the PR read fails', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       createPullRequest: async () => ({
         data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42', head: {sha: PIN}},
       }),
@@ -1943,7 +1952,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('reports no head when neither read carries one', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       getPullRequest: async () => {
         throw statusError(503, 'unavailable')
       },
@@ -1953,7 +1962,7 @@ describe('mergeDataPr with a pinned promotion', () => {
   })
 
   it('reports no head and no PR for a no-op', async () => {
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       compareCommitsWithBasehead: async () => ({
         data: {files: [], commits: [], ahead_by: 0, behind_by: 0, total_commits: 0},
       }),
@@ -1972,12 +1981,15 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
   const closed = (mergedAt: string | null) => ({
     data: [{number: 31, state: 'closed', merged_at: mergedAt, head: {ref: 'data'}, base: {ref: 'main'}}],
   })
+  /** The list endpoint filters by state: no open PR, and the one closed PR. */
+  const closedList = (mergedAt: string | null) => async (params: unknown) =>
+    (params as {state: string}).state === 'open' ? {data: []} : closed(mergedAt)
 
   it('does not recreate it when the newest closed PR was closed unmerged (AE10)', async () => {
     const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
     const addLabels = vi.fn(async () => ({data: []}))
-    const listPullRequests = vi.fn(async (_params: unknown) => closed(null))
-    const octokit = mockOctokit({createPullRequest, addLabels, listPullRequests})
+    const listPullRequests = vi.fn(closedList(null))
+    const octokit = pinnedOctokit({createPullRequest, addLabels, listPullRequests})
 
     const result = await mergeDataPr({
       octokit,
@@ -1999,7 +2011,8 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
       conflicted: false,
       mergeabilityUnavailable: false,
     })
-    expect(listPullRequests).toHaveBeenCalledExactlyOnceWith({
+    expect(listPullRequests).toHaveBeenCalledTimes(2)
+    expect(listPullRequests).toHaveBeenNthCalledWith(2, {
       owner: 'fro-bot',
       repo: '.github',
       state: 'closed',
@@ -2013,8 +2026,8 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
 
   it('still files the stale-divergence alert while the PR stays closed', async () => {
     const createIssue = vi.fn(async () => ({data: {number: 99, html_url: 'u'}}))
-    const octokit = mockOctokit({
-      listPullRequests: async () => closed(null),
+    const octokit = pinnedOctokit({
+      listPullRequests: closedList(null),
       createIssue,
       compareCommitsWithBasehead: async () => ({
         data: {
@@ -2034,7 +2047,7 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
 
   it('creates a PR when the newest closed PR was merged', async () => {
     const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u', head: {sha: PIN}}}))
-    const octokit = mockOctokit({createPullRequest, listPullRequests: async () => closed('2026-04-15T00:00:00Z')})
+    const octokit = pinnedOctokit({createPullRequest, listPullRequests: closedList('2026-04-15T00:00:00Z')})
     const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(result.closedPullRequestKept).toBe(false)
@@ -2042,7 +2055,7 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
 
   it('creates a PR when there is no closed PR at all', async () => {
     const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
-    const octokit = mockOctokit({createPullRequest, listPullRequests: async () => ({data: []})})
+    const octokit = pinnedOctokit({createPullRequest, listPullRequests: async () => ({data: []})})
     await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
     expect(createPullRequest).toHaveBeenCalledTimes(1)
   })
@@ -2050,7 +2063,7 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
   it('recreates it on a refresh-review run, without even looking (AE10)', async () => {
     const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
     const listPullRequests = vi.fn(async (_params: unknown) => closed(null))
-    const octokit = mockOctokit({createPullRequest, listPullRequests})
+    const octokit = pinnedOctokit({createPullRequest, listPullRequests})
     await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: true})
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(listPullRequests).not.toHaveBeenCalled()
@@ -2058,14 +2071,14 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
 
   it('recreates it when the option is left out, as an unpinned run always did', async () => {
     const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
-    const octokit = mockOctokit({createPullRequest, listPullRequests: async () => closed(null)})
+    const octokit = pinnedOctokit({createPullRequest, listPullRequests: async () => closed(null)})
     await mergeDataPr({octokit, now: NOW})
     expect(createPullRequest).toHaveBeenCalledTimes(1)
   })
 
   it('still updates an open PR when closed ones exist', async () => {
     const addLabels = vi.fn(async () => ({data: []}))
-    const octokit = mockOctokit({
+    const octokit = pinnedOctokit({
       listPullRequestsAssociatedWithCommit: async () => openPullRequestFor(55),
       listPullRequests: async () => closed(null),
       addLabels,
@@ -2076,14 +2089,181 @@ describe('mergeDataPr and a promotion PR the operator closed', () => {
   })
 
   it('fails when the closed-PR lookup fails', async () => {
-    const octokit = mockOctokit({
-      listPullRequests: async () => {
+    const octokit = pinnedOctokit({
+      listPullRequests: async (params: unknown) => {
+        if ((params as {state: string}).state === 'open') return {data: []}
         throw statusError(500, 'down')
       },
     })
     await expect(
       mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false}),
     ).rejects.toThrow('GitHub API error while looking up the newest closed data -> main pull request: down')
+  })
+})
+
+describe('mergeDataPr: an open PR the commit lookup missed', () => {
+  const byState = (open: unknown[], closedPulls: unknown[]) => async (params: unknown) => ({
+    data: (params as {state: string}).state === 'open' ? open : closedPulls,
+  })
+  const openPull = (number: number) => ({
+    number,
+    html_url: `https://github.com/fro-bot/.github/pull/${number}`,
+    state: 'open',
+    head: {ref: 'data'},
+    base: {ref: 'main'},
+  })
+  const oldClosed = {number: 31, state: 'closed', merged_at: null, head: {ref: 'data'}, base: {ref: 'main'}}
+
+  it('settles the open PR found by branch instead of keeping an older closed one closed', async () => {
+    const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests: byState([openPull(77)], [oldClosed]),
+      createPullRequest,
+      addLabels,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+    expect(result).toMatchObject({pullRequestNumber: 77, createdPullRequest: true, closedPullRequestKept: false})
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 77,
+      labels: ['automerge'],
+    })
+  })
+
+  it('looks for the open PR by head and base branch', async () => {
+    const listPullRequests = vi.fn(byState([openPull(77)], [oldClosed]))
+    const octokit = pinnedOctokit({listPullRequestsAssociatedWithCommit: async () => ({data: []}), listPullRequests})
+    await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+    expect(listPullRequests).toHaveBeenCalledWith({
+      owner: 'fro-bot',
+      repo: '.github',
+      state: 'open',
+      head: 'fro-bot:data',
+      base: 'main',
+      per_page: 30,
+    })
+  })
+
+  it('still keeps the closed PR closed when no open PR exists', async () => {
+    const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u'}}))
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests: byState([], [oldClosed]),
+      createPullRequest,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+    expect(result.closedPullRequestKept).toBe(true)
+    expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it('ignores an open PR from another head branch', async () => {
+    const other = {...openPull(80), head: {ref: 'feature'}}
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests: byState([other], [oldClosed]),
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+    expect(result.closedPullRequestKept).toBe(true)
+  })
+
+  it('does not look by branch when the run is allowed to recreate a closed PR', async () => {
+    const listPullRequests = vi.fn(byState([openPull(77)], [oldClosed]))
+    const createPullRequest = vi.fn(async () => ({data: {number: 42, html_url: 'u', head: {sha: PIN}}}))
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests,
+      createPullRequest,
+    })
+    await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: true})
+    expect(listPullRequests).not.toHaveBeenCalled()
+  })
+
+  it('fails when the branch lookup fails', async () => {
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests: async () => {
+        throw statusError(500, 'down')
+      },
+    })
+    await expect(
+      mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false}),
+    ).rejects.toThrow('GitHub API error while discovering existing data -> main pull request: down')
+  })
+})
+
+describe('mergeDataPr: a head that moved off the pin', () => {
+  const MOVED = 'b'.repeat(40)
+  const movedHead =
+    (mergeable = 'clean') =>
+    async () => ({data: {mergeable_state: mergeable, head: {sha: MOVED}}})
+
+  it('leaves the labels alone and reports the mismatch', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const removeLabel = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({getPullRequest: movedHead(), addLabels, removeLabel})
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
+    expect(addLabels).not.toHaveBeenCalled()
+    expect(removeLabel).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      pullRequestNumber: 42,
+      headSha: MOVED,
+      headMovedFromPin: true,
+      label: null,
+    })
+  })
+
+  it('warns with a fixed line that names no commit', async () => {
+    const logger = mockLogger()
+    const octokit = mockOctokit({getPullRequest: movedHead()})
+    await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: false, logger})
+    expect(logger.warn).toHaveBeenCalledWith(
+      'PR #42 head is not the pinned commit the gates checked; leaving its labels as they are.',
+    )
+  })
+
+  it('applies the labels when the head is the pin', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = pinnedOctokit({addLabels})
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
+    expect(addLabels).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({headMovedFromPin: false, label: 'automerge'})
+  })
+
+  it('applies the labels when the head could not be read, as an unreadable head says nothing', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({
+      getPullRequest: async () => {
+        throw statusError(503, 'down')
+      },
+      addLabels,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger: mockLogger()})
+    expect(addLabels).toHaveBeenCalledTimes(1)
+    expect(result.headMovedFromPin).toBe(false)
+  })
+
+  it('never reports a mismatch without a pin', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({getPullRequest: movedHead(), addLabels})
+    const result = await mergeDataPr({octokit, now: NOW})
+    expect(addLabels).toHaveBeenCalledTimes(1)
+    expect(result.headMovedFromPin).toBe(false)
+  })
+
+  it('also leaves the labels alone on a PR the run just created', async () => {
+    const addLabels = vi.fn(async () => ({data: []}))
+    const octokit = mockOctokit({
+      createPullRequest: async () => ({data: {number: 42, html_url: 'u', head: {sha: MOVED}}}),
+      getPullRequest: movedHead(),
+      addLabels,
+    })
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
+    expect(addLabels).not.toHaveBeenCalled()
+    expect(result.headMovedFromPin).toBe(true)
   })
 })
 
