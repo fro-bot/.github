@@ -475,14 +475,101 @@ describe('selfMerge: what counts as a passing check', () => {
     expect(await selfMerge(missing.input())).toMatchObject({code: 'TIMEOUT'})
   })
 
-  it('lets a check run decide when both a run and a status carry the context', async () => {
-    const w = world({
-      statuses: () => [
-        {context: 'Lint', state: 'failure'},
-        {context: 'Security: Private Leak Scan', state: 'success'},
-      ],
+  describe('a context that has both a check run and a commit status', () => {
+    const SECURITY = {context: 'Security: Private Leak Scan', state: 'success'}
+    const lintRun = (conclusion: string | null, status = 'completed'): readonly RunState[] => [
+      {name: 'Lint', app: 15_368, conclusion, status},
+      {name: 'Test', app: 15_368},
+      {name: 'CodeQL', app: 57_789},
+    ]
+    const lintStatus = (state: string) => [{context: 'Lint', state}, SECURITY]
+
+    it('passes when both succeed, and approves only then', async () => {
+      const w = world({runs: () => lintRun('success'), statuses: () => lintStatus('success')})
+      expect(await selfMerge(w.input())).toMatchObject(LIVE)
+      expect(w.log).toEqual(['approve', 'merge'])
     })
-    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+
+    it.each(['failure', 'error'])('fails when the run succeeds and the status is a %s', async state => {
+      const w = world({runs: () => lintRun('success'), statuses: () => lintStatus(state)})
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+      expect(outcome.summary).toContain('`Lint`')
+      expect(w.log).toEqual([])
+    })
+
+    it('keeps waiting when the run succeeds and the status is pending, and approves nothing', async () => {
+      const w = world({runs: () => lintRun('success'), statuses: () => lintStatus('pending')})
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+      expect(outcome.summary).toContain('`Lint`')
+      expect(w.log).toEqual([])
+    })
+
+    it('goes on once the pending status turns green', async () => {
+      const w = world({
+        runs: () => lintRun('success'),
+        statuses: poll => lintStatus(poll < 3 ? 'pending' : 'success'),
+      })
+      expect(await selfMerge(w.input())).toMatchObject(LIVE)
+      expect(w.sleeps).toEqual([MINUTE, MINUTE])
+    })
+
+    it.each(['failure', 'cancelled', 'timed_out'])(
+      'fails when the status succeeds and the run is a %s',
+      async conclusion => {
+        const w = world({runs: () => lintRun(conclusion), statuses: () => lintStatus('success')})
+        expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+        expect(w.log).toEqual([])
+      },
+    )
+
+    it.each(['in_progress', 'queued'])('keeps waiting when the status succeeds and the run is %s', async status => {
+      const w = world({runs: () => lintRun(null, status), statuses: () => lintStatus('success')})
+      expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+      expect(w.log).toEqual([])
+    })
+
+    it('fails, and does not wait, when one side has failed and the other is pending', async () => {
+      const statusFailed = world({runs: () => lintRun(null, 'in_progress'), statuses: () => lintStatus('failure')})
+      expect(await selfMerge(statusFailed.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+      expect(statusFailed.sleeps).toEqual([])
+      const runFailed = world({runs: () => lintRun('failure'), statuses: () => lintStatus('pending')})
+      expect(await selfMerge(runFailed.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+      expect(runFailed.sleeps).toEqual([])
+    })
+
+    it('lets a skipped or neutral run pass beside a successful status', async () => {
+      for (const conclusion of ['skipped', 'neutral']) {
+        const w = world({runs: () => lintRun(conclusion), statuses: () => lintStatus('success')})
+        expect(await selfMerge(w.input())).toMatchObject(LIVE)
+      }
+    })
+
+    it('lets the status decide alone when the run is from another app', async () => {
+      const otherApp = (): readonly RunState[] => [
+        {name: 'Lint', app: 99, conclusion: 'failure'},
+        {name: 'Test', app: 15_368},
+        {name: 'CodeQL', app: 57_789},
+      ]
+      const pass = world({runs: otherApp, statuses: () => lintStatus('success')})
+      expect(await selfMerge(pass.input())).toMatchObject(LIVE)
+      const fail = world({runs: otherApp, statuses: () => lintStatus('failure')})
+      expect(await selfMerge(fail.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+    })
+
+    it('lets the run decide alone when no status carries the context', async () => {
+      const pass = world({runs: () => lintRun('success'), statuses: () => [SECURITY]})
+      expect(await selfMerge(pass.input())).toMatchObject(LIVE)
+      const fail = world({runs: () => lintRun('failure'), statuses: () => [SECURITY]})
+      expect(await selfMerge(fail.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+    })
+
+    it('reports a context once even when both its run and its status fail', async () => {
+      const w = world({runs: () => lintRun('failure'), statuses: () => lintStatus('failure')})
+      const outcome = await selfMerge(w.input())
+      expect(outcome.summary.match(/`Lint`/gu)).toHaveLength(1)
+    })
   })
 
   it('reads a second page of statuses', async () => {

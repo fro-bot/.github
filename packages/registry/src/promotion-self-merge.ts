@@ -365,7 +365,8 @@ function statusOutcome(status: StatusView): {readonly done: boolean; readonly ok
 /**
  * Judges each required check on the pinned commit. A check run counts when its name and app match the
  * requirement (any app when none is named), the newest of several winning; a commit status, which has no
- * app, is matched by context and the newest wins. A check run decides before a status does.
+ * app, is matched by context and the newest wins. When a context has both, both must pass: either failing
+ * fails the context, either pending keeps it waiting, and an absent one leaves the other to decide alone.
  */
 function evaluateChecks(
   required: readonly RequiredCheck[],
@@ -380,11 +381,13 @@ function evaluateChecks(
     )
     const newest = matching.toSorted((left, right) => right.id - left.id)[0]
     const status = statuses.find(candidate => candidate.context === check.context)
+    const reported = [
+      ...(newest === undefined ? [] : [runOutcome(newest)]),
+      ...(status === undefined ? [] : [statusOutcome(status)]),
+    ]
     // Nothing reported yet counts as not done.
-    const outcome = newest === undefined ? undefined : runOutcome(newest)
-    const fromStatus = outcome === undefined && status !== undefined ? statusOutcome(status) : outcome
-    if (fromStatus === undefined || !fromStatus.done) pending.push(check.context)
-    else if (!fromStatus.ok) failed.push(check.context)
+    if (reported.some(outcome => outcome.done && !outcome.ok)) failed.push(check.context)
+    else if (reported.length === 0 || reported.some(outcome => !outcome.done)) pending.push(check.context)
   }
   return {failed, pending}
 }
