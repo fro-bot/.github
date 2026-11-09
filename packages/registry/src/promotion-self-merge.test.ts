@@ -40,6 +40,12 @@ interface PullState {
   mergeable?: string
 }
 
+interface ReviewState {
+  login?: string
+  state?: string
+  commit?: string
+}
+
 interface RunState {
   id?: number
   name: string
@@ -66,6 +72,8 @@ interface Scenario {
   merge?: () => unknown
   /** Milliseconds every API call takes on the fake clock, or per call: its name and its count so far (1-based). */
   callCost?: number | ((name: string, count: number) => number)
+  /** The reviews `listReviews` returns; an Error is thrown. Defaults to none. */
+  reviews?: () => readonly ReviewState[] | Error
   /** Whether a call hangs until its abort signal fires, like a request that stalls in flight. */
   hang?: (name: string, count: number) => boolean
 }
@@ -162,6 +170,19 @@ function world(scenario: Scenario = {}) {
               labels: (pull.labels ?? ['automerge']).map(name => ({name})),
               mergeable_state: pull.mergeable ?? 'clean',
             },
+          }
+        },
+        listReviews: async (params: unknown) => {
+          record('listReviews', params)
+          await maybeHang('listReviews', params)
+          const reviews = (scenario.reviews ?? (() => []))()
+          if (reviews instanceof Error) throw reviews
+          return {
+            data: reviews.map(review => ({
+              user: {login: review.login ?? 'fro-bot'},
+              state: review.state ?? 'APPROVED',
+              commit_id: review.commit ?? PIN,
+            })),
           }
         },
         createReview: async (params: unknown) => {
@@ -942,7 +963,7 @@ describe('selfMerge: transient failures', () => {
         throw apiError(503)
       },
     })
-    expect(await selfMerge(approving.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+    expect(await selfMerge(approving.input())).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
     expect(approving.requests.approve).toHaveLength(1)
   })
 })
@@ -970,19 +991,24 @@ describe('selfMerge: the approval', () => {
     expect(w.log).toEqual(['approve'])
   })
 
-  it.each([401, 403, 404, 500])('fails with exit 1 on a %i from the approval, and merges nothing', async status => {
-    const w = world({
-      approve: () => {
-        throw apiError(status)
-      },
-    })
-    const outcome = await selfMerge(w.input())
-    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
-    expect(w.log).toEqual(['approve'])
-    expect(outcome.summary).not.toContain('secret')
-    // only a 422 re-reads the pull request: the poll and the check before the approval are the two reads
-    expect(w.requests.getPull).toHaveLength(2)
-  })
+  it.each([400, 401, 403, 404, 429])(
+    'fails with exit 1 on a %i from the approval, and merges nothing',
+    async status => {
+      const w = world({
+        approve: () => {
+          throw apiError(status)
+        },
+      })
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+      expect(w.log).toEqual(['approve'])
+      expect(outcome.summary).not.toContain('secret')
+      expect(outcome.summary).toContain('GitHub refused the approval')
+      // a definitive refusal reads no reviews, and only a 422 re-reads the pull request
+      expect(w.requests.listReviews).toBeUndefined()
+      expect(w.requests.getPull).toHaveLength(2)
+    },
+  )
 
   it('does not approve a dry run, a held promotion or a stale head', async () => {
     for (const scenario of [
@@ -1654,15 +1680,16 @@ describe('selfMerge: the full text of every summary', () => {
 
 describe('selfMerge: odd thrown values and response shapes', () => {
   it.each([null, undefined, 'a string', 42, {status: '503'}, {status: null}, {code: 'EOTHER'}])(
-    'does not retry or crash on a thrown %j, and fails the approval cleanly',
+    'does not retry or crash on a thrown %j, and reconciles the approval once',
     async thrown => {
       const w = world({
         approve: () => {
           throw thrown
         },
       })
-      expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+      expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
       expect(w.requests.getPull).toHaveLength(2)
+      expect(w.requests.approve).toHaveLength(1)
     },
   )
 
@@ -2446,8 +2473,8 @@ describe('selfMerge: a write that stalls in flight is reconciled with one read',
   // reads: poll, before the approval, [settle], reconcile
   const afterWrite = (...later: readonly (PullState | Error)[]) => script<PullState | Error>({}, {}, ...later)
 
-  it('says the approval is unknown, and that the pull request is still open, when the approval stalls', async () => {
-    const w = world({...stallApprove, pulls: afterWrite({})})
+  it('says the approval is unknown, and that no approval was found, when the approval stalls', async () => {
+    const w = world({...stallApprove})
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
     expect(w.requests.approve).toHaveLength(1)
@@ -2455,7 +2482,7 @@ describe('selfMerge: a write that stalls in flight is reconciled with one read',
       [
         '### Promotion self-merge: approval unknown',
         '',
-        'The approval request was cut off at the deadline, so it is not known whether GitHub recorded it. Read again afterwards, the pull request is open. Check its reviews and dismiss the approval if the promotion should not merge.',
+        'The approval request failed or was cut off, so it is not known whether GitHub recorded it. A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit. Check the reviews and dismiss the approval if the promotion should not merge.',
         '',
         '- Pull request: #77',
         `- Pinned commit: \`${PIN}\``,
@@ -2464,26 +2491,23 @@ describe('selfMerge: a write that stalls in flight is reconciled with one read',
     )
   })
 
-  it.each([
-    [{merged: true, state: 'closed' as const}, 'merged'],
-    [{state: 'closed' as const}, 'closed'],
-  ])('names the state the pull request is in after a stalled approval: %j', async (pull, word) => {
-    const w = world({...stallApprove, pulls: afterWrite(pull)})
-    const outcome = await selfMerge(w.input())
-    expect(outcome.code).toBe('APPROVAL_UNKNOWN')
-    expect(outcome.summary).toContain(`the pull request is ${word}.`)
-  })
-
-  it('says the pull request could not be read when the read after a stalled approval fails', async () => {
-    const w = world({...stallApprove, pulls: afterWrite(apiError(404))})
+  it('says the reviews could not be read when the read after a stalled approval fails', async () => {
+    const w = world({...stallApprove, reviews: () => apiError(404)})
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
-    expect(outcome.summary).toContain('The pull request could not be read afterwards.')
-    expect(outcome.summary).not.toContain('Read again afterwards')
+    expect(outcome.summary).toContain('The reviews could not be read afterwards.')
+    expect(outcome.summary).not.toContain('found no approval')
   })
 
-  it('does not retry the stalled approval, and never merges', async () => {
-    const w = world({...stallApprove, pulls: afterWrite({})})
+  it('goes on to the merge when the stalled approval was recorded', async () => {
+    const w = world({...stallApprove, reviews: () => [{}]})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.approve).toHaveLength(1)
+    expect(w.requests.merge).toHaveLength(1)
+  })
+
+  it('does not retry the stalled approval, and never merges when none was found', async () => {
+    const w = world({...stallApprove})
     await selfMerge(w.input())
     expect(w.requests.approve).toHaveLength(1)
     expect(w.requests.merge).toBeUndefined()
@@ -2643,5 +2667,121 @@ describe('selfMerge: the new outcomes, exactly', () => {
     expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_SHORT'})
     expect(w.requests.getBranch).toHaveLength(3)
     expect(w.log).toEqual([])
+  })
+})
+
+describe('selfMerge: an approval that fails in a way that does not say whether it was recorded', () => {
+  const failApprove = (error: unknown) => ({
+    approve: () => {
+      throw error
+    },
+  })
+  const reset = Object.assign(new Error('read ECONNRESET'), {code: 'ECONNRESET'})
+  const noStatus = new Error('fetch failed')
+
+  it.each([
+    ['a connection reset', reset],
+    ['a network error with no status', noStatus],
+    ['a 500', apiError(500)],
+    ['a 502', apiError(502)],
+    ['a 503', apiError(503)],
+  ])('continues to the merge after %s when the approval was recorded', async (_name, error) => {
+    const w = world({...failApprove(error), reviews: () => [{}]})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject(LIVE)
+    expect(w.requests.approve).toHaveLength(1)
+    expect(w.requests.listReviews).toHaveLength(1)
+    expect(w.log).toEqual(['approve', 'merge'])
+  })
+
+  it.each([
+    ['a connection reset', reset],
+    ['a network error with no status', noStatus],
+    ['a 502', apiError(502)],
+  ])('ends with APPROVAL_UNKNOWN after %s when no approval was recorded, and merges nothing', async (_name, error) => {
+    const w = world({...failApprove(error)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(w.requests.merge).toBeUndefined()
+    expect(outcome.summary).toContain('dismiss the approval if the promotion should not merge')
+    expect(outcome.summary).not.toContain('secret')
+    expect(outcome.summary).not.toContain('GitHub refused the approval')
+  })
+
+  it('ends with APPROVAL_UNKNOWN after a 502 when the reviews cannot be read', async () => {
+    const w = world({...failApprove(apiError(502)), reviews: () => apiError(502)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(outcome.summary).toContain('The reviews could not be read afterwards.')
+    // one read, not retried
+    expect(w.requests.listReviews).toHaveLength(1)
+  })
+
+  it.each([
+    ['a review by someone else', {login: 'octocat'}],
+    ['a review of an older commit', {commit: 'b'.repeat(40)}],
+    ['a comment', {state: 'COMMENTED'}],
+    ['a dismissed approval', {state: 'DISMISSED'}],
+    ['a change request', {state: 'CHANGES_REQUESTED'}],
+    ['a pending review', {state: 'PENDING'}],
+    ['a login that only starts with fro-bot', {login: 'fro-bot-two'}],
+    ['a login that only ends with fro-bot', {login: 'not-fro-bot'}],
+  ])('does not count %s as the approval', async (_name, review) => {
+    const w = world({...failApprove(apiError(502)), reviews: () => [review]})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(w.requests.merge).toBeUndefined()
+  })
+
+  it('finds the approval among several reviews', async () => {
+    const w = world({
+      ...failApprove(apiError(502)),
+      reviews: () => [{login: 'octocat'}, {state: 'COMMENTED'}, {commit: 'c'.repeat(40)}, {}],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('reads the reviews of the pull request, a hundred to a page, with a signal of its own', async () => {
+    const w = world({...failApprove(apiError(502)), reviews: () => [{}]})
+    await selfMerge(w.input())
+    expect(w.requests.listReviews?.[0]).toEqual({owner: 'fro-bot', repo: '.github', pull_number: 77, per_page: 100})
+    expect(w.signals.filter(entry => entry.name === 'listReviews')).toEqual([{name: 'listReviews', ms: 2 * MINUTE}])
+  })
+
+  it('reads the reviews past the deadline, then stops at the deadline and says the approval is on the pull request', async () => {
+    const w = world({
+      ...failApprove(apiError(502)),
+      reviews: () => [{}],
+      callCost: name => (name === 'approve' ? 71 * MINUTE : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.listReviews).toHaveLength(1)
+    expect(w.requests.merge).toBeUndefined()
+    expect(outcome.summary).toContain('already submitted')
+  })
+
+  it('stops the merge, and says the approval is on the pull request, when the merge path then finds a moved head', async () => {
+    const w = world({
+      ...failApprove(apiError(502)),
+      reviews: () => [{}],
+      pulls: script<PullState>({}, {}, {head: MOVED}),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(outcome.summary).toContain('already submitted')
+  })
+
+  it('still treats a 422 as a refusal, and a definitive status as a refusal without reading reviews', async () => {
+    for (const status of [400, 401, 403, 404, 410, 422]) {
+      const w = world({...failApprove(apiError(status)), reviews: () => [{}]})
+      expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+      expect(w.requests.listReviews).toBeUndefined()
+    }
+  })
+
+  it('still ends a deadline that passed before the approval as TIMEOUT, without reading reviews', async () => {
+    const w = world({callCost: (name, count) => (name === 'getVariable' && count === 1 ? 71 * MINUTE : 0)})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.listReviews).toBeUndefined()
   })
 })

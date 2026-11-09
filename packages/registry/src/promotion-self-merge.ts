@@ -35,7 +35,7 @@ export interface SelfMergeOctokit {
   readonly rest: {
     readonly repos: Pick<Octokit['rest']['repos'], 'getBranch' | 'listCommitStatusesForRef'>
     readonly checks: Pick<Octokit['rest']['checks'], 'listForRef'>
-    readonly pulls: Pick<Octokit['rest']['pulls'], 'get' | 'createReview' | 'merge'>
+    readonly pulls: Pick<Octokit['rest']['pulls'], 'get' | 'listReviews' | 'createReview' | 'merge'>
     readonly actions: Pick<Octokit['rest']['actions'], 'getRepoVariable'>
   }
 }
@@ -107,6 +107,13 @@ interface PullView {
   readonly headSha: string
   readonly labels: readonly string[]
   readonly mergeableState: string
+}
+
+/** A review as the run needs it: who, which verdict, and which commit it was written against. */
+interface ReviewView {
+  readonly login: string | undefined
+  readonly state: string
+  readonly commitId: string | null | undefined
 }
 
 interface CheckRunView {
@@ -516,6 +523,25 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     }
   }
 
+  /**
+   * One read of the pull request's reviews that has the time of its own, for an approval request that may or
+   * may not have been recorded; `null` if it fails. It is not retried: it is the one read the run has left.
+   */
+  const reconcileReviews = async (): Promise<readonly ReviewView[] | null> => {
+    try {
+      const response = await octokit.rest.pulls.listReviews({
+        owner,
+        repo,
+        pull_number: pullRequest,
+        per_page: config.pageSize,
+        request: {signal: input.signal(config.reconcileMs)},
+      })
+      return response.data.map(review => ({login: review.user?.login, state: review.state, commitId: review.commit_id}))
+    } catch {
+      return null
+    }
+  }
+
   const pages = async <T>(fetchPage: (page: number) => Promise<readonly T[]>): Promise<readonly T[]> => {
     let all = Array.of<T>()
     for (const page of Array.from({length: config.maxPages}, (_, index) => index + 1)) {
@@ -655,13 +681,23 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     )
     state.approved = true
   } catch (error: unknown) {
-    if (error instanceof CutOffError) return approvalUnknown(state, await reconcile())
-    if (error instanceof DeadlineError) throw error
-    if (statusOf(error) === 422) {
-      const stale = guard(state, await readPull())
-      if (stale !== null) return stale
+    if (error instanceof DeadlineError && !(error instanceof CutOffError)) throw error
+    const status = statusOf(error)
+    // A response below 500 is GitHub's answer and the approval was not recorded. A cut-off request, one that
+    // got no response (a reset, a network error) and a 5xx do not say: one read of the reviews does.
+    if (error instanceof CutOffError || status === undefined || status >= 500) {
+      const reviews = await reconcileReviews()
+      if (reviews === null || !reviews.some(review => isPinnedApproval(review, input.pin))) {
+        return approvalUnknown(state, reviews)
+      }
+      state.approved = true
+    } else {
+      if (status === 422) {
+        const stale = guard(state, await readPull())
+        if (stale !== null) return stale
+      }
+      return outcomeOf(state, 'APPROVE_FAILED')
     }
-    return outcomeOf(state, 'APPROVE_FAILED')
   }
 
   // `mergeable_state` is computed lazily: re-read it while it says `unknown`, guarding every read.
@@ -716,16 +752,21 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
   }
 }
 
-/** The outcome of an approval request that was cut off: what a read afterwards showed, if it showed anything. */
-function approvalUnknown(state: RunState, pull: PullView | null): SelfMergeOutcome {
+/** Whether a review is the approval this run submits: `fro-bot`, approving, on the pinned commit. */
+function isPinnedApproval(review: ReviewView, pin: string): boolean {
+  return review.login === 'fro-bot' && review.state === 'APPROVED' && review.commitId === pin
+}
+
+/** The outcome of an approval request that may or may not have been recorded, and a read of the reviews. */
+function approvalUnknown(state: RunState, reviews: readonly ReviewView[] | null): SelfMergeOutcome {
   const seen =
-    pull === null
-      ? 'The pull request could not be read afterwards.'
-      : `Read again afterwards, the pull request is ${pull.merged ? 'merged' : pull.state}.`
+    reviews === null
+      ? 'The reviews could not be read afterwards.'
+      : 'A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit.'
   return outcomeWith(
     state,
     'APPROVAL_UNKNOWN',
-    `The approval request was cut off at the deadline, so it is not known whether GitHub recorded it. ${seen} Check its reviews and dismiss the approval if the promotion should not merge.`,
+    `The approval request failed or was cut off, so it is not known whether GitHub recorded it. ${seen} Check the reviews and dismiss the approval if the promotion should not merge.`,
   )
 }
 
