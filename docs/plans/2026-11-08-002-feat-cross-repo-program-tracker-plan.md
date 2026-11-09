@@ -218,7 +218,7 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 
 **Verification:** lint passes, and a local OpenCode session lists the skill.
 
-- [ ] **Unit 2: Program config and loader**
+- [x] **Unit 2: Program config and loader**
 
 **Goal:** Add `program-trackers.json` with #3512 as its first entry, label #3512, and load the snapshot's program from the config.
 

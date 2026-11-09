@@ -17,8 +17,9 @@ import process from 'node:process'
 import {promisify} from 'node:util'
 import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
-import {afterEach, describe, expect, it, vi} from 'vitest'
+import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
 import {parse} from 'yaml'
+import {parseProgramTrackers, selectProgram} from './program-trackers.ts'
 import {
   buildMarker,
   buildSnapshot,
@@ -62,6 +63,21 @@ function makeProjectItem(overrides: Partial<ProjectItem> = {}): ProjectItem {
 
 function comment(id: number, login: string, body: string): TrackerComment {
   return {id, author: {login}, body}
+}
+
+/** The #3512 entry, as `program-trackers.json` commits it. */
+const GATEWAY_ENTRY = selectProgram(
+  parseProgramTrackers(readFileSync(resolve(import.meta.dirname, '../../../program-trackers.json'), 'utf8')),
+  'gateway',
+)
+
+/** `scanOperatorMentions` for #3512's operator, with the dispatching comment as a bare ID. */
+function scan(
+  comments: readonly TrackerComment[],
+  previousMarker: MarkerData | null,
+  triggerId: number | null = null,
+): ReturnType<typeof scanOperatorMentions> {
+  return scanOperatorMentions(comments, previousMarker, GATEWAY_ENTRY, triggerId)
 }
 
 function successRuns(id: number, headSha: string): {workflow_runs: {id: number; head_sha: string}[]} {
@@ -1051,24 +1067,24 @@ describe('scanOperatorMentions', () => {
     comment(id, 'fro-bot', `answered\n<!-- ${MARKER_PREFIX}{"hash":"h"${fields}} -->`)
 
   it('marks an operator @fro-bot comment above the last answered ID as pending', () => {
-    expect(scanOperatorMentions([mention(105)], marked(100))).toEqual({pendingIds: [105], lastMentionId: 105})
+    expect(scan([mention(105)], marked(100))).toEqual({pendingIds: [105], lastMentionId: 105})
   })
 
   it('does not mark a mention at or below the last answered ID as pending', () => {
-    expect(scanOperatorMentions([mention(99), mention(100)], marked(100))).toEqual({pendingIds: [], lastMentionId: 100})
+    expect(scan([mention(99), mention(100)], marked(100))).toEqual({pendingIds: [], lastMentionId: 100})
   })
 
   it('marks a mention pending even when thread order puts it before the latest marker comment', () => {
     const comments = [mention(101), markerComment(103, ',"last_mention_id":100')]
 
     // The operator comment (101) was posted while the run that wrote comment 103 was in flight.
-    expect(scanOperatorMentions(comments, marked(100)).pendingIds).toEqual([101])
+    expect(scan(comments, marked(100)).pendingIds).toEqual([101])
   })
 
   it('keeps a mention that precedes a marker with last_mention_id 0 pending', () => {
     const comments = [mention(101), markerComment(103, ',"last_mention_id":0')]
 
-    expect(scanOperatorMentions(comments, marked(0)).pendingIds).toEqual([101])
+    expect(scan(comments, marked(0)).pendingIds).toEqual([101])
   })
 
   describe('a damaged latest marker', () => {
@@ -1081,13 +1097,13 @@ describe('scanOperatorMentions', () => {
       const latest = extractPreviousMarker(comments[2]?.body ?? '')
 
       expect(latest?.last_mention_id).toBeNull()
-      expect(scanOperatorMentions(comments, latest)).toEqual({pendingIds: [3010], lastMentionId: 3010})
+      expect(scan(comments, latest)).toEqual({pendingIds: [3010], lastMentionId: 3010})
     })
 
     it('does the same when the latest marker has no last_mention_id at all', () => {
       const comments = [markerComment(1, ',"last_mention_id":3000'), mention(3010), markerComment(3020, '')]
 
-      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[2]?.body ?? '')).pendingIds).toEqual([3010])
+      expect(scan(comments, extractPreviousMarker(comments[2]?.body ?? '')).pendingIds).toEqual([3010])
     })
 
     it('uses the highest valid value when several markers carry one', () => {
@@ -1099,13 +1115,13 @@ describe('scanOperatorMentions', () => {
         markerComment(3, ',"last_mention_id":"x"'),
       ]
 
-      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[4]?.body ?? '')).pendingIds).toEqual([3600])
+      expect(scan(comments, extractPreviousMarker(comments[4]?.body ?? '')).pendingIds).toEqual([3600])
     })
 
     it('falls back to the position rule only when no marker carries a valid value', () => {
       const comments = [mention(1), markerComment(2, ',"last_mention_id":"x"'), mention(3)]
 
-      expect(scanOperatorMentions(comments, extractPreviousMarker(comments[1]?.body ?? '')).pendingIds).toEqual([3])
+      expect(scan(comments, extractPreviousMarker(comments[1]?.body ?? '')).pendingIds).toEqual([3])
     })
   })
 
@@ -1120,11 +1136,11 @@ describe('scanOperatorMentions', () => {
     ]
 
     it('takes the highest mention before the latest fro-bot comment as the baseline', () => {
-      expect(scanOperatorMentions(legacy(), marked(null))).toEqual({pendingIds: [11, 12], lastMentionId: 12})
+      expect(scan(legacy(), marked(null))).toEqual({pendingIds: [11, 12], lastMentionId: 12})
     })
 
     it('leaves nothing pending when no mention follows the latest fro-bot comment', () => {
-      expect(scanOperatorMentions(legacy().slice(0, 4), marked(null))).toEqual({pendingIds: [], lastMentionId: 9})
+      expect(scan(legacy().slice(0, 4), marked(null))).toEqual({pendingIds: [], lastMentionId: 9})
     })
 
     it('counts a fro-bot reply without a marker as answering the mentions before it', () => {
@@ -1137,25 +1153,25 @@ describe('scanOperatorMentions', () => {
         mention(12),
       ]
 
-      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [12], lastMentionId: 12})
+      expect(scan(comments, marked(null))).toEqual({pendingIds: [12], lastMentionId: 12})
     })
 
     it('counts a fro-bot[bot] comment of any kind the same way', () => {
       const comments = [markerComment(1, ''), mention(2), comment(3, 'fro-bot[bot]', 'plain reply'), mention(4)]
 
-      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [4], lastMentionId: 4})
+      expect(scan(comments, marked(null))).toEqual({pendingIds: [4], lastMentionId: 4})
     })
 
     it('keeps a mention pending when only other authors comment after it', () => {
       const comments = [markerComment(1, ''), mention(2), comment(3, 'octocat', 'unrelated')]
 
-      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [2], lastMentionId: 2})
+      expect(scan(comments, marked(null))).toEqual({pendingIds: [2], lastMentionId: 2})
     })
 
     it('anchors on the latest marker comment, not an earlier one', () => {
       const comments = [mention(1), markerComment(2, ''), mention(3), markerComment(4, ''), mention(5)]
 
-      expect(scanOperatorMentions(comments, marked(null))).toEqual({pendingIds: [5], lastMentionId: 5})
+      expect(scan(comments, marked(null))).toEqual({pendingIds: [5], lastMentionId: 5})
     })
 
     it('treats an invalid last_mention_id the same way', () => {
@@ -1163,7 +1179,7 @@ describe('scanOperatorMentions', () => {
       const previous = extractPreviousMarker(comments[1]?.body ?? '')
 
       expect(previous?.last_mention_id).toBeNull()
-      expect(scanOperatorMentions(comments, previous)).toEqual({pendingIds: [3], lastMentionId: 3})
+      expect(scan(comments, previous)).toEqual({pendingIds: [3], lastMentionId: 3})
     })
   })
 
@@ -1171,54 +1187,54 @@ describe('scanOperatorMentions', () => {
     it('leaves a mention after the last fro-bot comment pending', () => {
       const comments = [mention(7), comment(8, 'fro-bot', 'prose-only reply'), mention(9)]
 
-      expect(scanOperatorMentions(comments, null)).toEqual({pendingIds: [9], lastMentionId: 9})
+      expect(scan(comments, null)).toEqual({pendingIds: [9], lastMentionId: 9})
     })
 
     it('counts a mention before the last fro-bot comment as answered and stays at the baseline', () => {
       const comments = [mention(7), mention(9), comment(10, 'fro-bot[bot]', 'prose-only reply')]
 
-      expect(scanOperatorMentions(comments, null)).toEqual({pendingIds: [], lastMentionId: 9})
+      expect(scan(comments, null)).toEqual({pendingIds: [], lastMentionId: 9})
     })
 
     it('leaves every operator mention pending when fro-bot never commented', () => {
-      expect(scanOperatorMentions([mention(7), mention(9), mention(8)], null)).toEqual({
+      expect(scan([mention(7), mention(9), mention(8)], null)).toEqual({
         pendingIds: [7, 8, 9],
         lastMentionId: 9,
       })
     })
 
     it('has nothing pending and a zero baseline when the thread has no operator mention', () => {
-      expect(scanOperatorMentions([comment(1, 'octocat', 'hello')], null)).toEqual({pendingIds: [], lastMentionId: 0})
+      expect(scan([comment(1, 'octocat', 'hello')], null)).toEqual({pendingIds: [], lastMentionId: 0})
     })
   })
 
   describe('the dispatching comment', () => {
     it('is pending when above the baseline although the comment list lacks it', () => {
-      expect(scanOperatorMentions([mention(100)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
+      expect(scan([mention(100)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
     })
 
     it('is listed once when the comment list already carries it', () => {
-      expect(scanOperatorMentions([mention(105)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
+      expect(scan([mention(105)], marked(100), 105)).toEqual({pendingIds: [105], lastMentionId: 105})
     })
 
     it('is ignored when at or below the baseline, because it is already acknowledged', () => {
-      expect(scanOperatorMentions([mention(100)], marked(100), 100)).toEqual({pendingIds: [], lastMentionId: 100})
-      expect(scanOperatorMentions([mention(100)], marked(100), 90)).toEqual({pendingIds: [], lastMentionId: 100})
+      expect(scan([mention(100)], marked(100), 100)).toEqual({pendingIds: [], lastMentionId: 100})
+      expect(scan([mention(100)], marked(100), 90)).toEqual({pendingIds: [], lastMentionId: 100})
     })
 
     it('joins the pending mentions in ascending order', () => {
-      expect(scanOperatorMentions([mention(103), mention(101)], marked(100), 102).pendingIds).toEqual([101, 102, 103])
+      expect(scan([mention(103), mention(101)], marked(100), 102).pendingIds).toEqual([101, 102, 103])
     })
   })
 
   it('lists pending IDs ascending and never lowers last_mention_id', () => {
-    expect(scanOperatorMentions([mention(30), mention(20)], marked(25))).toEqual({pendingIds: [30], lastMentionId: 30})
-    expect(scanOperatorMentions([], marked(25))).toEqual({pendingIds: [], lastMentionId: 25})
+    expect(scan([mention(30), mention(20)], marked(25))).toEqual({pendingIds: [30], lastMentionId: 30})
+    expect(scan([], marked(25))).toEqual({pendingIds: [], lastMentionId: 25})
   })
 
   it('ignores a comment without @fro-bot, one by another author, and bot replies', () => {
     expect(
-      scanOperatorMentions(
+      scan(
         [
           comment(11, 'marcusrbrown', 'acceptance run green'),
           comment(12, 'octocat', '@fro-bot please look'),
@@ -1230,7 +1246,7 @@ describe('scanOperatorMentions', () => {
   })
 
   it('matches the mention case-insensitively, like the hop gate', () => {
-    expect(scanOperatorMentions([comment(5, 'marcusrbrown', 'ping @Fro-Bot')], marked(0)).pendingIds).toEqual([5])
+    expect(scan([comment(5, 'marcusrbrown', 'ping @Fro-Bot')], marked(0)).pendingIds).toEqual([5])
   })
 })
 
@@ -2253,5 +2269,318 @@ describe('the marker stays under the GitHub comment limit', () => {
 
     expect(parsed?.hash).toBe('old-hash')
     expect(parsed?.last_mention_id).toBe(77)
+  })
+})
+
+// ─── Program config ───────────────────────────────────────────────────────────
+
+const configRoot = mkdtempSync(join(tmpdir(), 'rollout-tracker-config-'))
+afterAll(() => {
+  rmSync(configRoot, {recursive: true, force: true})
+})
+
+let configCounter = 0
+
+/** Writes a program config file and returns its path. */
+function writeConfig(programs: readonly unknown[]): string {
+  configCounter += 1
+  const path = join(configRoot, `config-${configCounter}.json`)
+  writeFileSync(path, JSON.stringify({programs}))
+  return path
+}
+
+function programEntry(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    key: 'gateway',
+    issue: 'fro-bot/.github#3512',
+    project: {owner: 'fro-bot', number: 1, gateField: 'gateway Unit Gate'},
+    operator: {id: 831617, login: 'marcusrbrown'},
+    evidence: 'gateway',
+    ...overrides,
+  }
+}
+
+describe('the program config in a snapshot run', () => {
+  // The #3512-shaped fixture and its output as the snapshot printed it before the config existed.
+  const goldenItems = [
+    {id: 'PVTI_1', content_number: 907, content_repo: 'fro-bot/agent', status: 'Done', readiness: null, gate: 'Unit 2'},
+    {
+      id: 'PVTI_2',
+      content_number: 24,
+      content_repo: 'fro-bot/dashboard',
+      status: 'In Progress',
+      readiness: 'blocked',
+      gate: 'Gateway stage 3',
+    },
+    {
+      id: 'PVTI_3',
+      content_number: 1712,
+      content_repo: 'marcusrbrown/infra',
+      status: 'Todo',
+      readiness: null,
+      gate: null,
+    },
+    {
+      id: 'PVTI_4',
+      content_number: 3512,
+      content_repo: 'fro-bot/.github',
+      status: 'In Progress',
+      readiness: null,
+      gate: 'G4c',
+    },
+  ]
+  const goldenIssues = [
+    {number: 907, repo: 'fro-bot/agent', state: 'merged', title: 'a', closed_at: '2026-10-01T00:00:00Z', labels: ['x']},
+    {number: 24, repo: 'fro-bot/dashboard', state: 'open', title: 'b', closed_at: null, labels: []},
+    {
+      number: 1712,
+      repo: 'marcusrbrown/infra',
+      state: 'closed',
+      title: 'c',
+      closed_at: '2026-10-30T00:00:00Z',
+      labels: [],
+    },
+    {number: 3512, repo: 'fro-bot/.github', state: 'open', title: 'd', closed_at: null, labels: []},
+  ]
+  const goldenComments = [
+    {
+      id: 100,
+      author: {login: 'fro-bot'},
+      body: `@fro-bot seeded\n<!-- gateway-rollout-tracker:${JSON.stringify({hash: 'deadbeef', last_mention_id: 100})} -->`,
+    },
+    {id: 101, author: {login: 'marcusrbrown'}, body: '@fro-bot acceptance green'},
+    {id: 102, author: {login: 'octocat'}, body: '@fro-bot G4c pass'},
+    {id: 103, author: {login: 'marcusrbrown'}, body: 'no mention here'},
+    {id: 104, author: {login: 'marcusrbrown'}, body: '@fro-bot another'},
+  ]
+  const goldenSignals = {
+    releases: {agent: {tag_name: 'v0.136.4'}, dashboard: {tag_name: '2026.10.80'}},
+    deploys: {
+      gateway: {workflow_runs: [{id: 42450423239, head_sha: 'aaaa'}]},
+      dashboard: {workflow_runs: [{id: 42450423240, head_sha: 'bbbb'}]},
+      router: {workflow_runs: [{id: 42450423241, head_sha: 'cccc'}]},
+    },
+    health: {ok: true, contractVersion: '1.15.0'},
+  }
+  const goldenStdout =
+    '{"should_comment":true,"reason":"gating transition detected — hash changed from deadbeef to e81328e4; operator mention pending (2)","hash":"e81328e4b86d316e8cee53afc629fda1dc992920c711f1c48e69c6a5ddff7f3d","snapshot":{"items":[{"content_number":3512,"content_repo":"fro-bot/.github","status":"In Progress","readiness":null,"gate":"G4c","issue_state":"open","issue_closed_at":null,"issue_labels":[]},{"content_number":907,"content_repo":"fro-bot/agent","status":"Done","readiness":null,"gate":"Unit 2","issue_state":"merged","issue_closed_at":"2026-10-01T00:00:00Z","issue_labels":["x"]},{"content_number":24,"content_repo":"fro-bot/dashboard","status":"In Progress","readiness":"blocked","gate":"Gateway stage 3","issue_state":"open","issue_closed_at":null,"issue_labels":[]},{"content_number":1712,"content_repo":"marcusrbrown/infra","status":"Todo","readiness":null,"gate":null,"issue_state":"closed","issue_closed_at":"2026-10-30T00:00:00Z","issue_labels":[]}],"external":{"agent_release":"v0.136.4","dashboard_release":"2026.10.80","deploy_gateway":{"run_id":42450423239,"head_sha":"aaaa"},"deploy_dashboard":{"run_id":42450423240,"head_sha":"bbbb"},"deploy_router":{"run_id":42450423241,"head_sha":"cccc"},"contract_version":"1.15.0"}},"pending_mention_ids":[101,104],"last_mention_id":104,"marker":"<!-- gateway-rollout-tracker:{\\"hash\\":\\"e81328e4b86d316e8cee53afc629fda1dc992920c711f1c48e69c6a5ddff7f3d\\",\\"last_mention_id\\":104} -->","marker_comment_id":100}\n'
+
+  function goldenEnv(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+    return {
+      ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(goldenItems),
+      ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(goldenIssues),
+      ROLLOUT_TRACKER_COMMENTS_JSON: JSON.stringify(goldenComments),
+      ROLLOUT_TRACKER_COMMENT_BODY: undefined,
+      ROLLOUT_TRACKER_COMMENT_ID: undefined,
+      ROLLOUT_TRACKER_PROGRAM: undefined,
+      ROLLOUT_TRACKER_CONFIG: undefined,
+      ROLLOUT_TRACKER_RELEASES_JSON: JSON.stringify(goldenSignals.releases),
+      ROLLOUT_TRACKER_DEPLOYS_JSON: JSON.stringify(goldenSignals.deploys),
+      ROLLOUT_TRACKER_HEALTH_JSON: JSON.stringify(goldenSignals.health),
+      ...extra,
+    }
+  }
+
+  it("prints #3512's snapshot byte for byte as it did before the config existed", () => {
+    const result = runCliRaw(goldenEnv())
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(goldenStdout)
+  })
+
+  it('selects the gateway program when ROLLOUT_TRACKER_PROGRAM is empty or unset', () => {
+    expect(runCliRaw(goldenEnv({ROLLOUT_TRACKER_PROGRAM: ''})).stdout).toBe(goldenStdout)
+  })
+
+  it('selects the program named by ROLLOUT_TRACKER_PROGRAM and reads its operator', () => {
+    const config = writeConfig([
+      programEntry(),
+      programEntry({
+        key: 'plugins',
+        issue: 'marcusrbrown/plugins#42',
+        operator: {id: 5, login: 'octocat'},
+        evidence: 'gateway',
+      }),
+    ])
+
+    const result = runCliRaw(goldenEnv({ROLLOUT_TRACKER_CONFIG: config, ROLLOUT_TRACKER_PROGRAM: 'plugins'}))
+
+    expect(result.status).toBe(0)
+    // octocat is the operator of this program: only comment 102 mentions the bot.
+    expect((JSON.parse(result.stdout) as PreflightResult).pending_mention_ids).toEqual([102])
+  })
+
+  it('exits 1 with a fixed message for an unknown program key, before any read', () => {
+    const result = runCliRaw(goldenEnv({ROLLOUT_TRACKER_PROGRAM: 'nope'}))
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('rollout-tracker-snapshot: FATAL — program config: unknown program key\n')
+  })
+
+  it.each([
+    ['a missing file', (): string => join(configRoot, 'absent.json'), 'program-trackers.json is missing'],
+    [
+      'malformed JSON',
+      (): string => {
+        const path = join(configRoot, 'malformed.json')
+        writeFileSync(path, '{')
+        return path
+      },
+      'program-trackers.json is not valid JSON',
+    ],
+    [
+      'a duplicate key',
+      (): string => writeConfig([programEntry(), programEntry({issue: 'a/b#1'})]),
+      'duplicate program key',
+    ],
+    [
+      'a duplicate issue',
+      (): string => writeConfig([programEntry(), programEntry({key: 'other'})]),
+      'duplicate tracker issue',
+    ],
+    [
+      'a non-numeric operator id',
+      (): string => writeConfig([programEntry({operator: {id: '831617', login: 'marcusrbrown'}})]),
+      'programs[0].operator.id is invalid',
+    ],
+  ])('exits 1 with a fixed message for %s', (_name, makePath, message) => {
+    const result = runCliRaw(goldenEnv({ROLLOUT_TRACKER_CONFIG: makePath()}))
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(`rollout-tracker-snapshot: FATAL — program config: ${message}\n`)
+  })
+
+  it('gives an empty external and makes no external read for evidence none', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-nogh-'))
+    try {
+      const calls = join(dir, 'calls.log')
+      writeFileSync(join(dir, 'gh'), `#!/bin/sh\necho "$*" >> '${calls}'\nexit 1\n`)
+      chmodSync(join(dir, 'gh'), 0o755)
+      const config = writeConfig([programEntry({evidence: 'none'})])
+
+      const result = runCliRaw(
+        goldenEnv({
+          PATH: `${dir}:${process.env.PATH ?? ''}`,
+          ROLLOUT_TRACKER_CONFIG: config,
+          ROLLOUT_TRACKER_RELEASES_JSON: undefined,
+          ROLLOUT_TRACKER_DEPLOYS_JSON: undefined,
+          ROLLOUT_TRACKER_HEALTH_JSON: undefined,
+          ROLLOUT_TRACKER_HEALTH_URL: 'http://127.0.0.1:1/never',
+        }),
+      )
+
+      expect(result.status).toBe(0)
+      const decision = JSON.parse(result.stdout) as PreflightResult
+      expect(decision.snapshot.external).toEqual({})
+      expect(decision.snapshot.items).toHaveLength(4)
+      expect(() => readFileSync(calls, 'utf8')).toThrow()
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('hashes an empty external deterministically and differently from a populated one', () => {
+    const none = writeConfig([programEntry({evidence: 'none'})])
+    const withoutSignals = goldenEnv({
+      ROLLOUT_TRACKER_CONFIG: none,
+      ROLLOUT_TRACKER_RELEASES_JSON: undefined,
+      ROLLOUT_TRACKER_DEPLOYS_JSON: undefined,
+      ROLLOUT_TRACKER_HEALTH_JSON: undefined,
+    })
+
+    const first = JSON.parse(runCliRaw(withoutSignals).stdout) as PreflightResult
+    const second = JSON.parse(runCliRaw(withoutSignals).stdout) as PreflightResult
+
+    expect(first.hash).toBe(second.hash)
+    expect(first.hash).not.toBe('e81328e4b86d316e8cee53afc629fda1dc992920c711f1c48e69c6a5ddff7f3d')
+  })
+
+  it("reads the Project, the owner and the gate field from the program's entry", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-project-cfg-'))
+    try {
+      writeFileSync(
+        join(dir, 'gh'),
+        [
+          `#!${process.execPath}`,
+          'const args = process.argv.slice(2)',
+          "if (args.slice(0, 5).join(' ') !== 'project item-list 7 --owner octo') {",
+          "  console.error('unexpected gh command: ' + args.join(' '))",
+          '  process.exit(1)',
+          '}',
+          'process.stdout.write(JSON.stringify({',
+          "  items: [{id: 'PVTI_1', content: {number: 5, repository: 'octo/repo', type: 'Issue'}, status: 'Todo', 'Phase Gate': 'G7'}],",
+          '  totalCount: 1,',
+          '}))',
+        ].join('\n'),
+      )
+      chmodSync(join(dir, 'gh'), 0o755)
+      const config = writeConfig([
+        programEntry({
+          key: 'octo',
+          issue: 'octo/repo#9',
+          project: {owner: 'octo', number: 7, gateField: 'Phase Gate'},
+          evidence: 'none',
+        }),
+      ])
+
+      const result = runCliRaw({
+        ...goldenEnv({
+          PATH: `${dir}:${process.env.PATH ?? ''}`,
+          ROLLOUT_TRACKER_CONFIG: config,
+          ROLLOUT_TRACKER_PROGRAM: 'octo',
+          ROLLOUT_TRACKER_ITEMS_JSON: undefined,
+          ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify([]),
+          ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+        }),
+      })
+
+      expect(result.status).toBe(0)
+      const items = (JSON.parse(result.stdout) as PreflightResult).snapshot.items
+      expect(items.map(item => [item.content_repo, item.content_number, item.gate])).toEqual([['octo/repo', 5, 'G7']])
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it("reads the tracker comments from the entry's issue", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-issue-cfg-'))
+    try {
+      writeFileSync(
+        join(dir, 'gh'),
+        [
+          '#!/bin/sh',
+          'case "$*" in',
+          '  "api --paginate repos/octo/repo/issues/9/comments?per_page=100 --jq "*)',
+          '    echo \'{"id":11,"login":"marcusrbrown","body":"@fro-bot hello"}\'; exit 0 ;;',
+          'esac',
+          'echo "unexpected gh command: $*" >&2; exit 1',
+        ].join('\n'),
+      )
+      chmodSync(join(dir, 'gh'), 0o755)
+      const config = writeConfig([
+        programEntry({
+          key: 'octo',
+          issue: 'octo/repo#9',
+          project: {owner: 'octo', number: 7, gateField: 'G'},
+          evidence: 'none',
+        }),
+      ])
+
+      const result = runCliRaw(
+        goldenEnv({
+          PATH: `${dir}:${process.env.PATH ?? ''}`,
+          ROLLOUT_TRACKER_CONFIG: config,
+          ROLLOUT_TRACKER_PROGRAM: 'octo',
+          ROLLOUT_TRACKER_COMMENTS_JSON: undefined,
+        }),
+      )
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).pending_mention_ids).toEqual([11])
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
   })
 })

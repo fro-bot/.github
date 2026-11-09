@@ -352,6 +352,7 @@ Each package README carries a `C4Component` diagram of its own modules.
 | [`mise.toml`](mise.toml) | Pinned Node, Bun, and Python versions |
 | [`tsconfig.json`](tsconfig.json) | TypeScript strict-mode configuration (native TS execution) |
 | [`vitest.config.ts`](vitest.config.ts) | Vitest configuration for colocated `scripts/*.test.ts` and `packages/*/src/*.test.ts` files |
+| [`program-trackers.json`](program-trackers.json) | The cross-repo programs the rollout tracker serves: each program's tracker issue, Project, operator and evidence kind. #3512 is the first entry; the file is owned by `@marcusrbrown` in `CODEOWNERS` |
 | [`stryker.config.json`](stryker.config.json) | The mutated modules and their paired tests (`mutate`, `testFiles`); [`mutation-guards.json`](mutation-guards.json) lists every package module that is not mutated, with a reason, and the three `shards` lists that split `mutate` across the PR gate's shard jobs |
 
 ## Automation

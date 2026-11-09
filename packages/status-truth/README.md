@@ -27,7 +27,8 @@ Each CLI keeps a `scripts/<name>.ts` entrypoint of six lines: `main` from the pa
 | `@fro-bot/status-truth/proposals-cli` | `runOpen`, `statusTruthProposalsCli`, `main` | The production composition and the goke CLI. |
 | `@fro-bot/status-truth/status-truth-prs` | `planStatusTruthPrActions`, `executeStatusTruthPrActions`, `fetchExistingCorrectionPrs`, `fetchTerminalFingerprints`, `isPrExecutionArmed`, `runPrsCore`, `runPrs`, `buildEnvBackedRunPrsCoreDeps`, `GRADUATED_CLAIM_KINDS` | Planner, executor and the testable core. |
 | `@fro-bot/status-truth/prs-cli` | `statusTruthPrsCli`, `main` | The goke CLI. |
-| `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. |
+| `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. Takes its tracker issue, Project and operator from the program config. |
+| `program-trackers` (relative import, not exported) | `parseProgramTrackers`, `loadProgramTrackers`, `selectProgram`, `issueRef`, `isOperatorComment`, `isAuthorizedTrigger`, `confirmedReposMissing`, `isPublicVisibility`, the entry types | Reads and validates [`program-trackers.json`](../../program-trackers.json) and holds the pure predicates the snapshot uses. Every failure is an `Error` with a fixed message. Mutated by Stryker. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot-cli` | `rolloutTrackerSnapshotCli`, `main` | The goke CLI. |
 
 ## CLIs
@@ -44,6 +45,21 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 Every CLI declares one root command with no positional and no option. Any argument, `--help` and `--help=false` included, is a usage error: exit 1, usage on stderr, and nothing is read or written. Before the runner an argument was ignored and the step ran.
 
 A thrown error prints its message and exits 1; no stack trace reaches stderr.
+
+## The program config
+
+`program-trackers.json` at the repository root maps each cross-repo program to its tracker issue, its Project and its operator. #3512 is the `gateway` entry. `rollout-tracker-snapshot` reads the entry named by `ROLLOUT_TRACKER_PROGRAM` (default `gateway`) from the file at `ROLLOUT_TRACKER_CONFIG` (default: the committed file). A missing file, malformed JSON, a duplicate key or issue, a bad field or an unknown program key prints `rollout-tracker-snapshot: FATAL — program config: <fixed message>` and exits 1 before any read.
+
+| Field | Meaning |
+| --- | --- |
+| `key` | The program name. Lowercase letters, digits and hyphens |
+| `issue` | The tracker issue as `owner/repo#n` |
+| `project` | `owner`, `number` and `gateField`, the name of the free-text gate column |
+| `operator` | The numeric `id` and the `login` of the one person whose comments drive the program |
+| `evidence` | `gateway` reads #3512's releases, deploys and health contract. `none` reads nothing outside GitHub, and `snapshot.external` is `{}` |
+| `repos` | Optional. The confirmed repos (`nameWithOwner`, `nodeId`) |
+
+The file is owned by `@marcusrbrown` in `.github/CODEOWNERS`. The operator comment check compares the login, and also the numeric ID when the comment carries one.
 
 ## The dry-run default
 
@@ -74,6 +90,7 @@ C4Component
     Component(proposalscli, "proposals-cli", "TypeScript", "goke CLI: plan and apply proposals")
     Component(prscli, "prs-cli", "TypeScript", "goke CLI: bounded correction PRs")
     Component(model, "report-model", "TypeScript", "Claim kinds, finding and report types, fingerprint, artifact validator")
+    Component(programs, "program-trackers", "TypeScript", "Program config parser and the operator, trigger and bootstrap predicates")
     Component(snapshot, "rollout-tracker-snapshot", "TypeScript", "Tracker preflight: snapshot, hash, wake decision")
     Component(snapshotcli, "rollout-tracker-snapshot-cli", "TypeScript", "goke CLI: print the preflight result")
     Component(prs, "status-truth-prs", "TypeScript", "Correction-PR planner, executor, env-backed deps")
@@ -105,6 +122,7 @@ C4Component
   Rel(rollout, extract, "imports")
   Rel(rollout, model, "imports")
   Rel(rollout, snapshot, "imports")
+  Rel(snapshot, programs, "imports")
   Rel(pexec, outcomes, "imports")
   Rel(pexec, pplan, "imports")
   Rel(pexec, labels, "imports")
