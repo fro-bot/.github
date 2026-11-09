@@ -581,54 +581,53 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
 
   // One poll per attempt, a minute apart. The attempts are bounded by `retry`, so the wait ends even if the
   // clock never moves; it ends sooner once the wait has used up its 60 minutes. A poll reads the live
-  // required list first: a list that differs ends the poll with `changed`, and the wait starts over on it.
-  // Otherwise it answers with the outcome that stops the run, or with the names of the checks still pending.
-  const poll = async (): Promise<{stop: SelfMergeOutcome | null; pending: readonly string[]; changed: boolean}> => {
+  // required list first. It answers with the outcome that stops the run, with `changed` when the list differs
+  // (the wait starts over on it), or with the names of the checks still pending.
+  const poll = async (): Promise<SelfMergeOutcome | 'changed' | readonly string[]> => {
     const stopped = guard(state, await readPull())
-    if (stopped !== null) return {stop: stopped, pending: Array.of<string>(), changed: false}
+    if (stopped !== null) return stopped
     const live = await readProtection()
-    if (!Array.isArray(live)) return {stop: live as SelfMergeOutcome, pending: Array.of<string>(), changed: false}
+    if (!Array.isArray(live)) return live as SelfMergeOutcome
     if (!sameChecks(required, live as readonly RequiredCheck[])) {
       required = live as readonly RequiredCheck[]
-      return {stop: null, pending: Array.of<string>(), changed: true}
+      return 'changed'
     }
     const verdict = evaluateChecks(required, await readRuns(), await readStatuses())
     if (verdict.failed.length > 0) {
-      const failed = outcomeWith(
+      return outcomeWith(
         state,
         'CHECK_FAILED',
         `These required checks failed on the pinned commit: ${list(verdict.failed)}. Nothing was approved.`,
       )
-      return {stop: failed, pending: Array.of<string>(), changed: false}
     }
-    return {stop: null, pending: verdict.pending, changed: false}
+    return verdict.pending
   }
 
   // The wait, then a last fresh read of the required list. A list that changed (a context added, removed or
-  // rebound) starts the wait over on the new list, inside the same absolute deadline.
-  const attempt = async (): Promise<{stop: SelfMergeOutcome | null; changed: boolean}> => {
+  // rebound) starts the wait over on the new list, inside the same absolute deadline. The answer is the
+  // outcome that stops the run, `changed`, or `null` for a wait that settled on a list that held.
+  const attempt = async (): Promise<SelfMergeOutcome | 'changed' | null> => {
     enter(true)
     const polled = await retry(poll, {
       attempts: config.maxPolls,
       delayMs: () => config.pollMs,
-      retryResult: result => !result.changed && result.pending.length > 0 && input.now() - start < config.waitMs,
+      retryResult: result => Array.isArray(result) && result.length > 0 && input.now() - start < config.waitMs,
       sleep,
     })
-    state.pending = polled.pending
-    if (polled.stop !== null) return {stop: polled.stop, changed: false}
-    if (polled.changed) return {stop: null, changed: true}
-    if (polled.pending.length > 0) return {stop: timeoutOutcome(state), changed: false}
+    if (!Array.isArray(polled)) return polled as SelfMergeOutcome | 'changed'
+    state.pending = polled as readonly string[]
+    if (polled.length > 0) return timeoutOutcome(state)
 
     enter(false)
     const recheck = await readProtection()
-    if (!Array.isArray(recheck)) return {stop: recheck as SelfMergeOutcome, changed: false}
-    const changed = !sameChecks(required, recheck as readonly RequiredCheck[])
+    if (!Array.isArray(recheck)) return recheck as SelfMergeOutcome
+    const same = sameChecks(required, recheck as readonly RequiredCheck[])
     required = recheck as readonly RequiredCheck[]
-    return {stop: null, changed}
+    return same ? null : 'changed'
   }
-  const waited = await retry(attempt, {attempts: config.maxRestarts + 1, retryResult: result => result.changed})
-  if (waited.stop !== null) return waited.stop
-  if (waited.changed) return outcomeOf(state, 'PROTECTION_CHANGED')
+  const waited = await retry(attempt, {attempts: config.maxRestarts + 1, retryResult: result => result === 'changed'})
+  if (waited === 'changed') return outcomeOf(state, 'PROTECTION_CHANGED')
+  if (waited !== null) return waited
 
   const beforeApproval = guard(state, await readPull())
   if (beforeApproval !== null) return beforeApproval

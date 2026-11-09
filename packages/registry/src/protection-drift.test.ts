@@ -579,8 +579,8 @@ interface IssueRecord {
   number: number
   pull_request?: unknown
   /** The body the issue carries; absent means none, as an issue opened before the marker existed has none. */
-  body?: string
-  comments?: readonly string[]
+  body?: string | null
+  comments?: readonly (string | null)[]
   state?: 'open' | 'closed'
 }
 
@@ -606,14 +606,14 @@ function issueWorld(options: IssueWorldOptions = {}) {
   const failures: Record<string, number> = {}
   const store = new Map<
     number,
-    {number: number; pull_request?: unknown; body: string; comments: string[]; state: string}
+    {number: number; pull_request?: unknown; body: string | null; comments: (string | null)[]; state: string}
   >()
   const add = (issue: IssueRecord) => {
     if (!store.has(issue.number)) {
       store.set(issue.number, {
         number: issue.number,
         pull_request: issue.pull_request,
-        body: issue.body ?? '',
+        body: issue.body === undefined ? '' : issue.body,
         comments: [...(issue.comments ?? [])],
         state: issue.state ?? 'open',
       })
@@ -1677,5 +1677,198 @@ describe('runProtectionDrift: the duplicate path never leaves the report with no
     const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 1}]})})
     await h.run()
     expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
+  })
+})
+
+describe('runProtectionDrift: the shape of the reads and of the markers', () => {
+  it.each([
+    ['a valid time', '2026-11-09T12:00:00Z', '2026-11-09T12:00:00Z'],
+    ['a valid time with an offset', '2026-11-09T12:00:00+02:00', '2026-11-09T12:00:00+02:00'],
+    ['a valid time with milliseconds', '2026-11-09T12:00:00.123Z', '2026-11-09T12:00:00.123Z'],
+    ['characters of a time that make no date', '2026-99-99T99:99:99Z', ''],
+    ['a date that Date.parse reads but the marker does not vouch for', 'Mon, 09 Nov 2026 12:00:00', ''],
+    ['a time that ends in text', '2026-11-09 12:00:00 GMT', ''],
+    ['a time that starts with text', 'at 2026-11-09T12:00:00Z', ''],
+    ['text', 'last tuesday', ''],
+    ['a number', 20_261_109, ''],
+    ['a number that Date.parse reads as a year', 2026, ''],
+    ['nothing', undefined, ''],
+    ['null', null, ''],
+  ])('writes the marker for %s', async (_name, value, expected) => {
+    const rule = goodRule({required_approving_review_count: 0, updated_at: value})
+    const h = runner({event: event({rule, sender: OPERATOR_USER})})
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body.endsWith(`\n${marker(expected)}\n`)).toBe(true)
+  })
+
+  it.each([20_261_109, 2026, null, ['2026-11-09T12:00:00Z'], true])(
+    'never closes on a match whose time is %j, whatever Date.parse makes of it',
+    async value => {
+      const h = runner({event: event({rule: goodRule({updated_at: value})}), world: issueWorld({open: [{number: 31}]})})
+      await h.run()
+      expect(h.world.store.get(31)?.state).toBe('open')
+    },
+  )
+
+  it('reads an issue with no body, and comments with no body, as having recorded nothing', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: null, comments: [null, marker(T10), null]}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('closed')
+    const none = runner({event: matchAt(T12), world: issueWorld({open: [{number: 44, body: null, comments: [null]}]})})
+    await none.run()
+    expect(none.world.store.get(44)?.state).toBe('closed')
+  })
+
+  it('reads a marker in the body that a null comment does not hide', async () => {
+    const h = runner({
+      event: matchAt(T11),
+      world: issueWorld({open: [{number: 31, body: marker(T13), comments: [null]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('asks for the issue, and for each page of its comments, by repository and number', async () => {
+    const h = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31, body: marker(T10)}]})})
+    await h.run()
+    expect(h.world.calls.find(call => call.name === 'get')?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 31,
+    })
+    expect(h.world.calls.find(call => call.name === 'comments')?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 31,
+      per_page: 100,
+      page: 1,
+    })
+  })
+
+  it('asks for the issue it comments on by repository and number, and reopens it with a state', async () => {
+    const world = issueWorld({
+      open: [{number: 31}],
+      before: (name, params) => {
+        const issue = name === 'get' ? world.store.get(params.issue_number as number) : undefined
+        if (issue !== undefined) issue.state = 'closed'
+      },
+    })
+    await runner({event: driftAt(T12), world}).run()
+    expect(world.calls.find(call => call.name === 'get')?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 31,
+    })
+    expect(world.calls.find(call => call.name === 'reopen')?.params).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 31,
+      state: 'open',
+    })
+  })
+
+  it('retries a transient failure on the issue read and on the comment read, with the same back-off', async () => {
+    const getFlaky = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31}], flaky: {name: 'get', status: 503, times: 1}}),
+    })
+    expect(await getFlaky.run()).toBe(0)
+    expect(getFlaky.sleeps).toEqual([2000])
+    const commentsFlaky = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31}], flaky: {name: 'comments', status: 502, times: 2}}),
+    })
+    expect(await commentsFlaky.run()).toBe(0)
+    expect(commentsFlaky.sleeps).toEqual([2000, 4000])
+  })
+
+  it('does not retry a write that reopens', async () => {
+    const world = issueWorld({
+      open: [{number: 31}],
+      flaky: {name: 'reopen', status: 503, times: 99},
+      before: (name, params) => {
+        const issue = name === 'get' ? world.store.get(params.issue_number as number) : undefined
+        if (issue !== undefined) issue.state = 'closed'
+      },
+    })
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(world.names().filter(name => name === 'reopen')).toHaveLength(1)
+  })
+
+  it('joins the two sentences of a summary that left one issue open and reopened another', async () => {
+    const world = issueWorld({
+      open: [
+        {number: 31, body: marker(T13)},
+        {number: 44, body: marker(T10)},
+      ],
+      before: (name, params) => {
+        if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: issues partly closed\n\nA drift report on the issues left open is as new as this event or newer, or this event has no usable time, so the match did not close them. A drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Left open: #31\n- Reopened: #44\n',
+    )
+    expect(h.stdout).toEqual(['protection-drift: left open #31; reopened #44\n'])
+  })
+
+  it('names the reopened issue in the summary of a drift comment that found it closed', async () => {
+    const world = issueWorld({
+      open: [{number: 31}],
+      before: (name, params) => {
+        const issue = name === 'get' ? world.store.get(params.issue_number as number) : undefined
+        if (issue !== undefined) issue.state = 'closed'
+      },
+    })
+    const h = runner({event: driftAt(T12), world})
+    await h.run()
+    expect(
+      h.writes[0]?.content.endsWith(
+        '- Issue: #31\n- Issue: #31 was closed while this report was posted, so it was reopened.\n',
+      ),
+    ).toBe(true)
+  })
+
+  it('closes an issue that no marker mentions when the match has a time, and only then', async () => {
+    const withTime = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
+    await withTime.run()
+    expect(withTime.world.store.get(31)?.state).toBe('closed')
+    const without = runner({event: matchAt(undefined), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
+    await without.run()
+    expect(without.world.store.get(31)?.state).toBe('open')
+  })
+})
+
+describe('runProtectionDrift: the summaries of a comment and of a mixed close', () => {
+  it('words a drift comment that found its issue open', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(h.writes[0]?.content.endsWith('- Issue: #31\n')).toBe(true)
+    expect(h.writes[0]?.content).not.toContain('reopened')
+    expect(h.stdout).toEqual(['protection-drift: commented on #31\n'])
+  })
+
+  it('calls a run that closed one issue and reopened another partly closed, not reopened', async () => {
+    const world = issueWorld({
+      open: [
+        {number: 31, body: marker(T10)},
+        {number: 44, body: marker(T10)},
+      ],
+      before: (name, params) => {
+        if (name === 'close' && params.issue_number === 44) world.store.get(44)?.comments.push(marker(T13))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    await h.run()
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: issues partly closed\n\nA drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Closed: #31\n- Reopened: #44\n',
+    )
+    expect(h.stdout).toEqual(['protection-drift: closed #31; reopened #44\n'])
   })
 })

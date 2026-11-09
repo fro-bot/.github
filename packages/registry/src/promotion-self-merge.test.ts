@@ -2477,3 +2477,84 @@ describe('selfMerge: a write that stalls in flight is reconciled with one read',
     expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_FAILED'})
   })
 })
+
+describe('selfMerge: the new outcomes, exactly', () => {
+  const facts = ['- Pull request: #77', `- Pinned commit: \`${PIN}\``, '']
+  const AFTER =
+    'The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.'
+  const stallMerge = {hang: (name: string, count: number) => name === 'merge' && count === 1}
+
+  it('titles and words a merge that was cut off and went through, without the approval note', async () => {
+    const w = world({...stallMerge, pulls: script<PullState>({}, {}, {}, {merged: true})})
+    expect((await selfMerge(w.input())).summary).toBe(
+      [
+        '### Promotion self-merge: merged after a cut-off request',
+        '',
+        'The merge request was cut off at the deadline, but the pull request is merged.',
+        '',
+        ...facts,
+      ].join('\n'),
+    )
+  })
+
+  it('titles and words a merge that was cut off and did not go through, with the approval note', async () => {
+    const w = world({...stallMerge, pulls: script<PullState>({}, {}, {}, {})})
+    expect((await selfMerge(w.input())).summary).toBe(
+      [
+        '### Promotion self-merge: merge cut off',
+        '',
+        `The merge request was cut off at the deadline. Read again afterwards, the pull request is still open, so the merge has not gone through, though GitHub may still accept it. Check the pull request. ${AFTER}`,
+        '',
+        ...facts,
+      ].join('\n'),
+    )
+  })
+
+  it('titles and words a merge whose state could not be read back, with the approval note', async () => {
+    const w = world({...stallMerge, pulls: script<PullState | Error>({}, {}, {}, apiError(404))})
+    expect((await selfMerge(w.input())).summary).toBe(
+      [
+        '### Promotion self-merge: merge state unknown',
+        '',
+        `The merge request failed or was cut off, and the pull request could not be read afterwards, so whether GitHub accepted the merge is not known. Check the pull request. ${AFTER}`,
+        '',
+        ...facts,
+      ].join('\n'),
+    )
+  })
+
+  it('does not call a sleep of no time', async () => {
+    // a request fails with 100 ms of the wait left and takes them; its 2 s back-off then has no time at all
+    const w = world({
+      runs: script<readonly RunState[] | Error>(apiError(503), GREEN_RUNS),
+      callCost: (name, count) =>
+        name === 'getPull' && count === 1 ? 60 * MINUTE - 100 : name === 'listRuns' && count === 1 ? 100 : 0,
+    })
+    await selfMerge(w.input())
+    expect(w.sleeps).toEqual([])
+  })
+
+  it('starts the wait over when only the last read of the list, after the polls, differs', async () => {
+    const withExtra = [...checksFor(DECLARED), {context: 'Extra', app_id: 15_368}]
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(checksFor(DECLARED)), protectionOf(withExtra)),
+      runs: () => [...GREEN_RUNS, {name: 'Extra'}],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    // before the wait, the poll, the last read (which differs), the poll again, the last read again
+    expect(w.requests.getBranch).toHaveLength(5)
+  })
+
+  it('stops with the protection failure when the last read of the list, after the polls, is short', async () => {
+    const w = world({
+      protection: script(
+        protectionOf(checksFor(DECLARED)),
+        protectionOf(checksFor(DECLARED)),
+        protectionOf(checksFor(['Lint'])),
+      ),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_SHORT'})
+    expect(w.requests.getBranch).toHaveLength(3)
+    expect(w.log).toEqual([])
+  })
+})

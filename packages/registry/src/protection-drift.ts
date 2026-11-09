@@ -325,21 +325,21 @@ function markerFor(updatedAt: unknown): string {
 }
 
 /**
- * The newest time recorded in the markers of `texts`, in milliseconds; `null` when no marker is there (an
- * issue opened before the marker existed). A marker with no usable time is newer than any time.
+ * The newest time recorded in the markers of `texts`, in milliseconds; minus infinity when no marker is there
+ * (an issue opened before the marker existed). A marker with no usable time is newer than any time.
  */
-function newestRecorded(texts: readonly string[]): number | null {
+function newestRecorded(texts: readonly string[]): number {
   const times = texts
     .flatMap(text => [...text.matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
-    .map(match => Date.parse(match[1] ?? ''))
+    .map(match => Date.parse(String(match[1])))
     .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
-  return times.length === 0 ? null : Math.max(...times)
+  return Math.max(Number.NEGATIVE_INFINITY, ...times)
 }
 
-/** Whether an event at `matchTime` is strictly newer than everything recorded; a time that is not one never is. */
-function isNewerThan(matchTime: unknown, recorded: number | null): boolean {
+/** Whether an event at `matchTime` is strictly newer than `recorded`; a time that is not one never is. */
+function isNewerThan(matchTime: unknown, recorded: number): boolean {
   const time = typeof matchTime === 'string' ? Date.parse(matchTime) : Number.NaN
-  return !Number.isNaN(time) && (recorded === null || time > recorded)
+  return time > recorded
 }
 
 async function retryRead<T>(operation: () => Promise<T>, sleep: (ms: number) => Promise<void>): Promise<T> {
@@ -356,7 +356,7 @@ async function readIssue(
     async () => octokit.rest.issues.get({owner: 'fro-bot', repo: '.github', issue_number: number}),
     sleep,
   )
-  return {state: issue.data.state, body: issue.data.body ?? ''}
+  return {state: issue.data.state, body: String(issue.data.body)}
 }
 
 async function readComments(
@@ -379,7 +379,7 @@ async function readComments(
         }),
       sleep,
     )
-    found = found.concat(response.data.map(comment => comment.body ?? ''))
+    found = found.concat(response.data.map(comment => String(comment.body)))
     if (response.data.length < pageSize) break
   }
   return found
@@ -611,7 +611,7 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
         })
         await octokit.rest.issues.update({...target, issue_number: number, state: 'closed', state_reason: 'completed'})
         const after = await readComments(octokit, number, params.sleep)
-        if (isNewerThan(updatedAt, newestRecorded([before[0] ?? '', ...after]))) {
+        if (isNewerThan(updatedAt, newestRecorded(after))) {
           closed.push(number)
         } else {
           await reopen(number)
