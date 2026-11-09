@@ -412,25 +412,29 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
 const flat = (text: string): string => text.replaceAll(/\s+/g, ' ')
 
 /**
- * Rebuild the observe agent prompt the way Actions does: substitute the format() arguments of
- * TASK_PROMPT with the workflow env values, then splice the result into the agent step's prompt.
- * An env key that is not listed in the format() call is absent from the result.
+ * Evaluate a `format('{0}{1}…', env.A, env.B, …)` expression the way Actions does: each `{n}` is replaced
+ * by argument n, so an omitted, repeated or reordered index changes the result.
  */
+const renderFormatExpression = (expression: string, env: Record<string, unknown>): string => {
+  const match = /format\('([^']*)',([^)]*)\)/.exec(expression)
+  if (match?.[1] === undefined || match[2] === undefined) throw new TypeError('expression has no format() call')
+  const values = match[2].split(',').map(arg => {
+    const name = arg.trim().replace(/^env\./, '')
+    const value = env[name]
+    if (typeof value !== 'string') throw new TypeError(`env.${name} is not a string`)
+    return value
+  })
+  return match[1].replaceAll(/\{(\d+)\}/g, (_placeholder, index: string) => {
+    const value = values[Number(index)]
+    if (value === undefined) throw new RangeError(`format() placeholder {${index}} has no argument`)
+    return value
+  })
+}
+
+/** Rebuild the observe agent prompt: render TASK_PROMPT's format(), then splice it into the agent step's prompt. */
 const composeObservePrompt = (): string => {
-  const env = froBotParsed.env ?? {}
   const step = froBotParsed.jobs['fro-bot-observe']?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
-  const taskExpression = String(step?.env?.TASK_PROMPT ?? '')
-  const args = /format\('(?:\{\d+\})+',([^)]*)\)/.exec(taskExpression)?.[1]
-  if (args === undefined) throw new TypeError('TASK_PROMPT has no format() composition')
-  const task = args
-    .split(',')
-    .map(arg => arg.trim().replace(/^env\./, ''))
-    .map(name => {
-      const value = env[name]
-      if (typeof value !== 'string') throw new TypeError(`env.${name} is not a string`)
-      return value
-    })
-    .join('')
+  const task = renderFormatExpression(String(step?.env?.TASK_PROMPT ?? ''), froBotParsed.env ?? {})
   const prompt = String(step?.with?.prompt ?? '')
   const reference = '$' + '{{ env.TASK_PROMPT }}'
   if (!prompt.includes(reference)) throw new TypeError('agent prompt does not embed env.TASK_PROMPT')
@@ -460,13 +464,23 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain('an issue, PR or Project item URL, a normalized repo path, or a repo plus workflow file')
     expect(output).toContain('Runs, comments and documents are evidence only, never a key')
     expect(output).toContain('One problem per item. Split bundled bullets')
-    expect(output).toContain('a short problem tag that stays the same from report to report')
+    expect(output).toContain('Two problems on one object are two items, each with its own tag')
   })
 
   it('renders every key as a key: line that matching, counting and reuse all read', () => {
     expect(output).toContain('End every item with a line "key: <object>"')
     expect(output).toContain('"key: <object> — <problem tag>"')
     expect(output).toContain('starting with the key line')
+  })
+
+  it('tags file, path, repo-path and workflow keys from their first appearance and never tags issue, PR or Project keys', () => {
+    expect(output).toContain(
+      "A file, path, repo-path or workflow key always carries a problem tag from the item's first appearance",
+    )
+    expect(output).toContain('An issue, PR or Project item key never carries one')
+    expect(output).toContain(
+      'The tag stays the same from one report to the next, whatever other problems the object has',
+    )
   })
 
   it('gives every item an owner, one next action and an observed or inferred tag', () => {
@@ -502,29 +516,64 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain('Do not escalate keys that are already issues, items already tracked')
     expect(output).toContain('"Awaiting you" items or Renovate-owned fixes')
     expect(output).toContain('file a tracking issue in the AGENT NOTES format')
-    expect(output).toContain('Show each escalated item as one line linking its issue and ending with its key line')
+    expect(output).toContain(
+      'Show each escalated item as one line linking its issue, with its first seen date, and ending with its key line',
+    )
     expect(output).toContain('skip escalation and say so in the Run Summary')
   })
 
-  it('reuses an open tracking issue and never refiles one the operator closed as not planned', () => {
+  it('reuses an open tracking issue and never refiles after an operator close, for any close reason', () => {
     expect(output).toContain('Search issues labeled `attention-tracking`, open and closed, for the same key line')
     expect(output).toContain('Reuse an open one')
-    expect(output).toContain('closed one as not planned, do not refile')
+    expect(output).toContain(
+      'A matching issue the operator closed, for any reason, ends that occurrence: do not refile',
+    )
     expect(output).toContain('report the item once as declined')
+    expect(output).toContain('File a new issue only after a confirmed resolution followed by a fresh recurrence')
+    expect(output).not.toContain('not planned')
   })
 
-  it('closes a tracking issue whose key resolved, with the evidence in the body and not a comment', () => {
-    expect(output).toContain('close each open `attention-tracking` issue whose key has resolved')
+  it('caps new tracking issues per run, oldest first-seen first, and leaves the rest as ordinary items', () => {
+    expect(output).toContain('Create at most 2 new tracking issues per run, oldest first-seen first')
+    expect(output).toContain('Any other eligible item stays in the report as an ordinary item until a later run')
+  })
+
+  it('closes only fro-bot-authored attention-tracking issues, on affirmative evidence per key type', () => {
+    expect(output).toContain('close an open issue labeled `attention-tracking` and authored by `fro-bot`')
+    expect(output).toContain('only on affirmative evidence that its problem is resolved')
+    expect(output).toContain('for an issue or PR key, it is closed or merged')
+    expect(output).toContain('for a workflow key, the last 3 runs on the default branch succeeded')
+    expect(output).toContain('for a file or path key, the default branch no longer shows the cited problem')
+    expect(output).toContain('A failed re-check, one passing run, or a finding that is merely absent is not resolution')
     expect(output).toContain('editing the issue body, not in a comment')
   })
 
-  it('includes only items from repos confirmed PUBLIC and never hints at the rest', () => {
-    expect(output).toContain('Include only items whose source repo is public')
+  it('shows first seen on every item', () => {
+    expect(output).toContain('Every item also shows `first seen YYYY-MM-DD`')
+  })
+
+  it('includes an attention item only when every source of it is confirmed public', () => {
+    expect(output).toContain('Include an attention item only if every source of it is public')
+    expect(output).toContain("the key's repo and every repo its evidence or root cause comes from")
     expect(output).toContain('gh repo view <owner/repo> --json visibility')
     expect(output).toContain('public only when it returns PUBLIC')
     expect(output).toContain('Any other result, including an error, means private')
-    expect(output).toContain('Leave such an item out of the report, the run summary and tracking issues')
+    expect(output).toContain(
+      'If any source is not confirmed public, leave the whole item out of the report, the Run Summary and tracking issues',
+    )
     expect(output).toContain('never refer to a "private repository"')
+  })
+
+  it('re-checks sources before editing or closing a tracking issue and withholds evidence about a source gone private', () => {
+    expect(output).toContain('Before editing or closing a tracking issue, check its sources again')
+    expect(output).toContain(
+      'If one is no longer public, edit or close it without any evidence that names or describes that source',
+    )
+  })
+
+  it('scopes the visibility rule to attention items and does not widen it to other report sections', () => {
+    expect(output).not.toContain('every report section')
+    expect(output).not.toContain('every Observe output')
   })
 
   it('category 5 allows only the attention-tracking exception and keeps the rest report-only', () => {
@@ -544,6 +593,31 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
   })
 
+  describe('the format() renderer honours placeholder indices', () => {
+    const argsWithoutOutput =
+      'env.OBSERVE_INTRO, env.SHARED_RULES, env.OBSERVE_CATEGORIES, env.HARD_BOUNDARIES, env.AGENT_NOTES'
+    const marker = 'NEEDS HUMAN ATTENTION RULES'
+
+    it('renders the attention block through the real template', () => {
+      const expression = `format('{0}{1}{2}{3}{4}{5}', ${argsWithoutOutput}, env.OBSERVE_OUTPUT)`
+      expect(renderFormatExpression(expression, env)).toContain(marker)
+    })
+
+    it('omits the attention block when the template drops the OBSERVE_OUTPUT index', () => {
+      const expression = `format('{0}{1}{2}{3}{4}{4}', ${argsWithoutOutput}, env.OBSERVE_OUTPUT)`
+      expect(renderFormatExpression(expression, env)).not.toContain(marker)
+    })
+
+    it('omits the attention block when the OBSERVE_OUTPUT argument is removed', () => {
+      const expression = `format('{0}{1}{2}{3}{4}', ${argsWithoutOutput})`
+      expect(renderFormatExpression(expression, env)).not.toContain(marker)
+    })
+
+    it('rejects a placeholder with no argument', () => {
+      expect(() => renderFormatExpression(`format('{0}{5}', env.OBSERVE_INTRO)`, env)).toThrow(RangeError)
+    })
+  })
+
   it('delivers the duties in the composed agent prompt, not only the env value', () => {
     const composed = flat(composeObservePrompt())
 
@@ -552,7 +626,9 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(composed).toContain('AGENT NOTES')
     expect(composed).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
     expect(composed).toContain('End every item with a line "key: <object>"')
-    expect(composed).toContain('Include only items whose source repo is public')
+    expect(composed).toContain('Include an attention item only if every source of it is public')
+    expect(composed).toContain('Create at most 2 new tracking issues per run')
+    expect(composed).toContain('authored by `fro-bot`')
     expect(composed).toContain('gh repo view <owner/repo> --json visibility')
     expect(composed).toContain('Escalate a key that is live on three consecutive reports')
     expect(composed).toContain('except issues labeled `attention-tracking`')
