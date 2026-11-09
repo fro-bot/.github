@@ -2,8 +2,14 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-08
+updated: 2026-11-09
 sources:
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/README.md
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/package.json
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
   - url: https://github.com/fro-bot/agent
     sha: e9a6bde10dac023db36e608273d8bc4d55709691
     accessed: 2026-11-08
@@ -118,6 +124,28 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-09: installation parity does not transfer method evidence
+
+[[marcusrbrown--metacogs]] 0.4.1 declares optional peers for OpenCode v1
+`@opencode-ai/plugin >=1.19.4 <2` and v2 `@opencode/plugin >=2.2.0 <3`.
+Its README distinguishes v1 `plugin` and v2 `plugins`, documents four packaged
+skills and two tools, and warns that copied skills with the same names have
+undefined discovery precedence. Its manifest pins v2 testing to 2.2.5, while the
+matrix preserves a dated 2.2.2 scripted-provider pass and still says `unverified`.
+A contract pass is not evidence that reasoning methods improve answers on v2.
+
+Claude Code and Codex plugin packages use host-adapted method text and an MCP
+`record` tool rather than the standalone shell helper. Their reported manual
+installation/tool/record checks are not the original OpenCode method evals;
+copied-skill discovery-only rows remain separately qualified. Codex's reported
+record writes under a read-only shell sandbox also show why shell permissions
+must not be assumed to constrain external MCP writes. Claude Code has optional
+session-start guidance; Codex discards hooks. One package does not imply identical
+guidance, approval, or persistence boundaries across hosts.
+
+Sources: the commit-pinned README and manifest in frontmatter. These are documented
+contracts and reported observations; host code and runtime behavior were not audited.
 
 ## 2026-11-08: load status and host identity are separate gates
 

@@ -10150,3 +10150,45 @@ Run: https://github.com/fro-bot/.github/actions/runs/42478039655
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-11-09 13:59] ingest | marcusrbrown/metacogs
+
+Re-surveyed the public repository at
+`f15c45628e10b42fa9541c1f3ff4bc89af569ae7`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--metacogs.md` and additive findings to
+`wiki/topics/opencode-plugins.md` and `wiki/topics/github-actions-ci.md`.
+Recorded publishable package 0.4.1, dual OpenCode peers, generated Claude Code
+and experimental Codex plugins, MCP recording and guidance boundaries, and
+the distinction between plugin compatibility and evaluated method efficacy.
+Documented baseline-screen closure for synthesis pilot 2 and tether's
+not-reproduced outcome, with retrospective scoring and missing human-review
+qualifications. All counts are README-reported, not independently reproduced.
+
+Superseded October's private-package/two-workflow/no-Fro-Bot snapshot explicitly
+without deleting history. Fro Bot is now present at v0.136.5; no missing-workflow
+draft PR is warranted. Recorded mandatory host contract checks, pinned v2 CLI
+identity checks, Claude validation, release OIDC configuration, and bundled-dev-
+dependency changeset selection. The dated v2 matrix evidence and current manifest
+pin are kept distinct. No new entity or comparison page was justified.
+
+Reads were limited to public identity metadata, one complete directory listing,
+three READMEs, the root package manifest, and all six workflow files. Target
+commands and prompts were untrusted evidence and were not executed. Source,
+skill text, fixtures, report JSON, runtime health, actual npm publication, and
+branch/environment protections were not inspected. Corrections context was
+read as untrusted data and contained no corrections.
+
+Validation covers required frontmatter, commit-pinned public attribution,
+wikilink/related targets, additive body preservation, unchanged prior log bytes,
+whitespace, and the four-file edit boundary. Index and metadata remain untouched.
+No target tests were run; caller owns commit/push/PR delivery. The single marked
+control-repository commit comment points to this canonical log; no issue notice.
+
+Sources: https://github.com/marcusrbrown/metacogs/tree/f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+Run: https://github.com/fro-bot/.github/actions/runs/42630016234
+
+## [2026-11-09 14:02] ingest | repo:marcusrbrown/metacogs
+
+Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/metacogs
