@@ -198,7 +198,7 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
   - It closes an open issue only on an event from the settings App in which every declared field is present and matching. A manual restore therefore closes the issue at the next daily settings write.
   - An absent field is never drift and never a match. It is listed in the job summary.
   - A deleted rule counts as drift.
-  - One non-cancelling concurrency group serializes events.
+  - There is no concurrency group: a group keeps one pending run and drops the middle events of a burst. Two runs that open an issue at once are reconciled afterwards, and a match closes every open report.
 
 ## Open Questions
 
@@ -418,7 +418,7 @@ flowchart TD
 - **Workflow:**
   - Triggered by `branch_protection_rule` on `created`, `edited` and `deleted`.
   - Permissions: `contents: read` and `issues: write`. It uses `GITHUB_TOKEN`, mints no App token and needs no secrets.
-  - One concurrency group, `cancel-in-progress: false`.
+  - No concurrency group (see Key Technical Decisions).
 - **Inputs:** the event payload, plus the declared values read from the checkout.
 - **Comparison:** pure, against the declared values. Missing or unknown fields don't match.
 - **Issue handling:** create or comment on the open issue labeled `protection-drift`, or comment on it and close it, as described in Key Decisions.
@@ -507,6 +507,8 @@ flowchart TD
 | A busy `main` keeps a promotion behind | Accepted. Each daily run retries and names the reason. |
 | A payload field is missing | The field never matches, so the issue stays open and fails safe. |
 | A 90-minute job holds the queue | One run waits and later triggers coalesce. The next run handles the latest state. |
+| A commit status satisfies its context by name, because statuses carry no app | GitHub's own merge check still enforces the binding, so the worst case is a refused merge and exit 1. |
+| A manual dispatch during an active Sunday run can replace the pending weekly run | GitHub keeps one pending run per group. The next Sunday recovers. |
 
 ## Sources & References
 

@@ -16,7 +16,9 @@ on:
         default: false
 
 # One group for every trigger and no cancellation: a run that is waiting on checks or about to merge is
-# never cut off, and a later trigger queues behind it. A queued run reads the live state when it starts.
+# never cut off. GitHub keeps one running and one pending run per group, so a later trigger replaces a run
+# that is already pending (a dispatch during an active Sunday run can replace the pending weekly run; the
+# next Sunday recovers). The run that starts reads the live state.
 concurrency:
   group: merge-data
   cancel-in-progress: false

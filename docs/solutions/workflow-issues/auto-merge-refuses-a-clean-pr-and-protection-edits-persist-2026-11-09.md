@@ -46,5 +46,5 @@ A third problem sat next to them: two edits to the `main` protection rule in the
 ## Things that stay true
 
 - An edit to the protection rule persists until the next settings write. Between the two, the rule is whatever the editor left, so the report has to come from the event, not from the settings run.
-- A concurrency group with `cancel-in-progress: false` keeps one running and one pending run. A third event replaces the pending one, so the watcher compares each event's own rule and never relies on seeing every event.
+- A concurrency group, even with `cancel-in-progress: false`, keeps one running and one pending run, and a third event replaces the pending one. The watcher therefore has no group: every event gets its own run, two runs that open an issue at the same time are reconciled afterwards (the later issue closes as a duplicate of the oldest), and a match closes every open report.
 - The first live approval has to be checked before the switch is trusted: if GitHub does not count the `fro-bot` approval as a code-owner review the merge answers 405 `blocked`, and the run must exit non-zero rather than report a green skip.
