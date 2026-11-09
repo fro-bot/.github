@@ -468,16 +468,13 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
   })
 
   it('renders every key as a key: line that matching, counting and reuse all read', () => {
-    expect(output).toContain('End every item with a line "key: <object>"')
-    expect(output).toContain('"key: <object> — <problem tag>"')
+    expect(output).toContain('End every item with a line "key: <object> — <problem tag>"')
     expect(output).toContain('starting with the key line')
   })
 
-  it('tags file, path, repo-path and workflow keys from their first appearance and never tags issue, PR or Project keys', () => {
-    expect(output).toContain(
-      "A file, path, repo-path or workflow key always carries a problem tag from the item's first appearance",
-    )
-    expect(output).toContain('An issue, PR or Project item key never carries one')
+  it('tags every key from its first appearance', () => {
+    expect(output).toContain("Every key carries a problem tag from the item's first appearance")
+    expect(output).not.toContain('never carries one')
     expect(output).toContain(
       'The tag stays the same from one report to the next, whatever other problems the object has',
     )
@@ -542,8 +539,11 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain('close an open issue labeled `attention-tracking` and authored by `fro-bot`')
     expect(output).toContain('only on affirmative evidence that its problem is resolved')
     expect(output).toContain('for an issue or PR key, it is closed or merged')
-    expect(output).toContain('for a Project item key, its Status is Done or the item was removed')
-    expect(output).toContain('for a workflow key, the last 3 runs on the default branch succeeded')
+    expect(output).toContain('for a Project item key, its Status is Done (a removed item is not resolution')
+    expect(output).toContain(
+      'for a workflow key, a fix for the cited failure is merged and linked and every default-branch run since it succeeded',
+    )
+    expect(output).not.toContain('the last 3 runs on the default branch succeeded')
     expect(output).toContain('for a file or path key, the default branch no longer shows the cited problem')
     expect(output).toContain('A failed re-check, one passing run, or a finding that is merely absent is not resolution')
     expect(output).toContain('editing the issue body, not in a comment')
@@ -626,7 +626,7 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(composed).toContain('TRUSTED AUTHORS')
     expect(composed).toContain('AGENT NOTES')
     expect(composed).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
-    expect(composed).toContain('End every item with a line "key: <object>"')
+    expect(composed).toContain('End every item with a line "key: <object> — <problem tag>"')
     expect(composed).toContain('Include an attention item only if every source of it is public')
     expect(composed).toContain('Create at most 2 new tracking issues per run')
     expect(composed).toContain('authored by `fro-bot`')
