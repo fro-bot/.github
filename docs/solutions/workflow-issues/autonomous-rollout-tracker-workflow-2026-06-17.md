@@ -2,7 +2,7 @@
 title: Autonomous rollout tracker workflows
 module: gateway-rollout-tracker
 date: 2026-06-17
-last_updated: 2026-10-22
+last_updated: 2026-11-09
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
@@ -135,6 +135,11 @@ empty fetch ends the preflight with a `FATAL` line on stderr, empty stdout and a
 failed read never counts as "no change". The update job requires a successful preflight and
 `should_comment == 'true'`, so every agent run has a valid marker to write.
 
+Read completeness and publication success are separate boundaries. PR #4146 raised the Project
+read limit to 1,000 and rejects a result at that limit as potentially truncated. Its subprocess
+buffer and tests cover a separate boundary: a response over 1 MiB containing only 900 items.
+Passing item-count tests alone would not protect that payload-size boundary.
+
 Pending operator mentions are a separate wake condition, not a hash input. The preflight reads the
 #3512 comments through the REST API (`gh api --paginate`), which carries numeric comment IDs. A
 mention is pending when its comment is by `marcusrbrown`, contains `@fro-bot`, and has an ID above
@@ -153,11 +158,14 @@ run repeats the preflight and answers whatever is pending.
 
 ### The marker
 
-The marker is `<!-- gateway-rollout-tracker:{"hash":…,"snapshot":…,"last_mention_id":…} -->`. The
+The marker is `<!-- gateway-rollout-tracker:{"hash":…,"last_mention_id":…} -->`. The
 preflight script builds the complete string and outputs it; the prompt embeds it and the agent copies
 it verbatim into every tracker reply and every in-place edit. `<`, `>` and `&` are escaped inside the
 JSON as `\u003c`, `\u003e` and `\u0026`, so Project text containing `-->` cannot close the HTML
 comment early.
+
+PR #4146 removed the growing snapshot from the marker; the full snapshot remains on stdout, and
+legacy markers containing it still parse. A 999-item fixture checks that marker size stays bounded.
 
 The marker comments authored by `fro-bot` or `fro-bot[bot]` are the only gate record; the script
 writes no state. The parser requires a string `hash`. `last_mention_id` is the highest operator
@@ -198,6 +206,14 @@ the operator posts. It then rewrites every stale section of the body, updates Pr
 missing dependencies, and maintains the acceptance list. Each acceptance entry is labelled
 operator-reported or agent-verified, and an unmet gate is never removed silently. When comment IDs
 are listed the agent replies once to them; with none listed it replies only when something changed.
+
+The body-size instructions added in PR #4146 retain open dependencies, summarize Done rows,
+request UTF-8 byte measurement, compact above 60,000 bytes and prohibit writes above 65,000 bytes.
+If compaction cannot fit the body, they require skipping both the body write and the new marker,
+preserving the old wake condition for retry. These are prompt contracts, not deterministic write
+guards: the final review confirmed the instructions and oversized-response test, but did not verify
+live compaction or skipped-write retry execution. Deterministic byte validation and marker advancement
+only after successful publication are follow-up safeguards, not runtime fixes established by this PR.
 
 ### Daily-only work
 
@@ -261,6 +277,9 @@ Bad split:
   count occurrences with `split('-->')`
 
 ## Related
+
+- Source PR #4146: merge `7c6bce20116cce0a99e8f75912e99f6208275679`.
+- [Size subprocess buffers selectively at call sites](../best-practices/size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md) — `docs/solutions/best-practices/size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md`.
 
 - `marcusrbrown/infra` `docs/runbooks/operator-surface-acceptance-automated.md` — the operator
   acceptance runs whose posted results the tracker reads and labels operator-reported.
