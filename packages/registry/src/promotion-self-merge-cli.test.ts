@@ -48,6 +48,7 @@ describe('no argv (the workflow call)', () => {
       env: unknown
       now: () => number
       sleep: (ms: number) => Promise<void>
+      signal: (ms: number) => AbortSignal
       readSettings: () => string
     }
     expect(params.env).toEqual(env)
@@ -62,6 +63,10 @@ describe('no argv (the workflow call)', () => {
     await vi.advanceTimersByTimeAsync(1)
     await sleeping
     expect(slept).toBe(true)
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    const signal = params.signal(30)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(30)
+    expect(signal.aborted).toBe(false)
     vi.useRealTimers()
     expect(params.readSettings()).toContain('required_status_checks')
   })

@@ -27,6 +27,7 @@ export function promotionSelfMergeCli(): CliConfig {
               new Promise<void>(resolve => {
                 setTimeout(resolve, ms)
               }),
+            signal: ms => AbortSignal.timeout(ms),
             stdout: context.stdout,
             stderr: context.stderr,
           }),

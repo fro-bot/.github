@@ -12,8 +12,12 @@
  *   be live, and `on` again in a fresh read before the approval and before the merge. A run that started
  *   as a dry run stays one to the end, whatever the variable becomes; it waits and polls as a live run
  *   does, then stops right before the approval.
- * - Every request goes through one deadline check. The wait has 60 minutes and the approval and merge get a
- *   further 15; a request issued after its deadline ends the run with TIMEOUT and a summary.
+ * - Every request goes through one deadline check and carries an abort signal sized to the time left. The
+ *   wait has 60 minutes and the approval and merge a further 10; a request issued after its deadline, or cut
+ *   off in flight, ends the run with TIMEOUT and a summary. A write that is cut off is reconciled with one
+ *   more read, which has 2 minutes of its own. The step needs at most 72 minutes, which leaves 18 of the
+ *   job's 90 for the steps before it.
+ * - The live required list is read again on every poll, and a change restarts the wait.
  * - Exit 0: merged, held, dry run, stale, timed out, 409 or behind. Exit 1: a failed check, unreadable or
  *   short protection, an approval that did not count, any other API failure. Stderr carries fixed codes
  *   only, never an upstream message, a token or a payload.
@@ -52,6 +56,8 @@ export interface SelfMergeInput {
   readonly declaredContexts: readonly string[]
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
+  /** An abort signal that fires after `ms`; the real one is `AbortSignal.timeout`. */
+  readonly signal: (ms: number) => AbortSignal
 }
 
 export type SelfMergeCode =
@@ -75,6 +81,10 @@ export type SelfMergeCode =
   | 'APPROVE_FAILED'
   | 'OPEN_WAITING'
   | 'MERGE_FAILED'
+  | 'MERGED_AFTER_CUT_OFF'
+  | 'MERGE_CUT_OFF'
+  | 'MERGE_UNKNOWN'
+  | 'APPROVAL_UNKNOWN'
   | 'MERGE_BLOCKED'
   | 'API_FAILED'
   | 'MERGED'
@@ -113,7 +123,7 @@ interface StatusView {
 }
 
 /** Codes whose summary text is built from the run, so the caller supplies it. */
-type DynamicCode = 'TIMEOUT' | 'CHECK_FAILED' | 'PROTECTION_EMPTY' | 'PROTECTION_SHORT'
+type DynamicCode = 'TIMEOUT' | 'CHECK_FAILED' | 'PROTECTION_EMPTY' | 'PROTECTION_SHORT' | 'APPROVAL_UNKNOWN'
 type FixedCode = Exclude<SelfMergeCode, DynamicCode>
 
 /** Settings that read as numbers and durations, inside a function so a mutant in them is exercised. */
@@ -121,7 +131,9 @@ function limits() {
   return {
     waitMs: 60 * 60 * 1000,
     // Time after the wait for the post-wait reads, the approval and the merge.
-    reserveMs: 15 * 60 * 1000,
+    reserveMs: 10 * 60 * 1000,
+    // The one read that reconciles a write that was cut off, outside the deadline.
+    reconcileMs: 2 * 60 * 1000,
     // Times the wait starts over because the live required list changed under it.
     maxRestarts: 3,
     pollMs: 60 * 1000,
@@ -158,6 +170,10 @@ function titles(): Readonly<Record<SelfMergeCode, string>> {
     APPROVE_FAILED: 'approval failed',
     OPEN_WAITING: 'open, waiting',
     MERGE_FAILED: 'merge failed',
+    MERGED_AFTER_CUT_OFF: 'merged after a cut-off request',
+    MERGE_CUT_OFF: 'merge cut off',
+    MERGE_UNKNOWN: 'merge state unknown',
+    APPROVAL_UNKNOWN: 'approval unknown',
     MERGE_BLOCKED: 'merge blocked',
     API_FAILED: 'GitHub API failure',
     MERGED: 'merged',
@@ -191,6 +207,11 @@ function details(): Readonly<Record<FixedCode, string>> {
     OPEN_WAITING:
       'GitHub refused the merge because the head or the base moved. The pull request stays open and the next daily run handles it.',
     MERGE_FAILED: 'The merge did not complete and the pull request is not merged.',
+    MERGED_AFTER_CUT_OFF: 'The merge request was cut off at the deadline, but the pull request is merged.',
+    MERGE_CUT_OFF:
+      'The merge request was cut off at the deadline. Read again afterwards, the pull request is still open, so the merge has not gone through, though GitHub may still accept it. Check the pull request.',
+    MERGE_UNKNOWN:
+      'The merge request failed or was cut off, and the pull request could not be read afterwards, so whether GitHub accepted the merge is not known. Check the pull request.',
     MERGE_BLOCKED:
       'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
     API_FAILED: 'A GitHub API call failed, so the run stopped. Nothing further was done.',
@@ -209,6 +230,9 @@ function failsRun(code: SelfMergeCode): boolean {
     'SWITCH_UNREADABLE',
     'APPROVE_FAILED',
     'MERGE_FAILED',
+    'MERGE_CUT_OFF',
+    'MERGE_UNKNOWN',
+    'APPROVAL_UNKNOWN',
     'MERGE_BLOCKED',
     'API_FAILED',
   ]).has(code)
@@ -253,7 +277,8 @@ function build(context: OutcomeContext, code: SelfMergeCode, detail: string): Se
 
 /** The job summary: title, what happened and what to do, then the pull request and the pin. */
 function summaryFor(context: OutcomeContext, title: string, detail: string, code?: SelfMergeCode): string {
-  const said = context.approved === true && code !== 'MERGED' ? afterApproval(detail) : detail
+  const said =
+    context.approved === true && code !== 'MERGED' && code !== 'MERGED_AFTER_CUT_OFF' ? afterApproval(detail) : detail
   const facts = [
     context.pullRequest === null ? undefined : `- Pull request: #${String(context.pullRequest)}`,
     `- Pinned commit: ${/^[0-9a-f]{40}$/u.test(context.pin) ? `\`${context.pin}\`` : 'not available'}`,
@@ -263,6 +288,9 @@ function summaryFor(context: OutcomeContext, title: string, detail: string, code
 
 /** Thrown by the deadline check; carries nothing, because the outcome is built from the run's state. */
 class DeadlineError extends Error {}
+
+/** A request that was in flight when its signal fired: it was sent, so a write may or may not have happened. */
+class CutOffError extends DeadlineError {}
 
 /** The outcome of a run whose deadline passed: the wait ran out, or the time after it did. */
 function timeoutOutcome(state: RunState): SelfMergeOutcome {
@@ -395,22 +423,37 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     state.waiting = waiting
     deadline = waiting ? waitDeadline : hardDeadline
   }
-  const timed = async <T>(operation: () => Promise<T>): Promise<T> => {
-    if (input.now() > deadline) throw new DeadlineError()
-    return operation()
+  // Every request carries a signal that fires when its deadline does. A request that fails with its signal
+  // fired was cut off in flight, whatever error Octokit made of it (it turns an abort into a 500).
+  const timed = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const remaining = deadline - input.now()
+    if (remaining < 0) throw new DeadlineError()
+    const signal = input.signal(remaining)
+    try {
+      return await operation(signal)
+    } catch (error: unknown) {
+      throw signal.aborted ? new CutOffError() : error
+    }
   }
-  const read = async <T>(operation: () => Promise<T>): Promise<T> =>
+  // A sleep never runs past the deadline.
+  const sleep = async (ms: number): Promise<void> => {
+    const left = Math.min(ms, deadline - input.now())
+    if (left > 0) await input.sleep(left)
+  }
+  const read = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> =>
     retry(async () => timed(operation), {
       attempts: config.transientAttempts,
       delayMs: attempt => attempt * config.transientBaseMs,
       shouldRetry: isTransient,
-      sleep: input.sleep,
+      sleep,
     })
 
   const readProtection = async (): Promise<SelfMergeOutcome | readonly RequiredCheck[]> => {
     let response: Awaited<ReturnType<SelfMergeOctokit['rest']['repos']['getBranch']>>
     try {
-      response = await read(async () => octokit.rest.repos.getBranch({owner, repo, branch: 'main'}))
+      response = await read(async signal =>
+        octokit.rest.repos.getBranch({owner, repo, branch: 'main', request: {signal}}),
+      )
     } catch (error: unknown) {
       if (error instanceof DeadlineError) throw error
       return outcomeOf(state, 'PROTECTION_UNREADABLE')
@@ -435,21 +478,45 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     return live
   }
 
-  const readPull = async (): Promise<PullView> => {
-    const response = await read(async () => octokit.rest.pulls.get({owner, repo, pull_number: pullRequest}))
-    return {
-      state: response.data.state,
-      merged: response.data.merged,
-      headSha: response.data.head.sha,
-      labels: response.data.labels.map(label => label.name),
-      mergeableState: response.data.mergeable_state,
+  const viewOf = (data: {
+    state: string
+    merged: boolean
+    head: {sha: string}
+    labels: readonly {name: string}[]
+    mergeable_state: string
+  }): PullView => ({
+    state: data.state,
+    merged: data.merged,
+    headSha: data.head.sha,
+    labels: data.labels.map(label => label.name),
+    mergeableState: data.mergeable_state,
+  })
+
+  const readPull = async (): Promise<PullView> =>
+    viewOf(
+      (await read(async signal => octokit.rest.pulls.get({owner, repo, pull_number: pullRequest, request: {signal}})))
+        .data,
+    )
+
+  /** One read of the pull request that has the time of its own, for a write that was cut off; `null` if it fails. */
+  const reconcile = async (): Promise<PullView | null> => {
+    try {
+      const response = await octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullRequest,
+        request: {signal: input.signal(config.reconcileMs)},
+      })
+      return viewOf(response.data)
+    } catch {
+      return null
     }
   }
 
   const pages = async <T>(fetchPage: (page: number) => Promise<readonly T[]>): Promise<readonly T[]> => {
     let all = Array.of<T>()
     for (const page of Array.from({length: config.maxPages}, (_, index) => index + 1)) {
-      const items = await read(async () => fetchPage(page))
+      const items = await fetchPage(page)
       all = all.concat(items)
       if (items.length < config.pageSize) break
     }
@@ -458,14 +525,17 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
 
   const readRuns = async (): Promise<readonly CheckRunView[]> =>
     pages(async page => {
-      const response = await octokit.rest.checks.listForRef({
-        owner,
-        repo,
-        ref: input.pin,
-        filter: 'latest',
-        per_page: config.pageSize,
-        page,
-      })
+      const response = await read(async signal =>
+        octokit.rest.checks.listForRef({
+          owner,
+          repo,
+          ref: input.pin,
+          filter: 'latest',
+          per_page: config.pageSize,
+          page,
+          request: {signal},
+        }),
+      )
       return response.data.check_runs.map(run => ({
         id: run.id,
         name: run.name,
@@ -477,21 +547,24 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
 
   const readStatuses = async (): Promise<readonly StatusView[]> =>
     pages(async page => {
-      const response = await octokit.rest.repos.listCommitStatusesForRef({
-        owner,
-        repo,
-        ref: input.pin,
-        per_page: config.pageSize,
-        page,
-      })
+      const response = await read(async signal =>
+        octokit.rest.repos.listCommitStatusesForRef({
+          owner,
+          repo,
+          ref: input.pin,
+          per_page: config.pageSize,
+          page,
+          request: {signal},
+        }),
+      )
       return response.data.map(status => ({context: status.context, state: status.state}))
     })
 
   /** `on`, anything else as given, or `unreadable` (an error, and a 404 too: a PAT without access sees none). */
   const readSwitch = async (): Promise<string | undefined | 'unreadable'> => {
     try {
-      const response = await read(async () =>
-        octokit.rest.actions.getRepoVariable({owner, repo, name: 'PROMOTION_SELF_MERGE'}),
+      const response = await read(async signal =>
+        octokit.rest.actions.getRepoVariable({owner, repo, name: 'PROMOTION_SELF_MERGE', request: {signal}}),
       )
       return response.data.value
     } catch (error: unknown) {
@@ -507,11 +580,18 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
   let required = initial as readonly RequiredCheck[]
 
   // One poll per attempt, a minute apart. The attempts are bounded by `retry`, so the wait ends even if the
-  // clock never moves; it ends sooner once the wait has used up its 60 minutes. A poll answers with the
-  // outcome that stops the run, or with the names of the checks still pending.
-  const poll = async (): Promise<{stop: SelfMergeOutcome | null; pending: readonly string[]}> => {
+  // clock never moves; it ends sooner once the wait has used up its 60 minutes. A poll reads the live
+  // required list first: a list that differs ends the poll with `changed`, and the wait starts over on it.
+  // Otherwise it answers with the outcome that stops the run, or with the names of the checks still pending.
+  const poll = async (): Promise<{stop: SelfMergeOutcome | null; pending: readonly string[]; changed: boolean}> => {
     const stopped = guard(state, await readPull())
-    if (stopped !== null) return {stop: stopped, pending: Array.of<string>()}
+    if (stopped !== null) return {stop: stopped, pending: Array.of<string>(), changed: false}
+    const live = await readProtection()
+    if (!Array.isArray(live)) return {stop: live as SelfMergeOutcome, pending: Array.of<string>(), changed: false}
+    if (!sameChecks(required, live as readonly RequiredCheck[])) {
+      required = live as readonly RequiredCheck[]
+      return {stop: null, pending: Array.of<string>(), changed: true}
+    }
     const verdict = evaluateChecks(required, await readRuns(), await readStatuses())
     if (verdict.failed.length > 0) {
       const failed = outcomeWith(
@@ -519,23 +599,24 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
         'CHECK_FAILED',
         `These required checks failed on the pinned commit: ${list(verdict.failed)}. Nothing was approved.`,
       )
-      return {stop: failed, pending: Array.of<string>()}
+      return {stop: failed, pending: Array.of<string>(), changed: false}
     }
-    return {stop: null, pending: verdict.pending}
+    return {stop: null, pending: verdict.pending, changed: false}
   }
 
-  // The wait, then a fresh read of the required list. A list that changed under the wait (a context added,
-  // an app rebound) starts the wait over on the new list, inside the same absolute deadline.
+  // The wait, then a last fresh read of the required list. A list that changed (a context added, removed or
+  // rebound) starts the wait over on the new list, inside the same absolute deadline.
   const attempt = async (): Promise<{stop: SelfMergeOutcome | null; changed: boolean}> => {
     enter(true)
     const polled = await retry(poll, {
       attempts: config.maxPolls,
       delayMs: () => config.pollMs,
-      retryResult: result => result.pending.length > 0 && input.now() - start < config.waitMs,
-      sleep: input.sleep,
+      retryResult: result => !result.changed && result.pending.length > 0 && input.now() - start < config.waitMs,
+      sleep,
     })
     state.pending = polled.pending
     if (polled.stop !== null) return {stop: polled.stop, changed: false}
+    if (polled.changed) return {stop: null, changed: true}
     if (polled.pending.length > 0) return {stop: timeoutOutcome(state), changed: false}
 
     enter(false)
@@ -559,7 +640,7 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
   if (approvalSwitch !== 'on') return outcomeOf(state, 'DRY_RUN')
 
   try {
-    await timed(async () =>
+    await timed(async signal =>
       octokit.rest.pulls.createReview({
         owner,
         repo,
@@ -567,10 +648,12 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
         commit_id: input.pin,
         event: 'APPROVE',
         body: `Approved by Merge Data Branch: ${input.pin} touches only knowledge/ and metadata/ and passed the promotion gates.`,
+        request: {signal},
       }),
     )
     state.approved = true
   } catch (error: unknown) {
+    if (error instanceof CutOffError) return approvalUnknown(state, await reconcile())
     if (error instanceof DeadlineError) throw error
     if (statusOf(error) === 422) {
       const stale = guard(state, await readPull())
@@ -590,7 +673,7 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
         attempts: config.mergeableRereads + 1,
         delayMs: () => config.mergeableDelayMs,
         retryResult: result => result.stop === null && result.pull.mergeableState === 'unknown',
-        sleep: input.sleep,
+        sleep,
       },
     )
 
@@ -602,17 +685,20 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
   if (mergeSwitch !== 'on') return outcomeOf(state, 'SWITCH_TURNED_OFF')
 
   try {
-    const merged = await timed(async () =>
+    const merged = await timed(async signal =>
       octokit.rest.pulls.merge({
         owner,
         repo,
         pull_number: pullRequest,
         sha: input.pin,
         merge_method: 'squash',
+        request: {signal},
       }),
     )
     return outcomeOf(state, merged.data.merged ? 'MERGED' : 'MERGE_FAILED')
   } catch (error: unknown) {
+    const cutOff = error instanceof CutOffError
+    if (error instanceof DeadlineError && !cutOff) throw error
     const status = statusOf(error)
     if (status === 409) return outcomeOf(state, 'OPEN_WAITING')
     if (status === 405) {
@@ -620,16 +706,25 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
       if (after.stop !== null) return after.stop
       return outcomeOf(state, after.pull.mergeableState === 'behind' ? 'OPEN_WAITING' : 'MERGE_BLOCKED')
     }
-    // The merge may have gone through before the failure: look before reporting.
-    try {
-      const pull = await readPull()
-      if (pull.merged) return outcomeOf(state, 'MERGED')
-    } catch (error_: unknown) {
-      if (error_ instanceof DeadlineError) throw error_
-      // The state is unknown; report the merge as failed.
-    }
-    return outcomeOf(state, 'MERGE_FAILED')
+    // The merge may have gone through before the failure or the cut-off: look before reporting.
+    const pull = await reconcile()
+    if (pull === null) return outcomeOf(state, 'MERGE_UNKNOWN')
+    if (pull.merged) return outcomeOf(state, cutOff ? 'MERGED_AFTER_CUT_OFF' : 'MERGED')
+    return outcomeOf(state, cutOff ? 'MERGE_CUT_OFF' : 'MERGE_FAILED')
   }
+}
+
+/** The outcome of an approval request that was cut off: what a read afterwards showed, if it showed anything. */
+function approvalUnknown(state: RunState, pull: PullView | null): SelfMergeOutcome {
+  const seen =
+    pull === null
+      ? 'The pull request could not be read afterwards.'
+      : `Read again afterwards, the pull request is ${pull.merged ? 'merged' : pull.state}.`
+  return outcomeWith(
+    state,
+    'APPROVAL_UNKNOWN',
+    `The approval request was cut off at the deadline, so it is not known whether GitHub recorded it. ${seen} Check its reviews and dismiss the approval if the promotion should not merge.`,
+  )
 }
 
 export interface RunSelfMergeParams {
@@ -639,6 +734,7 @@ export interface RunSelfMergeParams {
   readonly createClient: (token: string) => Promise<SelfMergeOctokit>
   readonly now: () => number
   readonly sleep: (ms: number) => Promise<void>
+  readonly signal: (ms: number) => AbortSignal
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
   /** Defaults to `appendFileSync`; a test passes a recorder. */
@@ -735,6 +831,7 @@ export async function runSelfMerge(params: RunSelfMergeParams): Promise<number> 
       declaredContexts,
       now: params.now,
       sleep: params.sleep,
+      signal: params.signal,
     }),
   )
 }

@@ -66,7 +66,10 @@ jobs:
     needs: decide
     if: ${{ needs.decide.outputs.run == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90 # a bounded wait for the required checks (60 minutes) plus setup and the merge
+    # The self-merge step needs at most 72 minutes: a 60-minute wait, 10 minutes for the approval and the merge
+    # (every request and sleep is cut off at its deadline), and a 2-minute read that reconciles a write that was
+    # cut off. That leaves 18 of the 90 for the steps before it and the runner's own teardown.
+    timeout-minutes: 90
     steps:
       # merge-data-pr.ts: contents (compare, plus pulls.updateBranch on the head repo), pull-requests (create/update the promotion PR), issues (conflict journal and labels).
       - id: get-workflow-app-token
