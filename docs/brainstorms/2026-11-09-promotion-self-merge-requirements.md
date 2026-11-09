@@ -42,20 +42,21 @@ The five merges fall inside the windows those edits open. That the edits removed
 **Self-merge in the promotion run**
 
 - R1. A promotion qualifies when the PR's live diff against `main`, read in the same run, changes only paths under `knowledge/` or `metadata/`. Both the old and the new path of a rename count. A diff the API truncates does not qualify. Labels never decide qualification. The run sets exactly one of `automerge` and `needs-review` and removes the other.
-- R2. A qualifying promotion is merged only after the promotion gates pass in the same run, on the commit that becomes the PR head.
-- R3. After the gates pass, the run waits a bounded time for the required checks on that head. It reads the required checks from the branch's live protection. Each must be success, skipped or neutral. If they do not settle in time, the run leaves the PR open and stops without merging.
+- R2. A qualifying promotion is merged only after the promotion gates pass in the same run, on the commit that becomes the PR head. If the PR head differs from the commit the gates checked, the run stops without approving.
+- R3. After the gates pass, the run waits a bounded time for the required checks on that head. It reads the required checks from the branch's live protection. That list must contain every context declared for `main` in `.github/settings.yml`; if it is missing, empty or short, the run stops without approving. Each check must be success, skipped or neutral. If they do not settle in time, the run leaves the PR open and ends successfully without merging, saying so in its summary.
 - R4. The run approves the PR as the `fro-bot` user, pinned to that head commit. The review body is one line naming the commit and the rule it met. It never claims anyone read the content.
 - R5. The run then merges the PR, pinned to that head commit. If the head has moved, GitHub refuses the merge and the run stops without retrying.
 - R6. Every decision is deterministic. No agent or LLM step is involved.
 - R7. A promotion that does not qualify, or whose gates or checks fail, stays open with the failure visible and waits for the operator, as today.
-- R8. `Merge Data Branch` runs daily instead of weekly. A behind or moved promotion is then caught up and merged by the next day's run.
+- R8. `Merge Data Branch` runs daily instead of weekly. A behind or moved qualifying promotion is then caught up and merged by the next day's run.
+- R8a. The daily run does not move the head of an open `needs-review` promotion. Its merge-back and update stay on today's weekly cadence, so an operator approval is not dismissed daily. Qualification is decided from the `data`-versus-`main` diff before the merge-back.
 
 **Protection drift**
 
 - R9. When `main` protection changes and the actor is not the settings automation, Fro Bot opens an issue in fro-bot/.github within 15 minutes. The issue names the actor, the time, the change GitHub reports, and the settings workflow that will restore protection.
 - R10. The settings automation is identified by actor type and numeric ID, not by login. The `fro-bot` user is always reported.
 - R11. The drift report does not block or revert the change. Restoration stays with the existing daily settings run.
-- R12. Further drift while an issue is open adds a comment to it. The issue closes on its own after the settings automation next rewrites `main` protection.
+- R12. Further drift while an issue is open adds a comment to it. The issue closes on its own only when a later write by the settings automation reports restoring the settings the drift changed. Otherwise it stays open for the operator.
 
 ---
 
@@ -67,7 +68,9 @@ The five merges fall inside the windows those edits open. That the edits removed
 - AE4. **Covers R2, R7.** The leak gate fails. The run does not open or update the PR for merge, and nothing is approved.
 - AE5. **Covers R3, R8.** The required checks have not settled when the wait ends. The PR stays open, and the next day's run catches it up and merges it.
 - AE6. **Covers R5.** `data` moves between the approval and the merge. The merge is refused, and the next run handles the new head.
-- AE7. **Covers R9, R10, R12.** The user `fro-bot` turns off required reviews in the web UI. Within 15 minutes an issue names `fro-bot`, the time and the change. The next settings run rewrites protection, and the issue closes.
+- AE7. **Covers R9, R10, R12.** The user `fro-bot` turns off required reviews in the web UI. Within 15 minutes an issue names `fro-bot`, the time and the change. The next settings run re-enables required reviews, and the issue closes.
+- AE8. **Covers R3.** The live required-check list comes back empty. The run does not approve, and it says why in its summary.
+- AE9. **Covers R8a.** A `needs-review` promotion has the operator's approval on a Tuesday. The Wednesday daily run does not push to `data`, and the approval stands.
 
 ---
 
@@ -115,7 +118,7 @@ The five merges fall inside the windows those edits open. That the edits removed
 
 ### Deferred to Planning
 
-- [Affects R3][Technical] The wait bound, and how the run tells a check that has not started from one that never will.
+- [Affects R3][Technical] The wait bound and job timeout (a recent `Main` run took 38 minutes). How the run tells a check that has not started from one that never will. Whether its token needs `checks: read` and `statuses: read` to see the leak status.
 - [Affects R8][Technical] Whether a run with nothing to promote should still update a behind PR.
 - [Affects R9][Technical] How to confirm a write came from the settings automation: by actor ID alone, or matched against an active settings run.
 
