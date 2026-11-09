@@ -10,75 +10,72 @@ origin: docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md
 
 ## Overview
 
-`Merge Data Branch` runs daily. Each run fixes one `data` commit and checks it with both promotion leak gates. If that commit's diff touches only `knowledge/` and `metadata/`, the run waits for the required checks on that exact commit, approves as `fro-bot` and squash-merges pinned to it. A promotion that doesn't qualify keeps waiting for the operator, and its head moves only on the weekly run.
+`Merge Data Branch` runs daily. A small `decide` job first checks whether the promotion qualifies and whether this is the weekly run. If the diff is held for review and it isn't the weekly run, the promotion job doesn't run.
 
-A new workflow watches `main` branch-protection edits. It opens one issue when someone other than the settings automation changes the rule, and closes the issue when a later settings write restores the drifted fields.
+The promotion job pins one `data` commit, gates it with both leak gates and updates the PR. When that commit's tree diff touches only `knowledge/` and `metadata/`, a self-merge step waits for the required checks on that commit, approves as `fro-bot`, and squash-merges pinned to the commit. A repository variable switches approval and merge on, and an operator label holds a single promotion.
+
+A separate workflow compares `main`'s protection rule with the declared settings on every `branch_protection_rule` event. It opens or comments on one issue when the rule drifts or a non-settings actor edits it, and closes the issue when an event shows the rule matching the declared settings again.
 
 ## Problem Frame
 
-See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. Today:
-
-- The operator approves and merges every promotion by hand.
-- `strict: true` leaves promotions behind until the weekly run.
-- A web-session edit to `main` protection twice left the review requirement unenforced for hours, and nothing reported it.
+See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. The operator approves and merges every promotion by hand. `strict: true` leaves promotions behind until the weekly run. Web-session edits to `main` protection twice left the review requirement unenforced for hours, and nothing reported it.
 
 ## Requirements Trace
 
-| Origin | Units |
-| --- | --- |
-| R1 qualification from the live diff, renames, truncation, one label | 1, 2 |
-| R2 gates and PR head on one commit | 1, 2 |
-| R3 bounded wait on live required checks, superset of `settings.yml`, timeout ends in success | 3 |
-| R4 approve as `fro-bot`, pinned | 3 |
-| R5 merge pinned, refused on a moved head | 3 |
-| R6 deterministic | 1, 3, 4 |
-| R7 failures stay open | 2, 3 |
-| R8 daily | 2 |
-| R8a `needs-review` head moves weekly only; qualify before merge-back | 1, 2 |
-| R9–R12 drift report | 4 |
-| AE1–AE9 | Units 1–4 test scenarios; Unit 6 live |
+| Origin                                                               | Units                                      |
+| -------------------------------------------------------------------- | ------------------------------------------ |
+| R1 qualification (tree diff, renames, one label)                     | 1, 2                                       |
+| R2 gates and PR head on one commit                                   | 2, 3                                       |
+| R3 bounded wait, live required list ⊇ `settings.yml`, timeout exit 0 | 3                                          |
+| R4 approve as `fro-bot`, pinned, one-line body                       | 3                                          |
+| R5 merge pinned, refused head → stop                                 | 3                                          |
+| R6 deterministic                                                     | 1, 3, 4                                    |
+| R7 failures stay open                                                | 2, 3                                       |
+| R8 daily                                                             | 2                                          |
+| R8a weekday hold, qualification before merge-back                    | 1, 2                                       |
+| R9–R12 drift report                                                  | 4                                          |
+| R13 operator controls (kill switch, per-PR hold)                     | 2, 3                                       |
+| AE1–AE10                                                             | unit scenarios; AE1 and AE7 live in Unit 6 |
 
 ## Scope Boundaries
 
-- No change to `main` protection: no bypass, no lower approval count, `strict` unchanged.
+- No change to `main` protection: no bypass, no lower count, `strict` unchanged.
 - No native auto-merge.
-- Renovate PRs, drafted-solution PRs, rulesets and repository-level settings stay out of scope.
+- Out of scope: Renovate PRs, drafted-solution PRs, rulesets, repository-level settings.
 
 ### Deferred to Separate Tasks
 
 - Renovate brief or auto-approval: its own brainstorm.
-- Fixing `capture-learnings-harvest.ts`'s fail-open required-context read (about lines 1804–1817). It is unrelated to promotion, so it gets a separate issue.
+- `capture-learnings-harvest.ts` reads the required contexts and fails open (about lines 1804–1817). This is filed as its own issue.
 
 ## Context & Research
 
 ### Relevant Code and Patterns
 
-- `.github/workflows/merge-data.yaml`:
-  - one job with `timeout-minutes: 10`;
-  - concurrency groups `merge-data-dispatch` (which cancels) and `merge-data-manual`;
-  - steps in order: App token mint, checkout `main`, setup, merge-back, checkout `data`, wiki presence gate, fetch `data`, promotion leak gate, `merge-data-pr`.
-- `packages/registry/src/merge-data-pr.ts`:
-  - `mergeDataPr`, with the post-PR block copied three times (lines 137–178, 191–232 and 244–285);
-  - `maybeUpdateBehindPullRequest`, which calls `updateBranch` after the gates;
-  - `selectLabel` and `addLabel` (add-only);
-  - `upsertAlertIssue`, which `merge-back-data.ts` consumes.
-- `packages/registry/src/merge-back-data.ts`: mutated, in shard 0. It is the pattern for a gate-path decision module with a `*-cli.ts` and a six-line shim.
-- `packages/privacy/src/check-private-leak.ts` `--promotion` and `check-wiki-private-presence.ts`:
-  - they scan `origin/main...origin/data` and the `data` checkout;
-  - they print no scanned SHA.
-- `packages/core/src/retry.ts`: a bounded retry with an injectable `sleep`. It is the poll primitive to extend.
-- `packages/wiki-ops/src/wiki-lint-issues.ts`: an open/comment/close issue lifecycle with fingerprint markers. Its shape fits the drift issue; its types don't.
-- `.github/workflows/status-truth.yaml`: the pattern for a deterministic step using `GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}` as step env.
-- `GET repos/fro-bot/.github/branches/main` returns `.protection.required_status_checks.checks[]` to a write token: 14 contexts, all on Actions app 15368 except CodeQL on 57789.
+- **`.github/workflows/merge-data.yaml`.**
+  - One job, `timeout-minutes: 10`.
+  - Concurrency groups `merge-data-dispatch` (cancels) and `merge-data-manual`.
+  - Steps, in order: App token, checkout `main`, setup, merge-back, checkout `data`, wiki presence gate, fetch `data`, promotion leak gate, `merge-data-pr`.
+  - `scripts/merge-data-workflow.test.ts` pins:
+    - the step names (`:170-181`)
+    - the cron (`:106`)
+    - the permissions and concurrency
+    - the rule that gate steps carry no `if:` (`:93-101`)
+- **`packages/registry/src/merge-data-pr.ts`.**
+  - The post-PR block in `mergeDataPr` appears three times.
+  - `maybeUpdateBehindPullRequest` calls `updateBranch` after the gates.
+  - `selectLabel` and `addLabel` (add-only).
+- **`packages/privacy/src/check-private-leak.ts:967`.** It hard-codes `git diff origin/main...origin/data`, and `check-private-leak.test.ts:5880` pins that argv. `check-wiki-private-presence.ts` reads the working directory.
+- **`packages/registry/src/merge-back-data.ts`.** Mutated, in shard 0. The pattern for a gate-path decision module with a `*-cli.ts` and a six-line shim.
+- **`.github/workflows/status-truth.yaml`.** A deterministic step that receives `GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}` as step env.
+- **`GET repos/fro-bot/.github/branches/main`.** Returns 14 required contexts. All come from Actions (app 15368) except CodeQL (app 57789). `Security: Private Leak Scan` is a commit status, which has a creator but no app.
+- **Settings writes.** They come from the Fro Bot App, `fro-bot[bot]`, user ID 109017866 (`update-repo-settings.yaml` passes the App secrets).
 
 ### Institutional Learnings
 
-- `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`:
-  - the promotion gates must scan the content that is promoted;
-  - commit statuses can be spoofed by anyone with `statuses: write`, so a merge decision must not trust a status alone. R2 runs the gates in the same run, on the same commit.
-- `docs/solutions/best-practices/review-shared-settings-against-effective-inherited-config-2026-10-09.md`: judge protection on the merged settings.
-- `docs/plans/2026-10-20-001-fix-keep-data-branch-present-plan.md` (complete): merge-back stays App-authored, non-force and fail-closed.
-- `docs/solutions/best-practices/repo-wide-app-token-scope-contract-2026-10-10.md`: App mints keep least privilege.
+- `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`: anyone with `statuses: write` can spoof a commit status. The merge decision here rests on the in-run gates at the pinned commit; the status only matters to GitHub's own merge check.
+- `docs/solutions/best-practices/review-shared-settings-against-effective-inherited-config-2026-10-09.md`: compare against the merged settings.
+- `docs/plans/2026-10-20-001-fix-keep-data-branch-present-plan.md`, recorded as complete: merge-back stays App-authored, non-force and fail-closed.
 
 ## Prior-Art Survey
 
@@ -100,12 +97,7 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
     },
     {
       "path_or_symbol": "packages/registry/src/merge-data-pr.ts#mergeDataPr",
-      "description": "Creates/updates the data->main PR, updates a behind PR, applies labels; no head SHA in its result, add-only labels, renames and truncation ignored",
-      "disposition": "extend"
-    },
-    {
-      "path_or_symbol": "packages/registry/src/merge-data-pr.ts#upsertAlertIssue",
-      "description": "Exact-title alert upsert that refreshes the body; no comment or close",
+      "description": "Creates/updates the data->main PR, updates a behind PR, applies labels; no head SHA in its result, add-only labels",
       "disposition": "extend"
     },
     {
@@ -115,18 +107,13 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
     },
     {
       "path_or_symbol": "packages/privacy/src/check-private-leak.ts#runPromotionCli",
-      "description": "Promotion leak gate over origin/main...origin/data; prints no scanned SHA",
-      "disposition": "extend"
+      "description": "Promotion leak gate over origin/main...origin/data",
+      "disposition": "reuse"
     },
     {
       "path_or_symbol": ".github/workflows/check-private-leak.yaml",
       "description": "Posts the required Security: Private Leak Scan status per PR head",
       "disposition": "reuse"
-    },
-    {
-      "path_or_symbol": "packages/core/src/retry.ts#retry",
-      "description": "Bounded retry with injectable sleep; the only poll primitive",
-      "disposition": "extend"
     },
     {
       "path_or_symbol": "packages/knowledge/src/capture-learnings-harvest.ts#getBranchProtection",
@@ -135,22 +122,28 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
       "insufficiency_reason": "Swallows read errors; R3 requires a fail-closed read."
     },
     {
+      "path_or_symbol": "packages/core/src/retry.ts#retry",
+      "description": "Attempt-bounded retry with injectable sleep",
+      "disposition": "insufficient",
+      "insufficiency_reason": "Bounds attempts, not elapsed time; the wait needs a time-bounded loop. Its transient-error retry is reused per read."
+    },
+    {
       "path_or_symbol": "packages/wiki-ops/src/wiki-lint-issues.ts#planIssueLifecycle",
       "description": "Fingerprinted issue open/comment/close lifecycle",
       "disposition": "insufficient",
-      "insufficiency_reason": "Bound to wiki-lint report types; the drift ledger needs per-field restoration checks."
+      "insufficiency_reason": "Bound to wiki-lint report types; the drift watcher compares a full rule against declared settings."
     },
     {
       "path_or_symbol": ".github/workflows/scorecard.yaml",
-      "description": "Only branch_protection_rule consumer; no actor filter or alert",
+      "description": "Only branch_protection_rule consumer",
       "disposition": "insufficient",
-      "insufficiency_reason": "Runs Scorecard only; no classification or issue."
+      "insufficiency_reason": "Runs Scorecard only; no comparison or issue."
     },
     {
       "path_or_symbol": "common-settings.yaml#allow_auto_merge",
       "description": "Native auto-merge, enabled and unused",
       "disposition": "insufficient",
-      "insufficiency_reason": "GitHub refuses to enable it on an already-clean PR, and it does not bind the merge to the commit the in-run gates checked."
+      "insufficiency_reason": "Refused on an already-clean PR and not bound to the commit the in-run gates checked."
     },
     {
       "path_or_symbol": ".github/workflows/fro-bot.yaml",
@@ -164,35 +157,56 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
 
 ## Key Technical Decisions
 
+- **A `decide` job before the promotion job.**
+  - It checks out `main` and fetches `data`, then computes qualification from the tree diff `git diff --name-status -M origin/main origin/data`.
+  - It outputs `run` (true or false) and `reason`. The promotion job has a job-level `if: needs.decide.outputs.run == 'true'`, so the gate steps keep no step-level `if:`.
+  - A tree diff, not three-dot, so content the operator already squash-merged doesn't count as changed. The local diff has no file cap and no truncation.
+- **The weekly run comes from the trigger, not the clock.**
+  - Two schedule entries: `0 22 * * 0` is the weekly run and `0 22 * * 1-6` the daily runs. `github.event.schedule` says which one fired.
+  - A `workflow_dispatch` input `refresh-review` (default false) and `repository_dispatch` count as daily runs.
+  - A late Sunday run that starts on Monday is still the weekly run.
 - **One pinned `data` commit per run.**
-  - After merge-back, the run reads `data`'s tip once.
-  - The wiki presence gate checks out that SHA. The promotion leak gate fetches it and scans `origin/main...<sha>`.
-  - Qualification reads `compare/main...<sha>`.
-  - The self-merge step requires the PR head to equal that SHA.
-  - Any later move of `data` stops the run, and the next run handles the new commit.
-- **No `updateBranch` after the gates.** Merge-back already brings `data` up to date with `main`. If `main` moves during the wait, the PR goes behind and the run stops without merging.
-- **The self-merge step is separate from `merge-data-pr`.** The PR step keeps creating and updating the PR, and changes only to replace labels and report the head SHA. This avoids threading new logic through its three copies.
-- **`FRO_BOT_PAT` is used only on the self-merge step.** That step reads required checks, check runs and statuses, approves and merges. The App token stays on merge-back and the PR writes. `fro-bot` is a code owner, and the App pushes `data`, so the approval satisfies last-push.
-- **Weekly window = a Sunday (UTC) run.** On any other day, a promotion whose pre-merge-back diff doesn't qualify is left alone. The run does no merge-back and no PR update, and ends with exit 0 and a "held for review" summary. A dispatch doesn't override the hold.
-- **One concurrency group for every trigger, with no cancellation.** `timeout-minutes: 90` and a 60-minute wait bound. A queued dispatch then runs against the latest state.
-- **Required-check list.** It is read from `branches/main` and must be a superset of the `main` contexts in `.github/settings.yml`, read from the checkout. The list is read again before the approval and before the merge.
-- **Drift close uses the event's `rule` payload.** On a settings-automation event, the issue closes only when every drifted field recorded in the issue's ledger matches the value declared for `main`. The settings automation is matched by sender type and numeric ID, recorded during implementation. A manually closed issue plus new drift opens a new issue.
+  - After merge-back, the run reads `data` once and outputs the commit.
+  - The wiki presence gate checks out that commit.
+  - After the fetch, `git update-ref refs/remotes/origin/data <pin>` makes the unchanged leak gate scan exactly the pinned commit.
+  - Qualification is recomputed from the tree diff at the pin.
+  - The self-merge step requires the PR head to equal the pin.
+  - The App token is not used after the PR step, because it expires in an hour.
+- **No `updateBranch` after the gates.** Merge-back already makes `data` current. If `main` moves during the wait, the merge is refused with 409 or 405-behind, and the next run picks it up.
+- **The self-merge step is separate from `merge-data-pr`.** The PR step only replaces labels, keeps unrelated labels, skips `updateBranch` when given a pin, and outputs the PR number and head.
+- **`FRO_BOT_PAT` on one step.** The self-merge step reads checks and statuses, approves and merges as `fro-bot`, a code owner. The App pushed `data` last, so the last-push rule is met.
+- **Operator controls (origin R13).**
+  - The repository variable `PROMOTION_SELF_MERGE` must be `on` for the step to approve or merge. Unset or any other value means a dry run that logs "would approve".
+  - A `hold-merge` label on the PR stops approval for that promotion. The run doesn't remove it.
+  - A promotion PR the operator closed is not reopened or approved by daily runs. It is recreated only on the weekly run.
+- **Wait loop.**
+  - A time-bounded loop of 60 minutes inside a 90-minute job, with a `sleep` seam and per-read retry for transient 5xx.
+  - Check runs use `filter=latest` with pagination, matched by context name and required app ID. Commit statuses are matched by context only, newest first, since statuses carry no app.
+  - The PR head is re-read on every poll. A moved head means "stale" (exit 0), and a cancelled check on a superseded commit is ignored.
+- **Merge outcomes.**
+  - 409 or a 405 where `mergeable_state` is `behind` means "open waiting" (exit 0).
+  - A 405 where `mergeable_state` is `blocked` after the approval means the approval didn't count or a change request is outstanding. That exits 1 so it stays visible, and it never produces a silent green.
+- **The drift watcher is stateless.**
+  - On every `branch_protection_rule` event for `main`, it compares the event's full `rule` with the declared values: review count, code owners, dismiss stale and last push from `common-settings.yaml`; strict and a contexts superset from `.github/settings.yml`; and `enforce_admins`.
+  - If the actor is not `fro-bot[bot]` (type Bot, ID 109017866), or the rule doesn't match, it opens or comments on the open `protection-drift` issue. The report names the actor, the time, the event `changes`, the mismatched fields and the settings workflow that restores the rule.
+  - When the rule matches and an issue is open, it comments and closes, whoever the actor. A deleted rule counts as a mismatch.
+  - One non-cancelling concurrency group serializes events.
 
 ## Open Questions
 
 ### Resolved During Planning
 
-- Merge method: squash, the only method enabled.
-- Exit codes:
-  - 0 for merged, no changes, held for review, timeout, a stale head or base, and a PR the operator merged;
-  - 1 for a failed gate, a failed or unreadable required check, an unreadable protection, and any API failure.
-- Where the drift issue lives: fro-bot/.github, labeled `protection-drift`, which is declared in `settings.yml`.
+- Merge method: squash.
+- **Exit codes.**
+  - 0: merged, no changes, held for review, dry run, `hold-merge`, timeout, stale head, 409 or behind, already merged.
+  - 1: a failed gate, a failed required check, unreadable or short protection, a 405 `blocked` after approval, any other API failure.
+- Drift issue home: fro-bot/.github, label `protection-drift` declared in `settings.yml`.
+- Shipping safety: the step ships in dry run. Unit 6 enables it after one live approval.
 
 ### Deferred to Implementation
 
-- **The numeric IDs of `settings[bot]` and `fro-bot[bot]`.** Read them from a recorded `branch_protection_rule` run payload.
-- **Whether `branch_protection_rule` payloads carry every field the ledger needs.** These are approvals, code owners, dismiss stale, last push, strict and contexts. If a field is missing, it stays open-ended, and only the operator closes the issue.
-- **Whether a `FRO_BOT_PAT` approval satisfies code-owner review on an App PR.** Unit 6 proves it live, before the first unattended run.
+- Whether `rule.require_last_push_approval` is present in real payloads. If it is absent, that field is compared as unknown and never matches, so the issue stays open until the operator closes it.
+- The exact set of `rule` field names. Pin them with a payload captured from a Scorecard `branch_protection_rule` run.
 
 ## High-Level Technical Design
 
@@ -200,151 +214,183 @@ See origin: `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`. 
 
 ```mermaid
 flowchart TD
-  T[schedule daily / dispatch / promote-data] --> Q0{pre-merge-back diff qualifies?}
-  Q0 -- no, not Sunday --> H[held for review, exit 0]
-  Q0 -- yes, or Sunday --> MB[merge-back main into data]
-  MB --> PIN[pin data SHA]
-  PIN --> G[wiki presence + promotion leak gates at SHA]
-  G -- fail --> F[exit 1, no PR change]
-  G -- pass --> PR[create/update PR, set one label, report head]
-  PR --> Q1{head == SHA and diff qualifies?}
-  Q1 -- no --> R[needs-review / stale, exit 0]
-  Q1 -- yes --> W[wait <=60m for required checks at SHA]
+  T[schedule daily or weekly / dispatch / promote-data] --> DEC[decide job: tree diff main..data]
+  DEC -- empty --> NC[no changes, exit 0]
+  DEC -- not qualifying and not weekly --> H[held for review, exit 0]
+  DEC -- qualifying, or weekly --> MB[merge-back main into data]
+  MB --> PIN[pin data commit]
+  PIN --> G[wiki presence + leak gate at pin]
+  G -- fail --> F[exit 1]
+  G -- pass --> PR[create/update PR, replace labels, output head]
+  PR --> Q1{head == pin and tree diff qualifies?}
+  Q1 -- no --> R[needs-review or stale, exit 0]
+  Q1 -- yes --> SW{PROMOTION_SELF_MERGE on and no hold-merge?}
+  SW -- no --> DRY[dry run / held, exit 0]
+  SW -- yes --> W[wait up to 60m; re-read head each poll]
   W -- timeout or stale --> O[open waiting, exit 0]
-  W -- failed --> F2[exit 1]
-  W -- passed --> A[approve as fro-bot, commit_id=SHA]
-  A --> M[merge squash, sha=SHA]
-  M -- refused --> O
+  W -- check failed --> F2[exit 1]
+  W -- passed --> A[re-read protection; approve as fro-bot, commit_id=pin]
+  A --> M[merge squash, sha=pin]
+  M -- 409 / behind --> O
+  M -- blocked --> F3[exit 1]
   M -- ok --> D[merged, exit 0]
 ```
 
 ## Implementation Units
 
-- [ ] **Unit 1: Promotion candidate and qualification**
+- [ ] **Unit 1: Promotion qualification**
 
-**Goal:** Pure decisions for pre-merge-back qualification, post-gate qualification at a pinned SHA, the weekly window, and the label to set.
+**Goal:** Pure decisions covering:
 
-**Requirements:** R1, R2, R8a, R6
+- tree-diff qualification
+- the weekly-run test
+- the run/hold decision
+- the label to set
+
+**Requirements:** R1, R8a, R6
 
 **Dependencies:** none
 
 **Files:**
 
-- Create: `packages/registry/src/promotion-qualify.ts` and `packages/registry/src/promotion-qualify.test.ts`
-- Modify: `packages/registry/package.json` (exports), `stryker.config.json` (`mutate`, `testFiles`), `mutation-guards.json` (one shard list), `packages/registry/README.md`
+- Create: `packages/registry/src/promotion-qualify.ts`, `packages/registry/src/promotion-qualify-cli.ts`, `scripts/promotion-qualify.ts`, and tests for the module and the CLI
+- Modify: `packages/registry/package.json` (exports), `stryker.config.json` (`mutate`, `testFiles`), `mutation-guards.json` (shard list; the CLI and shim are `not-mutated` with reasons), `scripts/registry-entrypoints.test.ts`, `packages/registry/README.md`
 
 **Approach:**
 
-- A file list qualifies only when every `filename`, and every `previous_filename` where one exists, is under `knowledge/` or `metadata/`.
-- A list the compare API marks as, or sizes as, truncated never qualifies.
-- An empty diff counts as "no changes".
-- `isWeeklyWindow(date)` is true on a Sunday (UTC).
-- The label decision returns the label to add and the label to remove.
+- Parse `git diff --name-status -M` output. Every path must be under `knowledge/` or `metadata/`, including both sides of a rename or copy.
+- An empty diff means "no changes".
+- Weekly is true for `schedule` with `0 22 * * 0`, or for dispatch with `refresh-review=true`.
+- Run is "no changes", "held", or "run".
+- The label decision returns what to add and what to remove.
+- The CLI writes `run`, `reason` and `qualifies` to `GITHUB_OUTPUT`.
 - Constants live inside functions.
 
-**Execution note:** test-first. This module is mutated, and its tests import it relatively.
+**Execution note:** write tests first. The module is mutated, and its tests import it relatively.
 
 **Test scenarios:**
 
-- Happy path: every path under `knowledge/` or `metadata/` qualifies, and the result is "add `automerge`, remove `needs-review`" (AE1).
-- Edge case: renaming `scripts/x.ts` to `knowledge/x.md` doesn't qualify (AE3).
-- Edge case: a path that only shares the prefix, such as `knowledgebase/x.md`, doesn't qualify.
-- Edge case: a truncated list doesn't qualify. An empty list is "no changes".
-- Edge case: Sunday 00:00 and 23:59 UTC fall in the weekly window. Saturday 23:59 does not.
-- Error path: a missing `filename` doesn't qualify.
+- Happy path: only `knowledge/` and `metadata/` paths gives `qualifies` and add `automerge`, remove `needs-review` (AE1).
+- Edge case: `R100 scripts/x.ts knowledge/x.md` doesn't qualify (AE3).
+- Edge case: the lookalike prefix `knowledgebase/x.md` doesn't qualify.
+- Edge case: an empty diff gives "no changes".
+- Edge case: a non-qualifying daily run is "held" (AE9). A non-qualifying run on the weekly schedule is "run". So is a dispatch with `refresh-review`.
+- Error path: malformed diff lines don't qualify.
 
-**Verification:** 100% Stryker score on the module, and `bun run check:mutation-guards` is clean.
+**Verification:** 100% Stryker on `promotion-qualify.ts`. `bun run check:mutation-guards` is clean.
 
-- [ ] **Unit 2: Workflow wiring, pinned SHA and PR step changes**
+- [ ] **Unit 2: Workflow and PR step**
 
-**Goal:** Run daily without cancellation, pin and propagate the `data` SHA, hold non-qualifying PRs on weekdays, and make the PR step set one label without moving the head.
+**Goal:** Add the `decide` job, the daily and weekly schedules, a non-cancelling queue, the pinned commit through both gates, and a PR step that replaces labels and never moves the head.
 
-**Requirements:** R1, R2, R7, R8, R8a
+**Requirements:** R1, R2, R7, R8, R8a, R13
 
 **Dependencies:** Unit 1
 
 **Files:**
 
-- Modify: `.github/workflows/merge-data.yaml`, `packages/registry/src/merge-data-pr.ts`, `packages/registry/src/merge-data-pr-cli.ts` (if new options), `packages/registry/src/merge-data-pr.test.ts`, `scripts/merge-data-workflow.test.ts`, `mutation-guards.json` (rewrite the `merge-data-pr.ts` not-mutated reason, whose auto-merge clause now fires)
+- Modify:
+  - `.github/workflows/merge-data.yaml`, including its header comment about the token
+  - `packages/registry/src/merge-data-pr.ts`, `merge-data-pr-cli.ts`, `merge-data-pr.test.ts`
+  - `scripts/merge-data-workflow.test.ts`
+  - `scripts/app-token-scope-guard.test.ts`, if the mint moves
+  - `mutation-guards.json`: rewrite the `merge-data-pr.ts` not-mutated reason, since its auto-merge clause now fires
 
 **Approach:**
 
-- Use a daily cron and one concurrency group with `cancel-in-progress: false`, and `timeout-minutes: 90`.
-- A pre-merge-back step runs Unit 1 on `compare/main...data`. If the diff doesn't qualify and it isn't the weekly window, the job ends with a held-for-review summary. All later steps are skipped through a step output.
-- After merge-back, a step records `data`'s SHA as an output. The wiki presence checkout uses `ref: <sha>`. The leak gate fetches that SHA and compares against it.
-- `merge-data-pr`:
-  - Replace labels using Unit 1's decision, removing the other label and keeping unrelated labels.
-  - Skip `updateBranch` when an expected SHA is given and report "behind".
-  - Return the PR number, head SHA and label decision as step outputs.
-- Gate steps keep no `if:` and no `continue-on-error` while they run.
+- **Triggers and concurrency:**
+  - Two crons.
+  - A `refresh-review` dispatch input.
+  - One concurrency group for every trigger, with `cancel-in-progress: false`.
+  - Promotion job `timeout-minutes: 90`.
+- **`decide` job:** `contents: read` only. It runs the Unit 1 CLI and outputs `run`.
+- **Pinned commit:**
+  - After merge-back, a step outputs the `data` commit. The wiki gate checks out `ref: <pin>`.
+  - After `git fetch origin data`, the job runs `git update-ref refs/remotes/origin/data <pin>`.
+- **`merge-data-pr`:**
+  - Takes the pin and replaces labels. Unrelated labels are kept, `hold-merge` included.
+  - Skips `updateBranch` when given a pin.
+  - On a daily run, it doesn't recreate a PR the operator closed.
+  - Outputs the PR number and head.
+- **Gate steps** keep no step-level `if:`.
 
-**Execution note:** start from failing workflow-contract tests for the cron, the concurrency, the SHA hand-off and the hold path.
-
-**Patterns to follow:** existing step-env token scoping in `merge-data.yaml`, and the `merge-data-workflow.test.ts` ordering assertions.
+**Execution note:** start with failing workflow-contract tests for each change.
 
 **Test scenarios:**
 
-- Happy path: the step order is token, checkout, setup, qualify, merge-back, pin, gates at the pinned SHA, PR, then self-merge.
-- Edge case: a weekday run with a non-qualifying diff does no merge-back and no PR update, and exits 0 (AE9).
-- Edge case: a Sunday run with a non-qualifying diff merges back, updates the PR, labels it `needs-review` and removes `automerge` (AE2).
-- Edge case: when the PR head differs from the expected SHA, `merge-data-pr` reports a mismatch and doesn't call `updateBranch`.
-- Error path: a failed gate leaves no PR created or changed for merge, and the job fails (AE4).
-- Integration: concurrency is the same group for all three triggers, with `cancel-in-progress: false`.
+- Happy path: `decide` runs, then the promotion job steps run in this order: token, checkout, setup, merge-back, pin, gates at the pin, PR, self-merge.
+- Edge case: a held `decide` skips the promotion job entirely, and the run is green (AE9).
+- Edge case: on a weekly run with a mixed diff, the run merges back, updates the PR to `needs-review`, and removes `automerge` (AE2).
+- Edge case: given a pin, `merge-data-pr` never calls `updateBranch` and reports `behind`.
+- Edge case: a closed promotion PR stays closed on a daily run (AE10).
+- Edge case: `hold-merge` survives the label replace.
+- Error path: a failed gate leaves the PR unchanged and fails the job (AE4).
+- Integration: the leak gate's diff resolves `origin/data` to the pin, even though `data` moved after the fetch.
 
-**Verification:** `actionlint` is clean, the workflow tests pass, and `merge-data-pr` tests cover the label replace and the no-update path.
+**Verification:** actionlint is clean. The workflow and `merge-data-pr` tests pass.
 
 - [ ] **Unit 3: Self-merge step**
 
-**Goal:** Wait for the required checks on the pinned SHA, approve as `fro-bot` and merge pinned to it.
+**Goal:** Wait for the required checks at the pin, then approve as `fro-bot` and merge pinned to it, behind the kill switch and the per-PR hold.
 
-**Requirements:** R3, R4, R5, R6, R7
+**Requirements:** R3, R4, R5, R6, R7, R13
 
 **Dependencies:** Unit 2
 
 **Files:**
 
-- Create: `packages/registry/src/promotion-self-merge.ts`, `packages/registry/src/promotion-self-merge-cli.ts`, `scripts/promotion-self-merge.ts`, plus tests for the module and the CLI
-- Modify: `.github/workflows/merge-data.yaml` (a new step with `GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}` in step env only), `scripts/merge-data-workflow.test.ts`, `scripts/registry-entrypoints.test.ts`, `packages/registry/package.json`, `stryker.config.json`, `mutation-guards.json`, `packages/registry/README.md`
+- Create: `packages/registry/src/promotion-self-merge.ts`, `promotion-self-merge-cli.ts`, `scripts/promotion-self-merge.ts`, and tests for each
+- Modify:
+  - `.github/workflows/merge-data.yaml`: a step with `GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}` in step env, and `PROMOTION_SELF_MERGE: ${{ vars.PROMOTION_SELF_MERGE }}`
+  - `scripts/merge-data-workflow.test.ts`, `scripts/registry-entrypoints.test.ts`, `packages/registry/package.json`, `stryker.config.json`, `mutation-guards.json`, `packages/registry/README.md`
 
 **Approach:**
 
-- Inputs:
-  - PR number;
-  - pinned SHA;
-  - label decision;
-  - the `main` contexts from `.github/settings.yml`.
-- Before waiting:
-  - Read `branches/main`.
-  - Fail with exit 1 if the required list is missing, empty or not a superset of the declared contexts (AE8).
-  - Re-read the PR. Stop with exit 0 ("stale") if the head isn't the SHA, the PR is closed or merged, or `automerge` isn't the decided label.
-- Polling, built on `retry` with an injectable `sleep`, bounded at 60 minutes:
-  - For each required context, take the newest check run or status at the SHA from the required app.
-  - Treat success, skipped and neutral as passing. Missing or in-progress means keep waiting. Failure, error, cancelled or timed out is a failure.
-  - A timeout exits 0 as "open waiting" (AE5).
-- Re-read the protection and the PR head, then approve with `commit_id = SHA` and a one-line body.
-- Merge with `sha = SHA` and squash. If GitHub refuses (head moved, behind, not mergeable), exit 0 as "open waiting" (AE6).
-- Write a summary for every outcome: state, SHA, PR, checks, and the next action. Never echo the token or error bodies.
+- Inputs: the PR, the pin, the label decision, and the `main` contexts declared in `.github/settings.yml`.
+- **Before the wait:**
+  - Read `branches/main`. The required list must be non-empty and contain every declared context; if not, exit 1 (AE8).
+  - Re-read the PR. Stop with exit 0 if:
+    - it is closed or merged;
+    - the head isn't the pin;
+    - it isn't labeled `automerge`;
+    - it carries `hold-merge`;
+    - the switch isn't `on` (dry run).
+- **Wait:** follow Key Decisions. A timeout exits 0 (AE5). A failed check at the pin exits 1.
+- **Approve and merge:**
+  - Re-read the protection and the head.
+  - Approve with `commit_id` set to the pin. The body is one line: "Approved by Merge Data Branch: <pin> touches only knowledge/ and metadata/ and passed the promotion gates."
+  - Merge, squash, with `sha` set to the pin. Map the outcome as Key Decisions describes (AE6).
+- **Summary and safety:**
+  - Write a step summary for every outcome.
+  - Stderr carries fixed strings only.
+  - Never use the App token.
 
-**Execution note:** test-first with a fake Octokit and fake clock. The module is mutated, and its tests import it relatively.
+**Execution note:** test first, with a fake Octokit and a fake clock. The module is mutated and imported relatively.
 
 **Test scenarios:**
 
-- Happy path: all checks pass, then approve with `commit_id`, then merge with `sha`, then exit 0 "merged" (AE1).
-- Edge case: a skipped `Fro Bot` and a neutral check count as passing.
-- Edge case: the newest of two check runs for the same context wins.
-- Edge case: a check from the wrong app is ignored, and the context still counts as missing.
-- Edge case: the head moves during the wait, so the run stops before approving and exits 0.
-- Edge case: the merge is refused after approval, so the run exits 0 "open waiting".
-- Error path: one required check fails, so there is no approval and the run exits 1.
-- Error path: the protection read returns 404 or an empty list, or lacks a declared context, so there is no approval and the run exits 1 (AE8).
-- Error path: the 60-minute timeout passes, so there is no approval and the run exits 0 with a timeout summary (AE5).
-- Integration: the CLI shim exits with usage 1 and is import-only safe, and the entrypoint parity tests pass.
+- Happy path: switch on, checks green, then approve with `commit_id` and the one-line body, then merge with `sha`, exit 0 (AE1).
+- Edge case: a skipped `Fro Bot` run and a neutral check count as passing.
+- Edge case: a second page of check runs is read.
+- Edge case: a check run from another app is ignored.
+- Edge case: the newest commit status wins.
+- Edge case: the head moves mid-wait, giving exit 0 "stale" and no approval. A cancelled check on the old commit doesn't fail the run.
+- Edge case: switch unset gives a dry run with no approval, exit 0. With `hold-merge` there is no approval, exit 0.
+- Edge case: a 409 merge, or a 405 while behind, gives exit 0 (AE6).
+- Error path: a 405 while blocked after the approval exits 1.
+- Error path: a failed required check exits 1. A 404, an empty list or a short list exits 1 (AE8).
+- Error path: a transient 503 on one poll is retried, and the wait continues.
+- Error path: the 60-minute timeout exits 0 with a summary (AE5).
+- Integration: the shim's usage error exits 1. It is safe to import, and the parity arrays include it.
 
-**Verification:** 100% Stryker score on `promotion-self-merge.ts`, `check:mutation-guards` is clean, and `FRO_BOT_PAT` appears only on this step (workflow test).
+**Verification:**
+
+- `promotion-self-merge.ts` has a 100% Stryker score, and `check:mutation-guards` is clean.
+- The workflow test pins `FRO_BOT_PAT` to this step only, and pins that no App token is used after the PR step.
 
 - [ ] **Unit 4: Protection drift watcher**
 
-**Goal:** Report `main` protection edits made by anyone other than the settings automation, and close the report once a later settings write restores the drifted fields.
+**Goal:** Report any `main` rule that doesn't match the declared settings, or that was edited by a non-settings actor, and close the report when an event shows the rule restored.
 
 **Requirements:** R9, R10, R11, R12
 
@@ -352,44 +398,41 @@ flowchart TD
 
 **Files:**
 
-- Create: `.github/workflows/protection-drift.yaml`, `packages/registry/src/protection-drift.ts`, `packages/registry/src/protection-drift-cli.ts`, `scripts/protection-drift.ts`, `scripts/protection-drift-workflow.test.ts`, and tests for the module and the CLI
+- Create: `.github/workflows/protection-drift.yaml`, `packages/registry/src/protection-drift.ts`, `protection-drift-cli.ts`, `scripts/protection-drift.ts`, `scripts/protection-drift-workflow.test.ts`, and tests for the module and the CLI
 - Modify: `.github/settings.yml` (`protection-drift` label), `scripts/settings-labels-effective-set.test.ts`, `packages/registry/package.json`, `stryker.config.json`, `mutation-guards.json`, `scripts/registry-entrypoints.test.ts`, `packages/registry/README.md`
 
 **Approach:**
 
-- Trigger on `branch_protection_rule` (created, edited, deleted) with `permissions: issues: write, contents: read`, `GITHUB_TOKEN` and no App mint.
-- Ignore any rule other than `main`.
-- Classify by sender type and ID:
-  - The settings automation is the only allowed actor.
-  - Everyone else, the `fro-bot` user included, is drift.
-- On drift, find the open issue labeled `protection-drift` by its marker.
-  - Create the issue, or comment on the existing one. Include the actor, the time and the event's `changes`.
-  - Add the changed fields to a ledger kept in a hidden marker in the issue body.
-  - A recorded event ID makes a redelivered event a no-op.
-- On a settings-automation event with an open issue:
-  - If every ledger field in the event's `rule` matches the value declared for `main` in the merged settings, comment and close.
-  - Otherwise leave the issue open.
-- Stderr carries only fixed strings. Exit 1 on API failure.
+- **Workflow:**
+  - Triggered by `branch_protection_rule` on `created`, `edited` and `deleted`.
+  - Permissions: `contents: read` and `issues: write`. It uses `GITHUB_TOKEN`, mints no App token and needs no secrets.
+  - One concurrency group, `cancel-in-progress: false`.
+- **Inputs:** the event payload, plus the declared values read from the checkout.
+- **Comparison:** pure, against the declared values. Missing or unknown fields don't match.
+- **Issue handling:** create or comment on the open issue labeled `protection-drift`, or comment on it and close it, as described in Key Decisions.
+- **Errors:** stderr carries only fixed strings, and any API failure exits 1.
 
-**Execution note:** test-first. The classification and the restoration check are pure and mutated.
+**Execution note:** write the tests first. The comparison and the actor classification are pure and mutated.
 
 **Test scenarios:**
 
-- Happy path: the `fro-bot` user disables required reviews, an issue opens with the actor, the time and the change, and its ledger holds `required_approving_review_count` (AE7).
-- Happy path: a later settings event with reviews restored comments and closes the issue (AE7).
-- Edge case: a settings event while no issue is open does nothing.
-- Edge case: a settings event that restores only one of two drifted fields leaves the issue open.
-- Edge case: drift while an issue is open adds a comment, not a second issue.
-- Edge case: a redelivered event with the same ID does nothing.
-- Edge case: an edit to a rule other than `main` is ignored.
+- Happy path: the user `fro-bot` sets the review count to 0. An issue opens, naming the actor, the time, the changes and the mismatched fields (AE7).
+- Happy path: a later event by `fro-bot[bot]` with the declared values comments on the issue and closes it (AE7).
+- Happy path: the operator restores the rule by hand. The event matches, so the issue closes.
+- Edge case: the settings App writes a rule that is missing reviews, as with an `_extends` fallback. That is reported.
+- Edge case: a non-settings actor makes a change that still matches, such as an undeclared field. A comment records the edit, and nothing opens or stays open.
+- Edge case: the second drift event comments on the existing issue rather than opening another.
 - Edge case: after a manual close, new drift opens a new issue.
+- Edge case: a missing `require_last_push_approval` never counts as a match.
+- Edge case: deleting the rule is reported.
+- Edge case: a rule other than `main` is ignored.
 - Error path: an issue API failure exits 1.
 
-**Verification:** 100% Stryker score on `protection-drift.ts`, `actionlint` is clean, and the workflow test pins the trigger, the permissions and the absence of secrets.
+**Verification:** `protection-drift.ts` scores 100% under Stryker, actionlint is clean, and the workflow test pins the trigger, the permissions, the concurrency and the absence of secrets.
 
-- [ ] **Unit 5: Docs and registration**
+- [ ] **Unit 5: Docs**
 
-**Goal:** Every surface that describes the promotion cadence, its tokens or its merge path matches the new behavior.
+**Goal:** Bring every surface that describes promotion cadence, tokens, merge path or operator controls in line with the new behaviour.
 
 **Requirements:** all
 
@@ -397,60 +440,62 @@ flowchart TD
 
 **Files:**
 
-- Modify: `packages/registry/README.md` (exports, CLI table, C4Component, cadence), `README.md` (registry row, workflow table, data-flow paragraph; scope the "never merges or approves" line to correction PRs), `.github/copilot-instructions.md` (Autonomous Commits, registry paragraph, `FRO_BOT_PAT` uses), `metadata/README.md` (cadence, credential table, PAT scope), and a new `docs/solutions/` entry (the auto-merge clean-status refusal and the edits that left protection drifting)
+- Modify:
+  - `packages/registry/README.md`
+  - `README.md`: the registry row, the workflow table, the data-flow paragraph, and the "never merges or approves" line, scoped to correction PRs
+  - `.github/copilot-instructions.md`: Autonomous Commits, the registry paragraph, and `FRO_BOT_PAT` uses
+  - `metadata/README.md`: cadence, credentials, the PAT scope, `PROMOTION_SELF_MERGE` and `hold-merge`
+- Create: a `docs/solutions/` entry on the auto-merge clean-status refusal and protection edits that persist until the next settings run
 
-**Test expectation:** none, because these are docs only. Markdown lint and `check:md-links` must pass.
+**Test expectation:** none, since these are docs. Markdown lint and `check:md-links` pass.
 
-**Verification:** lint is clean, and no stale "weekly" or "never auto-merges" claims remain for promotions.
+**Verification:** lint is clean, and no stale "weekly only" or "never auto-merges" claim remains for promotions.
 
-- [ ] **Unit 6: Live verification**
+- [ ] **Unit 6: Live verification and enablement**
 
-**Goal:** Prove the approval counts as a code-owner review, then run one real self-merge and one drift report.
+**Goal:** Prove a live approval counts, then enable the step.
 
 **Requirements:** all success criteria
 
-**Dependencies:** Units 1–5 merged
+**Dependencies:** Units 1–5 merged (the step ships in dry run)
 
 **Approach:**
 
-- After merge, the operator approves one dispatched `Merge Data Branch` run against a qualifying `data` diff. Confirm the review shows as approved by a code owner and the PR merges.
-- Read back the first scheduled daily run.
-- The operator makes one harmless edit to `main` protection in the web session, for example toggling and restoring the lock option. Confirm the drift issue opens, then closes after the next settings run.
+1. Read back the first daily runs in dry run, checking the decision, the pin, the gates and the "would approve" summary.
+2. With operator approval, set `PROMOTION_SELF_MERGE=on` and dispatch one run against a qualifying diff. Confirm that GitHub counts the `fro-bot` approval as a code-owner review and that the PR merges. If it is `blocked`, unset the variable and record the result.
+3. The operator makes one harmless edit to a declared field in the web session, for example the review count 1→2→1. Confirm the issue opens and later closes.
 
-**Test expectation:** none; this is a live check.
+**Test expectation:** none, since this is live.
 
-**Verification:** run links and issue links are recorded on the PR.
+**Verification:** the run and issue links are recorded on the PR.
 
 ## System-Wide Impact
 
-- **Interaction graph:**
-  - `merge-data.yaml` and `merge-data-pr`;
-  - the promotion leak gates, which now run at a pinned SHA;
-  - `check-private-leak.yaml`, whose status is read but not trusted alone;
-  - the settings workflow, whose writes now drive drift closure;
-  - Scorecard, which shares the `branch_protection_rule` trigger and is unchanged.
-- **Error propagation:** gate, check and API failures exit 1 and leave the PR open. Timeouts and stale heads exit 0 and leave a summary.
+- **Interaction graph:** `merge-data.yaml` (two jobs), `merge-data-pr`, the leak gates (now fed a pinned ref), `check-private-leak.yaml`, the settings workflow (whose writes close drift issues), and Scorecard, which also runs on `branch_protection_rule` and is unchanged.
+- **Error propagation:**
+  - Gate, check, protection and approval-not-counted failures exit 1 and leave the PR open.
+  - Timeouts, stale heads and holds exit 0 and write a summary.
 - **State lifecycle risks:**
-  - Another App writer can move `data` between the pin and the merge. The pinned merge refuses, and the next run retries.
+  - Another App writer can move `data` after the pin. The pinned merge then refuses, and the next run retries.
   - An approval left on a refused merge is dismissed by the next head move.
 - **Unchanged invariants:**
   - `main` protection.
-  - App-only `data` writes.
+  - `data` writes stay App-only.
   - Merge-back stays App-authored and non-force.
   - Drafted-solution PRs stay manual.
-  - The `data-write-token-guard` count, because the new scripts avoid the `commit-metadata` substring.
+  - The `data-write-token-guard` count stays the same, because the new script names avoid `commit-metadata`.
 
 ## Risks & Dependencies
 
 | Risk | Mitigation |
 | --- | --- |
-| A `FRO_BOT_PAT` approval doesn't count as a code-owner review | Unit 6 checks it before any unattended run. If it fails, the run degrades to "open waiting" and the operator approves. |
-| A busy `main` keeps a promotion behind for days | Accepted. Each daily run retries, and the summary names the reason. |
-| `branch_protection_rule` payloads lack a ledger field | That field stays open and only the operator closes the issue, so it fails safe. |
-| A 90-minute job holds the concurrency slot | Dispatches queue instead of cancelling. |
+| A `fro-bot` approval doesn't count as a code-owner approval | The step ships in dry run. Unit 6 tests the approval before enabling it. A `blocked` result exits 1, never green. |
+| A busy `main` keeps a promotion behind | Accepted. Each daily run retries and names the reason. |
+| A payload field is missing | The field never matches, so the issue stays open and fails safe. |
+| A 90-minute job holds the queue | One run waits and later triggers coalesce. The next run handles the latest state. |
 
 ## Sources & References
 
 - **Origin document:** `docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md`
-- Related past work: `docs/ideation/2026-11-07-open-ideation.md`, recorded as unexplored. It assumed an App bypass, which this plan replaces with a pinned `fro-bot` approval.
-- Related issue: fro-bot/agent#1520 (App PRs keep manual review; no agent review is added).
+- Related past work: `docs/ideation/2026-11-07-open-ideation.md`, recorded as unexplored. It assumed an App bypass; this plan uses a pinned `fro-bot` approval instead.
+- Related issue: fro-bot/agent#1520 (App PRs keep manual review; this plan adds no agent review).
