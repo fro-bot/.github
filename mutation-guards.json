@@ -181,6 +181,10 @@
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/promotion-qualify-cli and runs it under the entry guard. The decision is in packages/registry/src/promotion-qualify.ts, which is mutated, and the CLI is in promotion-qualify-cli.ts, pinned by its own tests. The shim's surface, including a usage error on unmatched argv, a fail-closed exit without an event name, the git-backed decision on a fixture checkout and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
     {
+      "path": "scripts/promotion-self-merge.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/promotion-self-merge-cli and runs it under the entry guard. The decisions are in packages/registry/src/promotion-self-merge.ts, which is mutated, and the CLI is in promotion-self-merge-cli.ts, pinned by its own tests. The shim's surface, including a usage error on unmatched argv, a fail-closed exit without a token and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
       "path": "scripts/rename-tracked-repo.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/rename-tracked-repo-cli and runs it under the entry guard. The behaviour is in packages/registry/src/rename-tracked-repo.ts and rename-tracked-repo-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
@@ -211,6 +215,10 @@
     {
       "path": "packages/registry/src/promotion-qualify-cli.ts",
       "reason": "I/O wiring for the promotion-qualify decision: the goke config (one read-only root command, no options) and the git adapter that runs git diff --name-status -M -z origin/main...origin/data and git ls-tree against the fetched refs. Every decision (the parser, the prefix allow-list, the equal-entry drop, the weekly test, the run/hold choice and the labels) is in packages/registry/src/promotion-qualify.ts, which is mutated and 100% killed. The adapter is pinned against real temporary git repositories by packages/registry/src/promotion-qualify-cli.test.ts (NUL-separated three-dot listing, renames, main-only changes ignored, absent and equal entries, git failure), and the config and usage errors by the same file. Not in the mutate list because a Stryker run over it would mostly score argument arrays handed to git."
+    },
+    {
+      "path": "packages/registry/src/promotion-self-merge-cli.ts",
+      "reason": "The goke entrypoint of the promotion self-merge: it declares no options and no positionals, and supplies the real clock, sleep, settings read and Octokit to runSelfMerge, so a mutation run would score the config object and a setTimeout wrapper. Every decision (the protection superset, the pinned head and label guards, the kill switch, the check evaluation, the bounded wait, the approval and the merge outcomes) is in packages/registry/src/promotion-self-merge.ts, which is mutated. The CLI surface (name, readOnly, the seams handed to the body, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/promotion-self-merge-cli.test.ts."
     },
     {
       "path": "packages/registry/src/rename-tracked-repo-cli.ts",
@@ -799,6 +807,7 @@
       "packages/knowledge/src/capture-learnings-open-cli.ts",
       "packages/knowledge/src/drafted-solutions-validate-rows-cli.ts",
       "packages/privacy/src/check-wiki-private-presence.ts",
+      "packages/registry/src/promotion-self-merge.ts",
       "packages/reports/src/daily-digest-counts-cli.ts",
       "packages/reports/src/gateway-announce-cli.ts",
       "packages/reports/src/gateway-announce.ts",

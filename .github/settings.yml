@@ -77,6 +77,9 @@ labels:
   - name: needs-review
     color: '#3d5a91'
     description: Data promotion PR needs human review before merge
+  - name: hold-merge
+    color: '#d93f0b'
+    description: Operator hold - the promotion self-merge does not approve or merge this PR
   - name: reconcile:pending-review
     color: '#2d718c'
     description: Unsolicited collaborator grant awaiting operator review

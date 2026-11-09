@@ -165,7 +165,7 @@ describe('merge-data.yaml promotion job', () => {
     expect(promotion['timeout-minutes']).toBe(90)
   })
 
-  it('has the steps in order: token, checkout, setup, merge-back, pin, gates at the pin, qualify, PR', () => {
+  it('has the steps in order: token, checkout, setup, merge-back, pin, gates at the pin, qualify, PR, self-merge', () => {
     expect(steps.map(step => step.name)).toEqual([
       'Get Workflow Access Token',
       '⤵ Checkout Branch',
@@ -178,6 +178,7 @@ describe('merge-data.yaml promotion job', () => {
       '🔒 Block private repo names in promotion diff',
       '🧮 Qualify promotion at the pinned commit',
       '🔀 Open data merge PR',
+      '🤝 Self-merge a qualifying promotion',
     ])
   })
 
@@ -300,10 +301,52 @@ describe('merge-data.yaml promotion job', () => {
     })
   })
 
-  it('uses the App token in the merge-back and the PR step only', () => {
+  it('uses the App token in the merge-back and the PR step only, and in nothing after the PR step', () => {
     const users = steps.filter(step => JSON.stringify(step).includes('steps.get-workflow-app-token.outputs.token'))
     expect(users.map(step => step.name)).toEqual(['🔁 Merge main into data', '🔀 Open data merge PR'])
-    expect(workflowRaw).not.toContain('secrets.FRO_BOT_PAT')
+    const prIndex = indexOfStep(step => step.id === 'open-pr')
+    for (const step of steps.slice(prIndex + 1)) {
+      expect(JSON.stringify(step)).not.toContain('get-workflow-app-token')
+      expect(JSON.stringify(step)).not.toContain('GITHUB_TOKEN')
+    }
+    expect(prIndex).toBe(steps.length - 2)
+  })
+
+  it('gives FRO_BOT_PAT to the self-merge step alone, as step env, and reads the switch as a variable', () => {
+    const holders = steps.filter(step => JSON.stringify(step).includes('FRO_BOT_PAT'))
+    expect(holders).toHaveLength(1)
+    const selfMerge = steps.at(-1)
+    expect(holders[0]).toBe(selfMerge)
+    expect(selfMerge?.name).toBe('🤝 Self-merge a qualifying promotion')
+    expect(selfMerge?.run).toBe('bun scripts/promotion-self-merge.ts')
+    expect(selfMerge?.env).toEqual({
+      GH_TOKEN: `${expressionStart} secrets.FRO_BOT_PAT }}`,
+      PROMOTION_SELF_MERGE: `${expressionStart} vars.PROMOTION_SELF_MERGE }}`,
+      PROMOTION_PR: `${expressionStart} steps.open-pr.outputs.pull-request }}`,
+      PROMOTION_PIN: PIN,
+      PROMOTION_QUALIFIES: `${expressionStart} steps.qualify.outputs.qualifies }}`,
+    })
+    expect(selfMerge?.if).toBeUndefined()
+    expect(selfMerge?.['continue-on-error']).toBeUndefined()
+    expect(selfMerge?.uses).toBeUndefined()
+    // the secret and the variable are on no other step, in no job env, and not in the decide job
+    expect(promotion).not.toHaveProperty('env')
+    expect(parsed).not.toHaveProperty('env')
+    expect(JSON.stringify(decide)).not.toContain('FRO_BOT_PAT')
+    expect(workflowRaw.match(/secrets\.FRO_BOT_PAT/gu)).toHaveLength(1)
+    expect(workflowRaw.match(/vars\.PROMOTION_SELF_MERGE/gu)).toHaveLength(1)
+  })
+
+  it('keeps the PAT out of every git subprocess: no step after the checkout passes it as a token input', () => {
+    for (const step of steps.filter(candidate => candidate.uses !== undefined)) {
+      expect(JSON.stringify(step.with ?? {})).not.toContain('FRO_BOT_PAT')
+    }
+  })
+
+  it('self-merges after the PR step, which is the last step before it', () => {
+    const pr = indexOfStep(step => step.id === 'open-pr')
+    const merge = indexOfStep(step => step.run?.includes('promotion-self-merge.ts') === true)
+    expect(merge).toBe(pr + 1)
   })
 })
 

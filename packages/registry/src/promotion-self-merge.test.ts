@@ -1,0 +1,1585 @@
+import {describe, expect, it} from 'vitest'
+import {
+  parseDeclaredContexts,
+  runSelfMerge,
+  selfMerge,
+  type SelfMergeInput,
+  type SelfMergeOctokit,
+  type SelfMergeOutcome,
+} from './promotion-self-merge.ts'
+
+const PIN = 'a'.repeat(40)
+const MOVED = 'b'.repeat(40)
+const DECLARED = ['Lint', 'Test', 'Security: Private Leak Scan', 'CodeQL'] as const
+const MINUTE = 60_000
+
+interface ApiError extends Error {
+  status: number
+}
+
+function apiError(status: number, message = 'upstream body with a secret'): ApiError {
+  return Object.assign(new Error(message), {status})
+}
+
+/** Plays `items` in order, then repeats the last. An `Error` item is thrown. */
+function script<T>(...items: readonly (T | Error)[]): () => T {
+  let index = 0
+  return () => {
+    const item = items[Math.min(index, items.length - 1)]
+    index += 1
+    if (item instanceof Error) throw item
+    return item as T
+  }
+}
+
+interface PullState {
+  state?: 'open' | 'closed'
+  merged?: boolean
+  head?: string
+  labels?: readonly string[]
+  mergeable?: string
+}
+
+interface RunState {
+  id?: number
+  name: string
+  status?: string
+  conclusion?: string | null
+  app?: number | null
+}
+
+const GREEN_RUNS: readonly RunState[] = [
+  {name: 'Lint', app: 15_368, conclusion: 'success'},
+  {name: 'Test', app: 15_368, conclusion: 'success'},
+  {name: 'CodeQL', app: 57_789, conclusion: 'success'},
+]
+
+interface Scenario {
+  /** `getBranch` answers; an Error is thrown. */
+  protection?: () => unknown
+  pulls?: () => PullState | Error
+  /** Check runs by page (1-based) per poll; the function gets the poll number (1-based). */
+  runs?: (poll: number, page: number) => readonly RunState[] | Error
+  statuses?: (poll: number, page: number) => readonly {context: string; state: string}[] | Error
+  variable?: () => string | undefined | Error
+  approve?: () => unknown
+  merge?: () => unknown
+  /** Milliseconds every API call takes on the fake clock. */
+  callCost?: number
+}
+
+function checksFor(contexts: readonly string[]) {
+  return contexts.map(context => ({context, app_id: context === 'CodeQL' ? 57_789 : 15_368}))
+}
+
+function protectionOf(checks: readonly {context: string; app_id: number | null}[] | undefined) {
+  return {data: {protection: {required_status_checks: checks === undefined ? {} : {checks}}}}
+}
+
+/** A fake world: an in-memory Octokit, a fake clock, and a log of the calls that matter. */
+function world(scenario: Scenario = {}) {
+  const clock = {now: 1_000_000}
+  const log: string[] = []
+  const sleeps: number[] = []
+  const requests: Record<string, unknown[]> = {}
+  let polls = 0
+  const record = (name: string, params: unknown) => {
+    ;(requests[name] ??= []).push(params)
+    clock.now += scenario.callCost ?? 0
+  }
+  const pulls: () => PullState | Error = scenario.pulls ?? (() => ({}))
+  const protection = scenario.protection ?? (() => protectionOf(checksFor(DECLARED)))
+  const octokit = {
+    rest: {
+      repos: {
+        getBranch: async (params: unknown) => {
+          record('getBranch', params)
+          return protection()
+        },
+        listCommitStatusesForRef: async (params: {page: number}) => {
+          record('listStatuses', params)
+          const result = (scenario.statuses ?? (() => [{context: 'Security: Private Leak Scan', state: 'success'}]))(
+            polls,
+            params.page,
+          )
+          if (result instanceof Error) throw result
+          return {data: result}
+        },
+      },
+      checks: {
+        listForRef: async (params: {page: number}) => {
+          record('listRuns', params)
+          if (params.page === 1) polls += 1
+          const result = (scenario.runs ?? (() => GREEN_RUNS))(polls, params.page)
+          if (result instanceof Error) throw result
+          return {
+            data: {
+              check_runs: result.map((run, index) => ({
+                id: run.id ?? index + 1,
+                name: run.name,
+                status: run.status ?? 'completed',
+                conclusion: run.conclusion === undefined ? 'success' : run.conclusion,
+                app: run.app === null ? null : {id: run.app ?? 15_368},
+              })),
+            },
+          }
+        },
+      },
+      pulls: {
+        get: async (params: unknown) => {
+          record('getPull', params)
+          const pull = pulls()
+          if (pull instanceof Error) throw pull
+          return {
+            data: {
+              state: pull.state ?? 'open',
+              merged: pull.merged ?? false,
+              head: {sha: pull.head ?? PIN},
+              labels: (pull.labels ?? ['automerge']).map(name => ({name})),
+              mergeable_state: pull.mergeable ?? 'clean',
+            },
+          }
+        },
+        createReview: async (params: unknown) => {
+          record('approve', params)
+          log.push('approve')
+          return (scenario.approve ?? (() => ({data: {}})))()
+        },
+        merge: async (params: unknown) => {
+          record('merge', params)
+          log.push('merge')
+          return (scenario.merge ?? (() => ({data: {merged: true, sha: 'c'.repeat(40)}})))()
+        },
+      },
+      actions: {
+        getRepoVariable: async (params: unknown) => {
+          record('getVariable', params)
+          const value = (scenario.variable ?? (() => 'on'))()
+          if (value instanceof Error) throw value
+          if (value === undefined) throw apiError(404, 'Not Found')
+          return {data: {name: 'PROMOTION_SELF_MERGE', value}}
+        },
+      },
+    },
+  } as unknown as SelfMergeOctokit
+  const input = (overrides: Partial<SelfMergeInput> = {}): SelfMergeInput => ({
+    octokit,
+    owner: 'fro-bot',
+    repo: '.github',
+    pullRequest: 77,
+    pin: PIN,
+    qualifies: true,
+    switchAtStart: 'on',
+    declaredContexts: DECLARED,
+    now: () => clock.now,
+    sleep: async ms => {
+      sleeps.push(ms)
+      clock.now += ms
+    },
+    ...overrides,
+  })
+  return {octokit, input, clock, log, sleeps, requests, polls: () => polls}
+}
+
+function summaryOf(outcome: SelfMergeOutcome): string {
+  return outcome.summary
+}
+
+describe('parseDeclaredContexts', () => {
+  const settings = (contexts: string) =>
+    `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        strict: true\n        contexts:\n${contexts}\n`
+
+  it('reads the contexts declared for main, including a quoted colon', () => {
+    expect(parseDeclaredContexts(settings("          - Lint\n          - 'Security: Private Leak Scan'"))).toEqual([
+      'Lint',
+      'Security: Private Leak Scan',
+    ])
+  })
+
+  it('reads the main branch when other branches are declared first', () => {
+    const text =
+      'branches:\n  - name: other\n    protection:\n      required_status_checks:\n        contexts:\n          - Nope\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n          - Lint\n'
+    expect(parseDeclaredContexts(text)).toEqual(['Lint'])
+  })
+
+  it('drops entries that are not strings, so an unquoted colon cannot pass as a context', () => {
+    expect(parseDeclaredContexts(settings('          - Lint\n          - Security: Private Leak Scan'))).toEqual([
+      'Lint',
+    ])
+  })
+
+  it.each([
+    ['no branches key', 'repository:\n  name: x\n'],
+    ['branches that is not a list', 'branches: nope\n'],
+    ['a list without main', 'branches:\n  - name: other\n'],
+    ['main without protection', 'branches:\n  - name: main\n'],
+    ['protection without status checks', 'branches:\n  - name: main\n    protection: {}\n'],
+    [
+      'contexts that is not a list',
+      'branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts: Lint\n',
+    ],
+    ['a document that is not a mapping', '- a\n- b\n'],
+    ['an empty document', ''],
+  ])('returns an empty list for %s', (_name, text) => {
+    expect(parseDeclaredContexts(text)).toEqual([])
+  })
+
+  it('throws on YAML that does not parse', () => {
+    expect(() => parseDeclaredContexts('a: [unclosed')).toThrow()
+  })
+})
+
+const APPROVAL_BODY = `Approved by Merge Data Branch: ${PIN} touches only knowledge/ and metadata/ and passed the promotion gates.`
+const LIVE = {exitCode: 0, code: 'MERGED'}
+
+describe('selfMerge: the happy path (AE1)', () => {
+  it('approves the pinned commit with a one-line body and merges pinned to it, squashing', async () => {
+    const w = world()
+    const outcome = await selfMerge(w.input())
+
+    expect(outcome).toMatchObject(LIVE)
+    expect(w.log).toEqual(['approve', 'merge'])
+    expect(w.requests.approve).toEqual([
+      {owner: 'fro-bot', repo: '.github', pull_number: 77, commit_id: PIN, event: 'APPROVE', body: APPROVAL_BODY},
+    ])
+    expect(w.requests.merge).toEqual([
+      {owner: 'fro-bot', repo: '.github', pull_number: 77, sha: PIN, merge_method: 'squash'},
+    ])
+    expect(APPROVAL_BODY.includes('\n')).toBe(false)
+    expect(w.sleeps).toEqual([])
+  })
+
+  it('names the pull request, the pin and the outcome in the summary', async () => {
+    const outcome = await selfMerge(world().input())
+    expect(outcome.summary).toBe(
+      [
+        '### Promotion self-merge: merged',
+        '',
+        'The promotion gates passed on the pinned commit, the required checks passed on it, and the pull request was approved as `fro-bot` and squash-merged pinned to it.',
+        '',
+        '- Pull request: #77',
+        `- Pinned commit: \`${PIN}\``,
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('reads the branch protection of main, the pull request, the checks and statuses of the pin', async () => {
+    const w = world()
+    await selfMerge(w.input())
+    expect(w.requests.getBranch?.[0]).toEqual({owner: 'fro-bot', repo: '.github', branch: 'main'})
+    expect(w.requests.getPull?.[0]).toEqual({owner: 'fro-bot', repo: '.github', pull_number: 77})
+    expect(w.requests.listRuns?.[0]).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      ref: PIN,
+      filter: 'latest',
+      per_page: 100,
+      page: 1,
+    })
+    expect(w.requests.listStatuses?.[0]).toEqual({owner: 'fro-bot', repo: '.github', ref: PIN, per_page: 100, page: 1})
+    expect(w.requests.getVariable?.[0]).toEqual({owner: 'fro-bot', repo: '.github', name: 'PROMOTION_SELF_MERGE'})
+  })
+
+  it('waits for checks that are still running, polling a minute apart', async () => {
+    const w = world({
+      runs: poll => [
+        {name: 'Lint', app: 15_368, conclusion: 'success'},
+        {
+          name: 'Test',
+          app: 15_368,
+          status: poll < 3 ? 'in_progress' : 'completed',
+          conclusion: poll < 3 ? null : 'success',
+        },
+        {name: 'CodeQL', app: 57_789, conclusion: 'success'},
+      ],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.sleeps).toEqual([MINUTE, MINUTE])
+    expect(w.polls()).toBe(3)
+  })
+
+  it('treats a missing run as pending until it appears', async () => {
+    const w = world({runs: poll => (poll < 2 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.sleeps).toEqual([MINUTE])
+  })
+})
+
+describe('selfMerge: what counts as a passing check', () => {
+  it.each(['success', 'skipped', 'neutral'])('counts a %s check run as passing', async conclusion => {
+    const w = world({runs: () => [{name: 'Lint', conclusion}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}]})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('counts a skipped Fro Bot run and a neutral check as passing', async () => {
+    const contexts = [...DECLARED, 'Fro Bot']
+    const w = world({
+      protection: () => protectionOf(checksFor(contexts)),
+      runs: () => [...GREEN_RUNS, {name: 'Fro Bot', conclusion: 'skipped'}],
+    })
+    expect(await selfMerge(w.input({declaredContexts: contexts}))).toMatchObject(LIVE)
+  })
+
+  it.each(['failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure'])(
+    'fails the run on a %s check run at the pin (exit 1)',
+    async conclusion => {
+      const w = world({runs: () => [{name: 'Lint', conclusion}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}]})
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+      expect(outcome.summary).toContain('`Lint`')
+      expect(w.log).toEqual([])
+    },
+  )
+
+  it('waits on queued and in-progress runs', async () => {
+    for (const status of ['queued', 'in_progress', 'waiting', 'pending']) {
+      const w = world({
+        runs: () => [{name: 'Lint', status, conclusion: null}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}],
+      })
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    }
+  })
+
+  it('ignores a check run from another app that has the required name', async () => {
+    const w = world({
+      runs: () => [{name: 'Lint', app: 999, conclusion: 'success'}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}],
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.log).toEqual([])
+  })
+
+  it('does not let a failing run from another app fail the required one', async () => {
+    const w = world({
+      runs: () => [
+        {id: 50, name: 'Lint', app: 999, conclusion: 'failure'},
+        {id: 1, name: 'Lint', app: 15_368, conclusion: 'success'},
+        {name: 'Test', id: 2},
+        {name: 'CodeQL', app: 57_789, id: 3},
+      ],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('takes any app when the required check names none', async () => {
+    const w = world({
+      protection: () => protectionOf(DECLARED.map(context => ({context, app_id: null}))),
+      runs: () => [
+        {name: 'Lint', app: 1},
+        {name: 'Test', app: 2},
+        {name: 'CodeQL', app: 3},
+      ],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('uses the newest of several runs with the same name and app', async () => {
+    const w = world({
+      runs: () => [
+        {id: 10, name: 'Lint', conclusion: 'failure'},
+        {id: 11, name: 'Lint', conclusion: 'success'},
+        {id: 2, name: 'Test'},
+        {id: 3, name: 'CodeQL', app: 57_789},
+      ],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    const stale = world({
+      runs: () => [
+        {id: 12, name: 'Lint', conclusion: 'failure'},
+        {id: 11, name: 'Lint', conclusion: 'success'},
+        {id: 2, name: 'Test'},
+        {id: 3, name: 'CodeQL', app: 57_789},
+      ],
+    })
+    expect(await selfMerge(stale.input())).toMatchObject({code: 'CHECK_FAILED'})
+  })
+
+  it('reads a second page of check runs', async () => {
+    const filler = Array.from({length: 100}, (_, index) => ({id: 1000 + index, name: `Other ${String(index)}`}))
+    const w = world({runs: (_poll, page) => (page === 1 ? filler : GREEN_RUNS)})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.listRuns).toHaveLength(2)
+    expect((w.requests.listRuns?.[1] as {page: number}).page).toBe(2)
+  })
+
+  it('stops paging at a short page, and after an empty page following a full one', async () => {
+    const full = Array.from({length: 100}, (_, index) => ({id: 1000 + index, name: `Other ${String(index)}`}))
+    const short = world({runs: () => GREEN_RUNS})
+    await selfMerge(short.input())
+    expect(short.requests.listRuns).toHaveLength(1)
+    const exact = world({runs: (_poll, page) => (page === 1 ? [...full] : page === 2 ? [] : GREEN_RUNS)})
+    expect(await selfMerge(exact.input())).toMatchObject({code: 'TIMEOUT'})
+    expect((exact.requests.listRuns ?? []).slice(0, 2)).toHaveLength(2)
+  })
+
+  it('reads a commit status by context for a check that posts no run, newest first', async () => {
+    const pending = world({
+      statuses: () => [
+        {context: 'Security: Private Leak Scan', state: 'success'},
+        {context: 'Security: Private Leak Scan', state: 'failure'},
+      ],
+    })
+    expect(await selfMerge(pending.input())).toMatchObject(LIVE)
+    const failed = world({
+      statuses: () => [
+        {context: 'Security: Private Leak Scan', state: 'failure'},
+        {context: 'Security: Private Leak Scan', state: 'success'},
+      ],
+    })
+    expect(await selfMerge(failed.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+  })
+
+  it.each(['failure', 'error'])('fails on a %s status', async state => {
+    const w = world({statuses: () => [{context: 'Security: Private Leak Scan', state}]})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+  })
+
+  it('waits on a pending status and on a missing one', async () => {
+    const pending = world({statuses: () => [{context: 'Security: Private Leak Scan', state: 'pending'}]})
+    expect(await selfMerge(pending.input())).toMatchObject({code: 'TIMEOUT'})
+    const missing = world({statuses: () => [{context: 'Some other context', state: 'success'}]})
+    expect(await selfMerge(missing.input())).toMatchObject({code: 'TIMEOUT'})
+  })
+
+  it('lets a check run decide when both a run and a status carry the context', async () => {
+    const w = world({
+      statuses: () => [
+        {context: 'Lint', state: 'failure'},
+        {context: 'Security: Private Leak Scan', state: 'success'},
+      ],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('reads a second page of statuses', async () => {
+    const filler = Array.from({length: 100}, (_, index) => ({context: `Other ${String(index)}`, state: 'success'}))
+    const w = world({
+      statuses: (_poll, page) => (page === 1 ? filler : [{context: 'Security: Private Leak Scan', state: 'success'}]),
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.listStatuses).toHaveLength(2)
+  })
+
+  it('reports a failed check ahead of one that is still pending', async () => {
+    const w = world({
+      runs: () => [
+        {name: 'Lint', status: 'in_progress', conclusion: null},
+        {name: 'Test', conclusion: 'failure'},
+        {name: 'CodeQL', app: 57_789},
+      ],
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+    expect(outcome.summary).toContain('`Test`')
+    expect(outcome.summary).not.toContain('`Lint`')
+  })
+
+  it('also waits on a required check the declared list does not name', async () => {
+    const w = world({
+      protection: () => protectionOf(checksFor([...DECLARED, 'Extra'])),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({code: 'TIMEOUT'})
+  })
+})
+
+describe('selfMerge: the live protection must hold every declared context (AE8)', () => {
+  it('stops with exit 1 and says why when the required list is empty', async () => {
+    const w = world({protection: () => protectionOf([])})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'PROTECTION_EMPTY'})
+    expect(outcome.summary).toContain('The live required-check list for `main` is empty')
+    expect(w.log).toEqual([])
+    expect(w.requests.getPull).toBeUndefined()
+  })
+
+  it('stops when the protection carries no checks at all', async () => {
+    const w = world({protection: () => protectionOf(undefined)})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_EMPTY'})
+  })
+
+  it('stops when main has no protection block', async () => {
+    const w = world({protection: () => ({data: {}})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_EMPTY'})
+  })
+
+  it('stops when the list is short, and names the missing contexts', async () => {
+    const w = world({protection: () => protectionOf(checksFor(['Lint', 'Test']))})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'PROTECTION_SHORT'})
+    expect(outcome.summary).toContain('`CodeQL`')
+    expect(outcome.summary).toContain('`Security: Private Leak Scan`')
+    expect(outcome.summary).not.toContain('`Lint`')
+  })
+
+  it('passes when the live list has more contexts than declared', async () => {
+    const w = world({protection: () => protectionOf(checksFor([...DECLARED, 'Extra']))})
+    const outcome = await selfMerge(w.input())
+    expect(outcome.code).not.toBe('PROTECTION_SHORT')
+  })
+
+  it('stops with exit 1 when the protection read fails with a 404', async () => {
+    const w = world({
+      protection: () => {
+        throw apiError(404)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'PROTECTION_UNREADABLE'})
+    expect(outcome.summary).not.toContain('secret')
+  })
+
+  it('stops with exit 1 when nothing is declared', async () => {
+    const w = world()
+    expect(await selfMerge(w.input({declaredContexts: []}))).toMatchObject({exitCode: 1, code: 'NO_DECLARED_CONTEXTS'})
+    expect(w.requests.getBranch).toBeUndefined()
+  })
+
+  it('re-reads the protection before the approval and stops if it has weakened since the wait began', async () => {
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(checksFor(['Lint']))),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_SHORT'})
+    expect(w.log).toEqual([])
+  })
+})
+
+describe('selfMerge: runs that stop before any approval', () => {
+  it('has nothing to do without a pull request', async () => {
+    const w = world()
+    expect(await selfMerge(w.input({pullRequest: null}))).toMatchObject({exitCode: 0, code: 'NO_PULL_REQUEST'})
+    expect(w.requests.getBranch).toBeUndefined()
+  })
+
+  it('leaves a promotion that does not qualify to the operator', async () => {
+    const w = world()
+    expect(await selfMerge(w.input({qualifies: false}))).toMatchObject({exitCode: 0, code: 'NOT_QUALIFYING'})
+    expect(w.requests.getBranch).toBeUndefined()
+    expect(w.log).toEqual([])
+  })
+
+  it.each([
+    [{state: 'closed' as const}, 'CLOSED_UNMERGED'],
+    [{state: 'closed' as const, merged: true}, 'ALREADY_MERGED'],
+    [{merged: true}, 'ALREADY_MERGED'],
+    [{head: MOVED}, 'STALE_HEAD'],
+    [{labels: ['needs-review']}, 'NOT_LABELED'],
+    [{labels: []}, 'NOT_LABELED'],
+    [{labels: ['automerge', 'hold-merge']}, 'HOLD_MERGE'],
+    [{labels: ['hold-merge']}, 'HOLD_MERGE'],
+  ])('stops with exit 0 before waiting for %j: %s', async (pull, code) => {
+    const w = world({pulls: () => pull})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code})
+    expect(w.log).toEqual([])
+    expect(w.requests.listRuns).toBeUndefined()
+    expect(w.sleeps).toEqual([])
+  })
+
+  it('prefers a merged pull request over a moved head, and a closed one over a hold', async () => {
+    const merged = world({pulls: () => ({state: 'closed', merged: true, head: MOVED, labels: ['hold-merge']})})
+    expect(await selfMerge(merged.input())).toMatchObject({code: 'ALREADY_MERGED'})
+    const closed = world({pulls: () => ({state: 'closed', head: MOVED, labels: ['hold-merge']})})
+    expect(await selfMerge(closed.input())).toMatchObject({code: 'CLOSED_UNMERGED'})
+    const stale = world({pulls: () => ({head: MOVED, labels: ['hold-merge']})})
+    expect(await selfMerge(stale.input())).toMatchObject({code: 'STALE_HEAD'})
+    const held = world({pulls: () => ({labels: ['hold-merge']})})
+    expect(await selfMerge(held.input())).toMatchObject({code: 'HOLD_MERGE'})
+  })
+})
+
+describe('selfMerge: the kill switch and the dry run (AE10)', () => {
+  it.each([undefined, '', 'off', 'ON', 'true', 'yes', ' on'])(
+    'waits and polls like a live run, then says what it would approve and approves nothing (switch %j)',
+    async value => {
+      const w = world({variable: () => value})
+      const outcome = await selfMerge(w.input({switchAtStart: value}))
+      expect(outcome).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+      expect(outcome.summary).toContain('would approve')
+      expect(outcome.summary).toContain('`PROMOTION_SELF_MERGE`')
+      expect(w.log).toEqual([])
+      expect(w.requests.listRuns).toBeDefined()
+    },
+  )
+
+  it('keeps waiting through a dry run until the checks settle', async () => {
+    const w = world({
+      variable: () => undefined,
+      runs: poll => (poll < 3 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS),
+    })
+    expect(await selfMerge(w.input({switchAtStart: undefined}))).toMatchObject({code: 'DRY_RUN'})
+    expect(w.sleeps).toEqual([MINUTE, MINUTE])
+  })
+
+  it('goes live when the variable is turned on during the wait', async () => {
+    const w = world({variable: () => 'on', runs: poll => (poll < 2 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
+    expect(await selfMerge(w.input({switchAtStart: undefined}))).toMatchObject(LIVE)
+  })
+
+  it('stops before the approval when the variable is turned off during the wait', async () => {
+    const w = world({variable: () => 'off'})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+    expect(w.log).toEqual([])
+  })
+
+  it('does not merge when the variable is turned off between the approval and the merge', async () => {
+    const w = world({variable: script<string | undefined>('on', 'off')})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'SWITCH_TURNED_OFF'})
+    expect(w.log).toEqual(['approve'])
+    expect(outcome.summary).toContain('approved')
+  })
+
+  it('reads the variable twice on a live run: before the approval and before the merge', async () => {
+    const w = world()
+    await selfMerge(w.input())
+    expect(w.requests.getVariable).toHaveLength(2)
+  })
+
+  it('treats an unset variable (404) as off', async () => {
+    const w = world({variable: () => undefined})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({code: 'DRY_RUN'})
+  })
+
+  it('fails closed with exit 1 when a run that started live cannot read the variable', async () => {
+    const w = world({
+      variable: () => {
+        throw apiError(403)
+      },
+    })
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 1, code: 'SWITCH_UNREADABLE'})
+    expect(w.log).toEqual([])
+  })
+
+  it('fails closed before the merge when the variable becomes unreadable after the approval', async () => {
+    const w = world({variable: script<string | undefined>('on', apiError(403))})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 1, code: 'SWITCH_UNREADABLE'})
+    expect(w.log).toEqual(['approve'])
+  })
+
+  it('stays a dry run, without failing, when the variable is unreadable and the run did not start live', async () => {
+    const w = world({
+      variable: () => {
+        throw apiError(403)
+      },
+    })
+    expect(await selfMerge(w.input({switchAtStart: undefined}))).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+  })
+})
+
+describe('selfMerge: a moving head, labels and state during the wait', () => {
+  it('stops as stale, without approving, when the head moves mid-wait; a cancelled check on the old commit does not fail the run', async () => {
+    const w = world({
+      pulls: script<PullState>({}, {head: MOVED}),
+      runs: poll => (poll < 2 ? GREEN_RUNS.slice(0, 1) : [{name: 'Lint', conclusion: 'cancelled'}]),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(w.log).toEqual([])
+  })
+
+  it('does not approve when hold-merge is added during the wait', async () => {
+    const w = world({
+      pulls: script<PullState>({}, {labels: ['automerge', 'hold-merge']}),
+      runs: poll => (poll < 2 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'HOLD_MERGE'})
+    expect(w.log).toEqual([])
+  })
+
+  it('stops when the pull request is closed or merged during the wait', async () => {
+    const closed = world({pulls: script<PullState>({}, {state: 'closed'}), runs: () => GREEN_RUNS.slice(0, 1)})
+    expect(await selfMerge(closed.input())).toMatchObject({code: 'CLOSED_UNMERGED'})
+    const merged = world({pulls: script<PullState>({}, {merged: true}), runs: () => GREEN_RUNS.slice(0, 1)})
+    expect(await selfMerge(merged.input())).toMatchObject({code: 'ALREADY_MERGED'})
+  })
+
+  it('re-reads the head after the checks pass and stops if it moved just before the approval', async () => {
+    const w = world({pulls: script<PullState>({}, {head: MOVED})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(w.log).toEqual([])
+  })
+
+  it('reads the pull request once per poll, once before the approval and once before the merge', async () => {
+    const w = world()
+    await selfMerge(w.input())
+    // the one poll, before the approval, before the merge
+    expect(w.requests.getPull).toHaveLength(3)
+  })
+})
+
+describe('selfMerge: the bounded wait (AE5)', () => {
+  it('ends at exactly 60 minutes with exit 0 and a summary, never approving', async () => {
+    const w = world({runs: () => GREEN_RUNS.slice(0, 1)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.sleeps).toHaveLength(60)
+    expect(new Set(w.sleeps)).toEqual(new Set([MINUTE]))
+    expect(w.polls()).toBe(61)
+    expect(w.log).toEqual([])
+    expect(outcome.summary).toContain('did not settle within 60 minutes')
+    expect(outcome.summary).toContain('`Test`')
+    expect(outcome.summary).toContain('next daily run')
+  })
+
+  it('counts the time the API calls take against the wait', async () => {
+    const w = world({runs: () => GREEN_RUNS.slice(0, 1), callCost: 1000})
+    expect(await selfMerge(w.input())).toMatchObject({code: 'TIMEOUT'})
+    // three calls a poll cost 3 s, so a poll comes every 63 s and the wait ends after about 58 of them
+    expect(w.polls()).toBeGreaterThan(55)
+    expect(w.polls()).toBeLessThan(60)
+  })
+
+  it('passes on the last poll before the deadline', async () => {
+    const w = world({runs: poll => (poll < 61 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.polls()).toBe(61)
+  })
+})
+
+describe('selfMerge: transient failures', () => {
+  it('retries a 503 on one poll and keeps waiting', async () => {
+    const w = world({runs: script<readonly RunState[] | Error>(apiError(503), GREEN_RUNS)})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.sleeps).toEqual([2000])
+  })
+
+  it.each([500, 502, 429])('retries a %i', async status => {
+    const w = world({pulls: script<PullState | Error>(apiError(status), {})})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('retries a dropped connection', async () => {
+    const reset = Object.assign(new Error('socket hang up'), {code: 'ECONNRESET'})
+    const w = world({
+      statuses: script<readonly {context: string; state: string}[] | Error>(reset, [
+        {context: 'Security: Private Leak Scan', state: 'success'},
+      ]),
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it.each(['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND'])('retries %s', async code => {
+    const failure = Object.assign(new Error('x'), {code})
+    const w = world({pulls: script<PullState | Error>(failure, {})})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('backs off 2 s and then 4 s, and gives up on the third failure with exit 1', async () => {
+    const w = world({runs: () => apiError(503)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'API_FAILED'})
+    expect(w.sleeps).toEqual([2000, 4000])
+    expect(outcome.summary).not.toContain('secret')
+  })
+
+  it('does not retry a 404 or a 403', async () => {
+    for (const status of [404, 403, 401, 422]) {
+      const w = world({pulls: () => apiError(status)})
+      expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'API_FAILED'})
+      expect(w.sleeps).toEqual([])
+      expect(w.requests.getPull).toHaveLength(1)
+    }
+  })
+
+  it('does not retry an error with no status and no network code', async () => {
+    const w = world({pulls: () => new Error('boom')})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'API_FAILED'})
+    expect(w.requests.getPull).toHaveLength(1)
+  })
+
+  it('does not retry the approval or the merge', async () => {
+    const approving = world({
+      approve: () => {
+        throw apiError(503)
+      },
+    })
+    expect(await selfMerge(approving.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+    expect(approving.requests.approve).toHaveLength(1)
+  })
+})
+
+describe('selfMerge: the approval', () => {
+  it('stops as stale when the approval is refused with a 422 because the head moved', async () => {
+    const w = world({
+      approve: () => {
+        throw apiError(422)
+      },
+      pulls: script<PullState>({}, {}, {head: MOVED}),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(w.log).toEqual(['approve'])
+  })
+
+  it('fails with exit 1 on a 422 when the head has not moved', async () => {
+    const w = world({
+      approve: () => {
+        throw apiError(422)
+      },
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+    expect(w.log).toEqual(['approve'])
+  })
+
+  it.each([401, 403, 404, 500])('fails with exit 1 on a %i from the approval, and merges nothing', async status => {
+    const w = world({
+      approve: () => {
+        throw apiError(status)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+    expect(w.log).toEqual(['approve'])
+    expect(outcome.summary).not.toContain('secret')
+    // only a 422 re-reads the pull request: the poll and the check before the approval are the two reads
+    expect(w.requests.getPull).toHaveLength(2)
+  })
+
+  it('does not approve a dry run, a held promotion or a stale head', async () => {
+    for (const scenario of [
+      {variable: () => 'off'},
+      {pulls: script<PullState>({}, {labels: ['automerge', 'hold-merge']})},
+      {pulls: script<PullState>({}, {head: MOVED})},
+    ]) {
+      const w = world(scenario)
+      await selfMerge(w.input())
+      expect(w.log).not.toContain('approve')
+    }
+  })
+})
+
+describe('selfMerge: the merge (AE6)', () => {
+  it('reports a 409 as open and waiting, with exit 0', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(409)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'OPEN_WAITING'})
+    expect(w.log).toEqual(['approve', 'merge'])
+    expect(outcome.summary).toContain('next daily run')
+  })
+
+  it('reports a 405 while the pull request is behind as open and waiting, with exit 0', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'behind'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'OPEN_WAITING'})
+  })
+
+  it('exits 1 on a 405 while the pull request stays blocked after the approval', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'}),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toContain('did not count')
+  })
+
+  it('exits 1 on a 405 for a conflicted pull request', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'dirty'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+  })
+
+  it('re-reads an unknown mergeable_state after a 405 before it decides', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'unknown'}, {mergeable: 'unknown'}, {mergeable: 'behind'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'OPEN_WAITING'})
+    expect(w.sleeps).toEqual([2000, 2000])
+  })
+
+  it('gives up on an unknown mergeable_state after three re-reads and exits 1', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'unknown'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(w.sleeps).toEqual([2000, 2000, 2000])
+  })
+
+  it('merges after an unknown mergeable_state resolves to clean', async () => {
+    const w = world({pulls: script<PullState>({}, {}, {mergeable: 'unknown'}, {mergeable: 'clean'})})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.sleeps).toEqual([2000])
+  })
+
+  it('exits 1 when an unknown mergeable_state resolves to blocked and the merge is refused', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {mergeable: 'unknown'}, {mergeable: 'blocked'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+  })
+
+  it('stops before the merge when the head moved after the approval', async () => {
+    const w = world({pulls: script<PullState>({}, {}, {head: MOVED})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(w.log).toEqual(['approve'])
+  })
+
+  it('stops before the merge when hold-merge was added after the approval', async () => {
+    const w = world({pulls: script<PullState>({}, {}, {labels: ['automerge', 'hold-merge']})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'HOLD_MERGE'})
+    expect(w.log).toEqual(['approve'])
+  })
+
+  it('exits 1 on any other merge failure when the pull request is not merged', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(500)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_FAILED'})
+    expect(w.requests.merge).toHaveLength(1)
+    expect(outcome.summary).not.toContain('secret')
+  })
+
+  it('reports merged when an ambiguous merge failure left the pull request merged', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(502)
+      },
+      pulls: script<PullState>({}, {}, {}, {merged: true, state: 'closed'}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.merge).toHaveLength(1)
+  })
+
+  it('exits 1 when the merge answers 200 but did not merge', async () => {
+    const w = world({merge: () => ({data: {merged: false, message: 'nope'}})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_FAILED'})
+  })
+
+  it('exits 1 when the pull request cannot be re-read after a failed merge', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(500)
+      },
+      pulls: script<PullState | Error>({}, {}, {}, apiError(404)),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'MERGE_FAILED'})
+  })
+})
+
+describe('selfMerge: summaries for every outcome', () => {
+  const heading = (outcome: SelfMergeOutcome) => summaryOf(outcome).split('\n')[0]
+
+  it.each([
+    [{pullRequest: null}, {}, 'no pull request'],
+    [{qualifies: false}, {}, 'not qualifying'],
+  ])('titles the early stops %#', async (input, scenario, title) => {
+    const outcome = await selfMerge(world(scenario).input(input))
+    expect(heading(outcome)).toBe(`### Promotion self-merge: ${title}`)
+  })
+
+  it.each([
+    [{state: 'closed' as const}, 'closed unmerged'],
+    [{merged: true}, 'already merged'],
+    [{head: MOVED}, 'stale head'],
+    [{labels: ['needs-review']}, 'not labeled automerge'],
+    [{labels: ['automerge', 'hold-merge']}, 'held by hold-merge'],
+  ])('titles the pull request stop %j', async (pull, title) => {
+    const outcome = await selfMerge(world({pulls: () => pull}).input())
+    expect(heading(outcome)).toBe(`### Promotion self-merge: ${title}`)
+    expect(outcome.summary).toContain('- Pull request: #77')
+    expect(outcome.summary).toContain(`- Pinned commit: \`${PIN}\``)
+  })
+
+  it('titles a dry run, a timeout and a failed check', async () => {
+    expect(heading(await selfMerge(world({variable: () => undefined}).input()))).toBe(
+      '### Promotion self-merge: dry run',
+    )
+    expect(heading(await selfMerge(world({runs: () => []}).input()))).toBe('### Promotion self-merge: timed out')
+    expect(heading(await selfMerge(world({runs: () => [{name: 'Lint', conclusion: 'failure'}]}).input()))).toBe(
+      '### Promotion self-merge: a required check failed',
+    )
+  })
+
+  it('titles the protection stops', async () => {
+    expect(heading(await selfMerge(world({protection: () => protectionOf([])}).input()))).toBe(
+      '### Promotion self-merge: required checks missing',
+    )
+    expect(heading(await selfMerge(world({protection: () => protectionOf(checksFor(['Lint']))}).input()))).toBe(
+      '### Promotion self-merge: required checks missing',
+    )
+    expect(
+      heading(
+        await selfMerge(
+          world({
+            protection: () => {
+              throw apiError(404)
+            },
+          }).input(),
+        ),
+      ),
+    ).toBe('### Promotion self-merge: protection unreadable')
+    expect(heading(await selfMerge(world().input({declaredContexts: []})))).toBe(
+      '### Promotion self-merge: no declared checks',
+    )
+  })
+
+  it('titles the switch, approval, merge and API failures', async () => {
+    const unreadable = world({
+      variable: () => {
+        throw apiError(403)
+      },
+    })
+    expect(heading(await selfMerge(unreadable.input()))).toBe('### Promotion self-merge: switch unreadable')
+    expect(heading(await selfMerge(world({variable: script<string | undefined>('on', 'off')}).input()))).toBe(
+      '### Promotion self-merge: switched off after approval',
+    )
+    expect(
+      heading(
+        await selfMerge(
+          world({
+            approve: () => {
+              throw apiError(403)
+            },
+          }).input(),
+        ),
+      ),
+    ).toBe('### Promotion self-merge: approval failed')
+    expect(
+      heading(
+        await selfMerge(
+          world({
+            merge: () => {
+              throw apiError(409)
+            },
+          }).input(),
+        ),
+      ),
+    ).toBe('### Promotion self-merge: open, waiting')
+    expect(
+      heading(
+        await selfMerge(
+          world({
+            merge: () => {
+              throw apiError(500)
+            },
+          }).input(),
+        ),
+      ),
+    ).toBe('### Promotion self-merge: merge failed')
+    expect(
+      heading(
+        await selfMerge(
+          world({
+            merge: () => {
+              throw apiError(405)
+            },
+            pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'}),
+          }).input(),
+        ),
+      ),
+    ).toBe('### Promotion self-merge: merge blocked')
+    expect(heading(await selfMerge(world({pulls: () => apiError(404)}).input()))).toBe(
+      '### Promotion self-merge: GitHub API failure',
+    )
+  })
+})
+
+describe('runSelfMerge', () => {
+  const SETTINGS = `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n${DECLARED.map(context => `          - '${context}'`).join('\n')}\n`
+
+  function harness(
+    env: Record<string, string | undefined>,
+    scenario: Scenario = {},
+    settings: () => string = () => SETTINGS,
+  ) {
+    const w = world(scenario)
+    const out: string[] = []
+    const err: string[] = []
+    const writes: {path: string; content: string}[] = []
+    const tokens: (string | undefined)[] = []
+    const run = async () =>
+      runSelfMerge({
+        env: {
+          GH_TOKEN: 'pat-value',
+          PROMOTION_PR: '77',
+          PROMOTION_PIN: PIN,
+          PROMOTION_QUALIFIES: 'true',
+          PROMOTION_SELF_MERGE: 'on',
+          GITHUB_STEP_SUMMARY: '/summary',
+          ...env,
+        },
+        readSettings: settings,
+        createClient: async token => {
+          tokens.push(token)
+          return w.octokit
+        },
+        now: () => w.clock.now,
+        sleep: async ms => {
+          w.sleeps.push(ms)
+          w.clock.now += ms
+        },
+        stdout: text => out.push(text),
+        stderr: text => err.push(text),
+        append: (path, content) => writes.push({path, content}),
+      })
+    return {run, w, out, err, writes, tokens}
+  }
+
+  it('merges a qualifying promotion, prints the outcome code and writes the summary', async () => {
+    const h = harness({})
+    expect(await h.run()).toBe(0)
+    expect(h.w.log).toEqual(['approve', 'merge'])
+    expect(h.out).toEqual(['promotion-self-merge: MERGED\n'])
+    expect(h.err).toEqual([])
+    expect(h.writes).toHaveLength(1)
+    expect(h.writes[0]?.path).toBe('/summary')
+    expect(h.writes[0]?.content).toContain('### Promotion self-merge: merged')
+    expect(h.tokens).toEqual(['pat-value'])
+  })
+
+  it('reads the declared contexts from the settings it was given', async () => {
+    const h = harness({}, {protection: () => protectionOf(checksFor(['Lint']))})
+    expect(await h.run()).toBe(1)
+    expect(h.err).toEqual(['::error::promotion-self-merge: PROTECTION_SHORT\n'])
+    expect(h.out).toEqual([])
+    expect(h.writes[0]?.content).toContain('required checks missing')
+  })
+
+  it('has nothing to do, without a token, when there is no pull request', async () => {
+    const h = harness({PROMOTION_PR: '', GH_TOKEN: undefined})
+    expect(await h.run()).toBe(0)
+    expect(h.out).toEqual(['promotion-self-merge: NO_PULL_REQUEST\n'])
+    expect(h.tokens).toEqual([])
+  })
+
+  it('treats an unset pull request the same way', async () => {
+    const h = harness({PROMOTION_PR: undefined, GH_TOKEN: undefined})
+    expect(await h.run()).toBe(0)
+    expect(h.out).toEqual(['promotion-self-merge: NO_PULL_REQUEST\n'])
+  })
+
+  it('leaves a promotion that does not qualify alone, without a token', async () => {
+    for (const value of ['false', '', undefined, 'TRUE']) {
+      const h = harness({PROMOTION_QUALIFIES: value, GH_TOKEN: undefined})
+      expect(await h.run()).toBe(0)
+      expect(h.out).toEqual(['promotion-self-merge: NOT_QUALIFYING\n'])
+      expect(h.tokens).toEqual([])
+    }
+  })
+
+  it.each(['abc', '0', '-1', '1.5', '07x', ' 7'])(
+    'rejects the pull request number %j with a fixed line',
+    async value => {
+      const h = harness({PROMOTION_PR: value})
+      expect(await h.run()).toBe(1)
+      expect(h.err).toEqual(['::error::promotion-self-merge: INVALID_PULL_REQUEST\n'])
+    },
+  )
+
+  it.each(['abc', 'A'.repeat(40), 'a'.repeat(39), 'a'.repeat(41), '', undefined])('rejects the pin %j', async value => {
+    const h = harness({PROMOTION_PIN: value})
+    expect(await h.run()).toBe(1)
+    expect(h.err).toEqual(['::error::promotion-self-merge: INVALID_PIN\n'])
+  })
+
+  it.each(['', undefined])('fails closed without a token (%j)', async value => {
+    const h = harness({GH_TOKEN: value})
+    expect(await h.run()).toBe(1)
+    expect(h.err).toEqual(['::error::promotion-self-merge: MISSING_TOKEN\n'])
+    expect(h.tokens).toEqual([])
+  })
+
+  it('fails with a fixed line when the settings cannot be read or parsed', async () => {
+    const unreadable = harness({}, {}, () => {
+      throw new Error('ENOENT: /secret/path')
+    })
+    expect(await unreadable.run()).toBe(1)
+    expect(unreadable.err).toEqual(['::error::promotion-self-merge: SETTINGS_UNREADABLE\n'])
+    const broken = harness({}, {}, () => 'a: [unclosed')
+    expect(await broken.run()).toBe(1)
+    expect(broken.err).toEqual(['::error::promotion-self-merge: SETTINGS_UNREADABLE\n'])
+  })
+
+  it('fails with a fixed line when the client cannot be created, leaking no message', async () => {
+    const err: string[] = []
+    const code = await runSelfMerge({
+      env: {GH_TOKEN: 'pat-value', PROMOTION_PR: '77', PROMOTION_PIN: PIN, PROMOTION_QUALIFIES: 'true'},
+      readSettings: () => SETTINGS,
+      createClient: async () => {
+        throw new Error('token pat-value rejected')
+      },
+      now: () => 0,
+      sleep: async () => {},
+      stdout: () => {},
+      stderr: text => err.push(text),
+      append: () => {},
+    })
+    expect(code).toBe(1)
+    expect(err).toEqual(['::error::promotion-self-merge: API_FAILED\n'])
+  })
+
+  it('treats a PROMOTION_SELF_MERGE of exactly on as the live start', async () => {
+    const live = harness(
+      {PROMOTION_SELF_MERGE: 'on'},
+      {
+        variable: () => {
+          throw apiError(403)
+        },
+      },
+    )
+    expect(await live.run()).toBe(1)
+    const dry = harness(
+      {PROMOTION_SELF_MERGE: undefined},
+      {
+        variable: () => {
+          throw apiError(403)
+        },
+      },
+    )
+    expect(await dry.run()).toBe(0)
+    expect(dry.out).toEqual(['promotion-self-merge: DRY_RUN\n'])
+  })
+
+  it('prints no token, no error body and no payload on any stream', async () => {
+    const h = harness(
+      {},
+      {
+        approve: () => {
+          throw apiError(403, 'Bearer pat-value leaked')
+        },
+      },
+    )
+    await h.run()
+    expect([...h.out, ...h.err].join('')).not.toContain('pat-value')
+    expect(h.writes.map(write => write.content).join('')).not.toContain('pat-value')
+    expect(h.writes.map(write => write.content).join('')).not.toContain('leaked')
+  })
+
+  it('writes no summary outside Actions', async () => {
+    const h = harness({GITHUB_STEP_SUMMARY: undefined})
+    expect(await h.run()).toBe(0)
+    expect(h.writes).toEqual([])
+  })
+})
+
+describe('selfMerge: the full text of every summary', () => {
+  const facts = (withPullRequest = true) => [
+    ...(withPullRequest ? ['- Pull request: #77'] : []),
+    `- Pinned commit: \`${PIN}\``,
+    '',
+  ]
+  const summary = (title: string, detail: string, withPullRequest = true) =>
+    [`### Promotion self-merge: ${title}`, '', detail, '', ...facts(withPullRequest)].join('\n')
+
+  const throwing = (status: number) => () => {
+    throw apiError(status)
+  }
+
+  const cases: readonly (readonly [string, () => Promise<SelfMergeOutcome>, string])[] = [
+    [
+      'no pull request',
+      async () => selfMerge(world().input({pullRequest: null})),
+      summary(
+        'no pull request',
+        'The PR step opened no promotion pull request, so there is nothing to approve.',
+        false,
+      ),
+    ],
+    [
+      'not qualifying',
+      async () => selfMerge(world().input({qualifies: false})),
+      summary(
+        'not qualifying',
+        'The promotion has a path outside `knowledge/` and `metadata/`, so it waits for the operator. Nothing was approved.',
+      ),
+    ],
+    [
+      'closed unmerged',
+      async () => selfMerge(world({pulls: () => ({state: 'closed'})}).input()),
+      summary('closed unmerged', 'The pull request is closed and not merged. Nothing was approved.'),
+    ],
+    [
+      'already merged',
+      async () => selfMerge(world({pulls: () => ({merged: true})}).input()),
+      summary('already merged', 'The pull request is already merged. Nothing was approved.'),
+    ],
+    [
+      'stale head',
+      async () => selfMerge(world({pulls: () => ({head: MOVED})}).input()),
+      summary(
+        'stale head',
+        'The pull request head is not the pinned commit the promotion gates checked, so nothing was approved. The next daily run handles the new head.',
+      ),
+    ],
+    [
+      'not labeled',
+      async () => selfMerge(world({pulls: () => ({labels: []})}).input()),
+      summary('not labeled automerge', 'The pull request does not carry the `automerge` label. Nothing was approved.'),
+    ],
+    [
+      'hold-merge',
+      async () => selfMerge(world({pulls: () => ({labels: ['automerge', 'hold-merge']})}).input()),
+      summary(
+        'held by hold-merge',
+        'The pull request carries the `hold-merge` label, so it waits for the operator. Nothing was approved.',
+      ),
+    ],
+    [
+      'dry run',
+      async () => selfMerge(world({variable: () => 'off'}).input()),
+      summary(
+        'dry run',
+        'Dry run: the repository variable `PROMOTION_SELF_MERGE` is not `on`, so the run would approve and merge the pull request but did not. Nothing was approved.',
+      ),
+    ],
+    [
+      'empty protection',
+      async () => selfMerge(world({protection: () => protectionOf([])}).input()),
+      summary(
+        'required checks missing',
+        'The live required-check list for `main` is empty, so the checks this promotion must pass are unknown. Nothing was approved.',
+      ),
+    ],
+    [
+      'short protection',
+      async () => selfMerge(world({protection: () => protectionOf(checksFor(['Lint']))}).input()),
+      summary(
+        'required checks missing',
+        'The live required-check list for `main` is missing declared contexts: `Test`, `Security: Private Leak Scan`, `CodeQL`. Nothing was approved.',
+      ),
+    ],
+    [
+      'unreadable protection',
+      async () => selfMerge(world({protection: throwing(404)}).input()),
+      summary(
+        'protection unreadable',
+        'The branch protection of `main` could not be read, so the required checks are unknown. Nothing was approved.',
+      ),
+    ],
+    [
+      'nothing declared',
+      async () => selfMerge(world().input({declaredContexts: []})),
+      summary(
+        'no declared checks',
+        'No required contexts are declared for `main` in `.github/settings.yml`, so the live list cannot be compared. Nothing was approved.',
+      ),
+    ],
+    [
+      'failed checks',
+      async () =>
+        selfMerge(
+          world({
+            runs: () => [
+              {name: 'Lint', conclusion: 'failure'},
+              {name: 'Test', conclusion: 'cancelled'},
+              {name: 'CodeQL', app: 57_789},
+            ],
+          }).input(),
+        ),
+      summary(
+        'a required check failed',
+        'These required checks failed on the pinned commit: `Lint`, `Test`. Nothing was approved.',
+      ),
+    ],
+    [
+      'timeout',
+      async () => selfMerge(world({runs: () => [{name: 'CodeQL', app: 57_789}]}).input()),
+      summary(
+        'timed out',
+        'The required checks did not settle within 60 minutes (still waiting on: `Lint`, `Test`). The pull request stays open and the next daily run catches it up and merges it. Nothing was approved.',
+      ),
+    ],
+    [
+      'unreadable switch',
+      async () => selfMerge(world({variable: throwing(403)}).input()),
+      summary(
+        'switch unreadable',
+        'The repository variable `PROMOTION_SELF_MERGE` could not be read, so the run cannot tell whether self-merge is on.',
+      ),
+    ],
+    [
+      'switched off',
+      async () => selfMerge(world({variable: script<string | undefined>('on', 'off')}).input()),
+      summary(
+        'switched off after approval',
+        'The pull request was approved, then `PROMOTION_SELF_MERGE` was turned off before the merge, so it was not merged.',
+      ),
+    ],
+    [
+      'approval failed',
+      async () => selfMerge(world({approve: throwing(403)}).input()),
+      summary('approval failed', 'GitHub refused the approval, so the pull request was not merged.'),
+    ],
+    [
+      'open waiting',
+      async () => selfMerge(world({merge: throwing(409)}).input()),
+      summary(
+        'open, waiting',
+        'GitHub refused the merge because the head or the base moved. The pull request stays open and the next daily run handles it.',
+      ),
+    ],
+    [
+      'merge blocked',
+      async () =>
+        selfMerge(world({merge: throwing(405), pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'})}).input()),
+      summary(
+        'merge blocked',
+        'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
+      ),
+    ],
+    [
+      'merge failed',
+      async () => selfMerge(world({merge: throwing(500)}).input()),
+      summary('merge failed', 'The merge did not complete and the pull request is not merged.'),
+    ],
+    [
+      'API failure',
+      async () => selfMerge(world({pulls: throwing(404)}).input()),
+      summary('GitHub API failure', 'A GitHub API call failed, so the run stopped. Nothing further was done.'),
+    ],
+    [
+      'merged',
+      async () => selfMerge(world().input()),
+      summary(
+        'merged',
+        'The promotion gates passed on the pinned commit, the required checks passed on it, and the pull request was approved as `fro-bot` and squash-merged pinned to it.',
+      ),
+    ],
+  ]
+
+  it.each(cases)('%s', async (_name, run, expected) => {
+    expect((await run()).summary).toBe(expected)
+  })
+})
+
+describe('selfMerge: odd thrown values and response shapes', () => {
+  it.each([null, undefined, 'a string', 42, {status: '503'}, {status: null}, {code: 'EOTHER'}])(
+    'does not retry or crash on a thrown %j, and fails the approval cleanly',
+    async thrown => {
+      const w = world({
+        approve: () => {
+          throw thrown
+        },
+      })
+      expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'APPROVE_FAILED'})
+      expect(w.requests.getPull).toHaveLength(2)
+    },
+  )
+
+  it.each([null, undefined, 'a string', {status: '503'}])('treats a thrown %j on a read as final', async thrown => {
+    const w = world({
+      pulls: () => {
+        throw thrown
+      },
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'API_FAILED'})
+    expect(w.requests.getPull).toHaveLength(1)
+    expect(w.sleeps).toEqual([])
+  })
+
+  it('stops with an empty list when the protection has no required_status_checks', async () => {
+    const w = world({protection: () => ({data: {protection: {}}})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_EMPTY'})
+  })
+
+  it('reads a check run with no app as belonging to no app', async () => {
+    const anyApp = world({
+      protection: () => protectionOf(DECLARED.map(context => ({context, app_id: null}))),
+      runs: () => [
+        {name: 'Lint', app: null},
+        {name: 'Test', app: null},
+        {name: 'CodeQL', app: null},
+      ],
+    })
+    expect(await selfMerge(anyApp.input())).toMatchObject(LIVE)
+    const named = world({runs: () => [{name: 'Lint', app: null}, {name: 'Test'}, {name: 'CodeQL', app: 57_789}]})
+    expect(await selfMerge(named.input())).toMatchObject({code: 'TIMEOUT'})
+  })
+
+  it('stops as stale when the head moved between a refused merge and the re-read', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {head: MOVED}),
+    })
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+  })
+})
+
+describe('runSelfMerge: values it passes on', () => {
+  const SETTINGS = `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n${DECLARED.map(context => `          - '${context}'`).join('\n')}\n`
+
+  function drive(env: Record<string, string | undefined>, scenario: Scenario = {}) {
+    const w = world(scenario)
+    const writes: string[] = []
+    const out: string[] = []
+    const run = async () =>
+      runSelfMerge({
+        env: {GH_TOKEN: 't', GITHUB_STEP_SUMMARY: '/s', ...env},
+        readSettings: () => SETTINGS,
+        createClient: async () => w.octokit,
+        now: () => w.clock.now,
+        sleep: async ms => {
+          w.clock.now += ms
+        },
+        stdout: text => out.push(text),
+        stderr: () => {},
+        append: (_path, content) => writes.push(content),
+      })
+    return {run, w, writes, out}
+  }
+
+  const live = {PROMOTION_PR: '7', PROMOTION_PIN: PIN, PROMOTION_QUALIFIES: 'true', PROMOTION_SELF_MERGE: 'on'}
+
+  it('accepts a one-digit and a four-digit pull request number', async () => {
+    for (const number of ['7', '1234']) {
+      const h = drive({...live, PROMOTION_PR: number})
+      expect(await h.run()).toBe(0)
+      expect((h.w.requests.getPull?.[0] as {pull_number: number}).pull_number).toBe(Number(number))
+    }
+  })
+
+  it('addresses fro-bot/.github, branch main, and the repository variable', async () => {
+    const h = drive(live)
+    await h.run()
+    expect(h.w.requests.getBranch).toEqual([{owner: 'fro-bot', repo: '.github', branch: 'main'}, expect.anything()])
+    expect(h.w.requests.getPull?.[0]).toEqual({owner: 'fro-bot', repo: '.github', pull_number: 7})
+  })
+
+  it('writes the full summary of an early stop, with no pull request line when there is none', async () => {
+    const none = drive({...live, PROMOTION_PR: undefined, PROMOTION_PIN: undefined})
+    await none.run()
+    expect(none.writes).toEqual([
+      '### Promotion self-merge: no pull request\n\nThe PR step opened no promotion pull request, so there is nothing to approve.\n\n- Pinned commit: ``\n',
+    ])
+    const unqualified = drive({...live, PROMOTION_QUALIFIES: 'false'})
+    await unqualified.run()
+    expect(unqualified.writes).toEqual([
+      `### Promotion self-merge: not qualifying\n\nThe promotion has a path outside \`knowledge/\` and \`metadata/\`, so it waits for the operator. Nothing was approved.\n\n- Pull request: #7\n- Pinned commit: \`${PIN}\`\n`,
+    ])
+  })
+
+  it('prints the outcome code on stdout for a stop with exit 0', async () => {
+    const unqualified = drive({...live, PROMOTION_QUALIFIES: 'false'})
+    await unqualified.run()
+    expect(unqualified.out).toEqual(['promotion-self-merge: NOT_QUALIFYING\n'])
+  })
+})

@@ -173,3 +173,18 @@ jobs:
           PROMOTION_QUALIFIES: ${{ steps.qualify.outputs.qualifies }}
           PROMOTION_REFRESH_REVIEW: ${{ inputs.refresh-review }}
         run: bun scripts/merge-data-pr.ts
+
+      # Waits for the required checks on the pinned commit, then approves it as `fro-bot` and squash-merges
+      # pinned to it. This is the only step that holds `FRO_BOT_PAT`, as step env: it reads checks and
+      # statuses, approves and merges as the `fro-bot` user (a code owner; the App pushed `data` last, so the
+      # last-push rule is met). Nothing here uses the App token, which expires after an hour.
+      # Until the repository variable `PROMOTION_SELF_MERGE` is `on`, it waits, logs what it would approve and
+      # stops. A `hold-merge` label on the PR stops it for that promotion.
+      - name: 🤝 Self-merge a qualifying promotion
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          PROMOTION_SELF_MERGE: ${{ vars.PROMOTION_SELF_MERGE }}
+          PROMOTION_PR: ${{ steps.open-pr.outputs.pull-request }}
+          PROMOTION_PIN: ${{ steps.pin.outputs.sha }}
+          PROMOTION_QUALIFIES: ${{ steps.qualify.outputs.qualifies }}
+        run: bun scripts/promotion-self-merge.ts
