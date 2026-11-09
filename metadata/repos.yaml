@@ -353,11 +353,11 @@ repos:
     added: 2026-06-15
     onboarding_status: onboarded
     last_survey_at: 2026-11-09
-    last_survey_status: failure
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-11-10
+    next_survey_eligible_at: 2026-11-26
     private: false
     node_id: R_kgDOS6ys-g
     database_id: 1269607674
