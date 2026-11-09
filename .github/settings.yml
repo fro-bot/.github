@@ -111,6 +111,9 @@ labels:
   - name: 'agent: working'
     color: '#fcf2e1'
     description: Agent is currently working on this
+  - name: attention-tracking
+    color: '#d93f0b'
+    description: Tracks a Needs Human Attention item from the daily report
 
 # `data` is a persistent branch. A deletion-only ruleset with no bypass actors protects it.
 # To delete `data` on purpose, remove that ruleset from this file first.

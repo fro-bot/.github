@@ -408,6 +408,158 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
   })
 })
 
+/** Collapse line wrapping so assertions pin wording, not where the YAML folds a line. */
+const flat = (text: string): string => text.replaceAll(/\s+/g, ' ')
+
+/**
+ * Rebuild the observe agent prompt the way Actions does: substitute the format() arguments of
+ * TASK_PROMPT with the workflow env values, then splice the result into the agent step's prompt.
+ * An env key that is not listed in the format() call is absent from the result.
+ */
+const composeObservePrompt = (): string => {
+  const env = froBotParsed.env ?? {}
+  const step = froBotParsed.jobs['fro-bot-observe']?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+  const taskExpression = String(step?.env?.TASK_PROMPT ?? '')
+  const args = /format\('(?:\{\d+\})+',([^)]*)\)/.exec(taskExpression)?.[1]
+  if (args === undefined) throw new TypeError('TASK_PROMPT has no format() composition')
+  const task = args
+    .split(',')
+    .map(arg => arg.trim().replace(/^env\./, ''))
+    .map(name => {
+      const value = env[name]
+      if (typeof value !== 'string') throw new TypeError(`env.${name} is not a string`)
+      return value
+    })
+    .join('')
+  const prompt = String(step?.with?.prompt ?? '')
+  const reference = '$' + '{{ env.TASK_PROMPT }}'
+  if (!prompt.includes(reference)) throw new TypeError('agent prompt does not embed env.TASK_PROMPT')
+  return prompt.replace(reference, () => task)
+}
+
+describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention list', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const output = flat(env.OBSERVE_OUTPUT ?? '')
+
+  it('closes the predecessor in a fixed order: find, read, create, read back, close', () => {
+    const order = [
+      'find the open predecessor daily report',
+      'read it',
+      "create today's report",
+      "read today's report back",
+      'only then CLOSE',
+    ].map(phrase => output.indexOf(phrase))
+
+    expect(order).not.toContain(-1)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(output).not.toContain('Before or after creating it')
+  })
+
+  it('keys each item to the object its next action works on, and never to evidence', () => {
+    expect(output).toContain('Key each item to the object its next action works on')
+    expect(output).toContain('an issue, PR or Project item URL, a normalized repo path, or a repo plus workflow file')
+    expect(output).toContain('Runs, comments and documents are evidence only, never a key')
+    expect(output).toContain('One problem per item. Split bundled bullets')
+    expect(output).toContain('a short problem tag that stays the same from report to report')
+  })
+
+  it('renders every key as a key: line that matching, counting and reuse all read', () => {
+    expect(output).toContain('End every item with a line "key: <object>"')
+    expect(output).toContain('"key: <object> — <problem tag>"')
+    expect(output).toContain('starting with the key line')
+  })
+
+  it('gives every item an owner, one next action and an observed or inferred tag', () => {
+    expect(output).toContain(
+      'Every item names an owner (a handle, or "you"), one next action, and whether it is observed or inferred',
+    )
+  })
+
+  it('re-checks each key just before publishing and keeps an item whose evidence alone resolved', () => {
+    expect(output).toContain('Just before publishing, re-read the object behind each key')
+    expect(output).toContain('If the key has resolved, drop the item')
+    expect(output).toContain('If only the evidence has resolved, refresh the evidence and keep the item')
+    expect(output).toContain('keep the item marked "could not re-check"')
+    expect(output).toContain('name the source only if its repo is public')
+  })
+
+  it('takes first-seen by walking back through prior reports, with today as the fallback', () => {
+    expect(output).toContain('oldest consecutive earlier daily report that lists the same key line')
+    expect(output).toContain('stop at the first report without it')
+    expect(output).toContain('If no earlier report lists it, use today. Never guess a date')
+  })
+
+  it('leads Needs Human Attention with the operator-only "Awaiting you" items', () => {
+    const structure = (env.OBSERVE_OUTPUT ?? '').split('\n').map(line => line.trim())
+    const heading = structure.indexOf('### Needs Human Attention')
+    expect(heading).toBeGreaterThan(-1)
+    expect(structure[heading + 1]).toBe('#### Awaiting you')
+    expect(output).toContain('list the items only the operator can do, each with its exact step')
+  })
+
+  it('escalates a key live on three consecutive reports, with the listed exclusions', () => {
+    expect(output).toContain("Escalate a key that is live on three consecutive reports, today's included")
+    expect(output).toContain('Do not escalate keys that are already issues, items already tracked')
+    expect(output).toContain('"Awaiting you" items or Renovate-owned fixes')
+    expect(output).toContain('file a tracking issue in the AGENT NOTES format')
+    expect(output).toContain('Show each escalated item as one line linking its issue and ending with its key line')
+    expect(output).toContain('skip escalation and say so in the Run Summary')
+  })
+
+  it('reuses an open tracking issue and never refiles one the operator closed as not planned', () => {
+    expect(output).toContain('Search issues labeled `attention-tracking`, open and closed, for the same key line')
+    expect(output).toContain('Reuse an open one')
+    expect(output).toContain('closed one as not planned, do not refile')
+    expect(output).toContain('report the item once as declined')
+  })
+
+  it('closes a tracking issue whose key resolved, with the evidence in the body and not a comment', () => {
+    expect(output).toContain('close each open `attention-tracking` issue whose key has resolved')
+    expect(output).toContain('editing the issue body, not in a comment')
+  })
+
+  it('includes only items from repos confirmed PUBLIC and never hints at the rest', () => {
+    expect(output).toContain('Include only items whose source repo is public')
+    expect(output).toContain('gh repo view <owner/repo> --json visibility')
+    expect(output).toContain('public only when it returns PUBLIC')
+    expect(output).toContain('Any other result, including an error, means private')
+    expect(output).toContain('Leave such an item out of the report, the run summary and tracking issues')
+    expect(output).toContain('never refer to a "private repository"')
+  })
+
+  it('category 5 allows only the attention-tracking exception and keeps the rest report-only', () => {
+    const category = flat(env.OBSERVE_CATEGORIES ?? '')
+    const oversight = category.slice(category.indexOf('5. OVERSIGHT'), category.indexOf('6. CROSS-PROJECT'))
+    expect(oversight).toContain('Do NOT modify individual issues/PRs or apply labels in this category')
+    expect(oversight).toContain(
+      'except issues labeled `attention-tracking`: create, label, edit and close those under the attention rules in the output section',
+    )
+  })
+
+  it('keeps the existing Needs Human Attention routing and the report title pinned', () => {
+    expect(flat(env.SHARED_RULES ?? '')).toContain('SCOPE CAP')
+    expect(flat(env.SHARED_RULES ?? '')).toContain('TRUSTED AUTHORS')
+    expect(flat(env.SHARED_RULES ?? '')).toContain('record it under "Needs Human Attention"')
+    expect(flat(env.AGENT_NOTES ?? '')).toContain('AGENT NOTES')
+    expect(output).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
+  })
+
+  it('delivers the duties in the composed agent prompt, not only the env value', () => {
+    const composed = flat(composeObservePrompt())
+
+    expect(composed).toContain('SCOPE CAP')
+    expect(composed).toContain('TRUSTED AUTHORS')
+    expect(composed).toContain('AGENT NOTES')
+    expect(composed).toContain('"Daily Fro Bot Report — YYYY-MM-DD (UTC)"')
+    expect(composed).toContain('End every item with a line "key: <object>"')
+    expect(composed).toContain('Include only items whose source repo is public')
+    expect(composed).toContain('gh repo view <owner/repo> --json visibility')
+    expect(composed).toContain('Escalate a key that is live on three consecutive reports')
+    expect(composed).toContain('except issues labeled `attention-tracking`')
+    expect(composed).toContain("read today's report back")
+    expect(composed).not.toContain('Before or after creating it')
+  })
+})
 const draftedBranch = 'docs/drafted-solutions'
 
 interface PullRequestFixture {
