@@ -27,6 +27,9 @@ export function protectionDriftCli(): CliConfig {
               new Promise<void>(resolve => {
                 setTimeout(resolve, ms)
               }),
+            signal: ms => AbortSignal.timeout(ms),
+            // The identity `github.token` writes as; the one place it is named.
+            author: {login: 'github-actions[bot]', type: 'Bot'},
             stdout: context.stdout,
             stderr: context.stderr,
           }),

@@ -575,12 +575,26 @@ describe('renderReport', () => {
   })
 })
 
+interface Author {
+  login: string
+  type: string
+}
+
+/** The identity `github.token` writes as, which the watcher is told to trust for its markers. */
+const BOT: Author = {login: 'github-actions[bot]', type: 'Bot'}
+const STRANGER: Author = {login: 'octocat', type: 'User'}
+
+/** A comment: its body alone (written by the bot), or with an author; `null` for a ghost user. */
+type CommentRecord = string | null | {body: string | null; author: Author | null}
+
 interface IssueRecord {
   number: number
   pull_request?: unknown
   /** The body the issue carries; absent means none, as an issue opened before the marker existed has none. */
   body?: string | null
-  comments?: readonly (string | null)[]
+  /** Who opened it; the bot unless said, `null` for a ghost user. */
+  author?: Author | null
+  comments?: readonly CommentRecord[]
   state?: 'open' | 'closed'
 }
 
@@ -597,16 +611,31 @@ interface IssueWorldOptions {
   endless?: boolean
   /** Runs before a call (its name, its parameters, and its count so far); an await here lets another run in. */
   before?: (name: string, params: Record<string, unknown>, count: number) => Promise<void> | void
+  /** Milliseconds a call takes on the fake clock, or per call: its name and its count so far (1-based). */
+  cost?: number | ((name: string, count: number) => number)
+  /** Whether a call stalls until its abort signal fires, like a request that never answers. */
+  hang?: (name: string, count: number) => boolean
 }
 
 /** An in-memory issue tracker with the calls the watcher makes, and a log of every call. */
 function issueWorld(options: IssueWorldOptions = {}) {
   const calls: {name: string; params: Record<string, unknown>}[] = []
+  const signals: {name: string; ms: number}[] = []
+  const clock = {ms: 0}
+  const controllers = new Map<AbortSignal, AbortController>()
+  const sizes = new Map<AbortSignal, number>()
   const counts: Record<string, number> = {}
   const failures: Record<string, number> = {}
   const store = new Map<
     number,
-    {number: number; pull_request?: unknown; body: string | null; comments: (string | null)[]; state: string}
+    {
+      number: number
+      pull_request?: unknown
+      body: string | null
+      author: Author | null
+      comments: CommentRecord[]
+      state: string
+    }
   >()
   const add = (issue: IssueRecord) => {
     if (!store.has(issue.number)) {
@@ -614,17 +643,35 @@ function issueWorld(options: IssueWorldOptions = {}) {
         number: issue.number,
         pull_request: issue.pull_request,
         body: issue.body === undefined ? '' : issue.body,
+        author: issue.author === undefined ? BOT : issue.author,
         comments: [...(issue.comments ?? [])],
         state: issue.state ?? 'open',
       })
     }
   }
   for (const issue of options.open ?? []) add(issue)
+  const commentView = (comment: CommentRecord) =>
+    comment === null || typeof comment === 'string'
+      ? {body: comment, user: BOT}
+      : {body: comment.body, user: comment.author}
 
-  const enter = async (name: string, params: Record<string, unknown>): Promise<void> => {
+  const enter = async (name: string, sent: Record<string, unknown>): Promise<void> => {
+    const {request, ...params} = sent as {request?: {signal?: AbortSignal}} & Record<string, unknown>
+    const signal = request?.signal
+    if (signal !== undefined) signals.push({name, ms: sizes.get(signal) ?? -1})
     calls.push({name, params})
     counts[name] = (counts[name] ?? 0) + 1
+    const cost = options.cost ?? 0
+    clock.ms += typeof cost === 'number' ? cost : cost(name, counts[name] ?? 0)
     await options.before?.(name, params, counts[name] ?? 0)
+    if (options.hang?.(name, counts[name] ?? 0) === true) {
+      await new Promise<never>((_resolve, reject) => {
+        setTimeout(() => {
+          if (signal !== undefined) controllers.get(signal)?.abort()
+          reject(Object.assign(new Error('The operation was aborted'), {status: 500}))
+        }, 0)
+      })
+    }
     if (options.fail === name) throw Object.assign(new Error('upstream body with a secret'), {status: 500})
     if (options.flaky?.name === name) {
       failures[name] = (failures[name] ?? 0) + 1
@@ -650,12 +697,12 @@ function issueWorld(options: IssueWorldOptions = {}) {
         get: async (params: Record<string, unknown>) => {
           await enter('get', params)
           const issue = store.get(params.issue_number as number)
-          return {data: {number: issue?.number, state: issue?.state, body: issue?.body}}
+          return {data: {number: issue?.number, state: issue?.state, body: issue?.body, user: issue?.author}}
         },
         listComments: async (params: Record<string, unknown>) => {
           await enter('comments', params)
           const issue = store.get(params.issue_number as number)
-          return {data: page(issue?.comments ?? [], params).map(body => ({body}))}
+          return {data: page(issue?.comments ?? [], params).map(commentView)}
         },
         create: async (params: Record<string, unknown>) => {
           await enter('create', params)
@@ -677,7 +724,13 @@ function issueWorld(options: IssueWorldOptions = {}) {
       },
     },
   } as unknown as ProtectionDriftOctokit
-  return {octokit, calls, store, names: () => calls.map(call => call.name)}
+  const signal = (ms: number): AbortSignal => {
+    const controller = new AbortController()
+    controllers.set(controller.signal, controller)
+    sizes.set(controller.signal, ms)
+    return controller.signal
+  }
+  return {octokit, calls, store, signals, clock, signal, names: () => calls.map(call => call.name)}
 }
 
 function runner(options: {
@@ -689,6 +742,7 @@ function runner(options: {
   world?: ReturnType<typeof issueWorld>
   readFailure?: 'event' | 'common' | 'repo'
   env?: Record<string, string | undefined>
+  author?: Author
 }) {
   const world = options.world ?? issueWorld()
   const stderr: string[] = []
@@ -718,10 +772,12 @@ function runner(options: {
         tokens.push(token)
         return world.octokit
       },
-      now: () => new Date('2026-11-09T13:00:00Z'),
+      now: () => new Date(Date.parse('2026-11-09T13:00:00Z') + world.clock.ms),
       sleep: async ms => {
         sleeps.push(ms)
       },
+      signal: world.signal,
+      author: options.author ?? BOT,
       stdout: text => stdout.push(text),
       stderr: text => stderr.push(text),
       append: (path, content) => writes.push({path, content}),
@@ -1010,6 +1066,8 @@ describe('runProtectionDrift: ignored and failing events', () => {
       },
       now: () => new Date(0),
       sleep: async () => {},
+      signal: ms => AbortSignal.timeout(ms),
+      author: BOT,
       stdout: () => {},
       stderr: text => stderr.push(text),
       append: () => {},
@@ -1870,5 +1928,240 @@ describe('runProtectionDrift: the summaries of a comment and of a mixed close', 
       '### Protection drift: issues partly closed\n\nA drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Closed: #31\n- Reopened: #44\n',
     )
     expect(h.stdout).toEqual(['protection-drift: closed #31; reopened #44\n'])
+  })
+})
+
+describe('runProtectionDrift: every request has a deadline', () => {
+  const SECOND = 1000
+  const MINUTE = 60 * SECOND
+  const cutOff = '::error::protection-drift: REQUEST_TIMEOUT\n'
+
+  it('gives every request a signal of 30 seconds while the budget lasts', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 1, body: marker(T10)}]})})
+    await h.run()
+    expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
+    expect(h.world.signals.map(entry => entry.name)).toEqual(h.world.names())
+    expect(new Set(h.world.signals.map(entry => entry.ms))).toEqual(new Set([30 * SECOND]))
+  })
+
+  it('gives each attempt of a retried read a signal of its own', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({flaky: {name: 'list', status: 503, times: 2}})})
+    await h.run()
+    expect(h.world.signals.filter(entry => entry.name === 'list')).toHaveLength(4)
+  })
+
+  it.each([
+    ['list', {event: driftAt(T12), open: []}],
+    ['create', {event: driftAt(T12), open: []}],
+    ['comment', {event: driftAt(T12), open: [{number: 31}]}],
+    ['get', {event: driftAt(T12), open: [{number: 31}]}],
+    ['comments', {event: matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
+    ['close', {event: matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
+  ])('exits 1 with REQUEST_TIMEOUT when the %s request stalls, and does not try again', async (name, setup) => {
+    const world = issueWorld({open: setup.open, hang: (called, count) => called === name && count === 1})
+    const h = runner({event: setup.event, world})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([cutOff])
+    expect(world.names().filter(called => called === name)).toHaveLength(1)
+    expect(h.sleeps).toEqual([])
+  })
+
+  it('says the state of the issues is uncertain, and what to do, in the job summary', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}], hang: name => name === 'comment'})})
+    await h.run()
+    expect(h.writes).toEqual([
+      {
+        path: '/summary',
+        content:
+          '### Protection drift: request cut off\n\nA GitHub request did not answer in time and was cut off, so the state of the issues is not certain: one may have been opened, commented on or closed before the cut-off. Check the open `protection-drift` issues and re-run the workflow for this event.\n\n- Event: `edited`\n',
+      },
+    ])
+    expect(h.writes[0]?.content).not.toContain('secret')
+  })
+
+  it('leaves a stalled read in the reconciliation as uncertain too', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({
+        open: [{number: 31, body: marker(T10)}],
+        hang: (name, count) => name === 'comments' && count === 2,
+      }),
+    })
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([cutOff])
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('does not count a failure with an aborted signal that was not ours as a cut-off', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({fail: 'list'})})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
+  })
+
+  it('shrinks a signal to the budget that is left', async () => {
+    // the list takes 5 min 45 s of the 6 minutes, so the next read has 15 seconds
+    const world = issueWorld({
+      open: [{number: 31}],
+      cost: (name, count) => (name === 'list' && count === 1 ? 5 * MINUTE + 45 * SECOND : 0),
+    })
+    const h = runner({event: driftAt(T12), world})
+    await h.run()
+    expect(world.signals.find(entry => entry.name === 'comment')).toBeUndefined()
+    const reads = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      cost: (name, count) => (name === 'get' && count === 1 ? 5 * MINUTE + 45 * SECOND : 0),
+    })
+    const read = runner({event: matchAt(T12), world: reads})
+    await read.run()
+    expect(reads.signals.find(entry => entry.name === 'comments')?.ms).toBe(15 * SECOND)
+  })
+
+  it('refuses a write that would start in the last 90 seconds, and says so without sending it', async () => {
+    // the list ends at minute 4:31; a write needs to start before minute 4:30
+    const world = issueWorld({cost: (name, count) => (name === 'list' && count === 1 ? 4 * MINUTE + 31 * SECOND : 0)})
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([cutOff])
+    expect(world.names()).toEqual(['list'])
+  })
+
+  it('lets a write start just inside that limit', async () => {
+    const world = issueWorld({cost: (name, count) => (name === 'list' && count === 1 ? 4 * MINUTE + 30 * SECOND : 0)})
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(world.names()).toContain('create')
+  })
+
+  it('keeps the last 90 seconds for the reads after a write', async () => {
+    // the close ends at minute 5; the read after it still has a minute
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      cost: (name, count) => (name === 'close' && count === 1 ? 5 * MINUTE : 0),
+    })
+    const h = runner({event: matchAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(world.names().at(-1)).toBe('comments')
+    expect(world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('refuses a read after the budget is spent, and leaves the issue state uncertain', async () => {
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      cost: (name, count) => (name === 'close' && count === 1 ? 6 * MINUTE + SECOND : 0),
+    })
+    const h = runner({event: matchAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([cutOff])
+    expect(world.names().at(-1)).toBe('close')
+  })
+
+  it('does not wait out a back-off past the budget', async () => {
+    const world = issueWorld({
+      flaky: {name: 'list', status: 503, times: 99},
+      cost: name => (name === 'list' ? 3 * MINUTE + SECOND : 0),
+    })
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual([cutOff])
+    expect(world.names().filter(name => name === 'list')).toHaveLength(2)
+  })
+})
+
+describe('runProtectionDrift: only the token\u2019s own markers count', () => {
+  const forged = (updatedAt: string, author: Author | null = STRANGER): CommentRecord => ({
+    body: marker(updatedAt),
+    author,
+  })
+
+  it('closes on a newer match when an unrelated user posted an empty marker', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged('')]}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('closes on a newer match when an unrelated user posted a newer marker', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13)]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('ignores a marker in an issue body an unrelated user wrote', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: marker(T13), author: STRANGER}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('still reads the token\u2019s own newer marker next to a forged one', async () => {
+    const h = runner({
+      event: matchAt(T11),
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T10), marker(T13)]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it.each([
+    ['the right login with the wrong type', {login: 'github-actions[bot]', type: 'User'}],
+    ['the right type with the wrong login', {login: 'fro-bot[bot]', type: 'Bot'}],
+    ['a login that only starts like it', {login: 'github-actions[bot]-two', type: 'Bot'}],
+    ['a ghost user', null],
+  ])('ignores a marker from %s', async (_name, author) => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13, author)]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('trusts the author it is given, and no other', async () => {
+    const custom: Author = {login: 'some-app[bot]', type: 'Bot'}
+    const mine = runner({
+      event: matchAt(T12),
+      author: custom,
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13, custom)]}]}),
+    })
+    await mine.run()
+    expect(mine.world.store.get(31)?.state).toBe('open')
+    const theirs = runner({
+      event: matchAt(T12),
+      author: custom,
+      world: issueWorld({open: [{number: 31, body: marker(T10), comments: [marker(T13)]}]}),
+    })
+    await theirs.run()
+    expect(theirs.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('does not reopen for a forged newer report that appears while the issue closes', async () => {
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      before: (name, params) => {
+        if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(forged(T13))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    await h.run()
+    expect(world.store.get(31)?.state).toBe('closed')
+    expect(world.names()).not.toContain('reopen')
+  })
+
+  it('reopens for the token\u2019s own newer report that appears while the issue closes', async () => {
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      before: (name, params) => {
+        if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
+      },
+    })
+    await runner({event: matchAt(T12), world}).run()
+    expect(world.store.get(31)?.state).toBe('open')
   })
 })

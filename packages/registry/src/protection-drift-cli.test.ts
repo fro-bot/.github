@@ -48,6 +48,8 @@ describe('no argv (the workflow call)', () => {
       env: unknown
       now: () => Date
       sleep: (ms: number) => Promise<void>
+      signal: (ms: number) => AbortSignal
+      author: {login: string; type: string}
       readFile: (path: string) => string
     }
     expect(params.env).toEqual(env)
@@ -62,6 +64,12 @@ describe('no argv (the workflow call)', () => {
     await vi.advanceTimersByTimeAsync(1)
     await sleeping
     expect(slept).toBe(true)
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    const signal = params.signal(30)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(30)
+    expect(signal.aborted).toBe(false)
+    // the identity github.token writes as, named once, here
+    expect(params.author).toEqual({login: 'github-actions[bot]', type: 'Bot'})
     vi.useRealTimers()
     expect(params.readFile('common-settings.yaml')).toContain('required_status_checks')
     expect(params.readFile('.github/settings.yml')).toContain('required_status_checks')

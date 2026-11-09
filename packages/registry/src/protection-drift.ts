@@ -17,6 +17,12 @@
  *   match with no usable time never closes). After it closes, it reads the comments again and reopens if a
  *   newer report landed; a run that comments on an issue reads its state again and reopens it if it was
  *   closed in the meantime.
+ * - Only the token's own markers count. The identity `github.token` writes as (`github-actions[bot]`, type
+ *   `Bot`) is passed in by the CLI, and a marker in an issue body or comment by anyone else is ignored.
+ * - Every request carries an abort signal of 30 seconds or what is left of a 6-minute budget, and a write
+ *   does not start in the last 90 seconds, which are kept for the reads that check it. A request that is cut
+ *   off, or that finds the budget spent, ends the run with exit 1 and a summary that says the state of the
+ *   issues is uncertain; it is never retried.
  * - Runs are not serialized: a burst of events each get a run. Two runs that both open an issue are
  *   reconciled afterwards, the later issue closing as a duplicate of the oldest, and a match closes every
  *   open issue. Issue reads retry on a transient failure; writes are never retried blindly.
@@ -272,10 +278,69 @@ export interface RunProtectionDriftParams {
   readonly now: () => Date
   /** The wait between read retries; a test passes a recorder. */
   readonly sleep: (ms: number) => Promise<void>
+  /** An abort signal that fires after `ms`; the real one is `AbortSignal.timeout`. */
+  readonly signal: (ms: number) => AbortSignal
+  /** The identity `github.token` writes as: only markers by this author count. */
+  readonly author: MarkerAuthor
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
   /** Defaults to `appendFileSync`; a test passes a recorder. */
   readonly append?: (path: string, content: string) => void
+}
+
+/** Who wrote a body or comment: a login and a type, as GitHub reports them. */
+export interface MarkerAuthor {
+  readonly login: string
+  readonly type: string
+}
+
+/** Thrown when a request was cut off in flight, or the budget had no time left to send it. */
+class CutOffError extends Error {}
+
+/**
+ * The client with a deadline on every request. A request gets a signal of `requestMs` or what is left of the
+ * budget, whichever is less. A write (a new issue, a comment, a close) does not start in the last `reserveMs`,
+ * which stay for the reads and the reopen that check it. A request whose signal fired, or that has no budget
+ * left, throws `CutOffError`, whatever error the client made of the abort.
+ */
+function bounded(
+  octokit: ProtectionDriftOctokit,
+  params: RunProtectionDriftParams,
+  start: number,
+): ProtectionDriftOctokit {
+  const requestMs = 30_000
+  const budgetMs = 6 * 60_000
+  const reserveMs = 90_000
+  const call = async <T>(write: boolean, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const left = start + budgetMs - params.now().getTime()
+    if (left - (write ? reserveMs : 0) < 0) throw new CutOffError()
+    const signal = params.signal(Math.min(requestMs, left))
+    try {
+      return await operation(signal)
+    } catch (error: unknown) {
+      throw signal.aborted ? new CutOffError() : error
+    }
+  }
+  const {issues} = octokit.rest
+  return {
+    rest: {
+      issues: {
+        listForRepo: async (request: NonNullable<Parameters<typeof issues.listForRepo>[0]>) =>
+          call(false, async signal => issues.listForRepo({...request, request: {signal}})),
+        get: async (request: NonNullable<Parameters<typeof issues.get>[0]>) =>
+          call(false, async signal => issues.get({...request, request: {signal}})),
+        listComments: async (request: NonNullable<Parameters<typeof issues.listComments>[0]>) =>
+          call(false, async signal => issues.listComments({...request, request: {signal}})),
+        create: async (request: NonNullable<Parameters<typeof issues.create>[0]>) =>
+          call(true, async signal => issues.create({...request, request: {signal}})),
+        createComment: async (request: NonNullable<Parameters<typeof issues.createComment>[0]>) =>
+          call(true, async signal => issues.createComment({...request, request: {signal}})),
+        // Reopening is part of the check after a write, so it uses the time the writes leave.
+        update: async (request: NonNullable<Parameters<typeof issues.update>[0]>) =>
+          call(request.state !== 'open', async signal => issues.update({...request, request: {signal}})),
+      },
+    },
+  } as unknown as ProtectionDriftOctokit
 }
 
 /** Whether a thrown GitHub error is worth another try: a 429, a 5xx, or a dropped connection. */
@@ -324,13 +389,21 @@ function markerFor(updatedAt: unknown): string {
   return `<!-- protection-drift:updated_at=${usable ? updatedAt : ''} -->`
 }
 
+/** A body or comment and who wrote it, as GitHub reports it. */
+interface Written {
+  readonly body: string
+  readonly user: {readonly login?: string; readonly type?: string} | null | undefined
+}
+
 /**
- * The newest time recorded in the markers of `texts`, in milliseconds; minus infinity when no marker is there
- * (an issue opened before the marker existed). A marker with no usable time is newer than any time.
+ * The newest time recorded in the markers of what `author` wrote, in milliseconds; minus infinity when there
+ * is none (an issue opened before the marker existed). A marker with no usable time is newer than any time.
+ * Anything written by anyone else is ignored.
  */
-function newestRecorded(texts: readonly string[]): number {
-  const times = texts
-    .flatMap(text => [...text.matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
+function newestRecorded(written: readonly Written[], author: MarkerAuthor): number {
+  const times = written
+    .filter(entry => entry.user?.login === author.login && entry.user.type === author.type)
+    .flatMap(entry => [...entry.body.matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
     .map(match => Date.parse(String(match[1])))
     .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
   return Math.max(Number.NEGATIVE_INFINITY, ...times)
@@ -346,27 +419,27 @@ async function retryRead<T>(operation: () => Promise<T>, sleep: (ms: number) => 
   return retry(operation, {attempts: 3, delayMs: attempt => attempt * 2000, shouldRetry: isTransient, sleep})
 }
 
-/** The state and body of an issue, read with retries. */
+/** The state of an issue, and its body with who wrote it, read with retries. */
 async function readIssue(
   octokit: ProtectionDriftOctokit,
   number: number,
   sleep: (ms: number) => Promise<void>,
-): Promise<{state: string; body: string}> {
+): Promise<{state: string; written: Written}> {
   const issue = await retryRead(
     async () => octokit.rest.issues.get({owner: 'fro-bot', repo: '.github', issue_number: number}),
     sleep,
   )
-  return {state: issue.data.state, body: String(issue.data.body)}
+  return {state: issue.data.state, written: {body: String(issue.data.body), user: issue.data.user}}
 }
 
 async function readComments(
   octokit: ProtectionDriftOctokit,
   number: number,
   sleep: (ms: number) => Promise<void>,
-): Promise<readonly string[]> {
+): Promise<readonly Written[]> {
   const pageSize = 100
   const maxPages = 50
-  let found = Array.of<string>()
+  let found = Array.of<Written>()
   for (const page of Array.from({length: maxPages}, (_, index) => index + 1)) {
     const response = await retryRead(
       async () =>
@@ -379,7 +452,7 @@ async function readComments(
         }),
       sleep,
     )
-    found = found.concat(response.data.map(comment => String(comment.body)))
+    found = found.concat(response.data.map(comment => ({body: String(comment.body), user: comment.user})))
     if (response.data.length < pageSize) break
   }
   return found
@@ -514,8 +587,9 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
 
   const updatedAt: unknown = Reflect.get(new Object(event.rule), 'updated_at')
   const at = typeof updatedAt === 'string' ? updatedAt : params.now().toISOString()
+  const start = params.now().getTime()
   try {
-    const octokit = await params.createClient(token)
+    const octokit = bounded(await params.createClient(token), params, start)
     const report = renderReport({
       action: String(event.action),
       login: Reflect.get(new Object(event.sender), 'login'),
@@ -597,10 +671,10 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
       const reopened = Array.of<number>()
       for (const number of open) {
         const before = [
-          (await readIssue(octokit, number, params.sleep)).body,
+          (await readIssue(octokit, number, params.sleep)).written,
           ...(await readComments(octokit, number, params.sleep)),
         ]
-        if (!isNewerThan(updatedAt, newestRecorded(before))) {
+        if (!isNewerThan(updatedAt, newestRecorded(before, params.author))) {
           kept.push(number)
           continue
         }
@@ -611,7 +685,7 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
         })
         await octokit.rest.issues.update({...target, issue_number: number, state: 'closed', state_reason: 'completed'})
         const after = await readComments(octokit, number, params.sleep)
-        if (isNewerThan(updatedAt, newestRecorded(after))) {
+        if (isNewerThan(updatedAt, newestRecorded(after, params.author))) {
           closed.push(number)
         } else {
           await reopen(number)
@@ -633,7 +707,15 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
       )
       params.stdout('protection-drift: no drift\n')
     }
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof CutOffError) {
+      return fail(
+        'REQUEST_TIMEOUT',
+        'request cut off',
+        'A GitHub request did not answer in time and was cut off, so the state of the issues is not certain: one may have been opened, commented on or closed before the cut-off. Check the open `protection-drift` issues and re-run the workflow for this event.',
+        eventFacts,
+      )
+    }
     return fail(
       'API_FAILED',
       'GitHub API failure',
