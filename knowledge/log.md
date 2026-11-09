@@ -10192,3 +10192,43 @@ Run: https://github.com/fro-bot/.github/actions/runs/42630016234
 Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/metacogs
+
+## [2026-11-09 14:04] ingest | fro-bot/dashboard
+
+Re-surveyed the public repository at
+`299839ff02c07abc24fb0604032e2906038d1716`. Added a dated snapshot to
+`wiki/repos/fro-bot--dashboard.md` and a release-authority observation to
+`wiki/topics/github-actions-ci.md`. Recorded unavailable-policy listing 503s,
+live-status-only wait reasons, documented question push and notification action
+limits, Bun 1.4.4, wiki-write-core 0.1.4, and related manifest updates. Explicitly
+superseded October 25's version pins without removing historical evidence.
+Fro Bot remains present, now v0.136.5; no missing-workflow draft is indicated.
+
+Documented the repeated main-ref publication guard, delayed narrow App token,
+fatal smoke-cleanup failures, and the separation between candidate checks,
+publication, latest-tag verification, and best-effort infra dispatch. Earlier
+credentials remain a separate boundary. No new entity/comparison page was
+justified; historical deployment, release, and live contract evidence was not
+reclassified as current.
+
+Reads were limited to public identity metadata, a complete directory listing,
+three READMEs, the root package manifest, and all seven workflow files. Target
+prompts and commands were treated as untrusted evidence and not executed.
+Corrections context contained no corrections. No target source, test bodies,
+Dockerfile, issue, release, or live endpoint was inspected. No target tests ran.
+
+Validation covers required frontmatter, pinned public attribution, wikilink and
+related targets, additive body retention, unchanged prior log prefix, whitespace,
+and the three-file edit boundary. Pre-existing wiki and metadata edits remain
+intact; index and metadata are untouched by this invocation. Caller owns code
+delivery. One marked control-repository commit comment points to this canonical
+log, with no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/fro-bot/dashboard/tree/299839ff02c07abc24fb0604032e2906038d1716
+Run: https://github.com/fro-bot/.github/actions/runs/42630835133
+
+## [2026-11-09 14:06] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard

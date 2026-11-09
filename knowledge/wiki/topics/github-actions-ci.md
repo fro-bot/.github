@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-11-09
 sources:
+  - url: https://github.com/fro-bot/dashboard/blob/299839ff02c07abc24fb0604032e2906038d1716/.github/workflows/release.yaml
+    sha: 299839ff02c07abc24fb0604032e2906038d1716
+    accessed: 2026-11-09
   - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/.github/workflows/ci.yml
     sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
     accessed: 2026-11-09
@@ -420,6 +423,28 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-11-09 — delay publication authority, not every credential
+
+[[fro-bot--dashboard]] at `299839ff02c07abc24fb0604032e2906038d1716`
+keeps release eligibility and publication authority as separate checks. The
+guard rejects manual dispatch off main, and the release job repeats
+`github.ref == 'refs/heads/main'` before reaching its credential steps.
+After candidate-image smoke tests and both Trivy phases, it mints an App token
+scoped to this repository and `contents: write` for tag/release publication.
+This limits the exposure window for that token; it does **not** mean preceding
+third-party actions run without credentials. GHCR login already uses the job's
+`GITHUB_TOKEN` with `packages: write`.
+
+The always-run smoke cleanup is also a release gate: missing containers or
+networks are tolerated, but Docker unavailability or failed removal is fatal.
+Only after that cleanup and scanning does publication proceed. CalVer/SHA tag
+promotion and readback precede GitHub Release creation; `latest` promotion and
+digest verification follow it. The separately credentialed infra dispatch
+remains best-effort and environment-gated. A green publication is not proof of
+a completed [[marcusrbrown--infra]] deployment. These are workflow-file facts,
+not fresh successful-run or production evidence, and extend the October 25
+phase-boundary observation without rewriting it.
 
 ## Bundle-affecting is not the same as runtime dependency (2026-11-09)
 
