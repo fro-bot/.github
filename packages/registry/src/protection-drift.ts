@@ -11,6 +11,12 @@
  *   present and matching. A field the event does not report is neither drift nor a match: it is listed in
  *   the job summary, and it keeps the issue open.
  * - Nothing is reverted or blocked; the daily settings run restores the rule.
+ * - Event order is kept in the issues themselves. Every report and comment ends with one hidden marker,
+ *   the `updated_at` of its event, and nothing else. A match closes an issue only if its own `updated_at` is
+ *   strictly newer than every recorded one (an empty or unusable one counts as newer than anything, and a
+ *   match with no usable time never closes). After it closes, it reads the comments again and reopens if a
+ *   newer report landed; a run that comments on an issue reads its state again and reopens it if it was
+ *   closed in the meantime.
  * - Runs are not serialized: a burst of events each get a run. Two runs that both open an issue are
  *   reconciled afterwards, the later issue closing as a duplicate of the oldest, and a match closes every
  *   open issue. Issue reads retry on a transient failure; writes are never retried blindly.
@@ -26,7 +32,10 @@ import {parse} from 'yaml'
 /** The slice of Octokit this module calls. */
 export interface ProtectionDriftOctokit {
   readonly rest: {
-    readonly issues: Pick<Octokit['rest']['issues'], 'listForRepo' | 'create' | 'createComment' | 'update'>
+    readonly issues: Pick<
+      Octokit['rest']['issues'],
+      'listForRepo' | 'get' | 'listComments' | 'create' | 'createComment' | 'update'
+    >
   }
 }
 
@@ -241,7 +250,7 @@ export function renderReport(facts: ReportFacts): string {
       : 'The branch protection rule for `main` was edited outside the settings automation, or no longer matches the declared settings.',
     '',
     `- Actor: \`${scalar(facts.login)}\` (type \`${scalar(facts.type)}\`, id \`${scalar(facts.id)}\`)`,
-    `- When: ${facts.at}`,
+    `- When: ${/^[\dTZ:.+-]+$/u.test(facts.at) ? facts.at : 'unknown'}`,
     `- Event: \`${inline(facts.action)}\`${facts.deleted ? ' (the rule no longer exists)' : ''}`,
     ...(changes.length === 0 ? ['- Reported changes: none reported'] : ['- Reported changes:', ...changes]),
     ...(facts.mismatched.length === 0
@@ -306,6 +315,118 @@ async function openIssueNumbers(
 
 function numbersText(numbers: readonly number[]): string {
   return numbers.map(number => `#${String(number)}`).join(', ')
+}
+
+/** The hidden marker: the time of the event that wrote the report, and nothing else. A bad time is left out. */
+function markerFor(updatedAt: unknown): string {
+  const usable =
+    typeof updatedAt === 'string' && /^[\dTZ:.+-]+$/u.test(updatedAt) && !Number.isNaN(Date.parse(updatedAt))
+  return `<!-- protection-drift:updated_at=${usable ? updatedAt : ''} -->`
+}
+
+/**
+ * The newest time recorded in the markers of `texts`, in milliseconds; `null` when no marker is there (an
+ * issue opened before the marker existed). A marker with no usable time is newer than any time.
+ */
+function newestRecorded(texts: readonly string[]): number | null {
+  const times = texts
+    .flatMap(text => [...text.matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
+    .map(match => Date.parse(match[1] ?? ''))
+    .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
+  return times.length === 0 ? null : Math.max(...times)
+}
+
+/** Whether an event at `matchTime` is strictly newer than everything recorded; a time that is not one never is. */
+function isNewerThan(matchTime: unknown, recorded: number | null): boolean {
+  const time = typeof matchTime === 'string' ? Date.parse(matchTime) : Number.NaN
+  return !Number.isNaN(time) && (recorded === null || time > recorded)
+}
+
+async function retryRead<T>(operation: () => Promise<T>, sleep: (ms: number) => Promise<void>): Promise<T> {
+  return retry(operation, {attempts: 3, delayMs: attempt => attempt * 2000, shouldRetry: isTransient, sleep})
+}
+
+/** The state and body of an issue, read with retries. */
+async function readIssue(
+  octokit: ProtectionDriftOctokit,
+  number: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<{state: string; body: string}> {
+  const issue = await retryRead(
+    async () => octokit.rest.issues.get({owner: 'fro-bot', repo: '.github', issue_number: number}),
+    sleep,
+  )
+  return {state: issue.data.state, body: issue.data.body ?? ''}
+}
+
+async function readComments(
+  octokit: ProtectionDriftOctokit,
+  number: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<readonly string[]> {
+  const pageSize = 100
+  const maxPages = 50
+  let found = Array.of<string>()
+  for (const page of Array.from({length: maxPages}, (_, index) => index + 1)) {
+    const response = await retryRead(
+      async () =>
+        octokit.rest.issues.listComments({
+          owner: 'fro-bot',
+          repo: '.github',
+          issue_number: number,
+          per_page: pageSize,
+          page,
+        }),
+      sleep,
+    )
+    found = found.concat(response.data.map(comment => comment.body ?? ''))
+    if (response.data.length < pageSize) break
+  }
+  return found
+}
+
+/** The job summary and the stdout line for a run that tried to close issues. */
+function reportClosing(
+  result: {readonly closed: readonly number[]; readonly kept: readonly number[]; readonly reopened: readonly number[]},
+  summarize: (title: string, detail: string) => void,
+  stdout: (text: string) => void,
+): void {
+  const {closed, kept, reopened} = result
+  const parts = [
+    closed.length > 0 ? `closed ${numbersText(closed)}` : undefined,
+    kept.length > 0 ? `left open ${numbersText(kept)}` : undefined,
+    reopened.length > 0 ? `reopened ${numbersText(reopened)}` : undefined,
+  ].filter(part => part !== undefined)
+  stdout(`protection-drift: ${parts.join('; ')}\n`)
+
+  if (kept.length === 0 && reopened.length === 0) {
+    summarize('issues closed', `- Issues: ${numbersText(closed)}`)
+    return
+  }
+  const lines = [
+    closed.length > 0 ? `- Closed: ${numbersText(closed)}` : undefined,
+    kept.length > 0 ? `- Left open: ${numbersText(kept)}` : undefined,
+    reopened.length > 0 ? `- Reopened: ${numbersText(reopened)}` : undefined,
+  ].filter(line => line !== undefined)
+  const keptOnly = closed.length === 0 && reopened.length === 0
+  const detail = keptOnly
+    ? 'A drift report on these issues is as new as this event or newer, or this event has no usable time, so the match did not close them. The next write by the settings automation that is newer than the drift closes them.'
+    : [
+        kept.length > 0
+          ? 'A drift report on the issues left open is as new as this event or newer, or this event has no usable time, so the match did not close them.'
+          : undefined,
+        reopened.length > 0
+          ? 'A drift report newer than this event was recorded while the issues were closing, so they were reopened.'
+          : undefined,
+      ]
+        .filter(sentence => sentence !== undefined)
+        .join(' ')
+  const title = keptOnly
+    ? 'issues left open'
+    : closed.length === 0 && kept.length === 0
+      ? 'issues reopened'
+      : 'issues partly closed'
+  summarize(title, `${detail}\n\n${lines.join('\n')}`)
 }
 
 /**
@@ -411,12 +532,23 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
     const open = await openIssueNumbers(octokit, params.sleep)
     const action = planAction(assessment, open.length > 0)
     const target = {owner: 'fro-bot', repo: '.github'}
+    // The report as it is written to an issue: it ends with the time of this event, for the runs that follow.
+    const written = `${report}${markerFor(updatedAt)}\n`
+    const reopen = async (number: number): Promise<void> => {
+      await octokit.rest.issues.update({...target, issue_number: number, state: 'open'})
+    }
+    /** Reads the issue back after a report was written to it; a close that happened in between is undone. */
+    const reopenIfClosed = async (number: number): Promise<boolean> => {
+      const closed = (await readIssue(octokit, number, params.sleep)).state === 'closed'
+      if (closed) await reopen(number)
+      return closed
+    }
 
     if (action === 'open') {
       const created = await octokit.rest.issues.create({
         ...target,
         title: 'Protection drift: main branch protection',
-        body: report,
+        body: written,
         labels: ['protection-drift'],
       })
       // Runs are not serialized, so another run may have opened an issue at the same time: the oldest wins.
@@ -425,7 +557,10 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
         summarize('issue opened', `${report}\n- Issue: ${created.data.html_url}`)
         params.stdout(`protection-drift: opened #${String(created.data.number)}\n`)
       } else {
-        await octokit.rest.issues.createComment({...target, issue_number: older, body: report})
+        // The older issue takes the report. It is read back before the new one closes, so a match that closed
+        // it in the meantime is undone and some issue stays open.
+        await octokit.rest.issues.createComment({...target, issue_number: older, body: written})
+        await reopenIfClosed(older)
         await octokit.rest.issues.createComment({
           ...target,
           issue_number: created.data.number,
@@ -448,20 +583,42 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
     } else if (action === 'comment') {
       // The oldest report carries the comments; the list is oldest first, so it is the first.
       const oldest = Math.min(...open)
-      await octokit.rest.issues.createComment({...target, issue_number: oldest, body: report})
-      summarize('comment added', `${report}\n- Issue: #${String(oldest)}`)
-      params.stdout(`protection-drift: commented on #${String(oldest)}\n`)
+      await octokit.rest.issues.createComment({...target, issue_number: oldest, body: written})
+      const reopened = await reopenIfClosed(oldest)
+      summarize(
+        'comment added',
+        `${report}\n- Issue: #${String(oldest)}${reopened ? `\n- Issue: #${String(oldest)} was closed while this report was posted, so it was reopened.` : ''}`,
+      )
+      params.stdout(`protection-drift: commented on #${String(oldest)}${reopened ? ', reopened' : ''}\n`)
     } else if (action === 'close') {
+      // Each issue closes only if this event is newer than every report on it, and is checked again afterwards.
+      const closed = Array.of<number>()
+      const kept = Array.of<number>()
+      const reopened = Array.of<number>()
       for (const number of open) {
+        const before = [
+          (await readIssue(octokit, number, params.sleep)).body,
+          ...(await readComments(octokit, number, params.sleep)),
+        ]
+        if (!isNewerThan(updatedAt, newestRecorded(before))) {
+          kept.push(number)
+          continue
+        }
         await octokit.rest.issues.createComment({
           ...target,
           issue_number: number,
           body: `The settings automation wrote the \`main\` rule at ${at} and every declared setting is present and matching. Closing.`,
         })
         await octokit.rest.issues.update({...target, issue_number: number, state: 'closed', state_reason: 'completed'})
+        const after = await readComments(octokit, number, params.sleep)
+        if (isNewerThan(updatedAt, newestRecorded([before[0] ?? '', ...after]))) {
+          closed.push(number)
+        } else {
+          await reopen(number)
+          reopened.push(number)
+        }
       }
-      summarize('issues closed', `- Issues: ${numbersText(open)}`)
-      params.stdout(`protection-drift: closed ${numbersText(open)}\n`)
+      reportClosing({closed, kept, reopened}, summarize, params.stdout)
     } else if (assessment.absent.length > 0) {
       summarize(
         'fields not reported',

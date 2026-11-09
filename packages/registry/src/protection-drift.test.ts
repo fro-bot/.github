@@ -578,12 +578,16 @@ describe('renderReport', () => {
 interface IssueRecord {
   number: number
   pull_request?: unknown
+  /** The body the issue carries; absent means none, as an issue opened before the marker existed has none. */
+  body?: string
+  comments?: readonly string[]
+  state?: 'open' | 'closed'
 }
 
 interface IssueWorldOptions {
   /** The open issues the first list returns. */
   open?: readonly IssueRecord[]
-  /** What a list returns once an issue has been created; defaults to `open`. */
+  /** Issues that appear when an issue is created, as another run's would. */
   afterCreate?: readonly IssueRecord[]
   /** The call that fails every time with a 500. */
   fail?: string
@@ -591,13 +595,36 @@ interface IssueWorldOptions {
   flaky?: {name: string; status: number; times: number}
   /** A list that never ends. */
   endless?: boolean
+  /** Runs before a call (its name, its parameters, and its count so far); an await here lets another run in. */
+  before?: (name: string, params: Record<string, unknown>, count: number) => Promise<void> | void
 }
 
+/** An in-memory issue tracker with the calls the watcher makes, and a log of every call. */
 function issueWorld(options: IssueWorldOptions = {}) {
   const calls: {name: string; params: Record<string, unknown>}[] = []
+  const counts: Record<string, number> = {}
   const failures: Record<string, number> = {}
-  let created = false
-  const guard = (name: string) => {
+  const store = new Map<
+    number,
+    {number: number; pull_request?: unknown; body: string; comments: string[]; state: string}
+  >()
+  const add = (issue: IssueRecord) => {
+    if (!store.has(issue.number)) {
+      store.set(issue.number, {
+        number: issue.number,
+        pull_request: issue.pull_request,
+        body: issue.body ?? '',
+        comments: [...(issue.comments ?? [])],
+        state: issue.state ?? 'open',
+      })
+    }
+  }
+  for (const issue of options.open ?? []) add(issue)
+
+  const enter = async (name: string, params: Record<string, unknown>): Promise<void> => {
+    calls.push({name, params})
+    counts[name] = (counts[name] ?? 0) + 1
+    await options.before?.(name, params, counts[name] ?? 0)
     if (options.fail === name) throw Object.assign(new Error('upstream body with a secret'), {status: 500})
     if (options.flaky?.name === name) {
       failures[name] = (failures[name] ?? 0) + 1
@@ -606,40 +633,51 @@ function issueWorld(options: IssueWorldOptions = {}) {
       }
     }
   }
+  const page = <T>(items: readonly T[], params: Record<string, unknown>): T[] =>
+    items.slice(((params.page as number) - 1) * 100, (params.page as number) * 100)
   const octokit = {
     rest: {
       issues: {
         listForRepo: async (params: Record<string, unknown>) => {
-          calls.push({name: 'list', params})
-          guard('list')
-          const size = 100
-          const page = params.page as number
+          await enter('list', params)
           if (options.endless === true) {
-            return {data: Array.from({length: size}, (_, index) => ({number: page * 1000 + index, pull_request: {}}))}
+            const number = params.page as number
+            return {data: Array.from({length: 100}, (_, index) => ({number: number * 1000 + index, pull_request: {}}))}
           }
-          const open = created ? (options.afterCreate ?? options.open ?? []) : (options.open ?? [])
-          return {data: open.slice((page - 1) * size, page * size)}
+          const open = [...store.values()].filter(issue => issue.state === 'open')
+          return {data: page(open, params).map(issue => ({number: issue.number, pull_request: issue.pull_request}))}
+        },
+        get: async (params: Record<string, unknown>) => {
+          await enter('get', params)
+          const issue = store.get(params.issue_number as number)
+          return {data: {number: issue?.number, state: issue?.state, body: issue?.body}}
+        },
+        listComments: async (params: Record<string, unknown>) => {
+          await enter('comments', params)
+          const issue = store.get(params.issue_number as number)
+          return {data: page(issue?.comments ?? [], params).map(body => ({body}))}
         },
         create: async (params: Record<string, unknown>) => {
-          calls.push({name: 'create', params})
-          guard('create')
-          created = true
+          await enter('create', params)
+          add({number: 900, body: params.body as string})
+          for (const issue of options.afterCreate ?? []) add(issue)
           return {data: {number: 900, html_url: 'https://github.com/fro-bot/.github/issues/900'}}
         },
         createComment: async (params: Record<string, unknown>) => {
-          calls.push({name: 'comment', params})
-          guard('comment')
+          await enter('comment', params)
+          store.get(params.issue_number as number)?.comments.push(params.body as string)
           return {data: {}}
         },
         update: async (params: Record<string, unknown>) => {
-          calls.push({name: 'close', params})
-          guard('close')
+          await enter(params.state === 'open' ? 'reopen' : 'close', params)
+          const issue = store.get(params.issue_number as number)
+          if (issue !== undefined) issue.state = params.state as string
           return {data: {}}
         },
       },
     },
   } as unknown as ProtectionDriftOctokit
-  return {octokit, calls, names: () => calls.map(call => call.name)}
+  return {octokit, calls, store, names: () => calls.map(call => call.name)}
 }
 
 function runner(options: {
@@ -741,7 +779,7 @@ describe('runProtectionDrift: opening and commenting', () => {
   it('comments on the open issue instead of opening another', async () => {
     const h = runner({event: DRIFT_EVENT, world: issueWorld({open: [{number: 31}]})})
     expect(await h.run()).toBe(0)
-    expect(h.world.names()).toEqual(['list', 'comment'])
+    expect(h.world.names()).toEqual(['list', 'comment', 'get'])
     expect(h.world.calls[1]?.params).toMatchObject({owner: 'fro-bot', repo: '.github', issue_number: 31})
     expect((h.world.calls[1]?.params as {body: string}).body).toContain('- Actor: `fro-bot`')
     expect(h.stdout).toEqual(['protection-drift: commented on #31\n'])
@@ -762,7 +800,7 @@ describe('runProtectionDrift: opening and commenting', () => {
     const open = Array.from({length: 100}, (_, index) => ({number: 1000 + index, pull_request: {}}))
     const h = runner({event: DRIFT_EVENT, world: issueWorld({open: [...open, {number: 77}]})})
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'list', 'comment'])
+    expect(h.world.names()).toEqual(['list', 'list', 'comment', 'get'])
     expect(h.world.calls[1]?.params).toMatchObject({page: 2})
     expect(h.world.calls[2]?.params).toMatchObject({issue_number: 77})
   })
@@ -785,7 +823,7 @@ describe('runProtectionDrift: opening and commenting', () => {
   it('reports the operator restoring the rule by hand as a non-settings edit', async () => {
     const h = runner({event: event({sender: OPERATOR_USER}), world: issueWorld({open: [{number: 31}]})})
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'comment'])
+    expect(h.world.names()).toEqual(['list', 'comment', 'get'])
   })
 
   it('reports a settings write that left out a review requirement (an _extends fallback)', async () => {
@@ -819,12 +857,12 @@ describe('runProtectionDrift: closing', () => {
   it('comments on the open issue and closes it when the settings App writes a matching rule (AE7)', async () => {
     const h = runner({event: event(), world: issueWorld({open: [{number: 31}]})})
     expect(await h.run()).toBe(0)
-    expect(h.world.names()).toEqual(['list', 'comment', 'close'])
-    expect(h.world.calls[1]?.params).toMatchObject({issue_number: 31})
-    expect((h.world.calls[1]?.params as {body: string}).body).toBe(
+    expect(h.world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close', 'comments'])
+    expect(h.world.calls[3]?.params).toMatchObject({issue_number: 31})
+    expect((h.world.calls[3]?.params as {body: string}).body).toBe(
       'The settings automation wrote the `main` rule at 2026-11-09T12:00:00Z and every declared setting is present and matching. Closing.',
     )
-    expect(h.world.calls[2]?.params).toEqual({
+    expect(h.world.calls[4]?.params).toEqual({
       owner: 'fro-bot',
       repo: '.github',
       issue_number: 31,
@@ -871,7 +909,9 @@ describe('runProtectionDrift: closing', () => {
     delete rule.updated_at
     const h = runner({event: event({rule}), world: issueWorld({open: [{number: 31}]})})
     await h.run()
-    expect((h.world.calls[1]?.params as {body: string}).body).toContain('at 2026-11-09T13:00:00.000Z')
+    // a match with no time is not newer than anything, so it closes nothing; the report reads the run's own clock
+    expect(h.world.names()).toEqual(['list', 'get', 'comments'])
+    expect(h.writes[0]?.content).toContain('left open')
   })
 })
 
@@ -997,8 +1037,8 @@ describe('runProtectionDrift: two runs that race to open the issue', () => {
       world: issueWorld({open: [], afterCreate: [{number: 31}, {number: 900}]}),
     })
     expect(await h.run()).toBe(0)
-    expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'comment', 'close'])
-    const [, , , onOlder, onNew, close] = h.world.calls
+    expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
+    const [, , , onOlder, , onNew, close] = h.world.calls
     expect(onOlder?.params).toMatchObject({owner: 'fro-bot', repo: '.github', issue_number: 31})
     expect((onOlder?.params as {body: string}).body).toContain('- Actor: `fro-bot` (type `User`, id `42`)')
     expect((onOlder?.params as {body: string}).body).toContain('`required_approving_review_count` (was `1`)')
@@ -1047,7 +1087,7 @@ describe('runProtectionDrift: two runs that race to open the issue', () => {
   it('does not look again when it commented on an existing issue', async () => {
     const h = runner({event: DRIFT_EVENT, world: issueWorld({open: [{number: 31}]})})
     await h.run()
-    expect(h.world.names()).toEqual(['list', 'comment'])
+    expect(h.world.names()).toEqual(['list', 'comment', 'get'])
   })
 
   it('fails when the second list fails, after the issue was created', async () => {
@@ -1060,7 +1100,12 @@ describe('runProtectionDrift: a match closes every open report', () => {
   it('comments on and closes each open issue, oldest first', async () => {
     const h = runner({event: event(), world: issueWorld({open: [{number: 60}, {number: 31}, {number: 44}]})})
     expect(await h.run()).toBe(0)
-    expect(h.world.names()).toEqual(['list', 'comment', 'close', 'comment', 'close', 'comment', 'close'])
+    expect(h.world.names()).toEqual([
+      'list',
+      ...['get', 'comments', 'comment', 'close', 'comments'].flatMap(name => [name]),
+      ...['get', 'comments', 'comment', 'close', 'comments'],
+      ...['get', 'comments', 'comment', 'close', 'comments'],
+    ])
     const closed = h.world.calls.filter(call => call.name === 'close').map(call => call.params.issue_number)
     expect(closed).toEqual([31, 44, 60])
     const commented = h.world.calls.filter(call => call.name === 'comment').map(call => call.params.issue_number)
@@ -1080,7 +1125,7 @@ describe('runProtectionDrift: a match closes every open report', () => {
   it('stops at the first failure, with exit 1', async () => {
     const h = runner({event: event(), world: issueWorld({open: [{number: 31}, {number: 44}], fail: 'close'})})
     expect(await h.run()).toBe(1)
-    expect(h.world.names()).toEqual(['list', 'comment', 'close'])
+    expect(h.world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close'])
   })
 })
 
@@ -1295,5 +1340,342 @@ describe('runProtectionDrift: a summary on every path', () => {
     expect(
       dup.writes[0]?.content.endsWith('- Issue: #900 was closed as a duplicate of #31, which carries this report.\n'),
     ).toBe(true)
+  })
+})
+
+const marker = (updatedAt: string) => `<!-- protection-drift:updated_at=${updatedAt} -->`
+const T10 = '2026-11-09T10:00:00Z'
+const T11 = '2026-11-09T11:00:00Z'
+const T12 = '2026-11-09T12:00:00Z'
+const T13 = '2026-11-09T13:00:00Z'
+
+/** A restore: the settings App writes the declared rule at `updatedAt`. */
+const matchAt = (updatedAt: string | undefined) => {
+  const rule = goodRule({updated_at: updatedAt})
+  if (updatedAt === undefined) delete rule.updated_at
+  return event({rule})
+}
+/** A weakening by the operator at `updatedAt`. */
+const driftAt = (updatedAt: string | undefined) => {
+  const rule = goodRule({required_approving_review_count: 0, updated_at: updatedAt})
+  if (updatedAt === undefined) delete rule.updated_at
+  return event({rule, sender: OPERATOR_USER, changes: {required_approving_review_count: {from: '1'}}})
+}
+
+describe('runProtectionDrift: every report records the time of its event', () => {
+  it('ends the body of a new issue with the marker, after the report', async () => {
+    const h = runner({event: driftAt(T12)})
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+    expect(body).toContain('- Actor: `fro-bot`')
+    expect(body.match(/protection-drift:/gu)).toHaveLength(1)
+  })
+
+  it('ends a comment on an open issue with the marker', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    const comment = h.world.calls.find(call => call.name === 'comment')?.params as {body: string}
+    expect(comment.body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+  })
+
+  it('ends the report moved to the older issue with the marker', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 31}]})})
+    await h.run()
+    const bodies = h.world.calls
+      .filter(call => call.name === 'comment' && call.params.issue_number === 31)
+      .map(call => (call.params as {body: string}).body)
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0]?.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+  })
+
+  it('writes an empty marker for an event with no time, and drops a time that is not one', async () => {
+    const none = runner({event: driftAt(undefined)})
+    await none.run()
+    expect((none.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
+      `\n${marker('')}\n`,
+    )
+    const hostile = runner({
+      event: driftAt('2026-11-09T12:00:00Z --> <!-- protection-drift:updated_at=2099-01-01T00:00:00Z'),
+    })
+    await hostile.run()
+    const body = (hostile.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body).toContain(`\n${marker('')}\n`)
+    // the only marker in the body is the one the run wrote, and the report shows no time it cannot vouch for
+    expect(body.match(/<!-- protection-drift:updated_at=/gu)).toHaveLength(1)
+    expect(body).toContain('- When: unknown')
+  })
+
+  it('does not put the marker in the job summary', async () => {
+    const h = runner({event: driftAt(T12)})
+    await h.run()
+    expect(h.writes[0]?.content).not.toContain('<!--')
+  })
+})
+
+describe('runProtectionDrift: a match closes only what it is newer than', () => {
+  const seeded = (updatedAt: string, extra: Partial<IssueRecord> = {}) =>
+    issueWorld({open: [{number: 31, body: `report\n${marker(updatedAt)}\n`, ...extra}]})
+
+  it('closes an issue whose every drift report is older than the match', async () => {
+    const h = runner({event: matchAt(T12), world: seeded(T10)})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close', 'comments'])
+    expect(h.world.store.get(31)?.state).toBe('closed')
+    expect(h.writes[0]?.content).toBe('### Protection drift: issues closed\n\n- Issues: #31\n')
+  })
+
+  it('leaves the issue open when its drift report is newer than the match (a delayed older restore)', async () => {
+    const h = runner({event: matchAt(T11), world: seeded(T13)})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names()).toEqual(['list', 'get', 'comments'])
+    expect(h.world.store.get(31)?.state).toBe('open')
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: issues left open\n\nA drift report on these issues is as new as this event or newer, or this event has no usable time, so the match did not close them. The next write by the settings automation that is newer than the drift closes them.\n\n- Left open: #31\n',
+    )
+    expect(h.stdout).toEqual(['protection-drift: left open #31\n'])
+  })
+
+  it('leaves the issue open when the drift report is exactly as new as the match', async () => {
+    const h = runner({event: matchAt(T12), world: seeded(T12)})
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('reads a newer drift report from a comment, not only from the body', async () => {
+    const h = runner({
+      event: matchAt(T11),
+      world: seeded(T10, {comments: [`more drift\n${marker(T12)}`, 'unrelated comment']}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('takes the newest of several reports', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: seeded(T10, {comments: [marker(T11), marker(T13), marker(T10)]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('reads the comments past the first page', async () => {
+    const filler = Array.from({length: 100}, () => 'no marker')
+    const h = runner({event: matchAt(T12), world: seeded(T10, {comments: [...filler, marker(T13)]})})
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+    expect(h.world.calls.filter(call => call.name === 'comments').map(call => call.params.page)).toEqual([1, 2])
+  })
+
+  it.each([
+    ['an empty marker', marker('')],
+    ['a marker with a time that is not one', marker('tomorrow')],
+  ])('treats %s as newer than anything, so it never closes', async (_name, mark) => {
+    const h = runner({event: matchAt(T13), world: issueWorld({open: [{number: 31, body: `report\n${mark}\n`}]})})
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('never closes on a match with no time', async () => {
+    const h = runner({event: matchAt(undefined), world: seeded(T10)})
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('open')
+    expect(h.world.names()).toEqual(['list', 'get', 'comments'])
+  })
+
+  it('never closes on a match whose time is not one', async () => {
+    const h = runner({event: matchAt('yesterday'), world: seeded(T10)})
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('closes an issue opened before the marker existed, which records no time', async () => {
+    const h = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('closes what it is newer than and keeps what it is not, and says which', async () => {
+    const h = runner({
+      event: matchAt(T12),
+      world: issueWorld({
+        open: [
+          {number: 31, body: marker(T10)},
+          {number: 44, body: marker(T13)},
+          {number: 60, body: marker(T11)},
+        ],
+      }),
+    })
+    expect(await h.run()).toBe(0)
+    expect([31, 44, 60].map(number => h.world.store.get(number)?.state)).toEqual(['closed', 'open', 'closed'])
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: issues partly closed\n\nA drift report on the issues left open is as new as this event or newer, or this event has no usable time, so the match did not close them.\n\n- Closed: #31, #60\n- Left open: #44\n',
+    )
+    expect(h.stdout).toEqual(['protection-drift: closed #31, #60; left open #44\n'])
+  })
+
+  it('reopens an issue when a newer drift report landed before it closed', async () => {
+    // A report newer than the match appears after the check and before the close: the re-read after the close sees it.
+    let seen = 0
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      before: (name, params) => {
+        if (name === 'comments') seen += 1
+        if (name === 'close' && seen === 1) world.store.get(params.issue_number as number)?.comments.push(marker(T13))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(world.store.get(31)?.state).toBe('open')
+    expect(world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close', 'comments', 'reopen'])
+    expect(h.writes[0]?.content).toBe(
+      '### Protection drift: issues reopened\n\nA drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Reopened: #31\n',
+    )
+    expect(h.stdout).toEqual(['protection-drift: reopened #31\n'])
+  })
+
+  it('does not reopen for a report older than the event that closed it', async () => {
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      before: (name, params) => {
+        if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T11))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    await h.run()
+    expect(world.store.get(31)?.state).toBe('closed')
+    expect(world.names()).not.toContain('reopen')
+  })
+
+  it('exits 1 when the reopen fails', async () => {
+    const world = issueWorld({
+      open: [{number: 31, body: marker(T10)}],
+      fail: 'reopen',
+      before: (name, params) => {
+        if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
+      },
+    })
+    const h = runner({event: matchAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
+  })
+})
+
+describe('runProtectionDrift: drift and a match that race', () => {
+  it('(match first) reopens when a newer drift report lands between the match closing and its re-read', async () => {
+    // The match checks, a drift run records itself, the match closes, and its re-read finds the drift.
+    let drift: Promise<number> | undefined
+    const hooked = issueWorld({
+      open: [{number: 1, body: marker(T10)}],
+      before: async (name, params) => {
+        if (name === 'comment' && String(params.body).includes('every declared setting') && drift === undefined) {
+          drift = runner({event: driftAt(T12), world: hooked}).run()
+          await drift
+        }
+      },
+    })
+    const older = runner({event: matchAt(T11), world: hooked})
+    expect(await older.run()).toBe(0)
+    expect(await drift).toBe(0)
+    expect(hooked.store.get(1)?.state).toBe('open')
+    expect(hooked.names()).toContain('reopen')
+  })
+
+  it('(drift first) reopens when a match closed the issue between the drift run listing it and commenting', async () => {
+    let match: Promise<number> | undefined
+    const world = issueWorld({
+      open: [{number: 1, body: marker(T10)}],
+      before: async (name, params) => {
+        if (name === 'comment' && String(params.body).includes('Actor') && match === undefined) {
+          match = runner({event: matchAt(T11), world}).run()
+          await match
+        }
+      },
+    })
+    const newer = runner({event: driftAt(T12), world})
+    expect(await newer.run()).toBe(0)
+    expect(await match).toBe(0)
+    expect(world.store.get(1)?.state).toBe('open')
+    expect(world.names().filter(name => name === 'reopen')).toHaveLength(1)
+  })
+
+  it('leaves a settled issue closed: the drift is older than the match that closed it', async () => {
+    const world = issueWorld({open: [{number: 1, body: marker(T10)}]})
+    await runner({event: matchAt(T12), world}).run()
+    expect(world.store.get(1)?.state).toBe('closed')
+    // a drift event from before the match, delivered late, finds the issue closed and none open: it opens its own
+    const late = runner({event: driftAt(T11), world})
+    await late.run()
+    expect(world.names()).toContain('create')
+  })
+
+  it('reopens an issue found closed after a drift comment, and says so', async () => {
+    const world = issueWorld({
+      open: [{number: 31}],
+      before: (name, params) => {
+        const issue = name === 'get' ? world.store.get(params.issue_number as number) : undefined
+        if (issue !== undefined) issue.state = 'closed'
+      },
+    })
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(world.store.get(31)?.state).toBe('open')
+    expect(world.names()).toEqual(['list', 'comment', 'get', 'reopen'])
+    expect(h.stdout).toEqual(['protection-drift: commented on #31, reopened\n'])
+    expect(h.writes[0]?.content).toContain('- Issue: #31 was closed while this report was posted, so it was reopened.')
+  })
+
+  it('does not reopen an issue that is still open after a drift comment', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(h.world.names()).toEqual(['list', 'comment', 'get'])
+  })
+
+  it('exits 1 when the issue cannot be read back after a drift comment', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}], fail: 'get'})})
+    expect(await h.run()).toBe(1)
+  })
+})
+
+describe('runProtectionDrift: the duplicate path never leaves the report with no open issue', () => {
+  it('reopens the older issue if a match closed it before the report reached it, then closes its own', async () => {
+    let match: Promise<number> | undefined
+    const world = issueWorld({
+      afterCreate: [{number: 1, body: marker(T10)}],
+      before: async (name, params) => {
+        if (name === 'comment' && params.issue_number === 1 && match === undefined) {
+          // the older issue is closed by a restore that predates this drift, after this run saw it open
+          match = runner({event: matchAt(T11), world}).run()
+          await match
+        }
+      },
+    })
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(0)
+    expect(await match).toBe(0)
+    expect(world.store.get(1)?.state).toBe('open')
+    expect(world.store.get(900)?.state).toBe('closed')
+    expect(h.stdout).toEqual(['protection-drift: opened #900, closed as a duplicate of #1\n'])
+  })
+
+  it('keeps its own issue open when the older one cannot be reopened', async () => {
+    const world = issueWorld({
+      afterCreate: [{number: 1, body: marker(T10), state: 'open'}],
+      fail: 'reopen',
+      before: (name, params) => {
+        const issue = name === 'get' && params.issue_number === 1 ? world.store.get(1) : undefined
+        if (issue !== undefined) issue.state = 'closed'
+      },
+    })
+    const h = runner({event: driftAt(T12), world})
+    expect(await h.run()).toBe(1)
+    expect(world.store.get(900)?.state).toBe('open')
+  })
+
+  it('reads the older issue back before it closes its own', async () => {
+    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 1}]})})
+    await h.run()
+    expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
   })
 })
