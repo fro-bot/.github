@@ -64,8 +64,8 @@ interface Scenario {
   variable?: () => string | undefined | Error
   approve?: () => unknown
   merge?: () => unknown
-  /** Milliseconds every API call takes on the fake clock. */
-  callCost?: number
+  /** Milliseconds every API call takes on the fake clock, or per call: its name and its count so far (1-based). */
+  callCost?: number | ((name: string, count: number) => number)
 }
 
 function checksFor(contexts: readonly string[]) {
@@ -85,7 +85,8 @@ function world(scenario: Scenario = {}) {
   let polls = 0
   const record = (name: string, params: unknown) => {
     ;(requests[name] ??= []).push(params)
-    clock.now += scenario.callCost ?? 0
+    const cost = scenario.callCost ?? 0
+    clock.now += typeof cost === 'number' ? cost : cost(name, requests[name]?.length ?? 0)
   }
   const pulls: () => PullState | Error = scenario.pulls ?? (() => ({}))
   const protection = scenario.protection ?? (() => protectionOf(checksFor(DECLARED)))
@@ -611,11 +612,6 @@ describe('selfMerge: the kill switch and the dry run (AE10)', () => {
     expect(w.sleeps).toEqual([MINUTE, MINUTE])
   })
 
-  it('goes live when the variable is turned on during the wait', async () => {
-    const w = world({variable: () => 'on', runs: poll => (poll < 2 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
-    expect(await selfMerge(w.input({switchAtStart: undefined}))).toMatchObject(LIVE)
-  })
-
   it('stops before the approval when the variable is turned off during the wait', async () => {
     const w = world({variable: () => 'off'})
     expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
@@ -636,9 +632,16 @@ describe('selfMerge: the kill switch and the dry run (AE10)', () => {
     expect(w.requests.getVariable).toHaveLength(2)
   })
 
-  it('treats an unset variable (404) as off', async () => {
+  it('treats an unset variable (404) as unreadable when the run started live, because a PAT without access sees none', async () => {
     const w = world({variable: () => undefined})
-    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({code: 'DRY_RUN'})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 1, code: 'SWITCH_UNREADABLE'})
+    expect(w.log).toEqual([])
+  })
+
+  it('stays a dry run on a 404 when the run did not start live', async () => {
+    const w = world({variable: () => undefined})
+    expect(await selfMerge(w.input({switchAtStart: undefined}))).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+    expect(w.log).toEqual([])
   })
 
   it('fails closed with exit 1 when a run that started live cannot read the variable', async () => {
@@ -1041,7 +1044,7 @@ describe('selfMerge: summaries for every outcome', () => {
   })
 
   it('titles a dry run, a timeout and a failed check', async () => {
-    expect(heading(await selfMerge(world({variable: () => undefined}).input()))).toBe(
+    expect(heading(await selfMerge(world({variable: () => undefined}).input({switchAtStart: undefined})))).toBe(
       '### Promotion self-merge: dry run',
     )
     expect(heading(await selfMerge(world({runs: () => []}).input()))).toBe('### Promotion self-merge: timed out')
@@ -1320,6 +1323,10 @@ describe('selfMerge: the full text of every summary', () => {
   ]
   const summary = (title: string, detail: string, withPullRequest = true) =>
     [`### Promotion self-merge: ${title}`, '', detail, '', ...facts(withPullRequest)].join('\n')
+  const AFTER =
+    'The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.'
+  /** A summary of a run that had already approved: the detail, then the sentence about the approval. */
+  const approvedSummary = (title: string, detail: string) => summary(title, `${detail} ${AFTER}`)
 
   const throwing = (status: number) => () => {
     throw apiError(status)
@@ -1450,7 +1457,7 @@ describe('selfMerge: the full text of every summary', () => {
     [
       'switched off',
       async () => selfMerge(world({variable: script<string | undefined>('on', 'off')}).input()),
-      summary(
+      approvedSummary(
         'switched off after approval',
         'The pull request was approved, then `PROMOTION_SELF_MERGE` was turned off before the merge, so it was not merged.',
       ),
@@ -1463,7 +1470,7 @@ describe('selfMerge: the full text of every summary', () => {
     [
       'open waiting',
       async () => selfMerge(world({merge: throwing(409)}).input()),
-      summary(
+      approvedSummary(
         'open, waiting',
         'GitHub refused the merge because the head or the base moved. The pull request stays open and the next daily run handles it.',
       ),
@@ -1472,7 +1479,7 @@ describe('selfMerge: the full text of every summary', () => {
       'merge blocked',
       async () =>
         selfMerge(world({merge: throwing(405), pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'})}).input()),
-      summary(
+      approvedSummary(
         'merge blocked',
         'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
       ),
@@ -1480,7 +1487,7 @@ describe('selfMerge: the full text of every summary', () => {
     [
       'merge failed',
       async () => selfMerge(world({merge: throwing(500)}).input()),
-      summary('merge failed', 'The merge did not complete and the pull request is not merged.'),
+      approvedSummary('merge failed', 'The merge did not complete and the pull request is not merged.'),
     ],
     [
       'API failure',
@@ -1601,7 +1608,7 @@ describe('runSelfMerge: values it passes on', () => {
     const none = drive({...live, PROMOTION_PR: undefined, PROMOTION_PIN: undefined})
     await none.run()
     expect(none.writes).toEqual([
-      '### Promotion self-merge: no pull request\n\nThe PR step opened no promotion pull request, so there is nothing to approve.\n\n- Pinned commit: ``\n',
+      '### Promotion self-merge: no pull request\n\nThe PR step opened no promotion pull request, so there is nothing to approve.\n\n- Pinned commit: not available\n',
     ])
     const unqualified = drive({...live, PROMOTION_QUALIFIES: 'false'})
     await unqualified.run()
@@ -1614,5 +1621,385 @@ describe('runSelfMerge: values it passes on', () => {
     const unqualified = drive({...live, PROMOTION_QUALIFIES: 'false'})
     await unqualified.run()
     expect(unqualified.out).toEqual(['promotion-self-merge: NOT_QUALIFYING\n'])
+  })
+})
+
+describe('selfMerge: a run that started as a dry run stays one', () => {
+  it('does not approve or merge when the variable is turned on during the wait, and never reads it', async () => {
+    const w = world({variable: () => 'on', runs: poll => (poll < 3 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
+    const outcome = await selfMerge(w.input({switchAtStart: undefined}))
+    expect(outcome).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+    expect(w.log).toEqual([])
+    expect(w.requests.approve).toBeUndefined()
+    expect(w.requests.merge).toBeUndefined()
+    expect(w.requests.getVariable).toBeUndefined()
+    expect(w.sleeps).toEqual([MINUTE, MINUTE])
+  })
+
+  it.each(['off', '', 'ON', 'true'])('stays a dry run when it started as %j and the variable reads on', async value => {
+    const w = world({variable: () => 'on'})
+    expect(await selfMerge(w.input({switchAtStart: value}))).toMatchObject({code: 'DRY_RUN'})
+    expect(w.log).toEqual([])
+  })
+
+  it('does not approve when it started live and the variable is off at the approval', async () => {
+    const w = world({variable: script<string | undefined>('off')})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 0, code: 'DRY_RUN'})
+    expect(w.log).toEqual([])
+    expect(w.requests.getVariable).toHaveLength(1)
+  })
+
+  it('does not merge when it started live and the variable is off at the merge', async () => {
+    const w = world({variable: script<string | undefined>('on', 'off')})
+    expect(await selfMerge(w.input({switchAtStart: 'on'}))).toMatchObject({exitCode: 0, code: 'SWITCH_TURNED_OFF'})
+    expect(w.log).toEqual(['approve'])
+  })
+})
+
+describe('selfMerge: required checks that change during the wait', () => {
+  const withExtra = [...checksFor(DECLARED), {context: 'Extra', app_id: 15_368}]
+  const extraGreen = (poll: number): readonly RunState[] => [
+    ...GREEN_RUNS,
+    poll < 3 ? {name: 'Extra', status: 'in_progress', conclusion: null} : {name: 'Extra'},
+  ]
+
+  it('starts the wait over on a context that was added, and waits for it', async () => {
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(withExtra)),
+      runs: poll => (poll < 2 ? GREEN_RUNS : extraGreen(poll)),
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.getBranch).toHaveLength(3)
+    expect(w.polls()).toBe(3)
+    expect(w.log).toEqual(['approve', 'merge'])
+  })
+
+  it('fails the run on an added context that fails, and approves nothing', async () => {
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(withExtra)),
+      runs: poll => (poll < 2 ? GREEN_RUNS : [...GREEN_RUNS, {name: 'Extra', conclusion: 'failure'}]),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+    expect(outcome.summary).toContain('`Extra`')
+    expect(w.log).toEqual([])
+  })
+
+  it('starts over when a required context is bound to another app', async () => {
+    const rebound = checksFor(DECLARED).map(check => (check.context === 'Lint' ? {...check, app_id: 99} : check))
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(rebound)),
+      runs: poll => (poll < 2 ? GREEN_RUNS : [...GREEN_RUNS, {name: 'Lint', app: 99, conclusion: 'failure'}]),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'CHECK_FAILED'})
+    expect(outcome.summary).toContain('`Lint`')
+    expect(w.log).toEqual([])
+  })
+
+  it('starts over when a context was removed too, so the list it approves on is the list it waited on', async () => {
+    const w = world({
+      protection: script(protectionOf(withExtra), protectionOf(checksFor(DECLARED))),
+      runs: () => [...GREEN_RUNS, {name: 'Extra'}],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.getBranch).toHaveLength(3)
+    expect(w.polls()).toBe(2)
+  })
+
+  it('does not start over when the list is the same', async () => {
+    const w = world()
+    await selfMerge(w.input())
+    expect(w.requests.getBranch).toHaveLength(2)
+    expect(w.polls()).toBe(1)
+  })
+
+  it('keeps the restart inside the same 60-minute deadline', async () => {
+    const w = world({
+      protection: script(protectionOf(checksFor(DECLARED)), protectionOf(withExtra)),
+      runs: poll =>
+        poll < 50 ? GREEN_RUNS.slice(0, 1) : [...GREEN_RUNS, {name: 'Extra', status: 'queued', conclusion: null}],
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('`Extra`')
+    // 49 minutes in, the list changes; the second wait ends at minute 60 of the run, not 60 minutes later
+    expect(w.clock.now - 1_000_000).toBe(60 * MINUTE)
+    expect(w.log).toEqual([])
+  })
+
+  it('stops before approving when the list keeps changing', async () => {
+    let reads = 0
+    const w = world({
+      protection: () => {
+        reads += 1
+        return protectionOf([...checksFor(DECLARED), {context: `Extra ${String(reads)}`, app_id: 15_368}])
+      },
+      runs: () => [...GREEN_RUNS, ...Array.from({length: 10}, (_, index) => ({name: `Extra ${String(index + 1)}`}))],
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'PROTECTION_CHANGED'})
+    expect(w.requests.getBranch).toHaveLength(5)
+    expect(w.log).toEqual([])
+    expect(outcome.summary).toContain('kept changing')
+  })
+
+  it('stops when the re-read list no longer holds a declared context', async () => {
+    const w = world({protection: script(protectionOf(checksFor(DECLARED)), protectionOf(checksFor(['Lint'])))})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 1, code: 'PROTECTION_SHORT'})
+  })
+})
+
+describe('selfMerge: one deadline for every request', () => {
+  const HOUR = 60 * MINUTE
+
+  it('ends a wait with TIMEOUT when one request outlasts the deadline, without another request', async () => {
+    const w = world({
+      runs: () => GREEN_RUNS.slice(0, 1),
+      callCost: (name, count) => (name === 'listRuns' && count === 2 ? HOUR + MINUTE : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('did not settle within 60 minutes')
+    expect(w.requests.listStatuses).toHaveLength(1)
+    expect(w.log).toEqual([])
+  })
+
+  it('stops paging when the deadline passes in the middle of a poll', async () => {
+    const full = Array.from({length: 100}, (_, index) => ({id: 1000 + index, name: `Other ${String(index)}`}))
+    const w = world({runs: () => full, callCost: name => (name === 'listRuns' ? MINUTE : 0)})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.listRuns?.length).toBeLessThanOrEqual(62)
+  })
+
+  it('ends with TIMEOUT when the first read already used the whole wait', async () => {
+    const w = world({callCost: name => (name === 'getBranch' ? HOUR + MINUTE : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.getPull).toBeUndefined()
+  })
+
+  it('does not retry a request past the deadline', async () => {
+    const w = world({
+      runs: script<readonly RunState[] | Error>(apiError(503)),
+      callCost: name => (name === 'listRuns' ? HOUR : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.requests.listRuns).toHaveLength(1)
+  })
+
+  it('leaves time after the wait for the reads, the approval and the merge', async () => {
+    const w = world({callCost: (name, count) => (name === 'getBranch' && count === 2 ? 14 * MINUTE : 0)})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+  })
+
+  it('ends with TIMEOUT when the time after the wait runs out before the approval', async () => {
+    const w = world({callCost: (name, count) => (name === 'getBranch' && count === 2 ? 16 * MINUTE + HOUR : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(outcome.summary).toContain('time reserved for the approval and the merge ran out')
+    expect(outcome.summary).not.toContain('did not settle')
+    expect(w.log).toEqual([])
+  })
+
+  it('ends with TIMEOUT before the merge, and says the approval was submitted', async () => {
+    const w = world({callCost: (name, count) => (name === 'getVariable' && count === 2 ? 76 * MINUTE : 0)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.log).toEqual(['approve'])
+    expect(outcome.summary).toContain('already submitted')
+  })
+
+  it('counts the hard deadline from the start of the run, not from the end of the wait', async () => {
+    const w = world({
+      runs: poll => (poll < 40 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS),
+      callCost: (name, count) => (name === 'getVariable' && count === 1 ? 40 * MINUTE : 0),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({code: 'TIMEOUT'})
+    expect(w.log).toEqual([])
+  })
+})
+
+describe('selfMerge: every outcome after the approval says it was submitted', () => {
+  const submitted = 'already submitted as `fro-bot` on the pinned commit'
+
+  const cases: readonly (readonly [string, string, Scenario])[] = [
+    ['STALE_HEAD', 'the head moved', {pulls: script<PullState>({}, {}, {head: MOVED})}],
+    ['HOLD_MERGE', 'hold-merge was added', {pulls: script<PullState>({}, {}, {labels: ['automerge', 'hold-merge']})}],
+    ['CLOSED_UNMERGED', 'the pull request closed', {pulls: script<PullState>({}, {}, {state: 'closed'})}],
+    ['ALREADY_MERGED', 'the pull request merged', {pulls: script<PullState>({}, {}, {merged: true})}],
+    ['NOT_LABELED', 'the label was removed', {pulls: script<PullState>({}, {}, {labels: []})}],
+    ['SWITCH_TURNED_OFF', 'the switch was turned off', {variable: script<string | undefined>('on', 'off')}],
+    [
+      'SWITCH_UNREADABLE',
+      'the switch became unreadable',
+      {variable: script<string | undefined | Error>('on', apiError(403))},
+    ],
+    [
+      'OPEN_WAITING',
+      'the merge answered 409',
+      {
+        merge: () => {
+          throw apiError(409)
+        },
+      },
+    ],
+    [
+      'MERGE_BLOCKED',
+      'the merge was blocked',
+      {
+        merge: () => {
+          throw apiError(405)
+        },
+        pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'}),
+      },
+    ],
+    [
+      'MERGE_FAILED',
+      'the merge failed',
+      {
+        merge: () => {
+          throw apiError(500)
+        },
+        pulls: script<PullState | Error>({}, {}, {}, {}, {}, {}, {}, {}),
+      },
+    ],
+    ['MERGE_FAILED', 'the merge did not merge', {merge: () => ({data: {merged: false}})}],
+    ['API_FAILED', 'a read failed after the approval', {pulls: script<PullState | Error>({}, {}, apiError(404))}],
+  ]
+
+  it.each(cases)('%s (%s)', async (code, _why, scenario) => {
+    const w = world(scenario)
+    const outcome = await selfMerge(w.input())
+    expect(outcome.code).toBe(code)
+    expect(w.log[0]).toBe('approve')
+    expect(outcome.summary).toContain(submitted)
+    expect(outcome.summary).toContain('check the pull request')
+    expect(outcome.summary).not.toContain('Nothing was approved')
+    expect(outcome.summary).not.toContain('Nothing further was done')
+  })
+
+  it('keeps the merged summary as it is', async () => {
+    const outcome = await selfMerge(world().input())
+    expect(outcome.summary).not.toContain('already submitted')
+  })
+
+  it.each([
+    ['STALE_HEAD', {pulls: () => ({head: MOVED})}],
+    ['HOLD_MERGE', {pulls: () => ({labels: ['automerge', 'hold-merge']})}],
+    [
+      'APPROVE_FAILED',
+      {
+        approve: () => {
+          throw apiError(403)
+        },
+      },
+    ],
+    ['API_FAILED', {pulls: () => apiError(404)}],
+    ['DRY_RUN', {variable: () => 'off'}],
+  ] as const)('does not say an approval was submitted when %s stops the run before it', async (code, scenario) => {
+    const outcome = await selfMerge(world(scenario).input({switchAtStart: code === 'DRY_RUN' ? undefined : 'on'}))
+    expect(outcome.code).toBe(code)
+    expect(outcome.summary).not.toContain('already submitted')
+  })
+
+  it('says a refused approval was not submitted', async () => {
+    const w = world({
+      approve: () => {
+        throw apiError(403)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome.code).toBe('APPROVE_FAILED')
+    expect(outcome.summary).not.toContain('already submitted')
+  })
+})
+
+describe('runSelfMerge: a summary for every early stop', () => {
+  const SETTINGS = `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n${DECLARED.map(context => `          - '${context}'`).join('\n')}\n`
+
+  function drive(env: Record<string, string | undefined>, options: {settings?: () => string; client?: boolean} = {}) {
+    const w = world()
+    const writes: string[] = []
+    const out: string[] = []
+    const err: string[] = []
+    const run = async () =>
+      runSelfMerge({
+        env: {GH_TOKEN: 'pat-value', GITHUB_STEP_SUMMARY: '/s', ...env},
+        readSettings: options.settings ?? (() => SETTINGS),
+        createClient: async () => {
+          if (options.client === false) throw new Error('token pat-value rejected')
+          return w.octokit
+        },
+        now: () => w.clock.now,
+        sleep: async ms => {
+          w.clock.now += ms
+        },
+        stdout: text => out.push(text),
+        stderr: text => err.push(text),
+        append: (_path, content) => writes.push(content),
+      })
+    return {run, writes, out, err}
+  }
+
+  const base = {PROMOTION_PR: '7', PROMOTION_PIN: PIN, PROMOTION_QUALIFIES: 'true', PROMOTION_SELF_MERGE: 'on'}
+  const facts = `- Pull request: #7\n- Pinned commit: \`${PIN}\`\n`
+
+  it('explains a pull request number that is not a number, without echoing it', async () => {
+    const h = drive({...base, PROMOTION_PR: 'abc `<script>`'})
+    expect(await h.run()).toBe(1)
+    expect(h.writes).toEqual([
+      `### Promotion self-merge: invalid pull request number\n\nThe pull request number from the PR step is not a positive integer, so the run stopped before it read anything. Check the "Open data merge PR" step and its outputs.\n\n- Pinned commit: \`${PIN}\`\n`,
+    ])
+    expect(h.err).toEqual(['::error::promotion-self-merge: INVALID_PULL_REQUEST\n'])
+    expect(h.writes.join('')).not.toContain('script')
+  })
+
+  it('explains a pin that is not a commit, without echoing it', async () => {
+    const h = drive({...base, PROMOTION_PIN: 'not-a-sha `x`'})
+    expect(await h.run()).toBe(1)
+    expect(h.writes).toEqual([
+      '### Promotion self-merge: invalid pinned commit\n\nThe pinned commit from the pin step is not a 40-character commit id, so the run stopped before it read anything. Check the "Pin the data commit" step.\n\n- Pull request: #7\n- Pinned commit: not available\n',
+    ])
+    expect(h.writes.join('')).not.toContain('not-a-sha')
+  })
+
+  it('explains a missing token', async () => {
+    const h = drive({...base, GH_TOKEN: ''})
+    expect(await h.run()).toBe(1)
+    expect(h.writes).toEqual([
+      `### Promotion self-merge: no token\n\nThe step has no \`FRO_BOT_PAT\`, so it cannot read the checks or approve. Check the repository secret and the step's env.\n\n${facts}`,
+    ])
+  })
+
+  it('explains settings that cannot be read, without the error', async () => {
+    const h = drive(base, {
+      settings: () => {
+        throw new Error('ENOENT: /secret/path')
+      },
+    })
+    expect(await h.run()).toBe(1)
+    expect(h.writes).toEqual([
+      `### Promotion self-merge: settings unreadable\n\n\`.github/settings.yml\` could not be read or parsed, so the declared checks are unknown. Check the file on \`main\`.\n\n${facts}`,
+    ])
+    expect(h.writes.join('')).not.toContain('secret')
+  })
+
+  it('explains a client that cannot be created, without the error', async () => {
+    const h = drive(base, {client: false})
+    expect(await h.run()).toBe(1)
+    expect(h.writes).toEqual([
+      `### Promotion self-merge: GitHub API failure\n\nThe GitHub client could not be created, so the run stopped before it read anything. Check the token.\n\n${facts}`,
+    ])
+    expect(h.writes.join('')).not.toContain('pat-value')
+  })
+
+  it('shows no pull request line and no pin when the PR step opened none', async () => {
+    const h = drive({...base, PROMOTION_PR: undefined, PROMOTION_PIN: undefined})
+    expect(await h.run()).toBe(0)
+    expect(h.writes[0]).toContain('- Pinned commit: not available\n')
+    expect(h.writes[0]).not.toContain('Pull request:')
   })
 })
