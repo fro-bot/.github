@@ -140,6 +140,20 @@ interface FixtureParams {
   triggerCommentId?: string
   /** The event kind that dispatched it, as the workflow passes `inputs.comment_event`. */
   triggerCommentEvent?: string
+  /** Visibility per repository, `null` for a 404; every repository of `items` is public unless it is listed here. */
+  visibility?: Record<string, string | null>
+}
+
+/** The `ROLLOUT_TRACKER_VISIBILITY_JSON` fixture: public for every repository of the items, then the overrides. */
+function visibilityFixture(
+  items: readonly {content_repo: string}[],
+  overrides: Record<string, string | null> = {},
+): string {
+  const visibility: Record<string, string | null> = {}
+  for (const item of items) {
+    if (item.content_repo !== '') visibility[item.content_repo] = 'public'
+  }
+  return JSON.stringify({...visibility, ...overrides})
 }
 
 function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
@@ -151,6 +165,7 @@ function fixtureEnv(params: FixtureParams): Record<string, string | undefined> {
     ROLLOUT_TRACKER_COMMENTS_JSON: params.comments === undefined ? undefined : JSON.stringify(params.comments),
     ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(params.issues),
     ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
+    ROLLOUT_TRACKER_VISIBILITY_JSON: visibilityFixture(params.items, params.visibility),
     ROLLOUT_TRACKER_RELEASES_JSON: JSON.stringify(signals.releases),
     ROLLOUT_TRACKER_DEPLOYS_JSON: JSON.stringify(signals.deploys),
     ROLLOUT_TRACKER_HEALTH_JSON: JSON.stringify(signals.health),
@@ -686,6 +701,21 @@ describe('rollout-tracker-snapshot CLI fixture path', () => {
 const FAKE_GH = [
   '#!/bin/sh',
   'if [ "$1" != api ]; then echo "unexpected gh command: $*" >&2; exit 1; fi',
+  // A repository visibility read: `gh api repos/<owner>/<repo> --jq .visibility`. It is answered before the
+  // blanket API failure below, so a test can fail the signal reads and leave the visibility reads alone.
+  'case "$2" in',
+  '  repos/*/*/*) ;;',
+  '  repos/*/*)',
+  '    name=$(echo "$2" | sed "s#^repos/##")',
+  '    echo "$name" >> "$FAKE_GH_VISIBILITY_LOG"',
+  '    case " $FAKE_GH_VIS_NOTFOUND " in *" $name "*) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;; esac',
+  '    case " $FAKE_GH_VIS_ERROR " in *" $name "*) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;; esac',
+  '    case " $FAKE_GH_VIS_NETWORK " in *" $name "*) echo "error connecting to api.github.com" >&2; exit 1 ;; esac',
+  '    case " $FAKE_GH_VIS_PRIVATE " in *" $name "*) echo private; exit 0 ;; esac',
+  '    case " $FAKE_GH_VIS_INTERNAL " in *" $name "*) echo internal; exit 0 ;; esac',
+  '    case " $FAKE_GH_VIS_GARBLED " in *" $name "*) echo; exit 0 ;; esac',
+  '    echo public; exit 0 ;;',
+  'esac',
   'case "$*" in',
   '  *--paginate*repos/fro-bot/.github/issues/3512/comments*)',
   '    [ -n "$FAKE_GH_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
@@ -712,9 +742,18 @@ interface FakeGhParams {
   apiFail?: boolean
   agentRelease?: unknown
   gatewayRuns?: unknown
+  /** Repositories whose visibility read answers private, internal, 404, 502, a network error or nothing. */
+  visibility?: {
+    private?: string[]
+    internal?: string[]
+    notFound?: string[]
+    error?: string[]
+    network?: string[]
+    garbled?: string[]
+  }
 }
 
-function runCliWithFakeGh(params: FakeGhParams): CliResult {
+function runCliWithFakeGh(params: FakeGhParams): CliResult & {visibilityReads: string[]} {
   const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-gh-'))
   try {
     writeFileSync(join(dir, 'gh'), FAKE_GH)
@@ -726,9 +765,20 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult {
         .map(entry => JSON.stringify({id: entry.id, login: entry.author.login, body: entry.body}))
         .join('\n')
     writeFileSync(commentsFile, lines)
-    return runCliRaw({
+    const visibilityLog = join(dir, 'visibility.log')
+    writeFileSync(visibilityLog, '')
+    const visibility = params.visibility ?? {}
+    const result = runCliRaw({
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       FAKE_GH_COMMENTS_FILE: commentsFile,
+      FAKE_GH_VISIBILITY_LOG: visibilityLog,
+      FAKE_GH_VIS_PRIVATE: (visibility.private ?? []).join(' '),
+      FAKE_GH_VIS_INTERNAL: (visibility.internal ?? []).join(' '),
+      FAKE_GH_VIS_NOTFOUND: (visibility.notFound ?? []).join(' '),
+      FAKE_GH_VIS_ERROR: (visibility.error ?? []).join(' '),
+      FAKE_GH_VIS_NETWORK: (visibility.network ?? []).join(' '),
+      FAKE_GH_VIS_GARBLED: (visibility.garbled ?? []).join(' '),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: undefined,
       FAKE_GH_FAIL: params.fail === true ? '1' : '',
       FAKE_GH_API_FAIL: params.apiFail === true ? '1' : '',
       FAKE_GH_AGENT_RELEASE: JSON.stringify(params.agentRelease ?? SIGNAL_FIXTURES.releases.agent),
@@ -743,6 +793,12 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult {
       // Health is the only read that is not served through `gh`; the fixture keeps the run offline.
       ROLLOUT_TRACKER_HEALTH_JSON: JSON.stringify(SIGNAL_FIXTURES.health),
     })
+    return {
+      ...result,
+      visibilityReads: readFileSync(visibilityLog, 'utf8')
+        .split('\n')
+        .filter(line => line !== ''),
+    }
   } finally {
     rmSync(dir, {recursive: true, force: true})
   }
@@ -2275,6 +2331,10 @@ function fakeProjectGhSource(): string {
   return [
     `#!${process.execPath}`,
     'const args = process.argv.slice(2)',
+    "if (args[0] === 'api' && args[1] === 'repos/fro-bot/agent') {",
+    String.raw`  process.stdout.write('public\n')`,
+    '  process.exit(0)',
+    '}',
     "if (args[0] !== 'project' || args[1] !== 'item-list') {",
     "  console.error('unexpected gh command: ' + args.join(' '))",
     '  process.exit(1)',
@@ -2300,6 +2360,7 @@ function runCliWithLiveProject(total: number, padBytes = 0): CliResult {
     return runCliRaw({
       ...fixtureEnv({items: [], issues: []}),
       ROLLOUT_TRACKER_ITEMS_JSON: undefined,
+      ROLLOUT_TRACKER_VISIBILITY_JSON: undefined,
       ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
       ROLLOUT_TRACKER_COMMENT_BODY: undefined,
       PATH: `${dir}:${process.env.PATH ?? ''}`,
@@ -2484,6 +2545,7 @@ describe('the program config in a snapshot run', () => {
     return {
       ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(goldenItems),
       ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(goldenIssues),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: visibilityFixture(goldenItems),
       ROLLOUT_TRACKER_COMMENTS_JSON: JSON.stringify(goldenComments),
       ROLLOUT_TRACKER_COMMENT_BODY: undefined,
       ROLLOUT_TRACKER_COMMENT_ID: undefined,
@@ -2685,6 +2747,7 @@ describe('the program config in a snapshot run', () => {
           ROLLOUT_TRACKER_CONFIG: config,
           ROLLOUT_TRACKER_PROGRAM: 'octo',
           ROLLOUT_TRACKER_ITEMS_JSON: undefined,
+          ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({'octo/repo': 'public'}),
           ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify([]),
           ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
         }),
@@ -2736,5 +2799,200 @@ describe('the program config in a snapshot run', () => {
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
+  })
+})
+
+// ─── Public-only snapshot ─────────────────────────────────────────────────────
+
+describe('a snapshot of public repos only', () => {
+  const publicItem = makeProjectItem({id: 'PVTI_pub', content_number: 24, content_repo: 'fro-bot/dashboard'})
+  const hiddenItem = makeProjectItem({id: 'PVTI_hid', content_number: 7, content_repo: 'secret-org/hidden-repo'})
+  const issues = [
+    makeIssueState({number: 24, repo: 'fro-bot/dashboard'}),
+    makeIssueState({number: 7, repo: 'secret-org/hidden-repo', title: 'hidden title'}),
+  ]
+
+  it('keeps an item from a public repo', () => {
+    const result = runCliFixture({items: [publicItem], issues})
+
+    expect(result.snapshot.items.map(item => `${item.content_repo}#${item.content_number}`)).toEqual([
+      'fro-bot/dashboard#24',
+    ])
+  })
+
+  it.each([
+    ['private', 'private'],
+    ['internal', 'internal'],
+    ['a 404', null],
+  ])('leaves out an item from a repo that is %s, and leaves no trace of it', (_name, visibility) => {
+    const result = runCliRaw(
+      fixtureEnv({
+        items: [publicItem, hiddenItem],
+        issues,
+        visibility: {'secret-org/hidden-repo': visibility},
+      }),
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('secret-org')
+    expect(result.stdout).not.toContain('hidden-repo')
+    expect(result.stdout).not.toContain('hidden title')
+    expect(result.stderr).not.toContain('secret-org')
+    const decision = JSON.parse(result.stdout) as PreflightResult
+    expect(decision.snapshot.items).toHaveLength(1)
+    expect(decision.snapshot.items.map(item => item.content_number)).toEqual([24])
+    expect(decision.reason).not.toMatch(/omit|private|hidden|2 items|count/i)
+  })
+
+  it('hashes the same with or without the hidden item, so the hidden item cannot move the hash', () => {
+    const withHidden = runCliFixture({
+      items: [publicItem, hiddenItem],
+      issues,
+      visibility: {'secret-org/hidden-repo': 'private'},
+    })
+    const without = runCliFixture({items: [publicItem], issues})
+
+    expect(withHidden.hash).toBe(without.hash)
+    expect(withHidden.snapshot).toEqual(without.snapshot)
+  })
+
+  it('does not read the issue state of a hidden item', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-issue-reads-'))
+    try {
+      const calls = join(dir, 'calls.log')
+      writeFileSync(join(dir, 'gh'), `#!/bin/sh\necho "$*" >> '${calls}'\nexit 1\n`)
+      chmodSync(join(dir, 'gh'), 0o755)
+
+      const result = runCliRaw({
+        ...fixtureEnv({items: [hiddenItem], issues: [], visibility: {'secret-org/hidden-repo': 'private'}}),
+        ROLLOUT_TRACKER_ISSUES_JSON: undefined,
+        PATH: `${dir}:${process.env.PATH ?? ''}`,
+      })
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).snapshot.items).toEqual([])
+      expect(() => readFileSync(calls, 'utf8')).toThrow()
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('keeps an unsupported draft item to be warned about as before', () => {
+    const draft = makeProjectItem({id: 'PVTI_draft', content_number: 0, content_repo: ''})
+
+    const result = runCliRaw(fixtureEnv({items: [publicItem, draft], issues}))
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe('')
+    expect((JSON.parse(result.stdout) as PreflightResult).snapshot.items).toHaveLength(1)
+  })
+
+  it('fails closed when the visibility fixture lacks a repo', () => {
+    const result = runCliRaw({
+      ...fixtureEnv({items: [publicItem], issues}),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({}),
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'rollout-tracker-snapshot: FATAL — failed to read repository visibility; refusing to treat an access failure as no-drift; exiting 1\n',
+    )
+  })
+
+  it.each([
+    ['not an object', '[]'],
+    ['malformed', '{'],
+  ])('fails closed when the visibility fixture is %s', (_name, fixture) => {
+    const result = runCliRaw({
+      ...fixtureEnv({items: [publicItem], issues}),
+      ROLLOUT_TRACKER_VISIBILITY_JSON: fixture,
+    })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('failed to read repository visibility')
+  })
+
+  describe('through gh', () => {
+    const items = [
+      publicItem,
+      makeProjectItem({id: 'PVTI_2', content_number: 25, content_repo: 'fro-bot/dashboard'}),
+      makeProjectItem({id: 'PVTI_3', content_number: 9, content_repo: 'fro-bot/agent'}),
+      hiddenItem,
+    ]
+    const allIssues = [
+      makeIssueState({number: 24, repo: 'fro-bot/dashboard'}),
+      makeIssueState({number: 25, repo: 'fro-bot/dashboard'}),
+      makeIssueState({number: 9, repo: 'fro-bot/agent'}),
+    ]
+
+    it('reads visibility once for each distinct repo', () => {
+      const result = runCliWithFakeGh({items, issues: allIssues})
+
+      expect(result.status).toBe(0)
+      expect([...result.visibilityReads].sort()).toEqual([
+        'fro-bot/agent',
+        'fro-bot/dashboard',
+        'secret-org/hidden-repo',
+      ])
+    })
+
+    it('treats repo names that differ only in case as one repo', () => {
+      const result = runCliWithFakeGh({
+        items: [
+          makeProjectItem({content_number: 1, content_repo: 'fro-bot/agent'}),
+          makeProjectItem({content_number: 2, content_repo: 'Fro-Bot/Agent'}),
+        ],
+        issues: [],
+      })
+
+      expect(result.visibilityReads).toHaveLength(1)
+    })
+
+    it('keeps the public items and omits a 404, a private and an internal repo, naming none', () => {
+      const result = runCliWithFakeGh({
+        items: [
+          ...items,
+          makeProjectItem({id: 'PVTI_4', content_number: 3, content_repo: 'gone/deleted'}),
+          makeProjectItem({id: 'PVTI_5', content_number: 4, content_repo: 'corp/internal-one'}),
+        ],
+        issues: allIssues,
+        visibility: {private: ['secret-org/hidden-repo'], notFound: ['gone/deleted'], internal: ['corp/internal-one']},
+      })
+
+      expect(result.status).toBe(0)
+      const decision = JSON.parse(result.stdout) as PreflightResult
+      expect(decision.snapshot.items.map(item => `${item.content_repo}#${item.content_number}`)).toEqual([
+        'fro-bot/agent#9',
+        'fro-bot/dashboard#24',
+        'fro-bot/dashboard#25',
+      ])
+      for (const hidden of ['secret-org', 'gone/deleted', 'corp/internal-one']) {
+        expect(result.stdout).not.toContain(hidden)
+        expect(result.stderr).not.toContain(hidden)
+      }
+    })
+
+    it('still answers the other items when one repo returns 404', () => {
+      const result = runCliWithFakeGh({items, issues: allIssues, visibility: {notFound: ['secret-org/hidden-repo']}})
+
+      expect(result.status).toBe(0)
+      expect((JSON.parse(result.stdout) as PreflightResult).snapshot.items).toHaveLength(3)
+    })
+
+    it.each([
+      ['a 5xx', {error: ['fro-bot/agent']}],
+      ['a network failure', {network: ['fro-bot/agent']}],
+      ['an empty answer', {garbled: ['fro-bot/agent']}],
+    ])('exits 1 with nothing on stdout on %s from a visibility read', (_name, visibility) => {
+      const result = runCliWithFakeGh({items, issues: allIssues, visibility})
+
+      expect(result.status).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe(
+        'rollout-tracker-snapshot: FATAL — failed to read repository visibility; refusing to treat an access failure as no-drift; exiting 1\n',
+      )
+    })
   })
 })

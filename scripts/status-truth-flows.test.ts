@@ -115,6 +115,7 @@ function snapshotEnv(items: readonly unknown[], extra: Readonly<Record<string, s
   return {
     ...SIGNAL_ENV,
     ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(items),
+    ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({'fro-bot/.github': 'public'}),
     ROLLOUT_TRACKER_ISSUES_JSON: '[]',
     ROLLOUT_TRACKER_COMMENT_BODY: '',
     ...extra,

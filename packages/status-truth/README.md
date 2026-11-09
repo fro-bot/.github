@@ -61,6 +61,10 @@ A thrown error prints its message and exits 1; no stack trace reaches stderr.
 
 The file is owned by `@marcusrbrown` in `.github/CODEOWNERS`. The operator comment check compares the login, and also the numeric ID when the comment carries one.
 
+## Public repos only
+
+A program covers public repos only. After the Project items are read, `rollout-tracker-snapshot` reads each distinct repo's visibility once (`gh api repos/<owner>/<repo> --jq .visibility`) and keeps an item only when the answer is `public`. A private or internal repo, and a 404 (which covers a repo the token cannot see and a deleted one), leave their items out of the snapshot, the hash, the marker and the prompt, with no count and no name, and the issue state of an omitted item is never read. Any other failure (a 5xx, a rate limit, a network error, an answer that is none of the three visibilities) prints one message that names no repo and exits 1, so an outage cannot empty the snapshot. `ROLLOUT_TRACKER_VISIBILITY_JSON` (`{"owner/repo": "public" | "private" | "internal" | null}`) replaces the reads in tests; a repo it lacks fails the run.
+
 ## The dry-run default
 
 `STATUS_TRUTH_DRY_RUN` is a dry run only when it is exactly `true`. The script's own default for an unset variable, or any other value, is the live path. The dry run is the default of the workflow: `status-truth.yaml` sets `STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}` for all three steps, and the correction-PR step runs only on a manual dispatch with `open_prs` and `dry_run=false`, with the repository variable and the graduated claim kinds also required to agree. `scripts/status-truth-flows.test.ts` pins both halves: a run with the workflow's default makes zero mutating calls, and a run with the variable unset, `1` or `TRUE` takes the live path.

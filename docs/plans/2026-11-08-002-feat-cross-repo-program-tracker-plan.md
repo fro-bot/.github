@@ -288,7 +288,7 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 
 **Verification:** `3512` appears only in the config, the drift-tested literals and the tests. `actionlint` is clean, and the workflow tests pass.
 
-- [ ] **Unit 4: Public-only snapshot**
+- [x] **Unit 4: Public-only snapshot**
 
 **Goal:** Items from repos that aren't public never reach the snapshot, the marker or the prompt.
 

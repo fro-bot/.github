@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url'
 import {
   isAuthorizedTrigger,
   isOperatorComment,
+  isPublicVisibility,
   issueRef,
   loadProgramTrackers,
   selectProgram,
@@ -665,6 +666,68 @@ export async function loadExternalSignals(env: NodeJS.ProcessEnv): Promise<Exter
   }
 }
 
+/**
+ * The visibility of one repo through `gh api`. `public` keeps the repo's items. A 404 covers a repo the
+ * token cannot see and a deleted one, so it reads as `hidden`, the same as `private` and `internal`.
+ * Every other failure (a 5xx, a rate limit, a network error, an answer that is none of the three
+ * visibilities) throws: an outage must not empty the snapshot, and it names no repo.
+ */
+function readRepoVisibility(repo: string): 'public' | 'hidden' {
+  let output: string
+  try {
+    output = execFileSync('gh', ['api', `repos/${repo}`, '--jq', '.visibility'], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+    if (stderr.includes('(HTTP 404)')) return 'hidden'
+    throw new Error('visibility read failed', {cause: error})
+  }
+  return classifyVisibility(output.trim())
+}
+
+function classifyVisibility(value: unknown): 'public' | 'hidden' {
+  if (value === null) return 'hidden'
+  if (typeof value !== 'string') throw new TypeError('visibility is not a string')
+  if (isPublicVisibility(value)) return 'public'
+  if (/^(?:private|internal)$/i.test(value)) return 'hidden'
+  throw new Error('visibility is unrecognized')
+}
+
+/**
+ * The lower-cased names of the public repos among `repos`, each distinct repo read once. A name that
+ * cannot be a GitHub repo is never requested and is not public. With `ROLLOUT_TRACKER_VISIBILITY_JSON`
+ * the answers come from that object (`public`, `private`, `internal`, or `null` for a 404) and a repo
+ * it lacks throws, like a failed read.
+ */
+function readPublicRepos(repos: readonly string[], env: Env): Set<string> {
+  let fixture: Map<string, unknown> | undefined
+  if (env.ROLLOUT_TRACKER_VISIBILITY_JSON !== undefined) {
+    const parsed: unknown = JSON.parse(env.ROLLOUT_TRACKER_VISIBILITY_JSON)
+    if (!isRecord(parsed)) throw new TypeError('visibility fixture is not an object')
+    fixture = new Map(Object.entries(parsed).map(([name, value]) => [name.toLowerCase(), value]))
+  }
+
+  const publicRepos = new Set<string>()
+  const seen = new Set<string>()
+  for (const repo of repos) {
+    const folded = repo.toLowerCase()
+    if (seen.has(folded) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) continue
+    seen.add(folded)
+    let visibility: 'public' | 'hidden'
+    if (fixture === undefined) {
+      visibility = readRepoVisibility(repo)
+    } else {
+      if (!fixture.has(folded)) throw new Error('visibility fixture lacks a repo')
+      visibility = classifyVisibility(fixture.get(folded))
+    }
+    if (visibility === 'public') publicRepos.add(folded)
+  }
+  return publicRepos
+}
+
 /** The external signals a program's evidence kind reads: #3512's releases, deploys and health, or nothing. */
 async function loadEvidence(kind: EvidenceKind, env: NodeJS.ProcessEnv): Promise<ExternalSignals | NoExternalSignals> {
   return kind === 'gateway' ? loadExternalSignals(env) : {}
@@ -736,6 +799,8 @@ export interface SnapshotIo {
  * `program-trackers.json`. A bad or missing config, or an unknown program, returns 1 before any read.
  *   ROLLOUT_TRACKER_PROGRAM     — the program key; empty or unset selects `gateway`
  *   ROLLOUT_TRACKER_CONFIG      — path of the config file; defaults to the committed `program-trackers.json`
+ *   ROLLOUT_TRACKER_VISIBILITY_JSON — {"owner/repo": "public" | "private" | "internal" | null}: the repository
+ *                                   visibility reads (`null` is a 404); a repo it lacks fails the run
  *
  * Accepts optional injected fixtures via environment variables for testing:
  *   ROLLOUT_TRACKER_ITEMS_JSON  — JSON array of ProjectItem[]
@@ -846,6 +911,22 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       return 1
     }
   }
+
+  // Only items from repos GitHub reports as public reach the snapshot, the marker and the prompt. A hidden
+  // repo leaves no count and no name. A draft item (no repo) stays, to be warned about as before.
+  let publicRepos: Set<string>
+  try {
+    publicRepos = readPublicRepos(
+      items.map(item => item.content_repo),
+      env,
+    )
+  } catch {
+    io.stderr(
+      'rollout-tracker-snapshot: FATAL — failed to read repository visibility; refusing to treat an access failure as no-drift; exiting 1\n',
+    )
+    return 1
+  }
+  items = items.filter(item => item.content_repo === '' || publicRepos.has(item.content_repo.toLowerCase()))
 
   if (env.ROLLOUT_TRACKER_ISSUES_JSON === undefined) {
     items = filterSupportedProjectItems(items)
