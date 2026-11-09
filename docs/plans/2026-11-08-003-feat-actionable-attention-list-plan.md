@@ -92,7 +92,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 ## Implementation Units
 
-- [ ] **Unit 1: Observe prompt duties**
+- [x] **Unit 1: Observe prompt duties**
 
 **Goal:** The Observe prompt carries R1–R13.
 
@@ -142,7 +142,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Verification:** the prompt contract tests pass.
 
-- [ ] **Unit 2: The `attention-tracking` label**
+- [x] **Unit 2: The `attention-tracking` label**
 
 **Goal:** Declare the label so the agent can apply it.
 
