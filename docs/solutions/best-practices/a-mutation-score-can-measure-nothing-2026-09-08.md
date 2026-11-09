@@ -1,7 +1,7 @@
 ---
 title: A mutation score can measure nothing — check reachability before writing tests
 date: 2026-09-08
-last_updated: 2026-11-05
+last_updated: 2026-11-09
 verified: 2026-09-08
 category: best-practices
 module: packages/ci-checks/src/check-mutation-guards.ts
@@ -63,6 +63,22 @@ Give the targeted score and name the tests covering the module. Before reaching 
 
 Keep argument parsing behind `import.meta.main` and restrict destructive targets. Run filesystem and git tests under a test-owned temporary root, using that root as the working directory and paths beneath it as targets.
 
+Temporary-directory ancestry is not ownership. In PR #4138, a guard accepting everything beneath
+`tmpdir()` also accepted the checkout when it lived beneath that directory. Rejection probes and
+mutated path defaults could therefore touch checkout files before assertions failed.
+
+The merged `scripts/build-wiki-write-core.test.ts` registers roots returned by fixture allocation,
+permits mutating operations only inside those roots, and rejects relative paths before resolution.
+Its pure guard tests simulate a checkout beneath the temporary directory, including the build-marker
+path. Real rejection probes use a child of an existing regular file so a broken guard cannot create
+checkout artifacts.
+
+Cleanup is a separate ownership boundary. A follow-up review caught an escape probe whose `finally`
+block bypassed the guard and recursively removed a fixed shared-temp path. The correction restricts
+cleanup to directories allocated by that describe block and their descendants. Sentinel-preservation
+tests and the final review's 29 passing focused guard cases cover both fixes. Do not infer filesystem
+safety from a passing rejection assertion while its cleanup can still delete unowned paths.
+
 ### A timeout fails the gate
 
 A timed-out mutant fails `check:mutation-guards`. The verdict is `mutant-timeout` (`packages/ci-checks/src/check-mutation-guards.ts:425`) unless an instrumentation failure or a directive violation takes precedence. Test loop bounds, and make an invalid bound fail promptly.
@@ -107,6 +123,8 @@ import {checkPrivateLeak} from "./private-leak.ts"
 ```
 
 ## Related
+
+- Source PR #4138: merge `7faa2fbd94d0c5d2e7a5d6c7fa14a6bf1ab72c88`.
 
 - [`enumerate-mutator-variants-before-a-stryker-directive`](enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md) — the adjacent trap: a mutant that _is_ reachable, silenced by an over-broad directive
 - [`mutation-coverage-is-silent-about-unwritten-branches`](../security-issues/mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md) — the third silence: a branch the code never wrote cannot be mutated at all

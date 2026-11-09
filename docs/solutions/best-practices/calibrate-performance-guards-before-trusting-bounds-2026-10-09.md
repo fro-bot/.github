@@ -1,6 +1,7 @@
 ---
 title: Calibrate performance guards before trusting their bounds
 date: 2026-10-09
+last_updated: 2026-11-09
 category: best-practices
 module: packages/wiki-write-core
 problem_type: best_practice
@@ -37,6 +38,27 @@ The shared lesson: a performance guard is evidence only after you know what it m
 make it fail, and whether the reconstructed pre-fix defect trips it.
 
 ## Guidance
+
+### Prove the fixture reaches the expensive path
+
+A fast malformed input may skip the very scan the test claims to bound. PR #4091's initial JWT
+second-segment fixture began with `eyJ.`: the token after the first opening was empty, so that opening
+was rejected before `secondRunEnd`. Later openings lacked a following dot. The timing assertion
+therefore did not observe the second-segment cache.
+
+The merged fixture in `packages/privacy/src/capture-learnings-privacy-scan.test.ts` repeats valid
+openings on both sides of one dot:
+
+```ts
+const repetitions = 20_000
+const body = `${'eyJ'.repeat(repetitions)}.${'eyJ'.repeat(repetitions)}`
+```
+
+Multiple first-segment openings now reach the same long, unterminated second segment. Keep both the
+false-result assertion and the timing bound: one pins behavior, the other limits repeated scanning.
+The follow-up review confirmed cache reachability and 171 passing focused tests. Trace parser
+preconditions before interpreting fast execution as regression protection; a passing timer alone
+cannot distinguish efficient work from skipped work.
 
 ### Reconstruct the pre-fix defect before trusting a scaling guard
 
@@ -189,6 +211,9 @@ The timeout is not the contract. The assertions are, and the timeout gives deter
 wall-clock room under contention.
 
 ## Related
+
+- Source PR #4091: merge `8ca1efddc84069e281ad1c75f19cbcdb38d0089d`.
+- Sibling: `docs/solutions/best-practices/a-mutation-score-can-measure-nothing-2026-09-08.md` (linked below).
 
 - [A mutation score can measure nothing](a-mutation-score-can-measure-nothing-2026-09-08.md) — the same false-confidence shape: a metric can report success while observing nothing load-bearing. Different mechanism (Stryker instrumentation reachability), so not merged.
 - [A policy scanner must parse tokens, not prose — and the tool may normalise away what you are checking for](a-policy-scanner-must-parse-tokens-not-prose-2026-09-08.md) — prove each rule can fail on the input it claims to reject.
