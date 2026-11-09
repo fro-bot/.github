@@ -35,6 +35,7 @@ The operator reads this section to decide what to do next. When items are stale,
   - a failing workflow, by repo and workflow file.
 
   Runs, comments and documents are evidence. They are never keys. A bullet that bundles several problems is split.
+
 - R2. Each item shows:
   - its owner: a GitHub handle, such as the PR author, the issue assignee or a bot handle like `renovate[bot]`, or "you" for the operator;
   - one next action, concrete enough to start without further research;
@@ -68,7 +69,7 @@ The operator reads this section to decide what to do next. When items are stale,
 
 **Privacy**
 
-- R13. Items, evidence and tracking issues name public repos only. A problem in a private repo is reported without the repo's name or contents. When the agent cannot confirm a repo is public, it treats it as private.
+- R13. Items, evidence and tracking issues cover public repos only. A problem whose source is not confirmed public is left out entirely, with no anonymous mention.
 
 ---
 
@@ -81,7 +82,7 @@ The operator reads this section to decide what to do next. When items are stale,
 - AE5. **Covers R8, R9.** The permission-posture item is keyed to `.github/workflows/scorecard.yaml`, which is live on its third consecutive report. Fro Bot files one tracking issue for it. The rollout item, keyed to #3512, is linked and never escalated.
 - AE6. **Covers R10.** The operator closes a tracking issue as not planned. The next report lists the item once as declined and files no new issue.
 - AE7. **Covers R11.** The Scorecard permissions are fixed. On its next run Fro Bot closes the tracking issue and records the evidence in the issue body.
-- AE8. **Covers R13.** A failing workflow in a private repo appears as "a workflow in a private repository is failing", with no name.
+- AE8. **Covers R13.** A failing workflow in a private repo does not appear in the report or in any tracking issue.
 
 ---
 

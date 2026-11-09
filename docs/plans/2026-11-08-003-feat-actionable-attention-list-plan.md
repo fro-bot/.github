@@ -72,10 +72,10 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 ## Key Technical Decisions
 
 - **The new duties are text inside the `OBSERVE_OUTPUT` string.** They are not a separate env key: `format()` at about `fro-bot.yaml:1090` drops keys that aren't composed, so a separate key would vanish without warning. Keeping the duties next to the report structure means one block owns the section.
-- **Every item renders its key.** Each attention item ends with a `key:` line holding the URL, path or repo/workflow. Each tracking issue body starts with the same line. Walk-back, the three-report count, reuse and the readback all match on that rendered line.
+- **Every item renders its key.** Each attention item ends with a `key:` line. The line holds the URL, path or repo/workflow, and then, when that object carries more than one problem, ` — ` and a short fixed problem tag, for example `package.json — typescript-major-drift`. The tag stays the same from one report to the next. Each tracking issue body starts with the same line. Walk-back, the three-report count, reuse and the readback all match on that rendered line.
 - **The label is `attention-tracking`.** It is declared in `.github/settings.yml`, so Update Repo Settings creates it.
 - **Category 5 gets an explicit exception.** The agent may create, label, edit and close issues labeled `attention-tracking`. The rest of category 5 stays report-only.
-- **Visibility comes from `gh repo view <owner/repo> --json visibility`.** The repo counts as public only when that call returns `PUBLIC`. Any other result, including an error, is treated as private. The same rule applies to item text, "could not re-check" sources and tracking issues.
+- **Visibility comes from `gh repo view <owner/repo> --json visibility`.** The repo counts as public only when that call returns `PUBLIC`. Any other result, including an error, is treated as private. An item whose source is not public is left out entirely. The report, the run summary and tracking issues never mention it, and never refer to it as "a private repository". This follows the persona's no-disclosure rule.
 - **Predecessor order is fixed in the prompt:** find the open predecessor, read it, create today's report, read today's report back, then close the predecessor. This replaces the current "before or after creating it" wording.
 - **Closing evidence goes into an edit of the issue body.** It is not posted as a comment.
 
@@ -108,7 +108,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 **Approach:** The block tells the agent to:
 
 1. Split bundled bullets so each item covers one problem.
-2. Key each item to the object its next action works on: an issue, PR or Project item URL, a normalized repo path, or a repo plus workflow file. Runs, comments and documents are cited as evidence only.
+2. Key each item to the object its next action works on: an issue, PR or Project item URL, a normalized repo path, or a repo plus workflow file. Runs, comments and documents are cited as evidence only. When one object carries two unrelated problems, give each problem its own item and its own fixed problem tag.
 3. Give each item an owner, which is a handle or "you", plus one next action and an observed or inferred tag.
 4. Just before publishing, re-read each key. Drop the item if the key has resolved. If only the evidence has resolved, refresh the evidence and keep the item. If the read fails, mark the item "could not re-check", naming the source only if its repo is public.
 5. Take first-seen from the oldest consecutive prior report that lists the same key. If no prior report has the key, use today. Never guess a date.
@@ -119,7 +119,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
    - Do not escalate keys that are already issues, items that are already tracked, "Awaiting you" items, or Renovate-owned fixes.
    - Show each escalated item as one line linking its issue, ending with its `key:` line.
 8. On every run, close any open `attention-tracking` issue whose key has resolved. Record the evidence in the issue body.
-9. Name only public repos. A problem in a private repo is reported without its name. If a repo's visibility can't be confirmed, treat it as private.
+9. Leave out every item whose source repo is not confirmed `PUBLIC`. Leave it out of the report and out of tracking issues, and do not hint that it exists.
 
 **Patterns to follow:** the existing `SCOPE CAP`, `AGENT NOTES` and category wording.
 
