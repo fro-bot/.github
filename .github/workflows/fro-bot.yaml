@@ -498,15 +498,21 @@ env:
       the evidence and keep the item. If the read fails, keep the item marked
       "could not re-check" and name the source only if its repo is public.
     - First-seen is the date of the oldest consecutive earlier daily report that
-      lists the same key line: walk back from the predecessor and stop at the
-      first report without it. If no earlier report lists it, use today. Never
-      guess a date.
+      lists the same item: walk back from the predecessor and stop at the first
+      report that does not. A report with `key:` lines lists an item when it has
+      the same key line. An earlier report without `key:` lines lists an item
+      only when it names the same object, plainly describes the same problem,
+      and exactly one of its items fits. If the match is ambiguous, stop the
+      walk at that report. From the first report with `key:` lines onward, use
+      the tagged key line. If no earlier report lists it, use today. Never guess
+      a date.
     - Under "Awaiting you", at the top of Needs Human Attention, list the items
       only the operator can do, each with its exact step. Other items follow.
     - Escalate a key that is live on three consecutive reports, today's
-      included. Search issues labeled `attention-tracking`, open and closed, for
-      the same key line. Reuse an open one. A matching issue the operator
-      closed, for any reason, ends that occurrence: do not refile, and report the
+      included, counted by the same matching as first-seen. Search issues
+      labeled `attention-tracking`, open and closed, for the same key line.
+      Reuse an open one. A matching issue the operator closed, for any reason,
+      ends that occurrence: do not refile, and report the
       item once as declined. File a new issue only after a confirmed resolution
       followed by a fresh recurrence. Otherwise file a tracking issue in the
       AGENT NOTES format, starting with the key line and labeled

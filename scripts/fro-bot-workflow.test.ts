@@ -495,9 +495,31 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
   })
 
   it('takes first-seen by walking back through prior reports, with today as the fallback', () => {
-    expect(output).toContain('oldest consecutive earlier daily report that lists the same key line')
-    expect(output).toContain('stop at the first report without it')
+    expect(output).toContain('oldest consecutive earlier daily report that lists the same item')
+    expect(output).toContain('stop at the first report that does not')
     expect(output).toContain('If no earlier report lists it, use today. Never guess a date')
+  })
+
+  it('matches a report with key: lines on the exact key line', () => {
+    expect(output).toContain('A report with `key:` lines lists an item when it has the same key line')
+    expect(output).toContain('From the first report with `key:` lines onward, use the tagged key line')
+  })
+
+  it('counts an earlier report without key: lines only for the same object, the same problem and a single matching item', () => {
+    expect(output).toContain('An earlier report without `key:` lines lists an item only when')
+    expect(output).toContain(
+      'it names the same object, plainly describes the same problem, and exactly one of its items fits',
+    )
+  })
+
+  it('stops the walk at a legacy report whose match is ambiguous', () => {
+    expect(output).toContain('If the match is ambiguous, stop the walk at that report')
+  })
+
+  it('counts the three consecutive reports for escalation with the same matching as first-seen', () => {
+    expect(output).toContain(
+      "live on three consecutive reports, today's included, counted by the same matching as first-seen",
+    )
   })
 
   it('leads Needs Human Attention with the operator-only "Awaiting you" items', () => {
