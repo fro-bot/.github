@@ -185,6 +185,10 @@
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/promotion-self-merge-cli and runs it under the entry guard. The decisions are in packages/registry/src/promotion-self-merge.ts, which is mutated, and the CLI is in promotion-self-merge-cli.ts, pinned by its own tests. The shim's surface, including a usage error on unmatched argv, a fail-closed exit without a token and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
     {
+      "path": "scripts/protection-drift.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/protection-drift-cli and runs it under the entry guard. The decisions are in packages/registry/src/protection-drift.ts, which is mutated, and the CLI is in protection-drift-cli.ts, pinned by its own tests. The shim's surface, including a usage error on unmatched argv, a fail-closed exit without an event file and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
       "path": "scripts/rename-tracked-repo.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/rename-tracked-repo-cli and runs it under the entry guard. The behaviour is in packages/registry/src/rename-tracked-repo.ts and rename-tracked-repo-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
@@ -219,6 +223,10 @@
     {
       "path": "packages/registry/src/promotion-self-merge-cli.ts",
       "reason": "The goke entrypoint of the promotion self-merge: it declares no options and no positionals, and supplies the real clock, sleep, settings read and Octokit to runSelfMerge, so a mutation run would score the config object and a setTimeout wrapper. Every decision (the protection superset, the pinned head and label guards, the kill switch, the check evaluation, the bounded wait, the approval and the merge outcomes) is in packages/registry/src/promotion-self-merge.ts, which is mutated. The CLI surface (name, readOnly, the seams handed to the body, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/promotion-self-merge-cli.test.ts."
+    },
+    {
+      "path": "packages/registry/src/protection-drift-cli.ts",
+      "reason": "The goke entrypoint of the protection drift report: it declares no options and no positionals, and supplies the real file reads, clock and Octokit to runProtectionDrift, so a mutation run would score the config object and a readFileSync wrapper. Every decision (the settings-actor test by type and numeric id, the field comparison with present/different/absent, the open/comment/close plan, the report text and the issue lookup) is in packages/registry/src/protection-drift.ts, which is mutated. The CLI surface (name, readOnly, the seams handed to the body, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/protection-drift-cli.test.ts."
     },
     {
       "path": "packages/registry/src/rename-tracked-repo-cli.ts",
@@ -831,6 +839,7 @@
       "packages/privacy/src/check-private-leak.ts",
       "packages/privacy/src/check-wiki-private-presence-cli.ts",
       "packages/registry/src/merge-back-data-cli.ts",
+      "packages/registry/src/protection-drift.ts",
       "packages/reports/src/improvement-metrics-detect-cli.ts",
       "packages/reports/src/improvement-metrics-report-cli.ts",
       "packages/wiki-ops/src/wiki-change-detect-core.ts",

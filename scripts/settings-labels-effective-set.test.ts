@@ -113,7 +113,7 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     expect(total, 'update this count when adding or removing a code-declared label').toBe(17)
   })
 
-  it.each(['attention-tracking', 'program-tracker', 'hold-merge'])(
+  it.each(['attention-tracking', 'program-tracker', 'hold-merge', 'protection-drift'])(
     'declares %s with a color and description in the effective merged label set',
     name => {
       const label = effectiveLabelsByName.get(name)

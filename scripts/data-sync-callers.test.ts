@@ -285,9 +285,28 @@ const CALLERS: readonly Caller[] = [
   },
 ]
 
-/** The one workflow `run:` step allowed to fetch `data` itself: the promotion diff in merge-data.yaml. */
-const SHELL_EXEMPTIONS: readonly {workflow: string; step: string}[] = [
-  {workflow: 'merge-data.yaml', step: '🔒 Fetch data ref for promotion diff'},
+/**
+ * The `run:` steps allowed to read `data` themselves, all in merge-data.yaml: the qualification fetch of the
+ * `decide` job, the pin that reads the remote `data` tip once after the merge-back, and the promotion diff
+ * fetch. None of them restores files from `data`, so none can use the `sync-data` action. `reads` is the
+ * command the step must still contain, so an exemption cannot rot.
+ */
+const SHELL_EXEMPTIONS: readonly {workflow: string; step: string; reads: string}[] = [
+  {
+    workflow: 'merge-data.yaml',
+    step: '🔒 Fetch data ref for qualification',
+    reads: 'git fetch --no-tags --prune origin data',
+  },
+  {
+    workflow: 'merge-data.yaml',
+    step: '📌 Pin the data commit',
+    reads: 'git ls-remote --exit-code origin refs/heads/data',
+  },
+  {
+    workflow: 'merge-data.yaml',
+    step: '🔒 Fetch data ref for promotion diff',
+    reads: 'git fetch --no-tags --prune origin data',
+  },
 ]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -429,7 +448,7 @@ describe('data sync callers: no workflow syncs data in shell', () => {
     for (const exempt of SHELL_EXEMPTIONS) {
       const step = runSteps.find(candidate => candidate.workflow === exempt.workflow && candidate.name === exempt.step)
       expect(step, `${exempt.workflow}: ${exempt.step}`).toBeDefined()
-      expect(step?.run).toContain('git fetch --no-tags --prune origin data')
+      expect(step?.run).toContain(exempt.reads)
     }
   })
 
