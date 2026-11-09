@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest'
 import {
   decideRun,
+  InvalidPathEncodingError,
   isWeeklyRun,
   labelDecision,
   parseNameStatus,
@@ -248,6 +249,46 @@ describe('qualifyPromotion', () => {
       entryAt: async () => null,
     }
     await expect(qualifyPromotion(git)).rejects.toThrow('boom')
+  })
+})
+
+describe('qualifyPromotion: a path git could not decode as UTF-8 (fail closed)', () => {
+  const invalid = () => {
+    throw new InvalidPathEncodingError()
+  }
+
+  it('disqualifies when the diff cannot be decoded', async () => {
+    const git: PromotionGit = {diffNameStatus: async () => invalid(), entryAt: async () => null}
+    expect(await qualifyPromotion(git)).toEqual({state: 'disqualified', reason: 'invalid-path-encoding'})
+  })
+
+  it('disqualifies when a tree lookup cannot be decoded', async () => {
+    const git: PromotionGit = {
+      diffNameStatus: async () => nameStatus(['M', 'knowledge/a.md']),
+      entryAt: async () => invalid(),
+    }
+    expect(await qualifyPromotion(git)).toEqual({state: 'disqualified', reason: 'invalid-path-encoding'})
+  })
+
+  it('still lets any other failure through, so the CLI fails with GIT_FAILED', async () => {
+    const git: PromotionGit = {
+      diffNameStatus: async () => {
+        throw new Error('git exploded')
+      },
+      entryAt: async () => null,
+    }
+    await expect(qualifyPromotion(git)).rejects.toThrow('git exploded')
+  })
+
+  it('names the failure with a fixed message that carries no path', () => {
+    expect(new InvalidPathEncodingError().message).toBe('invalid-path-encoding')
+    expect(new InvalidPathEncodingError()).toBeInstanceOf(Error)
+  })
+
+  it('holds a daily run and runs the weekly one, like any other non-qualifying promotion', () => {
+    const disqualified: Qualification = {state: 'disqualified', reason: 'invalid-path-encoding'}
+    expect(decideRun(disqualified, false)).toEqual({run: false, reason: 'held-for-review'})
+    expect(decideRun(disqualified, true)).toEqual({run: true, reason: 'weekly'})
   })
 })
 

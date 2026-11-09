@@ -18,17 +18,36 @@ import {appendStepSummary, writeGithubOutputs} from '@fro-bot/core/output'
 /** The two branch tips a promotion compares: `base` is `main`, `head` is `data`. */
 export type PromotionSide = 'base' | 'head'
 
+/**
+ * Thrown by the git seam when a path in git's output is not valid UTF-8. Decoding it with replacement
+ * characters would let `outside-\xff` and `outside-\ufffd` look the same, so the promotion is disqualified.
+ * The message is fixed and carries no path.
+ */
+export class InvalidPathEncodingError extends Error {
+  constructor() {
+    super('invalid-path-encoding')
+    this.name = 'InvalidPathEncodingError'
+  }
+}
+
 export interface PromotionGit {
-  /** Raw `git diff --name-status -M -z base...head`. */
+  /** Raw `git diff --name-status -M -z base...head`; throws {@link InvalidPathEncodingError} on a path that is not UTF-8. */
   readonly diffNameStatus: () => Promise<string>
-  /** The tree entry (`<mode> <type> <id>`) of `path` at the tip of `side`, or `null` when the path is absent there. */
+  /**
+   * The tree entry (`<mode> <type> <id>`) of `path` at the tip of `side`, or `null` when the path is absent
+   * there. The path is read literally, never as a pathspec. Throws {@link InvalidPathEncodingError} on a
+   * listing that is not UTF-8.
+   */
   readonly entryAt: (side: PromotionSide, path: string) => Promise<string | null>
 }
 
 export type Qualification =
   | {readonly state: 'empty'}
   | {readonly state: 'qualifies'}
-  | {readonly state: 'disqualified'; readonly reason: 'path-outside-allowlist' | 'malformed-diff'}
+  | {
+      readonly state: 'disqualified'
+      readonly reason: 'path-outside-allowlist' | 'malformed-diff' | 'invalid-path-encoding'
+    }
 
 export interface PromotionTrigger {
   readonly eventName: string
@@ -92,6 +111,15 @@ function isAllowedPath(path: string): boolean {
  * mode and object, and require every remaining path to be allowed.
  */
 export async function qualifyPromotion(git: PromotionGit): Promise<Qualification> {
+  try {
+    return await qualifyDiff(git)
+  } catch (error: unknown) {
+    if (error instanceof InvalidPathEncodingError) return {state: 'disqualified', reason: 'invalid-path-encoding'}
+    throw error
+  }
+}
+
+async function qualifyDiff(git: PromotionGit): Promise<Qualification> {
   const paths = parseNameStatus(await git.diffNameStatus())
   if (paths === null) return {state: 'disqualified', reason: 'malformed-diff'}
 
