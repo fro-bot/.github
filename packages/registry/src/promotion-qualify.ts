@@ -60,17 +60,20 @@ export function parseNameStatus(raw: string): readonly string[] | null {
   // A well-formed listing ends in a NUL, so its last field is empty; an empty listing is that field alone.
   if (fields.pop() !== '') return null
 
+  // A bounded pass over the fields: `owed` counts the paths the current record still has to carry.
   const paths: string[] = []
-  let index = 0
-  while (index < fields.length) {
-    const count = pathCount(String(fields[index]))
-    if (count === 0) return null
-    const record = fields.slice(index + 1, index + 1 + count)
-    if (record.length !== count || record.includes('')) return null
-    paths.push(...record)
-    index += 1 + count
+  let owed = 0
+  for (const field of fields) {
+    if (owed === 0) {
+      owed = pathCount(field)
+      if (owed === 0) return null
+    } else {
+      if (field === '') return null
+      paths.push(field)
+      owed -= 1
+    }
   }
-  return paths
+  return owed === 0 ? paths : null
 }
 
 /** The number of paths a status carries: one for A, M, D and T, two for a scored rename or copy, zero for anything else. */

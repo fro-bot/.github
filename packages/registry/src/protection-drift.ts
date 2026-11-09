@@ -264,19 +264,23 @@ export interface RunProtectionDriftParams {
 }
 
 /** The numbers of the open issues that carry the `protection-drift` label, pull requests excluded. */
-async function openIssueNumbers(octokit: ProtectionDriftOctokit, page = 1): Promise<readonly number[]> {
+async function openIssueNumbers(octokit: ProtectionDriftOctokit): Promise<readonly number[]> {
   const pageSize = 100
-  const response = await octokit.rest.issues.listForRepo({
-    owner: 'fro-bot',
-    repo: '.github',
-    state: 'open',
-    labels: 'protection-drift',
-    per_page: pageSize,
-    page,
-  })
-  const numbers = response.data.filter(issue => issue.pull_request === undefined).map(issue => issue.number)
-  if (response.data.length < pageSize) return numbers
-  return [...numbers, ...(await openIssueNumbers(octokit, page + 1))]
+  const maxPages = 50
+  let found = Array.of<number>()
+  for (const page of Array.from({length: maxPages}, (_, index) => index + 1)) {
+    const response = await octokit.rest.issues.listForRepo({
+      owner: 'fro-bot',
+      repo: '.github',
+      state: 'open',
+      labels: 'protection-drift',
+      per_page: pageSize,
+      page,
+    })
+    found = found.concat(response.data.filter(issue => issue.pull_request === undefined).map(issue => issue.number))
+    if (response.data.length < pageSize) break
+  }
+  return found
 }
 
 /**

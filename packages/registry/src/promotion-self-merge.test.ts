@@ -730,6 +730,32 @@ describe('selfMerge: the bounded wait (AE5)', () => {
     expect(w.polls()).toBeLessThan(60)
   })
 
+  it('ends the wait after 62 polls even when the clock never moves', async () => {
+    const w = world({runs: () => GREEN_RUNS.slice(0, 1)})
+    const input = w.input({
+      sleep: async ms => {
+        w.sleeps.push(ms)
+      },
+    })
+    expect(await selfMerge({...input, now: () => 0})).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
+    expect(w.polls()).toBe(62)
+    expect(w.sleeps).toHaveLength(61)
+  })
+
+  it('reads at most 50 pages of check runs and statuses a poll, then judges what it has', async () => {
+    const full = Array.from({length: 100}, (_, index) => ({id: 1000 + index, name: `Other ${String(index)}`}))
+    const fullStatuses = Array.from({length: 100}, (_, index) => ({
+      context: `Other ${String(index)}`,
+      state: 'success',
+    }))
+    const w = world({runs: () => full, statuses: () => fullStatuses})
+    expect(await selfMerge(w.input())).toMatchObject({code: 'TIMEOUT'})
+    expect(w.requests.listRuns).toHaveLength(50 * w.polls())
+    expect(w.requests.listStatuses).toHaveLength(50 * w.polls())
+    const pages = (w.requests.listRuns as {page: number}[]).map(request => request.page)
+    expect(Math.max(...pages)).toBe(50)
+  })
+
   it('passes on the last poll before the deadline', async () => {
     const w = world({runs: poll => (poll < 61 ? GREEN_RUNS.slice(0, 1) : GREEN_RUNS)})
     expect(await selfMerge(w.input())).toMatchObject(LIVE)
@@ -936,6 +962,13 @@ describe('selfMerge: the merge (AE6)', () => {
     const w = world({pulls: script<PullState>({}, {}, {head: MOVED})})
     expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
     expect(w.log).toEqual(['approve'])
+  })
+
+  it('does not re-read a stopped pull request whose mergeable_state is unknown', async () => {
+    const w = world({pulls: script<PullState>({}, {}, {head: MOVED, mergeable: 'unknown'})})
+    expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+    expect(w.sleeps).toEqual([])
+    expect(w.requests.getPull).toHaveLength(3)
   })
 
   it('stops before the merge when hold-merge was added after the approval', async () => {

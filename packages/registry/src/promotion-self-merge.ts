@@ -122,6 +122,9 @@ function limits() {
     mergeableRereads: 3,
     mergeableDelayMs: 2000,
     pageSize: 100,
+    maxPages: 50,
+    // 60 minutes at one poll a minute is 61 polls; one more is the bound if the clock never moves.
+    maxPolls: 62,
   }
 }
 
@@ -381,10 +384,14 @@ async function promote(input: SelfMergeInput, pullRequest: number): Promise<Self
     }
   }
 
-  const pages = async <T>(fetchPage: (page: number) => Promise<readonly T[]>, page = 1): Promise<readonly T[]> => {
-    const items = await read(async () => fetchPage(page))
-    if (items.length < config.pageSize) return items
-    return [...items, ...(await pages(fetchPage, page + 1))]
+  const pages = async <T>(fetchPage: (page: number) => Promise<readonly T[]>): Promise<readonly T[]> => {
+    let all = Array.of<T>()
+    for (const page of Array.from({length: config.maxPages}, (_, index) => index + 1)) {
+      const items = await read(async () => fetchPage(page))
+      all = all.concat(items)
+      if (items.length < config.pageSize) break
+    }
+    return all
   }
 
   const readRuns = async (): Promise<readonly CheckRunView[]> =>
@@ -436,27 +443,37 @@ async function promote(input: SelfMergeInput, pullRequest: number): Promise<Self
   if (!Array.isArray(protection)) return protection as SelfMergeOutcome
   const required = protection as readonly RequiredCheck[]
 
+  // One poll per attempt, a minute apart. The attempts are bounded by `retry`, so the wait ends even if the
+  // clock never moves; it ends sooner once the wait has used up its 60 minutes. A poll answers with the
+  // outcome that stops the run, or with the names of the checks still pending.
   const start = input.now()
-  for (;;) {
+  const poll = async (): Promise<{stop: SelfMergeOutcome | null; pending: readonly string[]}> => {
     const stopped = guard(input, await readPull())
-    if (stopped !== null) return stopped
+    if (stopped !== null) return {stop: stopped, pending: Array.of<string>()}
     const verdict = evaluateChecks(required, await readRuns(), await readStatuses())
     if (verdict.failed.length > 0) {
-      return outcomeWith(
+      const failed = outcomeWith(
         input,
         'CHECK_FAILED',
         `These required checks failed on the pinned commit: ${list(verdict.failed)}. Nothing was approved.`,
       )
+      return {stop: failed, pending: Array.of<string>()}
     }
-    if (verdict.pending.length === 0) break
-    if (input.now() - start >= config.waitMs) {
-      return outcomeWith(
-        input,
-        'TIMEOUT',
-        `The required checks did not settle within 60 minutes (still waiting on: ${list(verdict.pending)}). The pull request stays open and the next daily run catches it up and merges it. Nothing was approved.`,
-      )
-    }
-    await input.sleep(config.pollMs)
+    return {stop: null, pending: verdict.pending}
+  }
+  const polled = await retry(poll, {
+    attempts: config.maxPolls,
+    delayMs: () => config.pollMs,
+    retryResult: result => result.pending.length > 0 && input.now() - start < config.waitMs,
+    sleep: input.sleep,
+  })
+  if (polled.stop !== null) return polled.stop
+  if (polled.pending.length > 0) {
+    return outcomeWith(
+      input,
+      'TIMEOUT',
+      `The required checks did not settle within 60 minutes (still waiting on: ${list(polled.pending)}). The pull request stays open and the next daily run catches it up and merges it. Nothing was approved.`,
+    )
   }
 
   const recheck = await readProtection()
@@ -488,19 +505,22 @@ async function promote(input: SelfMergeInput, pullRequest: number): Promise<Self
   }
 
   // `mergeable_state` is computed lazily: re-read it while it says `unknown`, guarding every read.
-  const settle = async (): Promise<PullView | SelfMergeOutcome> => {
-    let pull = await readPull()
-    for (let rereads = 0; ; rereads += 1) {
-      const stopped = guard(input, pull)
-      if (stopped !== null) return stopped
-      if (pull.mergeableState !== 'unknown' || rereads >= config.mergeableRereads) return pull
-      await input.sleep(config.mergeableDelayMs)
-      pull = await readPull()
-    }
-  }
+  const settle = async (): Promise<{stop: SelfMergeOutcome | null; pull: PullView}> =>
+    retry(
+      async () => {
+        const pull = await readPull()
+        return {stop: guard(input, pull), pull}
+      },
+      {
+        attempts: config.mergeableRereads + 1,
+        delayMs: () => config.mergeableDelayMs,
+        retryResult: result => result.stop === null && result.pull.mergeableState === 'unknown',
+        sleep: input.sleep,
+      },
+    )
 
   const ready = await settle()
-  if ('code' in ready) return ready
+  if (ready.stop !== null) return ready.stop
 
   const mergeSwitch = await readSwitch()
   if (mergeSwitch === 'unreadable') return outcomeOf(input, 'SWITCH_UNREADABLE')
@@ -520,8 +540,8 @@ async function promote(input: SelfMergeInput, pullRequest: number): Promise<Self
     if (status === 409) return outcomeOf(input, 'OPEN_WAITING')
     if (status === 405) {
       const after = await settle()
-      if ('code' in after) return after
-      return outcomeOf(input, after.mergeableState === 'behind' ? 'OPEN_WAITING' : 'MERGE_BLOCKED')
+      if (after.stop !== null) return after.stop
+      return outcomeOf(input, after.pull.mergeableState === 'behind' ? 'OPEN_WAITING' : 'MERGE_BLOCKED')
     }
     // The merge may have gone through before the failure: look before reporting.
     try {

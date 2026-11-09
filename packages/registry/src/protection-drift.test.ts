@@ -580,7 +580,7 @@ interface IssueRecord {
   pull_request?: unknown
 }
 
-function issueWorld(options: {open?: readonly IssueRecord[]; fail?: string} = {}) {
+function issueWorld(options: {open?: readonly IssueRecord[]; fail?: string; endless?: boolean} = {}) {
   const calls: {name: string; params: Record<string, unknown>}[] = []
   const guard = (name: string) => {
     if (options.fail === name) throw Object.assign(new Error('upstream body with a secret'), {status: 500})
@@ -594,6 +594,9 @@ function issueWorld(options: {open?: readonly IssueRecord[]; fail?: string} = {}
           guard('list')
           const size = 100
           const page = params.page as number
+          if (options.endless === true) {
+            return {data: Array.from({length: size}, (_, index) => ({number: page * 1000 + index, pull_request: {}}))}
+          }
           return {data: open.slice((page - 1) * size, page * size)}
         },
         create: async (params: Record<string, unknown>) => {
@@ -736,6 +739,14 @@ describe('runProtectionDrift: opening and commenting', () => {
     expect(h.world.names()).toEqual(['list', 'list', 'comment'])
     expect(h.world.calls[1]?.params).toMatchObject({page: 2})
     expect(h.world.calls[2]?.params).toMatchObject({issue_number: 77})
+  })
+
+  it('reads at most 50 pages of open issues, then opens an issue if none of them is a real one', async () => {
+    const h = runner({event: DRIFT_EVENT, world: issueWorld({endless: true})})
+    expect(await h.run()).toBe(0)
+    expect(h.world.names().filter(name => name === 'list')).toHaveLength(50)
+    expect(h.world.calls.findLast(call => call.name === 'list')?.params).toMatchObject({page: 50})
+    expect(h.world.names().at(-1)).toBe('create')
   })
 
   it('opens a new issue after a manual close, because only open issues count', async () => {
