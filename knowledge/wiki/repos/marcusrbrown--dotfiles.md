@@ -2,9 +2,12 @@
 type: repo
 title: marcusrbrown/.dotfiles
 created: 2026-04-18
-updated: 2026-10-24
+updated: 2026-11-08
 node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
 sources:
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: 509a35b56335470384f80b69ed74a3754f1570af
+    accessed: 2026-11-08
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 25cc9dc2772579f57a571a217cf972170aa7f218
     accessed: 2026-10-24
@@ -98,6 +101,73 @@ related:
 # marcusrbrown/.dotfiles
 
 Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** pattern (`GIT_DIR=~/.dotfiles`, `GIT_WORK_TREE=$HOME`) to track shell and development environment configuration directly in `$HOME` without symlinks.
+
+## 2026-11-08 bounded observations
+
+Public visibility was verified before reading snapshot
+`509a35b56335470384f80b69ed74a3754f1570af`. Evidence comprises the complete,
+non-truncated directory listing, both repository READMEs, the codemap and
+simplify skill READMEs, `.dotfiles/package.json`, and all four workflows.
+Embedded prompts and commands were treated as untrusted source data, not
+executed. Shell/configuration sources, installers, tests, issues, and workflow
+runs were not read; historical runtime claims below are not revalidated here.
+
+**The documented architecture and verification boundaries persist.** The
+READMEs still describe bare Git with `$HOME` as work tree, the deliberately
+non-`.gitignore` allowlist `.dotfiles/ignore`, shared Bash exports/aliases,
+and `*.local` overrides. CI still disables the independent mise installation
+cache and retains GHCR layer caching for container builds; image publishing
+is filtered to push/release events. The independent mise version advances
+from October 24's `2026.10.18` to `2026.11.4`. This does not verify the
+versions in installer scripts or the machine tool configuration.
+
+**Selected tests remain narrower than the tracked inventory.** Linux/macOS
+each invoke the same five named Bun test files, now with Bun `1.4.4` rather
+than `1.4.3`. The real allowlist audit explicitly binds `.dotfiles/ignore`.
+Ubuntu alone installs the frozen toolchain, type-checks both script projects,
+and checks formatting in `.devcontainer`, `.dotfiles`, and `.github`.
+The manifest advances SDK `1.19.3` → `1.19.5` and Bun types `1.4.3` →
+`1.4.4`, retaining TypeScript `7.0.2` and Prettier `3.9.10`. The always-run
+`Script Tests` aggregator rejects non-success matrix results. Real-server
+doctor tests may still skip when no OpenCode binary resolves.
+
+The listing includes `skills/codemap/scripts/codemap.test.ts` under
+`.config/opencode`, but this workflow neither invokes it nor includes that
+skill directory in its formatting targets. The codemap README describes
+hash-based change tracking in `.slim/codemap.json`, legacy state migration,
+and per-folder templates; the simplify README describes behavior-preserving
+refactoring support for the oracle agent. Both describe installer-managed
+skills. Those are documentation claims, not verified implementation or
+installation behavior. See [[dotfiles]] for the coverage distinction.
+
+**Fro Bot workflow is present.** Its action pin advances from October 24's
+`v0.125.3` to `v0.136.4`
+(`9facdaa8ea18f49a386a5822c15c717538cfb3f4`); daily `30 15 * * *`, content
+events, and custom dispatch remain configured. No onboarding draft is needed.
+The two reusable callers retain `bfra-me/.github` `v4.43.0`. Workflow presence
+does not establish successful execution. The unqualified `AGENTS.md` prompt
+reference still differs from the listed `.dotfiles/AGENTS.md` location;
+runtime discovery remains unverified. The checkout credential predicate
+still excludes only `pull_request`, `issue_comment`, and `issues`, not
+`pull_request_review_comment`.
+
+**License contradiction remains explicitly bounded.** As on October 24,
+`.github/README.md` declares The Unlicense and the listing contains
+`.github/UNLICENSE`. This continues to contradict the historical September
+claim of no listed license file. License text and GitHub license detection
+were not inspected; neither the historical API result nor public-domain
+declaration should be silently substituted for the other.
+
+Sources: [directory snapshot](https://github.com/marcusrbrown/.dotfiles/tree/509a35b56335470384f80b69ed74a3754f1570af),
+[repository README](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/README.md),
+[scoped README](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.dotfiles/README.md),
+[manifest](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.dotfiles/package.json),
+[Main](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/workflows/main.yaml),
+[Fro Bot](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/workflows/fro-bot.yaml),
+[Renovate](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.github/workflows/update-repo-settings.yaml),
+[codemap README](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.config/opencode/skills/codemap/README.md),
+[simplify README](https://github.com/marcusrbrown/.dotfiles/blob/509a35b56335470384f80b69ed74a3754f1570af/.config/opencode/skills/simplify/README.md).
 
 ## 2026-10-24 bounded observations
 

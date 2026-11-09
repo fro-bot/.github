@@ -2,8 +2,11 @@
 type: topic
 title: LangChain
 created: 2026-04-18
-updated: 2026-10-19
+updated: 2026-11-03
 sources:
+  - url: https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/package.json
+    sha: 383b8cdafa8bb9911147028fce6e524c2739db93
+    accessed: 2026-11-03
   - url: https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json
     sha: 81a5aed0ca3454c115f5b776244f4455a5de69f0
     accessed: 2026-10-19
@@ -50,6 +53,14 @@ At `81a5aed0ca3454c115f5b776244f4455a5de69f0`, [[marcusrbrown--gpt]] declares `l
 The family continues to move at different minor versions. Movement in four packages does not prove compatibility with the fifth, and a stationary LangGraph pin does not by itself establish updater suppression. The README still describes a provider abstraction, but application imports, lockfile resolution, tests, and updater state were not inspected in this bounded survey.
 
 Sources: [package manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/pnpm-workspace.yaml), [README](https://github.com/marcusrbrown/gpt/blob/81a5aed0ca3454c115f5b776244f4455a5de69f0/readme.md).
+
+## GPT no longer declares the package family (2026-11-03)
+
+**Contradiction with the October 19 snapshot and the historical consumer descriptions above:** at `383b8cdafa8bb9911147028fce6e524c2739db93`, neither dependency section of [[marcusrbrown--gpt]]'s root manifest declares `langchain` or any `@langchain/*` package. It instead retains `openai` **6.49.0** and `@modelcontextprotocol/sdk` **1.32.2**. GPT should no longer be counted as a currently declared direct LangChain consumer on this evidence. The older versions remain recorded as dated history, not present-stack guidance.
+
+The workspace still overrides transitive `langsmith` to `>=0.6.0`; an override is a constraint, not proof the package remains installed. Application source, lockfile resolution, and tests were outside this survey's reads, so complete runtime removal and a successful migration are unverified. The README still describes a provider abstraction, but no longer needs that abstraction to imply LangChain usage.
+
+Sources: [package manifest](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/package.json), [workspace manifest](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/pnpm-workspace.yaml), [README](https://github.com/marcusrbrown/gpt/blob/383b8cdafa8bb9911147028fce6e524c2739db93/readme.md).
 
 ## Migration Patterns
 

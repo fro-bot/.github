@@ -2,8 +2,11 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-10-23
+updated: 2026-11-06
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-11-06
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-10-23
@@ -58,6 +61,33 @@ node_id: R_kgDORLxXng
 # fro-bot/fro-bot.github.io
 
 Org-level GitHub Pages custom domain holder for the `fro-bot` organization. Serves the `fro.bot` domain.
+
+## Bounded source confirmation (2026-11-06)
+
+GitHub confirms public visibility, default branch `main`, and stable repository
+identity `R_kgDORLxXng`. The complete, non-truncated root tree remains
+`3e44653c4d185b239b44b3af12255d18c86463ab`: one eight-byte `CNAME` blob
+(`208ca8c19f45a2b15968aaa4c0c391f18df60df4`), no directories or other files.
+There is still no README, manifest, or committed workflow to inspect.
+**No repo-local Fro Bot workflow is present.** A separate follow-up draft PR
+for minimal triage or infrastructure monitoring remains a proposal, not work
+performed by this survey.
+
+**Historical/current distinction:** the September 25 certificate observation
+below ends at November 6, today. Neither reaching that date nor confirming an
+unchanged Git tree establishes a currently expired certificate, a renewal, or
+a renewal failure. The October 7 renewal forecast remains untested. Earlier
+unqualified wording such as "Cert is valid and current" is dated evidence,
+not a current health assessment. The same boundary applies to the earlier
+DNS, redirect, verification, Pages-settings, issue, and sibling-site findings.
+Those observations are preserved, not revalidated or silently replaced.
+
+Only repository identity metadata and directory listings were read; `CNAME`
+contents and live infrastructure were not inspected. A separately authorized
+runtime check would be needed to resolve certificate validity or remediation
+status. See [[github-pages]] for the source/runtime evidence boundary.
+
+Source: [complete source tree](https://github.com/fro-bot/fro-bot.github.io/tree/3e44653c4d185b239b44b3af12255d18c86463ab).
 
 ## Bounded source confirmation (2026-10-23)
 

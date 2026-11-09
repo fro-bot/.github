@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-10-19
+updated: 2026-11-02
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -50,6 +50,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 6b0398e4bf614a1dd504997140bc8d85e572e5c7
     accessed: 2026-10-19
+  - url: https://github.com/fro-bot/systematic
+    sha: b3c99bcd4b32614b10111bf84477d5a6dac8dfb9
+    accessed: 2026-11-02
 tags:
   - documentation
   - github-pages
@@ -72,6 +75,47 @@ related:
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+## Published route additions, not a measured registry expansion (2026-11-02)
+
+The repository is public and still defaults to `gh-pages`, now at commit
+`b3c99bcd4b32614b10111bf84477d5a6dac8dfb9`. Complete, non-truncated
+recursive listings of this snapshot and the October 19 baseline establish
+the following directory changes:
+
+| Listed subtree | October 19 | November 2 | Observed addition |
+| --- | --- | --- | --- |
+| `guides/` | 14 | 15 | `search/` |
+| `reference/skills/` | 32 | 33 | `pr-attachments/` |
+| `components/` immediate directories | 71 | 72 | `pr-attachments/` |
+
+The new component route also contains nested `skills/pr-attachments/scripts/`
+directories. No directories were removed anywhere in the compared trees.
+The 17 root entries, 3 getting-started directories, and 38 agent-reference
+directories (37 named-agent paths plus `readme/`) persist. The schema tree
+still exposes only `latest/` and `v3/`. These additions supersede the October
+19 route counts, not its conclusion that layout alone cannot establish a
+published contract. See [[github-pages]].
+
+Only paths were inspected: neither generated HTML nor bundled skill/script
+bodies nor registry/schema JSON was read. A `search/` route does not establish
+search semantics, and the `pr-attachments/` paths do not establish attachment
+behavior, registry membership, or a current package version. No release date,
+live HTTP availability, schema equivalence, or deployment health was measured.
+The September 21 withdrawal of the publish/deploy-race diagnosis remains in
+force; historical issue and automation states below were not refreshed.
+
+There is still no source README file, dependency manifest, `.github/`
+directory, or committed workflow in the surveyed snapshot. In particular,
+**no Fro Bot workflow is present on the surveyed default branch**. A separate
+follow-up draft PR may be proposed, but should account for this generated
+output branch and the historically documented upstream-owned deployment.
+Absence here does not establish absence of upstream automation; that upstream
+was not surveyed in this pass. The `reference/agents/readme/` directory is a
+rendered route, not a README source file.
+
+Sources: [current output tree](https://github.com/fro-bot/systematic/tree/b3c99bcd4b32614b10111bf84477d5a6dac8dfb9),
+[October 19 baseline](https://github.com/fro-bot/systematic/tree/6b0398e4bf614a1dd504997140bc8d85e572e5c7).
 
 ## Output layout persists across a new snapshot (2026-10-19)
 
