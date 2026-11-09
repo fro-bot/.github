@@ -3,6 +3,7 @@ import type {RegistryIo} from './registry-io.ts'
 
 import process from 'node:process'
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
+import {writeGithubOutputs} from '@fro-bot/core/output'
 import {retry} from '@fro-bot/core/retry'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -26,6 +27,19 @@ export interface MergeDataPrParams {
   octokit?: OctokitClient
   now?: Date
   logger?: MergeDataPrLogger
+  /**
+   * The `data` commit the privacy gates checked. The compare runs against it, the PR is never brought up
+   * to date (a push after the gates would move the head they checked), and `mergeableState` reports
+   * `behind` instead.
+   */
+  pin?: string
+  /** The qualification of the promotion at the pin. When given it decides the label; otherwise the file list does. */
+  qualifies?: boolean
+  /**
+   * Whether to open a PR when the newest closed `data` -> `main` PR was closed unmerged. Defaults to true;
+   * the promotion run passes false unless the run asked for a review refresh.
+   */
+  recreateClosedPullRequest?: boolean
 }
 
 export interface MergeDataPrResult {
@@ -44,6 +58,12 @@ export interface MergeDataPrResult {
    * which is not an alarm condition. When true, callers should treat the run as non-clean (exit non-zero).
    */
   mergeabilityUnavailable: boolean
+  /** The PR head as the API reports it, or null when no PR was read or opened. */
+  headSha: string | null
+  /** `mergeable_state` of the PR: `behind` is reported, not repaired, for a pinned run. Null when no PR was read. */
+  mergeableState: string | null
+  /** True when the run left the newest closed PR closed because the operator closed it. */
+  closedPullRequestKept: boolean
 }
 
 /**
@@ -56,7 +76,7 @@ export interface MergeDataPrLogger {
   warn: (message: string) => void
 }
 
-export type MergeDataPrErrorCode = 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'API_ERROR'
+export type MergeDataPrErrorCode = 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'API_ERROR' | 'INVALID_PIN'
 
 const DEFAULT_LOGGER: MergeDataPrLogger = {
   warn(message) {
@@ -95,25 +115,16 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
   const octokit = params.octokit ?? (await createOctokitFromEnv())
   const logger = params.logger ?? DEFAULT_LOGGER
 
-  const comparison = await compareBranches({octokit, owner, repo, baseBranch, headBranch})
+  const comparison = await compareBranches({octokit, owner, repo, baseBranch, headRef: params.pin ?? headBranch})
 
   // The changed-file list alone decides: `data` keeps history, so commits ahead of `main` (for
   // example the merge-back, whose first-parent diff is empty) do not mean there is anything to promote.
   if ((comparison.data.files?.length ?? 0) === 0) {
-    return {
-      createdPullRequest: false,
-      pullRequestNumber: null,
-      pullRequestUrl: null,
-      label: null,
-      journalIssueNumber: null,
-      staleAlertIssueNumber: null,
-      conflicted: false,
-      conflictAlertIssueNumber: null,
-      mergeabilityUnavailable: false,
-    }
+    return emptyResult({label: null, staleAlertIssueNumber: null})
   }
 
-  const label = selectLabel(comparison.data.files ?? [])
+  const files = comparison.data.files ?? []
+  const label = params.qualifies === undefined ? selectLabel(files) : params.qualifies ? 'automerge' : 'needs-review'
   const staleAlertIssueNumber = await maybeCreateStaleDivergenceAlert({
     octokit,
     owner,
@@ -123,6 +134,8 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
     comparison: comparison.data,
     now,
   })
+
+  const settle = {octokit, owner, repo, headBranch, baseBranch, logger, label, staleAlertIssueNumber, pin: params.pin}
 
   const existingPullRequest = await findExistingPullRequest({
     octokit,
@@ -134,48 +147,16 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
   })
 
   if (existingPullRequest !== null) {
-    const mergeableState = await maybeUpdateBehindPullRequest({
-      octokit,
-      owner,
-      repo,
-      pullRequestNumber: existingPullRequest.number,
-      logger,
-    })
-    await addLabel({octokit, owner, repo, issueNumber: existingPullRequest.number, label})
+    return settlePullRequest(settle, existingPullRequest)
+  }
 
-    const conflicted = mergeableState === 'dirty'
-    const mergeabilityUnavailable = mergeableState === 'unavailable'
-    let conflictAlertIssueNumber: number | null = null
-    if (conflicted) {
-      try {
-        conflictAlertIssueNumber = await maybeCreateConflictAlert({
-          octokit,
-          owner,
-          repo,
-          pullRequestNumber: existingPullRequest.number,
-          pullRequestUrl: existingPullRequest.html_url,
-          headBranch,
-          baseBranch,
-        })
-      } catch (error: unknown) {
-        if (!isRetryableGitHubApiError(error)) throw error
-        logger.warn(
-          `${formatApiWarning(error, `creating conflict alert for PR #${existingPullRequest.number}`)}; next run will retry the alert.`,
-        )
-      }
-    }
-
-    return {
-      createdPullRequest: true,
-      pullRequestNumber: existingPullRequest.number,
-      pullRequestUrl: existingPullRequest.html_url,
-      label,
-      journalIssueNumber: null,
-      staleAlertIssueNumber,
-      conflicted,
-      conflictAlertIssueNumber,
-      mergeabilityUnavailable,
-    }
+  // A closed, unmerged promotion PR is the operator's decision: only a run that asked for a review
+  // refresh opens another.
+  if (
+    params.recreateClosedPullRequest === false &&
+    (await newestClosedPullRequestWasUnmerged({octokit, owner, repo, headBranch, baseBranch}))
+  ) {
+    return {...emptyResult({label: null, staleAlertIssueNumber}), closedPullRequestKept: true}
   }
 
   try {
@@ -185,51 +166,14 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       title: `chore(data): merge ${headBranch} into ${baseBranch}`,
       head: headBranch,
       base: baseBranch,
-      body: createPullRequestBody({baseBranch, headBranch, changedFiles: comparison.data.files ?? []}),
+      body: createPullRequestBody({baseBranch, headBranch, changedFiles: files}),
     })
 
-    const mergeableState = await maybeUpdateBehindPullRequest({
-      octokit,
-      owner,
-      repo,
-      pullRequestNumber: pullRequest.data.number,
-      logger,
+    return await settlePullRequest(settle, {
+      number: pullRequest.data.number,
+      html_url: pullRequest.data.html_url,
+      headSha: pullRequest.data.head?.sha ?? null,
     })
-    await addLabel({octokit, owner, repo, issueNumber: pullRequest.data.number, label})
-
-    const conflicted = mergeableState === 'dirty'
-    const mergeabilityUnavailable = mergeableState === 'unavailable'
-    let conflictAlertIssueNumber: number | null = null
-    if (conflicted) {
-      try {
-        conflictAlertIssueNumber = await maybeCreateConflictAlert({
-          octokit,
-          owner,
-          repo,
-          pullRequestNumber: pullRequest.data.number,
-          pullRequestUrl: pullRequest.data.html_url,
-          headBranch,
-          baseBranch,
-        })
-      } catch (error: unknown) {
-        if (!isRetryableGitHubApiError(error)) throw error
-        logger.warn(
-          `${formatApiWarning(error, `creating conflict alert for PR #${pullRequest.data.number}`)}; next run will retry the alert.`,
-        )
-      }
-    }
-
-    return {
-      createdPullRequest: true,
-      pullRequestNumber: pullRequest.data.number,
-      pullRequestUrl: pullRequest.data.html_url,
-      label,
-      journalIssueNumber: null,
-      staleAlertIssueNumber,
-      conflicted,
-      conflictAlertIssueNumber,
-      mergeabilityUnavailable,
-    }
   } catch (error: unknown) {
     if (isAlreadyExistsPullRequestError(error)) {
       const pullRequest = await waitForExistingPullRequestByBranch({
@@ -241,48 +185,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       })
 
       if (pullRequest !== null) {
-        const mergeableState = await maybeUpdateBehindPullRequest({
-          octokit,
-          owner,
-          repo,
-          pullRequestNumber: pullRequest.number,
-          logger,
-        })
-        await addLabel({octokit, owner, repo, issueNumber: pullRequest.number, label})
-
-        const conflicted = mergeableState === 'dirty'
-        const mergeabilityUnavailable = mergeableState === 'unavailable'
-        let conflictAlertIssueNumber: number | null = null
-        if (conflicted) {
-          try {
-            conflictAlertIssueNumber = await maybeCreateConflictAlert({
-              octokit,
-              owner,
-              repo,
-              pullRequestNumber: pullRequest.number,
-              pullRequestUrl: pullRequest.html_url,
-              headBranch,
-              baseBranch,
-            })
-          } catch (error: unknown) {
-            if (!isRetryableGitHubApiError(error)) throw error
-            logger.warn(
-              `${formatApiWarning(error, `creating conflict alert for PR #${pullRequest.number}`)}; next run will retry the alert.`,
-            )
-          }
-        }
-
-        return {
-          createdPullRequest: true,
-          pullRequestNumber: pullRequest.number,
-          pullRequestUrl: pullRequest.html_url,
-          label,
-          journalIssueNumber: null,
-          staleAlertIssueNumber,
-          conflicted,
-          conflictAlertIssueNumber,
-          mergeabilityUnavailable,
-        }
+        return settlePullRequest(settle, pullRequest)
       }
     }
 
@@ -294,20 +197,91 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       owner,
       repo,
       title: `Merge conflict: ${headBranch} -> ${baseBranch}`,
-      body: createConflictJournalBody({baseBranch, headBranch, changedFiles: comparison.data.files ?? []}),
+      body: createConflictJournalBody({baseBranch, headBranch, changedFiles: files}),
     })
 
-    return {
-      createdPullRequest: false,
-      pullRequestNumber: null,
-      pullRequestUrl: null,
-      label: null,
-      journalIssueNumber: journalEntry.data.number,
-      staleAlertIssueNumber,
-      conflicted: false,
-      conflictAlertIssueNumber: null,
-      mergeabilityUnavailable: false,
+    return {...emptyResult({label: null, staleAlertIssueNumber}), journalIssueNumber: journalEntry.data.number}
+  }
+}
+
+function emptyResult(params: {label: MergeLabel | null; staleAlertIssueNumber: number | null}): MergeDataPrResult {
+  return {
+    createdPullRequest: false,
+    pullRequestNumber: null,
+    pullRequestUrl: null,
+    label: params.label,
+    journalIssueNumber: null,
+    staleAlertIssueNumber: params.staleAlertIssueNumber,
+    conflicted: false,
+    conflictAlertIssueNumber: null,
+    mergeabilityUnavailable: false,
+    headSha: null,
+    mergeableState: null,
+    closedPullRequestKept: false,
+  }
+}
+
+/** What the three routes to a PR (found by commit, created, found by branch after a duplicate 422) share. */
+async function settlePullRequest(
+  context: {
+    octokit: OctokitClient
+    owner: string
+    repo: string
+    headBranch: string
+    baseBranch: string
+    logger: MergeDataPrLogger
+    label: MergeLabel
+    staleAlertIssueNumber: number | null
+    pin: string | undefined
+  },
+  pullRequest: {number: number; html_url: string; headSha?: string | null},
+): Promise<MergeDataPrResult> {
+  const {octokit, owner, repo, headBranch, baseBranch, logger} = context
+  const state = await maybeUpdateBehindPullRequest({
+    octokit,
+    owner,
+    repo,
+    pullRequestNumber: pullRequest.number,
+    logger,
+    pin: context.pin,
+  })
+  await replaceLabel({octokit, owner, repo, issueNumber: pullRequest.number, label: context.label})
+
+  const conflicted = state.mergeableState === 'dirty'
+  const mergeabilityUnavailable = state.mergeableState === 'unavailable'
+  let conflictAlertIssueNumber: number | null = null
+  if (conflicted) {
+    try {
+      conflictAlertIssueNumber = await maybeCreateConflictAlert({
+        octokit,
+        owner,
+        repo,
+        pullRequestNumber: pullRequest.number,
+        pullRequestUrl: pullRequest.html_url,
+        headBranch,
+        baseBranch,
+      })
+    } catch (error: unknown) {
+      if (!isRetryableGitHubApiError(error)) throw error
+      logger.warn(
+        `${formatApiWarning(error, `creating conflict alert for PR #${pullRequest.number}`)}; next run will retry the alert.`,
+      )
     }
+  }
+
+  return {
+    createdPullRequest: true,
+    pullRequestNumber: pullRequest.number,
+    pullRequestUrl: pullRequest.html_url,
+    label: context.label,
+    journalIssueNumber: null,
+    staleAlertIssueNumber: context.staleAlertIssueNumber,
+    conflicted,
+    conflictAlertIssueNumber,
+    mergeabilityUnavailable,
+    headSha: state.headSha ?? pullRequest.headSha ?? null,
+    mergeableState: state.mergeableState,
+    closedPullRequestKept: false,
   }
 }
 
@@ -317,7 +291,8 @@ async function maybeUpdateBehindPullRequest(params: {
   repo: string
   pullRequestNumber: number
   logger: MergeDataPrLogger
-}): Promise<string | null> {
+  pin: string | undefined
+}): Promise<{mergeableState: string | null; headSha: string | null}> {
   let pullRequest
 
   try {
@@ -331,19 +306,31 @@ async function maybeUpdateBehindPullRequest(params: {
       `${formatApiWarning(error, `fetching PR #${params.pullRequestNumber}`)}; continuing because the PR already exists and a later run can retry the branch update.`,
     )
 
-    return 'unavailable'
+    return {mergeableState: 'unavailable', headSha: null}
   }
+
+  const headSha = pullRequest.data.head.sha
 
   if (pullRequest.data.mergeable_state === 'unknown') {
     params.logger.warn(
       `PR #${params.pullRequestNumber} mergeability stayed unknown after ${MERGEABLE_STATE_RETRY_COUNT + 1} checks; leaving the branch unchanged for this run.`,
     )
 
-    return 'unknown'
+    return {mergeableState: 'unknown', headSha}
   }
 
   if (pullRequest.data.mergeable_state !== 'behind') {
-    return pullRequest.data.mergeable_state
+    return {mergeableState: pullRequest.data.mergeable_state, headSha}
+  }
+
+  // A pinned run has already gated its commit: a push now would move the head past what the gates saw.
+  // The merge-back keeps `data` current, so the next run catches the PR up.
+  if (params.pin !== undefined) {
+    params.logger.warn(
+      `PR #${params.pullRequestNumber} is behind the base branch; leaving the head unchanged so the gated commit stays the head.`,
+    )
+
+    return {mergeableState: 'behind', headSha}
   }
 
   try {
@@ -355,13 +342,13 @@ async function maybeUpdateBehindPullRequest(params: {
     })
   } catch (error: unknown) {
     if (isExpectedHeadShaRace(error)) {
-      return 'behind'
+      return {mergeableState: 'behind', headSha}
     }
 
     // The server-side merge of `main` into the head conflicts: the PR is conflicted, so route it to
     // the conflict alert rather than failing the run with a generic API error.
     if (isMergeConflictError(error)) {
-      return 'dirty'
+      return {mergeableState: 'dirty', headSha}
     }
 
     if (isRetryableGitHubApiError(error)) {
@@ -369,13 +356,13 @@ async function maybeUpdateBehindPullRequest(params: {
         `${formatApiWarning(error, `updating PR #${params.pullRequestNumber} branch from ${params.repo}`)}; continuing because the PR already exists and a later run can retry the branch update.`,
       )
 
-      return null
+      return {mergeableState: null, headSha}
     }
 
     throw toMergeDataPrError(error, `updating PR #${params.pullRequestNumber} branch from ${params.repo}`)
   }
 
-  return 'behind'
+  return {mergeableState: 'behind', headSha}
 }
 
 async function maybeCreateConflictAlert(params: {
@@ -472,16 +459,16 @@ async function compareBranches(params: {
   owner: string
   repo: string
   baseBranch: string
-  headBranch: string
+  headRef: string
 }) {
   try {
     return await params.octokit.rest.repos.compareCommitsWithBasehead({
       owner: params.owner,
       repo: params.repo,
-      basehead: `${params.baseBranch}...${params.headBranch}`,
+      basehead: `${params.baseBranch}...${params.headRef}`,
     })
   } catch (error: unknown) {
-    throw toMergeDataPrError(error, `comparing ${params.baseBranch}...${params.headBranch}`)
+    throw toMergeDataPrError(error, `comparing ${params.baseBranch}...${params.headRef}`)
   }
 }
 
@@ -634,7 +621,11 @@ async function waitForExistingPullRequestByBranch(params: {
   })
 }
 
-async function addLabel(params: {
+/**
+ * Gives the PR `label` and takes the other of the two off it. The new label goes on first, so the PR is
+ * never unlabeled; any other label, `hold-merge` included, is left as it is.
+ */
+async function replaceLabel(params: {
   octokit: OctokitClient
   owner: string
   repo: string
@@ -651,10 +642,58 @@ async function addLabel(params: {
   } catch (error: unknown) {
     throw toMergeDataPrError(error, `adding ${params.label} label to PR #${params.issueNumber}`)
   }
+
+  const stale: MergeLabel = params.label === 'automerge' ? 'needs-review' : 'automerge'
+  try {
+    await params.octokit.rest.issues.removeLabel({
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.issueNumber,
+      name: stale,
+    })
+  } catch (error: unknown) {
+    // The PR never carried the other label: nothing to remove.
+    if (getErrorStatus(error) === 404) return
+    throw toMergeDataPrError(error, `removing ${stale} label from PR #${params.issueNumber}`)
+  }
 }
 
-function selectLabel(files: {filename: string}[]): MergeLabel {
-  return files.every(file => AUTO_MERGE_PATH_PREFIXES.some(prefix => file.filename.startsWith(prefix)))
+async function newestClosedPullRequestWasUnmerged(params: {
+  octokit: OctokitClient
+  owner: string
+  repo: string
+  headBranch: string
+  baseBranch: string
+}): Promise<boolean> {
+  try {
+    const response = await params.octokit.rest.pulls.list({
+      owner: params.owner,
+      repo: params.repo,
+      state: 'closed',
+      head: `${params.owner}:${params.headBranch}`,
+      base: params.baseBranch,
+      sort: 'created',
+      direction: 'desc',
+      per_page: 1,
+    })
+    const newest = response.data[0]
+
+    return newest !== undefined && newest.merged_at === null
+  } catch (error: unknown) {
+    throw toMergeDataPrError(
+      error,
+      `looking up the newest closed ${params.headBranch} -> ${params.baseBranch} pull request`,
+    )
+  }
+}
+
+/** A file counts under both its names: a rename out of `scripts/` into `knowledge/` is not a knowledge-only change. */
+function selectLabel(files: {filename: string; previous_filename?: string}[]): MergeLabel {
+  const isAllowed = (path: string): boolean => AUTO_MERGE_PATH_PREFIXES.some(prefix => path.startsWith(prefix))
+
+  return files.every(
+    file => isAllowed(file.filename) && (file.previous_filename === undefined || isAllowed(file.previous_filename)),
+  )
     ? 'automerge'
     : 'needs-review'
 }
@@ -866,16 +905,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+const PROMOTION_PIN_PATTERN = /^[0-9a-f]{40}$/u
+
 /**
- * The CLI body: promotes `data` to `main`, prints the result as one JSON line, and returns exit code
- * 1 when the promotion PR is conflicted or its mergeability could not be read.
+ * The promotion params the workflow passes as env: `PROMOTION_PIN` (the gated `data` commit),
+ * `PROMOTION_QUALIFIES` and `PROMOTION_REFRESH_REVIEW`. Without a pin there are none, and the run behaves
+ * as it did before the pin existed. With one, anything but the exact string `true` is false, so a missing
+ * value fails safe to `needs-review` and a closed PR staying closed.
  */
-export async function runMergeDataPr(
-  io: RegistryIo,
-  merge: () => Promise<MergeDataPrResult> = mergeDataPr,
-): Promise<number> {
-  const result = await merge()
+export function promotionParamsFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): Pick<MergeDataPrParams, 'pin' | 'qualifies' | 'recreateClosedPullRequest'> {
+  const pin = env.PROMOTION_PIN
+  if (pin === undefined || pin === '') return {}
+  if (!PROMOTION_PIN_PATTERN.test(pin)) {
+    throw new MergeDataPrError({
+      code: 'INVALID_PIN',
+      message: 'PROMOTION_PIN must be a 40-character commit SHA',
+      remediation: 'Pass the pinned data commit from the pin step.',
+    })
+  }
+
+  return {
+    pin,
+    qualifies: env.PROMOTION_QUALIFIES === 'true',
+    recreateClosedPullRequest: env.PROMOTION_REFRESH_REVIEW === 'true',
+  }
+}
+
+export interface MergeDataPrIo extends RegistryIo {
+  /** The env of the run. When given, the PR number and head are written to `$GITHUB_OUTPUT`. */
+  readonly env?: Readonly<Record<string, string | undefined>>
+  /** Defaults to `appendFileSync`; a test passes a recorder. */
+  readonly append?: (path: string, content: string) => void
+}
+
+/**
+ * The CLI body: promotes `data` to `main`, prints the result as one JSON line, writes the PR number and
+ * head as step outputs, and returns exit code 1 when the promotion PR is conflicted or its mergeability
+ * could not be read.
+ */
+export async function runMergeDataPr(io: MergeDataPrIo, merge?: () => Promise<MergeDataPrResult>): Promise<number> {
+  const result = await (merge ?? (async () => mergeDataPr(promotionParamsFromEnv(io.env ?? process.env))))()
   io.stdout(`${JSON.stringify(result)}\n`)
+  if (io.env !== undefined) {
+    writeGithubOutputs(
+      {'pull-request': String(result.pullRequestNumber ?? ''), head: result.headSha ?? ''},
+      {onMissing: 'skip', env: io.env, append: io.append},
+    )
+  }
 
   return result.conflicted || result.mergeabilityUnavailable ? 1 : 0
 }
