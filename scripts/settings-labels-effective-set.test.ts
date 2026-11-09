@@ -113,13 +113,16 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     expect(total, 'update this count when adding or removing a code-declared label').toBe(17)
   })
 
-  it('declares attention-tracking with a color and description in the effective merged label set', () => {
-    const label = effectiveLabelsByName.get('attention-tracking')
+  it.each(['attention-tracking', 'program-tracker'])(
+    'declares %s with a color and description in the effective merged label set',
+    name => {
+      const label = effectiveLabelsByName.get(name)
 
-    expect(label, 'attention-tracking: missing from the effective merged label set').toBeDefined()
-    expect(label?.color).toMatch(/^#?[\da-f]{6}$/i)
-    expect(label?.description?.trim()).toBeTruthy()
-  })
+      expect(label, `${name}: missing from the effective merged label set`).toBeDefined()
+      expect(label?.color).toMatch(/^#?[\da-f]{6}$/i)
+      expect(label?.description?.trim()).toBeTruthy()
+    },
+  )
 
   it('keeps every code-declared label descriptor in sync with the effective merged label set (base + .github/settings.yml, merged by name)', () => {
     const mismatches: string[] = []
