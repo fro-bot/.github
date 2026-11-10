@@ -770,10 +770,10 @@ function isPinnedApproval(review: ReviewView, pin: string): boolean {
 
 /** The outcome of an approval request that may or may not have been recorded, and what the reviews showed. */
 function approvalUnknown(state: RunState, history: 'none' | 'incomplete'): SelfMergeOutcome {
-  const seen =
-    history === 'incomplete'
-      ? 'The review history was not fully read.'
-      : 'A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit.'
+  const seen = {
+    none: 'A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit.',
+    incomplete: 'The review history was not fully read.',
+  }[history]
   return outcomeWith(
     state,
     'APPROVAL_UNKNOWN',
