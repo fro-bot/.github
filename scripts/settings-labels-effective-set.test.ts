@@ -92,6 +92,14 @@ describe('.github/settings.yml labels: effective set after the v4.32.0 by-name _
     expect(redundant).toEqual([])
   })
 
+  it('keeps every label description within GitHub’s 100-character limit (a longer one fails the settings run with 422)', () => {
+    const tooLong = [...baseLabels, ...repoSettingsParsed.labels]
+      .filter(label => (label.description ?? '').length > 100)
+      .map(label => `"${label.name}": ${label.description?.length} characters`)
+
+    expect(tooLong).toEqual([])
+  })
+
   // Table-driven: add a sixth code-declared descriptor set by appending one entry here.
   const codeLabelSources: {
     source: string
