@@ -2,8 +2,17 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-09
+updated: 2026-11-10
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/f0d44887e8ec2d37c4162c3c81e2691075ace99a/package.json
+    sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
+    accessed: 2026-11-10
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/f0d44887e8ec2d37c4162c3c81e2691075ace99a/README.md
+    sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
+    accessed: 2026-11-10
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/f0d44887e8ec2d37c4162c3c81e2691075ace99a/.github/workflows/ci.yaml
+    sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
+    accessed: 2026-11-10
   - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/README.md
     sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
     accessed: 2026-11-09
@@ -124,6 +133,30 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-10: an unbounded v1 peer is not a v2 contract
+
+[[marcusrbrown--opencode-copilot-delegate]] still declares **0.12.1**, with
+development pin `@opencode-ai/plugin` **1.19.5** and sole peer
+`@opencode-ai/plugin >=1.14.41`. Its README uses singular `plugin` for server
+and opt-in TUI installation. There is no declared `@opencode/plugin` peer in
+this manifest. Contrast [[marcusrbrown--systematic]] and
+[[marcusrbrown--metacogs]], whose recent snapshots explicitly distinguish both
+package names and installation keys. A range without an upper bound on the v1
+package does not establish support for a separately named v2 API; lack of such
+a declaration also does not prove runtime incompatibility.
+
+The delegate plugin's configured verification boundary remains narrower: CI
+imports the built default entry under Node 24 and asserts a sole
+function-valued default export, without invoking it, then runs unit tests.
+The separately declared TUI-preload and integration scripts remain uninvoked
+across all six inspected workflows. Keep **peer declaration, config key,
+export shape, and real-host execution** as separate evidence fields rather
+than projecting the dual-line support of sibling plugins onto this package.
+
+Sources: the November 10 commit-pinned manifest, README, and CI workflow in
+frontmatter; [workflow listing](https://github.com/marcusrbrown/opencode-copilot-delegate/tree/f0d44887e8ec2d37c4162c3c81e2691075ace99a/.github/workflows).
+These are bounded source observations, not executed compatibility tests.
 
 ## 2026-11-09: installation parity does not transfer method evidence
 

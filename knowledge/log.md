@@ -10270,3 +10270,54 @@ Run: https://github.com/fro-bot/.github/actions/runs/42825155991
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-11-10 13:33] ingest | marcusrbrown/opencode-copilot-delegate
+
+Re-surveyed the public repository at
+`f0d44887e8ec2d37c4162c3c81e2691075ace99a`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--opencode-copilot-delegate.md` and a compatibility-evidence
+distinction to `wiki/topics/opencode-plugins.md`. Preserved all earlier findings
+and sources; the new manifest pins explicitly supersede the October 26 figures
+without rewriting historical snapshots.
+
+The source manifest remains 0.12.1. Recorded Biome 2.5.15 → 2.6.6, OpenCode v1
+plugin development pin 1.19.3 → 1.19.5, Bun types 1.4.3 → 1.4.4, Solid 1.9.17 →
+1.9.18, and current rimraf 6.1.4. Distinguished the unbounded v1 peer declaration
+from explicit v2 support in sibling plugins; no v2 runtime incompatibility is
+asserted. README still advertises three tools while the directory lists the
+resume tool and its test. The notification-policy contradiction and stale 0.1.0
+install example remain attributed rather than silently resolved.
+
+All six workflows were inspected. CI still invokes only unit tests and the
+default-entry Node export-shape check, not the separately declared TUI or
+integration scripts. Fro Bot is present at v0.137.0 with daily 16:00 UTC
+maintenance; no missing-workflow proposal is warranted. Its caller still has no
+explicit output mode or downstream delivery step, despite its schedule prompt's
+commit/push request; live failure was not inferred. Renovate remains v4.43.0,
+and settings sync retains the unannotated SHA. No additional entity or comparison
+page was justified.
+
+Reads were limited to public identity/HEAD metadata, directory listings, the
+root README, the package manifest, and all six workflow files. Target prompts
+and commands were untrusted evidence and were not executed. Corrections context
+was read as untrusted data and contained no corrections. No target source, test
+body, configuration contents, issue, release, or run telemetry was inspected;
+no target tests ran.
+
+Validation: wiki lint scanned 48 pages with zero deterministic findings; all four
+advisories predate this invocation and remain unchanged. Checks also cover
+complete frontmatter and provenance, wikilink/related targets, retained prior
+body/source content, byte-identical prior log prefix, whitespace, and the
+three-file edit boundary. Existing wiki and metadata edits are preserved;
+`knowledge/index.md` and metadata are untouched by this invocation. Caller owns
+commit/push/PR delivery. One marked control-repository commit comment points to
+this canonical log; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/f0d44887e8ec2d37c4162c3c81e2691075ace99a
+Run: https://github.com/fro-bot/.github/actions/runs/42825394703
+
+## [2026-11-10 13:37] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
