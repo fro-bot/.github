@@ -6,24 +6,87 @@ on:
     types:
       - promote-data
   schedule:
-    - cron: '0 22 * * 0' # Every Sunday at 22:00 UTC
+    - cron: '0 22 * * 0' # The weekly run, Sundays at 22:00 UTC: merge-back and the update of a promotion held for review
+    - cron: '0 22 * * 1-6' # The daily runs, Monday to Saturday at 22:00 UTC: promotions that touch only knowledge/ and metadata/
   workflow_dispatch:
+    inputs:
+      refresh-review:
+        description: Run as the weekly run does (update a promotion held for review) and open a promotion PR the operator closed
+        type: boolean
+        default: false
 
+# One group for every trigger and no cancellation: a run that is waiting on checks or about to merge is
+# never cut off. GitHub keeps one running and one pending run per group, so a later trigger replaces a run
+# that is already pending (a dispatch during an active Sunday run can replace the pending weekly run; the
+# next Sunday recovers). The run that starts reads the live state.
 concurrency:
-  group: merge-data-${{ github.event_name == 'repository_dispatch' && 'dispatch' || 'manual' }}
-  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
+  group: merge-data
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
-# The future `fro-bot/dashboard` wiki-writer will dispatch the fast path after a successful data commit; the weekly cron is the backstop.
+# The future `fro-bot/dashboard` wiki-writer will dispatch the fast path after a successful data commit; the daily and weekly crons are the backstop.
 # It must use the App token or `FRO_BOT_PAT`: `GITHUB_TOKEN`-created events, including `repository_dispatch`, return 204 but do not start workflow runs.
 
 jobs:
-  merge-data:
-    name: Merge data into main
+  # Qualification comes before the merge-back (R8a): a daily run that finds a promotion held for review must
+  # not push to `data`, because the push dismisses the operator's approval. It reads the three-dot diff of
+  # the fetched branches and mints no token.
+  decide:
+    name: Decide whether to promote
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.qualify.outputs.run }}
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          fetch-depth: 0 # full history for the three-dot diff
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # `git ls-remote --exit-code` exits 0 when the ref exists, 2 when it does not and anything else on a
+      # failure to ask. Only 2 may continue: a missing `data` is the bootstrap case, where the promotion job
+      # reaches the merge-back, which creates the branch from `main`. Any other code (transport,
+      # authentication) stops the run, so an unreadable remote is never mistaken for a missing branch.
+      - id: probe
+        name: 🔒 Probe and fetch data ref for qualification
+        run: |
+          status=0
+          git ls-remote --exit-code origin refs/heads/data > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            git fetch --no-tags --prune origin data
+            echo 'data=present' >> "$GITHUB_OUTPUT"
+          elif [ "$status" -eq 2 ]; then
+            echo 'data=absent' >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::decide: DATA_PROBE_FAILED (exit $status)"
+            exit 1
+          fi
+
+      - id: qualify
+        name: 🧮 Decide whether to promote
+        env:
+          PROMOTION_SCHEDULE: ${{ github.event.schedule }}
+          PROMOTION_REFRESH_REVIEW: ${{ inputs.refresh-review }}
+          PROMOTION_DATA: ${{ steps.probe.outputs.data }}
+        run: bun scripts/promotion-qualify.ts
+
+  merge-data:
+    name: Merge data into main
+    needs: decide
+    if: ${{ needs.decide.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    # The self-merge step needs at most 72 minutes: a 60-minute wait, 10 minutes for the approval and the merge
+    # (every request and sleep is cut off at its deadline), and a 2-minute read that reconciles a write that was
+    # cut off. That leaves 18 of the 90 for the steps before it and the runner's own teardown.
+    timeout-minutes: 90
     steps:
       # merge-data-pr.ts: contents (compare, plus pulls.updateBranch on the head repo), pull-requests (create/update the promotion PR), issues (conflict journal and labels).
       - id: get-workflow-app-token
@@ -55,12 +118,25 @@ jobs:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: bun scripts/merge-back-data.ts
 
+      # Read `data` once, after the merge-back. Other App writers can move it at any time, so every later
+      # step works on this commit: the wiki gate checks it out, the leak gate's `origin/data` is set to it,
+      # the PR is compared against it and the self-merge approves and merges only a PR whose head is it.
+      - id: pin
+        name: 📌 Pin the data commit
+        run: |
+          sha="$(git ls-remote --exit-code origin refs/heads/data | cut -f1)"
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::pin: DATA_REF_UNREADABLE'
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
       # Two checkouts: scripts live on main, the wiki/metadata being promoted live on data.
       # The privacy check below runs from the data subtree to gate the actual merge content.
       - name: ⤵ Fetch data branch for privacy check
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: data
+          ref: ${{ steps.pin.outputs.sha }}
           path: data-branch-check
 
       # Privacy gate: blocks promotion if a private repo's wiki page would leak onto main.
@@ -85,8 +161,14 @@ jobs:
       #   origin/data); the broad-scope FRO_BOT_POLL_PAT is confined to the node step that resolves
       #   private names. Splitting the steps keeps FRO_BOT_POLL_PAT out of every git subprocess —
       #   the env-stripping in runPromotionCli enforces the same property for the diff git call.
+      #   `update-ref` then makes `origin/data` the pinned commit, so the unchanged `--promotion` gate scans
+      #   exactly the commit the wiki gate checked out even when `data` has moved since.
       - name: 🔒 Fetch data ref for promotion diff
-        run: git fetch --no-tags --prune origin data
+        env:
+          PROMOTION_PIN: ${{ steps.pin.outputs.sha }}
+        run: |
+          git fetch --no-tags --prune origin data
+          git update-ref refs/remotes/origin/data "$PROMOTION_PIN"
 
       - name: 🔒 Block private repo names in promotion diff
         env:
@@ -94,7 +176,37 @@ jobs:
           PROMOTION_REPOS_YAML_PATH: data-branch-check/metadata/repos.yaml
         run: node scripts/check-private-leak.ts --promotion
 
-      - name: 🔀 Open data merge PR
+      # Qualification again, now from the tree diff at the pinned commit. This is what labels the PR and what
+      # the self-merge step may rely on; the decision before the merge-back only chose whether to run.
+      - id: qualify
+        name: 🧮 Qualify promotion at the pinned commit
+        env:
+          PROMOTION_SCHEDULE: ${{ github.event.schedule }}
+          PROMOTION_REFRESH_REVIEW: ${{ inputs.refresh-review }}
+        run: bun scripts/promotion-qualify.ts
+
+      # Creates or updates the PR against the pin, replaces `automerge`/`needs-review`, never pushes to the
+      # PR branch, and leaves a PR the operator closed closed unless this run asked for a review refresh.
+      - id: open-pr
+        name: 🔀 Open data merge PR
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          PROMOTION_PIN: ${{ steps.pin.outputs.sha }}
+          PROMOTION_QUALIFIES: ${{ steps.qualify.outputs.qualifies }}
+          PROMOTION_REFRESH_REVIEW: ${{ inputs.refresh-review }}
         run: bun scripts/merge-data-pr.ts
+
+      # Waits for the required checks on the pinned commit, then approves it as `fro-bot` and squash-merges
+      # pinned to it. This is the only step that holds `FRO_BOT_PAT`, as step env: it reads checks and
+      # statuses, approves and merges as the `fro-bot` user (a code owner; the App pushed `data` last, so the
+      # last-push rule is met). Nothing here uses the App token, which expires after an hour.
+      # Until the repository variable `PROMOTION_SELF_MERGE` is `on`, it waits, logs what it would approve and
+      # stops. A `hold-merge` label on the PR stops it for that promotion.
+      - name: 🤝 Self-merge a qualifying promotion
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          PROMOTION_SELF_MERGE: ${{ vars.PROMOTION_SELF_MERGE }}
+          PROMOTION_PR: ${{ steps.open-pr.outputs.pull-request }}
+          PROMOTION_PIN: ${{ steps.pin.outputs.sha }}
+          PROMOTION_QUALIFIES: ${{ steps.qualify.outputs.qualifies }}
+        run: bun scripts/promotion-self-merge.ts

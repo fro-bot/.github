@@ -1,10 +1,10 @@
 # `@fro-bot/registry`
 
-The writers of `metadata/repos.yaml` and the data-branch merges of the Fro Bot control plane: the App-token metadata writer, the reconcile that syncs the registry with real collaborator access, invitation polling, the survey write-back and its recovery tool, the onboarded gate, `merge-back-data`, `merge-data-pr`, `rename-tracked-repo` and the Renovate metadata refresh. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
+The writers of `metadata/repos.yaml` and the data-branch merges of the Fro Bot control plane: the App-token metadata writer, the reconcile that syncs the registry with real collaborator access, invitation polling, the survey write-back and its recovery tool, the onboarded gate, `merge-back-data`, `merge-data-pr`, the promotion self-merge (`promotion-qualify`, `promotion-self-merge`), `protection-drift`, `rename-tracked-repo` and the Renovate metadata refresh. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
 It depends on `@fro-bot/core` (guards, retry, the Octokit client factory, the goke runner and the PR wiki-authority check), `@fro.bot/wiki-write-core` (the `schemas`, `data-branch-bootstrap` and `wiki-slug` subpaths, and the `assertBranchWritable` guard), `@octokit/rest` (types, and the test mocks) and `yaml`. It depends on nothing else in the workspace.
 
-Every data writer here uses an App token and writes only to the `data` branch, which a repository ruleset restricts to the Fro Bot App; `main` receives those writes only through the weekly `Merge Data Branch` promotion and its gates. Nothing here runs in an agent job. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
+Every data writer here uses an App token and writes only to the `data` branch, which a repository ruleset restricts to the Fro Bot App; `main` receives those writes only through the `Merge Data Branch` promotion and its gates, which runs daily: a promotion that changes only `knowledge/` and `metadata/` is approved as `fro-bot` and squash-merged pinned to the gated commit by `promotion-self-merge`, and anything else waits for the operator. `protection-drift` reports edits to the `main` protection rule. Nothing here runs in an agent job. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
 
 ## Modules
 
@@ -19,7 +19,10 @@ Every data writer here uses an App token and writes only to the `data` branch, w
 | `@fro-bot/registry/reset-survey-status`, `reset-survey-status-cli` | `runResetSurveyStatus`, `parseTargets`, `formatResetSurveyTarget`; `resetSurveyStatusCli`, `main` | Operator recovery for survey fields. |
 | `@fro-bot/registry/check-repo-onboarded`, `check-repo-onboarded-cli` | `runCheck`, `runCheckRepoOnboarded`; `checkRepoOnboardedCli`, `main` | The survey routing gate. Fails closed to `onboarded=false`. |
 | `@fro-bot/registry/merge-back-data`, `merge-back-data-cli` | `mergeBackData`, `runCli`, `MergeBackError`; `mergeBackDataCli`, `main` | Merges `main` into `data` at the start of a merge-data run. Mutated. |
-| `@fro-bot/registry/merge-data-pr`, `merge-data-pr-cli` | `mergeDataPr`, `upsertAlertIssue`, `MergeDataPrError`, `runMergeDataPr`; `mergeDataPrCli`, `main` | Opens or refreshes the `data` to `main` promotion PR. |
+| `@fro-bot/registry/merge-data-pr`, `merge-data-pr-cli` | `mergeDataPr`, `upsertAlertIssue`, `MergeDataPrError`, `promotionParamsFromEnv`, `runMergeDataPr`; `mergeDataPrCli`, `main` | Opens or refreshes the `data` to `main` promotion PR against the pinned commit: replaces the `automerge`/`needs-review` pair, never pushes to the PR branch, leaves an operator-closed PR closed, outputs the PR number and head. |
+| `@fro-bot/registry/promotion-qualify`, `promotion-qualify-cli` | `qualifyPromotion`, `parseNameStatus`, `isWeeklyRun`, `decideRun`, `labelDecision`, `runPromotionQualify`; `createPromotionGit`, `promotionQualifyCli`, `main` | Decides from the tree diff whether a promotion qualifies (only `knowledge/` and `metadata/`, both sides of a rename) and whether a run proceeds. `promotion-qualify` is mutated. |
+| `@fro-bot/registry/promotion-self-merge`, `promotion-self-merge-cli` | `selfMerge`, `runSelfMerge`, `parseDeclaredContexts`; `promotionSelfMergeCli`, `main` | Waits for the required checks on the pinned commit, approves as `fro-bot` and squash-merges pinned to it, behind the `PROMOTION_SELF_MERGE` variable and the `hold-merge` label. `promotion-self-merge` is mutated. |
+| `@fro-bot/registry/protection-drift`, `protection-drift-cli` | `assessEvent`, `planAction`, `renderReport`, `parseDeclaredProtection`, `runProtectionDrift`; `protectionDriftCli`, `main` | Compares a `branch_protection_rule` event with the declared settings and opens, comments on or closes the `protection-drift` issue. `protection-drift` is mutated. |
 | `@fro-bot/registry/rename-tracked-repo`, `rename-tracked-repo-cli` | `renameTrackedRepo`, `runCli`, `RenameError`; `renameTrackedRepoCli`, `main` | The operator-dispatched rename: it commits the row and the wiki page move in one Git Data commit. |
 | `@fro-bot/registry/reconcile-cli` | `reconcileReposCli`, `main` | The goke CLI over `handleReconcile`. |
 | `@fro-bot/registry/reconcile-handler` | `handleReconcile`, `formatCommitMessage`, `HandleReconcileParams`, `HandleReconcileResult` | The I/O shell: read, plan, verify `data`, commit, then dispatch, file issues and sync stars. |
@@ -46,7 +49,10 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `reset-survey-status` | `reset-survey-status.yaml`: no argv | `false` | stdout JSON indented by two spaces, the only indented output; stderr `reset-survey-status: <message>`; exit 1. |
 | `check-repo-onboarded` | `survey-repo.yaml`: no argv | `true` | `onboarded=true\|false` on `$GITHUB_OUTPUT`; stderr `check-repo-onboarded: <reason>`. Never fails. |
 | `merge-back-data` | `merge-data.yaml`: no argv, no `continue-on-error` | `false` | stderr `::error::merge-back-data: <CODE>`; exit 1 stops the job before the privacy gates. |
-| `merge-data-pr` | `merge-data.yaml`: no argv | `false` | stdout JSON; exit 1 when the PR is conflicted or its mergeability could not be read. |
+| `merge-data-pr` | `merge-data.yaml`: no argv; env `PROMOTION_PIN`, `PROMOTION_QUALIFIES`, `PROMOTION_REFRESH_REVIEW` | `false` | stdout JSON; `pull-request` and `head` on `$GITHUB_OUTPUT`; exit 1 when the PR is conflicted or its mergeability could not be read. |
+| `promotion-qualify` | `merge-data.yaml` (`decide` job and the promotion job): no argv | `true` | `run`, `reason` and `qualifies` on `$GITHUB_OUTPUT`; a held or empty run adds a job summary; stderr `promotion-qualify: <CODE>`; exit 1 on a git or output failure. |
+| `promotion-self-merge` | `merge-data.yaml`: no argv, the only step that holds `FRO_BOT_PAT` | `false` | Job summary for every outcome; stdout `promotion-self-merge: <CODE>` for exit 0 (merged, held, dry run, stale, timeout, 409 or behind); stderr `::error::promotion-self-merge: <CODE>` and exit 1 for a failed check, unreadable or short protection, an approval that did not count or any other API failure. |
+| `protection-drift` | `protection-drift.yaml`: no argv | `false` | stdout one line per outcome; job summary; stderr `::error::protection-drift: <CODE>` and exit 1 on any failure. A match closes only the issues whose recorded `updated_at` markers it is strictly newer than, and reopens an issue a newer report reached. |
 | `rename-tracked-repo` | `rename-tracked-repo.yaml`: no argv, `refs/heads/main` only | `false` | stdout `{"result": ...}`; stderr `::error::rename-tracked-repo: <CODE>`; exit 1 when blocked or failed. |
 | `update-metadata` | `update-metadata.yaml`: no argv | `false` | stdout JSON summary, unconsumed. |
 
@@ -68,6 +74,12 @@ C4Component
     Component(merge_back_data_cli, "merge-back-data-cli", "TypeScript", "goke CLI; mutated")
     Component(merge_data_pr, "merge-data-pr", "TypeScript", "Opens the data to main promotion PR")
     Component(merge_data_pr_cli, "merge-data-pr-cli", "TypeScript", "goke CLI")
+    Component(promotion_qualify, "promotion-qualify", "TypeScript", "Tree-diff qualification and run decision; mutated")
+    Component(promotion_qualify_cli, "promotion-qualify-cli", "TypeScript", "goke CLI and git adapter")
+    Component(promotion_self_merge, "promotion-self-merge", "TypeScript", "Pinned approve and squash merge; mutated")
+    Component(promotion_self_merge_cli, "promotion-self-merge-cli", "TypeScript", "goke CLI")
+    Component(protection_drift, "protection-drift", "TypeScript", "main protection drift report; mutated")
+    Component(protection_drift_cli, "protection-drift-cli", "TypeScript", "goke CLI")
     Component(metadata_wiki_rename_guard, "metadata-wiki-rename-guard", "TypeScript", "Stops a rename from stranding a wiki page")
     Component(record_survey_result, "record-survey-result", "TypeScript", "Survey outcome write-back")
     Component(record_survey_result_cli, "record-survey-result-cli", "TypeScript", "goke CLI")
@@ -101,6 +113,9 @@ C4Component
   Rel(entrypoints, handle_invitation_cli, "main")
   Rel(entrypoints, merge_back_data_cli, "main")
   Rel(entrypoints, merge_data_pr_cli, "main")
+  Rel(entrypoints, promotion_qualify_cli, "main")
+  Rel(entrypoints, promotion_self_merge_cli, "main")
+  Rel(entrypoints, protection_drift_cli, "main")
   Rel(entrypoints, reconcile_cli, "main")
   Rel(entrypoints, record_survey_result_cli, "main")
   Rel(entrypoints, rename_tracked_repo_cli, "main")
@@ -115,6 +130,9 @@ C4Component
   Rel(handle_invitation_cli, handle_invitation, "runs")
   Rel(merge_back_data, merge_data_pr, "imports")
   Rel(merge_back_data_cli, merge_back_data, "runs")
+  Rel(promotion_qualify_cli, promotion_qualify, "runs")
+  Rel(promotion_self_merge_cli, promotion_self_merge, "runs")
+  Rel(protection_drift_cli, protection_drift, "runs")
   Rel(merge_data_pr, registry_io, "types with")
   Rel(merge_data_pr_cli, merge_data_pr, "runs")
   Rel(metadata_wiki_rename_guard, commit_metadata, "imports")
