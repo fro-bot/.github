@@ -82,7 +82,7 @@ labels:
     description: Operator hold - the promotion self-merge does not approve or merge this PR
   - name: protection-drift
     color: '#b60205'
-    description: main branch protection differs from the declared settings or was edited outside the settings automation
+    description: main protection differs from the declared settings or was edited outside the settings automation
   - name: reconcile:pending-review
     color: '#2d718c'
     description: Unsolicited collaborator grant awaiting operator review
