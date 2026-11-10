@@ -524,21 +524,34 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
   }
 
   /**
-   * One read of the pull request's reviews that has the time of its own, for an approval request that may or
-   * may not have been recorded; `null` if it fails. It is not retried: it is the one read the run has left.
+   * Looks for the approval this run submits in the pull request's reviews, a hundred to a page. The whole
+   * walk shares one signal of `reconcileMs`, outside the spent deadline, and no page is retried. It answers
+   * `found`, `none` when the history ended without it, or `incomplete` when a page failed, the signal fired
+   * or the page cap ran out first: the approval might be on a page that was not read.
    */
-  const reconcileReviews = async (): Promise<readonly ReviewView[] | null> => {
+  const reconcileReviews = async (): Promise<'found' | 'none' | 'incomplete'> => {
+    const signal = input.signal(config.reconcileMs)
     try {
-      const response = await octokit.rest.pulls.listReviews({
-        owner,
-        repo,
-        pull_number: pullRequest,
-        per_page: config.pageSize,
-        request: {signal: input.signal(config.reconcileMs)},
-      })
-      return response.data.map(review => ({login: review.user?.login, state: review.state, commitId: review.commit_id}))
+      for (const page of Array.from({length: config.maxPages}, (_, index) => index + 1)) {
+        const response = await octokit.rest.pulls.listReviews({
+          owner,
+          repo,
+          pull_number: pullRequest,
+          per_page: config.pageSize,
+          page,
+          request: {signal},
+        })
+        const reviews = response.data.map(review => ({
+          login: review.user?.login,
+          state: review.state,
+          commitId: review.commit_id,
+        }))
+        if (reviews.some(review => isPinnedApproval(review, input.pin))) return 'found'
+        if (reviews.length < config.pageSize) return 'none'
+      }
+      return 'incomplete'
     } catch {
-      return null
+      return 'incomplete'
     }
   }
 
@@ -686,10 +699,8 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     // A response below 500 is GitHub's answer and the approval was not recorded. A cut-off request, one that
     // got no response (a reset, a network error) and a 5xx do not say: one read of the reviews does.
     if (error instanceof CutOffError || status === undefined || status >= 500) {
-      const reviews = await reconcileReviews()
-      if (reviews === null || !reviews.some(review => isPinnedApproval(review, input.pin))) {
-        return approvalUnknown(state, reviews)
-      }
+      const history = await reconcileReviews()
+      if (history !== 'found') return approvalUnknown(state, history)
       state.approved = true
     } else {
       if (status === 422) {
@@ -757,11 +768,11 @@ function isPinnedApproval(review: ReviewView, pin: string): boolean {
   return review.login === 'fro-bot' && review.state === 'APPROVED' && review.commitId === pin
 }
 
-/** The outcome of an approval request that may or may not have been recorded, and a read of the reviews. */
-function approvalUnknown(state: RunState, reviews: readonly ReviewView[] | null): SelfMergeOutcome {
+/** The outcome of an approval request that may or may not have been recorded, and what the reviews showed. */
+function approvalUnknown(state: RunState, history: 'none' | 'incomplete'): SelfMergeOutcome {
   const seen =
-    reviews === null
-      ? 'The reviews could not be read afterwards.'
+    history === 'incomplete'
+      ? 'The review history was not fully read.'
       : 'A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit.'
   return outcomeWith(
     state,

@@ -94,11 +94,16 @@ function world(scenario: Scenario = {}) {
   const requests: Record<string, unknown[]> = {}
   let polls = 0
   const signals: {name: string; ms: number}[] = []
+  const signalIds: {name: string; id: number}[] = []
+  const ids = new Map<AbortSignal, number>()
   const controllers = new Map<AbortSignal, AbortController>()
   const sizes = new Map<AbortSignal, number>()
   const record = (name: string, params: unknown) => {
     const {request, ...rest} = params as {request?: {signal?: AbortSignal}}
-    if (request?.signal !== undefined) signals.push({name, ms: sizes.get(request.signal) ?? -1})
+    if (request?.signal !== undefined) {
+      signals.push({name, ms: sizes.get(request.signal) ?? -1})
+      signalIds.push({name, id: ids.get(request.signal) ?? -1})
+    }
     ;(requests[name] ??= []).push(rest)
     const cost = scenario.callCost ?? 0
     clock.now += typeof cost === 'number' ? cost : cost(name, requests[name]?.length ?? 0)
@@ -177,8 +182,9 @@ function world(scenario: Scenario = {}) {
           await maybeHang('listReviews', params)
           const reviews = (scenario.reviews ?? (() => []))()
           if (reviews instanceof Error) throw reviews
+          const page = (params as {page: number}).page
           return {
-            data: reviews.map(review => ({
+            data: reviews.slice((page - 1) * 100, page * 100).map(review => ({
               user: review.login === null ? null : {login: review.login ?? 'fro-bot'},
               state: review.state ?? 'APPROVED',
               commit_id: review.commit ?? PIN,
@@ -228,11 +234,12 @@ function world(scenario: Scenario = {}) {
       const controller = new AbortController()
       controllers.set(controller.signal, controller)
       sizes.set(controller.signal, ms)
+      ids.set(controller.signal, ids.size + 1)
       return controller.signal
     },
     ...overrides,
   })
-  return {octokit, input, clock, log, sleeps, requests, signals, polls: () => polls}
+  return {octokit, input, clock, log, sleeps, requests, signals, signalIds, polls: () => polls}
 }
 
 function summaryOf(outcome: SelfMergeOutcome): string {
@@ -2495,7 +2502,7 @@ describe('selfMerge: a write that stalls in flight is reconciled with one read',
     const w = world({...stallApprove, reviews: () => apiError(404)})
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
-    expect(outcome.summary).toContain('The reviews could not be read afterwards.')
+    expect(outcome.summary).toContain('The review history was not fully read.')
     expect(outcome.summary).not.toContain('found no approval')
   })
 
@@ -2712,7 +2719,7 @@ describe('selfMerge: an approval that fails in a way that does not say whether i
     const w = world({...failApprove(apiError(502)), reviews: () => apiError(502)})
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
-    expect(outcome.summary).toContain('The reviews could not be read afterwards.')
+    expect(outcome.summary).toContain('The review history was not fully read.')
     // one read, not retried
     expect(w.requests.listReviews).toHaveLength(1)
   })
@@ -2753,7 +2760,13 @@ describe('selfMerge: an approval that fails in a way that does not say whether i
   it('reads the reviews of the pull request, a hundred to a page, with a signal of its own', async () => {
     const w = world({...failApprove(apiError(502)), reviews: () => [{}]})
     await selfMerge(w.input())
-    expect(w.requests.listReviews?.[0]).toEqual({owner: 'fro-bot', repo: '.github', pull_number: 77, per_page: 100})
+    expect(w.requests.listReviews?.[0]).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      pull_number: 77,
+      per_page: 100,
+      page: 1,
+    })
     expect(w.signals.filter(entry => entry.name === 'listReviews')).toEqual([{name: 'listReviews', ms: 2 * MINUTE}])
   })
 
@@ -2793,5 +2806,134 @@ describe('selfMerge: an approval that fails in a way that does not say whether i
     const w = world({callCost: (name, count) => (name === 'getVariable' && count === 1 ? 71 * MINUTE : 0)})
     expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'TIMEOUT'})
     expect(w.requests.listReviews).toBeUndefined()
+  })
+})
+
+describe('selfMerge: the reviews are read page by page inside one budget', () => {
+  const failApprove = {
+    approve: () => {
+      throw apiError(502)
+    },
+  }
+  const older = (count: number): readonly ReviewState[] => Array.from({length: count}, () => ({login: 'octocat'}))
+  const pagesOf = (w: ReturnType<typeof world>) => (w.requests.listReviews as {page: number}[]).map(call => call.page)
+
+  it('continues to the merge when 100 older reviews fill page 1 and the pinned approval is on page 2', async () => {
+    const w = world({...failApprove, reviews: () => [...older(100), {}]})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(pagesOf(w)).toEqual([1, 2])
+    expect(w.requests.listReviews?.[1]).toEqual({
+      owner: 'fro-bot',
+      repo: '.github',
+      pull_number: 77,
+      per_page: 100,
+      page: 2,
+    })
+    expect(w.requests.approve).toHaveLength(1)
+  })
+
+  it('stops reading at the page that holds the approval', async () => {
+    const onFirst = world({...failApprove, reviews: () => [{}, ...older(150)]})
+    await selfMerge(onFirst.input())
+    expect(pagesOf(onFirst)).toEqual([1])
+    const onSecond = world({...failApprove, reviews: () => [...older(100), {}, ...older(120)]})
+    await selfMerge(onSecond.input())
+    expect(pagesOf(onSecond)).toEqual([1, 2])
+  })
+
+  it('finds the approval on the short page that ends the history', async () => {
+    const w = world({...failApprove, reviews: () => [...older(200), {}]})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(pagesOf(w)).toEqual([1, 2, 3])
+  })
+
+  it('ends with APPROVAL_UNKNOWN when two full pages and a short page 3 hold no approval, and says the history was read', async () => {
+    const w = world({...failApprove, reviews: () => older(250)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(pagesOf(w)).toEqual([1, 2, 3])
+    expect(outcome.summary).toContain(
+      'A read of the reviews afterwards found no approval by `fro-bot` on the pinned commit.',
+    )
+    expect(outcome.summary).not.toContain('not fully read')
+    expect(w.requests.merge).toBeUndefined()
+  })
+
+  it('treats an empty page after full pages as the end of the history', async () => {
+    const w = world({...failApprove, reviews: () => older(200)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome.code).toBe('APPROVAL_UNKNOWN')
+    expect(pagesOf(w)).toEqual([1, 2, 3])
+    expect(outcome.summary).toContain('found no approval')
+  })
+
+  it('reads every page with one signal of 2 minutes, not a new one for each page', async () => {
+    const w = world({...failApprove, reviews: () => [...older(200), {}]})
+    await selfMerge(w.input())
+    const reads = w.signals.filter(entry => entry.name === 'listReviews')
+    expect(reads).toEqual([
+      {name: 'listReviews', ms: 2 * MINUTE},
+      {name: 'listReviews', ms: 2 * MINUTE},
+      {name: 'listReviews', ms: 2 * MINUTE},
+    ])
+    const ids = w.signalIds.filter(entry => entry.name === 'listReviews').map(entry => entry.id)
+    expect(new Set(ids).size).toBe(1)
+  })
+
+  it.each([1, 2, 3])(
+    'ends with APPROVAL_UNKNOWN and the incomplete-history wording when page %i is cut off',
+    async cut => {
+      const w = world({
+        ...failApprove,
+        reviews: () => [...older(200), {}],
+        hang: (name, count) => name === 'listReviews' && count === cut,
+      })
+      const outcome = await selfMerge(w.input())
+      expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+      expect(pagesOf(w)).toHaveLength(cut)
+      expect(outcome.summary).toContain('The review history was not fully read.')
+      expect(outcome.summary).not.toContain('found no approval')
+      expect(w.requests.merge).toBeUndefined()
+    },
+  )
+
+  it('ends with APPROVAL_UNKNOWN when a later page fails, since the approval might have been on it', async () => {
+    let calls = 0
+    const w = world({
+      ...failApprove,
+      reviews: () => {
+        calls += 1
+        return calls === 1 ? older(100) : apiError(502)
+      },
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(outcome.summary).toContain('The review history was not fully read.')
+    expect(pagesOf(w)).toEqual([1, 2])
+  })
+
+  it('stops at the page cap of 50 pages, and says the history was not fully read', async () => {
+    const w = world({...failApprove, reviews: () => older(5000)})
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'APPROVAL_UNKNOWN'})
+    expect(w.requests.listReviews).toHaveLength(50)
+    expect(Math.max(...pagesOf(w))).toBe(50)
+    expect(outcome.summary).toContain('The review history was not fully read.')
+    expect(outcome.summary).not.toContain('found no approval')
+  })
+
+  it('still finds the approval on page 50, the last one read', async () => {
+    const w = world({...failApprove, reviews: () => [...older(4900), {}]})
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(w.requests.listReviews).toHaveLength(50)
+  })
+
+  it('gives a cut-off approval request the same walk', async () => {
+    const w = world({
+      hang: (name, count) => name === 'approve' && count === 1,
+      reviews: () => [...older(100), {}],
+    })
+    expect(await selfMerge(w.input())).toMatchObject(LIVE)
+    expect(pagesOf(w)).toEqual([1, 2])
   })
 })
