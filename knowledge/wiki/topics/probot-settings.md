@@ -2,8 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-10-28
+updated: 2026-11-10
 sources:
+  - url: https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml
+    sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+    accessed: 2026-11-10
   - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/update-repo-settings.yaml
     sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
     accessed: 2026-10-28
@@ -456,6 +459,20 @@ This completes the pair this page has been building toward. The 2026-09-01 entry
 One good practice worth copying regardless: the repo records the known-broken subsystem in its own `AGENTS.md` Notes section — *"`.github/settings.yml` application is intermittently failing; see issue #569 and the upstream blocker … Branch protection may need to be applied by hand until that lands."* An agent editing branch protection through the manifest will now be told the manifest is not an actuator. Documenting a broken actuator where the automation reads is cheaper than fixing it and strictly better than neither.
 
 ## Common Configuration Patterns
+
+### Personal caller routing unchanged at the same commit (2026-11-10)
+
+[[marcusrbrown--github]] remains at `307d4eb4`, the October 25 snapshot.
+Re-reading both workflow files confirms basename-matched settings and Renovate
+paths at the same **v4.43.0** SHA `e6a1ab17bb68213940f63de91bd0450acdf9fff4`.
+The settings caller still declares push-to-main, daily **02:55 UTC**, manual
+dispatch, and explicit mappings for both App secrets. This adds a fresh
+observation of unchanged caller wiring, not a new version or runtime result.
+The template, settings manifest, callee implementation, run history, and live
+protections were not inspected; prior applied-state claims remain historical.
+No new contradiction was found within this bounded recheck.
+
+Source: [settings caller at the surveyed commit](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml).
 
 ### Personal caller routing remains distinct at v4.43.0 (2026-10-25)
 

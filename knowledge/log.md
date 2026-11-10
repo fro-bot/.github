@@ -10232,3 +10232,41 @@ Run: https://github.com/fro-bot/.github/actions/runs/42630835133
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-11-10 13:31] ingest | marcusrbrown/.github
+
+Re-surveyed the public repository at
+`307d4eb4a5821ee2d179b9fb27a4607b7e944fc2`, unchanged since October 25.
+Added a dated bounded recheck to `wiki/repos/marcusrbrown--github.md` and
+renewed static caller-routing evidence in `wiki/topics/probot-settings.md`.
+The complete listing still contains 15 files and three workflows. Both correctly
+pathed reusable callers remain at v4.43.0; CI remains Prettier 3.9.10 with
+SHA-pinned checkout v5.1.0 and Prettier action v4.3. No Fro Bot workflow is
+present; a separate follow-up draft PR remains appropriate, not created here.
+
+Retained all previous knowledge, including the explicit corrections to global
+CI-ordering and push-enabled print-config claims. No new contradiction was
+found. No new entity or comparison page was justified. Runtime health, applied
+settings, and collaborator access were not revalidated.
+
+Reads were limited to public identity metadata, a complete directory listing,
+the README, and all three workflow files at the pinned commit. Target content
+was untrusted evidence, not executed instructions. Corrections context contained
+no corrections. No configuration contents, source code, callee implementation,
+issues, PRs, or workflow runs were read; no target tests were run.
+
+Validation covers complete frontmatter, pinned public attribution, wikilink and
+related targets, additive body preservation, unchanged prior log bytes, and
+whitespace. Only the two wiki pages and this append were changed by this run;
+pre-existing wiki and metadata changes remain intact. Index and metadata were
+not edited. Caller owns commit/push/PR delivery. The single marked control-repo
+commit comment points here; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/marcusrbrown/.github/tree/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+Run: https://github.com/fro-bot/.github/actions/runs/42825155991
+
+## [2026-11-10 13:34] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
