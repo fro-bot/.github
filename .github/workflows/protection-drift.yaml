@@ -25,8 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # `github.token` only: contents to read the declared settings, issues to open, comment on and close the
-    # report. No secret, no App token.
+    # report, actions to read this run's `created_at`, which orders the events (the `updated_at` of the rule
+    # does not advance on edits). No secret, no App token.
     permissions:
+      actions: read
       contents: read
       issues: write
     steps:
