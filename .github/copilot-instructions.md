@@ -45,7 +45,7 @@ If guidance conflicts, follow the order above.
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
 - Documented solutions (`docs/solutions/`, categorized learnings and fixes with YAML frontmatter for searchability)
 - Character definition (`persona/`, injected into agent prompts)
-- Repo-scoped agent skills (`.agents/skills/`)
+- Repo-scoped agent skills (`.agents/skills/`): The `fro-bot`, Remediate and Observe agent steps in `fro-bot.yaml` (the rollout tracker runs through the first) set `repo-skills: 'true'`, so the agent loads them from the default branch, freshly fetched and never from the checkout. Triggers: `schedule` and `workflow_dispatch` always; `issues`, `issue_comment` and `pull_request` only from an owner, member or collaborator on a same-repo head. `scripts/repo-skills-callers.test.ts` classifies every `fro-bot/agent` step as on or off.
 - Brand assets (`assets/`, `branding/`) — downstream applied via the `apply-branding` workflow
 
 ### Tests

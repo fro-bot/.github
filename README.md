@@ -645,7 +645,7 @@ This repository enforces strict quality standards:
 - Security and safety constraints
 - Platform-specific notes (GitHub Copilot coding agent, Copilot hooks)
 
-Repo-scoped agent skills live in [`.agents/skills/`](.agents/skills/) for techniques specific to this repository's conventions.
+Repo-scoped agent skills live in [`.agents/skills/`](.agents/skills/) for techniques specific to this repository's conventions. The `fro-bot`, Remediate and Observe agent steps in [`fro-bot.yaml`](.github/workflows/fro-bot.yaml) (the rollout tracker runs through the first) set `repo-skills: 'true'`, so the agent loads these skills from the default branch, freshly fetched and never from the checkout. Triggers: `schedule` and `workflow_dispatch` always; `issues`, `issue_comment` and `pull_request` only from an owner, member or collaborator on a same-repo head.
 
 > [!NOTE] These guidelines ensure consistent AI assistant behavior and maintain code quality across the project.
 
