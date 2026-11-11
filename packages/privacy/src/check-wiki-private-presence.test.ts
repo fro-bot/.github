@@ -1969,11 +1969,37 @@ describe('parseFrontmatterSources closing delimiter', () => {
     expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
   })
 
-  it('does not close on a line with text after the dashes', () => {
-    // #given an unterminated block: no frontmatter, so the legacy body-substring fallback applies
+  it('does not close on a line with text after the dashes, and gets no body-substring fallback', () => {
+    // #given an opened block with no valid closing line, structured sources for another repo and the
+    //        expected URL only in the body. Before the delimiter change the first `---` line closed the block
+    //        and the page was blocked; a block that never closes must not be rescued by the substring fallback.
     const content =
       '---\nsources:\n  - url: https://github.com/acme/other\n--- trailing text\nSee https://github.com/owner/name'
 
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it.each(['---\nSee https://github.com/owner/name', '---\r\nSee https://github.com/owner/name'])(
+    'blocks a page that opens a block with no closing line: %j',
+    content => {
+      expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+    },
+  )
+
+  it('blocks when a later valid `---` follows a line with text after the dashes', () => {
+    // #given a `--- text` line inside the block, then a valid closing line: the block is not valid YAML
+    //        (the text line starts a second document), so it has no readable sources
+    const content =
+      '---\nsources:\n  - url: https://github.com/acme/other\n--- trailing text\nmore: x\n---\nSee https://github.com/owner/name'
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it.each([
+    '----\nSee https://github.com/owner/name',
+    '---x\nSee https://github.com/owner/name',
+    '--- \nSee https://github.com/owner/name',
+  ])('keeps the body-substring fallback for a page whose first line is not an opening `---`: %j', content => {
     expect(detect(content)).toEqual([])
   })
 

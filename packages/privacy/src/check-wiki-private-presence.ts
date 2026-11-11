@@ -34,13 +34,15 @@ export interface PrivateWikiLeak {
  * Parse the YAML frontmatter of a wiki page and return the `sources` attribution
  * state with the following tri-state contract:
  *
- * - `null`       → `sources` key is ABSENT, frontmatter is missing/unparseable, or
- *                  the parsed value is not an object. Caller falls back to the legacy
+ * - `null`       → `sources` key is ABSENT, there is no opening `---` line, the YAML is
+ *                  unparseable, or the parsed value is not an object. Caller falls back to the legacy
  *                  body-substring check (no over-block of pre-existing pages).
  * - `[]`         → `sources` key IS PRESENT but is not an array (e.g. a scalar, null),
  *                  OR is an array with no entries that have a `url` string.
  *                  Key presence is authoritative — caller treats this as a failed
  *                  attribution check (page flagged; body substring is NOT consulted).
+ *                  Also returned for a page that opens a block (`---` then a line break) but
+ *                  has no valid closing line, or whose block contains a second-document marker.
  * - `string[]`   → `sources` key IS PRESENT and is an array with at least one usable
  *                  URL string. Authoritative; caller checks each URL against the repo.
  *
@@ -53,7 +55,11 @@ function parseFrontmatterSources(content: string): string[] | null {
   // The /m flag is intentionally absent so that ^ is string-start only —
   // body-embedded ---...--- blocks must not be treated as authoritative frontmatter.
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?=[ \t]*(?:\r?\n|$))/.exec(content)
-  if (!match) return null
+  if (!match) {
+    // A first line of exactly `---` opens a block. A block with no valid closing line has no readable
+    // sources: it is unreadable, not absent, so the legacy fallback must not rescue the page.
+    return /^---\r?\n/.test(content) ? [] : null
+  }
 
   // Capturing group always participates when the regex matches.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -62,8 +68,10 @@ function parseFrontmatterSources(content: string): string[] | null {
   let parsed: unknown
   try {
     parsed = YAML.parse(frontmatter)
-  } catch {
-    // unparseable → parsed stays undefined → null below
+  } catch (error: unknown) {
+    // A line that starts a second YAML document (`--- text` inside the block) is a malformed delimiter, not
+    // absent frontmatter: it has no readable sources. Other unparseable YAML stays undefined → null below.
+    if (error instanceof Error && 'code' in error && error.code === 'MULTIPLE_DOCS') return []
   }
 
   // hasOwnProperty.call throws only for null/undefined receivers.
