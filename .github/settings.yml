@@ -79,7 +79,7 @@ labels:
     description: Data promotion PR needs human review before merge
   - name: hold-merge
     color: '#d93f0b'
-    description: Operator hold - the promotion self-merge does not approve or merge this PR
+    description: Operator hold - the promotion self-merge and the Renovate approver skip this PR
   - name: protection-drift
     color: '#b60205'
     description: main protection differs from the declared settings or was edited outside the settings automation
