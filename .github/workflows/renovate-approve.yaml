@@ -1,0 +1,63 @@
+---
+name: Renovate Approve
+
+# Approves an open Renovate PR that carries `automerge` once every required check has passed on its head,
+# as the `fro-bot` user pinned to that head. GitHub's native auto-merge, which Renovate arms, does the
+# merge: this workflow never merges, never arms or disarms auto-merge and never dismisses a review.
+#
+# Every start is a full sweep. The workflow never reads the event payload to pick a PR: it lists the open
+# PRs and judges each one from current state, so a lost or replaced event costs nothing. It starts when a
+# CI workflow completes, every 30 minutes (the backstop for a missed event and for a new label) and by hand.
+# `Check Private Leak` is consumed on purpose: it posts the last required status, and the chain
+# Private Leak Sentinel -> Check Private Leak -> Renovate Approve is two `workflow_run` levels, inside
+# GitHub's limit of three. `Fro Bot` is left out: on a bot-authored PR its job is skipped at once.
+#
+# Trusted code only. There is no `pull_request`, `pull_request_target` or `push` trigger, so no PR's copy of
+# this file ever runs. `workflow_run`, `schedule` and `workflow_dispatch` run the definition on the default
+# branch, the checkout takes no ref and no step downloads anything from a PR. The job `if` only skips an
+# accidental dispatch from another ref; it is defense in depth, not the boundary.
+#
+# Mode. Until the repository variable `RENOVATE_APPROVE` is exactly `on`, a sweep is a dry run: it reports
+# what it would approve and approves nothing. The mode is fixed when the sweep step starts.
+#
+# FRO_BOT_PAT (the `fro-bot` user, a code owner) is passed to the sweep step alone, as step env. Nothing
+# else in this file reads it, and no App token is minted. A sweep's report is its job summary.
+on:
+  workflow_run:
+    workflows: [Main, CodeQL, Dependency Review, Renovate, Check Private Leak]
+    types: [completed]
+  schedule:
+    - cron: '11,41 * * * *' # Every 30 minutes, at :11 and :41
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One fixed group. GitHub keeps one running and one pending sweep and replaces a pending one when a third
+# arrives; that is harmless because every sweep is a full one. Sweeps never overlap, which keeps the
+# one-approval-per-sweep cap one approval at a time. Never key this group on the payload.
+concurrency:
+  group: renovate-approve
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    name: Approve ready Renovate PRs
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    # Setup, then the sweep's own 10-minute budget and its 2-minute reconcile, with margin.
+    timeout-minutes: 30
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🤖 Approve ready Renovate PRs
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          RENOVATE_APPROVE: ${{ vars.RENOVATE_APPROVE }}
+        run: bun scripts/renovate-approve.ts

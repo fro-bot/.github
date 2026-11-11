@@ -1,10 +1,10 @@
 # `@fro-bot/registry`
 
-The writers of `metadata/repos.yaml` and the data-branch merges of the Fro Bot control plane: the App-token metadata writer, the reconcile that syncs the registry with real collaborator access, invitation polling, the survey write-back and its recovery tool, the onboarded gate, `merge-back-data`, `merge-data-pr`, the promotion self-merge (`promotion-qualify`, `promotion-self-merge`), `protection-drift`, `rename-tracked-repo` and the Renovate metadata refresh. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
+The writers of `metadata/repos.yaml` and the data-branch merges of the Fro Bot control plane: the App-token metadata writer, the reconcile that syncs the registry with real collaborator access, invitation polling, the survey write-back and its recovery tool, the onboarded gate, `merge-back-data`, `merge-data-pr`, the promotion self-merge (`promotion-qualify`, `promotion-self-merge`), the Renovate approver (`renovate-approve`), the required-check logic both share (`required-checks`), `protection-drift`, `rename-tracked-repo` and the Renovate metadata refresh. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
 It depends on `@fro-bot/core` (guards, retry, the Octokit client factory, the goke runner and the PR wiki-authority check), `@fro.bot/wiki-write-core` (the `schemas`, `data-branch-bootstrap` and `wiki-slug` subpaths, and the `assertBranchWritable` guard), `@octokit/rest` (types, and the test mocks) and `yaml`. It depends on nothing else in the workspace.
 
-Every data writer here uses an App token and writes only to the `data` branch, which a repository ruleset restricts to the Fro Bot App; `main` receives those writes only through the `Merge Data Branch` promotion and its gates, which runs daily: a promotion that changes only `knowledge/` and `metadata/` is approved as `fro-bot` and squash-merged pinned to the gated commit by `promotion-self-merge`, and anything else waits for the operator. `protection-drift` reports edits to the `main` protection rule. Nothing here runs in an agent job. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
+Every data writer here uses an App token and writes only to the `data` branch, which a repository ruleset restricts to the Fro Bot App; `main` receives those writes only through the `Merge Data Branch` promotion and its gates, which runs daily: a promotion that changes only `knowledge/` and `metadata/` is approved as `fro-bot` and squash-merged pinned to the gated commit by `promotion-self-merge`, and anything else waits for the operator. `renovate-approve` approves open Renovate PRs that carry `automerge`, one per sweep, and never merges: GitHub's native auto-merge does. `protection-drift` reports edits to the `main` protection rule. Nothing here runs in an agent job. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
 
 ## Modules
 
@@ -21,7 +21,9 @@ Every data writer here uses an App token and writes only to the `data` branch, w
 | `@fro-bot/registry/merge-back-data`, `merge-back-data-cli` | `mergeBackData`, `runCli`, `MergeBackError`; `mergeBackDataCli`, `main` | Merges `main` into `data` at the start of a merge-data run. Mutated. |
 | `@fro-bot/registry/merge-data-pr`, `merge-data-pr-cli` | `mergeDataPr`, `upsertAlertIssue`, `MergeDataPrError`, `promotionParamsFromEnv`, `runMergeDataPr`; `mergeDataPrCli`, `main` | Opens or refreshes the `data` to `main` promotion PR against the pinned commit: replaces the `automerge`/`needs-review` pair, never pushes to the PR branch, leaves an operator-closed PR closed, outputs the PR number and head. |
 | `@fro-bot/registry/promotion-qualify`, `promotion-qualify-cli` | `qualifyPromotion`, `parseNameStatus`, `isWeeklyRun`, `decideRun`, `labelDecision`, `runPromotionQualify`; `createPromotionGit`, `promotionQualifyCli`, `main` | Decides from the tree diff whether a promotion qualifies (only `knowledge/` and `metadata/`, both sides of a rename) and whether a run proceeds. `promotion-qualify` is mutated. |
-| `@fro-bot/registry/promotion-self-merge`, `promotion-self-merge-cli` | `selfMerge`, `runSelfMerge`, `parseDeclaredContexts`; `promotionSelfMergeCli`, `main` | Waits for the required checks on the pinned commit, approves as `fro-bot` and squash-merges pinned to it, behind the `PROMOTION_SELF_MERGE` variable and the `hold-merge` label. `promotion-self-merge` is mutated. |
+| `@fro-bot/registry/promotion-self-merge`, `promotion-self-merge-cli` | `selfMerge`, `runSelfMerge`; `promotionSelfMergeCli`, `main` | Waits for the required checks on the pinned commit, approves as `fro-bot` and squash-merges pinned to it, behind the `PROMOTION_SELF_MERGE` variable and the `hold-merge` label. `promotion-self-merge` is mutated; it takes the check logic from `required-checks`. |
+| `@fro-bot/registry/required-checks` | `evaluateChecks`, `sameChecks`, `parseDeclaredContexts`, `readRequiredChecks`, `readCheckRuns`, `readCommitStatuses`, `isTransient`, `statusOf`, `DeadlineError`, `CutOffError`, the view types | The required checks of `main`, read and judged for one commit. The promotion step and the Renovate approver both import it, so the fail-closed logic has one copy: a required list that is unreadable, empty or short is a result of its own, a check run and a commit status of one name must both pass, and a reader says when it stopped at its page cap. A library with no CLI. Mutated. |
+| `@fro-bot/registry/renovate-approve`, `renovate-approve-cli` | `sweep`, `summaryOf`, `runApprove`; `renovateApproveCli`, `main` | The Renovate approver: lists the open PRs, finds candidates by identity, qualifies them, judges the required checks on the head once, and approves at most one PR per sweep pinned to that head, behind the `RENOVATE_APPROVE` variable and the `hold-merge` label. It has no merge, auto-merge or dismiss call. `renovate-approve` is mutated. |
 | `@fro-bot/registry/protection-drift`, `protection-drift-cli` | `assessEvent`, `planAction`, `renderReport`, `parseDeclaredProtection`, `runProtectionDrift`; `protectionDriftCli`, `main` | Compares a `branch_protection_rule` event with the declared settings and opens, comments on or closes the `protection-drift` issue. `protection-drift` is mutated. |
 | `@fro-bot/registry/rename-tracked-repo`, `rename-tracked-repo-cli` | `renameTrackedRepo`, `runCli`, `RenameError`; `renameTrackedRepoCli`, `main` | The operator-dispatched rename: it commits the row and the wiki page move in one Git Data commit. |
 | `@fro-bot/registry/reconcile-cli` | `reconcileReposCli`, `main` | The goke CLI over `handleReconcile`. |
@@ -52,6 +54,7 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `merge-data-pr` | `merge-data.yaml`: no argv; env `PROMOTION_PIN`, `PROMOTION_QUALIFIES`, `PROMOTION_REFRESH_REVIEW` | `false` | stdout JSON; `pull-request` and `head` on `$GITHUB_OUTPUT`; exit 1 when the PR is conflicted or its mergeability could not be read. |
 | `promotion-qualify` | `merge-data.yaml` (`decide` job and the promotion job): no argv | `true` | `run`, `reason` and `qualifies` on `$GITHUB_OUTPUT`; a held or empty run adds a job summary; stderr `promotion-qualify: <CODE>`; exit 1 on a git or output failure. |
 | `promotion-self-merge` | `merge-data.yaml`: no argv, the only step that holds `FRO_BOT_PAT` | `false` | Job summary for every outcome; stdout `promotion-self-merge: <CODE>` for exit 0 (merged, held, dry run, stale, timeout, 409 or behind); stderr `::error::promotion-self-merge: <CODE>` and exit 1 for a failed check, unreadable or short protection, an approval that did not count or any other API failure. |
+| `renovate-approve` | `renovate-approve.yaml`: no argv, the only step that holds `FRO_BOT_PAT` | `false` | Job summary table of every candidate (PR, head, outcome, detail, whether auto-merge is armed); stdout `renovate-approve: #<n> <outcome>` per candidate; stderr `::error::renovate-approve: <CODE>` and one `::error::renovate-approve: #<n> <code>` line per failing candidate and exit 1 when a candidate ended in `error`, `approval-unknown` or `approval-refused`, or the required list or the PR list could not be trusted. |
 | `protection-drift` | `protection-drift.yaml`: no argv | `false` | stdout one line per outcome; job summary; stderr `::error::protection-drift: <CODE>` and exit 1 on any failure. An event's time is the `created_at` of its workflow run (`GITHUB_RUN_ID`, read with `github.token` and `actions: read`), never `rule.updated_at`, which does not advance on edits. A match closes only the issues whose recorded `event_at` markers it is strictly newer than (a legacy `updated_at` marker counts as older than any match; every report also carries an empty one so the older reader closes nothing), and reopens an issue a newer report reached. |
 | `rename-tracked-repo` | `rename-tracked-repo.yaml`: no argv, `refs/heads/main` only | `false` | stdout `{"result": ...}`; stderr `::error::rename-tracked-repo: <CODE>`; exit 1 when blocked or failed. |
 | `update-metadata` | `update-metadata.yaml`: no argv | `false` | stdout JSON summary, unconsumed. |
@@ -84,6 +87,9 @@ C4Component
     Component(record_survey_result, "record-survey-result", "TypeScript", "Survey outcome write-back")
     Component(record_survey_result_cli, "record-survey-result-cli", "TypeScript", "goke CLI")
     Component(registry_io, "registry-io", "TypeScript", "RegistryIo sink type; type only")
+    Component(renovate_approve, "renovate-approve", "TypeScript", "Renovate approver sweep, one pinned approval; mutated")
+    Component(renovate_approve_cli, "renovate-approve-cli", "TypeScript", "goke CLI")
+    Component(required_checks, "required-checks", "TypeScript", "Required-check reading and judging, shared; mutated")
     Component(rename_tracked_repo, "rename-tracked-repo", "TypeScript", "Operator rename: row and wiki page in one commit")
     Component(rename_tracked_repo_cli, "rename-tracked-repo-cli", "TypeScript", "goke CLI")
     Component(repos_metadata, "repos-metadata", "TypeScript", "Row helpers for repos.yaml")
@@ -119,6 +125,7 @@ C4Component
   Rel(entrypoints, reconcile_cli, "main")
   Rel(entrypoints, record_survey_result_cli, "main")
   Rel(entrypoints, rename_tracked_repo_cli, "main")
+  Rel(entrypoints, renovate_approve_cli, "main")
   Rel(entrypoints, reset_survey_status_cli, "main")
   Rel(entrypoints, update_metadata_cli, "main")
   Rel(check_repo_onboarded, registry_io, "types with")
@@ -131,7 +138,10 @@ C4Component
   Rel(merge_back_data, merge_data_pr, "imports")
   Rel(merge_back_data_cli, merge_back_data, "runs")
   Rel(promotion_qualify_cli, promotion_qualify, "runs")
+  Rel(promotion_self_merge, required_checks, "imports")
   Rel(promotion_self_merge_cli, promotion_self_merge, "runs")
+  Rel(renovate_approve, required_checks, "imports")
+  Rel(renovate_approve_cli, renovate_approve, "runs")
   Rel(protection_drift_cli, protection_drift, "runs")
   Rel(merge_data_pr, registry_io, "types with")
   Rel(merge_data_pr_cli, merge_data_pr, "runs")
@@ -178,6 +188,7 @@ C4Component
   Rel(reconcile_cli, core, "runs on")
   Rel(record_survey_result_cli, core, "runs on")
   Rel(rename_tracked_repo_cli, core, "runs on")
+  Rel(renovate_approve_cli, core, "runs on")
   Rel(reset_survey_status_cli, core, "runs on")
   Rel(update_metadata_cli, core, "runs on")
   Rel(commit_metadata, core, "imports")

@@ -1,6 +1,5 @@
 import {describe, expect, it} from 'vitest'
 import {
-  parseDeclaredContexts,
   runSelfMerge,
   selfMerge,
   type SelfMergeInput,
@@ -245,50 +244,6 @@ function world(scenario: Scenario = {}) {
 function summaryOf(outcome: SelfMergeOutcome): string {
   return outcome.summary
 }
-
-describe('parseDeclaredContexts', () => {
-  const settings = (contexts: string) =>
-    `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        strict: true\n        contexts:\n${contexts}\n`
-
-  it('reads the contexts declared for main, including a quoted colon', () => {
-    expect(parseDeclaredContexts(settings("          - Lint\n          - 'Security: Private Leak Scan'"))).toEqual([
-      'Lint',
-      'Security: Private Leak Scan',
-    ])
-  })
-
-  it('reads the main branch when other branches are declared first', () => {
-    const text =
-      'branches:\n  - name: other\n    protection:\n      required_status_checks:\n        contexts:\n          - Nope\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n          - Lint\n'
-    expect(parseDeclaredContexts(text)).toEqual(['Lint'])
-  })
-
-  it('drops entries that are not strings, so an unquoted colon cannot pass as a context', () => {
-    expect(parseDeclaredContexts(settings('          - Lint\n          - Security: Private Leak Scan'))).toEqual([
-      'Lint',
-    ])
-  })
-
-  it.each([
-    ['no branches key', 'repository:\n  name: x\n'],
-    ['branches that is not a list', 'branches: nope\n'],
-    ['a list without main', 'branches:\n  - name: other\n'],
-    ['main without protection', 'branches:\n  - name: main\n'],
-    ['protection without status checks', 'branches:\n  - name: main\n    protection: {}\n'],
-    [
-      'contexts that is not a list',
-      'branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts: Lint\n',
-    ],
-    ['a document that is not a mapping', '- a\n- b\n'],
-    ['an empty document', ''],
-  ])('returns an empty list for %s', (_name, text) => {
-    expect(parseDeclaredContexts(text)).toEqual([])
-  })
-
-  it('throws on YAML that does not parse', () => {
-    expect(() => parseDeclaredContexts('a: [unclosed')).toThrow()
-  })
-})
 
 const APPROVAL_BODY = `Approved by Merge Data Branch: ${PIN} touches only knowledge/ and metadata/ and passed the promotion gates.`
 const LIVE = {exitCode: 0, code: 'MERGED'}
