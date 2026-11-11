@@ -61,6 +61,9 @@ Only commits that touch `packages/wiki-write-core/` are analyzed. The commit typ
 - A scoped suppression wins over a breaking marker: `build(dev)!:` releases nothing.
 - While the package is 0.x it never releases a major version; a breaking change is a minor bump.
 - A commit containing `[skip release]` (or `[release skip]`) is ignored by the release analysis.
+- Pull requests are squash-merged with `squash_merge_commit_title: PR_TITLE` (`common-settings.yaml`), so the PR title is the commit header the analysis reads. Pick the title type for the release you want.
+- A PR that changes only tests, docs other than the README, or other files under `packages/wiki-write-core/` that should not ship needs a non-releasing title (`test:`, `docs:`, `chore:`, `refactor:` or `build(dev):`). A `fix:` or `build:` title there publishes a patch.
+- A PR that changes nothing under `packages/wiki-write-core/` does not count toward the release type, whatever its own type. The release runs on every push to `main` and reads every package commit since the last release tag, so such a merge can still publish an earlier package change that has not been released yet.
 
 ### Publishing
 
