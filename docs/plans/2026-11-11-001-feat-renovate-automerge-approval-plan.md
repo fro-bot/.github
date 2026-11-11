@@ -204,7 +204,7 @@ flowchart TD
 
 ## Implementation Units
 
-- [ ] **Unit 1: Share the required-check logic**
+- [x] **Unit 1: Share the required-check logic**
 
 **Goal:** One module owns reading and evaluating the required checks for a commit, used by the promotion step with no change in its behaviour.
 
@@ -241,7 +241,7 @@ flowchart TD
 
 **Verification:** `promotion-self-merge.ts` and `required-checks.ts` are both at 100% mutation score, and the mutation gate is clean.
 
-- [ ] **Unit 2: The sweep**
+- [x] **Unit 2: The sweep**
 
 **Goal:** A decision module and CLI that lists candidates, qualifies them, evaluates checks once, approves at most one PR and reports every outcome.
 
@@ -301,7 +301,7 @@ flowchart TD
 
 **Verification:** `renovate-approve.ts` is at 100% mutation score with no disable directives. The entrypoint parity test covers the shim.
 
-- [ ] **Unit 3: The workflow**
+- [x] **Unit 3: The workflow**
 
 **Goal:** A default-branch workflow that runs the sweep on CI completion, every 30 minutes and on dispatch, with the PAT in one step.
 
@@ -339,7 +339,7 @@ flowchart TD
 
 **Verification:** `actionlint` passes on the new workflow, and the workflow test fails if the secret moves to job or workflow level.
 
-- [ ] **Unit 4: Docs and registration**
+- [x] **Unit 4: Docs and registration**
 
 **Goal:** The docs describe the approver, its switch, its limits and how it relates to the promotion step.
 

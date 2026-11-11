@@ -75,7 +75,7 @@ Step 3 showed that GitHub counts the `fro-bot` user's approval as the required c
 
 - **Label descriptions stop at 100 characters.** A longer one makes `POST /repos/{owner}/{repo}/labels` answer 422 and fails every Update Repo Settings run (run 42847754180) until it is fixed. `scripts/settings-labels-effective-set.test.ts` holds every label in `common-settings.yaml` and `.github/settings.yml` to the limit.
 - **Decode git output strictly.** The promotion gate drops a changed path whose tree entry already equals `main`, and a path absent on both sides counts as equal. Decoded with replacement characters, a path with an invalid byte becomes another string, is found on neither side, and leaves the allowlist check. `promotion-qualify-cli.ts` decodes with `new TextDecoder('utf-8', {fatal: true})`, disqualifies the promotion on a decoding error and runs git with `--literal-pathspecs`.
-- **A check run and a commit status with the same name must both pass.** When a required context has both, GitHub requires both, so a passing run must not hide a pending or failed status (`evaluateChecks` in `promotion-self-merge.ts`). When it has only one, that one decides.
+- **A check run and a commit status with the same name must both pass.** When a required context has both, GitHub requires both, so a passing run must not hide a pending or failed status (`evaluateChecks` in `required-checks.ts`). When it has only one, that one decides.
 
 ## Why This Matters
 
