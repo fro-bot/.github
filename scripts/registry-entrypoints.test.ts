@@ -10,7 +10,17 @@
  */
 
 import {execFileSync} from 'node:child_process'
-import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
@@ -409,6 +419,36 @@ describe('argv that matches nothing declared stops before the CLI body runs', ()
       expect(result.stderr).toContain(name)
       expect(result.stderr).not.toContain('MISSING_TOKEN')
       expect(result.stderr).not.toContain('is required')
+    },
+  )
+})
+
+describe('the renovate-approve shim under a checkout path the URL form escapes', () => {
+  // `import.meta.url` percent-encodes a space, `#` and `%` while `process.argv[1]` does not, so a
+  // `file://${process.argv[1]}` guard is false there and the step would exit 0 without sweeping.
+  it.each(['bun', 'node'] as const)(
+    'still runs the sweep under %s: a missing token is exit 1 with its stderr line',
+    async runtime => {
+      const checkout = join(scratch('escaped'), 'check out #1 100%')
+      mkdirSync(join(checkout, 'scripts'), {recursive: true})
+      symlinkSync(join(repoRoot, 'node_modules'), join(checkout, 'node_modules'))
+      const shim = join(checkout, 'scripts', 'renovate-approve.ts')
+      copyFileSync(entrypoint('renovate-approve'), shim)
+
+      const result = await spawnEntrypoint({
+        entrypoint: shim,
+        runtime,
+        cwd: checkout,
+        env: {
+          PATH: `${binDirectory}:${process.env.PATH ?? ''}`,
+          ...NO_TOKENS,
+          GH_TOKEN: undefined,
+          GITHUB_STEP_SUMMARY: undefined,
+        },
+      })
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe('::error::renovate-approve: MISSING_TOKEN\n')
     },
   )
 })
