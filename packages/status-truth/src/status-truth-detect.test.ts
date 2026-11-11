@@ -5196,3 +5196,42 @@ describe('plan-consistency corrector: bounded status-line rewrite', () => {
     expect(result.verdict).toBe('unresolved')
   })
 })
+
+describe('plan frontmatter closing delimiter', () => {
+  const path = 'docs/plans/example.md'
+
+  describe.each(['---x: kept', '----: kept'])('with a %s line', keyLine => {
+    it('buildPlanConsistencyClaim reads a status that follows the line', () => {
+      const content = `---\ntitle: x\n${keyLine}\nstatus: active\n---\n\nContent.`
+
+      expect(buildPlanConsistencyClaim(path, content).claimedState).toBe('active')
+    })
+
+    it('correctPlanConsistencyStatusLine corrects a status that follows the line', () => {
+      const content = `---\ntitle: x\n${keyLine}\nstatus: active\n---\n\nContent.`
+
+      expect(correctPlanConsistencyStatusLine(content)).toBe(
+        `---\ntitle: x\n${keyLine}\nstatus: complete\n---\n\nContent.`,
+      )
+    })
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    const content = '---\nstatus: active\n--- trailing text\nContent.'
+
+    expect(buildPlanConsistencyClaim(path, content).claimedState).toBe('unsupported')
+    expect(correctPlanConsistencyStatusLine(content)).toBeNull()
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    expect(buildPlanConsistencyClaim(path, '---\nstatus: active\n---').claimedState).toBe('active')
+    expect(correctPlanConsistencyStatusLine('---\nstatus: active\n---')).toBe('---\nstatus: complete\n---')
+  })
+
+  it('closes on a CRLF line break after `---`', () => {
+    expect(buildPlanConsistencyClaim(path, '---\r\nstatus: active\r\n---\r\nContent.').claimedState).toBe('active')
+    expect(correctPlanConsistencyStatusLine('---\r\nstatus: active\r\n---\r\nContent.')).toBe(
+      '---\r\nstatus: complete\r\n---\r\nContent.',
+    )
+  })
+})

@@ -500,3 +500,30 @@ describe('fetchExistingPatternProposals', () => {
     expect(total).toBe(150)
   })
 })
+
+describe('collectSolutionDocSources closing delimiter', () => {
+  const headSha = 'f'.repeat(40)
+  const path = 'docs/solutions/best-practices/example-doc.md'
+
+  it.each(['---x: kept', '----: kept'])('keeps a %s line inside the frontmatter', keyLine => {
+    const result = collectSolutionDocSources(
+      {[path]: `---\ntitle: Real title\n${keyLine}\nmodule: scripts/foo.ts\n---\nBody`},
+      headSha,
+    )
+
+    expect(result.sources[0]?.title).toBe('Real title')
+    expect(result.sources[0]?.signals.module).toBe('scripts/foo.ts')
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    const result = collectSolutionDocSources({[path]: '---\ntitle: Real title\n--- trailing text\nBody'}, headSha)
+
+    expect(result.sources[0]?.title).toBe('example-doc')
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    const result = collectSolutionDocSources({[path]: '---\ntitle: Real title\n---'}, headSha)
+
+    expect(result.sources[0]?.title).toBe('Real title')
+  })
+})

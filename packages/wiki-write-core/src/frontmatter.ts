@@ -7,7 +7,7 @@ export interface FrontmatterDocument {
 
 /** Parse a validated wiki document while retaining its raw body. */
 export function parseFrontmatterDocument(content: string): FrontmatterDocument {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
   if (match === null || match[1] === undefined) {
     throw new Error('validated wiki page is missing frontmatter')
   }

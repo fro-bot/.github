@@ -34,7 +34,7 @@ export interface SplitFrontmatterResult {
  * rather than silently discarded, so downstream safety/lint logic can observe it.
  */
 export function splitFrontmatter(content: string): SplitFrontmatterResult {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
   if (match === null) {
     return {frontmatter: {}, body: content.trim()}
   }

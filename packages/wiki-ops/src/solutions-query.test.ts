@@ -833,6 +833,46 @@ describe('assembleSolutionsContext', () => {
   })
 })
 
+describe('assembleSolutionsContext closing delimiter', () => {
+  const path = 'docs/solutions/best-practices/reconcile-repos-pattern.md'
+  const event = {
+    eventName: 'pull_request',
+    owner: 'fro-bot',
+    repo: '.github',
+    title: 'feat: improve reconcile-repos logic',
+    body: 'Refactors the reconcile-repos automation script.',
+  }
+  const assemble = (content: string) =>
+    assembleSolutionsContext({files: {[path]: content}, event, privateNames: [], now: new Date('2026-06-22')})
+
+  it.each(['---x: kept', '----: kept'])('keeps a %s line inside the frontmatter', keyLine => {
+    // #given a doc whose scoring fields follow a line that starts with three dashes
+    const result = assemble(
+      `---\ntitle: Reconcile Repos Pattern\n${keyLine}\nmodule: scripts/reconcile-repos.ts\nlast_updated: 2026-06-01\ntags: [reconcile]\n---\n\nBody.\n`,
+    )
+
+    // #then the fields after that line are read
+    expect(result.selectedPaths).toEqual([path])
+    expect(result.excerpt).toContain('Last updated: 2026-06-01')
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    const result = assemble(
+      '---\ntitle: Reconcile Repos Pattern\nmodule: scripts/reconcile-repos.ts\nlast_updated: 2026-06-01\ntags: [reconcile]\n--- trailing text\nBody.\n',
+    )
+
+    expect(result.excerpt).not.toContain('Last updated: 2026-06-01')
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    const result = assemble(
+      '---\ntitle: Reconcile Repos Pattern\nmodule: scripts/reconcile-repos.ts\ntags: [reconcile]\n---',
+    )
+
+    expect(result.selectedPaths).toEqual([path])
+  })
+})
+
 // ---------------------------------------------------------------------------
 // searchSolutions: the query entry for in-process callers
 // ---------------------------------------------------------------------------

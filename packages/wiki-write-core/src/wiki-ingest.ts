@@ -1005,7 +1005,7 @@ export function appendLogEntry(
 }
 
 function parseFrontmatter(path: string, content: string): WikiFrontmatter {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
 
   if (match === null) {
     throw new WikiIngestError({
@@ -1236,7 +1236,7 @@ function mergeFrontmatterArray(records: Record<string, unknown>[], key: string):
 }
 
 function parseFrontmatterDocument(content: string): {values: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
   if (match === null || match[1] === undefined) {
     throw new Error('validated wiki page is missing frontmatter')
   }

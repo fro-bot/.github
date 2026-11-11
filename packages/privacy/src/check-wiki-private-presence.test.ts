@@ -1948,3 +1948,45 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     expect(result.stderr).toBe('')
   })
 })
+
+describe('parseFrontmatterSources closing delimiter', () => {
+  const publicSlugMap = new Map([
+    ['owner--name', [{owner: 'owner', name: 'name', private: false} as unknown as RepoEntry]],
+  ])
+  const detect = (content: string) =>
+    detectPrivateWikiLeaks({
+      dataWikiPages: [page('owner--name.md', 'h1', content)],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+
+  it.each(['---x: kept', '----: kept'])('reads sources that follow a %s line', keyLine => {
+    // #given structured sources for another repo after a non-delimiter line, and the expected URL only in the body
+    const content = `---\ntype: repo\n${keyLine}\nsources:\n  - url: https://github.com/acme/other\n---\nSee https://github.com/owner/name`
+
+    // #when detection runs
+    // #then the structured sources are authoritative and the page is unattributable
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    // #given an unterminated block: no frontmatter, so the legacy body-substring fallback applies
+    const content =
+      '---\nsources:\n  - url: https://github.com/acme/other\n--- trailing text\nSee https://github.com/owner/name'
+
+    expect(detect(content)).toEqual([])
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    const content = '---\nsources:\n  - url: https://github.com/acme/other\n---'
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it('closes on a CRLF line break after `---`', () => {
+    const content =
+      '---\r\nsources:\r\n  - url: https://github.com/acme/other\r\n---\r\nSee https://github.com/owner/name'
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+})

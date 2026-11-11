@@ -759,7 +759,7 @@ function computeOverlapScore(candidateTokens: Set<string>, doc: SolutionDoc): nu
 // ---------------------------------------------------------------------------
 
 function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
   if (match === null) {
     return {frontmatter: {}, body: content.trim()}
   }
@@ -776,7 +776,7 @@ function splitFrontmatter(content: string): {frontmatter: Record<string, unknown
   }
 }
 
-function collectSolutionDocs(files: Record<string, string>): SolutionDoc[] {
+export function collectSolutionDocs(files: Record<string, string>): SolutionDoc[] {
   const docs: SolutionDoc[] = []
 
   for (const [path, content] of Object.entries(files)) {

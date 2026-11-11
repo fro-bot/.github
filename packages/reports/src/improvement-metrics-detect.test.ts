@@ -21,6 +21,7 @@ import {
   loadGitAddDates,
   recoverPriorTickState,
   scoreCandidateLink,
+  splitFrontmatter,
   writeImprovementMetricsDigestFile,
   type ComputeMetricsInput,
   type ComputeMetricsResult,
@@ -816,5 +817,24 @@ describe('loadGitAddDates runs git with the env it is given', () => {
     } finally {
       await rm(dir, {recursive: true, force: true})
     }
+  })
+})
+
+describe('splitFrontmatter closing delimiter', () => {
+  it.each(['---x: kept', '----: kept'])('keeps a %s line inside the frontmatter', keyLine => {
+    // #given a frontmatter block with a line that starts with three dashes but is not a delimiter
+    const content = `---\ntitle: x\n${keyLine}\nstatus: active\n---\nbody\n`
+
+    // #when the block is split
+    // #then the mapping runs to the real closing line
+    expect(splitFrontmatter(content)).toMatchObject({title: 'x', status: 'active'})
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    expect(splitFrontmatter('---\ntitle: x\n--- trailing text\nbody\n')).toEqual({})
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    expect(splitFrontmatter('---\ntitle: x\n---')).toEqual({title: 'x'})
   })
 })

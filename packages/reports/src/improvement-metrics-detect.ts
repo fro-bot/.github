@@ -559,7 +559,7 @@ export async function loadSolutionDocFilesFromDisk(
 }
 
 export function splitFrontmatter(content: string): Record<string, unknown> {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
   if (match === null) return {}
   const frontmatterText = match[1]
   if (frontmatterText === undefined) return {}

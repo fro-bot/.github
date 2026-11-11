@@ -15,6 +15,7 @@ import {
   buildCandidateDigest,
   buildLogExcerpt,
   buildMergeShaMarker,
+  collectSolutionDocs,
   DEPENDENCY_LABELS,
   fetchMergedPrsInWindow,
   fetchOpenedLearningShas,
@@ -4390,5 +4391,29 @@ describe('buildCandidateDigest — mixed threat types in dual-trigger candidate'
     const serialized = JSON.stringify(result)
     expect(serialized).not.toContain('testowner/secret-repo')
     expect(serialized).not.toContain('ghp_')
+  })
+})
+
+describe('collectSolutionDocs closing delimiter', () => {
+  const path = 'docs/solutions/best-practices/example-doc.md'
+
+  it.each(['---x: kept', '----: kept'])('keeps a %s line inside the frontmatter', keyLine => {
+    const docs = collectSolutionDocs({
+      [path]: `---\ntitle: x\n${keyLine}\nmodule: scripts/foo.ts\ntags: [ci]\n---\nBody`,
+    })
+
+    expect(docs).toEqual([{path, module: 'scripts/foo.ts', tags: ['ci'], problemType: ''}])
+  })
+
+  it('does not close on a line with text after the dashes', () => {
+    const docs = collectSolutionDocs({[path]: '---\nmodule: scripts/foo.ts\n--- trailing text\nBody'})
+
+    expect(docs).toEqual([{path, module: '', tags: [], problemType: ''}])
+  })
+
+  it('closes on `---` at the end of the content with no newline', () => {
+    const docs = collectSolutionDocs({[path]: '---\nmodule: scripts/foo.ts\n---'})
+
+    expect(docs).toEqual([{path, module: 'scripts/foo.ts', tags: [], problemType: ''}])
   })
 })
