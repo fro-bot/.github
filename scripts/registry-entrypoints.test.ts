@@ -270,6 +270,11 @@ describe('the Octokit-backed shims fail closed on missing input', () => {
       env: {},
       stderr: '::error::rename-tracked-repo: INVALID_INPUT (field=node_id)\n',
     },
+    {
+      name: 'renovate-approve',
+      env: {GH_TOKEN: undefined, GITHUB_STEP_SUMMARY: undefined},
+      stderr: '::error::renovate-approve: MISSING_TOKEN\n',
+    },
     {name: 'reset-survey-status', env: {}, stderr: 'reset-survey-status: TARGETS is required\n'},
     {
       name: 'reconcile-repos',
@@ -388,6 +393,7 @@ describe('argv that matches nothing declared stops before the CLI body runs', ()
     'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
+    'renovate-approve',
     'reset-survey-status',
     'update-metadata',
   ]
@@ -422,6 +428,7 @@ describe('importing a shim runs nothing', () => {
     'reconcile-repos',
     'record-survey-result',
     'rename-tracked-repo',
+    'renovate-approve',
     'reset-survey-status',
     'update-metadata',
   ]

@@ -193,6 +193,10 @@
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/rename-tracked-repo-cli and runs it under the entry guard. The behaviour is in packages/registry/src/rename-tracked-repo.ts and rename-tracked-repo-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
     {
+      "path": "scripts/renovate-approve.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/registry/renovate-approve-cli and runs it under the entry guard. The decisions are in packages/registry/src/renovate-approve.ts, which is mutated, and the CLI is in renovate-approve-cli.ts, pinned by its own tests. The shim's surface, including a usage error on unmatched argv, a fail-closed exit without a token and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
+    },
+    {
       "path": "scripts/update-metadata.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/registry/update-metadata-cli and runs it under the entry guard. The behaviour is in packages/registry/src/update-metadata.ts and update-metadata-cli.ts, each pinned by its own tests. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/registry-entrypoints.test.ts."
     },
@@ -231,6 +235,10 @@
     {
       "path": "packages/registry/src/rename-tracked-repo-cli.ts",
       "reason": "The goke entrypoint of the operator rename: it declares no options and no positionals, so a mutation run would score only the config object and the plumbing around the body. The CLI surface (name, readOnly, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/rename-tracked-repo-cli.test.ts, and the body by rename-tracked-repo.test.ts."
+    },
+    {
+      "path": "packages/registry/src/renovate-approve-cli.ts",
+      "reason": "The goke entrypoint of the Renovate approver: it declares no options and no positionals, and supplies the real clock, sleep, settings read and Octokit to runApprove, so a mutation run would score the config object and a setTimeout wrapper. Every decision (who is a candidate, the qualification rules, the required-check evaluation, the one approval per sweep, the fresh read, the dry-run default, the review reconcile and the fixed report) is in packages/registry/src/renovate-approve.ts, which is mutated. The CLI surface (name, readOnly, the seams handed to the body, the error format and exit codes, a usage error on unmatched argv) is pinned by packages/registry/src/renovate-approve-cli.test.ts."
     },
     {
       "path": "packages/registry/src/update-metadata-cli.ts",
@@ -797,6 +805,7 @@
       "packages/knowledge/src/drafted-solutions-publish-cli.ts",
       "packages/registry/src/merge-back-data.ts",
       "packages/registry/src/promotion-qualify.ts",
+      "packages/registry/src/renovate-approve.ts",
       "packages/registry/src/required-checks.ts",
       "packages/status-truth/src/program-trackers.ts",
       "packages/wiki-ops/src/route-stderr.ts",
