@@ -96,6 +96,8 @@ interface Scenario {
   readonly listPageSize?: (page: number) => number | undefined
   /** The extra rows a list page holds, to make a list reach its cap. */
   readonly fill?: Partial<Record<'commits' | 'files' | 'reviews' | 'runs' | 'statuses', number>>
+  /** Restricts the run and status `fill` to this PR; every PR when unset. */
+  readonly fillOnly?: number
   readonly failRead?: (name: string, pr: number, call: number) => Error | undefined
   readonly hang?: (name: string, call: number) => boolean
   readonly cost?: number | ((name: string, call: number) => number)
@@ -208,6 +210,8 @@ function world(scenario: Scenario = {}) {
     labels: (spec.labels ?? ['automerge']).map(name => ({name})),
     auto_merge: spec.armed === false ? null : {enabled_by: {login: 'fro-bot'}, merge_method: 'squash'},
   })
+  const filled = (spec: PrSpec, fill = 0): number =>
+    scenario.fillOnly === undefined || scenario.fillOnly === spec.number ? fill : 0
   const page = <T>(items: readonly T[], params: {page: number; per_page: number}, fill = 0): readonly T[] => {
     const all =
       fill > 0
@@ -254,7 +258,7 @@ function world(scenario: Scenario = {}) {
         listCommitStatusesForRef: async (params: {ref: string; page: number; per_page: number}) => {
           const spec = byHead(params.ref)
           await gate('listStatuses', params, spec.number)
-          return {data: page(spec.statuses ?? GREEN_STATUSES, params, scenario.fill?.statuses)}
+          return {data: page(spec.statuses ?? GREEN_STATUSES, params, filled(spec, scenario.fill?.statuses))}
         },
       },
       checks: {
@@ -268,7 +272,7 @@ function world(scenario: Scenario = {}) {
             conclusion: run.conclusion === undefined ? 'success' : run.conclusion,
             app: run.app === null ? null : {id: run.app ?? 15_368},
           }))
-          return {data: {check_runs: page(runs, params, scenario.fill?.runs)}}
+          return {data: {check_runs: page(runs, params, filled(spec, scenario.fill?.runs))}}
         },
       },
       pulls: {
@@ -1113,22 +1117,47 @@ describe('sweep: the required checks on the head', () => {
     expect(w.named('listRuns').map(call => call.params.ref)).toEqual([sha(1), sha(2)])
   })
 
-  it('reads every page of runs and statuses', async () => {
+  it('reads every page of runs: the required runs sit after a hundred others', async () => {
     const noise = Array.from({length: 100}, (_, index) => ({id: 1000 + index, name: `Other ${String(index)}`}))
     const w = world({prs: [pr(1, {runs: [...noise, ...GREEN_RUNS.map((run, index) => ({...run, id: index + 1}))]})]})
     expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
     expect(w.named('listRuns').map(call => call.params.page)).toEqual([1, 2])
   })
 
-  it('fails closed on a list of runs or statuses that reaches the page cap, and judges the next PR', async () => {
-    const runs = world({prs: [pr(1), pr(2)], fill: {runs: 4997}})
-    const fromRuns = await LIVE(runs)
-    expect(rowOf(fromRuns, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
-    expect(fromRuns.exitCode).toBe(1)
+  it('reads every page of statuses: the required success sits after a hundred other statuses', async () => {
+    const noise = Array.from({length: 100}, (_, index) => ({context: `Other ${String(index)}`, state: 'success'}))
+    const w = world({prs: [pr(1, {statuses: [...noise, {context: 'Security: Private Leak Scan', state: 'success'}]})]})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approved'})
+    expect(w.named('listStatuses').map(call => call.params.page)).toEqual([1, 2])
+    expect(w.named('approve')).toHaveLength(1)
+  })
 
-    const statuses = world({prs: [pr(1)], fill: {statuses: 4999}})
-    const fromStatuses = await LIVE(statuses)
-    expect(rowOf(fromStatuses, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+  it('leaves the required status pending when it is not on the pages read: nothing is approved on a short read', async () => {
+    const noise = Array.from({length: 100}, (_, index) => ({context: `Other ${String(index)}`, state: 'success'}))
+    const w = world({prs: [pr(1, {statuses: noise})]})
+    expect(rowOf(await LIVE(w), 1)).toMatchObject({
+      outcome: 'checks-pending',
+      detail: 'waiting on: `Security: Private Leak Scan`',
+    })
+  })
+
+  it('fails closed on a run list that reaches the page cap, for that PR only: the next PR is judged and approved', async () => {
+    const w = world({prs: [pr(1), pr(2)], fill: {runs: 4997}, fillOnly: 1})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+    expect(rowOf(result, 2).outcome).toBe('approved')
+    expect(result.exitCode).toBe(1)
+    expect(w.named('listRuns').filter(call => call.params.ref === sha(1))).toHaveLength(50)
+  })
+
+  it('fails closed on a status list that reaches the page cap, for that PR only: the next PR is judged and approved', async () => {
+    const w = world({prs: [pr(1), pr(2)], fill: {statuses: 4999}, fillOnly: 1})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+    expect(rowOf(result, 2).outcome).toBe('approved')
+    expect(result.exitCode).toBe(1)
+    expect(w.named('listStatuses').filter(call => call.params.ref === sha(1))).toHaveLength(50)
   })
 })
 

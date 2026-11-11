@@ -52,8 +52,11 @@ describe('no argv (the workflow call)', () => {
       readSettings: () => string
     }
     expect(params.env).toEqual(env)
-    expect(Math.abs(params.now() - Date.now())).toBeLessThan(1000)
     vi.useFakeTimers()
+    vi.setSystemTime(1_234_567_890_123)
+    expect(params.now()).toBe(1_234_567_890_123)
+    vi.setSystemTime(1_234_567_891_000)
+    expect(params.now()).toBe(1_234_567_891_000)
     let slept = false
     const sleeping = params.sleep(20).then(() => {
       slept = true
