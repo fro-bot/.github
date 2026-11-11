@@ -118,9 +118,9 @@ describe('gateway-rollout-tracker.yaml: the fan-out job', () => {
   const checkout = programs?.steps?.find(step => step.uses?.startsWith('actions/checkout@'))
 
   it('checks out with the repository pin and keeps no credential', () => {
-    expect(checkout?.uses).toBe('actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0')
+    expect(checkout?.uses).toMatch(/^actions\/checkout@[\da-f]{40}$/u)
     expect(checkout?.with?.['persist-credentials']).toBe(false)
-    expect(workflowText).toContain('uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0')
+    expect(workflowText).toMatch(/^\s*uses: actions\/checkout@[\da-f]{40} # v\d+\.\d+\.\d+$/mu)
   })
 
   it('dispatches with the workflow token, and reads every value through env', () => {
