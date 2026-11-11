@@ -186,7 +186,7 @@ describe('capture-learnings-harvest through scripts/capture-learnings-harvest.ts
   const emptyRepo = [
     route('GET', `${BASE}/pulls`, {b: []}),
     route('GET', `${BASE}/issues`, {b: []}),
-    route('GET', `${BASE}/branches/main/protection`, {s: 404, b: {message: 'Not Found'}}),
+    route('GET', `${BASE}/branches/main`, {b: {protection: {required_status_checks: {checks: []}}}}),
   ]
 
   it('prints the digest with the twelve telemetry keys and writes the same bytes to the digest file', async () => {
@@ -272,7 +272,7 @@ describe('capture-learnings-harvest through scripts/capture-learnings-harvest.ts
       }),
       route('GET', `${BASE}/pulls/102/reviews`, {b: []}),
       route('GET', `${BASE}/issues`, {b: []}),
-      route('GET', `${BASE}/branches/main/protection`, {s: 404, b: {message: 'Not Found'}}),
+      route('GET', `${BASE}/branches/main`, {b: {protection: {required_status_checks: {checks: []}}}}),
       route('GET', `~^${BASE}/compare/`, {b: {files: [{filename: 'src/lint.ts', patch: '@@ -1 +1 @@\n-a\n+b\n'}]}}),
     ]
 
