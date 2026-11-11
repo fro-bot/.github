@@ -164,7 +164,7 @@ function limits() {
     commitCap: 250,
     fileCap: 300,
     // Pages of a hundred for the PR list and the reviews: 50.
-    listCap: 5000,
+    listPages: 50,
     shortSha: 7,
   }
 }
@@ -351,18 +351,17 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     })
   const client = {client: octokit, owner, repo, read}
 
-  /** Pages of a hundred, read to the end. `capped` when the list reached `cap`, so there may be more. */
+  /** Pages of a hundred, read to the end. `capped` when the list reached its page limit, so there may be more. */
   const readList = async <T>(
     fetchPage: (page: number) => Promise<readonly T[]>,
-    cap: number,
   ): Promise<{readonly items: readonly T[]; readonly capped: boolean}> => {
     let all = Array.of<T>()
-    for (const page of Array.from({length: Math.ceil(cap / config.pageSize)}, (_, index) => index + 1)) {
+    for (const page of Array.from({length: config.listPages}, (_, index) => index + 1)) {
       const items = await fetchPage(page)
       all = all.concat(items)
       if (items.length < config.pageSize) break
     }
-    return {items: all, capped: all.length >= cap}
+    return {items: all, capped: all.length >= config.listPages * config.pageSize}
   }
 
   const requiredList = async () => readRequiredChecks({...client, declared: input.declaredContexts})
@@ -390,7 +389,6 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
             }),
           )
         ).data,
-      config.listCap,
     )
   } catch (error: unknown) {
     if (error instanceof DeadlineError) throw error
@@ -463,7 +461,6 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
             }),
           )
         ).data,
-      config.listCap,
     )
 
   /**
@@ -508,7 +505,6 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
               request: {signal},
             })
           ).data,
-        config.listCap,
       )
       return reviews.items
     } catch {
