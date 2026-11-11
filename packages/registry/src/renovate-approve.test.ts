@@ -33,6 +33,11 @@ interface CommitSpec {
   readonly noVerification?: boolean
 }
 
+interface FileSpec {
+  filename: string
+  previous_filename?: string
+}
+
 interface ReviewSpec {
   readonly login?: string | null
   readonly state?: string
@@ -59,8 +64,13 @@ interface PrSpec {
   base?: string
   armed?: boolean
   title?: string
-  commits?: readonly CommitSpec[]
-  files?: readonly {filename: string; previous_filename?: string}[]
+  /** What a compare of `main` against this head lists; a function is asked per compare call (1-based). */
+  commits?: readonly CommitSpec[] | ((call: number) => readonly CommitSpec[])
+  files?: readonly FileSpec[] | ((call: number) => readonly FileSpec[])
+  /** What the PR-number endpoints would answer if the branch were moved: the sweep must never ask them. */
+  prScoped?: {commits?: readonly CommitSpec[]; files?: readonly FileSpec[]}
+  /** Overrides the `total_commits` a compare reports. */
+  totalCommits?: unknown
   /** Commits `main` is ahead of the head by, per compare call on this PR (1-based) or a fixed value. */
   behindBy?: number | string | null | undefined | ((call: number) => unknown)
   runs?: readonly RunSpec[]
@@ -108,6 +118,23 @@ function pr(number: number, overrides: Partial<PrSpec> = {}): PrSpec {
   return {number, ...overrides}
 }
 
+function commitRows(commits: readonly CommitSpec[], fill = 0): unknown[] {
+  const rows: unknown[] = [...commits, ...Array.from({length: fill}, () => ({}))].map((commit, index) => {
+    if (commit === null || typeof commit !== 'object') return commit
+    return {
+      sha: sha(index + 1, 'c'),
+      author: 'author' in commit ? commit.author : APP,
+      commit: {
+        verification:
+          'noVerification' in commit && commit.noVerification === true
+            ? undefined
+            : {verified: 'verified' in commit ? commit.verified : true},
+      },
+    }
+  })
+  return rows
+}
+
 function world(scenario: Scenario = {}) {
   const clock = {now: 5_000_000}
   const calls: {name: string; params: Record<string, unknown>; signalMs: number | undefined}[] = []
@@ -121,8 +148,10 @@ function world(scenario: Scenario = {}) {
     if (found === undefined) throw apiError(404, 'no such pr')
     return found
   }
+  // Heads are addressed by the commit they had when the world was built, whatever the PR does afterwards.
+  const originalHeads = new Map(prs.map(spec => [spec.head ?? sha(spec.number), spec] as const))
   const byHead = (ref: string): PrSpec => {
-    const found = prs.find(candidate => (candidate.head ?? sha(candidate.number)) === ref)
+    const found = originalHeads.get(ref)
     if (found === undefined) throw apiError(404, 'no such head')
     return found
   }
@@ -187,12 +216,31 @@ function world(scenario: Scenario = {}) {
           if (answer instanceof Error) throw answer
           return answer
         },
-        compareCommitsWithBasehead: async (params: {basehead: string}) => {
+        compareCommitsWithBasehead: async (params: {basehead: string; page: number; per_page: number}) => {
           const head = params.basehead.replace(/^main\.\.\./u, '')
           const spec = byHead(head)
           const call = await gate('compare', params, spec.number)
           const behindBy = typeof spec.behindBy === 'function' ? spec.behindBy(call) : (spec.behindBy ?? 0)
-          return {data: {behind_by: behindBy, status: 'ahead'}}
+          const listed = typeof spec.commits === 'function' ? spec.commits(call) : (spec.commits ?? [{}])
+          const commits = commitRows(listed, scenario.fill?.commits)
+          const changed =
+            typeof spec.files === 'function' ? spec.files(call) : (spec.files ?? [{filename: 'package.json'}])
+          const files = [
+            ...changed,
+            ...Array.from({length: scenario.fill?.files ?? 0}, (_, index) => ({
+              filename: `src/filler${String(index)}.ts`,
+            })),
+          ]
+          return {
+            data: {
+              behind_by: behindBy,
+              status: 'ahead',
+              total_commits: 'totalCommits' in spec ? spec.totalCommits : commits.length,
+              commits: commits.slice((params.page - 1) * params.per_page, params.page * params.per_page),
+              // GitHub lists the first 300 files, on the first page only.
+              files: params.page === 1 ? files.slice(0, 300) : [],
+            },
+          }
         },
         listCommitStatusesForRef: async (params: {ref: string; page: number; per_page: number}) => {
           const spec = byHead(params.ref)
@@ -235,23 +283,29 @@ function world(scenario: Scenario = {}) {
           scenario.onGet?.(spec, call)
           return {data: dataOf(spec)}
         },
+        // The PR-number endpoints are not in the sweep's client type. They answer with what a moved branch would
+        // show, so a sweep that asked them would qualify the wrong commits; every test pins that none is asked.
         listCommits: async (params: {pull_number: number; page: number; per_page: number}) => {
           const spec = byNumber(params.pull_number)
           await gate('listCommits', params, spec.number)
-          const commits = (spec.commits ?? [{}]).map((commit, index) => ({
-            sha: sha(index + 1, 'c'),
-            author: 'author' in commit ? commit.author : APP,
-            commit: {
-              verification:
-                commit.noVerification === true ? undefined : {verified: 'verified' in commit ? commit.verified : true},
-            },
-          }))
-          return {data: page(commits, params, scenario.fill?.commits)}
+          return {data: commitRows(spec.prScoped?.commits ?? [{}])}
         },
         listFiles: async (params: {pull_number: number; page: number; per_page: number}) => {
           const spec = byNumber(params.pull_number)
           await gate('listFiles', params, spec.number)
-          return {data: page(spec.files ?? [{filename: 'package.json'}], params, scenario.fill?.files)}
+          return {data: spec.prScoped?.files ?? [{filename: 'package.json'}]}
+        },
+        merge: async (params: unknown) => {
+          record('merge', params)
+          return {data: {merged: true}}
+        },
+        dismissReview: async (params: unknown) => {
+          record('dismissReview', params)
+          return {data: {}}
+        },
+        updateBranch: async (params: unknown) => {
+          record('updateBranch', params)
+          return {data: {}}
         },
         listReviews: async (params: {pull_number: number; page: number; per_page: number}) => {
           const spec = byNumber(params.pull_number)
@@ -369,8 +423,6 @@ describe('sweep: the happy path (AE1, AE2)', () => {
     expect(w.order()).toEqual([
       'getBranch',
       'list',
-      'listCommits',
-      'listFiles',
       'compare',
       'listRuns',
       'listStatuses',
@@ -389,20 +441,6 @@ describe('sweep: the happy path (AE1, AE2)', () => {
       per_page: 100,
       page: 1,
     })
-    expect(w.named('listCommits')[0]?.params).toEqual({
-      owner: 'fro-bot',
-      repo: '.github',
-      pull_number: 7,
-      per_page: 100,
-      page: 1,
-    })
-    expect(w.named('listFiles')[0]?.params).toEqual({
-      owner: 'fro-bot',
-      repo: '.github',
-      pull_number: 7,
-      per_page: 100,
-      page: 1,
-    })
     expect(w.named('listReviews')[0]?.params).toEqual({
       owner: 'fro-bot',
       repo: '.github',
@@ -414,7 +452,8 @@ describe('sweep: the happy path (AE1, AE2)', () => {
       owner: 'fro-bot',
       repo: '.github',
       basehead: `main...${sha(7)}`,
-      per_page: 1,
+      per_page: 100,
+      page: 1,
     })
     expect(w.named('getBranch')[0]?.params).toEqual({owner: 'fro-bot', repo: '.github', branch: 'main'})
     expect(w.named('getVariable')[0]?.params).toEqual({owner: 'fro-bot', repo: '.github', name: 'RENOVATE_APPROVE'})
@@ -436,20 +475,19 @@ describe('sweep: the happy path (AE1, AE2)', () => {
     })
   })
 
-  it('has no way to merge, arm auto-merge or dismiss: the client it is given holds none', async () => {
-    const w = world({prs: [pr(7)]})
-    const pulls = w.octokit.rest.pulls as Record<string, unknown>
-    expect(Object.keys(pulls).toSorted()).toEqual([
-      'createReview',
-      'get',
-      'list',
-      'listCommits',
-      'listFiles',
-      'listReviews',
-    ])
-    expect('merge' in pulls).toBe(false)
-    await LIVE(w)
-    expect(w.order().filter(name => name === 'approve')).toHaveLength(1)
+  it('never merges, updates the branch, dismisses a review or asks a PR-number endpoint, in any outcome', async () => {
+    const forbidden = ['merge', 'updateBranch', 'dismissReview', 'listCommits', 'listFiles']
+    const scenarios = [
+      world({prs: [pr(1), pr(2)]}),
+      world({prs: [pr(1, {armed: false}), pr(2, {behindBy: 2})]}),
+      world({prs: [pr(1, {reviews: [{}]}), pr(2, {labels: ['automerge', 'hold-merge']})]}),
+      world({prs: [pr(1)], approve: () => apiError(500)}),
+    ]
+    for (const w of scenarios) {
+      await LIVE(w)
+      await DRY(w)
+      expect(w.order().filter(name => forbidden.includes(name))).toEqual([])
+    }
   })
 
   it('judges a major update like any candidate: the PR title is never read (AE4)', async () => {
@@ -544,7 +582,7 @@ describe('sweep: the mode is fixed at the start (AE8)', () => {
     expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
     expect(rowOf(result, 1).detail).toBe('the sweep ran out of time')
     expect(rowOf(result, 2).detail).toBe('the sweep ran out of time')
-    expect(w.named('listCommits')).toHaveLength(1)
+    expect(w.named('compare')).toHaveLength(2)
   })
 
   it('retries a transient failure of the variable read before it gives up', async () => {
@@ -747,7 +785,7 @@ describe('sweep: qualification', () => {
       detail: 'a commit is not by the App, or is unverified',
     })
     expect(result.exitCode).toBe(0)
-    expect(w.named('listFiles')).toEqual([])
+    expect(w.named('listRuns')).toEqual([])
     expect(w.named('approve')).toEqual([])
   })
 
@@ -756,7 +794,7 @@ describe('sweep: qualification', () => {
     const w = world({prs: [pr(1, {commits})]})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'approved'})
-    expect(w.named('listCommits').map(call => call.params.page)).toEqual([1, 2])
+    expect(w.named('compare').map(call => call.params.page)).toEqual([1, 2, 1, 2])
   })
 
   it('finds a bad commit on the second page of commits', async () => {
@@ -777,7 +815,8 @@ describe('sweep: qualification', () => {
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({outcome: 'config-change', detail: 'changes a Renovate config file'})
     expect(result.exitCode).toBe(0)
-    expect(w.named('compare')).toEqual([])
+    expect(w.named('compare')).toHaveLength(1)
+    expect(w.named('listRuns')).toEqual([])
   })
 
   it.each([
@@ -791,15 +830,13 @@ describe('sweep: qualification', () => {
     expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
   })
 
-  it('finds a config file on the second page of files', async () => {
+  it('finds a config file late in a long file list', async () => {
     const files = [
-      ...Array.from({length: 100}, (_, index) => ({filename: `src/f${String(index)}.ts`})),
+      ...Array.from({length: 250}, (_, index) => ({filename: `src/f${String(index)}.ts`})),
       {filename: 'default.json'},
     ]
     const w = world({prs: [pr(1, {files})]})
-    const result = await LIVE(w)
-    expect(outcomes(result)).toEqual({1: 'config-change'})
-    expect(w.named('listFiles').map(call => call.params.page)).toEqual([1, 2])
+    expect(outcomes(await LIVE(w))).toEqual({1: 'config-change'})
   })
 
   it('lets a PR that changes workflows or settings files through (accepted in the origin)', async () => {
@@ -807,6 +844,70 @@ describe('sweep: qualification', () => {
       prs: [pr(1, {files: [{filename: '.github/workflows/main.yaml'}, {filename: '.github/settings.yml'}]})],
     })
     expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+  })
+})
+
+describe('sweep: qualification is read by SHA, never by PR number (A to B to A)', () => {
+  it('judges the pinned head A by its own files when the branch was B in between: config-change, no approval', async () => {
+    const w = world({
+      prs: [pr(1, {files: [{filename: 'default.json'}], prScoped: {files: [{filename: 'package.json'}]}})],
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'config-change'})
+    expect(w.named('approve')).toEqual([])
+    expect(w.order()).not.toContain('listFiles')
+    expect(w.order()).not.toContain('listCommits')
+  })
+
+  it('judges the pinned head A by its own commits when the branch was B in between: foreign-commit, no approval', async () => {
+    const w = world({
+      prs: [pr(1, {commits: [{author: {id: 5, type: 'User'}}], prScoped: {commits: [{}]}})],
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'foreign-commit'})
+    expect(w.named('approve')).toEqual([])
+    expect(w.order()).not.toContain('listCommits')
+  })
+
+  it('asks the compare for the pinned head, by SHA, for the commits and the files', async () => {
+    const w = world({prs: [pr(1)]})
+    await LIVE(w)
+    expect(w.named('compare').map(call => call.params.basehead)).toEqual([`main...${sha(1)}`, `main...${sha(1)}`])
+  })
+
+  it('re-applies the commit rule at the fresh read, against the then-current main', async () => {
+    const w = world({prs: [pr(1, {commits: call => (call === 1 ? [{}] : [{}, {author: {id: 5, type: 'User'}}])})]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({
+      outcome: 'foreign-commit',
+      detail: 'a commit is not by the App, or is unverified',
+    })
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('re-applies the config rule at the fresh read: main moved and the diff now holds a Renovate config file', async () => {
+    const w = world({
+      prs: [
+        pr(1, {files: call => (call === 1 ? [{filename: 'package.json'}] : [{filename: '.github/renovate.json5'}])}),
+      ],
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'config-change'})
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('fails closed when the fresh read cannot show the lists complete', async () => {
+    const w = world({prs: [pr(1, {files: call => (call === 1 ? [{filename: 'a.ts'}] : [{} as never])})]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error'})
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('keeps the dry run honest too: the fresh read can turn a would-approve into a config-change', async () => {
+    const w = world({
+      prs: [pr(1, {files: call => (call === 1 ? [{filename: 'a.ts'}] : [{filename: 'default.json'}])})],
+    })
+    expect(outcomes(await DRY(w))).toEqual({1: 'config-change'})
   })
 })
 
@@ -1108,39 +1209,50 @@ describe('sweep: the fresh read right before the approval (AE7)', () => {
 })
 
 describe('sweep: reads that fail or reach a cap are errors for that PR only (AE: fail closed)', () => {
-  it('turns a commit list at the 250-commit API cap into an error for that PR', async () => {
-    const w = world({prs: [pr(1, {commits: Array.from({length: 250}, () => ({}))}), pr(2)]})
+  it('turns more than 250 commits into an error for that PR and judges the next one', async () => {
+    const w = world({prs: [pr(1, {commits: Array.from({length: 251}, () => ({}))}), pr(2)]})
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
     expect(rowOf(result, 2).outcome).toBe('approved')
     expect(result.exitCode).toBe(1)
-    expect(
-      w
-        .named('listCommits')
-        .filter(call => call.params.pull_number === 1)
-        .map(call => call.params.page),
-    ).toEqual([1, 2, 3])
   })
 
-  it('accepts 249 commits', async () => {
-    const w = world({prs: [pr(1, {commits: Array.from({length: 249}, () => ({}))})]})
+  it('accepts exactly 250 commits, read in pages of a hundred', async () => {
+    const w = world({prs: [pr(1, {commits: Array.from({length: 250}, () => ({}))})]})
     expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+    expect(w.named('compare').map(call => call.params.page)).toEqual([1, 2, 3, 1, 2, 3])
   })
 
-  it('turns a file list at the 3000-file API cap into an error for that PR', async () => {
-    const files = Array.from({length: 3000}, (_, index) => ({filename: `src/f${String(index)}.ts`}))
-    const w = world({prs: [pr(1, {files})]})
+  it('turns a file list at the 300-file compare cap into an error for that PR', async () => {
+    const files = Array.from({length: 300}, (_, index) => ({filename: `src/f${String(index)}.ts`}))
+    const w = world({prs: [pr(1, {files}), pr(2)]})
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+    expect(rowOf(result, 2).outcome).toBe('approved')
     expect(result.exitCode).toBe(1)
-    expect(w.named('listFiles')).toHaveLength(30)
-    expect(w.named('compare')).toEqual([])
+    expect(w.named('listRuns').every(call => call.params.ref === sha(2))).toBe(true)
   })
 
-  it('accepts 2999 files', async () => {
-    const files = Array.from({length: 2999}, (_, index) => ({filename: `src/f${String(index)}.ts`}))
+  it('accepts 299 files', async () => {
+    const files = Array.from({length: 299}, (_, index) => ({filename: `src/f${String(index)}.ts`}))
     const w = world({prs: [pr(1, {files})]})
     expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+  })
+
+  it.each([
+    ['fewer commits than the compare says there are', {commits: [{}, {}], totalCommits: 5}],
+    ['no commit count', {totalCommits: undefined}],
+    ['a commit count that is not a number', {totalCommits: '1'}],
+    ['an entry that is not an object among the commits', {commits: [{}, null as never]}],
+    ['a file entry without a name', {files: [{filename: 'a.ts'}, {} as never]}],
+    ['a file entry that is not an object', {files: [null as never]}],
+    ['a file name that is not a string', {files: [{filename: 7 as never}]}],
+  ])('fails closed on %s, and approves nothing', async (_name, overrides) => {
+    const w = world({prs: [pr(1, overrides)]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a GitHub read failed'})
+    expect(result.exitCode).toBe(1)
+    expect(w.named('approve')).toEqual([])
   })
 
   it('turns a review list at its cap into an error for that PR', async () => {
@@ -1151,8 +1263,8 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
   })
 
   it.each([
-    ['listCommits', 500],
-    ['listFiles', 403],
+    ['compare', 500],
+    ['compare', 403],
     ['listRuns', 404],
     ['listStatuses', 404],
     ['listReviews', 403],
@@ -1173,7 +1285,7 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
   it('retries a transient failure of a PR read and carries on', async () => {
     const w = world({
       prs: [pr(1)],
-      failRead: (name, _number, call) => (name === 'listFiles' && call === 1 ? apiError(502) : undefined),
+      failRead: (name, _number, call) => (name === 'compare' && call === 1 ? apiError(502) : undefined),
     })
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'approved'})
@@ -1181,17 +1293,17 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
   })
 
   it('gives up on a read that keeps failing: 2 s then 4 s, three attempts', async () => {
-    const w = world({prs: [pr(1)], failRead: name => (name === 'listCommits' ? apiError(503) : undefined)})
+    const w = world({prs: [pr(1)], failRead: name => (name === 'compare' ? apiError(503) : undefined)})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error'})
     expect(w.sleeps).toEqual([2000, 4000])
-    expect(w.named('listCommits')).toHaveLength(3)
+    expect(w.named('compare')).toHaveLength(3)
   })
 
   it('does not retry a 4xx read', async () => {
-    const w = world({prs: [pr(1)], failRead: name => (name === 'listCommits' ? apiError(422) : undefined)})
+    const w = world({prs: [pr(1)], failRead: name => (name === 'compare' ? apiError(422) : undefined)})
     await LIVE(w)
-    expect(w.named('listCommits')).toHaveLength(1)
+    expect(w.named('compare')).toHaveLength(1)
     expect(w.sleeps).toEqual([])
   })
 })
@@ -1381,7 +1493,7 @@ describe('sweep: one budget for every request', () => {
   it('turns every remaining candidate into an error when the budget runs out mid-sweep', async () => {
     const w = world({
       prs: [pr(1), pr(2), pr(3)],
-      cost: (name, call) => (name === 'listCommits' && call === 2 ? BUDGET : 0),
+      cost: (name, call) => (name === 'compare' && call === 3 ? BUDGET : 0),
     })
     const result = await LIVE(w)
     expect(result.exitCode).toBe(1)
@@ -1389,16 +1501,16 @@ describe('sweep: one budget for every request', () => {
     expect(outcomes(result)).toEqual({1: 'approved', 2: 'error', 3: 'error'})
     expect(rowOf(result, 2).detail).toBe('the sweep ran out of time')
     expect(rowOf(result, 3).detail).toBe('the sweep ran out of time')
-    expect(w.named('listCommits')).toHaveLength(2)
+    expect(w.named('compare')).toHaveLength(3)
     expect(w.named('approve')).toHaveLength(1)
   })
 
   it('turns a request that is cut off in flight into the same error, without a retry', async () => {
-    const w = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'listFiles' && call === 1})
+    const w = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
     expect(rowOf(result, 1).detail).toBe('the sweep ran out of time')
-    expect(w.named('listFiles')).toHaveLength(1)
+    expect(w.named('compare')).toHaveLength(1)
     expect(w.sleeps).toEqual([])
   })
 
@@ -1407,7 +1519,7 @@ describe('sweep: one budget for every request', () => {
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
     expect(w.named('listStatuses')).toHaveLength(1)
-    expect(w.named('listCommits')).toHaveLength(1)
+    expect(w.named('compare')).toHaveLength(1)
   })
 
   it('does not approve when the budget ran out before the review request', async () => {
@@ -1628,7 +1740,7 @@ describe('runApprove', () => {
   it('exits 1 with a fixed CANDIDATE_ERROR line when a candidate ended in error', async () => {
     const t = runParams(
       {},
-      world({prs: [pr(7)], failRead: name => (name === 'listFiles' ? apiError(404, 'SECRET') : undefined)}),
+      world({prs: [pr(7)], failRead: name => (name === 'compare' ? apiError(404, 'SECRET') : undefined)}),
     )
     expect(await runApprove(t.params)).toBe(1)
     expect(t.err).toEqual(['::error::renovate-approve: CANDIDATE_ERROR\n'])
@@ -1759,7 +1871,7 @@ describe('runApprove', () => {
   it('uses the injected clock, sleep and signal', async () => {
     const w = world({
       prs: [pr(7)],
-      failRead: (name, _n, call) => (name === 'listCommits' && call === 1 ? apiError(503) : undefined),
+      failRead: (name, _n, call) => (name === 'compare' && call === 1 ? apiError(503) : undefined),
     })
     const slept: number[] = []
     const sized: number[] = []

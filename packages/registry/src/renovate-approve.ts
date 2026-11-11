@@ -155,9 +155,9 @@ function limits() {
     transientAttempts: 3,
     transientBaseMs: 2000,
     pageSize: 100,
-    // The API's own caps: a PR lists at most 250 commits and 3000 files.
+    // The compare lists at most 250 commits a PR may hold and 300 files, on its first page only.
     commitCap: 250,
-    fileCap: 3000,
+    fileCap: 300,
     // Pages of a hundred for the PR list and the reviews: 50.
     listCap: 5000,
     shortSha: 7,
@@ -217,11 +217,9 @@ function shortHead(sha: string): string {
 }
 
 /** A commit counts when GitHub resolved its author to the App and verified its signature. */
-function isAppCommit(commit: {
-  readonly author: unknown
-  readonly commit: {readonly verification?: {readonly verified: boolean} | null}
-}): boolean {
-  return isApp(commit.author) && commit.commit.verification?.verified === true
+function isAppCommit(entry: object): boolean {
+  const verification: unknown = Reflect.get(new Object(Reflect.get(entry, 'commit')), 'verification')
+  return isApp(Reflect.get(entry, 'author')) && Reflect.get(new Object(verification), 'verified') === true
 }
 
 /** Whether a changed file is, or was renamed from, one of the Renovate config files. */
@@ -229,6 +227,26 @@ function touchesConfig(file: {readonly filename: string; readonly previous_filen
   const paths = new Set<string | undefined>(configPaths())
   return paths.has(file.filename) || paths.has(file.previous_filename)
 }
+
+function isObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null
+}
+
+/** A changed file the compare listed, or `null` when the entry is not one. */
+function fileOf(entry: unknown): {readonly filename: string; readonly previous_filename?: string} | null {
+  if (!isObject(entry)) return null
+  const filename: unknown = Reflect.get(entry, 'filename')
+  const previous: unknown = Reflect.get(entry, 'previous_filename')
+  if (typeof filename !== 'string') return null
+  if (previous !== undefined && typeof previous !== 'string') return null
+  return previous === undefined ? {filename} : {filename, previous_filename: previous}
+}
+
+/** What a compare of `main` against one head SHA shows. */
+type Compared =
+  | {readonly kind: 'capped'}
+  | {readonly kind: 'malformed'}
+  | {readonly kind: 'ok'; readonly behind: boolean; readonly foreign: boolean; readonly config: boolean}
 
 /** Fixed text for each outcome that has none of its own. */
 function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'checks-pending' | 'error'>, string>> {
@@ -354,19 +372,47 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
   const reasons = errorDetails()
   const texts = details()
 
-  /** Whether `head` is behind the tip of `main`: the comparison's own count, not `mergeable_state`. */
-  const isBehind = async (head: string): Promise<boolean> => {
-    const response = await read(async signal =>
-      octokit.rest.repos.compareCommitsWithBasehead({
-        owner,
-        repo,
-        basehead: `main...${head}`,
-        per_page: 1,
-        request: {signal},
-      }),
-    )
-    // Anything but a count of zero is not up to date: a missing or odd count never reads as current.
-    return response.data.behind_by !== 0
+  /**
+   * Compares the current `main` with one head SHA, which gives the commits and the changed files of exactly
+   * that head, whatever the branch is moved to afterwards, and how far `main` is ahead of it. The answer is
+   * complete or it is not an answer: more commits than were returned, a file list at the compare's cap, a count
+   * that is not a number or an entry that is not what it should be all fail closed.
+   */
+  const compareHead = async (head: string): Promise<Compared> => {
+    const fetchPage = async (page: number) =>
+      (
+        await read(async signal =>
+          octokit.rest.repos.compareCommitsWithBasehead({
+            owner,
+            repo,
+            basehead: `main...${head}`,
+            per_page: config.pageSize,
+            page,
+            request: {signal},
+          }),
+        )
+      ).data
+    const first = await fetchPage(1)
+    const total: unknown = first.total_commits
+    if (typeof total !== 'number') return {kind: 'malformed'}
+    if (total > config.commitCap) return {kind: 'capped'}
+    const commits: unknown[] = Array.isArray(first.commits) ? [...first.commits] : []
+    for (const page of Array.from({length: Math.ceil(config.commitCap / config.pageSize) - 1}, (_, i) => i + 2)) {
+      if (commits.length >= total) break
+      commits.push(...(await fetchPage(page)).commits)
+    }
+    const changed: unknown = first.files
+    if (commits.length !== total || !Array.isArray(changed)) return {kind: 'malformed'}
+    if (changed.length >= config.fileCap) return {kind: 'capped'}
+    const files = changed.map(fileOf)
+    if (!commits.every(isObject) || files.includes(null)) return {kind: 'malformed'}
+    return {
+      kind: 'ok',
+      // Anything but a count of zero is not up to date: a missing or odd count never reads as current.
+      behind: first.behind_by !== 0,
+      foreign: commits.length === 0 || !commits.every(isAppCommit),
+      config: files.some(file => file !== null && touchesConfig(file)),
+    }
   }
 
   /** The reviews of a PR, read to the end. */
@@ -450,48 +496,20 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       armed,
     })
     const fixed = (outcome: keyof typeof texts, armed = pull.armed): Row => row(outcome, texts[outcome], armed)
+    /** The row that stops a PR on what its compare shows, or `null` when the compare allows an approval. */
+    const stopFor = (compared: Compared, armed: boolean): Row | null => {
+      if (compared.kind === 'capped') return row('error', reasons.capped, armed)
+      if (compared.kind === 'malformed') return row('error', reasons.read, armed)
+      if (compared.foreign) return fixed('foreign-commit', armed)
+      if (compared.config) return fixed('config-change', armed)
+      if (compared.behind) return fixed('behind', armed)
+      return null
+    }
 
     if (pull.labels.includes('hold-merge')) return fixed('held')
 
-    const commits = await readList(
-      async page =>
-        (
-          await read(async signal =>
-            octokit.rest.pulls.listCommits({
-              owner,
-              repo,
-              pull_number: pull.number,
-              per_page: config.pageSize,
-              page,
-              request: {signal},
-            }),
-          )
-        ).data,
-      config.commitCap,
-    )
-    if (commits.capped) return row('error', reasons.capped)
-    if (commits.items.length === 0 || !commits.items.every(isAppCommit)) return fixed('foreign-commit')
-
-    const files = await readList(
-      async page =>
-        (
-          await read(async signal =>
-            octokit.rest.pulls.listFiles({
-              owner,
-              repo,
-              pull_number: pull.number,
-              per_page: config.pageSize,
-              page,
-              request: {signal},
-            }),
-          )
-        ).data,
-      config.fileCap,
-    )
-    if (files.capped) return row('error', reasons.capped)
-    if (files.items.some(touchesConfig)) return fixed('config-change')
-
-    if (await isBehind(head)) return fixed('behind')
+    const stop = stopFor(await compareHead(head), pull.armed)
+    if (stop !== null) return stop
 
     const runs = await readCheckRuns({...client, ref: head})
     const statuses = await readCommitStatuses({...client, ref: head})
@@ -506,15 +524,16 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
 
     if (slotUsed) return fixed('deferred')
 
-    // The fresh read: the PR, `main` and the required list again, and in a live sweep the variable. It can
-    // only stop the approval.
+    // The fresh read: the PR, the commits and files of the pinned head against the current `main`, the required
+    // list again, and in a live sweep the variable. It can only stop the approval.
     const fresh = viewOf(
       (await read(async signal => octokit.rest.pulls.get({owner, repo, pull_number: pull.number, request: {signal}})))
         .data,
     )
     if (!isCandidate(fresh) || fresh.labels.includes('hold-merge')) return fixed('no-longer-qualifies', fresh.armed)
     if (fresh.headSha !== head) return fixed('head-moved', fresh.armed)
-    if (await isBehind(head)) return fixed('behind', fresh.armed)
+    const stopped = stopFor(await compareHead(head), fresh.armed)
+    if (stopped !== null) return stopped
     const again = await requiredList()
     if (again.kind !== 'ok') return row('error', reasons.list, fresh.armed)
     if (!sameChecks(required, again.checks)) return fixed('protection-changed', fresh.armed)
