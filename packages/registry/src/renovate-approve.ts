@@ -7,9 +7,9 @@
  *   `main` and judges each from current state, so a lost or replaced event costs nothing.
  * - A candidate is a PR authored by the App (type `Bot`, numeric id), from a head in this repository whose ref
  *   starts with `renovate/`, carrying `automerge`. Anything else is not listed at all. A candidate then fails
- *   qualification when it carries `hold-merge`, when a commit's resolved author is not the App or the commit is
- *   unverified, or when it touches a Renovate config file. The committer is not tested: GitHub's web flow
- *   commits for the App.
+ *   qualification when it carries `hold-merge`, when a commit was not authored by the App and committed and
+ *   signed by GitHub (author the App by type and id, committer `web-flow`, signature verified and `valid`), or
+ *   when it touches a Renovate config file.
  * - Before any PR is judged the live required list of `main` is read and must name every context declared in
  *   `.github/settings.yml`. A list that is unreadable, empty or short stops the sweep with exit 1.
  * - Each PR is judged once, from scratch: behind `main` (measured), the required checks on its head, an
@@ -169,9 +169,12 @@ function limits() {
   }
 }
 
-/** The identity of the App that Renovate commits and opens PRs as, and the user that approves. */
+/**
+ * The identity of the App that Renovate commits and opens PRs as, the user that approves, and the committer
+ * of a commit GitHub itself made and signed (`web-flow`, numeric id).
+ */
 function identity() {
-  return {appId: 109_017_866, appType: 'Bot', approver: 'fro-bot'}
+  return {appId: 109_017_866, appType: 'Bot', approver: 'fro-bot', signerId: 19_864_447}
 }
 
 /** The Renovate config files the approver never lets through: they decide which updates are labelled. */
@@ -221,12 +224,22 @@ function shortHead(sha: string): string {
   return /^[0-9a-f]{40}$/u.test(sha) ? sha.slice(0, limits().shortSha) : 'unknown'
 }
 
-/** A commit counts when GitHub resolved its author to the App and verified its signature. */
+/**
+ * A commit counts when it was authored by the App and committed and signed by GitHub: the author is the App
+ * by type and id, the top-level committer is GitHub's own (`web-flow`) and the signature is verified and
+ * `valid`. `verified` authenticates the committer's signature, not the author, so a person's own signed commit
+ * that names the App as author is told apart by its committer.
+ */
 function isAppCommit(entry: unknown): boolean {
   // `Object()` makes a primitive, `null` or `undefined` safe to read.
   const commit = new Object(entry)
-  const verification: unknown = Reflect.get(new Object(Reflect.get(commit, 'commit')), 'verification')
-  return isApp(Reflect.get(commit, 'author')) && Reflect.get(new Object(verification), 'verified') === true
+  const verification = new Object(Reflect.get(new Object(Reflect.get(commit, 'commit')), 'verification'))
+  return (
+    isApp(Reflect.get(commit, 'author')) &&
+    Reflect.get(new Object(Reflect.get(commit, 'committer')), 'id') === identity().signerId &&
+    Reflect.get(verification, 'verified') === true &&
+    Reflect.get(verification, 'reason') === 'valid'
+  )
 }
 
 /** Whether a changed file is, or was renamed from, one of the Renovate config files. */
@@ -276,7 +289,7 @@ type Compared = 'capped' | 'malformed' | {readonly behind: boolean; readonly for
 function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'checks-pending' | 'error'>, string>> {
   return {
     held: 'carries hold-merge',
-    'foreign-commit': 'a commit is not by the App, or is unverified',
+    'foreign-commit': 'a commit is not authored by the App and signed by GitHub',
     'config-change': 'changes a Renovate config file',
     behind: 'behind main; Renovate rebases it',
     'already-approved': 'already approved by fro-bot on this head',

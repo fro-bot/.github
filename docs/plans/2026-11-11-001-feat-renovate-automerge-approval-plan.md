@@ -145,7 +145,7 @@ Terms: a **sweep** is one execution of the approver's CLI. The **approver** is t
 
 - **Every start is a full sweep.** The workflow starts when a CI workflow completes, every 30 minutes, and on dispatch. It never reads the event payload to choose a PR. It lists the open PRs and judges each one from current state. A lost or replaced event is picked up by the next sweep, and there is no payload to trust.
 - **Judge once, no wait loop.** A PR whose checks are pending or failed is left for the next sweep. The promotion step's 60-minute wait is not reused.
-- **Candidates are found by identity, then qualified.** A candidate is an open PR against `main`, authored by the App (type and numeric id), from a same-repository head whose ref starts with `renovate/`, carrying `automerge`. Anything else is not listed at all, which keeps the `data` promotion and human PRs out. A candidate then fails qualification when it carries `hold-merge`, when any commit's resolved author is not the App or the commit is unverified, or when it changes, adds, removes or renames `default.json` or `.github/renovate.json5`.
+- **Candidates are found by identity, then qualified.** A candidate is an open PR against `main`, authored by the App (type and numeric id), from a same-repository head whose ref starts with `renovate/`, carrying `automerge`. Anything else is not listed at all, which keeps the `data` promotion and human PRs out. A candidate then fails qualification when it carries `hold-merge`, when any commit was not authored by the App and committed and signed by GitHub (author the App by type and numeric id, top-level committer `web-flow` id 19864447, signature verified with reason `valid`), or when it changes, adds, removes or renames `default.json` or `.github/renovate.json5`.
 - **Reads fail closed per PR.** Commits, files, check runs, statuses and reviews are read to the end. A list that reaches the API's cap, or a read that fails, gives that PR an error outcome and no approval. The other PRs are still judged.
 - **Up to date is measured, not inferred.** The sweep compares the PR head with `main` and skips a PR that is behind. `mergeable_state` is not used for this, because a PR that lacks a review reports `blocked` whether or not it is behind.
 - **One approval per sweep, lowest PR number first.** Under the up-to-date rule only one PR can merge at a time. Further ready PRs are reported as deferred. The cap counts approvals sent, so a PR that is pending or failing never blocks the ones after it. The cap applies in a dry run too.
@@ -162,7 +162,7 @@ Past work with the same surface: recorded as deferred in `docs/plans/2026-11-09-
 ### Resolved During Planning
 
 - What starts the approver: `workflow_run` on the CI workflows, a 30-minute schedule and dispatch, each doing a full sweep.
-- How to tell a Renovate branch and App-only commits: head ref prefix `renovate/` on a same-repository head, PR author and every commit author matched by type and numeric id, every commit verified. The committer is not tested, because GitHub's web flow commits for the App.
+- How to tell a Renovate branch and App-only commits: head ref prefix `renovate/` on a same-repository head, PR author and every commit author matched by type and numeric id, and every commit committed and signed by GitHub: the top-level committer is `web-flow` (id 19864447) and the signature is verified with reason `valid`. `verified` authenticates the committer's signature, not the author, so a person's own signed commit that names the App as author is told apart by its committer. Renovate's commits are created through the API, so GitHub commits and signs them.
 - Reuse of the promotion code: one shared required-checks module (Unit 1).
 - No auto-merge armed: approve and report.
 - Stuck PRs: the job summary lists every candidate with its outcome and the missing or failed checks.
@@ -184,7 +184,7 @@ flowchart TD
   P --> L[list open PRs against main]
   L --> C{App author, same-repo renovate/ head, automerge label?}
   C -- no --> X[not a candidate: not listed]
-  C -- yes --> Q{hold-merge, foreign or unverified commit, config file changed?}
+  C -- yes --> Q{hold-merge, commit not authored by the App and signed by GitHub, config file changed?}
   Q -- yes --> O1[outcome: held / foreign-commit / config-change]
   Q -- no --> U{behind main?}
   U -- yes --> O2[outcome: behind]
@@ -291,7 +291,7 @@ flowchart TD
 - Edge case: a skipped required check run counts as passed. A required context with no run and no status → `checks-pending`, named. A failed required check → `checks-failed`, named. A check run and a status of one name where the status is pending → `checks-pending`.
 - Edge case: auto-merge not armed → `approved-not-armed`.
 - Edge case: a PR without the label, the `data` promotion PR, a PR from a fork, a PR whose head repository is gone, a PR by a person from a `renovate/` branch → not candidates, never approved (AE5, AE10).
-- Edge case: `hold-merge` present → `held`. A commit by another author, a commit with no resolved author, or an unverified commit → `foreign-commit` (AE5, AE9).
+- Edge case: `hold-merge` present → `held`. A commit by another author, a commit with no resolved author, an unverified commit, a commit verified under another committer (a user, the App itself, none) or with a reason other than `valid` → `foreign-commit` (AE5, AE9).
 - Edge case: the PR changes `default.json` or `.github/renovate.json5`, or renames a file to or from either path → `config-change` (AE6).
 - Edge case: the PR is behind `main` with green checks → `behind`, no approval.
 - Error path: at the fresh read the head differs → `head-moved`, no approval for either head (AE7). The label is gone, `hold-merge` was added or the PR is closed → `no-longer-qualifies`. `main` has moved and the head is now behind → `behind`. The required list differs → `protection-changed`. The variable reads anything but `on` → `switch-off`; it cannot be read → `error`.

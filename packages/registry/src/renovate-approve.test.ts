@@ -14,6 +14,8 @@ import {
 
 const DECLARED = ['Lint', 'Test', 'Security: Private Leak Scan', 'CodeQL'] as const
 const APP = {id: 109_017_866, type: 'Bot'} as const
+/** GitHub's own committer for commits made through the API (`web-flow`). */
+const WEB_FLOW = {id: 19_864_447, type: 'User'} as const
 const MINUTE = 60_000
 const BUDGET = 10 * MINUTE
 
@@ -35,6 +37,8 @@ function apiErrorWith(status: number, headers: Record<string, string>, message =
 interface CommitSpec {
   readonly author?: unknown
   readonly verified?: boolean | undefined
+  readonly reason?: unknown
+  readonly committer?: unknown
   readonly noVerification?: boolean
 }
 
@@ -133,11 +137,15 @@ function commitRows(commits: readonly CommitSpec[], fill = 0): unknown[] {
     return {
       sha: sha(index + 1, 'c'),
       author: 'author' in commit ? commit.author : APP,
+      committer: 'committer' in commit ? commit.committer : WEB_FLOW,
       commit: {
         verification:
           'noVerification' in commit && commit.noVerification === true
             ? undefined
-            : {verified: 'verified' in commit ? commit.verified : true},
+            : {
+                verified: 'verified' in commit ? commit.verified : true,
+                reason: 'reason' in commit ? commit.reason : 'valid',
+              },
       },
     }
   })
@@ -966,7 +974,17 @@ describe('sweep: qualification', () => {
     ['the App id with the wrong type', [{author: {id: APP.id, type: 'User'}}]],
     ['no resolved author', [{author: null}]],
     ['an empty author object', [{author: {}}]],
+    ['a commit verified under another user as committer', [{committer: {id: 1, type: 'User'}}]],
+    ['a commit verified under the App as committer', [{committer: APP}]],
+    ['a commit with no committer', [{committer: null}]],
+    ['a commit with an empty committer object', [{committer: {}}]],
+    ['a commit whose committer has the web-flow id as a string', [{committer: {id: '19864447', type: 'User'}}]],
+    ['a verified commit whose reason is not valid', [{reason: 'unknown_key'}]],
+    ['a verified commit with a reason of gpgverify_unavailable', [{reason: 'gpgverify_unavailable'}]],
+    ['a verified commit with no reason', [{reason: undefined}]],
+    ['a verified commit with a reason in another case', [{reason: 'Valid'}]],
     ['an unverified commit', [{verified: false}]],
+    ['an unverified commit whose reason is valid', [{verified: false, reason: 'valid'}]],
     ['a commit with no verification data', [{noVerification: true}]],
     ['a commit with verified undefined', [{verified: undefined}]],
     ['one bad commit among App commits', [appCommit, {author: {id: 1, type: 'User'}}, appCommit]],
@@ -977,14 +995,32 @@ describe('sweep: qualification', () => {
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({
       outcome: 'foreign-commit',
-      detail: 'a commit is not by the App, or is unverified',
+      detail: 'a commit is not authored by the App and signed by GitHub',
     })
     expect(result.exitCode).toBe(0)
     expect(w.named('listRuns')).toEqual([])
     expect(w.named('approve')).toEqual([])
   })
 
-  it('accepts several App commits, a committer that is not the App, and reads every page of commits', async () => {
+  it('sends no review for a commit the App authored but a person committed and signed, however many other commits are fine', async () => {
+    const w = world({prs: [pr(1, {commits: [{}, {committer: {id: 4_242, type: 'User'}}, {}]}), pr(2)]})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'foreign-commit', 2: 'approved'})
+    expect(w.named('approve').map(call => call.params.pull_number)).toEqual([2])
+  })
+
+  it('accepts the real Renovate shape: authored by the App, committed and signed by web-flow, verified valid', async () => {
+    const real = {
+      author: {id: 109_017_866, type: 'Bot', login: 'fro-bot[bot]'},
+      committer: {id: 19_864_447, type: 'User', login: 'web-flow'},
+      verified: true,
+      reason: 'valid',
+    }
+    const w = world({prs: [pr(1, {commits: [real, real]})]})
+    expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+  })
+
+  it('accepts several App commits and reads every page of commits', async () => {
     const commits = Array.from({length: 150}, () => ({}))
     const w = world({prs: [pr(1, {commits})]})
     const result = await LIVE(w)
@@ -1075,8 +1111,17 @@ describe('sweep: qualification is read by SHA, never by PR number (A to B to A)'
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({
       outcome: 'foreign-commit',
-      detail: 'a commit is not by the App, or is unverified',
+      detail: 'a commit is not authored by the App and signed by GitHub',
     })
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('re-applies the committer rule at the fresh read too', async () => {
+    const w = world({
+      prs: [pr(1, {commits: call => (call === 1 ? [{}] : [{}, {committer: {id: 1, type: 'User'}}])})],
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1).outcome).toBe('foreign-commit')
     expect(w.named('approve')).toEqual([])
   })
 
