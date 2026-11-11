@@ -106,6 +106,8 @@ interface Scenario {
   readonly fillOnly?: number
   readonly failRead?: (name: string, pr: number, call: number) => Error | undefined
   readonly hang?: (name: string, call: number) => boolean
+  /** The request is aborted at its cap, and the transport rejects with this error rather than an abort error. */
+  readonly abortWith?: (name: string, call: number) => Error | undefined
   readonly cost?: number | ((name: string, call: number) => number)
   readonly reviewsError?: (call: number) => Error | undefined
   /** Extra review rows on the n-th `listReviews` call, to make only the reconcile read reach its cap. */
@@ -197,9 +199,23 @@ function world(scenario: Scenario = {}) {
         reject(Object.assign(new Error('The operation was aborted'), {status: 500}))
       })
     })
+  /** Fires the request's signal as the cap does, then rejects with `error` (headers arrived, the body stalled). */
+  const abortThen = async (params: unknown, error: Error): Promise<never> =>
+    new Promise<never>((_resolve, reject) => {
+      const signal = (params as {request?: {signal?: AbortSignal}}).request?.signal
+      queueMicrotask(() => {
+        if (signal !== undefined) {
+          clock.now += sizes.get(signal) ?? 0
+          controllers.get(signal)?.abort()
+        }
+        reject(error)
+      })
+    })
   const gate = async (name: string, params: unknown, number?: number): Promise<number> => {
     const call = record(name, params)
     if (scenario.hang?.(name, call) === true) await stall(params)
+    const aborted = scenario.abortWith?.(name, call)
+    if (aborted !== undefined) await abortThen(params, aborted)
     const failure = scenario.failRead?.(name, number ?? 0, call)
     if (failure !== undefined) throw failure
     return call
@@ -1765,6 +1781,67 @@ describe('sweep: a rate limit stops the sweep (the PAT is shared, and the cooldo
     expect(rowOf(result, 2).detail).toBe('rate-limited')
     expect(w.order().at(-1)).toBe('listReviews')
     expect(w.named('listReviews')).toHaveLength(2)
+  })
+
+  describe('a request that is aborted at its cap while GitHub had already answered with a rate limit', () => {
+    const ABORTED_LIMITS = [
+      ['a 429', () => apiError(429, 'SECRET')],
+      ['a 403 with the rate limit used up', () => apiErrorWith(403, {'x-ratelimit-remaining': '0'}, 'SECRET')],
+    ] as const
+
+    it.each(ABORTED_LIMITS)(
+      '%s keeps its rate limit on a read: no retry, no request after it, every candidate rate-limited',
+      async (_name, make) => {
+        const w = world({
+          prs: [pr(1), pr(2), pr(3)],
+          abortWith: (name, call) => (name === 'compare' && call === 1 ? make() : undefined),
+        })
+        const result = await LIVE(w)
+        expect(w.order()).toEqual(['getBranch', 'list', 'compare'])
+        expect(result.rows.map(row => row.detail)).toEqual(['rate-limited', 'rate-limited', 'rate-limited'])
+        expect(result.exitCode).toBe(1)
+        expect(w.sleeps).toEqual([])
+        expect(JSON.stringify(result)).not.toContain('SECRET')
+      },
+    )
+
+    it.each(ABORTED_LIMITS)(
+      '%s keeps its rate limit on the review request: approval-unknown, no reconcile read, the next PR untouched',
+      async (_name, make) => {
+        const w = world({
+          prs: [pr(1), pr(2)],
+          abortWith: (name, call) => (name === 'approve' && call === 1 ? make() : undefined),
+        })
+        const result = await LIVE(w)
+        expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'error'})
+        expect(rowOf(result, 2).detail).toBe('rate-limited')
+        expect(w.order().at(-1)).toBe('approve')
+        expect(w.named('listReviews')).toHaveLength(1)
+        expect(w.calls.filter(call => call.params.pull_number === 2 || call.params.ref === sha(2))).toEqual([])
+      },
+    )
+
+    it('still reads an aborted request with any other error as a request timeout, and goes on to the next PR', async () => {
+      for (const error of [apiError(500), apiError(404), apiError(403, 'forbidden'), new Error('socket hang up')]) {
+        const w = world({
+          prs: [pr(1), pr(2)],
+          abortWith: (name, call) => (name === 'compare' && call === 1 ? error : undefined),
+        })
+        const result = await LIVE(w)
+        expect(outcomes(result)).toEqual({1: 'error', 2: 'approved'})
+        expect(rowOf(result, 1).detail).toBe('request-timeout')
+      }
+    })
+
+    it('still reads an aborted request at the budget with a non-rate-limit error as the end of the sweep', async () => {
+      const w = world({
+        prs: [pr(1), pr(2)],
+        abortWith: (name, call) => (name === 'compare' && call === 1 ? apiError(500) : undefined),
+        cost: (name, call) => (name === 'list' && call === 1 ? BUDGET - 10_000 : 0),
+      })
+      const result = await LIVE(w)
+      expect(result.rows.map(row => row.detail)).toEqual(['budget-exhausted', 'budget-exhausted'])
+    })
   })
 
   it('does not stop for an ambiguous write that is not a rate limit: it reconciles and the next PR is deferred', async () => {

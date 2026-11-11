@@ -354,7 +354,9 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     try {
       return await operation(signal)
     } catch (error: unknown) {
-      if (!signal.aborted) throw error
+      // A rate limit is a known answer, even when the body stalled until the cap aborted the request: it keeps
+      // its identity, so it is never retried and it stops the sweep.
+      if (!signal.aborted || isRateLimited(error)) throw error
       throw remaining > config.requestMs ? new RequestTimeoutError() : new CutOffError()
     }
   }
