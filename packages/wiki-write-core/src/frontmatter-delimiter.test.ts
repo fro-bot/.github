@@ -13,6 +13,8 @@ const TRAILING_WHITESPACE = [' ', '\t', ' \t '] as const
 
 const PAGE_PATH = 'knowledge/wiki/topics/delimiter.md'
 
+const MISSING_CLOSE_ERROR = 'Invalid frontmatter: missing closing --- delimiter'
+
 function ingest(content: string): Record<string, string> {
   return buildWikiIngestChanges({
     existingFiles: {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'},
@@ -35,9 +37,23 @@ describe('splitFrontmatter closing delimiter', () => {
     expect(result.body).toBe('body')
   })
 
-  it('does not close on a line with text after the dashes', () => {
-    const content = '---\ntitle: x\n--- trailing text\nbody\n'
+  it.each([
+    ['a line with text after the dashes', '---\ntitle: x\n--- trailing text\nbody\n'],
+    ['a line that opens with more dashes', '---\ntitle: x\n----\nbody\n'],
+    ['no closing line at all', '---\ntitle: x\nbody\n'],
+    ['nothing after the opening line', '---\n'],
+    ['an invalid YAML body', '---\ntitle: [\n---x\nneedle content'],
+  ])('reports a block with no valid closing line (%s) as a frontmatter error', (_name, content) => {
+    expect(splitFrontmatter(content)).toEqual({frontmatter: {}, body: '', error: MISSING_CLOSE_ERROR})
+  })
 
+  it.each([
+    ['no opening line', 'title: x\n---\nbody\n'],
+    ['an opening line with more dashes', '----\ntitle: x\n---\nbody\n'],
+    ['an opening line with text after the dashes', '--- text\ntitle: x\n---\nbody\n'],
+    ['an opening line with no line break', '---'],
+    ['empty content', ''],
+  ])('treats content with %s as having no frontmatter block', (_name, content) => {
     expect(splitFrontmatter(content)).toEqual({frontmatter: {}, body: content.trim()})
   })
 

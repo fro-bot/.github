@@ -372,6 +372,54 @@ describe('lintWikiSnapshot', () => {
     )
   })
 
+  it.each([
+    ['a line with text after the dashes', '--- trailing text'],
+    ['no closing line', 'Body text.'],
+  ])('reports a frontmatter block with %s as invalid-frontmatter', (_name, closingLine) => {
+    const path = 'knowledge/wiki/repos/fro-bot--github.md'
+    const files = Object.fromEntries([
+      [
+        'knowledge/index.md',
+        buildIndex([
+          '## Repos',
+          '',
+          '- [[fro-bot--github]] — Fro Bot .github',
+          '',
+          '## Topics',
+          '',
+          '_No topic pages yet._',
+          '',
+          '## Entities',
+          '',
+          '_No entity pages yet._',
+          '',
+          '## Comparisons',
+          '',
+          '_No comparison pages yet._',
+        ]),
+      ],
+      [
+        path,
+        [
+          '---',
+          'type: repo',
+          'title: Fro Bot .github',
+          'created: 2026-04-16',
+          'updated: 2026-04-16',
+          closingLine,
+          '',
+        ].join('\n'),
+      ],
+    ])
+
+    const result = lintWikiSnapshot({files, now: new Date('2026-05-02T00:00:00Z')})
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual(
+      expect.arrayContaining([expect.objectContaining({kind: 'invalid-frontmatter', path})]),
+    )
+  })
+
   it('labels stale claims, missing cross-references, and knowledge gaps as advisory findings', () => {
     const files = Object.fromEntries([
       [

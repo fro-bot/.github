@@ -30,12 +30,18 @@ export interface SplitFrontmatterResult {
 /**
  * Split raw wiki page content into frontmatter and body.
  *
- * Stricter than a naive split: malformed YAML frontmatter is surfaced via `error`
- * rather than silently discarded, so downstream safety/lint logic can observe it.
+ * Stricter than a naive split: malformed YAML frontmatter, and a block that opens with `---` but has
+ * no valid closing line, are surfaced via `error` rather than silently discarded, so downstream
+ * safety/lint logic can observe them. Content with no opening `---` line has no frontmatter and no error.
  */
 export function splitFrontmatter(content: string): SplitFrontmatterResult {
   const match = /^---\n([\s\S]+?)\n---[ \t]*(?:\n|$)/u.exec(content)
   if (match === null) {
+    // A first line of exactly `---` opens a block. A block with no valid closing line is malformed
+    // frontmatter, not a body: report it so callers do not read the raw block as page content.
+    if (content.startsWith('---\n')) {
+      return {frontmatter: {}, body: '', error: 'Invalid frontmatter: missing closing --- delimiter'}
+    }
     return {frontmatter: {}, body: content.trim()}
   }
 

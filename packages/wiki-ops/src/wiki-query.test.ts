@@ -220,6 +220,22 @@ describe('assembleWikiContext', () => {
   })
 })
 
+describe('assembleWikiContext: a frontmatter block that never closes', () => {
+  it.each([
+    ['invalid YAML before a `---x` line', '---\ntitle: [\n---x\nneedle content'],
+    ['a `--- text` line', '---\ntitle: Needle\n--- trailing text\nneedle content'],
+  ])('throws instead of reading the raw block as page content (%s)', (_name, content) => {
+    // #given a page whose opening block has no valid closing line, and a query that matches its text
+    const files = {'knowledge/wiki/topics/broken.md': content}
+
+    // #when assembling baseline wiki context
+    // #then the page is malformed, as an invalid YAML block is, and is never emitted
+    expect(() => assembleWikiContext({files, event: {eventName: 'workflow_dispatch', title: 'needle'}})).toThrow(
+      'Invalid wiki frontmatter in knowledge/wiki/topics/broken.md',
+    )
+  })
+})
+
 describe('writeSelectedPathsHandoff', () => {
   it('writes selected paths as a deterministic JSON array under the handoff path', async () => {
     // #given a runner-temp directory and a set of selected wiki paths

@@ -396,6 +396,21 @@ describe('planWikiRepairs', () => {
     expect(plan.counts.outOfScope).toBeGreaterThan(0)
   })
 
+  it('treats a frontmatter block with no valid closing line as out-of-scope, file byte-identical', () => {
+    const files = buildCleanFiles()
+    const path = 'knowledge/wiki/repos/fro-bot--broken.md'
+    const original = ['---', 'title: Broken', '--- trailing text', '', 'Body.', ''].join('\n')
+    files[path] = original
+
+    const baseline = lintWikiSnapshot({files}).deterministicFindings
+    expect(baseline.some(f => f.kind === 'invalid-frontmatter' && f.path === path)).toBe(true)
+
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    expect(plan.repairedFiles[path]).toBe(original)
+    expect(plan.counts.outOfScope).toBeGreaterThan(0)
+  })
+
   it('refuses a repair whose path is outside knowledge/ (AE5)', () => {
     const files = buildCleanFiles()
     const baseline = [{kind: 'missing-frontmatter' as const, path: 'metadata/repos.yaml', message: 'missing fields'}]

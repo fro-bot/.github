@@ -239,6 +239,30 @@ describe('assembleExpandedContext — query mode', () => {
     expect(result.pageCount).toBe(0)
   })
 
+  it.each([
+    ['invalid YAML before a `---x` line', '---\ntitle: [\n---x\nneedle content'],
+    ['a `--- text` line', '---\ntitle: Needle\n--- trailing text\nneedle content'],
+  ])('excludes a page whose frontmatter block never closes (%s)', (_name, content) => {
+    // #given a corpus with a valid page and a page whose opening block has no valid closing line
+    const files: Record<string, string> = {
+      ...BASE_FILES,
+      'knowledge/wiki/topics/broken.md': content,
+    }
+
+    // #when a query that matches the broken page's text runs
+    const result = assembleExpandedContext({
+      mode: 'query',
+      files,
+      query: 'needle content octokit',
+      privateTokens: NO_PRIVATE_TOKENS,
+    })
+
+    // #then the broken page is neither selected nor excerpted, and the valid page still is
+    expect(result.selectedPaths).not.toContain('knowledge/wiki/topics/broken.md')
+    expect(result.selectedPaths).toContain('knowledge/wiki/entities/octokit.md')
+    expect(result.excerpt).not.toContain('needle')
+  })
+
   it('rejects invalid query text before reading corpus pages', () => {
     // #given invalid query text and a corpus file that would otherwise be unsafe if inspected
     const files: Record<string, string> = {
