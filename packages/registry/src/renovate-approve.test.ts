@@ -1600,15 +1600,6 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
 
 describe('sweep: a failed read says why, with a fixed code and no response text', () => {
   it.each([
-    ['a 429 that keeps coming', apiError(429, 'SECRET'), 'rate-limited', 3],
-    [
-      'a 403 with the rate limit used up',
-      apiErrorWith(403, {'x-ratelimit-remaining': '0'}, 'SECRET'),
-      'rate-limited',
-      1,
-    ],
-    ['a 403 with a retry-after header', apiErrorWith(403, {'retry-after': '30'}, 'SECRET'), 'rate-limited', 1],
-    ['a 403 that says secondary rate limit', apiError(403, 'SECRET secondary rate limit'), 'rate-limited', 1],
     ['a plain 403', apiError(403, 'SECRET'), 'read-failed', 1],
     [
       'a 403 with headers of another kind',
@@ -1666,6 +1657,148 @@ describe('sweep: a failed read says why, with a fixed code and no response text'
     expect(rowOf(result, 1).detail).toBe('request-timeout')
     expect(rowOf(result, 2).detail).toBe('read-failed')
     expect(outcomes(result)).toEqual({1: 'error', 2: 'error', 3: 'approved'})
+  })
+})
+
+describe('sweep: a rate limit stops the sweep (the PAT is shared, and the cooldown is account-wide)', () => {
+  const LIMITS = [
+    ['a 429', () => apiError(429, 'SECRET')],
+    ['a 403 with the rate limit used up', () => apiErrorWith(403, {'x-ratelimit-remaining': '0'}, 'SECRET')],
+    ['a 403 with a retry-after header', () => apiErrorWith(403, {'retry-after': '30'}, 'SECRET')],
+    ['a 403 that says secondary rate limit', () => apiError(403, 'SECRET secondary rate limit')],
+  ] as const
+
+  it.each(LIMITS)(
+    '%s on the first candidate’s first read: one request, none after, all three rate-limited',
+    async (_name, make) => {
+      const w = world({
+        prs: [pr(1), pr(2), pr(3)],
+        failRead: (name, number) => (name === 'compare' && number === 1 ? make() : undefined),
+      })
+      const result = await LIVE(w)
+      expect(w.order()).toEqual(['getBranch', 'list', 'compare'])
+      expect(outcomes(result)).toEqual({1: 'error', 2: 'error', 3: 'error'})
+      expect(result.rows.map(row => row.detail)).toEqual(['rate-limited', 'rate-limited', 'rate-limited'])
+      expect(result.exitCode).toBe(1)
+      expect(result.stop).toBeNull()
+      expect(w.sleeps).toEqual([])
+      expect(JSON.stringify(result)).not.toContain('SECRET')
+    },
+  )
+
+  it.each(LIMITS)(
+    '%s on a later candidate: what was approved stays, the rest is rate-limited and untouched',
+    async (_name, make) => {
+      const w = world({
+        prs: [pr(1), pr(2), pr(3)],
+        failRead: (name, number) => (name === 'compare' && number === 2 ? make() : undefined),
+      })
+      const result = await LIVE(w)
+      expect(outcomes(result)).toEqual({1: 'approved', 2: 'error', 3: 'error'})
+      expect(result.rows.map(row => row.detail).slice(1)).toEqual(['rate-limited', 'rate-limited'])
+      expect(w.order().at(-1)).toBe('compare')
+      expect(w.named('approve')).toHaveLength(1)
+      expect(w.calls.filter(call => call.params.ref === sha(3) || call.params.pull_number === 3)).toEqual([])
+    },
+  )
+
+  it.each([
+    ['a check-run read', 'listRuns', 1],
+    ['a status read', 'listStatuses', 1],
+    ['a review read', 'listReviews', 1],
+    ['the fresh read of the PR', 'get', 1],
+    ['the fresh read of the required list', 'getBranch', 2],
+    ['the variable read', 'getVariable', 1],
+  ] as const)(
+    '%s rate-limited: that candidate and the rest end rate-limited with no further request',
+    async (_name, read, call) => {
+      const w = world({
+        prs: [pr(1), pr(2)],
+        failRead: (name, _number, count) => (name === read && count === call ? apiError(429) : undefined),
+      })
+      const result = await LIVE(w)
+      expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
+      expect(result.rows.map(row => row.detail)).toEqual(['rate-limited', 'rate-limited'])
+      expect(w.order().at(-1)).toBe(read)
+      expect(w.named(read)).toHaveLength(call)
+      expect(w.named('approve')).toEqual([])
+    },
+  )
+
+  it.each(LIMITS)('%s on the initial required-list read: the existing stop, one request', async (_name, make) => {
+    const w = world({prs: [pr(1)], protection: () => make()})
+    const result = await LIVE(w)
+    expect(result).toEqual({exitCode: 1, live: true, stop: 'REQUIRED_UNREADABLE', rows: []})
+    expect(w.order()).toEqual(['getBranch'])
+  })
+
+  it.each(LIMITS)('%s on the PR list: the existing stop, one list request', async (_name, make) => {
+    const w = world({prs: [pr(1)], listError: () => make()})
+    const result = await LIVE(w)
+    expect(result).toEqual({exitCode: 1, live: true, stop: 'CANDIDATES_UNREADABLE', rows: []})
+    expect(w.order()).toEqual(['getBranch', 'list'])
+  })
+
+  it.each(LIMITS)(
+    '%s on the review request: approval-unknown, no reconcile read, the next PR untouched',
+    async (_name, make) => {
+      const w = world({prs: [pr(1), pr(2)], approve: () => make()})
+      const result = await LIVE(w)
+      expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'error'})
+      expect(rowOf(result, 2).detail).toBe('rate-limited')
+      expect(result.exitCode).toBe(1)
+      expect(w.order().at(-1)).toBe('approve')
+      expect(w.named('listReviews')).toHaveLength(1)
+      expect(w.calls.filter(call => call.params.pull_number === 2 || call.params.ref === sha(2))).toEqual([])
+      expect(JSON.stringify(result)).not.toContain('SECRET')
+    },
+  )
+
+  it('stops after a rate limit on the reconcile read too: approval-unknown, nothing sent after it', async () => {
+    const w = world({
+      prs: [pr(1), pr(2)],
+      approve: () => apiError(502),
+      reviewsError: call => (call >= 2 ? apiError(429) : undefined),
+    })
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'error'})
+    expect(rowOf(result, 2).detail).toBe('rate-limited')
+    expect(w.order().at(-1)).toBe('listReviews')
+    expect(w.named('listReviews')).toHaveLength(2)
+  })
+
+  it('does not stop for an ambiguous write that is not a rate limit: it reconciles and the next PR is deferred', async () => {
+    const w = world({prs: [pr(1), pr(2)], approve: () => apiError(503)})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'deferred'})
+  })
+
+  it('does not stop for a read that fails for another reason: the next PR is judged', async () => {
+    const w = world({
+      prs: [pr(1), pr(2)],
+      failRead: (name, number) => (name === 'compare' && number === 1 ? apiError(404) : undefined),
+    })
+    expect(outcomes(await LIVE(w))).toEqual({1: 'error', 2: 'approved'})
+  })
+
+  it('names every PR with the rate-limited code on stderr and still writes the summary', async () => {
+    const t = runParams(
+      {},
+      world({
+        prs: [pr(3), pr(5)],
+        failRead: (name, number) => (name === 'compare' && number === 3 ? apiError(429) : undefined),
+      }),
+    )
+    expect(await runApprove(t.params)).toBe(1)
+    expect(t.err).toEqual([
+      '::error::renovate-approve: #3 rate-limited\n',
+      '::error::renovate-approve: #5 rate-limited\n',
+      '::error::renovate-approve: CANDIDATE_ERROR\n',
+    ])
+    const summary = t.appended.map(entry => entry.content).join('')
+    expect(summary).toContain('| #3 |')
+    expect(summary).toContain('| #5 |')
+    expect(summary).toContain('rate-limited')
   })
 })
 
@@ -1748,11 +1881,6 @@ describe('sweep: a review request that fails or is cut off', () => {
 
   it.each([
     ['a 408', apiError(408)],
-    ['a 429', apiError(429)],
-    ['a 403 with the rate limit used up', apiErrorWith(403, {'x-ratelimit-remaining': '0'})],
-    ['a 403 with a retry-after header', apiErrorWith(403, {'retry-after': '60'})],
-    ['a 403 with a secondary rate limit message', apiError(403, 'You have exceeded a secondary rate limit')],
-    ['a 403 with a rate limit message in another case', apiError(403, 'API RATE LIMIT exceeded')],
     ['a 500', apiError(500)],
     ['a 503', apiError(503)],
     ['an error with no status', new Error('socket hang up')],
@@ -2221,13 +2349,13 @@ describe('runApprove', () => {
       {},
       world({
         prs: [pr(3), pr(5), pr(7), pr(9, {labels: ['automerge', 'hold-merge']})],
-        failRead: (name, number) => (name === 'compare' && number === 3 ? apiError(429) : undefined),
+        failRead: (name, number) => (name === 'compare' && number === 3 ? apiError(404) : undefined),
         approve: () => apiError(422),
       }),
     )
     expect(await runApprove(t.params)).toBe(1)
     expect(t.err).toEqual([
-      '::error::renovate-approve: #3 rate-limited\n',
+      '::error::renovate-approve: #3 read-failed\n',
       '::error::renovate-approve: #5 approval-refused\n',
       '::error::renovate-approve: #7 approval-refused\n',
       '::error::renovate-approve: CANDIDATE_ERROR\n',

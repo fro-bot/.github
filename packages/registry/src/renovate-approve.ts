@@ -15,14 +15,17 @@
  * - Each PR is judged once, from scratch: behind `main` (measured), the required checks on its head, an
  *   approval already given on that head. A PR whose checks are pending or failed waits for the next sweep.
  * - One approval per sweep, lowest PR number first; the others that are ready are `deferred`. The slot is used
- *   once a request is sent, whatever the response, and in a dry run by the first `would-approve`.
+ *   once a request is sent that may have been recorded (a definite client-error refusal frees it), and in a
+ *   dry run by the first `would-approve`.
  * - The mode is `RENOVATE_APPROVE` as the step started: only `on` is live, anything else is a dry run for the
  *   whole sweep. Right before an approval a fresh read must still agree (PR, `main`, required list, and in a
  *   live sweep the variable) and can only stop the approval.
  * - A list that reaches the API's cap, or a read that fails, is an `error` for that PR and no approval; the
- *   other PRs are still judged. Every request goes through one wrapper with an abort signal sized to what is
+ *   other PRs are still judged. A rate limit is the exception: it is never retried, and once any request is
+ *   answered with one the sweep sends nothing more, the rest of the candidates are `error` (`rate-limited`,
+ *   unjudged) and an approval that was being sent stays `approval-unknown` with no reconcile read. Every request goes through one wrapper with an abort signal sized to what is
  *   left of one budget for the sweep; when it is spent the remaining candidates are `error`.
- * - Exit 0 when no candidate ended in `error` or `approval-unknown`. Exit 1 otherwise, and when the required
+ * - Exit 0 when no candidate ended in `error`, `approval-unknown` or `approval-refused`. Exit 1 otherwise, and when the required
  *   list or the candidate list could not be trusted. The job summary and stderr carry fixed strings, outcome
  *   codes, PR numbers, short SHAs and required-check names only: never a response body, a token, a title or a
  *   branch name.
@@ -355,13 +358,22 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       throw remaining > config.requestMs ? new RequestTimeoutError() : new CutOffError()
     }
   }
-  const read: ReadRequest = async operation =>
-    retry(async () => timed(operation), {
-      attempts: config.transientAttempts,
-      delayMs: attempt => attempt * config.transientBaseMs,
-      shouldRetry: isTransient,
-      sleep: input.sleep,
-    })
+  // Set by the first request that GitHub answers with a rate limit. The PAT is shared, so the cooldown is
+  // account-wide: a rate limit is never retried, and once it is set nothing more is sent in this sweep.
+  let limited = false
+  const read: ReadRequest = async operation => {
+    try {
+      return await retry(async () => timed(operation), {
+        attempts: config.transientAttempts,
+        delayMs: attempt => attempt * config.transientBaseMs,
+        shouldRetry: error => isTransient(error) && !isRateLimited(error),
+        sleep: input.sleep,
+      })
+    } catch (error: unknown) {
+      limited = limited || isRateLimited(error)
+      throw error
+    }
+  }
   const client = {client: octokit, owner, repo, read}
 
   /** Pages of a hundred, read to the end. `capped` when the list reached its page limit, so there may be more. */
@@ -522,7 +534,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
           ).data,
       )
       return reviews.items
-    } catch {
+    } catch (error: unknown) {
+      limited = limited || isRateLimited(error)
       return null
     }
   }
@@ -620,6 +633,12 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       )
     } catch (error: unknown) {
       if (error instanceof DeadlineError && !(error instanceof CutOffError)) throw error
+      // A rate limit may or may not have been recorded, and anything more sent now would add to the cooldown:
+      // no reconcile read, and the rest of the sweep is left unjudged.
+      if (isRateLimited(error)) {
+        limited = true
+        return fixed('approval-unknown', fresh.armed)
+      }
       // A definite refusal created no review: the slot is free for the next ready PR.
       if (isRefusal(error)) {
         slotUsed = false
@@ -644,18 +663,25 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       detail: reason,
       armed: pull.armed,
     })
+    if (limited) {
+      rows.push(failed(reasons.rateLimited))
+      continue
+    }
     if (spent) {
       rows.push(failed(reasons.budget))
       continue
     }
+    let row: Row
     try {
-      rows.push(await judge(pull))
+      row = await judge(pull)
     } catch (error: unknown) {
       spent = error instanceof DeadlineError
-      if (spent) rows.push(failed(reasons.budget))
-      else if (error instanceof RequestTimeoutError) rows.push(failed(reasons.timeout))
-      else rows.push(failed(isRateLimited(error) ? reasons.rateLimited : reasons.read))
+      if (spent) row = failed(reasons.budget)
+      else row = failed(error instanceof RequestTimeoutError ? reasons.timeout : reasons.read)
     }
+    // A rate limit anywhere in the judging makes this candidate `rate-limited`, except an approval that may
+    // have been recorded: that stays `approval-unknown`.
+    rows.push(limited && row.outcome !== 'approval-unknown' ? failed(reasons.rateLimited) : row)
   }
   return {exitCode: rows.some(row => isFailure(row.outcome)) ? 1 : 0, live, stop: null, rows}
 }
