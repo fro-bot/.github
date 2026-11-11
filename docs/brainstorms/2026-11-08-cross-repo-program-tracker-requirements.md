@@ -141,7 +141,7 @@ This is the A2 self-maintenance and A3 cross-repo coordination thread in `docs/b
 
 ## Dependencies / Assumptions
 
-- The CI agent does not load `.agents/skills/`. The Action sets `OPENCODE_DISABLE_PROJECT_CONFIG=1` (fro-bot/agent `packages/runtime/src/agent/server-v2.ts:413`), and OpenCode then skips the project walk. That flag stays, because it keeps a fork checkout from adding config. Until fro-bot/agent#2129 loads repo skills on trusted runs, every CI prompt that needs the program skill tells the agent to read its `SKILL.md` by path. Local harnesses already load `.agents/skills/`.
+- The CI agent does not load `.agents/skills/`. The Action sets `OPENCODE_DISABLE_PROJECT_CONFIG=1` (fro-bot/agent `packages/runtime/src/agent/server-v2.ts:413`), and OpenCode then skips the project walk. That flag stays, because it keeps a fork checkout from adding config. `fro-bot.yaml` now sets the action's `repo-skills: 'true'`, which loads repo skills from the default branch on trusted runs (fro-bot/agent#2129); until a live run proves the load, every CI prompt that needs the program skill tells the agent to read its `SKILL.md` by path. Local harnesses already load `.agents/skills/`.
 - `FRO_BOT_PAT` is documented with `project` scope and already edits Project 1. Implementation confirms it can create a user Project the first time it does so.
 - A gateway launch carries no GitHub credential, and brokered push covers only an existing PR head. Discord's `/fro-bot dispatch` already dispatches `fro-bot.yaml` with a prompt, and that run holds `FRO_BOT_PAT`, so programs start there. A dashboard dispatch route and a denylist gate on `/fro-bot dispatch` are tracked in fro-bot/agent#2130.
 

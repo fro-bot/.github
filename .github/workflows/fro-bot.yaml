@@ -730,6 +730,7 @@ jobs:
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
+          repo-skills: 'true'
           prompt: |
             <persona>
             ${{ env.PERSONA }}
@@ -1002,6 +1003,7 @@ jobs:
           model: ${{ vars.FRO_BOT_MODEL }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: branch-pr
+          repo-skills: 'true'
           prompt: |
             <persona>
             ${{ env.PERSONA }}
@@ -1181,6 +1183,7 @@ jobs:
           model: ${{ vars.FRO_BOT_MODEL }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: working-dir
+          repo-skills: 'true'
           # Observe runs 20-30 minutes; the job's 60-minute limit stays the backstop.
           timeout: '2700000'
           prompt: |

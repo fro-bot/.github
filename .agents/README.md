@@ -28,4 +28,6 @@ Each `SKILL.md` declares two required fields in YAML frontmatter:
 - The technique is specific to this repo's conventions, file layout, brand system, or scripts
 - An agent has applied the technique multiple times and would benefit from a single reference
 
+In CI, the `fro-bot`, Remediate and Observe jobs of `fro-bot.yaml` load these skills through the agent's `repo-skills` input, from the default branch and never from the checkout. Triggers: `schedule` and `workflow_dispatch` always; `issues`, `issue_comment` and `pull_request` only from an owner, member or collaborator on a same-repo head.
+
 For broader skills used across many projects, prefer your personal skill directory (`~/.agents/skills/` for OpenCode/Codex, `~/.claude/skills/` for Claude Code).
