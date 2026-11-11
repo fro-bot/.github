@@ -141,17 +141,19 @@ Origin requirements, and the unit that carries each:
 
 ## Key Technical Decisions
 
-- **Every start is a full sweep.** The workflow starts when a CI workflow completes, every 30 minutes, and on dispatch. It never reads the event payload to choose a PR. It lists the open PRs and judges each one from current state. A lost or replaced event costs at most 30 minutes, and there is no payload to trust.
+Terms: a **sweep** is one execution of the approver's CLI. The **approver** is the workflow, CLI and module together.
+
+- **Every start is a full sweep.** The workflow starts when a CI workflow completes, every 30 minutes, and on dispatch. It never reads the event payload to choose a PR. It lists the open PRs and judges each one from current state. A lost or replaced event is picked up by the next sweep, and there is no payload to trust.
 - **Judge once, no wait loop.** A PR whose checks are pending or failed is left for the next sweep. The promotion step's 60-minute wait is not reused.
-- **Candidates are found by identity, then qualified.** A candidate is an open PR against `main`, authored by the App (type and numeric id), from a same-repository head whose ref starts with `renovate/`, carrying `automerge`. Anything else is not listed at all, which keeps the `data` promotion and human PRs out. A candidate then fails qualification when it carries `hold-merge`, when any commit is not authored by the App or is unverified, or when it changes `default.json` or `.github/renovate.json5`.
+- **Candidates are found by identity, then qualified.** A candidate is an open PR against `main`, authored by the App (type and numeric id), from a same-repository head whose ref starts with `renovate/`, carrying `automerge`. Anything else is not listed at all, which keeps the `data` promotion and human PRs out. A candidate then fails qualification when it carries `hold-merge`, when any commit's resolved author is not the App or the commit is unverified, or when it changes, adds, removes or renames `default.json` or `.github/renovate.json5`.
 - **Reads fail closed per PR.** Commits, files, check runs, statuses and reviews are read to the end. A list that reaches the API's cap, or a read that fails, gives that PR an error outcome and no approval. The other PRs are still judged.
 - **Up to date is measured, not inferred.** The sweep compares the PR head with `main` and skips a PR that is behind. `mergeable_state` is not used for this, because a PR that lacks a review reports `blocked` whether or not it is behind.
-- **One approval per sweep, lowest PR number first.** Under the up-to-date rule only one PR can merge at a time, and the cap bounds the first live sweep. Further ready PRs are reported as deferred.
-- **An existing approval is respected.** If the `fro-bot` user's latest review on the PR is an approval of the current head and has not been dismissed, the sweep does nothing for that PR.
-- **Approve even when auto-merge is not armed.** The outcome says so. Merging such a PR stays with the operator (origin AE4).
-- **Mode is the variable at step start.** `RENOVATE_APPROVE` is passed into the step env. Anything but `on` is a dry run for the whole sweep. Right before an approval a fresh API read of the variable, the PR and the required list must still agree, and can only stop the approval.
+- **One approval per sweep, lowest PR number first.** Under the up-to-date rule only one PR can merge at a time. Further ready PRs are reported as deferred. The cap counts approvals sent, so a PR that is pending or failing never blocks the ones after it. The cap applies in a dry run too.
+- **An existing approval is respected.** If a non-dismissed approval by the `fro-bot` user exists on the current head, the sweep does nothing for that PR.
+- **Approve even when auto-merge is not armed.** The outcome says so. Merging such a PR stays with the operator.
+- **Mode is the variable at step start.** `RENOVATE_APPROVE` is passed into the step env. Anything but `on` is a dry run for the whole sweep. Right before an approval a fresh read must still agree, and can only stop the approval.
 - **Required-check logic is shared, not copied.** `evaluateChecks`, `sameChecks`, `parseDeclaredContexts` and the protection, check-run and status readers move to one module that both the promotion step and the sweep import. A drift between two copies of fail-closed check logic is the worse risk. Orchestration and outcome text stay separate in each caller.
-- **Trusted code only.** The workflow has no `pull_request` trigger. Its checkout is the default branch. Dispatch from another ref is refused. The PR is read through the API only.
+- **No path runs PR code.** The workflow has no `pull_request` trigger, checks out the default branch and downloads no artifact. The PR is read through the API only.
 
 Past work with the same surface: recorded as deferred in `docs/plans/2026-11-09-001-feat-promotion-self-merge-plan.md` (Renovate approval). This plan is that work, and it differs from the promotion step by sweeping many PRs and never merging.
 
@@ -167,9 +169,10 @@ Past work with the same surface: recorded as deferred in `docs/plans/2026-11-09-
 
 ### Deferred to Implementation
 
-- The exact `workflow_run` workflow names and whether the dependency-review workflow needs to be one of them. The schedule covers any gap.
+- The exact `workflow_run` workflow names (candidates on `main` today: `Main`, `CodeQL`, `Dependency Review`, `Check Private Leak`) and whether a consumer of `Check Private Leak`, itself a `workflow_run` consumer, stays inside GitHub's chaining limit. The schedule covers any gap.
 - The request budget per sweep with about ten open candidates. Measure it in the dry run and adjust page sizes.
 - Whether GitHub accepts an approval whose `commit_id` is no longer the head. The fresh read makes this rare, and the next sweep handles the new head either way.
+- Whether the PAT's read of the variable answers 404 for "unset". A 404 at step start is a dry run; at the fresh read of a live sweep it is `error`.
 
 ## High-Level Technical Design
 
@@ -192,8 +195,8 @@ flowchart TD
   A -- yes --> O5[outcome: already-approved]
   A -- no --> B{an approval already given this sweep?}
   B -- yes --> O6[outcome: deferred]
-  B -- no --> F[fresh read: PR still qualifies, same head, same required list, variable]
-  F -- changed --> O7[outcome: head-moved / protection-changed / switch-off]
+  B -- no --> F[fresh read: PR still a qualifying candidate, same head, not behind current main, same required list, variable]
+  F -- changed --> O7[outcome: head-moved / no-longer-qualifies / behind / protection-changed / switch-off]
   F -- dry run --> O8[outcome: would-approve]
   F -- live --> R[approve as fro-bot, commit_id = head]
   R --> O9[outcome: approved or approved-not-armed]
@@ -221,17 +224,18 @@ flowchart TD
 
 **Approach:**
 
-- Move the check types, `evaluateChecks`, `sameChecks`, `parseDeclaredContexts` and the protection, check-run and status readers. The readers take the commit and the request wrapper as arguments.
+- Move the check types, `evaluateChecks`, `sameChecks`, `parseDeclaredContexts` and the protection, check-run and status readers. The readers are closures inside the promotion function today and return its outcome type. The shared readers take the client, repository, commit, declared contexts and the request wrapper as arguments, and return a result of their own that says what went wrong. The promotion step maps that result to the outcomes it gives now.
 - `promotion-self-merge.ts` imports them by relative path. Its orchestration, wait loop, merge and outcome text do not move.
 - Tests for the moved functions move with them, so each mutated module is killed by tests that import it relatively.
 
-**Execution note:** Characterization first. Before moving anything, add a differential test that runs a frozen copy of the current `evaluateChecks` and `sameChecks` against seeded inputs, then keep it pointed at the moved functions.
+**Execution note:** Characterization first, before moving anything. Pin the readers through the promotion step's own entry point with scripted fake responses (several pages, status order, app ids, an empty list, a short list, a transient error, a cut-off request) and record the requests made and the outcome. Add a differential test that runs a frozen copy of the current `evaluateChecks` and `sameChecks` against seeded inputs. Both stay green across the move.
 
 **Patterns to follow:** `packages/registry/src/reconcile-*.ts` seams; `docs/solutions/best-practices/equivalence-refactors-need-differential-proofs-2026-09-06.md`.
 
 **Test scenarios:**
 
 - Happy path: every existing `promotion-self-merge` test passes unchanged in meaning after the move.
+- Happy path: the reader characterization gives the same requests and outcomes before and after the move.
 - Edge case: the differential test agrees on seeded mixes of check runs and statuses (passed, failed, pending, skipped, neutral, absent, wrong app, both present).
 - Error path: a required list that is empty, unreadable or shorter than the declared contexts is reported as such by the shared reader.
 
@@ -260,12 +264,16 @@ flowchart TD
 **Approach:**
 
 - Follow the flow in the design above. Constants live inside functions. Every Octokit call goes through one wrapper that carries an abort signal and a sweep-wide budget, as the promotion and drift modules do.
-- The App identity check is by type and numeric id. The Renovate config paths are a fixed pair.
-- Lists are read to the end. Reaching a cap is an error outcome for that PR.
-- The review body states the label, the head commit and that the required checks passed.
-- After a failed or cut-off `createReview`, read the reviews once before deciding the outcome, so a retry never posts a second approval.
-- The job summary is one table: PR number, head (short), outcome code, detail (names of missing or failed required checks, or the disqualifying reason) and whether auto-merge is armed. Stderr gets fixed strings only.
-- Exit 0 when every candidate got a non-error outcome. Exit 1 when the required list could not be trusted, the candidate list could not be read, or any candidate ended in an error.
+- The owner and repository come from `GITHUB_REPOSITORY`. The declared required contexts come from `.github/settings.yml` in the checkout, as in the promotion CLI.
+- The App identity check is by type and numeric id, on the PR author and on each commit's resolved author. The Renovate config paths are a fixed pair, matched against each changed file's current and previous name.
+- Lists are read to the end. Reaching a cap is an `error` outcome for that PR.
+- The fresh read fetches the PR again and re-applies the candidate and qualification rules to it, compares its head with the current `main` commit, reads the required list again and reads the variable.
+- Outcome codes, one per candidate: `held`, `foreign-commit`, `config-change`, `behind`, `checks-failed`, `checks-pending`, `already-approved`, `deferred`, `head-moved`, `no-longer-qualifies`, `protection-changed`, `switch-off`, `would-approve`, `approved`, `approved-not-armed`, `approval-unknown`, `error`.
+- The cap counts review requests sent and, in a dry run, `would-approve` outcomes. Once a request is sent the slot is used, whatever the response.
+- The review body is a fixed sentence with the label, the head commit and that the required checks passed.
+- After a failed or cut-off `createReview`, read the reviews once. A recorded approval at the head gives `approved`. Anything else gives `approval-unknown`, and the sweep sends no further request. The next sweep reads the reviews before it writes.
+- The job summary is one table: PR number, head (short), outcome code, detail (names of missing or failed required checks) and whether auto-merge is armed. Stderr gets fixed strings only.
+- Exit 0 when no candidate ended in `error` or `approval-unknown`. Exit 1 otherwise, and when the required list could not be trusted or the candidate list could not be read.
 
 **Execution note:** Test-first, with a fake GitHub client. No test sleeps or touches the network.
 
@@ -275,18 +283,20 @@ flowchart TD
 
 - Happy path: one labelled `renovate/` PR by the App, up to date, all required checks passed, no review yet, mode on → one approval with `commit_id` equal to the head, outcome `approved` (origin AE1, AE2).
 - Happy path: the same PR with mode unset → no review call, outcome `would-approve`. The variable API is not asked to turn it live (AE8).
-- Edge case: two ready PRs → the lower number is approved, the other is `deferred`.
-- Edge case: the `fro-bot` user's latest review approves the current head → `already-approved`, no call. Its latest review approves an older head, or was dismissed → treated as not approved (AE3).
-- Edge case: a skipped required check run counts as passed; a required context with no run and no status is pending and named; a check run and a status of one name where the status is pending → pending.
-- Edge case: auto-merge not armed → `approved-not-armed` (AE4).
-- Edge case: a PR without the label, the `data` promotion PR, a PR from a fork, a PR by a person from a `renovate/` branch → not candidates, never approved (AE5, AE10).
-- Edge case: `hold-merge` present → `held`. A commit by another author, or an unverified commit → `foreign-commit` (AE5, AE9).
-- Edge case: the PR changes `default.json` or `.github/renovate.json5` → `config-change` (AE6).
+- Happy path: a major update that carries `automerge` and otherwise qualifies is judged like any candidate (AE4).
+- Edge case: two ready PRs → the lower number is approved, the other is `deferred`. In a dry run the lower number is `would-approve` and the other is `deferred`.
+- Edge case: a non-dismissed approval by the `fro-bot` user on the current head exists → `already-approved`, no call, and the slot is not used. An approval on an older head, or a dismissed one, does not count (AE3).
+- Edge case: a skipped required check run counts as passed. A required context with no run and no status → `checks-pending`, named. A failed required check → `checks-failed`, named. A check run and a status of one name where the status is pending → `checks-pending`.
+- Edge case: auto-merge not armed → `approved-not-armed`.
+- Edge case: a PR without the label, the `data` promotion PR, a PR from a fork, a PR whose head repository is gone, a PR by a person from a `renovate/` branch → not candidates, never approved (AE5, AE10).
+- Edge case: `hold-merge` present → `held`. A commit by another author, a commit with no resolved author, or an unverified commit → `foreign-commit` (AE5, AE9).
+- Edge case: the PR changes `default.json` or `.github/renovate.json5`, or renames a file to or from either path → `config-change` (AE6).
 - Edge case: the PR is behind `main` with green checks → `behind`, no approval.
-- Error path: the head differs at the fresh read → `head-moved`, no approval for either head (AE7). The required list differs at the fresh read → `protection-changed`. The variable reads off at the fresh read → `switch-off`; unreadable → error.
-- Error path: the commit or file list reaches its cap, or a read fails for one PR → that PR errors, the others are still judged, exit 1.
+- Error path: at the fresh read the head differs → `head-moved`, no approval for either head (AE7). The label is gone, `hold-merge` was added or the PR is closed → `no-longer-qualifies`. `main` has moved and the head is now behind → `behind`. The required list differs → `protection-changed`. The variable reads anything but `on` → `switch-off`; it cannot be read → `error`.
+- Error path: the commit or file list reaches its cap, or a read fails for one PR → that PR is `error`, the others are still judged, exit 1.
 - Error path: the required list is unreadable, empty or shorter than the declared contexts → no PR is judged, exit 1.
-- Error path: `createReview` fails with a server error after the review was recorded → the reconcile read finds it, outcome `approved`, no second review. With no review found → error.
+- Error path: `createReview` fails with a server error after the review was recorded → the reconcile read finds it, outcome `approved`, no second review. With no review found, or the reconcile read failing → `approval-unknown`, exit 1, and a second ready PR in that sweep is `deferred`.
+- Error path: the sweep's budget runs out mid-sweep → the remaining candidates are `error`, exit 1.
 - Integration: the CLI maps env to inputs, writes the summary table, and exits per the rule above. A missing token fails closed with a fixed message.
 
 **Verification:** `renovate-approve.ts` is at 100% mutation score with no disable directives. The entrypoint parity test covers the shim.
@@ -308,21 +318,23 @@ flowchart TD
 
 **Approach:**
 
-- Triggers: `workflow_run` (completed) for the CI workflows that produce required checks, a schedule every 30 minutes at off-minutes, and `workflow_dispatch`. No `pull_request` or `pull_request_target`.
-- One job. It refuses to run unless the ref is the default branch. Checkout has no `ref` from the event and `persist-credentials: false`.
+- Triggers: `workflow_run` (completed) for the CI workflows that produce required checks, a schedule every 30 minutes at off-minutes, and `workflow_dispatch`. No `pull_request` or `pull_request_target`. The workflow's name is `Renovate Approve`.
+- One job. It refuses to run unless the ref is the default branch. Checkout has no `ref` from the event and `persist-credentials: false`. The shared setup action (`./.github/actions/setup`) runs next, from the default branch's lockfile.
+- What keeps PR code out is that no trigger runs a PR's workflow definition and no step checks out or downloads anything from a PR. The ref gate only covers dispatch.
 - Job permissions `contents: read`. `FRO_BOT_PAT` and `vars.RENOVATE_APPROVE` appear only in the sweep step's `env:`. No `${{ }}` inside `run:`.
-- One concurrency group, `cancel-in-progress: false`. A replaced pending run is harmless because every run is a full sweep.
-- A short job timeout that leaves margin over the sweep's own budget.
+- One concurrency group with a fixed name, `cancel-in-progress: false`. A replaced pending run is harmless because every run is a full sweep.
+- A job timeout that covers setup and leaves margin over the sweep's own budget.
 - The `hold-merge` description is reworded to cover both the promotion and Renovate approvals, within GitHub's 100-character limit.
 
 **Patterns to follow:** `.github/workflows/protection-drift.yaml`, `.github/workflows/check-private-leak.yaml`, `scripts/merge-data-workflow.test.ts`.
 
 **Test scenarios:**
 
-- Happy path: the workflow has exactly the three trigger kinds, and the schedule is every 30 minutes.
-- Edge case: no `pull_request` or `pull_request_target` trigger; the checkout takes no ref from the event; the job is gated on the default branch.
+- Happy path: the workflow is named `Renovate Approve` and has exactly the three trigger kinds, and the schedule is every 30 minutes.
+- Edge case: no `pull_request` or `pull_request_target` trigger; the checkout takes no ref from the event; the job is gated on the default branch (origin AE11).
+- Edge case: the shared setup action runs after the checkout and before the sweep step.
 - Edge case: `FRO_BOT_PAT` appears in exactly one step's `env:` and nowhere else in the file; no App token is minted; permissions are `contents: read` only.
-- Edge case: the concurrency group does not cancel; no step writes repository settings.
+- Edge case: the concurrency group is a fixed string and does not cancel; the file reads no `github.event` field other than the event name; no step writes repository settings.
 - Edge case: every label description in the settings files stays within 100 characters (existing test).
 
 **Verification:** `actionlint` passes on the new workflow, and the workflow test fails if the secret moves to job or workflow level.
@@ -363,10 +375,11 @@ flowchart TD
 
 **Approach:**
 
-- With the variable unset, read back the first sweeps that list a real candidate: its identity fields, labels, head, the checks read, the `would-approve` outcome, and that the PR has no review.
-- Before turning the variable on, look at one Renovate PR that groups updates of different kinds and record how it is labelled.
-- The operator sets `RENOVATE_APPROVE` to `on`. The cap means the first live sweep approves one PR. Read back the review's author and commit, that protection counted it, that auto-merge merged the PR, and the time from the last check to the merge.
-- If any part differs, the operator unsets the variable. PRs already approved are the operator's to dismiss or merge.
+- With the variable unset, read back the first sweeps that list a real candidate: its identity fields, labels, head, the checks read, the `would-approve` outcome, and that the PR has no review. Note how many requests a sweep makes and how long after the last check it ran.
+- Before turning the variable on, look at one Renovate PR that groups updates of different kinds. Record how it is labelled and which files and commits it carries.
+- The rollout waits until a real candidate is ready and has auto-merge armed. The operator puts `hold-merge` on every other open candidate, then sets `RENOVATE_APPROVE` to `on`.
+- Read back the first live approval: the review's author and commit, that protection counted it, that auto-merge merged the PR, and the time from the last check to the merge. If the PR fell behind before it merged, wait for its next head and read that one back.
+- When the read-back is good, the operator removes the holds. If any part differs, the operator unsets the variable. PRs already approved are the operator's to dismiss or merge.
 
 **Test scenarios:** Test expectation: none -- live verification of shipped behaviour.
 
@@ -385,12 +398,15 @@ flowchart TD
 
 | Risk | Mitigation |
 | --- | --- |
-| The refactor in Unit 1 changes how the live promotion step evaluates checks | Characterization-first differential test; both modules at 100% mutation score; the promotion step's own tests unchanged in meaning |
-| The first live sweep does something unexpected | Dry run first; one approval per sweep; the read-back in Unit 5 before the variable stays on |
+| The refactor in Unit 1 changes how the live promotion step evaluates checks | Characterization first: the readers are pinned through the promotion step's own entry point with scripted responses, and the pure functions by a differential test; both modules at 100% mutation score |
+| The first live approval is followed by more before anyone has read it back | Unit 5 holds every other candidate with `hold-merge` before the variable is turned on, and releases them after the read-back |
 | A release that passes CI but is unsound merges unattended | Accepted in the origin. Limits are the release age for third-party updates, the required checks and the mutation gate |
+| A labelled PR changes workflows, the settings files or the approver's own workflow | Accepted in the origin for action and agent pin updates. Only the two Renovate config files are excluded. Unit 5 records the file list of one grouped PR before enabling |
 | An approved PR cannot be stopped by the label or the variable | Stated in the docs (Unit 4); the operator dismisses the review or disables auto-merge |
+| `main` moves between the last comparison and the approval | The fresh read compares against the current `main` commit. The remaining gap is accepted: protection still refuses a behind merge, and Renovate rebases |
 | Renovate rebases faster than checks finish, so a PR keeps getting new heads | Each head is judged afresh and approved at most once; the summary shows the PR as pending or behind on every sweep |
-| The 30-minute sweep adds about 48 short runs a day | Each run is one job with no build; the schedule can be widened later without changing behaviour |
+| GitHub delays or drops scheduled runs | The 30-minute schedule is a cadence, not a bound. CI completions start most sweeps, dispatch is the manual recovery, and Unit 5 measures the real delay |
+| Sweeps add runs: about 48 scheduled a day plus one per CI completion | Each run is one short job; the schedule can be widened later without changing behaviour |
 | A grouped Renovate PR is labelled in a way nobody has looked at | Checked on a real PR in Unit 5 before the variable is turned on |
 
 ## Documentation / Operational Notes
