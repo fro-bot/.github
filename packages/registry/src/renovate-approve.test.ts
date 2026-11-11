@@ -1766,6 +1766,16 @@ describe('sweep: one budget for every request', () => {
     expect(w.named('approve')).toHaveLength(1)
   })
 
+  it('reports a held PR after the budget ran out as an error too: nothing after the exhaustion is judged', async () => {
+    const w = world({
+      prs: [pr(1), pr(2, {labels: ['automerge', 'hold-merge']})],
+      cost: (name, call) => (name === 'compare' && call === 1 ? BUDGET : 0),
+    })
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
+    expect(rowOf(result, 2).detail).toBe('budget-exhausted')
+  })
+
   it('turns a request that stalls past its own cap into an error for that PR alone, without a retry', async () => {
     const w = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1})
     const result = await LIVE(w)

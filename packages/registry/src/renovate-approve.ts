@@ -230,9 +230,11 @@ function isAppCommit(entry: unknown): boolean {
 }
 
 /** Whether a changed file is, or was renamed from, one of the Renovate config files. */
-function touchesConfig(file: {readonly filename: string; readonly previous: string | undefined}): boolean {
-  const paths = new Set<string | undefined>(configPaths())
-  return paths.has(file.filename) || paths.has(file.previous)
+function touchesConfig(file: unknown): boolean {
+  const paths = new Set<unknown>(configPaths())
+  // `Object()` makes `null` safe to read.
+  const entry = new Object(file)
+  return paths.has(Reflect.get(entry, 'filename')) || paths.has(Reflect.get(entry, 'previous'))
 }
 
 /** Whether a failure is GitHub's rate limit: a 429, or a 403 that carries the limit's headers or its message. */
@@ -435,12 +437,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     }
     if (commits.length !== total) return 'malformed'
     if (first.files.length >= config.fileCap) return 'capped'
-    const files: {readonly filename: string; readonly previous: string | undefined}[] = []
-    for (const entry of first.files) {
-      const file = fileOf(entry)
-      if (file === null) return 'malformed'
-      files.push(file)
-    }
+    const files = first.files.map(fileOf)
+    if (files.includes(null)) return 'malformed'
     return {
       // Anything but a count of zero is not up to date: a missing or odd count never reads as current.
       behind: first.behind_by !== 0,
