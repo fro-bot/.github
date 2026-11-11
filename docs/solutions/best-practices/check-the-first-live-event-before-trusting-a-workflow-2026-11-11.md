@@ -34,7 +34,7 @@ The promotion self-merge and the protection drift watcher passed their tests, th
 
 `rule.updated_at` in a `branch_protection_rule` payload does not change when the rule is edited. Three edits on 2026-11-10 (19:13:42Z, :45Z and :49Z) all carried `2026-11-08T11:13:10Z`, so a rule of "close only on a strictly newer event" could never close issue #4172.
 
-The watcher now uses the creation time of its own workflow run, which GitHub sets when it receives the event (`eventTimeOf` in `packages/registry/src/protection-drift.ts`). It reads the run with `GET /repos/{owner}/{repo}/actions/runs/{GITHUB_RUN_ID}`, and the job needs `actions: read`. A run that cannot be read leaves the event with no usable time, and such an event never closes an issue.
+The watcher now uses the creation time of its own workflow run, which GitHub sets when it receives the event (`eventTimeOf` in `packages/registry/src/protection-drift.ts`). It reads the run with `GET /repos/{owner}/{repo}/actions/runs/{GITHUB_RUN_ID}`, and the job needs `actions: read`. A run that cannot be read leaves the event with no usable time, and a matching settings write with no usable time never closes a report.
 
 Before a workflow orders, deduplicates or compares by a payload field, capture two real events and compare the field.
 
@@ -51,9 +51,9 @@ Every report therefore carries both markers. The old reader counts the empty one
 
 `protection-drift.test.ts` keeps a copy of the previous reader (`baseVersionMayClose`) and runs it against reports the current version writes. When a stored format changes, test the old reader against the new writer, as well as the new reader against old data.
 
-### Fix a run's mode when it starts
+### Fix the mode when the step starts
 
-The self-merge step waits up to 60 minutes for checks. A run that starts as a dry run stays one, even when the switch is turned on during the wait. A fresh read of the switch can stop a live run and can never start one (`promotion-self-merge.ts`):
+The self-merge step waits up to 60 minutes for checks. A step that starts as a dry run stays one, even when the switch is turned on during the wait. A fresh read of the switch can stop a live run and can never start one (`promotion-self-merge.ts`):
 
 ```ts
 if (input.switchAtStart !== "on") return outcomeOf(state, "DRY_RUN")
@@ -61,25 +61,25 @@ if (input.switchAtStart !== "on") return outcomeOf(state, "DRY_RUN")
 
 ### Roll out in dry run, read it back, then switch on once
 
-1. Ship with the switch unset. A dry run does everything except the write.
+1. Ship with the switch unset. The earlier steps still merge back and open the PR. The self-merge step waits for the checks, then stops before the approval and the merge.
 2. Read back the first scheduled run. Run 42940189403 pinned `data`, passed both gates, opened #4175 and logged `promotion-self-merge: DRY_RUN`.
 3. Set the variable, then dispatch one run. Run 42942262202 approved #4175 as `fro-bot` at the pinned commit and squash-merged it three seconds later.
 
-Step 3 was the only way to learn that GitHub counts the `fro-bot` user's approval as the required code-owner review. A write token cannot read the protection rule to find out beforehand.
+Step 3 showed that GitHub counts the `fro-bot` user's approval as the required code-owner review. Nothing before it had tested that.
 
 ### Find other writers in the actors of past runs
 
-`GET /repos/{owner}/{repo}/actions/runs?event=branch_protection_rule` lists every run the event started, and each run's `actor` is the account that edited a rule. The Scorecard workflow also runs on that event, so the history is older than the watcher. It showed two writes by `settings[bot]` (id 26100684) before each write by the declared settings automation, `fro-bot[bot]` (id 109017866), from 2026-11-09 on. The watcher matches the settings automation by actor type and numeric id.
+`GET /repos/{owner}/{repo}/actions/runs?event=branch_protection_rule` lists the runs the event started, and each run's `actor` is the account that created, edited or deleted a rule. The event fires for every branch rule, so check which rule a run was about before naming an editor of `main`. The Scorecard workflow also runs on that event, so the history is older than the watcher. It showed two writes by `settings[bot]` (id 26100684) before each write by the declared settings automation, `fro-bot[bot]` (id 109017866), from 2026-11-09 on. The watcher matches the settings automation by actor type and numeric id.
 
 ### Smaller rules from the same work
 
-- **Label descriptions stop at 100 characters.** A longer one makes `POST /repos/{owner}/{repo}/labels` answer 422 and fails every Update Repo Settings run (run 42847754180) until it is fixed. `scripts/settings-labels-effective-set.test.ts` holds every declared label to the limit.
+- **Label descriptions stop at 100 characters.** A longer one makes `POST /repos/{owner}/{repo}/labels` answer 422 and fails every Update Repo Settings run (run 42847754180) until it is fixed. `scripts/settings-labels-effective-set.test.ts` holds every label in `common-settings.yaml` and `.github/settings.yml` to the limit.
 - **Decode git output strictly.** The promotion gate drops a changed path whose tree entry already equals `main`, and a path absent on both sides counts as equal. Decoded with replacement characters, a path with an invalid byte becomes another string, is found on neither side, and leaves the allowlist check. `promotion-qualify-cli.ts` decodes with `new TextDecoder('utf-8', {fatal: true})`, disqualifies the promotion on a decoding error and runs git with `--literal-pathspecs`.
-- **A check run and a commit status with the same name must both pass.** GitHub requires both, so a passing run must not hide a pending or failed status (`evaluateChecks` in `promotion-self-merge.ts`).
+- **A check run and a commit status with the same name must both pass.** When a required context has both, GitHub requires both, so a passing run must not hide a pending or failed status (`evaluateChecks` in `promotion-self-merge.ts`). When it has only one, that one decides.
 
 ## Why This Matters
 
-The timestamp, the marker and the label limit each failed on the first live event or the first push after merge, with every check green. A watcher that cannot close its issue, or closes the wrong one, trains the operator to ignore it. A dry run that turns live merges without the operator having asked for it.
+The timestamp failed on the first live event and the label limit on the first push after merge, with every check green. The marker change would have failed on the first re-run of an older run. A watcher that cannot close its issue, or closes the wrong one, trains the operator to ignore it. A dry run that turns live merges a PR the operator did not ask it to merge.
 
 ## When to Apply
 
@@ -91,11 +91,9 @@ The timestamp, the marker and the label limit each failed on the first live even
 
 ## Examples
 
-Reading the editors of `main` protection from run history:
+Reading who edited branch rules from run history (the newest 50 runs; add `--paginate` for all of them):
 
 ```sh
 gh api 'repos/fro-bot/.github/actions/runs?event=branch_protection_rule&per_page=50' \
   --jq '.workflow_runs[] | "\(.created_at) \(.name) \(.actor.login) \(.actor.id)"'
 ```
-
-Comparing a payload field across events before relying on it: #4172's body and first comment both show `When: 2026-11-08T11:13:10.000Z` for events that arrived two days later and seconds apart.
