@@ -163,9 +163,8 @@ describe('renovate-approve.yaml runs trusted code only', () => {
     expect(job.permissions).toBeUndefined()
   })
 
-  it('gives the job room for setup and the sweep’s own 10-minute budget plus its 2-minute reconcile', () => {
-    expect(job['timeout-minutes']).toBeGreaterThanOrEqual(20)
-    expect(job['timeout-minutes']).toBeLessThanOrEqual(30)
+  it('gives the job 30 minutes: setup, the sweep’s 10-minute budget and its 2-minute reconcile, with room to spare', () => {
+    expect(job['timeout-minutes']).toBe(30)
   })
 })
 
