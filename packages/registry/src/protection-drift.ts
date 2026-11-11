@@ -17,7 +17,8 @@
  *   that is not digits, a run that cannot be read and a `created_at` that is not an ISO time all leave the
  *   event with no usable time.
  * - Event order is kept in the issues themselves. Every report and comment ends with one hidden marker,
- *   `event_at=` and the time of its event, and nothing else. A match closes an issue only if its own time is
+ *   `event_at=` and the time of its event, and nothing else, next to an empty `updated_at=` marker that keeps
+ *   a re-run of a run created before the rename from closing on an obsolete match. A match closes an issue only if its own time is
  *   strictly newer than every recorded one (an empty or unusable one counts as newer than anything, and a
  *   match with no usable time never closes). A marker written before the rename (`updated_at=`) is legacy
  *   and counts as older than any match, so an issue that only carries those closes on the next matching
@@ -401,9 +402,14 @@ function numbersText(numbers: readonly number[]): string {
   return numbers.map(number => `#${String(number)}`).join(', ')
 }
 
-/** The hidden marker: the time of the event that wrote the report, and nothing else. No time leaves it empty. */
+/**
+ * The hidden markers: the time of the event that wrote the report, and nothing else. No time leaves it empty.
+ * An empty `updated_at=` marker goes with it for the version before the rename: a re-run of an older run
+ * executes that version's reader, which counts an empty marker as newer than anything and so closes nothing,
+ * where it would otherwise find no marker and close on an obsolete match. This version ignores it.
+ */
 function markerFor(eventAt: string | undefined): string {
-  return `<!-- protection-drift:event_at=${eventAt ?? ''} -->`
+  return `<!-- protection-drift:updated_at= -->\n<!-- protection-drift:event_at=${eventAt ?? ''} -->`
 }
 
 /**

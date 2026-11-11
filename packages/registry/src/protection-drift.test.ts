@@ -1467,7 +1467,7 @@ describe('runProtectionDrift: every report records the time of its event', () =>
     const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
     expect(body).toContain('- Actor: `fro-bot`')
-    expect(body.match(/protection-drift:/gu)).toHaveLength(1)
+    expect(body.match(/protection-drift:event_at=/gu)).toHaveLength(1)
   })
 
   it('ends a comment on an open issue with the marker', async () => {
@@ -2293,7 +2293,7 @@ describe('runProtectionDrift: events are ordered by the time their run was creat
     const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body.endsWith(`\n${marker(T13)}\n`)).toBe(true)
     expect(body).not.toContain(`event_at=${RULE_STALE}`)
-    expect(body.match(/<!-- protection-drift:/gu)).toHaveLength(1)
+    expect(body.match(/<!-- protection-drift:event_at=/gu)).toHaveLength(1)
   })
 })
 
@@ -2442,7 +2442,7 @@ describe('runProtectionDrift: the creation time of the run must be an ISO time',
     await drift.run()
     const body = (drift.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body.endsWith(`\n${marker('')}\n`)).toBe(true)
-    expect(body.match(/<!-- protection-drift:/gu)).toHaveLength(1)
+    expect(body.match(/<!-- protection-drift:event_at=/gu)).toHaveLength(1)
     const match = runner({
       ...matchAt(value),
       world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
@@ -2511,7 +2511,7 @@ describe('runProtectionDrift: markers written before the rename', () => {
     expect(h.world.store.get(31)?.state).toBe('closed')
   })
 
-  it('writes the new marker, and only that one, on a comment to a legacy issue', async () => {
+  it('writes the new marker and the empty legacy one, and no other time, on a comment to a legacy issue', async () => {
     const h = runner({
       ...driftAt(T12),
       world: issueWorld({open: [{number: 31, body: `report\n${legacyMarker(T10)}\n`}]}),
@@ -2519,7 +2519,8 @@ describe('runProtectionDrift: markers written before the rename', () => {
     await h.run()
     const comment = h.world.calls.find(call => call.name === 'comment')?.params as {body: string}
     expect(comment.body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
-    expect(comment.body).not.toContain('updated_at=')
+    expect(comment.body).not.toContain(legacyMarker(T10))
+    expect(comment.body.match(/updated_at=\S*/gu)).toEqual(['updated_at='])
   })
 })
 
@@ -2605,5 +2606,143 @@ describe('renderReport: the rule time', () => {
     ['is not a time', 'soon\n- Event: `forged`'],
   ])('adds nothing when the rule time %s', (_name, value) => {
     expect(renderReport({...facts, ruleUpdatedAt: value})).not.toContain('Rule last updated')
+  })
+})
+
+/**
+ * The marker reader and the comparison of the version on `origin/main` before the rename, as they were: they
+ * match `updated_at=` markers only, count an empty or unusable one as newer than anything, and close nothing
+ * unless the match time is strictly newer. A run created before the rename that is re-run executes this code
+ * against issues the current version wrote.
+ */
+function baseVersionMayClose(
+  written: readonly {body: string | null; user: Author | null}[],
+  matchTime: string,
+  author: Author,
+): boolean {
+  const times = written
+    .filter(entry => entry.user?.login === author.login && entry.user.type === author.type)
+    .flatMap(entry => [...String(entry.body).matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
+    .map(match => Date.parse(String(match[1])))
+    .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
+  const recorded = Math.max(Number.NEGATIVE_INFINITY, ...times)
+  return Date.parse(matchTime) > recorded
+}
+
+describe('runProtectionDrift: a report is read safely by the version before the rename', () => {
+  const EMPTY_LEGACY = legacyMarker('')
+  const countOf = (text: string, needle: string) => text.split(needle).length - 1
+
+  /** Every body the current version wrote to issue `number`: its body, then its comments. */
+  const writtenTo = (world: ReturnType<typeof issueWorld>, number: number) => {
+    const issue = world.store.get(number)
+    return [
+      {body: issue?.body ?? null, user: issue?.author ?? null},
+      ...(issue?.comments ?? []).map(comment => ({
+        body: typeof comment === 'string' ? comment : (comment?.body ?? null),
+        user: BOT,
+      })),
+    ]
+  }
+
+  it('fixture control: the base reader would close an issue that carries only event_at markers', () => {
+    expect(baseVersionMayClose([{body: `report\n${marker(T10)}\n`, user: BOT}], T12, BOT)).toBe(true)
+  })
+
+  it('fixture control: the base reader closes on a match newer than a legacy marker, and not otherwise', () => {
+    expect(baseVersionMayClose([{body: legacyMarker(T10), user: BOT}], T12, BOT)).toBe(true)
+    expect(baseVersionMayClose([{body: legacyMarker(T12), user: BOT}], T12, BOT)).toBe(false)
+  })
+
+  it('keeps an issue the current version opened open under a matching run of the base version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    expect(world.store.get(900)?.state).toBe('open')
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open after the current version commented on it too', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    await runner({...driftAt(T11), world}).run()
+    expect(world.store.get(900)?.comments).toHaveLength(1)
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open when the current version moved the report to the older issue', async () => {
+    const world = issueWorld({afterCreate: [{number: 31, body: 'report'}, {number: 900}]})
+    await runner({...driftAt(T10), world}).run()
+    expect(world.store.get(31)?.state).toBe('open')
+    expect(baseVersionMayClose(writtenTo(world, 31), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open when the report has no usable time', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(undefined), world}).run()
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('still closes an issue the current version opened on a newer match of the current version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    await runner({...driftAt(T11), world}).run()
+    const match = runner({...matchAt(T12), world})
+    expect(await match.run()).toBe(0)
+    expect(match.stdout).toEqual(['protection-drift: closed #900\n'])
+    expect(world.store.get(900)?.state).toBe('closed')
+  })
+
+  it('leaves an issue open on an older or equal match of the current version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T12), world}).run()
+    await runner({...matchAt(T12), world}).run()
+    await runner({...matchAt(T11), world}).run()
+    expect(world.store.get(900)?.state).toBe('open')
+  })
+
+  it('writes the empty legacy marker exactly once in a new issue, beside one event_at marker', async () => {
+    const h = runner(driftAt(T12))
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, 'updated_at=')).toBe(1)
+    expect(countOf(body, marker(T12))).toBe(1)
+    expect(countOf(body, '<!-- protection-drift:')).toBe(2)
+    expect(body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+  })
+
+  it('writes it exactly once in a comment on an open issue', async () => {
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'comment')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, 'updated_at=')).toBe(1)
+    expect(countOf(body, marker(T12))).toBe(1)
+    expect(countOf(body, '<!-- protection-drift:')).toBe(2)
+  })
+
+  it('writes it exactly once in the report moved to the older issue, and in no other comment', async () => {
+    const h = runner({...driftAt(T12), world: issueWorld({afterCreate: [{number: 31}]})})
+    await h.run()
+    const comments = h.world.calls.filter(call => call.name === 'comment').map(call => String(call.params.body))
+    expect(comments).toHaveLength(2)
+    expect(countOf(comments[0] ?? '', EMPTY_LEGACY)).toBe(1)
+    expect(countOf(comments[0] ?? '', '<!-- protection-drift:')).toBe(2)
+    expect(comments[1]).not.toContain('<!--')
+  })
+
+  it('writes it for a report with no usable time as well, next to an empty event_at marker', async () => {
+    const h = runner(driftAt('yesterday'))
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, marker(''))).toBe(1)
+  })
+
+  it('does not write the legacy marker in the closing comment, the job summary or a duplicate notice', async () => {
+    const h = runner({...matchAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(String(h.world.calls.find(call => call.name === 'comment')?.params.body)).not.toContain('<!--')
+    expect(h.writes[0]?.content).not.toContain('<!--')
   })
 })
