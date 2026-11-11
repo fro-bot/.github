@@ -266,14 +266,16 @@ flowchart TD
 - Follow the flow in the design above. Constants live inside functions. Every Octokit call goes through one wrapper that carries an abort signal and a sweep-wide budget, as the promotion and drift modules do.
 - The owner and repository come from `GITHUB_REPOSITORY`. The declared required contexts come from `.github/settings.yml` in the checkout, as in the promotion CLI.
 - The App identity check is by type and numeric id, on the PR author and on each commit's resolved author. The Renovate config paths are a fixed pair, matched against each changed file's current and previous name.
-- Lists are read to the end. Reaching a cap is an `error` outcome for that PR.
-- The fresh read fetches the PR again and re-applies the candidate and qualification rules to it, compares its head with the current `main` commit, reads the required list again and reads the variable.
-- Outcome codes, one per candidate: `held`, `foreign-commit`, `config-change`, `behind`, `checks-failed`, `checks-pending`, `already-approved`, `deferred`, `head-moved`, `no-longer-qualifies`, `protection-changed`, `switch-off`, `would-approve`, `approved`, `approved-not-armed`, `approval-unknown`, `error`.
-- The cap counts review requests sent and, in a dry run, `would-approve` outcomes. Once a request is sent the slot is used, whatever the response.
+- Lists are read to the end. Reaching a cap is an `error` outcome for that PR. The commits and files of a PR are read from the compare of `main` against the pinned head SHA, not by PR number; a compare that cannot be shown complete (more commits than returned, 300 files, a malformed entry) is an `error`.
+- Every request has its own 30-second cap besides the sweep budget. A request that outruns its cap ends that candidate as `error` (`request-timeout`); only an exhausted budget marks the rest `error` unjudged. An `error` row carries a fixed code: `rate-limited`, `request-timeout`, `budget-exhausted` or `read-failed`.
+- The fresh read fetches the PR again and re-applies the candidate and qualification rules to it, compares its pinned head with the current `main` commit (commits, files and the behind count), reads the required list again and reads the variable.
+- Outcome codes, one per candidate: `held`, `foreign-commit`, `config-change`, `behind`, `checks-failed`, `checks-pending`, `already-approved`, `deferred`, `head-moved`, `no-longer-qualifies`, `protection-changed`, `switch-off`, `would-approve`, `approved`, `approved-not-armed`, `approval-unknown`, `approval-refused`, `changes-requested`, `error`.
+- The cap counts review requests sent and, in a dry run, `would-approve` outcomes. Once a request is sent the slot is used, unless GitHub answered with a client error that is not a timeout or a rate limit: that created no review, so the outcome is `approval-refused`, the slot stays free and the sweep tries the next ready PR.
 - The review body is a fixed sentence with the label, the head commit and that the required checks passed.
 - After a failed or cut-off `createReview`, read the reviews once. A recorded approval at the head gives `approved`. Anything else gives `approval-unknown`, and the sweep sends no further request. The next sweep reads the reviews before it writes.
 - The job summary is one table: PR number, head (short), outcome code, detail (names of missing or failed required checks) and whether auto-merge is armed. Stderr gets fixed strings only.
-- Exit 0 when no candidate ended in `error` or `approval-unknown`. Exit 1 otherwise, and when the required list could not be trusted or the candidate list could not be read.
+- The `fro-bot` user's reviews on the current head are folded in order: `APPROVED`, `CHANGES_REQUESTED` and `DISMISSED` are decisive, `COMMENTED` is not. The latest decisive approval is `already-approved`; the latest decisive change request is `changes-requested` (exit 0, no approval).
+- Exit 0 when no candidate ended in `error`, `approval-unknown` or `approval-refused`. Exit 1 otherwise, and when the required list could not be trusted or the candidate list could not be read.
 
 **Execution note:** Test-first, with a fake GitHub client. No test sleeps or touches the network.
 
@@ -296,7 +298,9 @@ flowchart TD
 - Error path: the commit or file list reaches its cap, or a read fails for one PR → that PR is `error`, the others are still judged, exit 1.
 - Error path: the required list is unreadable, empty or shorter than the declared contexts → no PR is judged, exit 1.
 - Error path: `createReview` fails with a server error after the review was recorded → the reconcile read finds it, outcome `approved`, no second review. With no review found, or the reconcile read failing → `approval-unknown`, exit 1, and a second ready PR in that sweep is `deferred`.
-- Error path: the sweep's budget runs out mid-sweep → the remaining candidates are `error`, exit 1.
+- Error path: `createReview` is refused with a 422 → `approval-refused`, the slot is not used, the next ready PR is approved, exit 1. With a 500 → `approval-unknown`, the next ready PR is `deferred`.
+- Error path: the branch is force-pushed A→B→A between the list and the fresh read → the commits and files are those of the pinned head A; no approval on B's.
+- Error path: one request stalls past its cap → that candidate is `error` and the next one is judged. The sweep's budget runs out mid-sweep → the remaining candidates are `error`, exit 1.
 - Integration: the CLI maps env to inputs, writes the summary table, and exits per the rule above. A missing token fails closed with a fixed message.
 
 **Verification:** `renovate-approve.ts` is at 100% mutation score with no disable directives. The entrypoint parity test covers the shim.
