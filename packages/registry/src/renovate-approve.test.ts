@@ -1773,6 +1773,15 @@ describe('sweep: a rate limit stops the sweep (the PAT is shared, and the cooldo
     expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'deferred'})
   })
 
+  it('does not stop for a reconcile read that fails for another reason: the next PR is deferred', async () => {
+    const w = world({
+      prs: [pr(1), pr(2)],
+      approve: () => apiError(502),
+      reviewsError: call => (call === 2 ? apiError(500) : undefined),
+    })
+    expect(outcomes(await LIVE(w))).toEqual({1: 'approval-unknown', 2: 'deferred'})
+  })
+
   it('does not stop for a read that fails for another reason: the next PR is judged', async () => {
     const w = world({
       prs: [pr(1), pr(2)],

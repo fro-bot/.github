@@ -370,7 +370,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
         sleep: input.sleep,
       })
     } catch (error: unknown) {
-      limited = limited || isRateLimited(error)
+      if (isRateLimited(error)) limited = true
       throw error
     }
   }
@@ -535,7 +535,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       )
       return reviews.items
     } catch (error: unknown) {
-      limited = limited || isRateLimited(error)
+      if (isRateLimited(error)) limited = true
       return null
     }
   }
