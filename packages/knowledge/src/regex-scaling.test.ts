@@ -208,6 +208,22 @@ describe('the solution-doc frontmatter and title tokens scale linearly', {timeou
       },
     },
     {
+      name: 'a frontmatter fence and repeated fence-like lines with trailing text',
+      make: (size: number) => `---\na: 1${repeat('\n--- \tx')(size)}`,
+      reaches: input => {
+        expect(collect(input).sources.map(source => source.title)).toEqual(['a'])
+      },
+    },
+    {
+      name: 'a fence-like line followed by a long whitespace run then text',
+      make: (size: number) => `---\ntitle: T\n---${' '.repeat(size)}x`,
+      reaches: input => {
+        // The close fence is never reached, so the doc has no frontmatter. The same run ending the line closes it.
+        expect(collect(input).sources.map(source => source.title)).toEqual(['a'])
+        expect(collect(`${input.slice(0, -1)}\n`).sources.map(source => source.title)).toEqual(['T'])
+      },
+    },
+    {
       name: 'a closed frontmatter block holding a long title',
       make: (size: number) => `---\ntitle: ${'word '.repeat(size / 5)}\n---\nbody`,
       reaches: input => {

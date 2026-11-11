@@ -192,6 +192,15 @@ const FRONTMATTER_CASES = [
   {name: 'a fence and many lines that begin with one dash', make: keyed('-')},
 ]
 
+/** A closing fence may carry trailing spaces or tabs; the scan after `---` must not restart per candidate. */
+const TRAILING_FENCE_CASES = [
+  {name: 'many fence-like lines with trailing text', make: (size: number) => `---\na: 1${repeat('\n--- \tx')(size)}`},
+  {
+    name: 'a fence-like line and a long whitespace run then text',
+    make: (size: number) => `---\na: 1\n---${' '.repeat(size)}x`,
+  },
+]
+
 /** Number of `key: value` lines between the opening fence and the end of `input`. */
 const bodyLines = (input: string) => input.split('\n').length - 2
 
@@ -295,6 +304,14 @@ describe('the tokenizer and frontmatter patterns scale linearly', {timeout: SUIT
   })
 
   it.each(FRONTMATTER_CASES)('splitFrontmatter: $name', ({make}) => {
+    expect(
+      growthRatio(make, SMALL, text => {
+        splitFrontmatter(text)
+      }),
+    ).toBeLessThan(CEILING)
+  })
+
+  it.each(TRAILING_FENCE_CASES)('splitFrontmatter: $name', ({make}) => {
     expect(
       growthRatio(make, SMALL, text => {
         splitFrontmatter(text)
@@ -423,6 +440,12 @@ describe('reach: each scaling input reaches the pattern it measures', () => {
 
   it('splitFrontmatter: a closed fence yields its mapping', () => {
     expect(splitFrontmatter('---\ntitle: T\n---\nbody')).toEqual({title: 'T'})
+  })
+
+  it('splitFrontmatter: a whitespace run on the closing line is walked to its end', () => {
+    const spaces = ' '.repeat(SMALL)
+    expect(splitFrontmatter(`---\na: 1\n---${spaces}x`)).toEqual({})
+    expect(splitFrontmatter(`---\na: 1\n---${spaces}\nbody`)).toEqual({a: 1})
   })
 
   it.each(FRONTMATTER_CASES)(

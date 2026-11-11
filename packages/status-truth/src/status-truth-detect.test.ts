@@ -5223,6 +5223,25 @@ describe('plan frontmatter closing delimiter', () => {
     expect(correctPlanConsistencyStatusLine(content)).toBeNull()
   })
 
+  describe.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('with %s line breaks', (_name, eol) => {
+    it.each([' ', '\t', ' \t '])('reads and corrects a status closed by `---` and %j', trailing => {
+      const content = ['---', 'status: active', `---${trailing}`, 'Content.'].join(eol)
+
+      expect(buildPlanConsistencyClaim(path, content).claimedState).toBe('active')
+      expect(correctPlanConsistencyStatusLine(content)).toBe(content.replace('active', 'complete'))
+    })
+
+    it.each([' ', '\t'])('closes on `---` and %j at the end of the content', trailing => {
+      const content = ['---', 'status: active', `---${trailing}`].join(eol)
+
+      expect(buildPlanConsistencyClaim(path, content).claimedState).toBe('active')
+      expect(correctPlanConsistencyStatusLine(content)).toBe(content.replace('active', 'complete'))
+    })
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     expect(buildPlanConsistencyClaim(path, '---\nstatus: active\n---').claimedState).toBe('active')
     expect(correctPlanConsistencyStatusLine('---\nstatus: active\n---')).toBe('---\nstatus: complete\n---')

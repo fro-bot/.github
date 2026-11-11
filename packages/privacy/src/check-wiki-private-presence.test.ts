@@ -1977,6 +1977,33 @@ describe('parseFrontmatterSources closing delimiter', () => {
     expect(detect(content)).toEqual([])
   })
 
+  it.each([' ', '\t', ' \t '])('closes on `---` followed by trailing whitespace %j', trailing => {
+    // #given structured sources for another repo, a closing line with trailing whitespace, and the expected URL in the body
+    const content = `---\nsources:\n  - url: https://github.com/acme/other\n---${trailing}\nSee https://github.com/owner/name`
+
+    // #then the structured sources are authoritative: the body URL does not rescue the page
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it.each([' ', '\t'])('closes on `---` followed by %j at the end of the content', trailing => {
+    const content = `---\nnote: https://github.com/owner/name\nsources:\n  - url: https://github.com/acme/other\n---${trailing}`
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it.each([' ', '\t'])('closes on a CRLF line break after `---` and %j', trailing => {
+    const content = `---\r\nsources:\r\n  - url: https://github.com/acme/other\r\n---${trailing}\r\nSee https://github.com/owner/name`
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
+  it('closes at the first whitespace-suffixed line, not at a later body rule', () => {
+    const content =
+      '---\nsources:\n  - url: https://github.com/acme/other\n--- \nSee https://github.com/owner/name\n\n---\nmore'
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     // #given the expected URL only under a non-sources key, so the body-substring fallback would accept the page
     const content = '---\nnote: https://github.com/owner/name\nsources:\n  - url: https://github.com/acme/other\n---'

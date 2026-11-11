@@ -26,7 +26,7 @@ export const SUPPORTED_PLAN_STATUSES: readonly string[] = ['active', 'complete',
  */
 function parsePlanFrontmatterStatus(content: string): string | null {
   // Match YAML frontmatter block: ---\n...\n--- (supports both LF and CRLF line endings)
-  const frontmatterMatch = /^---\r?\n([\s\S]+?)\r?\n---(?=\r?\n|$)/u.exec(content)
+  const frontmatterMatch = /^---\r?\n([\s\S]+?)\r?\n---(?=[ \t]*(?:\r?\n|$))/u.exec(content)
   if (frontmatterMatch === null || frontmatterMatch[1] === undefined) {
     return null
   }
@@ -291,7 +291,7 @@ export function resolvePlanConsistencyVerdict(params: {
  * Pure function: no I/O.
  */
 export function correctPlanConsistencyStatusLine(content: string): string | null {
-  const frontmatterMatch = /^(---\r?\n)([\s\S]+?)(\r?\n---)(?=\r?\n|$)/u.exec(content)
+  const frontmatterMatch = /^(---\r?\n)([\s\S]+?)(\r?\n---)(?=[ \t]*(?:\r?\n|$))/u.exec(content)
   if (frontmatterMatch === null) return null
 
   const [fullMatch, openDelim, frontmatterText, closeDelim] = frontmatterMatch

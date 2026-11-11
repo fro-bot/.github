@@ -834,6 +834,14 @@ describe('splitFrontmatter closing delimiter', () => {
     expect(splitFrontmatter('---\ntitle: x\n--- trailing text\nbody\n')).toEqual({})
   })
 
+  it.each([' ', '\t', ' \t '])('closes on `---` followed by trailing whitespace %j', trailing => {
+    expect(splitFrontmatter(`---\ntitle: x\n---${trailing}\nbody\n`)).toEqual({title: 'x'})
+  })
+
+  it.each([' ', '\t'])('closes on `---` followed by %j at the end of the content', trailing => {
+    expect(splitFrontmatter(`---\ntitle: x\n---${trailing}`)).toEqual({title: 'x'})
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     expect(splitFrontmatter('---\ntitle: x\n---')).toEqual({title: 'x'})
   })

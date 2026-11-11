@@ -185,7 +185,7 @@ function collectDocs(
 }
 
 function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---[ \t]*(?:\n|$)/u.exec(content)
   if (match === null) {
     return {frontmatter: {}, body: content.trim()}
   }

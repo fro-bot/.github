@@ -521,6 +521,18 @@ describe('collectSolutionDocSources closing delimiter', () => {
     expect(result.sources[0]?.title).toBe('example-doc')
   })
 
+  it.each([' ', '\t', ' \t '])('closes on `---` followed by trailing whitespace %j', trailing => {
+    const result = collectSolutionDocSources({[path]: `---\ntitle: Real title\n---${trailing}\nBody`}, headSha)
+
+    expect(result.sources[0]?.title).toBe('Real title')
+  })
+
+  it.each([' ', '\t'])('closes on `---` followed by %j at the end of the content', trailing => {
+    const result = collectSolutionDocSources({[path]: `---\ntitle: Real title\n---${trailing}`}, headSha)
+
+    expect(result.sources[0]?.title).toBe('Real title')
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     const result = collectSolutionDocSources({[path]: '---\ntitle: Real title\n---'}, headSha)
 

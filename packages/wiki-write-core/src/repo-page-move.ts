@@ -408,7 +408,7 @@ function repairRelated(content: string, oldSlug: string, newSlug: string): strin
  * Returns `undefined` for a layout it does not recognize; the caller then re-renders structurally.
  */
 function editRelatedText(content: string, oldSlug: string, newSlug: string): string | undefined {
-  const match = /^---\n([\s\S]+?)\n---(?:\n|$)/u.exec(content)
+  const match = /^---\n([\s\S]+?)\n---[ \t]*(?:\n|$)/u.exec(content)
   const frontmatter = match?.[1]
   if (frontmatter === undefined) return undefined
   const lines = frontmatter.split('\n')

@@ -8,6 +8,9 @@ import {splitFrontmatter} from './wiki-utils.ts'
 // are YAML content (here: mapping keys) and stay inside the frontmatter.
 const KEY_LINES = ['---x: kept', '----: kept'] as const
 
+// A closing line may carry trailing spaces or tabs, as it did before the delimiter was tightened.
+const TRAILING_WHITESPACE = [' ', '\t', ' \t '] as const
+
 const PAGE_PATH = 'knowledge/wiki/topics/delimiter.md'
 
 function ingest(content: string): Record<string, string> {
@@ -41,6 +44,17 @@ describe('splitFrontmatter closing delimiter', () => {
   it('closes on `---` at the end of the content with no newline', () => {
     expect(splitFrontmatter('---\ntitle: x\n---')).toEqual({frontmatter: {title: 'x'}, body: ''})
   })
+
+  it.each(TRAILING_WHITESPACE)('closes on `---` followed by trailing whitespace %j', trailing => {
+    expect(splitFrontmatter(`---\ntitle: x\n---${trailing}\nbody\n`)).toEqual({
+      frontmatter: {title: 'x'},
+      body: 'body',
+    })
+  })
+
+  it.each(TRAILING_WHITESPACE)('closes on `---` followed by %j at the end of the content', trailing => {
+    expect(splitFrontmatter(`---\ntitle: x\n---${trailing}`)).toEqual({frontmatter: {title: 'x'}, body: ''})
+  })
 })
 
 describe('parseFrontmatterDocument closing delimiter', () => {
@@ -59,6 +73,14 @@ describe('parseFrontmatterDocument closing delimiter', () => {
 
   it('closes on `---` at the end of the content with no newline', () => {
     expect(parseFrontmatterDocument('---\ntitle: x\n---')).toEqual({values: {title: 'x'}, body: ''})
+  })
+
+  it.each(TRAILING_WHITESPACE)('closes on `---` followed by trailing whitespace %j', trailing => {
+    expect(parseFrontmatterDocument(`---\ntitle: x\n---${trailing}\nbody\n`)).toMatchObject({values: {title: 'x'}})
+  })
+
+  it.each(TRAILING_WHITESPACE)('closes on `---` followed by %j at the end of the content', trailing => {
+    expect(parseFrontmatterDocument(`---\ntitle: x\n---${trailing}`).values).toEqual({title: 'x'})
   })
 })
 
@@ -85,6 +107,30 @@ describe('wiki ingest closing delimiter', () => {
     const content = ['---', ...required, 'updated: 2026-08-29', '--- trailing text', 'Notes.', ''].join('\n')
 
     expect(() => ingest(content)).toThrow(`${PAGE_PATH} is missing YAML frontmatter`)
+  })
+
+  it.each(TRAILING_WHITESPACE)('reads required fields closed by `---` and %j', trailing => {
+    const content = ['---', ...required, 'updated: 2026-08-29', `---${trailing}`, '', 'Notes.', ''].join('\n')
+
+    expect(ingest(content)[PAGE_PATH]).toContain('Notes.')
+  })
+
+  it.each(TRAILING_WHITESPACE)('strips database_id before a closing `---` and %j', trailing => {
+    const content = [
+      '---',
+      ...required,
+      'updated: 2026-08-29',
+      'database_id: 42',
+      `---${trailing}`,
+      '',
+      'Notes.',
+      '',
+    ].join('\n')
+
+    const written = ingest(content)[PAGE_PATH] ?? ''
+
+    expect(written).toContain('Notes.')
+    expect(written).not.toContain('database_id')
   })
 
   it.each(KEY_LINES)('strips database_id that follows a %s line', keyLine => {

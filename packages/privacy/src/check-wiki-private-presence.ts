@@ -52,7 +52,7 @@ function parseFrontmatterSources(content: string): string[] | null {
   // Match YAML frontmatter fences anchored to the true start of the file.
   // The /m flag is intentionally absent so that ^ is string-start only —
   // body-embedded ---...--- blocks must not be treated as authoritative frontmatter.
-  const match = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/.exec(content)
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?=[ \t]*(?:\r?\n|$))/.exec(content)
   if (!match) return null
 
   // Capturing group always participates when the regex matches.

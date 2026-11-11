@@ -570,6 +570,20 @@ describe('planRepoPageMove: a frontmatter line that starts with three dashes is 
   })
 })
 
+describe('planRepoPageMove: a closing delimiter may carry trailing whitespace', () => {
+  const MOTHERSHIP = 'marcusrbrown--mothership'
+
+  it.each([' ', '\t', ' \t '])('edits the related: list in place before a closing `---` and %j', trailing => {
+    const topicWith = (slug: string) =>
+      topicPage([], `[[${MOTHERSHIP}]]`).replace('related:\n---', `related:\n  - ${slug}\n---${trailing}`)
+    const files = snapshot({[TOPIC_PATH]: topicWith(OLD_SLUG)})
+
+    const next = applied(planRepoPageMove(moveParams({files})), files)
+
+    expect(next[TOPIC_PATH]).toBe(topicWith(NEW_SLUG))
+  })
+})
+
 describe('planRepoPageMove: same-slug renames edit the page in place', () => {
   const SAME_SLUG_NAME = 'panthe-ai'
 

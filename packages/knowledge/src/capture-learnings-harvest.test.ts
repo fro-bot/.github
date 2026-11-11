@@ -4411,6 +4411,18 @@ describe('collectSolutionDocs closing delimiter', () => {
     expect(docs).toEqual([{path, module: '', tags: [], problemType: ''}])
   })
 
+  it.each([' ', '\t', ' \t '])('closes on `---` followed by trailing whitespace %j', trailing => {
+    const docs = collectSolutionDocs({[path]: `---\nmodule: scripts/foo.ts\n---${trailing}\nBody`})
+
+    expect(docs).toEqual([{path, module: 'scripts/foo.ts', tags: [], problemType: ''}])
+  })
+
+  it.each([' ', '\t'])('closes on `---` followed by %j at the end of the content', trailing => {
+    const docs = collectSolutionDocs({[path]: `---\nmodule: scripts/foo.ts\n---${trailing}`})
+
+    expect(docs).toEqual([{path, module: 'scripts/foo.ts', tags: [], problemType: ''}])
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     const docs = collectSolutionDocs({[path]: '---\nmodule: scripts/foo.ts\n---'})
 

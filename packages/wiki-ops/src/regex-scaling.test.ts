@@ -200,6 +200,14 @@ function solutionsContext(text: string, withFrontmatter = true) {
 const SOLUTION_CASES = [
   {name: 'a frontmatter fence with no close', make: (size: number) => `---\n${repeat('a\n')(size)}`},
   {name: 'a frontmatter fence and repeated fence-like lines', make: (size: number) => `---\n${repeat('\n---x')(size)}`},
+  {
+    name: 'a frontmatter fence and repeated fence-like lines with trailing text',
+    make: (size: number) => `---\na: 1${repeat('\n--- \tx')(size)}`,
+  },
+  {
+    name: 'a fence-like line followed by a long whitespace run then text',
+    make: (size: number) => `---\ntitle: T\n---${' '.repeat(size)}x`,
+  },
   {name: 'a whitespace run then x', make: (size: number) => `${' '.repeat(size)}x`},
   {name: 'a run of replacement characters then a', make: (size: number) => `${'\uFFFD'.repeat(size)}a`},
   {name: 'replacement characters alternating with a', make: repeat('\uFFFDa')},

@@ -864,6 +864,24 @@ describe('assembleSolutionsContext closing delimiter', () => {
     expect(result.excerpt).not.toContain('Last updated: 2026-06-01')
   })
 
+  it.each([' ', '\t', ' \t '])('closes on `---` followed by trailing whitespace %j', trailing => {
+    const result = assemble(
+      `---\ntitle: Reconcile Repos Pattern\nmodule: scripts/reconcile-repos.ts\nlast_updated: 2026-06-01\ntags: [reconcile]\n---${trailing}\nBody.\n`,
+    )
+
+    expect(result.selectedPaths).toEqual([path])
+    expect(result.excerpt).toContain('Last updated: 2026-06-01')
+  })
+
+  it.each([' ', '\t'])('closes on `---` followed by %j at the end of the content', trailing => {
+    const result = assemble(
+      `---\ntitle: Reconcile Repos Pattern\nmodule: scripts/reconcile-repos.ts\nlast_updated: 2026-06-01\ntags: [reconcile]\n---${trailing}`,
+    )
+
+    expect(result.selectedPaths).toEqual([path])
+    expect(result.excerpt).toContain('Last updated: 2026-06-01')
+  })
+
   it('closes on `---` at the end of the content with no newline', () => {
     const result = assemble(
       '---\ntitle: Reconcile Repos Pattern\nmodule: scripts/reconcile-repos.ts\ntags: [reconcile]\n---',
