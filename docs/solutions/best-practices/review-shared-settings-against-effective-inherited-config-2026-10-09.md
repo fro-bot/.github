@@ -117,7 +117,8 @@ Repository settings sync is a control plane. A wrong label review deletes labels
 pull requests; a wrong branch-protection review changes the applied protection without a code
 failure. Both can ship green: the file parses, and ordinary pull-request CI does not exercise the
 settings-sync workflow. The existing required-check doc makes the same point about
-`.github/settings.yml`, which nothing validates during PR CI.
+`.github/settings.yml`: PR CI checks only what a test pins (the label set, label description length,
+the required contexts, the `data` ruleset), never the API's answer.
 
 The review question is: what will the engine apply after inheritance, merge rules, and version
 pinning?

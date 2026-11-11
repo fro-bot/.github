@@ -1,7 +1,7 @@
 ---
 title: "perf(ci): run the PR mutation gate as three Stryker shards"
 type: refactor
-status: active
+status: complete
 date: 2026-11-08
 origin: docs/brainstorms/2026-11-08-sharded-mutation-gate-requirements.md
 ---
@@ -229,7 +229,7 @@ flowchart LR
 
 ## Implementation Units
 
-- [ ] **Unit 1: Shard inventory and coverage test**
+- [x] **Unit 1: Shard inventory and coverage test**
 
 **Goal:** Commit three shard lists and a test that pins them as an exact partition of `mutate`.
 
@@ -266,7 +266,7 @@ flowchart LR
 
 **Verification:** the test fails when one entry moves out of every shard. The lists' estimated costs are within 10% of each other. `bun run check:mutation-guards` passes the registration tests.
 
-- [ ] **Unit 2: Shard run mode**
+- [x] **Unit 2: Shard run mode**
 
 **Goal:** One shard can run the gate on its subset and publish a manifest plus report, while the local single run is unchanged. This unit also commits the artifact contract and the report fixtures that Unit 3 builds on.
 
@@ -318,7 +318,7 @@ flowchart LR
 
 **Verification:** a local run with no shard id gives the same verdict and output as before. The new modules score 100% in Stryker.
 
-- [ ] **Unit 3: Merge-and-classify mode**
+- [x] **Unit 3: Merge-and-classify mode**
 
 **Goal:** Turn three shard artifacts into one verdict through today's classifier path.
 
@@ -381,7 +381,7 @@ flowchart LR
 
 **Verification:** each check above is killed by a hand mutation, the module scores 100% in Stryker, and the classification seam leaves the existing gate tests green.
 
-- [ ] **Unit 4: Workflow job graph**
+- [x] **Unit 4: Workflow job graph**
 
 **Goal:** Replace the single job with three shard jobs and the final required job.
 
@@ -431,7 +431,7 @@ flowchart LR
 
 **Verification:** `actionlint` is clean, and the workflow tests fail if any one of the three `needs` entries or the `always()` is removed.
 
-- [ ] **Unit 5: Docs and registration**
+- [x] **Unit 5: Docs and registration**
 
 **Goal:** Describe shard assignment and rebalancing wherever the gate is documented.
 
@@ -453,7 +453,7 @@ flowchart LR
 
 **Verification:** `bun run lint` is clean, and no doc still describes a single mutation job.
 
-- [ ] **Unit 6: Live verification on the PR**
+- [x] **Unit 6: Live verification on the PR**
 
 **Goal:** Prove the timing target and the re-run behaviour on GitHub.
 
