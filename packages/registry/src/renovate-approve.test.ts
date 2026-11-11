@@ -27,6 +27,11 @@ function apiError(status: number, message = 'upstream body with a secret'): ApiE
   return Object.assign(new Error(message), {status})
 }
 
+/** A GitHub error that carries response headers, as Octokit's `RequestError` does. */
+function apiErrorWith(status: number, headers: Record<string, string>, message = 'upstream body with a secret') {
+  return Object.assign(new Error(message), {status, response: {headers}})
+}
+
 interface CommitSpec {
   readonly author?: unknown
   readonly verified?: boolean | undefined
@@ -641,8 +646,8 @@ describe('sweep: one approval per sweep, lowest number first', () => {
     expect(outcomes(result)).toEqual({1: 'head-moved', 2: 'approved'})
   })
 
-  it('uses the slot once a review request is sent, whatever came back', async () => {
-    const w = world({prs: [pr(1), pr(2)], approve: () => apiError(422), reviewsError: () => undefined})
+  it('uses the slot once a review request is sent that may have been recorded', async () => {
+    const w = world({prs: [pr(1), pr(2)], approve: () => apiError(502), reviewsError: () => undefined})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'deferred'})
     expect(w.named('approve')).toHaveLength(1)
@@ -1386,15 +1391,64 @@ describe('sweep: a review request that fails or is cut off', () => {
   })
 
   it.each([
-    ['a 422', apiError(422)],
-    ['a 403', apiError(403)],
+    ['a 408', apiError(408)],
+    ['a 429', apiError(429)],
+    ['a 403 with the rate limit used up', apiErrorWith(403, {'x-ratelimit-remaining': '0'})],
+    ['a 403 with a retry-after header', apiErrorWith(403, {'retry-after': '60'})],
+    ['a 403 with a secondary rate limit message', apiError(403, 'You have exceeded a secondary rate limit')],
+    ['a 403 with a rate limit message in another case', apiError(403, 'API RATE LIMIT exceeded')],
+    ['a 500', apiError(500)],
+    ['a 503', apiError(503)],
     ['an error with no status', new Error('socket hang up')],
-  ])('also reads the reviews after %s', async (_name, error) => {
-    const w = world({prs: [pr(1)], approve: () => error})
+  ])('also reads the reviews after %s, uses the slot and ends unknown', async (_name, error) => {
+    const w = world({prs: [pr(1), pr(2)], approve: () => error})
     const result = await LIVE(w)
-    expect(outcomes(result)).toEqual({1: 'approval-unknown'})
-    expect(w.named('listReviews')).toHaveLength(2)
+    expect(outcomes(result)).toEqual({1: 'approval-unknown', 2: 'deferred'})
+    expect(w.named('listReviews').filter(call => call.params.pull_number === 1)).toHaveLength(2)
+    expect(w.named('approve')).toHaveLength(1)
     expect(JSON.stringify(result)).not.toContain('secret')
+  })
+
+  it('treats a response below 500 that is not a rate limit as a refusal: nothing was created, the next PR is tried (exit 1)', async () => {
+    const w = world({prs: [pr(1), pr(2)], approve: call => (call === 1 ? apiError(422) : 'ok')})
+    const result = await LIVE(w)
+
+    expect(outcomes(result)).toEqual({1: 'approval-refused', 2: 'approved'})
+    expect(rowOf(result, 1).detail).toBe('GitHub refused the approval request; no review was created')
+    expect(result.exitCode).toBe(1)
+    expect(w.named('approve').map(call => call.params.pull_number)).toEqual([1, 2])
+    // no reconcile read for the refused PR: only the judging read of its reviews
+    expect(w.named('listReviews').filter(call => call.params.pull_number === 1)).toHaveLength(1)
+    expect(w.prs.find(spec => spec.number === 1)?.reviews ?? []).toEqual([])
+    expect(w.prs.find(spec => spec.number === 2)?.reviews).toHaveLength(1)
+  })
+
+  it.each([400, 401, 403, 404, 409, 410, 422, 451])('treats a %i as a refusal', async status => {
+    const w = world({prs: [pr(1), pr(2)], approve: call => (call === 1 ? apiError(status) : 'ok')})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approval-refused', 2: 'approved'})
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('does not treat the edges of the 4xx range as refusals: 399 and 500 are ambiguous', async () => {
+    for (const status of [399, 500]) {
+      const w = world({prs: [pr(1), pr(2)], approve: () => apiError(status)})
+      expect(outcomes(await LIVE(w))).toEqual({1: 'approval-unknown', 2: 'deferred'})
+    }
+  })
+
+  it('tries the next ready PRs after a refusal, up to the one approval', async () => {
+    const w = world({prs: [pr(1), pr(2), pr(3)], approve: call => (call === 1 ? apiError(422) : 'ok')})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approval-refused', 2: 'approved', 3: 'deferred'})
+  })
+
+  it('ends a refused sweep with only refusals as exit 1 and approves nothing', async () => {
+    const w = world({prs: [pr(1), pr(2)], approve: () => apiError(422)})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'approval-refused', 2: 'approval-refused'})
+    expect(result.exitCode).toBe(1)
+    expect(w.named('approve')).toHaveLength(2)
   })
 
   it('finds the recorded approval after a request that was cut off in flight', async () => {

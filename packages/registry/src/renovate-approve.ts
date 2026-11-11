@@ -43,6 +43,7 @@ import {
   readCommitStatuses,
   readRequiredChecks,
   sameChecks,
+  statusOf,
   type ReadRequest,
 } from './required-checks.ts'
 
@@ -93,6 +94,7 @@ export type OutcomeCode =
   | 'approved'
   | 'approved-not-armed'
   | 'approval-unknown'
+  | 'approval-refused'
   | 'error'
 
 /** Why a sweep stopped before it judged any PR, or ran out of budget while it did. */
@@ -228,6 +230,28 @@ function touchesConfig(file: {readonly filename: string; readonly previous_filen
   return paths.has(file.filename) || paths.has(file.previous_filename)
 }
 
+/** Whether a failure is GitHub's rate limit: a 429, or a 403 that carries the limit's headers or its message. */
+function isRateLimited(error: unknown): boolean {
+  if (statusOf(error) === 429) return true
+  if (statusOf(error) !== 403) return false
+  const headers = new Object(Reflect.get(new Object(Reflect.get(new Object(error), 'response')), 'headers'))
+  const message: unknown = Reflect.get(new Object(error), 'message')
+  return (
+    Reflect.get(headers, 'x-ratelimit-remaining') === '0' ||
+    Reflect.get(headers, 'retry-after') !== undefined ||
+    (typeof message === 'string' && /rate limit/iu.test(message))
+  )
+}
+
+/**
+ * Whether a failed review request is a definite refusal: GitHub answered with a client error that is not a
+ * timeout or a rate limit, so it created no review. Everything else may have been recorded.
+ */
+function isRefusal(error: unknown): boolean {
+  const status = statusOf(error)
+  return status !== undefined && status >= 400 && status < 500 && status !== 408 && !isRateLimited(error)
+}
+
 function isObject(value: unknown): value is object {
   return typeof value === 'object' && value !== null
 }
@@ -265,6 +289,7 @@ function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'chec
     approved: 'approved on this head',
     'approved-not-armed': 'approved; auto-merge is not armed, merge it by hand',
     'approval-unknown': 'the approval failed or was cut off and no approval was found; check the reviews',
+    'approval-refused': 'GitHub refused the approval request; no review was created',
   }
 }
 
@@ -562,6 +587,11 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       )
     } catch (error: unknown) {
       if (error instanceof DeadlineError && !(error instanceof CutOffError)) throw error
+      // A definite refusal created no review: the slot is free for the next ready PR.
+      if (isRefusal(error)) {
+        slotUsed = false
+        return fixed('approval-refused', fresh.armed)
+      }
       // A failed or cut-off request does not say whether it was recorded: one read of the reviews does.
       const history = await reconcile(pull.number)
       if (history === null || !history.some(review => isApproval(review, head))) {
@@ -592,7 +622,9 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       rows.push(failed(spent ? reasons.budget : reasons.read))
     }
   }
-  const bad = rows.some(row => row.outcome === 'error' || row.outcome === 'approval-unknown')
+  const bad = rows.some(
+    row => row.outcome === 'error' || row.outcome === 'approval-unknown' || row.outcome === 'approval-refused',
+  )
   return {exitCode: bad ? 1 : 0, live, stop: null, rows}
 }
 
