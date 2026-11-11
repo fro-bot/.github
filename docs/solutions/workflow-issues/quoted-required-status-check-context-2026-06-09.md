@@ -166,7 +166,8 @@ branch-protection update.
 
 The insidious part: this passed `pnpm lint` and **all** pull-request CI.
 `.github/settings.yml` is consumed only by the settings-sync workflow at apply
-time — nothing validates it during PR CI — so the bug shipped green and surfaced
+time — nothing validated it during PR CI then, and today only the tests that pin
+specific fields do — so the bug shipped green and surfaced
 only when the sync ran post-merge. The required check was never registered, and
 the failure was visible only in the `Update Repository Settings` workflow run, not
 on the PR.
