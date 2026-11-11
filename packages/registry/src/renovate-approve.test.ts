@@ -1331,7 +1331,7 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
   ])('fails closed on %s, and approves nothing', async (_name, overrides) => {
     const w = world({prs: [pr(1, overrides)]})
     const result = await LIVE(w)
-    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a GitHub read failed'})
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'read-failed'})
     expect(result.exitCode).toBe(1)
     expect(w.named('approve')).toEqual([])
   })
@@ -1356,7 +1356,7 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
       failRead: (read, number) => (read === name && number === 1 ? apiError(status) : undefined),
     })
     const result = await LIVE(w)
-    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'a GitHub read failed'})
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'read-failed'})
     expect(rowOf(result, 2).outcome).toBe('approved')
     expect(result.exitCode).toBe(1)
     expect(w.named('approve').map(call => call.params.pull_number)).toEqual([2])
@@ -1386,6 +1386,52 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
     await LIVE(w)
     expect(w.named('compare')).toHaveLength(1)
     expect(w.sleeps).toEqual([])
+  })
+})
+
+describe('sweep: a failed read says why, with a fixed code and no response text', () => {
+  it.each([
+    ['a 429 that keeps coming', apiError(429, 'SECRET'), 'rate-limited', 3],
+    [
+      'a 403 with the rate limit used up',
+      apiErrorWith(403, {'x-ratelimit-remaining': '0'}, 'SECRET'),
+      'rate-limited',
+      1,
+    ],
+    ['a 403 with a retry-after header', apiErrorWith(403, {'retry-after': '30'}, 'SECRET'), 'rate-limited', 1],
+    ['a 403 that says secondary rate limit', apiError(403, 'SECRET secondary rate limit'), 'rate-limited', 1],
+    ['a plain 403', apiError(403, 'SECRET'), 'read-failed', 1],
+    [
+      'a 403 with headers of another kind',
+      apiErrorWith(403, {'x-ratelimit-remaining': '12'}, 'SECRET'),
+      'read-failed',
+      1,
+    ],
+    ['a 404', apiError(404, 'SECRET'), 'read-failed', 1],
+    ['a 500 that keeps coming', apiError(500, 'SECRET'), 'read-failed', 3],
+    ['an error with no status', new Error('SECRET'), 'read-failed', 1],
+  ])('names %s as %s', async (_name, error, code, attempts) => {
+    const w = world({
+      prs: [pr(1), pr(2)],
+      failRead: (name, number) => (name === 'compare' && number === 1 ? error : undefined),
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: code})
+    expect(outcomes(result)).toEqual({1: 'error', 2: 'approved'})
+    expect(w.named('compare').filter(call => call.params.basehead === `main...${sha(1)}`)).toHaveLength(attempts)
+    expect(JSON.stringify(result)).not.toContain('SECRET')
+  })
+
+  it('tells a request timeout, an exhausted budget and a failed read apart in one sweep', async () => {
+    const w = world({
+      prs: [pr(1), pr(2), pr(3)],
+      hang: (name, call) => name === 'compare' && call === 1,
+      failRead: (name, number) => (name === 'compare' && number === 2 ? apiError(500) : undefined),
+    })
+    const result = await LIVE(w)
+    expect(rowOf(result, 1).detail).toBe('request-timeout')
+    expect(rowOf(result, 2).detail).toBe('read-failed')
+    expect(outcomes(result)).toEqual({1: 'error', 2: 'error', 3: 'approved'})
   })
 })
 
@@ -1620,8 +1666,8 @@ describe('sweep: one budget for every request', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stop).toBeNull()
     expect(outcomes(result)).toEqual({1: 'approved', 2: 'error', 3: 'error'})
-    expect(rowOf(result, 2).detail).toBe('the sweep ran out of time')
-    expect(rowOf(result, 3).detail).toBe('the sweep ran out of time')
+    expect(rowOf(result, 2).detail).toBe('budget-exhausted')
+    expect(rowOf(result, 3).detail).toBe('budget-exhausted')
     expect(w.named('compare')).toHaveLength(3)
     expect(w.named('approve')).toHaveLength(1)
   })
@@ -1630,7 +1676,7 @@ describe('sweep: one budget for every request', () => {
     const w = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error', 2: 'approved'})
-    expect(rowOf(result, 1).detail).toBe('a request timed out')
+    expect(rowOf(result, 1).detail).toBe('request-timeout')
     expect(result.exitCode).toBe(1)
     expect(w.named('compare')).toHaveLength(3)
     expect(w.sleeps).toEqual([])
@@ -1666,7 +1712,7 @@ describe('sweep: one budget for every request', () => {
     })
     const atCapResult = await LIVE(atCap)
     expect(outcomes(atCapResult)).toEqual({1: 'error', 2: 'error'})
-    expect(rowOf(atCapResult, 2).detail).toBe('the sweep ran out of time')
+    expect(rowOf(atCapResult, 2).detail).toBe('budget-exhausted')
   })
 
   it('sends no request once the budget has run out', async () => {
@@ -1898,15 +1944,48 @@ describe('runApprove', () => {
       world({prs: [pr(7)], failRead: name => (name === 'compare' ? apiError(404, 'SECRET') : undefined)}),
     )
     expect(await runApprove(t.params)).toBe(1)
-    expect(t.err).toEqual(['::error::renovate-approve: CANDIDATE_ERROR\n'])
+    expect(t.err).toEqual([
+      '::error::renovate-approve: #7 read-failed\n',
+      '::error::renovate-approve: CANDIDATE_ERROR\n',
+    ])
     expect(t.out).toEqual(['renovate-approve: #7 error\n'])
     expect(JSON.stringify([t.err, t.out, t.appended])).not.toContain('SECRET')
   })
 
-  it('exits 1 on approval-unknown with the same fixed line', async () => {
+  it('exits 1 on approval-unknown, naming the outcome as the cause', async () => {
     const t = runParams({}, world({prs: [pr(7)], approve: () => apiError(500)}))
     expect(await runApprove(t.params)).toBe(1)
-    expect(t.err).toEqual(['::error::renovate-approve: CANDIDATE_ERROR\n'])
+    expect(t.err).toEqual([
+      '::error::renovate-approve: #7 approval-unknown\n',
+      '::error::renovate-approve: CANDIDATE_ERROR\n',
+    ])
+  })
+
+  it('exits 1 on approval-refused, naming the outcome as the cause', async () => {
+    const t = runParams({}, world({prs: [pr(7)], approve: () => apiError(422)}))
+    expect(await runApprove(t.params)).toBe(1)
+    expect(t.err).toEqual([
+      '::error::renovate-approve: #7 approval-refused\n',
+      '::error::renovate-approve: CANDIDATE_ERROR\n',
+    ])
+  })
+
+  it('names every failing candidate and its cause, in PR order, and skips the ones that did well', async () => {
+    const t = runParams(
+      {},
+      world({
+        prs: [pr(3), pr(5), pr(7)],
+        failRead: (name, number) => (name === 'compare' && number === 3 ? apiError(429) : undefined),
+        approve: () => apiError(422),
+      }),
+    )
+    expect(await runApprove(t.params)).toBe(1)
+    expect(t.err).toEqual([
+      '::error::renovate-approve: #3 rate-limited\n',
+      '::error::renovate-approve: #5 approval-refused\n',
+      '::error::renovate-approve: #7 approval-refused\n',
+      '::error::renovate-approve: CANDIDATE_ERROR\n',
+    ])
   })
 
   it.each([

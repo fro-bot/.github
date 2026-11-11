@@ -300,10 +300,11 @@ function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'chec
 /** The fixed reasons a PR ends as `error`. */
 function errorDetails() {
   return {
-    read: 'a GitHub read failed',
+    read: 'read-failed',
+    rateLimited: 'rate-limited',
     capped: 'a list reached the API cap',
-    budget: 'the sweep ran out of time',
-    timeout: 'a request timed out',
+    budget: 'budget-exhausted',
+    timeout: 'request-timeout',
     switch: 'RENOVATE_APPROVE could not be read',
     list: 'the required checks for main could not be read',
   }
@@ -646,13 +647,16 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     } catch (error: unknown) {
       spent = error instanceof DeadlineError
       if (spent) rows.push(failed(reasons.budget))
-      else rows.push(failed(error instanceof RequestTimeoutError ? reasons.timeout : reasons.read))
+      else if (error instanceof RequestTimeoutError) rows.push(failed(reasons.timeout))
+      else rows.push(failed(isRateLimited(error) ? reasons.rateLimited : reasons.read))
     }
   }
-  const bad = rows.some(
-    row => row.outcome === 'error' || row.outcome === 'approval-unknown' || row.outcome === 'approval-refused',
-  )
-  return {exitCode: bad ? 1 : 0, live, stop: null, rows}
+  return {exitCode: rows.some(row => isFailure(row.outcome)) ? 1 : 0, live, stop: null, rows}
+}
+
+/** The outcomes that fail the run: a PR that could not be judged, and an approval that did not go as sent. */
+function isFailure(outcome: OutcomeCode): boolean {
+  return outcome === 'error' || outcome === 'approval-unknown' || outcome === 'approval-refused'
 }
 
 /** The job summary: the mode, then one table row per candidate. */
@@ -776,6 +780,12 @@ export async function runApprove(params: RunApproveParams): Promise<number> {
     return 1
   }
   if (result.exitCode !== 0) {
+    // One line per candidate that failed, with a fixed cause: the error code, or the outcome for a write.
+    for (const row of result.rows.filter(candidate => isFailure(candidate.outcome))) {
+      params.stderr(
+        `::error::renovate-approve: #${String(row.number)} ${row.outcome === 'error' ? row.detail : row.outcome}\n`,
+      )
+    }
     params.stderr('::error::renovate-approve: CANDIDATE_ERROR\n')
     return 1
   }
