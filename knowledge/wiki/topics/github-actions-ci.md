@@ -2,8 +2,20 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-08
+updated: 2026-11-09
 sources:
+  - url: https://github.com/fro-bot/dashboard/blob/299839ff02c07abc24fb0604032e2906038d1716/.github/workflows/release.yaml
+    sha: 299839ff02c07abc24fb0604032e2906038d1716
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/.github/workflows/ci.yml
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/.github/workflows/release.yaml
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/.github/workflows/renovate-changesets.yaml
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
   - url: https://github.com/fro-bot/agent/blob/e9a6bde10dac023db36e608273d8bc4d55709691/.github/workflows/ci.yaml
     sha: e9a6bde10dac023db36e608273d8bc4d55709691
     accessed: 2026-11-08
@@ -411,6 +423,50 @@ related:
 ---
 
 # GitHub Actions CI
+
+## 2026-11-09 — delay publication authority, not every credential
+
+[[fro-bot--dashboard]] at `299839ff02c07abc24fb0604032e2906038d1716`
+keeps release eligibility and publication authority as separate checks. The
+guard rejects manual dispatch off main, and the release job repeats
+`github.ref == 'refs/heads/main'` before reaching its credential steps.
+After candidate-image smoke tests and both Trivy phases, it mints an App token
+scoped to this repository and `contents: write` for tag/release publication.
+This limits the exposure window for that token; it does **not** mean preceding
+third-party actions run without credentials. GHCR login already uses the job's
+`GITHUB_TOKEN` with `packages: write`.
+
+The always-run smoke cleanup is also a release gate: missing containers or
+networks are tolerated, but Docker unavailability or failed removal is fatal.
+Only after that cleanup and scanning does publication proceed. CalVer/SHA tag
+promotion and readback precede GitHub Release creation; `latest` promotion and
+digest verification follow it. The separately credentialed infra dispatch
+remains best-effort and environment-gated. A green publication is not proof of
+a completed [[marcusrbrown--infra]] deployment. These are workflow-file facts,
+not fresh successful-run or production evidence, and extend the October 25
+phase-boundary observation without rewriting it.
+
+## Bundle-affecting is not the same as runtime dependency (2026-11-09)
+
+[[marcusrbrown--metacogs]] now treats Zod and MCP SDK bumps as release-affecting
+despite their `devDependencies` classification: its Renovate changeset detector
+names them as bundled into shipped MCP servers. It also compares runtime, peer,
+and optional dependencies and shipped paths. Dependency category alone is the
+wrong boundary for deciding whether users need a new version.
+
+Its CI adds Node 22, a pinned Claude CLI validation lane, a PR-only changeset
+gate, and a separate mandatory OpenCode v2 packed-plugin contract suite. The
+v2 job loads `testedWith` from the manifest (currently 2.2.5), checks the installed
+CLI's exact version, and uses a scripted provider. These checks do not establish
+method efficacy, which the README keeps local and outside CI. The separate
+push/dispatch release workflow configures OIDC npm publication and host-required
+prepublish tests, but does not declare a dependency on the v2 CI job. Declared
+CI gates, release admission, and observed publication are separate evidence.
+
+This extends the October 24 two-workflow snapshot without erasing it: six
+workflows now include Fro Bot, Renovate, and settings sync. No integration-absence
+follow-up is warranted. Sources are the three pinned workflows in frontmatter;
+these are static definitions, not observed green runs or audited script internals.
 
 ## Prove the selected runtime, not just a listening port (2026-11-08)
 

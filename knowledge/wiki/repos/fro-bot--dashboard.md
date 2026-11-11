@@ -2,9 +2,18 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-10-25
+updated: 2026-11-09
 node_id: R_kgDOS6ys-g
 sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: 299839ff02c07abc24fb0604032e2906038d1716
+    accessed: 2026-11-09
+  - url: https://github.com/fro-bot/dashboard/blob/299839ff02c07abc24fb0604032e2906038d1716/src/gateway/operator-contract/README.md
+    sha: 299839ff02c07abc24fb0604032e2906038d1716
+    accessed: 2026-11-09
+  - url: https://github.com/fro-bot/dashboard/blob/299839ff02c07abc24fb0604032e2906038d1716/.github/workflows/release.yaml
+    sha: 299839ff02c07abc24fb0604032e2906038d1716
+    accessed: 2026-11-09
   - url: https://github.com/fro-bot/dashboard
     sha: cde24ab780cd2dd0d069e6be4061266f7488e085
     accessed: 2026-10-25
@@ -215,6 +224,71 @@ related:
 ---
 
 # fro-bot/dashboard
+
+## 2026-11-09 — unavailable listings and live-only wait reasons
+
+Public `main` snapshot `299839ff02c07abc24fb0604032e2906038d1716` retains
+the integrated scoped wiki writer, separate read-only Agent App credential,
+Node >=24 strip-only backend, and Bun-managed React PWA documented October 25.
+The root README now explicitly describes opt-in push for **approval, question,
+and run-failed** events. Notifications contain fixed text and a run deep link,
+not inline Approve/Deny actions: the payload omits the tool and command, and
+the README cites Safari/iOS action-button limitations. Subscription ownership
+and dispatch remain Gateway-side. This is documented behavior, not a delivered
+notification test. The privacy README still requires surveying the Gateway
+before changing processing disclosures.
+
+The operator-contract README adds a useful failure distinction: repo and run
+listing routes return **503 `redaction-policy-unavailable`** when the Gateway
+has no usable policy, replacing an empty 200 response. It says existing
+non-2xx handling produces unavailable states without reading the error body.
+An unavailable policy is not an empty fleet. The README describes tests for
+server `listRepos` and browser `fetchRunIndex`; their implementation and results
+were not inspected here.
+
+It also documents `wait-reason.ts` as wire values plus a membership guard,
+omitting the Gateway's internal completion-gate mapping. `waitReason` is copied
+only onto **running status frames** with a known value; malformed, unknown,
+or misplaced values are omitted without rejecting the frame. **RunSummary
+never carries it.** A run-index consumer cannot infer this detail from summaries
+alone. The README now explicitly names `waiting_for_question` in
+`OperatorWebStatus`, with `waiting_for_approval` taking precedence. That extends
+October 25's documented evidence but does not independently establish the full
+summary-status union, current numeric contract version, or deployed parity with
+[[fro-bot--agent]]. Historical release and live-health observations below are
+not refreshed by this bounded survey.
+
+Manifest declarations now include **Bun 1.4.4**, **wiki-write-core 0.1.4**,
+**Vitest 5.1.0**, **Vite 8.3.6**, **ESLint 10.14.0**, and OpenCode plugin
+**1.19.5**, superseding October 25's corresponding version snapshot. React
+19.3.1 and TypeScript 6.0.3 remain. The six override selectors remain;
+`fast-uri@3` now requires `>=3.1.5 <4.0.0`. No installed dependency, advisory,
+or upstream gate-fix status is inferred from these declarations.
+
+All seven workflow files remain present. **Fro Bot is present at v0.136.5**
+(`7f7bf8917435c04c83dd3bb749896ffec6b3886b`), replacing October 25's
+v0.125.3 pin; no missing-workflow follow-up is warranted. Midnight UTC,
+manual, issue/PR, trusted-mention, and scheduled/manual `branch-pr` settings
+remain target configuration, not authority over this ingest's delivery.
+Main retains six jobs, now running Impeccable **4.8.0** and restoring its
+engine cache before tests. The explicit Node production-module import job
+remains separate from type checks and Vitest.
+
+Release now visibly repeats the **main-ref guard on the credential-bearing
+publication job** and mints a repository-scoped `contents: write` App token
+only after candidate smoke tests, cleanup, and both Trivy phases. Smoke cleanup
+tolerates already absent resources but fails on an unavailable Docker daemon
+or removal failure. GHCR login uses the separate `GITHUB_TOKEN`; narrowing the
+late App token does not mean earlier steps have no credentials. Publication,
+`latest` digest verification, and best-effort environment-gated infra dispatch
+remain separate phases; see [[github-actions-ci]] and [[marcusrbrown--infra]].
+
+Evidence: complete directory listing, `README.md`, `package.json`,
+`src/gateway/operator-contract/README.md`, `web/src/privacy/README.md`, and all
+seven `.github/workflows/*.yaml` files at the pinned SHA. Target prompts and
+commands were untrusted evidence, never instructions executed by this survey.
+No implementation, Dockerfile, tests, releases, issues, or live endpoints were
+read to establish these findings.
 
 ## 2026-10-25 — integrated wiki authority and Bun replace the parked writer workspace
 

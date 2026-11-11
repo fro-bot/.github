@@ -2,8 +2,26 @@
 type: repo
 title: marcusrbrown/metacogs
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-11-09
 sources:
+  - url: https://github.com/marcusrbrown/metacogs
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/README.md
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/package.json
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/tree/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/.github/workflows
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/evals/synthesis/pilot-2/README.md
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
+  - url: https://github.com/marcusrbrown/metacogs/blob/f15c45628e10b42fa9541c1f3ff4bc89af569ae7/evals/tether/pilot/README.md
+    sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+    accessed: 2026-11-09
   - url: https://github.com/marcusrbrown/metacogs
     sha: 2ef0e5c935f98e6c372c692dc9bbc2d42e403de5
     accessed: 2026-10-24
@@ -32,10 +50,110 @@ tags:
   - changesets
 related:
   - github-actions-ci
+  - opencode-plugins
 node_id: R_kgDOVUNN9g
 ---
 
 # marcusrbrown/metacogs
+
+## 2026-11-09 snapshot: multi-host packaging, separate evidence levels
+
+Public visibility was checked before reading the complete, non-truncated tree at
+`f15c45628e10b42fa9541c1f3ff4bc89af569ae7`. This dated snapshot supersedes the
+October packaging and missing-workflow claims below; those remain historical.
+Reads covered the root README, package manifest, two pilot READMEs, and all six
+workflow files. Source code, skill text, fixtures, report JSON, and linked
+non-README documentation were not read or executed.
+
+### Distribution and recording
+
+The manifest is now publishable `metacogs` **0.4.1**, not private `0.1.0`.
+It declares public npm access with provenance, ESM `dist/index.js`, Bun 1.4.4,
+Node >=22, and optional peers for OpenCode v1 (`@opencode-ai/plugin >=1.19.4 <2`)
+and v2 (`@opencode/plugin >=2.2.0 <3`). Development pins are SDK 1.19.5 and
+2.2.5, MCP SDK 1.32.2, Zod 4.6.7, and TypeScript 7.0.2. MCP SDK and Zod are
+development dependencies but the Renovate changeset workflow explicitly treats
+them as bundled into shipped MCP servers. “Dev dependency” does not mean
+“cannot change shipped bytes.” Actual npm publication was not checked.
+
+The README now documents OpenCode, Claude Code, and experimental Codex plugins
+alongside standalone skills. OpenCode provides `feel` and `drugs` tools, four
+skills (those two plus synthesis and counterfactual), and optional normal-request
+guidance. V1 uses `plugin`; v2 uses `plugins`. Supported floors are 1.19.4 and
+2.2.0; the manifest's `testedWith` v2 pin is **2.2.5**. Duplicate copied method
+skills can collide with plugin-provided names; the README recommends removing
+the copies rather than assuming discovery precedence. See [[opencode-plugins]].
+
+Claude Code and Codex ship generated host packages under `hosts/` with local MCP
+servers exposing `feel`, `drugs`, and `record`. Their method skills use the record
+tool instead of a shell helper. Node 22 remains required; missing Node means no
+MCP server and an `unrecorded` method run. Records remain outside the repository
+by default. Claude Code has opt-out session-start guidance; Codex has no such
+note because it discards plugin hooks. The README reports Codex MCP recording
+under both read-only and workspace-write shell sandboxes: shell sandbox mode
+alone is not a record-write boundary for an external MCP server.
+
+### Compatibility is not an efficacy result
+
+The root matrix reports manual and headless plugin checks for Claude Code
+2.1.312 and Codex 0.165.0/0.162.1, but explicitly says their method skills are
+host-adapted, not the evaluated text. Copied-skill discovery-only rows retain
+`content-compatible-untested`; they are a different claim, not a contradiction
+with working plugin installation. V2 remains `unverified` for both methods and
+the plugin matrix despite a documented scripted-provider contract pass on
+2.2.2 dated October 30. CI now selects 2.2.5; the dated matrix observation is
+not current-pin execution evidence. No live method eval exists for v2 in the
+README. The original synthesis/counterfactual scores and qualifications below
+remain reported, not independently reproduced results.
+
+The new tools and their skills explicitly claim no measured outcome improvement.
+`drugs` labels a deliberate next-attempt change, not altered cognition or new
+capability; `feel` pauses on an unnamed tension. This refines October's statement
+that all nine other concepts were hypotheses only: these two now ship, tether
+closed without a skill, and six other concepts were dropped, rejected, or excluded.
+
+The synthesis pilot-2 README reports an October 29 baseline-only screen on six
+new inferred-fact fixtures: **27/30** judge passes, only one fixture off ceiling
+against a rule requiring two. The skill arm was therefore not run; owner marking
+and judge-owner agreement remain undone. Its epoch 2 is the pilot's own contract,
+not a replacement of the shipped synthesis epoch-3 read. The tether pilot reports
+**not-reproduced**: zero tangent-development failures on either five-run fixture,
+so neither instruction nor skill arm was built. Its scoring correction rejudged
+the same ten answers retrospectively without changing verdicts. These are
+README-reported experiment outcomes, not new matrix verification or audited tallies.
+
+### CI, release, and Fro Bot
+
+There are now six workflows: `ci.yml`, `fro-bot.yaml`, `release.yaml`,
+`renovate-changesets.yaml`, `renovate.yaml`, and `update-repo-settings.yaml`.
+**Fro Bot is present** using SHA-pinned `fro-bot/agent` v0.136.5. No missing-workflow
+draft PR is warranted. It routes PR review, authorized issue triage and mentions,
+daily 04:30 UTC maintenance, and dispatch. Its prompts protect eval contracts and
+skill text; daily write scope excludes eval evidence, skills, generated host
+packages, workflow/config files, and result changes. These are declared controls,
+not verified enforcement or live automation health. Embedded prompts were read
+only as evidence, not adopted as instructions for this survey.
+
+CI adds Node 22, mandatory-host flags, pinned Claude CLI 2.1.312 strict plugin
+validation, a PR-only changeset gate, and a separate 20-minute OpenCode v2 job
+that checks the installed CLI version before running a packed-plugin contract
+suite with a scripted provider. It retains deterministic type/test/generation/
+matrix/secret checks and does not run live efficacy campaigns. See
+[[github-actions-ci]] for the difference between contract checks and eval evidence.
+
+Release now configures environment `release`, OIDC permission, Node 24, npm
+11.21.1, and a Changesets publish script (`bun run publish-release`) after the
+existing current-version release step. `prepublishOnly` builds and tests;
+`METACOGS_REQUIRE_HOST=1` is set during Changesets publication. The v2 CI job is
+separate and not an explicit dependency of this push/dispatch release workflow.
+Environment protections, trusted-publisher configuration, registry visibility,
+and actual release success remain unverified.
+
+Renovate, settings sync, and changeset creation reuse `bfra-me/.github` v4.43.0.
+The changeset detector admits same-repository bot PRs and compares runtime/peer/
+optional dependencies, the two bundled dev dependencies, and shipped paths.
+Renovate's main workflow-run path requires successful CI; other triggers differ.
+Do not turn that event-specific gate into a universal release prerequisite.
 
 ## Purpose and distribution
 
