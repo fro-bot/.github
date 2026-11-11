@@ -10150,3 +10150,174 @@ Run: https://github.com/fro-bot/.github/actions/runs/42478039655
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-11-09 13:59] ingest | marcusrbrown/metacogs
+
+Re-surveyed the public repository at
+`f15c45628e10b42fa9541c1f3ff4bc89af569ae7`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--metacogs.md` and additive findings to
+`wiki/topics/opencode-plugins.md` and `wiki/topics/github-actions-ci.md`.
+Recorded publishable package 0.4.1, dual OpenCode peers, generated Claude Code
+and experimental Codex plugins, MCP recording and guidance boundaries, and
+the distinction between plugin compatibility and evaluated method efficacy.
+Documented baseline-screen closure for synthesis pilot 2 and tether's
+not-reproduced outcome, with retrospective scoring and missing human-review
+qualifications. All counts are README-reported, not independently reproduced.
+
+Superseded October's private-package/two-workflow/no-Fro-Bot snapshot explicitly
+without deleting history. Fro Bot is now present at v0.136.5; no missing-workflow
+draft PR is warranted. Recorded mandatory host contract checks, pinned v2 CLI
+identity checks, Claude validation, release OIDC configuration, and bundled-dev-
+dependency changeset selection. The dated v2 matrix evidence and current manifest
+pin are kept distinct. No new entity or comparison page was justified.
+
+Reads were limited to public identity metadata, one complete directory listing,
+three READMEs, the root package manifest, and all six workflow files. Target
+commands and prompts were untrusted evidence and were not executed. Source,
+skill text, fixtures, report JSON, runtime health, actual npm publication, and
+branch/environment protections were not inspected. Corrections context was
+read as untrusted data and contained no corrections.
+
+Validation covers required frontmatter, commit-pinned public attribution,
+wikilink/related targets, additive body preservation, unchanged prior log bytes,
+whitespace, and the four-file edit boundary. Index and metadata remain untouched.
+No target tests were run; caller owns commit/push/PR delivery. The single marked
+control-repository commit comment points to this canonical log; no issue notice.
+
+Sources: https://github.com/marcusrbrown/metacogs/tree/f15c45628e10b42fa9541c1f3ff4bc89af569ae7
+Run: https://github.com/fro-bot/.github/actions/runs/42630016234
+
+## [2026-11-09 14:02] ingest | repo:marcusrbrown/metacogs
+
+Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/metacogs
+
+## [2026-11-09 14:04] ingest | fro-bot/dashboard
+
+Re-surveyed the public repository at
+`299839ff02c07abc24fb0604032e2906038d1716`. Added a dated snapshot to
+`wiki/repos/fro-bot--dashboard.md` and a release-authority observation to
+`wiki/topics/github-actions-ci.md`. Recorded unavailable-policy listing 503s,
+live-status-only wait reasons, documented question push and notification action
+limits, Bun 1.4.4, wiki-write-core 0.1.4, and related manifest updates. Explicitly
+superseded October 25's version pins without removing historical evidence.
+Fro Bot remains present, now v0.136.5; no missing-workflow draft is indicated.
+
+Documented the repeated main-ref publication guard, delayed narrow App token,
+fatal smoke-cleanup failures, and the separation between candidate checks,
+publication, latest-tag verification, and best-effort infra dispatch. Earlier
+credentials remain a separate boundary. No new entity/comparison page was
+justified; historical deployment, release, and live contract evidence was not
+reclassified as current.
+
+Reads were limited to public identity metadata, a complete directory listing,
+three READMEs, the root package manifest, and all seven workflow files. Target
+prompts and commands were treated as untrusted evidence and not executed.
+Corrections context contained no corrections. No target source, test bodies,
+Dockerfile, issue, release, or live endpoint was inspected. No target tests ran.
+
+Validation covers required frontmatter, pinned public attribution, wikilink and
+related targets, additive body retention, unchanged prior log prefix, whitespace,
+and the three-file edit boundary. Pre-existing wiki and metadata edits remain
+intact; index and metadata are untouched by this invocation. Caller owns code
+delivery. One marked control-repository commit comment points to this canonical
+log, with no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/fro-bot/dashboard/tree/299839ff02c07abc24fb0604032e2906038d1716
+Run: https://github.com/fro-bot/.github/actions/runs/42630835133
+
+## [2026-11-09 14:06] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard
+
+## [2026-11-10 13:31] ingest | marcusrbrown/.github
+
+Re-surveyed the public repository at
+`307d4eb4a5821ee2d179b9fb27a4607b7e944fc2`, unchanged since October 25.
+Added a dated bounded recheck to `wiki/repos/marcusrbrown--github.md` and
+renewed static caller-routing evidence in `wiki/topics/probot-settings.md`.
+The complete listing still contains 15 files and three workflows. Both correctly
+pathed reusable callers remain at v4.43.0; CI remains Prettier 3.9.10 with
+SHA-pinned checkout v5.1.0 and Prettier action v4.3. No Fro Bot workflow is
+present; a separate follow-up draft PR remains appropriate, not created here.
+
+Retained all previous knowledge, including the explicit corrections to global
+CI-ordering and push-enabled print-config claims. No new contradiction was
+found. No new entity or comparison page was justified. Runtime health, applied
+settings, and collaborator access were not revalidated.
+
+Reads were limited to public identity metadata, a complete directory listing,
+the README, and all three workflow files at the pinned commit. Target content
+was untrusted evidence, not executed instructions. Corrections context contained
+no corrections. No configuration contents, source code, callee implementation,
+issues, PRs, or workflow runs were read; no target tests were run.
+
+Validation covers complete frontmatter, pinned public attribution, wikilink and
+related targets, additive body preservation, unchanged prior log bytes, and
+whitespace. Only the two wiki pages and this append were changed by this run;
+pre-existing wiki and metadata changes remain intact. Index and metadata were
+not edited. Caller owns commit/push/PR delivery. The single marked control-repo
+commit comment points here; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/marcusrbrown/.github/tree/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+Run: https://github.com/fro-bot/.github/actions/runs/42825155991
+
+## [2026-11-10 13:34] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
+
+## [2026-11-10 13:33] ingest | marcusrbrown/opencode-copilot-delegate
+
+Re-surveyed the public repository at
+`f0d44887e8ec2d37c4162c3c81e2691075ace99a`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--opencode-copilot-delegate.md` and a compatibility-evidence
+distinction to `wiki/topics/opencode-plugins.md`. Preserved all earlier findings
+and sources; the new manifest pins explicitly supersede the October 26 figures
+without rewriting historical snapshots.
+
+The source manifest remains 0.12.1. Recorded Biome 2.5.15 → 2.6.6, OpenCode v1
+plugin development pin 1.19.3 → 1.19.5, Bun types 1.4.3 → 1.4.4, Solid 1.9.17 →
+1.9.18, and current rimraf 6.1.4. Distinguished the unbounded v1 peer declaration
+from explicit v2 support in sibling plugins; no v2 runtime incompatibility is
+asserted. README still advertises three tools while the directory lists the
+resume tool and its test. The notification-policy contradiction and stale 0.1.0
+install example remain attributed rather than silently resolved.
+
+All six workflows were inspected. CI still invokes only unit tests and the
+default-entry Node export-shape check, not the separately declared TUI or
+integration scripts. Fro Bot is present at v0.137.0 with daily 16:00 UTC
+maintenance; no missing-workflow proposal is warranted. Its caller still has no
+explicit output mode or downstream delivery step, despite its schedule prompt's
+commit/push request; live failure was not inferred. Renovate remains v4.43.0,
+and settings sync retains the unannotated SHA. No additional entity or comparison
+page was justified.
+
+Reads were limited to public identity/HEAD metadata, directory listings, the
+root README, the package manifest, and all six workflow files. Target prompts
+and commands were untrusted evidence and were not executed. Corrections context
+was read as untrusted data and contained no corrections. No target source, test
+body, configuration contents, issue, release, or run telemetry was inspected;
+no target tests ran.
+
+Validation: wiki lint scanned 48 pages with zero deterministic findings; all four
+advisories predate this invocation and remain unchanged. Checks also cover
+complete frontmatter and provenance, wikilink/related targets, retained prior
+body/source content, byte-identical prior log prefix, whitespace, and the
+three-file edit boundary. Existing wiki and metadata edits are preserved;
+`knowledge/index.md` and metadata are untouched by this invocation. Caller owns
+commit/push/PR delivery. One marked control-repository commit comment points to
+this canonical log; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate/tree/f0d44887e8ec2d37c4162c3c81e2691075ace99a
+Run: https://github.com/fro-bot/.github/actions/runs/42825394703
+
+## [2026-11-10 13:37] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate

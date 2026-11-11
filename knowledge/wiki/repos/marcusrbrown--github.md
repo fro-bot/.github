@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-10-25
+updated: 2026-11-10
 sources:
+  - url: https://github.com/marcusrbrown/.github
+    sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
+    accessed: 2026-11-10
   - url: https://github.com/marcusrbrown/.github
     sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
     accessed: 2026-10-25
@@ -306,6 +309,42 @@ The 2026-09-04 deadlock sharpens the case and also bounds it honestly:
 - **Standing caveat.** An agent that proposes bumps would be a second writer against the same `uses:` lines Renovate owns, which is the re-derivation/duplicate-authoring class already cataloged in [[github-actions-ci]]. Scope any such workflow to _detect and report_ on this repo, or to act only when Renovate's delivery signal has been flat for multiple cycles.
 
 ## Survey History
+
+### Bounded source recheck (2026-11-10)
+
+Public `main` still resolves to `307d4eb4a5821ee2d179b9fb27a4607b7e944fc2`,
+the same commit inspected October 25. The complete, non-truncated recursive
+listing contains 15 files and exactly three workflows: `main.yaml`,
+`renovate.yaml`, and `update-repo-settings.yaml`. The README still describes
+GitHub defaults and health checks. No package manifest or application-code path
+is listed. **No Fro Bot workflow is present** in the listing or the inspected
+workflows; the separate follow-up draft PR recommendation remains open.
+
+Both reusable callers remain pinned to
+`e6a1ab17bb68213940f63de91bd0450acdf9fff4` (**v4.43.0**), with distinct,
+basename-matched Renovate and settings workflow paths. Both explicitly map
+`APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`. Settings sync retains
+push-to-main, daily `55 2 * * *`, and manual triggers. These are static routing
+facts, not proof that settings were applied; see [[probot-settings]].
+
+CI still consists solely of Prettier **3.9.10** with `--check .`, using
+full-SHA-pinned checkout **v5.1.0** and Prettier action **v4.3**. Renovate's
+four-hour schedule and event routes are unchanged. The October corrections
+remain applicable: successful CI gates the `workflow_run` route, not every
+route, and `print-config` follows `inputs.print-config || false`, not the push
+event. No new contradiction was found in the bounded evidence.
+
+Only public identity metadata, the directory listing, README, and all three
+workflow files were inspected. Configuration contents, reusable callees, runs,
+issues, PRs, collaborator access, and live protections were not read. Earlier
+configuration and incident observations remain dated evidence, not refreshed
+runtime claims.
+
+Sources: [directory listing](https://github.com/marcusrbrown/.github/tree/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2),
+[README](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/readme.md),
+[CI](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/main.yaml),
+[Renovate caller](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/renovate.yaml),
+[settings caller](https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml).
 
 ### Bounded source recheck (2026-10-25)
 
