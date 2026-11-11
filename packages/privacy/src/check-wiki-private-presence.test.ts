@@ -1978,7 +1978,8 @@ describe('parseFrontmatterSources closing delimiter', () => {
   })
 
   it('closes on `---` at the end of the content with no newline', () => {
-    const content = '---\nsources:\n  - url: https://github.com/acme/other\n---'
+    // #given the expected URL only under a non-sources key, so the body-substring fallback would accept the page
+    const content = '---\nnote: https://github.com/owner/name\nsources:\n  - url: https://github.com/acme/other\n---'
 
     expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
   })
