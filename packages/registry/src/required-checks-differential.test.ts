@@ -6,7 +6,7 @@
  */
 
 import {describe, expect, it} from 'vitest'
-import {evaluateChecks, sameChecks} from './promotion-self-merge.ts'
+import {evaluateChecks, sameChecks} from './required-checks.ts'
 
 interface RequiredCheck {
   readonly context: string

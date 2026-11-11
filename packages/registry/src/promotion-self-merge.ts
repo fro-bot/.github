@@ -28,7 +28,19 @@ import type {Octokit} from '@octokit/rest'
 
 import {appendStepSummary} from '@fro-bot/core/output'
 import {retry} from '@fro-bot/core/retry'
-import {parse} from 'yaml'
+import {
+  CutOffError,
+  DeadlineError,
+  evaluateChecks,
+  isTransient,
+  parseDeclaredContexts,
+  readCheckRuns,
+  readCommitStatuses,
+  readRequiredChecks,
+  sameChecks,
+  statusOf,
+  type RequiredCheck,
+} from './required-checks.ts'
 
 /** The slice of Octokit this module calls, so a test builds a fake of exactly these methods. */
 export interface SelfMergeOctokit {
@@ -96,11 +108,6 @@ export interface SelfMergeOutcome {
   readonly summary: string
 }
 
-interface RequiredCheck {
-  readonly context: string
-  readonly appId: number | null
-}
-
 interface PullView {
   readonly state: string
   readonly merged: boolean
@@ -114,19 +121,6 @@ interface ReviewView {
   readonly login: string | undefined
   readonly state: string
   readonly commitId: string | null | undefined
-}
-
-interface CheckRunView {
-  readonly id: number
-  readonly name: string
-  readonly status: string
-  readonly conclusion: string | null
-  readonly appId: number | null
-}
-
-interface StatusView {
-  readonly context: string
-  readonly state: string
 }
 
 /** Codes whose summary text is built from the run, so the caller supplies it. */
@@ -293,54 +287,12 @@ function summaryFor(context: OutcomeContext, title: string, detail: string, code
   return [`### Promotion self-merge: ${title}`, '', said, '', ...facts, ''].join('\n')
 }
 
-/** Thrown by the deadline check; carries nothing, because the outcome is built from the run's state. */
-class DeadlineError extends Error {}
-
-/** A request that was in flight when its signal fired: it was sent, so a write may or may not have happened. */
-class CutOffError extends DeadlineError {}
-
 /** The outcome of a run whose deadline passed: the wait ran out, or the time after it did. */
 function timeoutOutcome(state: RunState): SelfMergeOutcome {
   const detail = state.waiting
     ? `The required checks did not settle within 60 minutes${state.pending.length > 0 ? ` (still waiting on: ${list(state.pending)})` : ''}. The pull request stays open and the next daily run catches it up and merges it. Nothing was approved.`
     : 'The time reserved for the approval and the merge ran out after the required checks passed. The pull request stays open and the next daily run handles it. Nothing was approved.'
   return outcomeWith(state, 'TIMEOUT', detail)
-}
-
-/** A property of whatever was thrown; `Object()` makes a primitive, `null` or `undefined` safe to read. */
-function propertyOf(error: unknown, name: string): unknown {
-  return Reflect.get(new Object(error), name)
-}
-
-/** The status of a thrown GitHub error, if it has one. */
-function statusOf(error: unknown): number | undefined {
-  const status = propertyOf(error, 'status')
-  return typeof status === 'number' ? status : undefined
-}
-
-function isTransient(error: unknown): boolean {
-  const status = statusOf(error)
-  if (status !== undefined) return status === 429 || status >= 500
-  const code = propertyOf(error, 'code')
-  return code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'ENOTFOUND'
-}
-
-/** The contexts declared for `main` in the text of `.github/settings.yml`; empty when there are none. */
-export function parseDeclaredContexts(text: string): readonly string[] {
-  const document: unknown = parse(text)
-  const branches = isRecord(document) ? document.branches : undefined
-  if (!Array.isArray(branches)) return []
-  const declared: readonly unknown[] = branches
-  const main = declared.find(branch => isRecord(branch) && branch.name === 'main')
-  const protection = isRecord(main) ? main.protection : undefined
-  const checks = isRecord(protection) ? protection.required_status_checks : undefined
-  const contexts = isRecord(checks) ? checks.contexts : undefined
-  if (!Array.isArray(contexts)) return []
-  return contexts.filter((context: unknown): context is string => typeof context === 'string')
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Fixed stop for a pull request that cannot be approved as it stands, or `null` when it can. */
@@ -351,59 +303,6 @@ function guard(input: Pick<SelfMergeInput, 'pullRequest' | 'pin'>, pull: PullVie
   if (pull.labels.includes('hold-merge')) return outcomeOf(input, 'HOLD_MERGE')
   if (!pull.labels.includes('automerge')) return outcomeOf(input, 'NOT_LABELED')
   return null
-}
-
-/** Whether a check run has finished and, if so, whether it passed. */
-function runOutcome(run: CheckRunView): {readonly done: boolean; readonly ok: boolean} {
-  return {
-    done: run.status === 'completed',
-    ok: run.conclusion === 'success' || run.conclusion === 'skipped' || run.conclusion === 'neutral',
-  }
-}
-
-/** Whether a commit status has finished and, if so, whether it passed. */
-function statusOutcome(status: StatusView): {readonly done: boolean; readonly ok: boolean} {
-  return {
-    done: status.state === 'success' || status.state === 'failure' || status.state === 'error',
-    ok: status.state === 'success',
-  }
-}
-
-/**
- * Judges each required check on the pinned commit. A check run counts when its name and app match the
- * requirement (any app when none is named), the newest of several winning; a commit status, which has no
- * app, is matched by context and the newest wins. When a context has both, both must pass: either failing
- * fails the context, either pending keeps it waiting, and an absent one leaves the other to decide alone.
- */
-export function evaluateChecks(
-  required: readonly RequiredCheck[],
-  runs: readonly CheckRunView[],
-  statuses: readonly StatusView[],
-): {readonly failed: readonly string[]; readonly pending: readonly string[]} {
-  const failed: string[] = []
-  const pending: string[] = []
-  for (const check of required) {
-    const matching = runs.filter(
-      run => run.name === check.context && (check.appId === null || run.appId === check.appId),
-    )
-    const newest = matching.toSorted((left, right) => right.id - left.id)[0]
-    const status = statuses.find(candidate => candidate.context === check.context)
-    const reported = [
-      ...(newest === undefined ? [] : [runOutcome(newest)]),
-      ...(status === undefined ? [] : [statusOutcome(status)]),
-    ]
-    // Nothing reported yet counts as not done.
-    if (reported.some(outcome => outcome.done && !outcome.ok)) failed.push(check.context)
-    else if (reported.length === 0 || reported.some(outcome => !outcome.done)) pending.push(check.context)
-  }
-  return {failed, pending}
-}
-
-/** Whether two required-check lists name the same contexts bound to the same apps. */
-export function sameChecks(left: readonly RequiredCheck[], right: readonly RequiredCheck[]): boolean {
-  const keys = (checks: readonly RequiredCheck[]): readonly string[] =>
-    checks.map(check => `${check.context}\0${String(check.appId)}`).toSorted()
-  return JSON.stringify(keys(left)) === JSON.stringify(keys(right))
 }
 
 /** Runs `selfMerge`'s decisions. Any thrown GitHub failure that is not mapped below ends as `API_FAILED`. */
@@ -459,33 +358,35 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     })
 
   const readProtection = async (): Promise<SelfMergeOutcome | readonly RequiredCheck[]> => {
-    let response: Awaited<ReturnType<SelfMergeOctokit['rest']['repos']['getBranch']>>
-    try {
-      response = await read(async signal =>
-        octokit.rest.repos.getBranch({owner, repo, branch: 'main', request: {signal}}),
-      )
-    } catch (error: unknown) {
-      if (error instanceof DeadlineError) throw error
-      return outcomeOf(state, 'PROTECTION_UNREADABLE')
+    const result = await readRequiredChecks({
+      client: octokit,
+      owner,
+      repo,
+      read,
+      declared: input.declaredContexts,
+    })
+    switch (result.kind) {
+      case 'unreadable': {
+        return outcomeOf(state, 'PROTECTION_UNREADABLE')
+      }
+      case 'empty': {
+        return outcomeWith(
+          state,
+          'PROTECTION_EMPTY',
+          'The live required-check list for `main` is empty, so the checks this promotion must pass are unknown. Nothing was approved.',
+        )
+      }
+      case 'short': {
+        return outcomeWith(
+          state,
+          'PROTECTION_SHORT',
+          `The live required-check list for \`main\` is missing declared contexts: ${list(result.missing)}. Nothing was approved.`,
+        )
+      }
+      case 'ok': {
+        return result.checks
+      }
     }
-    const checks = response.data.protection?.required_status_checks?.checks ?? []
-    if (checks.length === 0) {
-      return outcomeWith(
-        state,
-        'PROTECTION_EMPTY',
-        'The live required-check list for `main` is empty, so the checks this promotion must pass are unknown. Nothing was approved.',
-      )
-    }
-    const live = checks.map(check => ({context: check.context, appId: check.app_id ?? null}))
-    const missing = input.declaredContexts.filter(context => !live.some(check => check.context === context))
-    if (missing.length > 0) {
-      return outcomeWith(
-        state,
-        'PROTECTION_SHORT',
-        `The live required-check list for \`main\` is missing declared contexts: ${list(missing)}. Nothing was approved.`,
-      )
-    }
-    return live
   }
 
   const viewOf = (data: {
@@ -555,53 +456,6 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     }
   }
 
-  const pages = async <T>(fetchPage: (page: number) => Promise<readonly T[]>): Promise<readonly T[]> => {
-    let all = Array.of<T>()
-    for (const page of Array.from({length: config.maxPages}, (_, index) => index + 1)) {
-      const items = await fetchPage(page)
-      all = all.concat(items)
-      if (items.length < config.pageSize) break
-    }
-    return all
-  }
-
-  const readRuns = async (): Promise<readonly CheckRunView[]> =>
-    pages(async page => {
-      const response = await read(async signal =>
-        octokit.rest.checks.listForRef({
-          owner,
-          repo,
-          ref: input.pin,
-          filter: 'latest',
-          per_page: config.pageSize,
-          page,
-          request: {signal},
-        }),
-      )
-      return response.data.check_runs.map(run => ({
-        id: run.id,
-        name: run.name,
-        status: run.status,
-        conclusion: run.conclusion,
-        appId: run.app?.id ?? null,
-      }))
-    })
-
-  const readStatuses = async (): Promise<readonly StatusView[]> =>
-    pages(async page => {
-      const response = await read(async signal =>
-        octokit.rest.repos.listCommitStatusesForRef({
-          owner,
-          repo,
-          ref: input.pin,
-          per_page: config.pageSize,
-          page,
-          request: {signal},
-        }),
-      )
-      return response.data.map(status => ({context: status.context, state: status.state}))
-    })
-
   /** `on`, anything else as given, or `unreadable` (an error, and a 404 too: a PAT without access sees none). */
   const readSwitch = async (): Promise<string | undefined | 'unreadable'> => {
     try {
@@ -634,7 +488,9 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
       required = live as readonly RequiredCheck[]
       return 'changed'
     }
-    const verdict = evaluateChecks(required, await readRuns(), await readStatuses())
+    const {runs} = await readCheckRuns({client: octokit, owner, repo, read, ref: input.pin})
+    const {statuses} = await readCommitStatuses({client: octokit, owner, repo, read, ref: input.pin})
+    const verdict = evaluateChecks(required, runs, statuses)
     if (verdict.failed.length > 0) {
       return outcomeWith(
         state,

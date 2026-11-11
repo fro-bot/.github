@@ -797,6 +797,7 @@
       "packages/knowledge/src/drafted-solutions-publish-cli.ts",
       "packages/registry/src/merge-back-data.ts",
       "packages/registry/src/promotion-qualify.ts",
+      "packages/registry/src/required-checks.ts",
       "packages/status-truth/src/program-trackers.ts",
       "packages/wiki-ops/src/route-stderr.ts",
       "packages/wiki-ops/src/wiki-handoff-core.ts",
