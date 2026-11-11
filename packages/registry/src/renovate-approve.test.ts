@@ -76,6 +76,8 @@ interface PrSpec {
   prScoped?: {commits?: readonly CommitSpec[]; files?: readonly FileSpec[]}
   /** Overrides the `total_commits` a compare reports. */
   totalCommits?: unknown
+  /** Fields laid over the compare's answer, to make it malformed. */
+  rawCompare?: Record<string, unknown>
   /** Commits `main` is ahead of the head by, per compare call on this PR (1-based) or a fixed value. */
   behindBy?: number | string | null | undefined | ((call: number) => unknown)
   runs?: readonly RunSpec[]
@@ -252,6 +254,7 @@ function world(scenario: Scenario = {}) {
               commits: commits.slice((params.page - 1) * params.per_page, params.page * params.per_page),
               // GitHub lists the first 300 files, on the first page only.
               files: params.page === 1 ? files.slice(0, 300) : [],
+              ...spec.rawCompare,
             },
           }
         },
@@ -586,6 +589,18 @@ describe('sweep: the mode is fixed at the start (AE8)', () => {
     const result = await LIVE(w)
     expect(rowOf(result, 7)).toMatchObject({outcome: 'error', detail: 'RENOVATE_APPROVE could not be read'})
     expect(result.exitCode).toBe(1)
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('ends the sweep when the variable read is cut off by the budget, not just by its own cap', async () => {
+    const w = world({
+      prs: [pr(1), pr(2)],
+      hang: name => name === 'getVariable',
+      cost: (name, call) => (name === 'getBranch' && call === 2 ? BUDGET - 10_000 : 0),
+    })
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
+    expect(rowOf(result, 1).detail).toBe('budget-exhausted')
     expect(w.named('approve')).toEqual([])
   })
 
@@ -1353,15 +1368,40 @@ describe('sweep: reads that fail or reach a cap are errors for that PR only (AE:
     ['fewer commits than the compare says there are', {commits: [{}, {}], totalCommits: 5}],
     ['no commit count', {totalCommits: undefined}],
     ['a commit count that is not a number', {totalCommits: '1'}],
-    ['an entry that is not an object among the commits', {commits: [{}, null as never]}],
+    ['a compare with no commit list', {rawCompare: {commits: undefined}}],
+    ['a compare with a commit list that is not a list', {rawCompare: {commits: 'x'}}],
+    ['a compare with no file list', {rawCompare: {files: undefined}}],
+    ['a compare with a file list that is not a list', {rawCompare: {files: 'x'}}],
     ['a file entry without a name', {files: [{filename: 'a.ts'}, {} as never]}],
     ['a file entry that is not an object', {files: [null as never]}],
     ['a file name that is not a string', {files: [{filename: 7 as never}]}],
+    ['a previous file name that is not a string', {files: [{filename: 'a.ts', previous_filename: 7 as never}]}],
   ])('fails closed on %s, and approves nothing', async (_name, overrides) => {
     const w = world({prs: [pr(1, overrides)]})
     const result = await LIVE(w)
     expect(rowOf(result, 1)).toMatchObject({outcome: 'error', detail: 'read-failed'})
     expect(result.exitCode).toBe(1)
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('stops reading a compare that has no usable commit count after its first page', async () => {
+    for (const totalCommits of [undefined, '1', null]) {
+      const w = world({prs: [pr(1, {totalCommits})]})
+      await LIVE(w)
+      expect(w.named('compare')).toHaveLength(1)
+    }
+  })
+
+  it('asks for exactly the pages the commit count promises, no more', async () => {
+    const w = world({prs: [pr(1, {commits: [{}, {}], totalCommits: 5})]})
+    await LIVE(w)
+    expect(w.named('compare').map(call => call.params.page)).toEqual([1, 2, 3])
+  })
+
+  it('treats a commit entry that is not an object as a commit that is not by the App', async () => {
+    const w = world({prs: [pr(1, {commits: [{}, null as never]})]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1).outcome).toBe('foreign-commit')
     expect(w.named('approve')).toEqual([])
   })
 
@@ -1449,6 +1489,31 @@ describe('sweep: a failed read says why, with a fixed code and no response text'
     expect(outcomes(result)).toEqual({1: 'error', 2: 'approved'})
     expect(w.named('compare').filter(call => call.params.basehead === `main...${sha(1)}`)).toHaveLength(attempts)
     expect(JSON.stringify(result)).not.toContain('SECRET')
+  })
+
+  it.each([
+    ['a 404 with the rate limit used up', apiErrorWith(404, {'x-ratelimit-remaining': '0'})],
+    ['a 404 with a retry-after header', apiErrorWith(404, {'retry-after': '30'})],
+    ['a 404 that says rate limit', apiError(404, 'rate limit')],
+    ['a 422 with a retry-after header', apiErrorWith(422, {'retry-after': '30'})],
+  ])('does not read %s as a rate limit: only 429 and 403 are', async (_name, error) => {
+    const w = world({prs: [pr(1)], failRead: name => (name === 'compare' ? error : undefined)})
+    expect(rowOf(await LIVE(w), 1).detail).toBe('read-failed')
+  })
+
+  it.each([
+    ['a 422 with a retry-after header', apiErrorWith(422, {'retry-after': '30'})],
+    ['a 404 that says rate limit', apiError(404, 'rate limit')],
+    ['a 400 with the rate limit used up', apiErrorWith(400, {'x-ratelimit-remaining': '0'})],
+  ])('still treats %s as a refusal of the approval', async (_name, error) => {
+    const w = world({prs: [pr(1)], approve: () => error})
+    expect(outcomes(await LIVE(w))).toEqual({1: 'approval-refused'})
+  })
+
+  it('reads a rate-limit message with a non-string message as no message', async () => {
+    const error = Object.assign(new Error('x'), {status: 403, message: undefined})
+    const w = world({prs: [pr(1)], failRead: name => (name === 'compare' ? error : undefined)})
+    expect(rowOf(await LIVE(w), 1).detail).toBe('read-failed')
   })
 
   it('tells a request timeout, an exhausted budget and a failed read apart in one sweep', async () => {
@@ -1733,6 +1798,7 @@ describe('sweep: one budget for every request', () => {
     const own = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1, cost: cost(30_001)})
     const ownResult = await LIVE(own)
     expect(outcomes(ownResult)).toEqual({1: 'error', 2: 'approved'})
+    expect(rowOf(ownResult, 1).detail).toBe('request-timeout')
 
     const atCap = world({
       prs: [pr(1), pr(2)],
@@ -1741,6 +1807,7 @@ describe('sweep: one budget for every request', () => {
     })
     const atCapResult = await LIVE(atCap)
     expect(outcomes(atCapResult)).toEqual({1: 'error', 2: 'error'})
+    expect(rowOf(atCapResult, 1).detail).toBe('budget-exhausted')
     expect(rowOf(atCapResult, 2).detail).toBe('budget-exhausted')
   })
 
@@ -2003,7 +2070,7 @@ describe('runApprove', () => {
     const t = runParams(
       {},
       world({
-        prs: [pr(3), pr(5), pr(7)],
+        prs: [pr(3), pr(5), pr(7), pr(9, {labels: ['automerge', 'hold-merge']})],
         failRead: (name, number) => (name === 'compare' && number === 3 ? apiError(429) : undefined),
         approve: () => apiError(422),
       }),

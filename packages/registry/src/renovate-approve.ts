@@ -222,15 +222,17 @@ function shortHead(sha: string): string {
 }
 
 /** A commit counts when GitHub resolved its author to the App and verified its signature. */
-function isAppCommit(entry: object): boolean {
-  const verification: unknown = Reflect.get(new Object(Reflect.get(entry, 'commit')), 'verification')
-  return isApp(Reflect.get(entry, 'author')) && Reflect.get(new Object(verification), 'verified') === true
+function isAppCommit(entry: unknown): boolean {
+  // `Object()` makes a primitive, `null` or `undefined` safe to read.
+  const commit = new Object(entry)
+  const verification: unknown = Reflect.get(new Object(Reflect.get(commit, 'commit')), 'verification')
+  return isApp(Reflect.get(commit, 'author')) && Reflect.get(new Object(verification), 'verified') === true
 }
 
 /** Whether a changed file is, or was renamed from, one of the Renovate config files. */
-function touchesConfig(file: {readonly filename: string; readonly previous_filename?: string}): boolean {
+function touchesConfig(file: {readonly filename: string; readonly previous: string | undefined}): boolean {
   const paths = new Set<string | undefined>(configPaths())
-  return paths.has(file.filename) || paths.has(file.previous_filename)
+  return paths.has(file.filename) || paths.has(file.previous)
 }
 
 /** Whether a failure is GitHub's rate limit: a 429, or a 403 that carries the limit's headers or its message. */
@@ -238,11 +240,10 @@ function isRateLimited(error: unknown): boolean {
   if (statusOf(error) === 429) return true
   if (statusOf(error) !== 403) return false
   const headers = new Object(Reflect.get(new Object(Reflect.get(new Object(error), 'response')), 'headers'))
-  const message: unknown = Reflect.get(new Object(error), 'message')
   return (
     Reflect.get(headers, 'x-ratelimit-remaining') === '0' ||
     Reflect.get(headers, 'retry-after') !== undefined ||
-    (typeof message === 'string' && /rate limit/iu.test(message))
+    /rate limit/iu.test(String(Reflect.get(new Object(error), 'message')))
   )
 }
 
@@ -251,29 +252,23 @@ function isRateLimited(error: unknown): boolean {
  * timeout or a rate limit, so it created no review. Everything else may have been recorded.
  */
 function isRefusal(error: unknown): boolean {
-  const status = statusOf(error)
-  return status !== undefined && status >= 400 && status < 500 && status !== 408 && !isRateLimited(error)
-}
-
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null
+  const status = statusOf(error) ?? 0
+  return status >= 400 && status < 500 && status !== 408 && !isRateLimited(error)
 }
 
 /** A changed file the compare listed, or `null` when the entry is not one. */
-function fileOf(entry: unknown): {readonly filename: string; readonly previous_filename?: string} | null {
-  if (!isObject(entry)) return null
-  const filename: unknown = Reflect.get(entry, 'filename')
-  const previous: unknown = Reflect.get(entry, 'previous_filename')
+function fileOf(entry: unknown): {readonly filename: string; readonly previous: string | undefined} | null {
+  // `Object()` makes a primitive, `null` or `undefined` safe to read.
+  const file = new Object(entry)
+  const filename: unknown = Reflect.get(file, 'filename')
+  const previous: unknown = Reflect.get(file, 'previous_filename')
   if (typeof filename !== 'string') return null
   if (previous !== undefined && typeof previous !== 'string') return null
-  return previous === undefined ? {filename} : {filename, previous_filename: previous}
+  return {filename, previous}
 }
 
 /** What a compare of `main` against one head SHA shows. */
-type Compared =
-  | {readonly kind: 'capped'}
-  | {readonly kind: 'malformed'}
-  | {readonly kind: 'ok'; readonly behind: boolean; readonly foreign: boolean; readonly config: boolean}
+type Compared = 'capped' | 'malformed' | {readonly behind: boolean; readonly foreign: boolean; readonly config: boolean}
 
 /** Fixed text for each outcome that has none of its own. */
 function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'checks-pending' | 'error'>, string>> {
@@ -431,24 +426,26 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       ).data
     const first = await fetchPage(1)
     const total: unknown = first.total_commits
-    if (typeof total !== 'number') return {kind: 'malformed'}
-    if (total > config.commitCap) return {kind: 'capped'}
-    const commits: unknown[] = Array.isArray(first.commits) ? [...first.commits] : []
+    if (typeof total !== 'number' || !Array.isArray(first.commits) || !Array.isArray(first.files)) return 'malformed'
+    if (total > config.commitCap) return 'capped'
+    const commits: unknown[] = [...first.commits]
     for (const page of Array.from({length: Math.ceil(config.commitCap / config.pageSize) - 1}, (_, i) => i + 2)) {
       if (commits.length >= total) break
       commits.push(...(await fetchPage(page)).commits)
     }
-    const changed: unknown = first.files
-    if (commits.length !== total || !Array.isArray(changed)) return {kind: 'malformed'}
-    if (changed.length >= config.fileCap) return {kind: 'capped'}
-    const files = changed.map(fileOf)
-    if (!commits.every(isObject) || files.includes(null)) return {kind: 'malformed'}
+    if (commits.length !== total) return 'malformed'
+    if (first.files.length >= config.fileCap) return 'capped'
+    const files: {readonly filename: string; readonly previous: string | undefined}[] = []
+    for (const entry of first.files) {
+      const file = fileOf(entry)
+      if (file === null) return 'malformed'
+      files.push(file)
+    }
     return {
-      kind: 'ok',
       // Anything but a count of zero is not up to date: a missing or odd count never reads as current.
       behind: first.behind_by !== 0,
       foreign: commits.length === 0 || !commits.every(isAppCommit),
-      config: files.some(file => file !== null && touchesConfig(file)),
+      config: files.some(touchesConfig),
     }
   }
 
@@ -482,13 +479,13 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       readonly commit_id?: string | null
     }[],
     head: string,
-  ): 'approved' | 'changes-requested' | 'none' => {
-    let verdict: 'approved' | 'changes-requested' | 'none' = 'none'
+  ): 'approved' | 'changes-requested' | null => {
+    let verdict: 'approved' | 'changes-requested' | null = null
     for (const review of reviews) {
       if (review.user?.login !== identity().approver || review.commit_id !== head) continue
       if (review.state === 'APPROVED') verdict = 'approved'
       if (review.state === 'CHANGES_REQUESTED') verdict = 'changes-requested'
-      if (review.state === 'DISMISSED') verdict = 'none'
+      if (review.state === 'DISMISSED') verdict = null
     }
     return verdict
   }
@@ -548,8 +545,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     const fixed = (outcome: keyof typeof texts, armed = pull.armed): Row => row(outcome, texts[outcome], armed)
     /** The row that stops a PR on what its compare shows, or `null` when the compare allows an approval. */
     const stopFor = (compared: Compared, armed: boolean): Row | null => {
-      if (compared.kind === 'capped') return row('error', reasons.capped, armed)
-      if (compared.kind === 'malformed') return row('error', reasons.read, armed)
+      if (compared === 'capped') return row('error', reasons.capped, armed)
+      if (compared === 'malformed') return row('error', reasons.read, armed)
       if (compared.foreign) return fixed('foreign-commit', armed)
       if (compared.config) return fixed('config-change', armed)
       if (compared.behind) return fixed('behind', armed)
