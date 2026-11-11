@@ -32,7 +32,7 @@ export interface PrivateWikiLeak {
 
 /**
  * Parse the YAML frontmatter of a wiki page and return the `sources` attribution
- * state with the following tri-state contract:
+ * state with the following contract:
  *
  * - `null`       → `sources` key is ABSENT, there is no opening `---` line, the YAML is
  *                  unparseable, or the parsed value is not an object. Caller falls back to the legacy
@@ -41,16 +41,17 @@ export interface PrivateWikiLeak {
  *                  OR is an array with no entries that have a `url` string.
  *                  Key presence is authoritative — caller treats this as a failed
  *                  attribution check (page flagged; body substring is NOT consulted).
- *                  Also returned for a page that opens a block (`---` then a line break) but
- *                  has no valid closing line, or whose block contains a second-document marker.
  * - `string[]`   → `sources` key IS PRESENT and is an array with at least one usable
  *                  URL string. Authoritative; caller checks each URL against the repo.
+ * - `'unreadable'` → the page opens a block (`---` then a line break) but the block has no valid
+ *                  closing line or holds a second-document marker. The page has no readable sources:
+ *                  caller flags it and never consults the body substring.
  *
  * The critical distinction is key PRESENCE (`'sources' in obj`) vs absence:
  * - Present → always return an array (possibly empty) → authoritative.
  * - Absent  → return null → caller falls back to substring.
  */
-function parseFrontmatterSources(content: string): string[] | null {
+function parseFrontmatterSources(content: string): string[] | null | 'unreadable' {
   // Match YAML frontmatter fences anchored to the true start of the file.
   // The /m flag is intentionally absent so that ^ is string-start only —
   // body-embedded ---...--- blocks must not be treated as authoritative frontmatter.
@@ -58,7 +59,7 @@ function parseFrontmatterSources(content: string): string[] | null {
   if (!match) {
     // A first line of exactly `---` opens a block. A block with no valid closing line has no readable
     // sources: it is unreadable, not absent, so the legacy fallback must not rescue the page.
-    return /^---\r?\n/.test(content) ? [] : null
+    return /^---\r?\n/.test(content) ? 'unreadable' : null
   }
 
   // Capturing group always participates when the regex matches.
@@ -71,7 +72,8 @@ function parseFrontmatterSources(content: string): string[] | null {
   } catch (error: unknown) {
     // A line that starts a second YAML document (`--- text` inside the block) is a malformed delimiter, not
     // absent frontmatter: it has no readable sources. Other unparseable YAML stays undefined → null below.
-    if (error instanceof Error && 'code' in error && error.code === 'MULTIPLE_DOCS') return []
+    // The yaml library throws only Error instances, each with a `code`.
+    if ((error as {code?: unknown}).code === 'MULTIPLE_DOCS') return 'unreadable'
   }
 
   // hasOwnProperty.call throws only for null/undefined receivers.
@@ -202,6 +204,12 @@ export function detectPrivateWikiLeaks(params: {
       const entry = entries[0]!
       const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
       const structuredSources = parseFrontmatterSources(page.content)
+
+      if (structuredSources === 'unreadable') {
+        // An opened frontmatter block that cannot be read is not absent frontmatter: no fallback.
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
+        continue
+      }
 
       if (structuredSources !== null) {
         // Structured sources are present and parseable — they are authoritative.

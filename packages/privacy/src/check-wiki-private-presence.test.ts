@@ -2023,6 +2023,27 @@ describe('parseFrontmatterSources closing delimiter', () => {
     expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
   })
 
+  it.each([' ', '\t', ' \t '])('passes a page whose matching source is closed by `---` and %j', trailing => {
+    // #given a matching structured source, a closing line with trailing whitespace and no body URL: the
+    //        block is readable, so the page passes (an unclosed block would be blocked)
+    const content = `---\nsources:\n  - url: https://github.com/owner/name\n---${trailing}\nBody.`
+
+    expect(detect(content)).toEqual([])
+  })
+
+  it.each([' ', '\t'])('passes a CRLF page whose matching source is closed by `---` and %j', trailing => {
+    const content = `---\r\nsources:\r\n  - url: https://github.com/owner/name\r\n---${trailing}\r\nBody.`
+
+    expect(detect(content)).toEqual([])
+  })
+
+  it('does not close on `---x`, so a matching source above it is not read', () => {
+    // #given a matching source, then a `---x` line and no real closing line: the block never closes
+    const content = '---\nsources:\n  - url: https://github.com/owner/name\n---x\nBody.'
+
+    expect(detect(content)).toEqual([{filename: 'owner--name.md', reason: 'unattributable-page'}])
+  })
+
   it('closes at the first whitespace-suffixed line, not at a later body rule', () => {
     const content =
       '---\nsources:\n  - url: https://github.com/acme/other\n--- \nSee https://github.com/owner/name\n\n---\nmore'
