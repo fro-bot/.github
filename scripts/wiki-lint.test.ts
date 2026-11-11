@@ -726,7 +726,7 @@ describe('lintWikiSnapshot', () => {
     expect(workflow).toContain('WIKI_LINT_FAILURE_MESSAGE')
     expect(workflow).toContain("steps.restore-wiki.outcome == 'failure'")
     expect(workflow).toContain('if: always()')
-    expect(workflow).toContain('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a')
+    expect(workflow).toMatch(/^\s*uses: actions\/upload-artifact@[\da-f]{40}(?:\s|$)/mu)
   })
 })
 
