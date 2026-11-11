@@ -752,13 +752,108 @@ describe('sweep: an existing approval is respected (AE3)', () => {
     expect(outcomes(await LIVE(dismissedRequest))).toEqual({1: 'approved'})
   })
 
-  it('ignores change requests and approvals on another head, and reviews by other people', async () => {
-    const olderRequest = world({prs: [pr(1, {reviews: [{}, {state: 'CHANGES_REQUESTED', commit: sha(1, 'b')}]})]})
-    expect(outcomes(await LIVE(olderRequest))).toEqual({1: 'already-approved'})
+  it('ignores reviews by other people', async () => {
     const otherPerson = world({prs: [pr(1, {reviews: [{login: 'marcusrbrown', state: 'CHANGES_REQUESTED'}]})]})
     expect(outcomes(await LIVE(otherPerson))).toEqual({1: 'approved'})
     const noUser = world({prs: [pr(1, {reviews: [{login: null, state: 'CHANGES_REQUESTED'}]})]})
     expect(outcomes(await LIVE(noUser))).toEqual({1: 'approved'})
+  })
+
+  describe('a change request keeps blocking across new heads, as GitHub does', () => {
+    const OLD = sha(1, 'b')
+
+    it('blocks a new head after a change request on an older head: no review call, the slot stays free, exit 0', async () => {
+      const w = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED', commit: OLD}]}), pr(2)]})
+      const result = await LIVE(w)
+      expect(outcomes(result)).toEqual({1: 'changes-requested', 2: 'approved'})
+      expect(result.exitCode).toBe(0)
+      expect(w.named('approve').map(call => call.params.pull_number)).toEqual([2])
+    })
+
+    it('blocks in a dry run too, and a later comment does not lift it', async () => {
+      const w = world({
+        prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED', commit: OLD}, {state: 'COMMENTED'}]})],
+      })
+      expect(outcomes(await DRY(w))).toEqual({1: 'changes-requested'})
+    })
+
+    it('lets a dismissal of the change request lift it', async () => {
+      const w = world({
+        prs: [
+          pr(1, {
+            reviews: [
+              {state: 'CHANGES_REQUESTED', commit: OLD},
+              {state: 'DISMISSED', commit: OLD},
+            ],
+          }),
+        ],
+      })
+      expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+      expect(w.named('approve').map(call => call.params.commit_id)).toEqual([sha(1)])
+    })
+
+    it('lets a later approval of the older head lift it, and approves the new head', async () => {
+      const w = world({
+        prs: [
+          pr(1, {
+            reviews: [
+              {state: 'CHANGES_REQUESTED', commit: OLD},
+              {state: 'APPROVED', commit: OLD},
+            ],
+          }),
+        ],
+      })
+      expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+      expect(w.named('approve').map(call => call.params.commit_id)).toEqual([sha(1)])
+    })
+
+    it('approves a new head after an approval of an older head, which does not count for this one', async () => {
+      const w = world({prs: [pr(1, {reviews: [{state: 'APPROVED', commit: OLD}]})]})
+      expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
+      expect(w.named('approve').map(call => call.params.commit_id)).toEqual([sha(1)])
+    })
+
+    it('blocks on a change request on the current head after an approval of an older head', async () => {
+      const w = world({prs: [pr(1, {reviews: [{state: 'APPROVED', commit: OLD}, {state: 'CHANGES_REQUESTED'}]})]})
+      expect(outcomes(await LIVE(w))).toEqual({1: 'changes-requested'})
+    })
+
+    it('counts only an approval of the current head as already approved', async () => {
+      const w = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED', commit: OLD}, {}]})]})
+      expect(outcomes(await LIVE(w))).toEqual({1: 'already-approved'})
+    })
+
+    it('folds across a page boundary: the change request on page 1 blocks, a later approval on page 2 lifts it', async () => {
+      const filler = Array.from({length: 99}, () => ({login: 'x', state: 'COMMENTED'}))
+      const blocked = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED', commit: OLD}, ...filler]})]})
+      expect(outcomes(await LIVE(blocked))).toEqual({1: 'changes-requested'})
+      const lifted = world({
+        prs: [
+          pr(1, {reviews: [{state: 'CHANGES_REQUESTED', commit: OLD}, ...filler, {state: 'APPROVED', commit: OLD}]}),
+        ],
+      })
+      expect(outcomes(await LIVE(lifted))).toEqual({1: 'approved'})
+      expect(
+        lifted
+          .named('listReviews')
+          .map(call => call.params.page)
+          .slice(0, 2),
+      ).toEqual([1, 2])
+      const late = world({
+        prs: [
+          pr(1, {reviews: [{state: 'APPROVED', commit: OLD}, ...filler, {state: 'CHANGES_REQUESTED', commit: OLD}]}),
+        ],
+      })
+      expect(outcomes(await LIVE(late))).toEqual({1: 'changes-requested'})
+    })
+
+    it('still needs an approval of the current head to reconcile an ambiguous write', async () => {
+      const w = world({
+        prs: [pr(1, {reviews: [{state: 'APPROVED', commit: OLD}]})],
+        approve: () => apiError(502),
+      })
+      expect(outcomes(await LIVE(w))).toEqual({1: 'approval-unknown'})
+    })
   })
 
   it('folds the history across a page boundary, in order', async () => {

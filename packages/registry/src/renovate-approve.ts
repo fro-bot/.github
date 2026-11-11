@@ -464,8 +464,10 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     )
 
   /**
-   * What the `fro-bot` user's reviews on `head` add up to, in the order GitHub lists them: an approval, a
-   * change request or a dismissal is decisive and the latest one counts; a comment is not decisive.
+   * What the `fro-bot` user's reviews add up to, in the order GitHub lists them and across every head: an
+   * approval, a change request or a dismissal is decisive and the latest one counts; a comment is not. GitHub
+   * keeps a change request blocking across new commits until that reviewer approves or it is dismissed, so a
+   * change request on any head blocks. An approval counts only on `head`.
    */
   const verdictOf = (
     reviews: readonly {
@@ -477,8 +479,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
   ): 'approved' | 'changes-requested' | null => {
     let verdict: 'approved' | 'changes-requested' | null = null
     for (const review of reviews) {
-      if (review.user?.login !== identity().approver || review.commit_id !== head) continue
-      if (review.state === 'APPROVED') verdict = 'approved'
+      if (review.user?.login !== identity().approver) continue
+      if (review.state === 'APPROVED') verdict = review.commit_id === head ? 'approved' : null
       if (review.state === 'CHANGES_REQUESTED') verdict = 'changes-requested'
       if (review.state === 'DISMISSED') verdict = null
     }

@@ -274,7 +274,7 @@ flowchart TD
 - The review body is a fixed sentence with the label, the head commit and that the required checks passed.
 - After a failed or cut-off `createReview`, read the reviews once. A recorded approval at the head gives `approved`. Anything else gives `approval-unknown`, and the sweep sends no further request. The next sweep reads the reviews before it writes.
 - The job summary is one table: PR number, head (short), outcome code, detail (names of missing or failed required checks) and whether auto-merge is armed. Stderr gets fixed strings only.
-- The `fro-bot` user's reviews on the current head are folded in order: `APPROVED`, `CHANGES_REQUESTED` and `DISMISSED` are decisive, `COMMENTED` is not. The latest decisive approval is `already-approved`; the latest decisive change request is `changes-requested` (exit 0, no approval).
+- The `fro-bot` user's reviews are folded in order across every head: `APPROVED`, `CHANGES_REQUESTED` and `DISMISSED` are decisive, `COMMENTED` is not. If the latest decisive review is `CHANGES_REQUESTED` (any head, since GitHub keeps it blocking across new commits until that reviewer approves or it is dismissed) the outcome is `changes-requested` (exit 0, no approval, the slot stays free). If it is `APPROVED` on the current head the outcome is `already-approved`. Anything else (none, dismissed, an approval of an older head) proceeds. The reconcile after an ambiguous write still needs an approval at the current head.
 - Exit 0 when no candidate ended in `error`, `approval-unknown` or `approval-refused`. Exit 1 otherwise, and when the required list could not be trusted or the candidate list could not be read.
 
 **Execution note:** Test-first, with a fake GitHub client. No test sleeps or touches the network.
