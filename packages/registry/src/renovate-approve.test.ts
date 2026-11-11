@@ -176,10 +176,14 @@ function world(scenario: Scenario = {}) {
   const stall = async (params: unknown): Promise<never> =>
     new Promise<never>((_resolve, reject) => {
       const signal = (params as {request?: {signal?: AbortSignal}}).request?.signal
-      setTimeout(() => {
-        if (signal !== undefined) controllers.get(signal)?.abort()
+      // The request never answers: its signal fires, and the fake clock moves on by the time that took.
+      queueMicrotask(() => {
+        if (signal !== undefined) {
+          clock.now += sizes.get(signal) ?? 0
+          controllers.get(signal)?.abort()
+        }
         reject(Object.assign(new Error('The operation was aborted'), {status: 500}))
-      }, 0)
+      })
     })
   const gate = async (name: string, params: unknown, number?: number): Promise<number> => {
     const call = record(name, params)
@@ -581,13 +585,12 @@ describe('sweep: the mode is fixed at the start (AE8)', () => {
     expect(w.named('approve')).toEqual([])
   })
 
-  it('ends the sweep, not just the PR, when the variable read is cut off', async () => {
+  it('ends the PR, not the sweep, when the variable read stalls past its own cap', async () => {
     const w = world({prs: [pr(1), pr(2)], hang: name => name === 'getVariable'})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
-    expect(rowOf(result, 1).detail).toBe('the sweep ran out of time')
-    expect(rowOf(result, 2).detail).toBe('the sweep ran out of time')
-    expect(w.named('compare')).toHaveLength(2)
+    expect(rowOf(result, 1).detail).toBe('RENOVATE_APPROVE could not be read')
+    expect(w.named('getVariable')).toHaveLength(2)
   })
 
   it('retries a transient failure of the variable read before it gives up', async () => {
@@ -1515,15 +1518,6 @@ describe('sweep: a review request that fails or is cut off', () => {
 })
 
 describe('sweep: one budget for every request', () => {
-  it('gives each request a signal sized to what is left, from ten minutes down', async () => {
-    const w = world({prs: [pr(1)], cost: 1000})
-    await LIVE(w)
-    const sizes = w.calls.map(call => call.signalMs)
-    expect(sizes[0]).toBe(BUDGET)
-    expect(sizes[1]).toBe(BUDGET - 1000)
-    expect(sizes.every((size, index) => size === BUDGET - index * 1000)).toBe(true)
-  })
-
   it('exits 1 with TIMEOUT when the budget is spent before the required list is read', async () => {
     const w = world({prs: [pr(1)], cost: BUDGET + 1})
     const result = await LIVE(w)
@@ -1531,17 +1525,17 @@ describe('sweep: one budget for every request', () => {
     expect(w.order()).toEqual(['getBranch'])
   })
 
-  it('exits 1 with TIMEOUT when the PR list is cut off', async () => {
+  it('exits 1 with CANDIDATES_UNREADABLE when the PR list stalls past its own cap', async () => {
     const w = world({prs: [pr(1)], hang: name => name === 'list'})
     const result = await LIVE(w)
-    expect(result.stop).toBe('TIMEOUT')
+    expect(result.stop).toBe('CANDIDATES_UNREADABLE')
     expect(result.exitCode).toBe(1)
   })
 
-  it('exits 1 with TIMEOUT when the required list read is cut off', async () => {
+  it('exits 1 with REQUIRED_UNREADABLE when the required list read stalls past its own cap', async () => {
     const w = world({prs: [pr(1)], hang: name => name === 'getBranch'})
     const result = await LIVE(w)
-    expect(result.stop).toBe('TIMEOUT')
+    expect(result.stop).toBe('REQUIRED_UNREADABLE')
   })
 
   it('turns every remaining candidate into an error when the budget runs out mid-sweep', async () => {
@@ -1559,13 +1553,47 @@ describe('sweep: one budget for every request', () => {
     expect(w.named('approve')).toHaveLength(1)
   })
 
-  it('turns a request that is cut off in flight into the same error, without a retry', async () => {
+  it('turns a request that stalls past its own cap into an error for that PR alone, without a retry', async () => {
     const w = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1})
     const result = await LIVE(w)
-    expect(outcomes(result)).toEqual({1: 'error', 2: 'error'})
-    expect(rowOf(result, 1).detail).toBe('the sweep ran out of time')
-    expect(w.named('compare')).toHaveLength(1)
+    expect(outcomes(result)).toEqual({1: 'error', 2: 'approved'})
+    expect(rowOf(result, 1).detail).toBe('a request timed out')
+    expect(result.exitCode).toBe(1)
+    expect(w.named('compare')).toHaveLength(3)
     expect(w.sleeps).toEqual([])
+    expect(w.named('approve').map(call => call.params.pull_number)).toEqual([2])
+  })
+
+  it('gives every request a signal of 30 seconds at most, and the time left when that is less', async () => {
+    const w = world({prs: [pr(1)], cost: 1000})
+    await LIVE(w)
+    const sizes = w.calls.map(call => call.signalMs)
+    expect(Math.max(...sizes.map(size => size ?? 0))).toBe(30_000)
+    expect(sizes.every(size => size === 30_000)).toBe(true)
+
+    const late = world({
+      prs: [pr(1)],
+      cost: (name, call) => (name === 'list' && call === 1 ? BUDGET - 12_000 : 0),
+    })
+    await LIVE(late)
+    const tail = late.calls.slice(late.calls.findIndex(call => call.name === 'list') + 1)
+    expect(tail[0]?.signalMs).toBe(12_000)
+  })
+
+  it('reads a stall as the request’s own timeout when more than the cap is left, and as the budget when not', async () => {
+    const cost = (left: number) => (name: string, call: number) => (name === 'list' && call === 1 ? BUDGET - left : 0)
+    const own = world({prs: [pr(1), pr(2)], hang: (name, call) => name === 'compare' && call === 1, cost: cost(30_001)})
+    const ownResult = await LIVE(own)
+    expect(outcomes(ownResult)).toEqual({1: 'error', 2: 'approved'})
+
+    const atCap = world({
+      prs: [pr(1), pr(2)],
+      hang: (name, call) => name === 'compare' && call === 1,
+      cost: cost(30_000),
+    })
+    const atCapResult = await LIVE(atCap)
+    expect(outcomes(atCapResult)).toEqual({1: 'error', 2: 'error'})
+    expect(rowOf(atCapResult, 2).detail).toBe('the sweep ran out of time')
   })
 
   it('sends no request once the budget has run out', async () => {
@@ -1943,7 +1971,7 @@ describe('runApprove', () => {
     )
     expect(await runApprove(t.params)).toBe(0)
     expect(slept).toEqual([2000])
-    expect(sized[0]).toBe(BUDGET)
+    expect(sized[0]).toBe(30_000)
   })
 
   it('does not throw when GITHUB_STEP_SUMMARY is unset', async () => {

@@ -150,8 +150,10 @@ interface PullView {
 /** Numbers and durations, inside a function so a mutant in them is exercised. */
 function limits() {
   return {
-    // One budget for the whole sweep: the reads, the approval and the review reconcile after it.
+    // One budget for the whole sweep: the reads and the approval.
     budgetMs: 10 * 60 * 1000,
+    // The most one request may take, so one stalled read costs a PR and not the sweep.
+    requestMs: 30 * 1000,
     // The one read that reconciles an approval that was cut off, outside the spent budget.
     reconcileMs: 2 * 60 * 1000,
     transientAttempts: 3,
@@ -299,10 +301,14 @@ function errorDetails() {
     read: 'a GitHub read failed',
     capped: 'a list reached the API cap',
     budget: 'the sweep ran out of time',
+    timeout: 'a request timed out',
     switch: 'RENOVATE_APPROVE could not be read',
     list: 'the required checks for main could not be read',
   }
 }
+
+/** A request that outran its own cap while the sweep still had budget left: it costs one PR, not the sweep. */
+class RequestTimeoutError extends Error {}
 
 /** Runs the sweep. Any thrown failure that is not mapped below ends it as `API_FAILED`. */
 export async function sweep(input: SweepInput): Promise<SweepResult> {
@@ -321,16 +327,19 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
   const config = limits()
   const budgetEnd = input.now() + config.budgetMs
 
-  // Every request carries a signal that fires when the budget does. A request that fails with its signal
-  // fired was cut off in flight, whatever error Octokit made of it (it turns an abort into a 500).
+  // Every request carries a signal that fires after its own cap or when the budget does, whichever is first.
+  // A request that fails with its signal fired was cut off in flight, whatever error Octokit made of it (it
+  // turns an abort into a 500). Cut off by the budget it is a `CutOffError`, which ends the sweep; cut off by
+  // its cap with more budget left it is a `RequestTimeoutError`, which ends only the PR it was for.
   const timed = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const remaining = budgetEnd - input.now()
     if (remaining <= 0) throw new DeadlineError()
-    const signal = input.signal(remaining)
+    const signal = input.signal(Math.min(remaining, config.requestMs))
     try {
       return await operation(signal)
     } catch (error: unknown) {
-      throw signal.aborted ? new CutOffError() : error
+      if (!signal.aborted) throw error
+      throw remaining > config.requestMs ? new RequestTimeoutError() : new CutOffError()
     }
   }
   const read: ReadRequest = async operation =>
@@ -619,7 +628,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       rows.push(await judge(pull))
     } catch (error: unknown) {
       spent = error instanceof DeadlineError
-      rows.push(failed(spent ? reasons.budget : reasons.read))
+      if (spent) rows.push(failed(reasons.budget))
+      else rows.push(failed(error instanceof RequestTimeoutError ? reasons.timeout : reasons.read))
     }
   }
   const bad = rows.some(
