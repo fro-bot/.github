@@ -7,6 +7,7 @@
  * - I/O shell tests: `harvestCandidates` and `fetchOpenedLearningShas` with mocked Octokit
  */
 
+import nodeProcess from 'node:process'
 import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it, vi} from 'vitest'
 import {
@@ -25,6 +26,7 @@ import {
   LEARNING_PROPOSAL_LABEL,
   MAX_EXCERPT_CHARS_PER_CANDIDATE,
   parseMergeShaMarker,
+  readRequiredCheckNames,
   selectWithCiFixFloor,
   type BuildCandidateDigestInput,
   type Candidate,
@@ -3032,6 +3034,89 @@ function mockOctokitForCiFix(
     },
   } as unknown as OctokitClient
 }
+
+function branchOctokit(getBranch: () => Promise<unknown>): {octokit: OctokitClient; getBranchProtection: () => void} {
+  const getBranchProtection = vi.fn()
+  const octokit = {rest: {repos: {getBranch, getBranchProtection}}} as unknown as OctokitClient
+  return {octokit, getBranchProtection}
+}
+
+describe('readRequiredCheckNames', () => {
+  it('reads the required contexts from the branch read a write token can use', async () => {
+    // #given main reports two required checks under protection
+    const {octokit, getBranchProtection} = branchOctokit(async () => ({
+      data: {protection: {required_status_checks: {checks: [{context: 'Lint'}, {context: 'Test'}]}}},
+    }))
+
+    // #when reading
+    const names = await readRequiredCheckNames(octokit, 'fro-bot', '.github')
+
+    // #then the names come back and the admin-only protection endpoint is not used
+    expect(names).toEqual(new Set(['Lint', 'Test']))
+    expect(getBranchProtection).not.toHaveBeenCalled()
+  })
+
+  it('returns an empty set, not null, when main has no required checks', async () => {
+    // #given a successful read with no protection block
+    const {octokit} = branchOctokit(async () => ({data: {}}))
+
+    // #when reading
+    const names = await readRequiredCheckNames(octokit, 'fro-bot', '.github')
+
+    // #then it is a real empty list
+    expect(names).toEqual(new Set())
+  })
+
+  it('returns null when the read fails, and says so on stderr', async () => {
+    // #given a failing read
+    const {octokit} = branchOctokit(async () => {
+      throw new Error('boom')
+    })
+    const write = vi.spyOn(nodeProcess.stderr, 'write').mockImplementation(() => true)
+
+    // #when reading
+    const names = await readRequiredCheckNames(octokit, 'fro-bot', '.github')
+
+    // #then the failure is distinguishable from an empty list and logged without the error message
+    expect(names).toBeNull()
+    const logged = write.mock.calls.map(call => String(call[0])).join('')
+    write.mockRestore()
+    expect(logged).toContain('required-checks read failed')
+    expect(logged).not.toContain('boom')
+  })
+})
+
+describe('harvestCiFixCandidates without a readable required list', () => {
+  it('draws no conclusions and does not touch the rollup when the required list is null', async () => {
+    // #given a PR with a fail→pass transition on a check that may not be required
+    const pr = makeMergedPrItem()
+    const ghExec = vi.fn<GhExecFn>(() =>
+      makeGraphQLResponse([
+        {oid: 'sha1fail', checks: [{name: 'Optional', conclusion: 'FAILURE'}]},
+        {oid: 'sha2pass', checks: [{name: 'Optional', conclusion: 'SUCCESS'}]},
+      ]),
+    )
+    const write = vi.spyOn(nodeProcess.stderr, 'write').mockImplementation(() => true)
+
+    // #when the required list could not be read
+    const result = await harvestCiFixCandidates(
+      mockOctokitForCiFix(),
+      'fro-bot',
+      '.github',
+      new Date(),
+      [pr],
+      null,
+      ghExec,
+    )
+    const logged = write.mock.calls.map(call => String(call[0])).join('')
+    write.mockRestore()
+
+    // #then nothing is examined or emitted, and the skip is logged
+    expect(result).toEqual({candidates: [], ciFixPrsExamined: 0, ciFixCandidates: 0})
+    expect(ghExec).not.toHaveBeenCalled()
+    expect(logged).toContain('ci-fix skipped')
+  })
+})
 
 describe('harvestCiFixCandidates', () => {
   it('happy path: PR with fail→pass transition → one CiFixCandidate with correct SHAs and diffExcerpt', async () => {

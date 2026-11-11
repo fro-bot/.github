@@ -1374,10 +1374,16 @@ export async function harvestCiFixCandidates(
     labels: {name: string}[]
     user: {login: string} | null
   }[],
-  requiredCheckNames: Set<string>,
+  requiredCheckNames: Set<string> | null,
   ghExec: GhExecFn = defaultGhExec,
   env: Env = process.env,
 ): Promise<{candidates: CiFixCandidate[]; ciFixPrsExamined: number; ciFixCandidates: number}> {
+  // null = the required list could not be read. Which checks count is unknown, so no PR is judged.
+  if (requiredCheckNames === null) {
+    process.stderr.write('capture-learnings-harvest: ci-fix skipped, required checks unknown\n')
+    return {candidates: [], ciFixPrsExamined: 0, ciFixCandidates: 0}
+  }
+
   const token = env.GITHUB_TOKEN ?? env.GH_TOKEN
 
   let ciFixPrsExamined = 0
@@ -1772,6 +1778,26 @@ export async function fetchMergedPrsInWindow(
   return result
 }
 
+/**
+ * Read the required status-check contexts of `main` from the branch read, which a write
+ * token can use (the branch-protection endpoint needs admin). An empty set means `main`
+ * lists no required checks; null means the read failed and the list is unknown.
+ */
+export async function readRequiredCheckNames(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+): Promise<Set<string> | null> {
+  try {
+    const branch = await octokit.rest.repos.getBranch({owner, repo, branch: 'main'})
+    const checks = branch.data.protection?.required_status_checks?.checks ?? []
+    return new Set(checks.map(check => check.context))
+  } catch {
+    process.stderr.write('capture-learnings-harvest: required-checks read failed, ci-fix harvest will be skipped\n')
+    return null
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -1795,26 +1821,8 @@ export async function runCaptureLearningsHarvest(env: Env, io: HarvestIo): Promi
         fetchMergedPrsInWindow(octokit, owner, repo, now),
       ])
 
-    // Get the required-checks set from branch protection.
-    // Wrap in try/catch — if branch protection is absent (404) or the call fails,
-    // use an empty Set (findFailPassTransition treats empty = all checks count).
-    // Counts-only logging on failure.
-    let requiredCheckNames = new Set<string>()
-    try {
-      const branchProtection = await octokit.rest.repos.getBranchProtection({
-        owner,
-        repo,
-        branch: 'main',
-      })
-      const checks = branchProtection.data.required_status_checks?.checks ?? []
-      requiredCheckNames = new Set(checks.map((c: {context: string}) => c.context))
-    } catch {
-      // 404 = no branch protection configured; any other error = degrade gracefully.
-      // Empty set means all failed→passed transitions count (documented approximation).
-      process.stderr.write(
-        `capture-learnings-harvest: getBranchProtection failed or absent, using empty required-checks set (all transitions count)\n`,
-      )
-    }
+    // null = unreadable; harvestCiFixCandidates then skips the ci-fix harvest.
+    const requiredCheckNames = await readRequiredCheckNames(octokit, owner, repo)
 
     // Harvest CI fail→pass candidates using the shared merged-PR list.
     const {
