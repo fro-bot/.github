@@ -375,7 +375,7 @@ function statusOutcome(status: StatusView): {readonly done: boolean; readonly ok
  * app, is matched by context and the newest wins. When a context has both, both must pass: either failing
  * fails the context, either pending keeps it waiting, and an absent one leaves the other to decide alone.
  */
-function evaluateChecks(
+export function evaluateChecks(
   required: readonly RequiredCheck[],
   runs: readonly CheckRunView[],
   statuses: readonly StatusView[],
@@ -400,7 +400,7 @@ function evaluateChecks(
 }
 
 /** Whether two required-check lists name the same contexts bound to the same apps. */
-function sameChecks(left: readonly RequiredCheck[], right: readonly RequiredCheck[]): boolean {
+export function sameChecks(left: readonly RequiredCheck[], right: readonly RequiredCheck[]): boolean {
   const keys = (checks: readonly RequiredCheck[]): readonly string[] =>
     checks.map(check => `${check.context}\0${String(check.appId)}`).toSorted()
   return JSON.stringify(keys(left)) === JSON.stringify(keys(right))
