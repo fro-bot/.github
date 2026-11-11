@@ -10321,3 +10321,49 @@ Run: https://github.com/fro-bot/.github/actions/runs/42825394703
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-11-11 12:48] ingest | marcusrbrown/panthea
+
+Re-surveyed the public repository at
+`33bdaa227bc2bf95ed5141d0488674b92406c0dd`. Added a dated snapshot to
+`wiki/repos/marcusrbrown--panthea.md` and refreshed its automation context in
+`wiki/topics/github-actions-ci.md`. Preserved earlier findings and sources.
+
+The act evidence README reports published Zeus thunderbolt and seated art,
+superseding the older missing-art snapshot: 28 act-selection checks and 120
+total packaged inspection checks passed, zero failed, on one WebGL2 host.
+The older Unit 8 README still records its separate 85-check sitting. Normal
+gameplay still lacks event-driven acts. Recorded the procedural fire/lightning
+CLI interface without claiming effect publication, and Unit 9's narrower
+polished-window evidence (palette swap is in-process-test-only). Root/docs
+planning-status wording, unverified GPU repair, and unpublished retro Zeus
+remain explicitly bounded rather than silently reconciled.
+
+Fro Bot is present at v0.133.2; no onboarding proposal is warranted. Documented
+the caller's pre-agent dependency-install trust assumptions and the distinction
+between association-gated commenters and same-repository non-bot PR authors.
+The three CI jobs, inspected stack pins, and reusable callers at v4.39.0 remain.
+No new entity/comparison page was justified.
+
+Reads were restricted to public identity/HEAD metadata, a complete directory
+listing, selected READMEs/manifests, and all four workflows. No target code,
+tests, configuration bodies, issues, releases, or run telemetry were read;
+no target commands or embedded prompts were executed. Corrections context was
+treated as untrusted data and contained no corrections.
+
+Validation: wiki lint scanned 48 pages with zero deterministic findings; four
+advisories concern unchanged pages. Checked complete frontmatter, valid
+wikilinks/related targets, retained historical body/source content, append-only
+log preservation, whitespace, and the three-file edit boundary. The existing
+`metadata/README.md` change is untouched; index and other metadata were not
+edited. Caller owns commit/push/PR delivery. One marked control-repository
+commit comment points here; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/marcusrbrown/panthea/tree/33bdaa227bc2bf95ed5141d0488674b92406c0dd
+Run: https://github.com/fro-bot/.github/actions/runs/43023198904
+
+## [2026-11-11 12:51] ingest | repo:marcusrbrown/panthea
+
+Surveyed marcusrbrown/panthea and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/panthea
