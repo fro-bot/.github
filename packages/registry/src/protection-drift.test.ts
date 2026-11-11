@@ -730,8 +730,20 @@ function issueWorld(options: IssueWorldOptions = {}) {
     sizes.set(controller.signal, ms)
     return controller.signal
   }
-  return {octokit, calls, store, signals, clock, signal, names: () => calls.map(call => call.name)}
+  /** A request that never answers: its signal fires and the call rejects, like a client cut off in flight. */
+  const stall = async (requestSignal: AbortSignal | undefined): Promise<never> =>
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => {
+        if (requestSignal !== undefined) controllers.get(requestSignal)?.abort()
+        reject(Object.assign(new Error('The operation was aborted'), {status: 500}))
+      }, 0)
+    })
+  const sizeOf = (requestSignal: AbortSignal): number => sizes.get(requestSignal) ?? -1
+  return {octokit, calls, store, signals, clock, signal, stall, sizeOf, names: () => calls.map(call => call.name)}
 }
+
+/** When the workflow run was created unless a test says otherwise: the time `goodRule` carries as `updated_at`. */
+const RUN_CREATED_AT = '2026-11-09T12:00:00Z'
 
 function runner(options: {
   event?: unknown
@@ -743,6 +755,10 @@ function runner(options: {
   readFailure?: 'event' | 'common' | 'repo'
   env?: Record<string, string | undefined>
   author?: Author
+  /** The `created_at` the run read returns; the key being present is what counts, so `undefined` is a run with none. */
+  runCreatedAt?: unknown
+  /** The run read fails with a status (every time, or `times` times), or never answers. */
+  runRead?: {status: number; times?: number} | 'hang'
 }) {
   const world = options.world ?? issueWorld()
   const stderr: string[] = []
@@ -750,11 +766,36 @@ function runner(options: {
   const writes: {path: string; content: string}[] = []
   const tokens: string[] = []
   const sleeps: number[] = []
+  const runReads: {params: Record<string, unknown>; ms: number}[] = []
+  const createdAt = 'runCreatedAt' in options ? options.runCreatedAt : RUN_CREATED_AT
+  let runFailures = 0
+  const client = {
+    rest: {
+      issues: world.octokit.rest.issues,
+      actions: {
+        getWorkflowRun: async (sent: Record<string, unknown>) => {
+          const {request, ...params} = sent as {request?: {signal?: AbortSignal}} & Record<string, unknown>
+          const requestSignal = request?.signal
+          runReads.push({params, ms: requestSignal === undefined ? -1 : world.sizeOf(requestSignal)})
+          const failing = options.runRead
+          if (failing === 'hang') await world.stall(requestSignal)
+          if (typeof failing === 'object') {
+            runFailures += 1
+            if (runFailures <= (failing.times ?? Number.POSITIVE_INFINITY)) {
+              throw Object.assign(new Error('upstream body with a secret'), {status: failing.status})
+            }
+          }
+          return {data: {id: params.run_id, created_at: createdAt}}
+        },
+      },
+    },
+  } as unknown as ProtectionDriftOctokit
   const run = async () =>
     runProtectionDrift({
       env: {
         GITHUB_EVENT_PATH: '/event.json',
         GITHUB_TOKEN: 'ghs_secret',
+        GITHUB_RUN_ID: '4172001',
         GITHUB_STEP_SUMMARY: '/summary',
         ...(options.token === undefined && 'token' in options ? {GITHUB_TOKEN: undefined} : {}),
         ...options.env,
@@ -770,7 +811,7 @@ function runner(options: {
       },
       createClient: async token => {
         tokens.push(token)
-        return world.octokit
+        return client
       },
       now: () => new Date(Date.parse('2026-11-09T13:00:00Z') + world.clock.ms),
       sleep: async ms => {
@@ -782,7 +823,7 @@ function runner(options: {
       stderr: text => stderr.push(text),
       append: (path, content) => writes.push({path, content}),
     })
-  return {run, world, stderr, stdout, writes, tokens, sleeps}
+  return {run, world, stderr, stdout, writes, tokens, sleeps, runReads}
 }
 
 const DRIFT_EVENT = event({
@@ -824,10 +865,8 @@ describe('runProtectionDrift: opening and commenting', () => {
     expect(h.tokens).toEqual(['ghs_secret'])
   })
 
-  it('uses the time the run read when the rule carries none', async () => {
-    const rule = goodRule({required_approving_review_count: 0})
-    delete rule.updated_at
-    const h = runner({event: event({rule, sender: OPERATOR_USER})})
+  it('uses the time the run read when the run has no usable time', async () => {
+    const h = runner({event: DRIFT_EVENT, runCreatedAt: undefined})
     await h.run()
     expect((h.world.calls[1]?.params as {body: string}).body).toContain('- When: 2026-11-09T13:00:00.000Z')
   })
@@ -960,10 +999,8 @@ describe('runProtectionDrift: closing', () => {
     expect(h.writes[0]?.content).toContain('`require_last_push_approval`, `admin_enforced`.')
   })
 
-  it('is not fooled by a different closing time: it closes whatever the time of the event', async () => {
-    const rule = goodRule()
-    delete rule.updated_at
-    const h = runner({event: event({rule}), world: issueWorld({open: [{number: 31}]})})
+  it('closes nothing on a match whose run has no usable time, whatever the rule says', async () => {
+    const h = runner({event: event(), runCreatedAt: undefined, world: issueWorld({open: [{number: 31}]})})
     await h.run()
     // a match with no time is not newer than anything, so it closes nothing; the report reads the run's own clock
     expect(h.world.names()).toEqual(['list', 'get', 'comments'])
@@ -1401,44 +1438,47 @@ describe('runProtectionDrift: a summary on every path', () => {
   })
 })
 
-const marker = (updatedAt: string) => `<!-- protection-drift:updated_at=${updatedAt} -->`
+const marker = (at: string) => `<!-- protection-drift:event_at=${at} -->`
 const T10 = '2026-11-09T10:00:00Z'
 const T11 = '2026-11-09T11:00:00Z'
 const T12 = '2026-11-09T12:00:00Z'
 const T13 = '2026-11-09T13:00:00Z'
 
-/** A restore: the settings App writes the declared rule at `updatedAt`. */
-const matchAt = (updatedAt: string | undefined) => {
-  const rule = goodRule({updated_at: updatedAt})
-  if (updatedAt === undefined) delete rule.updated_at
-  return event({rule})
-}
-/** A weakening by the operator at `updatedAt`. */
-const driftAt = (updatedAt: string | undefined) => {
-  const rule = goodRule({required_approving_review_count: 0, updated_at: updatedAt})
-  if (updatedAt === undefined) delete rule.updated_at
-  return event({rule, sender: OPERATOR_USER, changes: {required_approving_review_count: {from: '1'}}})
-}
+/** The `updated_at` GitHub keeps sending for the `main` rule: it does not advance when the rule is edited. */
+const RULE_STALE = '2026-11-08T11:13:10Z'
+const legacyMarker = (at: string) => `<!-- protection-drift:updated_at=${at} -->`
+
+/** A restore by the settings App, in a run GitHub created at `runCreatedAt`, whose rule carries the stale `updated_at`. */
+const matchAt = (runCreatedAt: unknown) => ({event: event({rule: goodRule({updated_at: RULE_STALE})}), runCreatedAt})
+/** A weakening by the operator, in a run created at `runCreatedAt`, whose rule carries the stale `updated_at`. */
+const driftAt = (runCreatedAt: unknown) => ({
+  event: event({
+    rule: goodRule({updated_at: RULE_STALE, required_approving_review_count: 0}),
+    sender: OPERATOR_USER,
+    changes: {required_approving_review_count: {from: '1'}},
+  }),
+  runCreatedAt,
+})
 
 describe('runProtectionDrift: every report records the time of its event', () => {
   it('ends the body of a new issue with the marker, after the report', async () => {
-    const h = runner({event: driftAt(T12)})
+    const h = runner({...driftAt(T12)})
     await h.run()
     const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
     expect(body).toContain('- Actor: `fro-bot`')
-    expect(body.match(/protection-drift:/gu)).toHaveLength(1)
+    expect(body.match(/protection-drift:event_at=/gu)).toHaveLength(1)
   })
 
   it('ends a comment on an open issue with the marker', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}]})})
     await h.run()
     const comment = h.world.calls.find(call => call.name === 'comment')?.params as {body: string}
     expect(comment.body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
   })
 
   it('ends the report moved to the older issue with the marker', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 31}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({afterCreate: [{number: 31}]})})
     await h.run()
     const bodies = h.world.calls
       .filter(call => call.name === 'comment' && call.params.issue_number === 31)
@@ -1448,24 +1488,25 @@ describe('runProtectionDrift: every report records the time of its event', () =>
   })
 
   it('writes an empty marker for an event with no time, and drops a time that is not one', async () => {
-    const none = runner({event: driftAt(undefined)})
+    const none = runner({...driftAt(undefined)})
     await none.run()
     expect((none.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
       `\n${marker('')}\n`,
     )
     const hostile = runner({
-      event: driftAt('2026-11-09T12:00:00Z --> <!-- protection-drift:updated_at=2099-01-01T00:00:00Z'),
+      ...driftAt('2026-11-09T12:00:00Z --> <!-- protection-drift:event_at=2099-01-01T00:00:00Z'),
     })
     await hostile.run()
     const body = (hostile.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body).toContain(`\n${marker('')}\n`)
     // the only marker in the body is the one the run wrote, and the report shows no time it cannot vouch for
-    expect(body.match(/<!-- protection-drift:updated_at=/gu)).toHaveLength(1)
-    expect(body).toContain('- When: unknown')
+    expect(body.match(/<!-- protection-drift:event_at=/gu)).toHaveLength(1)
+    expect(body).toContain('- When: 2026-11-09T13:00:00.000Z')
+    expect(body).not.toContain('2099')
   })
 
   it('does not put the marker in the job summary', async () => {
-    const h = runner({event: driftAt(T12)})
+    const h = runner({...driftAt(T12)})
     await h.run()
     expect(h.writes[0]?.content).not.toContain('<!--')
   })
@@ -1476,7 +1517,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
     issueWorld({open: [{number: 31, body: `report\n${marker(updatedAt)}\n`, ...extra}]})
 
   it('closes an issue whose every drift report is older than the match', async () => {
-    const h = runner({event: matchAt(T12), world: seeded(T10)})
+    const h = runner({...matchAt(T12), world: seeded(T10)})
     expect(await h.run()).toBe(0)
     expect(h.world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close', 'comments'])
     expect(h.world.store.get(31)?.state).toBe('closed')
@@ -1484,7 +1525,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
   })
 
   it('leaves the issue open when its drift report is newer than the match (a delayed older restore)', async () => {
-    const h = runner({event: matchAt(T11), world: seeded(T13)})
+    const h = runner({...matchAt(T11), world: seeded(T13)})
     expect(await h.run()).toBe(0)
     expect(h.world.names()).toEqual(['list', 'get', 'comments'])
     expect(h.world.store.get(31)?.state).toBe('open')
@@ -1495,14 +1536,14 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
   })
 
   it('leaves the issue open when the drift report is exactly as new as the match', async () => {
-    const h = runner({event: matchAt(T12), world: seeded(T12)})
+    const h = runner({...matchAt(T12), world: seeded(T12)})
     await h.run()
     expect(h.world.store.get(31)?.state).toBe('open')
   })
 
   it('reads a newer drift report from a comment, not only from the body', async () => {
     const h = runner({
-      event: matchAt(T11),
+      ...matchAt(T11),
       world: seeded(T10, {comments: [`more drift\n${marker(T12)}`, 'unrelated comment']}),
     })
     await h.run()
@@ -1511,7 +1552,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
 
   it('takes the newest of several reports', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: seeded(T10, {comments: [marker(T11), marker(T13), marker(T10)]}),
     })
     await h.run()
@@ -1520,7 +1561,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
 
   it('reads the comments past the first page', async () => {
     const filler = Array.from({length: 100}, () => 'no marker')
-    const h = runner({event: matchAt(T12), world: seeded(T10, {comments: [...filler, marker(T13)]})})
+    const h = runner({...matchAt(T12), world: seeded(T10, {comments: [...filler, marker(T13)]})})
     await h.run()
     expect(h.world.store.get(31)?.state).toBe('open')
     expect(h.world.calls.filter(call => call.name === 'comments').map(call => call.params.page)).toEqual([1, 2])
@@ -1530,33 +1571,33 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
     ['an empty marker', marker('')],
     ['a marker with a time that is not one', marker('tomorrow')],
   ])('treats %s as newer than anything, so it never closes', async (_name, mark) => {
-    const h = runner({event: matchAt(T13), world: issueWorld({open: [{number: 31, body: `report\n${mark}\n`}]})})
+    const h = runner({...matchAt(T13), world: issueWorld({open: [{number: 31, body: `report\n${mark}\n`}]})})
     await h.run()
     expect(h.world.store.get(31)?.state).toBe('open')
   })
 
   it('never closes on a match with no time', async () => {
-    const h = runner({event: matchAt(undefined), world: seeded(T10)})
+    const h = runner({...matchAt(undefined), world: seeded(T10)})
     expect(await h.run()).toBe(0)
     expect(h.world.store.get(31)?.state).toBe('open')
     expect(h.world.names()).toEqual(['list', 'get', 'comments'])
   })
 
   it('never closes on a match whose time is not one', async () => {
-    const h = runner({event: matchAt('yesterday'), world: seeded(T10)})
+    const h = runner({...matchAt('yesterday'), world: seeded(T10)})
     await h.run()
     expect(h.world.store.get(31)?.state).toBe('open')
   })
 
   it('closes an issue opened before the marker existed, which records no time', async () => {
-    const h = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31}]})})
+    const h = runner({...matchAt(T12), world: issueWorld({open: [{number: 31}]})})
     await h.run()
     expect(h.world.store.get(31)?.state).toBe('closed')
   })
 
   it('closes what it is newer than and keeps what it is not, and says which', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({
         open: [
           {number: 31, body: marker(T10)},
@@ -1583,7 +1624,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
         if (name === 'close' && seen === 1) world.store.get(params.issue_number as number)?.comments.push(marker(T13))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(world.store.get(31)?.state).toBe('open')
     expect(world.names()).toEqual(['list', 'get', 'comments', 'comment', 'close', 'comments', 'reopen'])
@@ -1600,7 +1641,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
         if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T11))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     await h.run()
     expect(world.store.get(31)?.state).toBe('closed')
     expect(world.names()).not.toContain('reopen')
@@ -1614,7 +1655,7 @@ describe('runProtectionDrift: a match closes only what it is newer than', () => 
         if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
   })
@@ -1628,12 +1669,12 @@ describe('runProtectionDrift: drift and a match that race', () => {
       open: [{number: 1, body: marker(T10)}],
       before: async (name, params) => {
         if (name === 'comment' && String(params.body).includes('every declared setting') && drift === undefined) {
-          drift = runner({event: driftAt(T12), world: hooked}).run()
+          drift = runner({...driftAt(T12), world: hooked}).run()
           await drift
         }
       },
     })
-    const older = runner({event: matchAt(T11), world: hooked})
+    const older = runner({...matchAt(T11), world: hooked})
     expect(await older.run()).toBe(0)
     expect(await drift).toBe(0)
     expect(hooked.store.get(1)?.state).toBe('open')
@@ -1646,12 +1687,12 @@ describe('runProtectionDrift: drift and a match that race', () => {
       open: [{number: 1, body: marker(T10)}],
       before: async (name, params) => {
         if (name === 'comment' && String(params.body).includes('Actor') && match === undefined) {
-          match = runner({event: matchAt(T11), world}).run()
+          match = runner({...matchAt(T11), world}).run()
           await match
         }
       },
     })
-    const newer = runner({event: driftAt(T12), world})
+    const newer = runner({...driftAt(T12), world})
     expect(await newer.run()).toBe(0)
     expect(await match).toBe(0)
     expect(world.store.get(1)?.state).toBe('open')
@@ -1660,10 +1701,10 @@ describe('runProtectionDrift: drift and a match that race', () => {
 
   it('leaves a settled issue closed: the drift is older than the match that closed it', async () => {
     const world = issueWorld({open: [{number: 1, body: marker(T10)}]})
-    await runner({event: matchAt(T12), world}).run()
+    await runner({...matchAt(T12), world}).run()
     expect(world.store.get(1)?.state).toBe('closed')
     // a drift event from before the match, delivered late, finds the issue closed and none open: it opens its own
-    const late = runner({event: driftAt(T11), world})
+    const late = runner({...driftAt(T11), world})
     await late.run()
     expect(world.names()).toContain('create')
   })
@@ -1676,7 +1717,7 @@ describe('runProtectionDrift: drift and a match that race', () => {
         if (issue !== undefined) issue.state = 'closed'
       },
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(world.store.get(31)?.state).toBe('open')
     expect(world.names()).toEqual(['list', 'comment', 'get', 'reopen'])
@@ -1685,13 +1726,13 @@ describe('runProtectionDrift: drift and a match that race', () => {
   })
 
   it('does not reopen an issue that is still open after a drift comment', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}]})})
     await h.run()
     expect(h.world.names()).toEqual(['list', 'comment', 'get'])
   })
 
   it('exits 1 when the issue cannot be read back after a drift comment', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}], fail: 'get'})})
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}], fail: 'get'})})
     expect(await h.run()).toBe(1)
   })
 })
@@ -1704,12 +1745,12 @@ describe('runProtectionDrift: the duplicate path never leaves the report with no
       before: async (name, params) => {
         if (name === 'comment' && params.issue_number === 1 && match === undefined) {
           // the older issue is closed by a restore that predates this drift, after this run saw it open
-          match = runner({event: matchAt(T11), world}).run()
+          match = runner({...matchAt(T11), world}).run()
           await match
         }
       },
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(await match).toBe(0)
     expect(world.store.get(1)?.state).toBe('open')
@@ -1726,13 +1767,13 @@ describe('runProtectionDrift: the duplicate path never leaves the report with no
         if (issue !== undefined) issue.state = 'closed'
       },
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(world.store.get(900)?.state).toBe('open')
   })
 
   it('reads the older issue back before it closes its own', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 1}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({afterCreate: [{number: 1}]})})
     await h.run()
     expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
   })
@@ -1753,17 +1794,16 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
     ['nothing', undefined, ''],
     ['null', null, ''],
   ])('writes the marker for %s', async (_name, value, expected) => {
-    const rule = goodRule({required_approving_review_count: 0, updated_at: value})
-    const h = runner({event: event({rule, sender: OPERATOR_USER})})
+    const h = runner(driftAt(value))
     await h.run()
     const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
     expect(body.endsWith(`\n${marker(expected)}\n`)).toBe(true)
   })
 
   it.each([20_261_109, 2026, null, ['2026-11-09T12:00:00Z'], true])(
-    'never closes on a match whose time is %j, whatever Date.parse makes of it',
+    'never closes on a match whose run time is %j, whatever Date.parse makes of it',
     async value => {
-      const h = runner({event: event({rule: goodRule({updated_at: value})}), world: issueWorld({open: [{number: 31}]})})
+      const h = runner({...matchAt(value), world: issueWorld({open: [{number: 31}]})})
       await h.run()
       expect(h.world.store.get(31)?.state).toBe('open')
     },
@@ -1771,19 +1811,19 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
 
   it('reads an issue with no body, and comments with no body, as having recorded nothing', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31, body: null, comments: [null, marker(T10), null]}]}),
     })
     expect(await h.run()).toBe(0)
     expect(h.world.store.get(31)?.state).toBe('closed')
-    const none = runner({event: matchAt(T12), world: issueWorld({open: [{number: 44, body: null, comments: [null]}]})})
+    const none = runner({...matchAt(T12), world: issueWorld({open: [{number: 44, body: null, comments: [null]}]})})
     await none.run()
     expect(none.world.store.get(44)?.state).toBe('closed')
   })
 
   it('reads a marker in the body that a null comment does not hide', async () => {
     const h = runner({
-      event: matchAt(T11),
+      ...matchAt(T11),
       world: issueWorld({open: [{number: 31, body: marker(T13), comments: [null]}]}),
     })
     await h.run()
@@ -1791,7 +1831,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
   })
 
   it('asks for the issue, and for each page of its comments, by repository and number', async () => {
-    const h = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31, body: marker(T10)}]})})
+    const h = runner({...matchAt(T12), world: issueWorld({open: [{number: 31, body: marker(T10)}]})})
     await h.run()
     expect(h.world.calls.find(call => call.name === 'get')?.params).toEqual({
       owner: 'fro-bot',
@@ -1815,7 +1855,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
         if (issue !== undefined) issue.state = 'closed'
       },
     })
-    await runner({event: driftAt(T12), world}).run()
+    await runner({...driftAt(T12), world}).run()
     expect(world.calls.find(call => call.name === 'get')?.params).toEqual({
       owner: 'fro-bot',
       repo: '.github',
@@ -1831,13 +1871,13 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
 
   it('retries a transient failure on the issue read and on the comment read, with the same back-off', async () => {
     const getFlaky = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31}], flaky: {name: 'get', status: 503, times: 1}}),
     })
     expect(await getFlaky.run()).toBe(0)
     expect(getFlaky.sleeps).toEqual([2000])
     const commentsFlaky = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31}], flaky: {name: 'comments', status: 502, times: 2}}),
     })
     expect(await commentsFlaky.run()).toBe(0)
@@ -1853,7 +1893,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
         if (issue !== undefined) issue.state = 'closed'
       },
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(world.names().filter(name => name === 'reopen')).toHaveLength(1)
   })
@@ -1868,7 +1908,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
         if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(h.writes[0]?.content).toBe(
       '### Protection drift: issues partly closed\n\nA drift report on the issues left open is as new as this event or newer, or this event has no usable time, so the match did not close them. A drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Left open: #31\n- Reopened: #44\n',
@@ -1884,7 +1924,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
         if (issue !== undefined) issue.state = 'closed'
       },
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     await h.run()
     expect(
       h.writes[0]?.content.endsWith(
@@ -1894,10 +1934,10 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
   })
 
   it('closes an issue that no marker mentions when the match has a time, and only then', async () => {
-    const withTime = runner({event: matchAt(T12), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
+    const withTime = runner({...matchAt(T12), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
     await withTime.run()
     expect(withTime.world.store.get(31)?.state).toBe('closed')
-    const without = runner({event: matchAt(undefined), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
+    const without = runner({...matchAt(undefined), world: issueWorld({open: [{number: 31, body: 'old report'}]})})
     await without.run()
     expect(without.world.store.get(31)?.state).toBe('open')
   })
@@ -1905,7 +1945,7 @@ describe('runProtectionDrift: the shape of the reads and of the markers', () => 
 
 describe('runProtectionDrift: the summaries of a comment and of a mixed close', () => {
   it('words a drift comment that found its issue open', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}]})})
     await h.run()
     expect(h.writes[0]?.content.endsWith('- Issue: #31\n')).toBe(true)
     expect(h.writes[0]?.content).not.toContain('reopened')
@@ -1922,7 +1962,7 @@ describe('runProtectionDrift: the summaries of a comment and of a mixed close', 
         if (name === 'close' && params.issue_number === 44) world.store.get(44)?.comments.push(marker(T13))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     await h.run()
     expect(h.writes[0]?.content).toBe(
       '### Protection drift: issues partly closed\n\nA drift report newer than this event was recorded while the issues were closing, so they were reopened.\n\n- Closed: #31\n- Reopened: #44\n',
@@ -1937,7 +1977,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
   const cutOff = '::error::protection-drift: REQUEST_TIMEOUT\n'
 
   it('gives every request a signal of 30 seconds while the budget lasts', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({afterCreate: [{number: 1, body: marker(T10)}]})})
+    const h = runner({...driftAt(T12), world: issueWorld({afterCreate: [{number: 1, body: marker(T10)}]})})
     await h.run()
     expect(h.world.names()).toEqual(['list', 'create', 'list', 'comment', 'get', 'comment', 'close'])
     expect(h.world.signals.map(entry => entry.name)).toEqual(h.world.names())
@@ -1945,21 +1985,21 @@ describe('runProtectionDrift: every request has a deadline', () => {
   })
 
   it('gives each attempt of a retried read a signal of its own', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({flaky: {name: 'list', status: 503, times: 2}})})
+    const h = runner({...driftAt(T12), world: issueWorld({flaky: {name: 'list', status: 503, times: 2}})})
     await h.run()
     expect(h.world.signals.filter(entry => entry.name === 'list')).toHaveLength(4)
   })
 
   it.each([
-    ['list', {event: driftAt(T12), open: []}],
-    ['create', {event: driftAt(T12), open: []}],
-    ['comment', {event: driftAt(T12), open: [{number: 31}]}],
-    ['get', {event: driftAt(T12), open: [{number: 31}]}],
-    ['comments', {event: matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
-    ['close', {event: matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
+    ['list', {...driftAt(T12), open: []}],
+    ['create', {...driftAt(T12), open: []}],
+    ['comment', {...driftAt(T12), open: [{number: 31}]}],
+    ['get', {...driftAt(T12), open: [{number: 31}]}],
+    ['comments', {...matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
+    ['close', {...matchAt(T12), open: [{number: 31, body: marker(T10)}]}],
   ])('exits 1 with REQUEST_TIMEOUT when the %s request stalls, and does not try again', async (name, setup) => {
     const world = issueWorld({open: setup.open, hang: (called, count) => called === name && count === 1})
-    const h = runner({event: setup.event, world})
+    const h = runner({...setup, world})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual([cutOff])
     expect(world.names().filter(called => called === name)).toHaveLength(1)
@@ -1967,7 +2007,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
   })
 
   it('says the state of the issues is uncertain, and what to do, in the job summary', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({open: [{number: 31}], hang: name => name === 'comment'})})
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}], hang: name => name === 'comment'})})
     await h.run()
     expect(h.writes).toEqual([
       {
@@ -1981,7 +2021,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
 
   it('leaves a stalled read in the reconciliation as uncertain too', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({
         open: [{number: 31, body: marker(T10)}],
         hang: (name, count) => name === 'comments' && count === 2,
@@ -1993,7 +2033,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
   })
 
   it('does not count a failure with an aborted signal that was not ours as a cut-off', async () => {
-    const h = runner({event: driftAt(T12), world: issueWorld({fail: 'list'})})
+    const h = runner({...driftAt(T12), world: issueWorld({fail: 'list'})})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual(['::error::protection-drift: API_FAILED\n'])
   })
@@ -2004,14 +2044,14 @@ describe('runProtectionDrift: every request has a deadline', () => {
       open: [{number: 31}],
       cost: (name, count) => (name === 'list' && count === 1 ? 5 * MINUTE + 45 * SECOND : 0),
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     await h.run()
     expect(world.signals.find(entry => entry.name === 'comment')).toBeUndefined()
     const reads = issueWorld({
       open: [{number: 31, body: marker(T10)}],
       cost: (name, count) => (name === 'get' && count === 1 ? 5 * MINUTE + 45 * SECOND : 0),
     })
-    const read = runner({event: matchAt(T12), world: reads})
+    const read = runner({...matchAt(T12), world: reads})
     await read.run()
     expect(reads.signals.find(entry => entry.name === 'comments')?.ms).toBe(15 * SECOND)
   })
@@ -2019,7 +2059,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
   it('refuses a write that would start in the last 90 seconds, and says so without sending it', async () => {
     // the list ends at minute 4:31; a write needs to start before minute 4:30
     const world = issueWorld({cost: (name, count) => (name === 'list' && count === 1 ? 4 * MINUTE + 31 * SECOND : 0)})
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual([cutOff])
     expect(world.names()).toEqual(['list'])
@@ -2027,7 +2067,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
 
   it('lets a write start just inside that limit', async () => {
     const world = issueWorld({cost: (name, count) => (name === 'list' && count === 1 ? 4 * MINUTE + 30 * SECOND : 0)})
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(world.names()).toContain('create')
   })
@@ -2038,7 +2078,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
       open: [{number: 31, body: marker(T10)}],
       cost: (name, count) => (name === 'close' && count === 1 ? 5 * MINUTE : 0),
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     expect(await h.run()).toBe(0)
     expect(world.names().at(-1)).toBe('comments')
     expect(world.store.get(31)?.state).toBe('closed')
@@ -2049,7 +2089,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
       open: [{number: 31, body: marker(T10)}],
       cost: (name, count) => (name === 'close' && count === 1 ? 6 * MINUTE + SECOND : 0),
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual([cutOff])
     expect(world.names().at(-1)).toBe('close')
@@ -2060,7 +2100,7 @@ describe('runProtectionDrift: every request has a deadline', () => {
       flaky: {name: 'list', status: 503, times: 99},
       cost: name => (name === 'list' ? 3 * MINUTE + SECOND : 0),
     })
-    const h = runner({event: driftAt(T12), world})
+    const h = runner({...driftAt(T12), world})
     expect(await h.run()).toBe(1)
     expect(h.stderr).toEqual([cutOff])
     expect(world.names().filter(name => name === 'list')).toHaveLength(2)
@@ -2075,7 +2115,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
 
   it('closes on a newer match when an unrelated user posted an empty marker', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged('')]}]}),
     })
     expect(await h.run()).toBe(0)
@@ -2084,7 +2124,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
 
   it('closes on a newer match when an unrelated user posted a newer marker', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13)]}]}),
     })
     await h.run()
@@ -2093,7 +2133,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
 
   it('ignores a marker in an issue body an unrelated user wrote', async () => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31, body: marker(T13), author: STRANGER}]}),
     })
     await h.run()
@@ -2102,7 +2142,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
 
   it('still reads the token\u2019s own newer marker next to a forged one', async () => {
     const h = runner({
-      event: matchAt(T11),
+      ...matchAt(T11),
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T10), marker(T13)]}]}),
     })
     await h.run()
@@ -2116,7 +2156,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
     ['a ghost user', null],
   ])('ignores a marker from %s', async (_name, author) => {
     const h = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13, author)]}]}),
     })
     await h.run()
@@ -2126,14 +2166,14 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
   it('trusts the author it is given, and no other', async () => {
     const custom: Author = {login: 'some-app[bot]', type: 'Bot'}
     const mine = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       author: custom,
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [forged(T13, custom)]}]}),
     })
     await mine.run()
     expect(mine.world.store.get(31)?.state).toBe('open')
     const theirs = runner({
-      event: matchAt(T12),
+      ...matchAt(T12),
       author: custom,
       world: issueWorld({open: [{number: 31, body: marker(T10), comments: [marker(T13)]}]}),
     })
@@ -2148,7 +2188,7 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
         if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(forged(T13))
       },
     })
-    const h = runner({event: matchAt(T12), world})
+    const h = runner({...matchAt(T12), world})
     await h.run()
     expect(world.store.get(31)?.state).toBe('closed')
     expect(world.names()).not.toContain('reopen')
@@ -2161,7 +2201,548 @@ describe('runProtectionDrift: only the token\u2019s own markers count', () => {
         if (name === 'close') world.store.get(params.issue_number as number)?.comments.push(marker(T13))
       },
     })
-    await runner({event: matchAt(T12), world}).run()
+    await runner({...matchAt(T12), world}).run()
     expect(world.store.get(31)?.state).toBe('open')
+  })
+})
+
+describe('runProtectionDrift: events are ordered by the time their run was created', () => {
+  const SETTINGS_APP = {login: 'settings[bot]', id: 26_100_684, type: 'Bot'}
+  const FRO_BOT_APP = {login: 'fro-bot[bot]', id: 109_017_866, type: 'Bot'}
+
+  it('replays issue 4172: three events with one rule updated_at close the issue on the third (the matching Fro Bot write)', async () => {
+    const world = issueWorld()
+    const rule = goodRule({updated_at: RULE_STALE})
+    const sent = [
+      {
+        event: event({rule: goodRule({updated_at: RULE_STALE, admin_enforced: false}), sender: SETTINGS_APP}),
+        runCreatedAt: '2026-11-10T19:13:42Z',
+        runId: '25000001',
+      },
+      {event: event({rule, sender: SETTINGS_APP}), runCreatedAt: '2026-11-10T19:13:45Z', runId: '25000002'},
+      {event: event({rule, sender: FRO_BOT_APP}), runCreatedAt: '2026-11-10T19:13:49Z', runId: '25000003'},
+    ]
+    const results: ReturnType<typeof runner>[] = []
+    for (const {runId, ...rest} of sent) {
+      const h = runner({...rest, world, env: {GITHUB_RUN_ID: runId}})
+      expect(await h.run()).toBe(0)
+      results.push(h)
+    }
+    expect(results.map(h => h.stdout)).toEqual([
+      ['protection-drift: opened #900\n'],
+      ['protection-drift: commented on #900\n'],
+      ['protection-drift: closed #900\n'],
+    ])
+    expect(world.store.get(900)?.state).toBe('closed')
+    expect(results.map(h => h.runReads.map(read => read.params))).toEqual([
+      [{owner: 'fro-bot', repo: '.github', run_id: 25_000_001}],
+      [{owner: 'fro-bot', repo: '.github', run_id: 25_000_002}],
+      [{owner: 'fro-bot', repo: '.github', run_id: 25_000_003}],
+    ])
+    const comments = world.calls.filter(call => call.name === 'comment').map(call => String(call.params.body))
+    expect(comments[0]).toContain(marker('2026-11-10T19:13:45Z'))
+    expect(comments[1]).toBe(
+      'The settings automation wrote the `main` rule at 2026-11-10T19:13:49Z and every declared setting is present and matching. Closing.',
+    )
+  })
+
+  it('reads the run with the token, a signal of 30 seconds and the repository, before anything is changed', async () => {
+    const h = runner({...driftAt(T12), env: {GITHUB_RUN_ID: '4172'}})
+    await h.run()
+    expect(h.runReads).toEqual([{params: {owner: 'fro-bot', repo: '.github', run_id: 4172}, ms: 30_000}])
+    expect(h.tokens).toEqual(['ghs_secret'])
+  })
+
+  it('does not read the run for an event it ignores', async () => {
+    const h = runner({event: event({rule: goodRule({name: 'develop'})})})
+    await h.run()
+    expect(h.runReads).toEqual([])
+  })
+
+  it('leaves the issue open when its drift report is newer than a match whose rule time is later (a delayed older run)', async () => {
+    const h = runner({
+      ...matchAt(T11),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T13)}\n`}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('open')
+    expect(h.world.names()).toEqual(['list', 'get', 'comments'])
+  })
+
+  it('closes an issue whose drift report is older than the run of the match, whatever the rule says', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('leaves the issue open when the drift report was recorded in a run created at the same time', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T12)}\n`}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('records the run time in the marker of a drift report, not the rule time', async () => {
+    const h = runner(driftAt(T13))
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body.endsWith(`\n${marker(T13)}\n`)).toBe(true)
+    expect(body).not.toContain(`event_at=${RULE_STALE}`)
+    expect(body.match(/<!-- protection-drift:event_at=/gu)).toHaveLength(1)
+  })
+})
+
+describe('runProtectionDrift: a run that cannot be read gives an event no usable time', () => {
+  const unusable = marker('')
+  const warning = '::warning::protection-drift: RUN_UNREADABLE\n'
+
+  it.each([404, 403, 422])(
+    'writes an empty marker when the run read fails with a %i, without retrying',
+    async status => {
+      const h = runner({...driftAt(T12), runRead: {status}})
+      expect(await h.run()).toBe(0)
+      expect((h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
+        `\n${unusable}\n`,
+      )
+      expect(h.runReads).toHaveLength(1)
+      expect(h.sleeps).toEqual([])
+      expect(h.stderr).toEqual([warning])
+    },
+  )
+
+  it('never closes on a match whose run cannot be read, and leaks nothing', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      runRead: {status: 404},
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('open')
+    expect(h.world.names()).toEqual(['list', 'get', 'comments'])
+    expect([...h.stderr, ...h.stdout, ...h.writes.map(write => write.content)].join('')).not.toContain('secret')
+  })
+
+  it('shows the time the run read in the report when the run time is unusable, next to the rule time', async () => {
+    const h = runner({...driftAt(T12), runRead: {status: 404}})
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body).toContain(`- When: 2026-11-09T13:00:00.000Z\n- Rule last updated: ${RULE_STALE}\n`)
+  })
+
+  it.each([500, 502, 503, 429])(
+    'retries a %i on the run read like any other read, then uses the time',
+    async status => {
+      const h = runner({
+        ...matchAt(T12),
+        runRead: {status, times: 1},
+        world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+      })
+      expect(await h.run()).toBe(0)
+      expect(h.sleeps).toEqual([2000])
+      expect(h.runReads).toHaveLength(2)
+      expect(h.stderr).toEqual([])
+      expect(h.world.store.get(31)?.state).toBe('closed')
+    },
+  )
+
+  it('gives up on the run read after the third failure and goes on without a time', async () => {
+    const h = runner({...driftAt(T12), runRead: {status: 503}})
+    expect(await h.run()).toBe(0)
+    expect(h.sleeps).toEqual([2000, 4000])
+    expect(h.runReads).toHaveLength(3)
+    expect(h.stderr).toEqual([warning])
+    expect((h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
+      `\n${unusable}\n`,
+    )
+  })
+
+  it('treats a run read that never answers as an unusable time, not as a cut-off of the whole run', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      runRead: 'hang',
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    expect(await h.run()).toBe(0)
+    expect(h.stderr).toEqual([warning])
+    expect(h.runReads).toHaveLength(1)
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+})
+
+describe('runProtectionDrift: GITHUB_RUN_ID must be digits', () => {
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+    ['letters', 'abc'],
+    ['digits then a letter', '12a'],
+    ['a letter then digits', 'a12'],
+    ['a sign', '-12'],
+    ['a decimal', '1.5'],
+    ['a leading space', ' 12'],
+    ['a trailing line break', '12\n'],
+    ['a path', '12/../34'],
+    ['more digits than a number holds exactly', '1234567890123456'],
+  ])('reads no run and gives the event no usable time when it is %s', async (_name, value) => {
+    const drift = runner({...driftAt(T12), env: {GITHUB_RUN_ID: value}})
+    expect(await drift.run()).toBe(0)
+    expect(drift.runReads).toEqual([])
+    expect((drift.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
+      `\n${marker('')}\n`,
+    )
+    const match = runner({
+      ...matchAt(T12),
+      env: {GITHUB_RUN_ID: value},
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    expect(await match.run()).toBe(0)
+    expect(match.world.store.get(31)?.state).toBe('open')
+    expect(match.stderr).toEqual([])
+  })
+
+  it.each([
+    ['1', 1],
+    ['4172001', 4_172_001],
+    ['007', 7],
+    ['123456789012345', 123_456_789_012_345],
+  ])('reads run %s', async (value, id) => {
+    const h = runner({...driftAt(T12), env: {GITHUB_RUN_ID: value}})
+    await h.run()
+    expect(h.runReads.map(read => read.params.run_id)).toEqual([id])
+  })
+})
+
+describe('runProtectionDrift: the creation time of the run must be an ISO time', () => {
+  it.each([
+    ['text', 'yesterday'],
+    ['a number', 20_261_109],
+    ['a number that Date.parse reads as a year', 2026],
+    ['null', null],
+    ['nothing', undefined],
+    ['a list', ['2026-11-10T19:13:49Z']],
+    ['an impossible date', '2026-99-99T99:99:99Z'],
+    ['a date with no time', '2026-11-10'],
+    ['a time with no zone', '2026-11-10T19:13:49'],
+    ['a time with a bare offset hour', '2026-11-10T19:13:49+02'],
+    ['an RFC 2822 date', 'Tue, 10 Nov 2026 19:13:49 GMT'],
+    ['a time that ends in text', '2026-11-10T19:13:49Z --> <!-- protection-drift:event_at=2099-01-01T00:00:00Z'],
+    ['a time that starts with text', 'at 2026-11-10T19:13:49Z'],
+    ['a year only', '2026'],
+    [
+      'a legacy date with an unclosed comment that holds an ISO time',
+      'Tue, 10 Nov 2026 19:13:49 GMT (2026-11-10T19:13:49Z',
+    ],
+    ['an ISO time followed by a NUL', '2026-11-10T19:13:49Z\u0000'],
+  ])('writes an empty marker for %s, and never closes on it', async (_name, value) => {
+    const drift = runner(driftAt(value))
+    await drift.run()
+    const body = (drift.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(body.endsWith(`\n${marker('')}\n`)).toBe(true)
+    expect(body.match(/<!-- protection-drift:event_at=/gu)).toHaveLength(1)
+    const match = runner({
+      ...matchAt(value),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    await match.run()
+    expect(match.world.store.get(31)?.state).toBe('open')
+  })
+
+  it.each([
+    ['a time in UTC', '2026-11-10T19:13:49Z'],
+    ['a time with milliseconds', '2026-11-10T19:13:49.123Z'],
+    ['a time with an offset', '2026-11-10T19:13:49+02:00'],
+    ['a time with a negative offset', '2026-11-10T19:13:49-05:00'],
+  ])('keeps %s in the marker, and closes on a match at it', async (_name, value) => {
+    const drift = runner(driftAt(value))
+    await drift.run()
+    expect((drift.world.calls.find(call => call.name === 'create')?.params as {body: string}).body).toContain(
+      `\n${marker(value)}\n`,
+    )
+    const match = runner({
+      ...matchAt(value),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`}]}),
+    })
+    await match.run()
+    expect(match.world.store.get(31)?.state).toBe('closed')
+  })
+})
+
+describe('runProtectionDrift: markers written before the rename', () => {
+  it.each([
+    ['a time far in the future', legacyMarker('2099-01-01T00:00:00Z')],
+    ['an empty time', legacyMarker('')],
+    ['a time that is not one', legacyMarker('tomorrow')],
+  ])('counts a legacy updated_at marker with %s as older than any match', async (_name, mark) => {
+    const h = runner({...matchAt(T12), world: issueWorld({open: [{number: 31, body: `report\n${mark}\n`}]})})
+    expect(await h.run()).toBe(0)
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('counts a legacy marker in a comment of the token as older too', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: `report\n${marker(T10)}\n`, comments: [legacyMarker(T13)]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('lets the newer event_at marker win next to a legacy one', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      world: issueWorld({open: [{number: 31, body: `report\n${legacyMarker(T10)}\n`, comments: [marker(T13)]}]}),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('open')
+  })
+
+  it('still ignores an event_at marker from anyone but the token', async () => {
+    const h = runner({
+      ...matchAt(T12),
+      world: issueWorld({
+        open: [{number: 31, body: `report\n${legacyMarker(T10)}\n`, comments: [{body: marker(T13), author: STRANGER}]}],
+      }),
+    })
+    await h.run()
+    expect(h.world.store.get(31)?.state).toBe('closed')
+  })
+
+  it('writes the new marker and the empty legacy one, and no other time, on a comment to a legacy issue', async () => {
+    const h = runner({
+      ...driftAt(T12),
+      world: issueWorld({open: [{number: 31, body: `report\n${legacyMarker(T10)}\n`}]}),
+    })
+    await h.run()
+    const comment = h.world.calls.find(call => call.name === 'comment')?.params as {body: string}
+    expect(comment.body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+    expect(comment.body).not.toContain(legacyMarker(T10))
+    expect(comment.body.match(/updated_at=\S*/gu)).toEqual(['updated_at='])
+  })
+})
+
+describe('runProtectionDrift: the When line of a report', () => {
+  const createdBody = (h: ReturnType<typeof runner>) =>
+    (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+
+  it('shows the event time, then the rule time when it differs, labelled as the last update of the rule', async () => {
+    const h = runner(driftAt(T13))
+    await h.run()
+    expect(createdBody(h)).toContain(`- When: ${T13}\n- Rule last updated: ${RULE_STALE}\n- Event: \`edited\``)
+  })
+
+  it('shows the rule time once when it is the event time', async () => {
+    const h = runner({event: DRIFT_EVENT})
+    await h.run()
+    expect(createdBody(h)).toContain(`- When: ${T12}\n- Event:`)
+    expect(createdBody(h)).not.toContain('Rule last updated')
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['not text', 20_261_109],
+    ['not a time', 'x`y\nz --> <!--'],
+  ])('shows no rule time when it is %s', async (_name, value) => {
+    const rule = goodRule({required_approving_review_count: 0, updated_at: value})
+    if (value === undefined) delete rule.updated_at
+    const h = runner({event: event({rule, sender: OPERATOR_USER}), runCreatedAt: T13})
+    await h.run()
+    expect(createdBody(h)).toContain(`- When: ${T13}\n- Event:`)
+    expect(createdBody(h)).not.toContain('Rule last updated')
+  })
+
+  it('names the run time in the comment that closes the issue', async () => {
+    const h = runner({...matchAt(T13), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(h.world.calls.find(call => call.name === 'comment')?.params.body).toBe(
+      `The settings automation wrote the \`main\` rule at ${T13} and every declared setting is present and matching. Closing.`,
+    )
+  })
+})
+
+describe('renderReport: the rule time', () => {
+  const facts = {
+    action: 'edited',
+    login: 'fro-bot',
+    type: 'User',
+    id: 42,
+    at: T13,
+    changes: {},
+    mismatched: [] as string[],
+    absent: [] as string[],
+    deleted: false,
+    settingsActor: false,
+  }
+
+  it('adds the last update of the rule under the event time when the two differ', () => {
+    expect(renderReport({...facts, ruleUpdatedAt: RULE_STALE})).toContain(
+      `- When: ${T13}\n- Rule last updated: ${RULE_STALE}\n- Event: \`edited\``,
+    )
+  })
+
+  it.each([
+    ['text', 'soon'],
+    ['a time with text before it', 'at 2026-11-09T13:00:00Z'],
+    ['a time with text after it', '2026-11-09T13:00:00Z or so'],
+    ['empty', ''],
+  ])('shows an event time that is %s as unknown', (_name, at) => {
+    expect(renderReport({...facts, at})).toContain('- When: unknown\n')
+  })
+
+  it.each([
+    ['with text before it', 'at 2026-11-08T11:13:10Z'],
+    ['with text after it', '2026-11-08T11:13:10Z or so'],
+    ['empty', ''],
+  ])('adds nothing when the rule time is a time %s', (_name, value) => {
+    expect(renderReport({...facts, ruleUpdatedAt: value})).not.toContain('Rule last updated')
+  })
+
+  it.each([
+    ['is the event time', T13],
+    ['is absent', undefined],
+    ['is not a time', 'soon\n- Event: `forged`'],
+  ])('adds nothing when the rule time %s', (_name, value) => {
+    expect(renderReport({...facts, ruleUpdatedAt: value})).not.toContain('Rule last updated')
+  })
+})
+
+/**
+ * The marker reader and the comparison of the version on `origin/main` before the rename, as they were: they
+ * match `updated_at=` markers only, count an empty or unusable one as newer than anything, and close nothing
+ * unless the match time is strictly newer. A run created before the rename that is re-run executes this code
+ * against issues the current version wrote.
+ */
+function baseVersionMayClose(
+  written: readonly {body: string | null; user: Author | null}[],
+  matchTime: string,
+  author: Author,
+): boolean {
+  const times = written
+    .filter(entry => entry.user?.login === author.login && entry.user.type === author.type)
+    .flatMap(entry => [...String(entry.body).matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
+    .map(match => Date.parse(String(match[1])))
+    .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
+  const recorded = Math.max(Number.NEGATIVE_INFINITY, ...times)
+  return Date.parse(matchTime) > recorded
+}
+
+describe('runProtectionDrift: a report is read safely by the version before the rename', () => {
+  const EMPTY_LEGACY = legacyMarker('')
+  const countOf = (text: string, needle: string) => text.split(needle).length - 1
+
+  /** Every body the current version wrote to issue `number`: its body, then its comments. */
+  const writtenTo = (world: ReturnType<typeof issueWorld>, number: number) => {
+    const issue = world.store.get(number)
+    return [
+      {body: issue?.body ?? null, user: issue?.author ?? null},
+      ...(issue?.comments ?? []).map(comment => ({
+        body: typeof comment === 'string' ? comment : (comment?.body ?? null),
+        user: BOT,
+      })),
+    ]
+  }
+
+  it('fixture control: the base reader would close an issue that carries only event_at markers', () => {
+    expect(baseVersionMayClose([{body: `report\n${marker(T10)}\n`, user: BOT}], T12, BOT)).toBe(true)
+  })
+
+  it('fixture control: the base reader closes on a match newer than a legacy marker, and not otherwise', () => {
+    expect(baseVersionMayClose([{body: legacyMarker(T10), user: BOT}], T12, BOT)).toBe(true)
+    expect(baseVersionMayClose([{body: legacyMarker(T12), user: BOT}], T12, BOT)).toBe(false)
+  })
+
+  it('keeps an issue the current version opened open under a matching run of the base version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    expect(world.store.get(900)?.state).toBe('open')
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open after the current version commented on it too', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    await runner({...driftAt(T11), world}).run()
+    expect(world.store.get(900)?.comments).toHaveLength(1)
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open when the current version moved the report to the older issue', async () => {
+    const world = issueWorld({afterCreate: [{number: 31, body: 'report'}, {number: 900}]})
+    await runner({...driftAt(T10), world}).run()
+    expect(world.store.get(31)?.state).toBe('open')
+    expect(baseVersionMayClose(writtenTo(world, 31), T13, BOT)).toBe(false)
+  })
+
+  it('keeps it open when the report has no usable time', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(undefined), world}).run()
+    expect(baseVersionMayClose(writtenTo(world, 900), T13, BOT)).toBe(false)
+  })
+
+  it('still closes an issue the current version opened on a newer match of the current version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T10), world}).run()
+    await runner({...driftAt(T11), world}).run()
+    const match = runner({...matchAt(T12), world})
+    expect(await match.run()).toBe(0)
+    expect(match.stdout).toEqual(['protection-drift: closed #900\n'])
+    expect(world.store.get(900)?.state).toBe('closed')
+  })
+
+  it('leaves an issue open on an older or equal match of the current version', async () => {
+    const world = issueWorld()
+    await runner({...driftAt(T12), world}).run()
+    await runner({...matchAt(T12), world}).run()
+    await runner({...matchAt(T11), world}).run()
+    expect(world.store.get(900)?.state).toBe('open')
+  })
+
+  it('writes the empty legacy marker exactly once in a new issue, beside one event_at marker', async () => {
+    const h = runner(driftAt(T12))
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, 'updated_at=')).toBe(1)
+    expect(countOf(body, marker(T12))).toBe(1)
+    expect(countOf(body, '<!-- protection-drift:')).toBe(2)
+    expect(body.endsWith(`\n${marker(T12)}\n`)).toBe(true)
+  })
+
+  it('writes it exactly once in a comment on an open issue', async () => {
+    const h = runner({...driftAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'comment')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, 'updated_at=')).toBe(1)
+    expect(countOf(body, marker(T12))).toBe(1)
+    expect(countOf(body, '<!-- protection-drift:')).toBe(2)
+  })
+
+  it('writes it exactly once in the report moved to the older issue, and in no other comment', async () => {
+    const h = runner({...driftAt(T12), world: issueWorld({afterCreate: [{number: 31}]})})
+    await h.run()
+    const comments = h.world.calls.filter(call => call.name === 'comment').map(call => String(call.params.body))
+    expect(comments).toHaveLength(2)
+    expect(countOf(comments[0] ?? '', EMPTY_LEGACY)).toBe(1)
+    expect(countOf(comments[0] ?? '', '<!-- protection-drift:')).toBe(2)
+    expect(comments[1]).not.toContain('<!--')
+  })
+
+  it('writes it for a report with no usable time as well, next to an empty event_at marker', async () => {
+    const h = runner(driftAt('yesterday'))
+    await h.run()
+    const body = (h.world.calls.find(call => call.name === 'create')?.params as {body: string}).body
+    expect(countOf(body, EMPTY_LEGACY)).toBe(1)
+    expect(countOf(body, marker(''))).toBe(1)
+  })
+
+  it('does not write the legacy marker in the closing comment, the job summary or a duplicate notice', async () => {
+    const h = runner({...matchAt(T12), world: issueWorld({open: [{number: 31}]})})
+    await h.run()
+    expect(String(h.world.calls.find(call => call.name === 'comment')?.params.body)).not.toContain('<!--')
+    expect(h.writes[0]?.content).not.toContain('<!--')
   })
 })

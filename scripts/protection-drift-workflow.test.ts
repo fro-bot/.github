@@ -52,10 +52,10 @@ describe('protection-drift.yaml', () => {
     expect(parsed.on.branch_protection_rule?.types).toEqual(['created', 'edited', 'deleted'])
   })
 
-  it('has the one report job, with contents read and issues write and nothing more', () => {
+  it('has the one report job, with actions read, contents read and issues write and nothing more', () => {
     expect(Object.keys(parsed.jobs)).toEqual(['report'])
     expect(parsed.permissions).toEqual({contents: 'read'})
-    expect(job.permissions).toEqual({contents: 'read', issues: 'write'})
+    expect(job.permissions).toEqual({actions: 'read', contents: 'read', issues: 'write'})
     expect(job['timeout-minutes']).toBe(10)
     expect(job.needs).toBeUndefined()
     expect(job.if).toBeUndefined()

@@ -11,12 +11,19 @@
  *   present and matching. A field the event does not report is neither drift nor a match: it is listed in
  *   the job summary, and it keeps the issue open.
  * - Nothing is reverted or blocked; the daily settings run restores the rule.
+ * - An event's time is the `created_at` of the workflow run that handles it (`GET /actions/runs/{GITHUB_RUN_ID}`
+ *   with `github.token`, `actions: read`): GitHub creates the run when it receives the event. The `updated_at`
+ *   of the rule is not used to order anything, because it does not advance when the rule is edited. A run id
+ *   that is not digits, a run that cannot be read and a `created_at` that is not an ISO time all leave the
+ *   event with no usable time.
  * - Event order is kept in the issues themselves. Every report and comment ends with one hidden marker,
- *   the `updated_at` of its event, and nothing else. A match closes an issue only if its own `updated_at` is
+ *   `event_at=` and the time of its event, and nothing else, next to an empty `updated_at=` marker that keeps
+ *   a re-run of a run created before the rename from closing on an obsolete match. A match closes an issue only if its own time is
  *   strictly newer than every recorded one (an empty or unusable one counts as newer than anything, and a
- *   match with no usable time never closes). After it closes, it reads the comments again and reopens if a
- *   newer report landed; a run that comments on an issue reads its state again and reopens it if it was
- *   closed in the meantime.
+ *   match with no usable time never closes). A marker written before the rename (`updated_at=`) is legacy
+ *   and counts as older than any match, so an issue that only carries those closes on the next matching
+ *   write. After it closes, it reads the comments again and reopens if a newer report landed; a run that
+ *   comments on an issue reads its state again and reopens it if it was closed in the meantime.
  * - Only the token's own markers count. The identity `github.token` writes as (`github-actions[bot]`, type
  *   `Bot`) is passed in by the CLI, and a marker in an issue body or comment by anyone else is ignored.
  * - Every request carries an abort signal of 30 seconds or what is left of a 6-minute budget, and a write
@@ -42,6 +49,7 @@ export interface ProtectionDriftOctokit {
       Octokit['rest']['issues'],
       'listForRepo' | 'get' | 'listComments' | 'create' | 'createComment' | 'update'
     >
+    readonly actions: Pick<Octokit['rest']['actions'], 'getWorkflowRun'>
   }
 }
 
@@ -211,7 +219,10 @@ export interface ReportFacts {
   readonly login: unknown
   readonly type: unknown
   readonly id: unknown
+  /** The time of the event: the creation time of the run that handles it. */
   readonly at: string
+  /** The `updated_at` of the rule, which does not advance on edits; shown only when it differs from `at`. */
+  readonly ruleUpdatedAt?: unknown
   readonly changes: unknown
   readonly mismatched: readonly string[]
   readonly absent: readonly string[]
@@ -257,6 +268,11 @@ export function renderReport(facts: ReportFacts): string {
     '',
     `- Actor: \`${scalar(facts.login)}\` (type \`${scalar(facts.type)}\`, id \`${scalar(facts.id)}\`)`,
     `- When: ${/^[\dTZ:.+-]+$/u.test(facts.at) ? facts.at : 'unknown'}`,
+    ...(typeof facts.ruleUpdatedAt === 'string' &&
+    facts.ruleUpdatedAt !== facts.at &&
+    /^[\dTZ:.+-]+$/u.test(facts.ruleUpdatedAt)
+      ? [`- Rule last updated: ${facts.ruleUpdatedAt}`]
+      : []),
     `- Event: \`${inline(facts.action)}\`${facts.deleted ? ' (the rule no longer exists)' : ''}`,
     ...(changes.length === 0 ? ['- Reported changes: none reported'] : ['- Reported changes:', ...changes]),
     ...(facts.mismatched.length === 0
@@ -321,7 +337,7 @@ function bounded(
       throw signal.aborted ? new CutOffError() : error
     }
   }
-  const {issues} = octokit.rest
+  const {issues, actions} = octokit.rest
   return {
     rest: {
       issues: {
@@ -338,6 +354,10 @@ function bounded(
         // Reopening is part of the check after a write, so it uses the time the writes leave.
         update: async (request: NonNullable<Parameters<typeof issues.update>[0]>) =>
           call(request.state !== 'open', async signal => issues.update({...request, request: {signal}})),
+      },
+      actions: {
+        getWorkflowRun: async (request: NonNullable<Parameters<typeof actions.getWorkflowRun>[0]>) =>
+          call(false, async signal => actions.getWorkflowRun({...request, request: {signal}})),
       },
     },
   } as unknown as ProtectionDriftOctokit
@@ -382,11 +402,43 @@ function numbersText(numbers: readonly number[]): string {
   return numbers.map(number => `#${String(number)}`).join(', ')
 }
 
-/** The hidden marker: the time of the event that wrote the report, and nothing else. A bad time is left out. */
-function markerFor(updatedAt: unknown): string {
-  const usable =
-    typeof updatedAt === 'string' && /^[\dTZ:.+-]+$/u.test(updatedAt) && !Number.isNaN(Date.parse(updatedAt))
-  return `<!-- protection-drift:updated_at=${usable ? updatedAt : ''} -->`
+/**
+ * The hidden markers: the time of the event that wrote the report, and nothing else. No time leaves it empty.
+ * An empty `updated_at=` marker goes with it for the version before the rename: a re-run of an older run
+ * executes that version's reader, which counts an empty marker as newer than anything and so closes nothing,
+ * where it would otherwise find no marker and close on an obsolete match. This version ignores it.
+ */
+function markerFor(eventAt: string | undefined): string {
+  return `<!-- protection-drift:updated_at= -->\n<!-- protection-drift:event_at=${eventAt ?? ''} -->`
+}
+
+/**
+ * The time of the event: the `created_at` of this run, which GitHub creates when it receives the event. The
+ * `updated_at` of the rule does not advance on edits, so it orders nothing. `undefined` when the run id is not
+ * digits, the run cannot be read (a transient failure is retried like any read) or its `created_at` is not an
+ * ISO time. A run that cannot be read is named on stderr as a fixed warning.
+ */
+async function eventTimeOf(
+  octokit: ProtectionDriftOctokit,
+  runId: string | undefined,
+  sleep: (ms: number) => Promise<void>,
+  stderr: (text: string) => void,
+): Promise<string | undefined> {
+  if (!/^\d{1,15}$/u.test(String(runId))) return undefined
+  try {
+    const run = await retryRead(
+      async () => octokit.rest.actions.getWorkflowRun({owner: 'fro-bot', repo: '.github', run_id: Number(runId)}),
+      sleep,
+    )
+    const createdAt: unknown = run.data.created_at
+    const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u
+    return typeof createdAt === 'string' && iso.test(createdAt) && !Number.isNaN(Date.parse(createdAt))
+      ? createdAt
+      : undefined
+  } catch {
+    stderr('::warning::protection-drift: RUN_UNREADABLE\n')
+    return undefined
+  }
 }
 
 /** A body or comment and who wrote it, as GitHub reports it. */
@@ -396,23 +448,23 @@ interface Written {
 }
 
 /**
- * The newest time recorded in the markers of what `author` wrote, in milliseconds; minus infinity when there
- * is none (an issue opened before the marker existed). A marker with no usable time is newer than any time.
+ * The newest time recorded in the `event_at` markers of what `author` wrote, in milliseconds; minus infinity
+ * when there is none (an issue opened before the marker existed, or one that only has legacy `updated_at`
+ * markers, which count as older than any match). A marker with no usable time is newer than any time.
  * Anything written by anyone else is ignored.
  */
 function newestRecorded(written: readonly Written[], author: MarkerAuthor): number {
   const times = written
     .filter(entry => entry.user?.login === author.login && entry.user.type === author.type)
-    .flatMap(entry => [...entry.body.matchAll(/<!-- protection-drift:updated_at=(\S*) -->/gu)])
+    .flatMap(entry => [...entry.body.matchAll(/<!-- protection-drift:event_at=(\S*) -->/gu)])
     .map(match => Date.parse(String(match[1])))
     .map(time => (Number.isNaN(time) ? Number.POSITIVE_INFINITY : time))
   return Math.max(Number.NEGATIVE_INFINITY, ...times)
 }
 
-/** Whether an event at `matchTime` is strictly newer than `recorded`; a time that is not one never is. */
-function isNewerThan(matchTime: unknown, recorded: number): boolean {
-  const time = typeof matchTime === 'string' ? Date.parse(matchTime) : Number.NaN
-  return time > recorded
+/** Whether an event at `matchTime` is strictly newer than `recorded`; no time (`undefined` parses as NaN) never is. */
+function isNewerThan(matchTime: string | undefined, recorded: number): boolean {
+  return Date.parse(String(matchTime)) > recorded
 }
 
 async function retryRead<T>(operation: () => Promise<T>, sleep: (ms: number) => Promise<void>): Promise<T> {
@@ -585,17 +637,19 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
     )
   }
 
-  const updatedAt: unknown = Reflect.get(new Object(event.rule), 'updated_at')
-  const at = typeof updatedAt === 'string' ? updatedAt : params.now().toISOString()
+  const ruleUpdatedAt: unknown = Reflect.get(new Object(event.rule), 'updated_at')
   const start = params.now().getTime()
   try {
     const octokit = bounded(await params.createClient(token), params, start)
+    const eventAt = await eventTimeOf(octokit, env.GITHUB_RUN_ID, params.sleep, params.stderr)
+    const at = eventAt ?? params.now().toISOString()
     const report = renderReport({
       action: String(event.action),
       login: Reflect.get(new Object(event.sender), 'login'),
       type: Reflect.get(new Object(event.sender), 'type'),
       id: Reflect.get(new Object(event.sender), 'id'),
       at,
+      ruleUpdatedAt,
       changes: event.changes,
       mismatched: assessment.mismatched,
       absent: assessment.absent,
@@ -607,7 +661,7 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
     const action = planAction(assessment, open.length > 0)
     const target = {owner: 'fro-bot', repo: '.github'}
     // The report as it is written to an issue: it ends with the time of this event, for the runs that follow.
-    const written = `${report}${markerFor(updatedAt)}\n`
+    const written = `${report}${markerFor(eventAt)}\n`
     const reopen = async (number: number): Promise<void> => {
       await octokit.rest.issues.update({...target, issue_number: number, state: 'open'})
     }
@@ -674,7 +728,7 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
           (await readIssue(octokit, number, params.sleep)).written,
           ...(await readComments(octokit, number, params.sleep)),
         ]
-        if (!isNewerThan(updatedAt, newestRecorded(before, params.author))) {
+        if (!isNewerThan(eventAt, newestRecorded(before, params.author))) {
           kept.push(number)
           continue
         }
@@ -685,7 +739,7 @@ export async function runProtectionDrift(params: RunProtectionDriftParams): Prom
         })
         await octokit.rest.issues.update({...target, issue_number: number, state: 'closed', state_reason: 'completed'})
         const after = await readComments(octokit, number, params.sleep)
-        if (isNewerThan(updatedAt, newestRecorded(after, params.author))) {
+        if (isNewerThan(eventAt, newestRecorded(after, params.author))) {
           closed.push(number)
         } else {
           await reopen(number)
