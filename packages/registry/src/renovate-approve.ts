@@ -95,6 +95,7 @@ export type OutcomeCode =
   | 'approved-not-armed'
   | 'approval-unknown'
   | 'approval-refused'
+  | 'changes-requested'
   | 'error'
 
 /** Why a sweep stopped before it judged any PR, or ran out of budget while it did. */
@@ -291,6 +292,7 @@ function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'chec
     approved: 'approved on this head',
     'approved-not-armed': 'approved; auto-merge is not armed, merge it by hand',
     'approval-unknown': 'the approval failed or was cut off and no approval was found; check the reviews',
+    'changes-requested': 'fro-bot requested changes on this head',
     'approval-refused': 'GitHub refused the approval request; no review was created',
   }
 }
@@ -468,14 +470,27 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       config.listCap,
     )
 
-  const isApproval = (
-    review: {
+  /**
+   * What the `fro-bot` user's reviews on `head` add up to, in the order GitHub lists them: an approval, a
+   * change request or a dismissal is decisive and the latest one counts; a comment is not decisive.
+   */
+  const verdictOf = (
+    reviews: readonly {
       readonly user?: {readonly login: string} | null
       readonly state: string
       readonly commit_id?: string | null
-    },
+    }[],
     head: string,
-  ): boolean => review.user?.login === identity().approver && review.state === 'APPROVED' && review.commit_id === head
+  ): 'approved' | 'changes-requested' | 'none' => {
+    let verdict: 'approved' | 'changes-requested' | 'none' = 'none'
+    for (const review of reviews) {
+      if (review.user?.login !== identity().approver || review.commit_id !== head) continue
+      if (review.state === 'APPROVED') verdict = 'approved'
+      if (review.state === 'CHANGES_REQUESTED') verdict = 'changes-requested'
+      if (review.state === 'DISMISSED') verdict = 'none'
+    }
+    return verdict
+  }
 
   /**
    * Looks for the approval this sweep sent in the PR's reviews. The whole walk shares one signal of
@@ -554,7 +569,9 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
 
     const reviews = await readReviews(pull.number)
     if (reviews.capped) return row('error', reasons.capped)
-    if (reviews.items.some(review => isApproval(review, head))) return fixed('already-approved')
+    const standing = verdictOf(reviews.items, head)
+    if (standing === 'approved') return fixed('already-approved')
+    if (standing === 'changes-requested') return fixed('changes-requested')
 
     if (slotUsed) return fixed('deferred')
 
@@ -603,7 +620,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       }
       // A failed or cut-off request does not say whether it was recorded: one read of the reviews does.
       const history = await reconcile(pull.number)
-      if (history === null || !history.some(review => isApproval(review, head))) {
+      if (history === null || verdictOf(history, head) !== 'approved') {
         return fixed('approval-unknown', fresh.armed)
       }
     }

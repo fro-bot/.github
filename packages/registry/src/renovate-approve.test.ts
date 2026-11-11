@@ -672,7 +672,6 @@ describe('sweep: an existing approval is respected (AE3)', () => {
     ['an approval of an older head', {commit: sha(1, 'b')}],
     ['a dismissed approval', {state: 'DISMISSED'}],
     ['a comment', {state: 'COMMENTED'}],
-    ['a change request', {state: 'CHANGES_REQUESTED'}],
     ['an approval by someone else', {login: 'marcusrbrown'}],
     ['an approval by the App', {login: 'fro-bot[bot]'}],
     ['an approval with no user', {login: null}],
@@ -696,6 +695,80 @@ describe('sweep: an existing approval is respected (AE3)', () => {
     })
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'checks-failed'})
+  })
+
+  it('reads the latest decisive review of fro-bot on this head: a later change request wins over the approval (exit 0, no approval)', async () => {
+    const w = world({prs: [pr(1, {reviews: [{}, {state: 'CHANGES_REQUESTED'}]}), pr(2)]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 1)).toMatchObject({
+      outcome: 'changes-requested',
+      detail: 'fro-bot requested changes on this head',
+    })
+    expect(outcomes(result)).toEqual({1: 'changes-requested', 2: 'approved'})
+    expect(result.exitCode).toBe(0)
+    expect(w.named('approve').map(call => call.params.pull_number)).toEqual([2])
+  })
+
+  it('does not use the slot for a change request, and a lone change request is not an approval', async () => {
+    const w = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}]})]})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'changes-requested'})
+    expect(w.named('approve')).toEqual([])
+    expect(w.named('get')).toEqual([])
+  })
+
+  it('keeps an approval across a later comment: a comment is not decisive', async () => {
+    const w = world({prs: [pr(1, {reviews: [{}, {state: 'COMMENTED'}]})]})
+    expect(outcomes(await LIVE(w))).toEqual({1: 'already-approved'})
+    const afterRequest = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}, {state: 'COMMENTED'}]})]})
+    expect(outcomes(await LIVE(afterRequest))).toEqual({1: 'changes-requested'})
+  })
+
+  it('lets a later approval replace a change request, and a later dismissal clear an approval', async () => {
+    const replaced = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}, {}]})]})
+    expect(outcomes(await LIVE(replaced))).toEqual({1: 'already-approved'})
+    const dismissed = world({prs: [pr(1, {reviews: [{}, {state: 'DISMISSED'}]})]})
+    expect(outcomes(await LIVE(dismissed))).toEqual({1: 'approved'})
+    const dismissedRequest = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}, {state: 'DISMISSED'}]})]})
+    expect(outcomes(await LIVE(dismissedRequest))).toEqual({1: 'approved'})
+  })
+
+  it('ignores change requests and approvals on another head, and reviews by other people', async () => {
+    const olderRequest = world({prs: [pr(1, {reviews: [{}, {state: 'CHANGES_REQUESTED', commit: sha(1, 'b')}]})]})
+    expect(outcomes(await LIVE(olderRequest))).toEqual({1: 'already-approved'})
+    const otherPerson = world({prs: [pr(1, {reviews: [{login: 'marcusrbrown', state: 'CHANGES_REQUESTED'}]})]})
+    expect(outcomes(await LIVE(otherPerson))).toEqual({1: 'approved'})
+    const noUser = world({prs: [pr(1, {reviews: [{login: null, state: 'CHANGES_REQUESTED'}]})]})
+    expect(outcomes(await LIVE(noUser))).toEqual({1: 'approved'})
+  })
+
+  it('folds the history across a page boundary, in order', async () => {
+    const filler = Array.from({length: 99}, () => ({login: 'x', state: 'COMMENTED'}))
+    const requestLast = world({prs: [pr(1, {reviews: [{}, ...filler, {state: 'CHANGES_REQUESTED'}]})]})
+    expect(outcomes(await LIVE(requestLast))).toEqual({1: 'changes-requested'})
+    expect(requestLast.named('listReviews').map(call => call.params.page)).toEqual([1, 2])
+    const approvalLast = world({prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}, ...filler, {}]})]})
+    expect(outcomes(await LIVE(approvalLast))).toEqual({1: 'already-approved'})
+  })
+
+  it('shows a change request only after the checks passed, like an existing approval', async () => {
+    const w = world({
+      prs: [
+        pr(1, {
+          reviews: [{state: 'CHANGES_REQUESTED'}],
+          runs: [{name: 'Lint', conclusion: 'failure'}, ...GREEN_RUNS.slice(1)],
+        }),
+      ],
+    })
+    expect(outcomes(await LIVE(w))).toEqual({1: 'checks-failed'})
+  })
+
+  it('reconciles an ambiguous approval against the same fold: the recorded approval is the latest decisive review', async () => {
+    const w = world({
+      prs: [pr(1, {reviews: [{state: 'CHANGES_REQUESTED'}, {state: 'DISMISSED'}]})],
+      approve: () => ({recordedThen: apiError(502)}),
+    })
+    expect(outcomes(await LIVE(w))).toEqual({1: 'approved'})
   })
 
   it('is idempotent: a second sweep after the first approval approves nothing new', async () => {
