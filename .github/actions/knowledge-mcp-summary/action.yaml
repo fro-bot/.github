@@ -1,5 +1,5 @@
 name: Knowledge MCP Summary
-description: Add a table of the knowledge MCP server's tool calls to the job summary, from the call log that knowledge-mcp-config names. It never fails the job.
+description: Add a table of the knowledge MCP server's tool calls to the job summary and print the same text to the step log, from the call log that knowledge-mcp-config names. It never fails the job.
 
 inputs:
   call-log:
@@ -33,7 +33,10 @@ runs:
             LC_ALL=C sort | LC_ALL=C uniq -c 2>/dev/null) || counts=''
         fi
 
-        {
+        # The same text goes to the step log, which the run-log CLI and the REST API can read and the job
+        # summary cannot. Every line is a fixed string or built from tokens the strict pattern matched, so no
+        # line from the file reaches stdout and none can start with `::` to act as a workflow command.
+        emit() {
           if [ -z "$counts" ]; then
             printf 'Knowledge tools: no calls recorded.\n\n'
           else
@@ -43,7 +46,10 @@ runs:
             done <<< "$counts"
             printf '\n'
           fi
-        } 2>/dev/null >> "$summary" || true
+        }
+
+        emit 2>/dev/null || true
+        emit 2>/dev/null >> "$summary" || true
 
         exit 0
       shell: bash

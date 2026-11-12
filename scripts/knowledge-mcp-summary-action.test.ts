@@ -1,6 +1,6 @@
 /**
  * Contract tests for `.github/actions/knowledge-mcp-summary`, which turns the `knowledge` MCP server's call
- * log into a table in the job summary. The cases run the action's `run:` text under real bash
+ * log into a table in the job summary and the step log. The cases run the action's `run:` text under real bash
  * (`@fro-bot/test-kit/workflow-step`). The log is data the model's queries never reach (the server writes
  * only a tool name and a fixed code), but the action still prints nothing from the file except tokens that
  * match the fixed line shape.
@@ -139,7 +139,7 @@ describe('knowledge-mcp-summary action: nothing recorded', () => {
 
     expect(result.status).toBe(0)
     expect(result.summary).toBe(NO_CALLS)
-    expect(result.stdout).toBe('')
+    expect(result.stdout).toBe(NO_CALLS)
     expect(result.stderr).toBe('')
   })
 
@@ -199,7 +199,7 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
     expect(result.summary).toBe(
       `${HEADING}${row('solutions_search', 'corpus-unavailable', 1)}${row('solutions_search', 'ok', 1)}${row('wiki_linked', 'handoff-malformed', 1)}${row('wiki_linked', 'no-handoff', 1)}${row('wiki_search', 'invalid-query', 1)}${row('wiki_search', 'ok', 3)}${row('wiki_search', 'unexpected', 1)}\n`,
     )
-    expect(result.stdout).toBe('')
+    expect(result.stdout).toBe(result.summary)
   })
 
   it('counts a last line that has no trailing newline', () => {
@@ -247,7 +247,8 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
 
     expect(result.status).toBe(0)
     expect(result.summary).toBe(`${HEADING}${row('wiki_search', 'ok', 2)}\n`)
-    expect(result.stdout + result.stderr).toBe('')
+    expect(result.stdout).toBe(`${HEADING}${row('wiki_search', 'ok', 2)}\n`)
+    expect(result.stderr).toBe('')
   })
 
   it('appends to what earlier steps wrote and does not truncate it', () => {
@@ -260,6 +261,70 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
     const result = run('', {summaryBefore: 'earlier step\n'})
 
     expect(result.summary).toBe(`earlier step\n${NO_CALLS}`)
+  })
+})
+
+describe('knowledge-mcp-summary action: the step log', () => {
+  const hostile = [
+    '::error::x',
+    '::set-output name=a::b',
+    `::add-mask::${SENTINEL}`,
+    'wiki_search ok; rm -rf /',
+    `wiki_search ok ::error::${SENTINEL}`,
+    '::wiki_search ok',
+    ' ::warning::y',
+    '',
+  ]
+
+  it('prints the table that it appends to the summary', () => {
+    const result = run('wiki_search ok\nwiki_search ok\nsolutions_search invalid-query\n')
+    const table = `${HEADING}${row('solutions_search', 'invalid-query', 1)}${row('wiki_search', 'ok', 2)}\n`
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(table)
+    expect(result.stdout).toBe(table)
+  })
+
+  it.each([
+    ['an empty file', ''],
+    ['a missing file', undefined],
+  ] as const)('prints the fixed line for %s', (_label, content) => {
+    const result = run(content)
+
+    expect(result.stdout).toBe(NO_CALLS)
+    expect(result.summary).toBe(NO_CALLS)
+  })
+
+  it.each([
+    ['GITHUB_STEP_SUMMARY is unset', 'unset'],
+    ['GITHUB_STEP_SUMMARY is unwritable', 'unwritable'],
+  ] as const)('still prints the table and the fixed line when %s', (_label, summaryPath) => {
+    const withCalls = run('wiki_linked ok\n', {summaryPath})
+    const empty = run('', {summaryPath})
+
+    expect(withCalls.status).toBe(0)
+    expect(withCalls.stdout).toBe(`${HEADING}${row('wiki_linked', 'ok', 1)}\n`)
+    expect(withCalls.stderr).toBe('')
+    expect(empty.status).toBe(0)
+    expect(empty.stdout).toBe(NO_CALLS)
+    expect(empty.stderr).toBe('')
+  })
+
+  it('never prints a line of the file that is not of the shape, so no workflow command can start a line', () => {
+    const result = run(hostile.join('\n'))
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(NO_CALLS)
+    expect(result.stdout).not.toContain('::')
+    expect(result.stdout).not.toContain('rm -rf')
+    expect(result.stdout + result.stderr).not.toContain(SENTINEL)
+  })
+
+  it('prints only the matched lines when hostile lines sit between valid ones', () => {
+    const result = run(['wiki_search ok', ...hostile, 'wiki_search ok'].join('\n'))
+
+    expect(result.stdout).toBe(`${HEADING}${row('wiki_search', 'ok', 2)}\n`)
+    for (const line of result.stdout.split('\n')) expect(line.startsWith('::')).toBe(false)
   })
 })
 
