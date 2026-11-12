@@ -10367,3 +10367,22 @@ Run: https://github.com/fro-bot/.github/actions/runs/43023198904
 Surveyed marcusrbrown/panthea and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthea
+
+## [2026-11-12 06:59] manual-edit | topic:github-actions-ci
+
+Corrected the inherited oversight interpretation of readable archived repositories
+as registry drift. The pinned reconciliation code intentionally maps archived
+entries to `lost-access`; read permission, live visibility and automation
+eligibility are separate signals. Preserved the earlier report as dated
+contradicting evidence. Only the topic and this log were edited; trusted ingest
+owns delivery, with no metadata or index changes.
+
+Sources: https://github.com/fro-bot/.github/blob/94c37c8618165a8d082eb8c4e8abaac91c483cda/packages/registry/src/reconcile-plan.ts
+Earlier report: https://github.com/fro-bot/.github/issues/4182
+Run: https://github.com/fro-bot/.github/actions/runs/43169314472
+
+## [2026-11-12 07:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@94c37c8618165a8d082eb8c4e8abaac91c483cda
