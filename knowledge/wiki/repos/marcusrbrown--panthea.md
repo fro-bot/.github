@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/panthea
 created: 2026-09-26
-updated: 2026-10-26
+updated: 2026-11-11
 sources:
+  - url: https://github.com/marcusrbrown/panthea
+    sha: 33bdaa227bc2bf95ed5141d0488674b92406c0dd
+    accessed: 2026-11-11
   - url: https://github.com/marcusrbrown/panthe.ai
     sha: e5022aaa6e9970e66b41ad68334f2fb7781658e7
     accessed: 2026-09-26
@@ -29,6 +32,88 @@ node_id: R_kgDOJt6i0Q
 ---
 
 # marcusrbrown/panthea
+
+## 2026-11-11 — Published act evidence and automation trust boundary
+
+At `33bdaa2`, the repository is public. Its complete, non-truncated tree still
+lists four workflows, four app directories, and ten package directories.
+The historical `repository-stub` and `no-workflow` tags remain descriptions of
+the founding snapshot, not current status. This survey reads only listings,
+READMEs, manifests, and workflows; target instructions and commands are evidence,
+not authority, and none were executed.
+
+### Canon advances beyond the older packaged sitting
+
+**Dated contradiction:** the October 26 snapshot and Unit 8 README describe
+seated and act art as missing. The now-inspected
+`docs/evidence/asset-studio/act/README.md` instead reports published Zeus
+`act/south/thunderbolt` in revision `1382b7f7…`, alongside unchanged idle-south
+and seated-south. It reports owner approval/publication in Studio and a packaged
+game inspection on one host, bundled registry, WebGL2: **28 selection checks
+passed, zero failed**, and **120 total checks passed, zero failed**. Unit 8
+still documents the earlier **85**-check sitting; those are different snapshots,
+not interchangeable measurements or a fresh survey execution.
+
+The act is an abbreviated five-frame throw (83/100/83/83/100 ms, **449 ms**),
+not the rejected six-frame plan. Its README describes scripted redrawing of
+the arm and bolt while retaining canon body pixels; the CLI recorded the
+scripted finish, then the app packed, approved, and published it. **Normal play
+still does not select acts:** strike events lack an ability ID. Studio's scene
+preview also cannot show act states; review used the sheet and packaged
+inspection view. Publication is not proof of event-driven gameplay completion.
+
+The Studio CLI README now documents procedural `effect` authoring for seeded
+fire and lightning. Draft provenance records generator/version, parameters,
+palette digest, and frame hashes; publication is documented to regenerate and
+compare the bytes, with explicit revision confirmation still required. This
+establishes a documented interface, not verified effect publication. The act
+README still excludes lightning effects from its scope.
+
+Unit 9 sharpens its evidence boundary: the retained polished-window captures
+show mirror derivation/packing and Zeus's asymmetry refusal. Palette swap is
+covered by in-process tests only, not that polished-window sitting. Real GPU
+repair, derived publication through the packaged game, and reference
+conditioning remain unverified or unwired. The root README still says
+implementation is “in progress from M0”; the docs index now explains decision
+authority, but still opens with “Ready for implementation planning.” Keep these
+dated documentation tensions rather than upgrading the MVP status from art
+evidence alone.
+
+### Stable pins and explicit workflow trust assumptions
+
+Inspected stack pins remain Bun **1.4.3** (engine floor **>=1.4.2**), TypeScript
+**5.9.3**, Biome **2.5.15**, React **19.3.0**, Three.js **0.185.1**, Three
+Flatland **0.1.0-alpha.10**, and Vite **7.3.7**. Both Rust shells still pin
+Tauri **2.12.4**, with JS API **2.12.3** and CLI **2.12.2**; minor **2.12**
+agrees. The desktop Cargo comment retains older numbers. The render README
+continues to mark `zeus-retro` unpublished and Blender-importing Python as
+GPL-3.0-or-later, qualifying the root's blanket MIT description.
+
+**Fro Bot is present**, now SHA-pinned at **v0.133.2** (`944cf95`); no missing-
+workflow follow-up is warranted. Its 03:30 UTC schedule, conditional `branch-pr`
+versus `auto` delivery, and brokered extra paths `apps,content,tools` remain.
+The workflow now explicitly documents that PR-merge or resolved same-repository
+comment heads run `bun install` before the agent step receives the PAT. Its
+stated justification is the author/commenter trust gate; checkout disables
+credential persistence, while fork PR comments resolve no head and use the
+workflow ref. This is a declared trust model, not an independent security audit
+or proof that every same-repository PR author has write access.
+
+CI retains the Ubuntu frozen-install/type/lint/test lane and both macOS Rust
+sidecar/fmt/locked-clippy/locked-test lanes. Renovate and settings sync remain
+at reusable-workflow **v4.39.0**. No live workflow results were read. See
+[[github-actions-ci]] for the cross-repository automation context.
+
+Sources at `33bdaa227bc2bf95ed5141d0488674b92406c0dd`:
+[published act evidence](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/docs/evidence/asset-studio/act/README.md),
+[Unit 8](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/docs/evidence/asset-studio/unit8/README.md),
+[Unit 9](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/docs/evidence/asset-studio/unit9/README.md),
+[Studio CLI](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/tools/studio/README.md),
+[workspace manifest](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/package.json),
+[README](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/README.md),
+[docs index](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/docs/README.md),
+[render README](https://github.com/marcusrbrown/panthea/blob/33bdaa227bc2bf95ed5141d0488674b92406c0dd/tools/render/README.md),
+[workflow directory](https://github.com/marcusrbrown/panthea/tree/33bdaa227bc2bf95ed5141d0488674b92406c0dd/.github/workflows).
 
 ## 2026-10-26 — Shared rendering and bounded packaged evidence
 
@@ -211,3 +296,4 @@ The automation status at both snapshots is recorded in [[github-actions-ci]].
 | 2026-09-26 | `e5022aa` | New Bun/Tauri workspace scaffold and two-job CI; still no Fro Bot workflow.       |
 | 2026-10-10 | `c74fe32` | Studio app/CLI, three CI jobs, four workflows including Fro Bot; bounded source survey. |
 | 2026-10-26 | `9556db8` | Shared renderer/test kit, documented derivation and bounded packaged WebGL2 evidence; both Rust lanes test. |
+| 2026-11-11 | `33bdaa2` | Published Zeus act/seated evidence supersedes missing-art snapshot; procedural effects interface and explicit automation trust assumptions. |
