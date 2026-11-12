@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-09
+updated: 2026-11-11
 sources:
+  - url: https://github.com/marcusrbrown/panthea/tree/33bdaa227bc2bf95ed5141d0488674b92406c0dd/.github/workflows
+    sha: 33bdaa227bc2bf95ed5141d0488674b92406c0dd
+    accessed: 2026-11-11
   - url: https://github.com/fro-bot/dashboard/blob/299839ff02c07abc24fb0604032e2906038d1716/.github/workflows/release.yaml
     sha: 299839ff02c07abc24fb0604032e2906038d1716
     accessed: 2026-11-09
@@ -1369,6 +1372,27 @@ settings-path-filtered main push. Callee behavior and applied repository
 settings were not read.
 
 Source: [workflow directory at the surveyed SHA](https://github.com/marcusrbrown/panthea/tree/9556db85d5d9f648db8f07f0eb0269b900cf0dbc/.github/workflows).
+
+**Panthea refresh (2026-11-11, `33bdaa2`).** [[marcusrbrown--panthea]] retains
+four workflows, three CI jobs, Bun **1.4.3**, and reusable Renovate/settings
+callers **v4.39.0**. Both macOS Rust lanes still build the sidecar before fmt,
+locked clippy, and locked tests. Fro Bot advances to **v0.133.2**, pinned at
+`944cf954ac2afa61c4d061a4aad41a6cb80f7129`; the daily 03:30 UTC schedule and
+input-dependent `branch-pr`/`auto` delivery expression are unchanged.
+
+The current caller explicitly documents its installation trust boundary:
+`bun install --frozen-lockfile` runs on the PR merge ref or a resolved
+same-repository PR-comment head before the agent step receives its PAT.
+Checkout disables persisted credentials. Fork PRs are excluded; fork PR
+comments resolve no head and therefore retain the workflow ref. Commenters
+must be OWNER/MEMBER/COLLABORATOR; the PR gate excludes forks and bot authors
+but does not itself test the author's write permission. The comment's claim
+that admitted same-repository authors already have write access is therefore
+an assumption, not something this survey independently established. Source
+commands/prompts were read as data, not executed; presence of these declarations
+does not establish live-run success or a complete credential-isolation proof.
+
+Source: [workflow directory at the surveyed SHA](https://github.com/marcusrbrown/panthea/tree/33bdaa227bc2bf95ed5141d0488674b92406c0dd/.github/workflows).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 
