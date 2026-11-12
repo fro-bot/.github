@@ -349,7 +349,7 @@ What each site does with the three outcomes, after both PRs:
 
 ### Phase 2: the private packages and the gate (second PR, no release)
 
-- [ ] **Unit 4: The privacy gate**
+- [x] **Unit 4: The privacy gate**
 
 **Goal:** The gate reads attribution through the splitter and blocks every public repo page without a valid block and a matching source.
 
