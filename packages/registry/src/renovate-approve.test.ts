@@ -71,6 +71,10 @@ interface PrSpec {
   baseRepoId?: number
   state?: string
   base?: string
+  /** Replaces the `base` object whole, to make it unreadable. */
+  rawBase?: unknown
+  /** The `draft` flag the list reports; `false` when unset, and `undefined` set explicitly is a missing flag. */
+  draft?: unknown
   armed?: boolean
   title?: string
   /** What a compare of `main` against this head lists; a function is asked per compare call (1-based). */
@@ -98,8 +102,10 @@ interface Scenario {
   readonly approve?: (call: number) => 'ok' | Error | 'hang' | {readonly recordedThen: Error | 'hang'}
   /** Runs inside `pulls.get` before it answers, to change the PR between the judging and the fresh read. */
   readonly onGet?: (pr: PrSpec, call: number) => void
-  readonly listError?: (page: number) => Error | undefined
-  readonly listPageSize?: (page: number) => number | undefined
+  readonly listError?: (page: number, call: number) => Error | undefined
+  readonly listPageSize?: (page: number, call: number) => number | undefined
+  /** Runs inside `pulls.list` before it answers, to change the open PRs between two lists. */
+  readonly onList?: (call: number) => void
   /** The extra rows a list page holds, to make a list reach its cap. */
   readonly fill?: Partial<Record<'commits' | 'files' | 'reviews' | 'runs' | 'statuses', number>>
   /** Restricts the run and status `fill` to this PR; every PR when unset. */
@@ -232,7 +238,8 @@ function world(scenario: Scenario = {}) {
       ref: spec.ref ?? 'renovate/left-pad-9.x',
       repo: spec.headRepoId === null ? null : {id: spec.headRepoId ?? 1},
     },
-    base: {ref: spec.base ?? 'main', repo: {id: spec.baseRepoId ?? 1}},
+    draft: 'draft' in spec ? spec.draft : false,
+    base: 'rawBase' in spec ? spec.rawBase : {ref: spec.base ?? 'main', repo: {id: spec.baseRepoId ?? 1}},
     labels: (spec.labels ?? ['automerge']).map(name => ({name})),
     auto_merge: spec.armed === false ? null : {enabled_by: {login: 'fro-bot'}, merge_method: 'squash'},
   })
@@ -304,10 +311,11 @@ function world(scenario: Scenario = {}) {
       },
       pulls: {
         list: async (params: {page: number; per_page: number}) => {
-          await gate('list', params)
-          const failure = scenario.listError?.(params.page)
+          const call = await gate('list', params)
+          scenario.onList?.(call)
+          const failure = scenario.listError?.(params.page, call)
           if (failure !== undefined) throw failure
-          const size = scenario.listPageSize?.(params.page)
+          const size = scenario.listPageSize?.(params.page, call)
           if (size !== undefined) {
             return {
               data: Array.from({length: size}, (_, index) =>
@@ -471,6 +479,7 @@ describe('sweep: the happy path (AE1, AE2)', () => {
       'compare',
       'getBranch',
       'getVariable',
+      'list',
       'approve',
     ])
     expect(w.calls[1]?.params).toEqual({
@@ -948,7 +957,7 @@ describe('sweep: who is a candidate (AE5, AE10)', () => {
     const w = world({
       prs: [
         pr(1, {labels: []}),
-        pr(2, {author: {id: 1, type: 'User'}}),
+        pr(2, {author: {id: 1, type: 'User'}, draft: true}),
         pr(3),
         pr(4, {headRepoId: 9}),
         pr(5, {ref: 'data'}),
@@ -959,7 +968,7 @@ describe('sweep: who is a candidate (AE5, AE10)', () => {
   })
 
   it('does not throw on a null head repository that comes with a person as author', async () => {
-    const w = world({prs: [pr(1, {headRepoId: null, author: {id: 5, type: 'User'}}), pr(2)]})
+    const w = world({prs: [pr(1, {headRepoId: null, author: {id: 5, type: 'User'}, draft: true}), pr(2)]})
     const result = await LIVE(w)
     expect(result.exitCode).toBe(0)
     expect(outcomes(result)).toEqual({2: 'approved'})
@@ -969,8 +978,287 @@ describe('sweep: who is a candidate (AE5, AE10)', () => {
     const many = Array.from({length: 100}, (_, index) => pr(100 + index, {ref: 'feature/x'}))
     const w = world({prs: [...many, pr(300)]})
     const result = await LIVE(w)
-    expect(w.named('list').map(call => call.params.page)).toEqual([1, 2])
+    // Both pages are read for the sweep, and again right before the approval.
+    expect(w.named('list').map(call => call.params.page)).toEqual([1, 2, 1, 2])
     expect(outcomes(result)).toEqual({300: 'approved'})
+  })
+})
+
+describe('sweep: it yields to open pull requests by people', () => {
+  const YIELD_DETAIL = (number: number) =>
+    `an open PR by a user account (#${String(number)}) comes first; merge, close or draft it to release the sweep`
+  const person = (number: number, overrides: Partial<PrSpec> = {}): PrSpec =>
+    pr(number, {author: {id: 1234, type: 'User'}, ref: 'feature/x', labels: [], ...overrides})
+  /** What a yielding sweep reads: the required list, the list, then only the judging reads of a ready PR. */
+  const JUDGED = ['getBranch', 'list', 'compare', 'listRuns', 'listStatuses', 'listReviews']
+
+  it.each([
+    ['live', LIVE],
+    ['dry run', DRY],
+  ] as const)(
+    'sends no approval and reports the ready candidate `yielded`, exit 0 (%s)',
+    async (_mode, sweepWith: (w: World) => Promise<SweepResult>) => {
+      const w = world({prs: [pr(7, {armed: false}), person(3)]})
+      const result = await sweepWith(w)
+
+      expect(result).toEqual({
+        exitCode: 0,
+        live: _mode === 'live',
+        stop: null,
+        rows: [{number: 7, head: sha(7).slice(0, 7), outcome: 'yielded', detail: YIELD_DETAIL(3), armed: false}],
+      })
+      expect(w.order()).toEqual(JUDGED)
+    },
+  )
+
+  it('asks only for open pull requests against main, so a closed one is never listed', async () => {
+    const w = world({prs: [pr(7)]})
+    await LIVE(w)
+    expect(w.named('list')[0]?.params).toMatchObject({state: 'open', base: 'main'})
+  })
+
+  it.each([
+    ['a draft user PR', {draft: true}],
+    ['a user PR against another base', {base: 'develop'}],
+    ['a user PR against another base, as a base object', {rawBase: {ref: 'develop', repo: {id: 1}}}],
+    ['a PR by the App', {author: {id: 109_017_866, type: 'Bot'}}],
+    ['a PR by another bot', {author: {id: 29_139_614, type: 'Bot'}}],
+  ] as const)('does not yield to %s: the candidate is approved as before', async (_name, overrides) => {
+    const w = world({prs: [pr(7), person(3, overrides)]})
+    expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+    expect(w.named('approve')).toHaveLength(1)
+    expect(outcomes(await DRY(world({prs: [pr(7), person(3, overrides)]})))).toEqual({7: 'would-approve'})
+  })
+
+  it.each([
+    ['a missing draft flag', {draft: undefined}],
+    ['a draft flag that is not a boolean', {draft: 'false'}],
+    ['a null draft flag', {draft: null}],
+    ['a base with no ref', {rawBase: {repo: {id: 1}}}],
+    ['a base ref that is not a string', {rawBase: {ref: 5, repo: {id: 1}}}],
+    ['an author with no type', {author: {id: 1234}}],
+    ['an author that is null', {author: null}],
+    ['an author type that is not a string', {author: {id: 1234, type: 42}}],
+    ['an author type nobody expects', {author: {id: 1234, type: 'Organization'}}],
+    ['a draft flag and no author type', {draft: true, author: {id: 1234}}],
+    ['a base ref that is not a string, on a draft', {draft: true, rawBase: {ref: 5, repo: {id: 1}}}],
+    ['a missing draft flag, on a PR against another base', {base: 'develop', draft: undefined}],
+  ] as const)('yields when a listed PR has %s', async (_name, overrides) => {
+    const w = world({prs: [pr(7), person(3, overrides)]})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({7: 'yielded'})
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('does not yield on a PR by the App even when its draft flag and base cannot be read', async () => {
+    const w = world({
+      prs: [
+        pr(7),
+        person(3, {author: {id: 109_017_866, type: 'Bot'}, draft: undefined, rawBase: {ref: 5, repo: {id: 1}}}),
+      ],
+    })
+    expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+  })
+
+  it('keeps the outcome of a candidate that is not ready, and yields only the ready one', async () => {
+    const w = world({prs: [pr(2, {behindBy: 1}), pr(3), person(9)]})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({2: 'behind', 3: 'yielded'})
+    expect(result.exitCode).toBe(0)
+  })
+
+  it.each<[string, Partial<PrSpec>, OutcomeCode]>([
+    ['held', {labels: ['automerge', 'hold-merge']}, 'held'],
+    ['behind', {behindBy: 2}, 'behind'],
+    ['a foreign commit', {commits: [{author: {id: 1, type: 'User'}}]}, 'foreign-commit'],
+    ['a config change', {files: [{filename: 'default.json'}]}, 'config-change'],
+    ['a failed check', {runs: [{name: 'Lint', app: 15_368, conclusion: 'failure'}]}, 'checks-failed'],
+    [
+      'a pending check',
+      {runs: [{name: 'Lint', app: 15_368, status: 'in_progress', conclusion: null}]},
+      'checks-pending',
+    ],
+    ['an approval already given', {reviews: [{}]}, 'already-approved'],
+    ['a change request', {reviews: [{state: 'CHANGES_REQUESTED'}]}, 'changes-requested'],
+  ])('keeps %s as the outcome while it yields', async (_name, overrides, outcome) => {
+    const w = world({prs: [pr(1, overrides), person(9)]})
+    expect(outcomes(await LIVE(w))).toEqual({1: outcome})
+    expect(w.named('approve')).toEqual([])
+  })
+
+  it('yields every ready candidate and defers none: the slot is never used', async () => {
+    const w = world({prs: [pr(1), pr(2), pr(3), person(9)]})
+    expect(outcomes(await LIVE(w))).toEqual({1: 'yielded', 2: 'yielded', 3: 'yielded'})
+    expect(outcomes(await DRY(world({prs: [pr(1), pr(2), person(9)]})))).toEqual({1: 'yielded', 2: 'yielded'})
+  })
+
+  it('names the lowest-numbered PR it yields to, and nothing a person wrote', async () => {
+    const title = 'Rotate the SECRET-TITLE credentials'
+    const w = world({
+      prs: [
+        pr(50),
+        person(40, {title}),
+        person(12, {title}),
+        person(5, {title, draft: true}),
+        person(2, {title, base: 'x'}),
+      ],
+    })
+    const result = await LIVE(w)
+
+    expect(rowOf(result, 50).detail).toBe(YIELD_DETAIL(12))
+    expect(rowOf(result, 50).detail).not.toContain('SECRET-TITLE')
+    expect(JSON.stringify(result)).not.toContain('SECRET-TITLE')
+  })
+
+  it('spends nothing on the fresh read, the required list again, the variable or an approval', async () => {
+    const w = world({prs: [pr(7), person(3)]})
+    await LIVE(w)
+    expect(w.order().filter(name => ['get', 'getVariable', 'approve'].includes(name))).toEqual([])
+    expect(w.named('getBranch')).toHaveLength(1)
+    expect(w.named('compare')).toHaveLength(1)
+  })
+
+  it('reports a yielding sweep in the job summary and stdout, with nothing on stderr and exit 0', async () => {
+    const t = runParams({}, world({prs: [pr(7), person(3)]}))
+    expect(await runApprove(t.params)).toBe(0)
+
+    expect(t.out).toEqual(['renovate-approve: #7 yielded\n'])
+    expect(t.err).toEqual([])
+    expect(t.appended).toEqual([
+      {
+        path: '/tmp/summary',
+        content: [
+          '### Renovate approve (live)',
+          '',
+          '| PR | Head | Outcome | Detail | Auto-merge armed |',
+          '| --- | --- | --- | --- | --- |',
+          `| #7 | ${sha(7).slice(0, 7)} | yielded | ${YIELD_DETAIL(3)} | yes |`,
+          '',
+        ].join('\n'),
+      },
+    ])
+    expect(t.w.named('approve')).toEqual([])
+  })
+
+  it('reports a yielding dry run the same way', async () => {
+    const t = runParams(
+      {env: {GH_TOKEN: 't', GITHUB_REPOSITORY: 'fro-bot/.github', GITHUB_STEP_SUMMARY: '/tmp/s'}},
+      world({prs: [pr(7), person(3)]}),
+    )
+    expect(await runApprove(t.params)).toBe(0)
+    expect(t.out).toEqual(['renovate-approve: #7 yielded\n'])
+    expect(t.err).toEqual([])
+    expect(t.appended[0]?.content.startsWith('### Renovate approve (dry run)\n')).toBe(true)
+  })
+
+  it('renders a `yielded` row in the summary table', () => {
+    const result: SweepResult = {
+      exitCode: 0,
+      live: true,
+      stop: null,
+      rows: [{number: 4, head: 'abc1234', outcome: 'yielded', detail: YIELD_DETAIL(2), armed: true}],
+    }
+    expect(summaryOf(result)).toContain(`| #4 | abc1234 | yielded | ${YIELD_DETAIL(2)} | yes |`)
+  })
+
+  describe('the re-check right before the approval', () => {
+    it('yields to a PR that appeared since the first list, and sends no approval (live)', async () => {
+      const w: World = world({
+        prs: [pr(7)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3))
+        },
+      })
+      const result = await LIVE(w)
+
+      expect(outcomes(result)).toEqual({7: 'yielded'})
+      expect(rowOf(result, 7).detail).toBe(YIELD_DETAIL(3))
+      expect(result.exitCode).toBe(0)
+      expect(w.named('approve')).toEqual([])
+      expect(w.order()).toEqual([
+        'getBranch',
+        'list',
+        'compare',
+        'listRuns',
+        'listStatuses',
+        'listReviews',
+        'get',
+        'compare',
+        'getBranch',
+        'getVariable',
+        'list',
+      ])
+    })
+
+    it('yields to a PR that appeared since the first list (dry run)', async () => {
+      const w: World = world({
+        prs: [pr(7)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3))
+        },
+      })
+      const result = await DRY(w)
+      expect(outcomes(result)).toEqual({7: 'yielded'})
+      expect(w.order().at(-1)).toBe('list')
+    })
+
+    it('does not burn the slot: the next ready candidate yields without another re-check', async () => {
+      const w: World = world({
+        prs: [pr(1), pr(2)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3))
+        },
+      })
+      const result = await LIVE(w)
+      expect(outcomes(result)).toEqual({1: 'yielded', 2: 'yielded'})
+      expect(w.named('get')).toHaveLength(1)
+      expect(w.named('list')).toHaveLength(2)
+    })
+
+    it('lets the approval through when the PR that appeared is a draft', async () => {
+      const w: World = world({
+        prs: [pr(7)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3, {draft: true}))
+        },
+      })
+      expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+    })
+
+    it('reads the list only once for the approval, and not for a candidate that stopped earlier', async () => {
+      const w = world({prs: [pr(1, {behindBy: 1}), pr(2)]})
+      await LIVE(w)
+      expect(w.named('list')).toHaveLength(2)
+      const stopped = world({prs: [pr(1, {behindBy: 1})]})
+      await LIVE(stopped)
+      expect(stopped.named('list')).toHaveLength(1)
+    })
+
+    it('makes the candidate an error, and sends no approval, when the second list cannot be read', async () => {
+      const w = world({prs: [pr(7)], listError: (_page, call) => (call >= 2 ? apiError(404, 'SECRET') : undefined)})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'error', detail: 'read-failed'})
+      expect(result.exitCode).toBe(1)
+      expect(w.named('approve')).toEqual([])
+    })
+
+    it('makes the candidate an error, and sends no approval, when the second list is cut off at the cap', async () => {
+      const w = world({prs: [pr(7)], listPageSize: (_page, call) => (call >= 2 ? 100 : undefined)})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+      expect(w.named('approve')).toEqual([])
+    })
+
+    it('does the same in a dry run', async () => {
+      const w = world({prs: [pr(7)], listPageSize: (_page, call) => (call >= 2 ? 100 : undefined)})
+      const result = await DRY(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'error', detail: 'a list reached the API cap'})
+    })
+
+    it('keeps the stop when the first list cannot be trusted: nothing is judged', async () => {
+      const w = world({prs: [pr(7), person(3)], listError: () => apiError(500)})
+      expect(await LIVE(w)).toMatchObject({exitCode: 1, stop: 'CANDIDATES_UNREADABLE', rows: []})
+    })
   })
 })
 
