@@ -103,6 +103,7 @@ jobs:
             echo "| Dispatched | $(jq '.dispatches // 0' "$result") |"
             echo "| Dispatches deferred | $(jq '.dispatchesDeferred // 0' "$result") |"
             echo "| Dispatches failed | $(jq '.dispatchesFailed // 0' "$result") |"
+            echo "| Dispatches outcome unknown | $(jq '.dispatchesOutcomeUnknown // 0' "$result") |"
             echo "| Visibility transition issues | $(jq '.visibilityTransitionIssues // 0' "$result") |"
             echo "| Visibility transitions detected | $(jq '.summary.visibilityTransitions // 0' "$result") |"
             echo "| Visibility transition duplicates skipped | $(jq '.visibilityTransitionDuplicatesSkipped // 0' "$result") |"

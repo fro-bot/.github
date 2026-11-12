@@ -17,6 +17,7 @@ import {
   DISPATCH_DEFAULTS,
   loadDispatchStaggerFromEnv,
   loadMaxDispatchesPerRunFromEnv,
+  runDispatches,
   syncStars,
 } from './reconcile-effects.ts'
 import {formatCommitMessage, handleReconcile, type HandleReconcileParams} from './reconcile-handler.ts'
@@ -3047,6 +3048,10 @@ interface IssueListEntry {
   labels: {name: string}[]
 }
 
+function dispatchRequest(n: number): {owner: string; repo: string; node_id: string} {
+  return {owner: 't', repo: `r${n}`, node_id: `R_${n}`}
+}
+
 function apiError(status: number, message = 'API error'): Error {
   return Object.assign(new Error(message), {status})
 }
@@ -3491,6 +3496,7 @@ describe('handleReconcile (I/O shell)', () => {
       expect(dispatchCalls).toHaveLength(3)
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
+      expect(result.dispatchesOutcomeUnknown).toBe(0)
       expect(logger.warn).toHaveBeenCalled()
     })
 
@@ -3571,7 +3577,7 @@ describe('handleReconcile (I/O shell)', () => {
       expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
     })
 
-    it('treats a dispatch timeout as failure and continues to the next', async () => {
+    it('counts a dispatch timeout as an unknown outcome, not a failure, and continues to the next', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
         const typed = params as {inputs?: {node_id: string}}
@@ -3607,7 +3613,8 @@ describe('handleReconcile (I/O shell)', () => {
       // one should not block the others from dispatching.
       expect(dispatchCalls.slice().sort()).toEqual(['R_1', 'R_2', 'R_3'])
       expect(result.dispatches).toBe(2)
-      expect(result.dispatchesFailed).toBe(1)
+      expect(result.dispatchesFailed).toBe(0)
+      expect(result.dispatchesOutcomeUnknown).toBe(1)
     })
 
     it('dispatch payload carries node_id only — never owner/repo', async () => {
@@ -3641,6 +3648,207 @@ describe('handleReconcile (I/O shell)', () => {
       // inputs surface, even alongside node_id. The workflow itself resolves the identity.
       expect(dispatchPayloads[0]).not.toHaveProperty('owner')
       expect(dispatchPayloads[0]).not.toHaveProperty('repo')
+    })
+  })
+
+  describe('runDispatches deadline', () => {
+    const TIMEOUT_MS = 1000
+
+    async function runWith(
+      createWorkflowDispatch: (params: {
+        inputs: {node_id: string}
+        request?: {signal?: AbortSignal}
+      }) => Promise<unknown>,
+      count: number,
+      logger: ReconcileLogger,
+    ) {
+      return runDispatches({
+        writerOctokit: {rest: {actions: {createWorkflowDispatch}}} as unknown as OctokitClient,
+        owner: 'fro-bot',
+        repo: '.github',
+        workflowFile: 'survey-repo.yaml',
+        workflowRef: 'main',
+        dispatches: Array.from({length: count}, (_, i) => dispatchRequest(i + 1)),
+        timeoutMs: TIMEOUT_MS,
+        staggerMs: 0,
+        logger,
+        entryByKey: new Map(),
+      })
+    }
+
+    it('hands the request an AbortSignal that is not yet aborted', async () => {
+      const seen: (AbortSignal | undefined)[] = []
+      const createWorkflowDispatch = vi.fn(async (params: {request?: {signal?: AbortSignal}}) => {
+        seen.push(params.request?.signal)
+      })
+
+      await runWith(createWorkflowDispatch, 2, silentLogger())
+
+      expect(seen).toHaveLength(2)
+      expect(seen[0]).toBeInstanceOf(AbortSignal)
+      expect(seen[1]).toBeInstanceOf(AbortSignal)
+      expect(seen[0]).not.toBe(seen[1])
+      expect(seen[0]?.aborted).toBe(false)
+    })
+
+    it('aborts the request at the deadline and counts it as an unknown outcome, not a failure', async () => {
+      vi.useFakeTimers()
+      try {
+        let signal: AbortSignal | undefined
+        const createWorkflowDispatch = vi.fn(async (params: {request?: {signal?: AbortSignal}}) => {
+          signal = params.request?.signal
+          return new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('aborted')))
+          })
+        })
+        const logger = silentLogger()
+
+        const pending = runWith(createWorkflowDispatch, 1, logger)
+        await vi.advanceTimersByTimeAsync(TIMEOUT_MS - 1)
+        expect(signal?.aborted).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        const outcome = await pending
+
+        expect(signal?.aborted).toBe(true)
+        expect(outcome).toEqual({succeeded: 0, failed: 0, outcomeUnknown: 1})
+        expect(logger.warn).toHaveBeenCalledTimes(1)
+        const line = logger.warn.mock.calls[0]?.[0] ?? ''
+        expect(line).toContain('dispatch outcome unknown')
+        expect(line).not.toContain('dispatch failed')
+        expect(line).not.toContain('aborted')
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps the counts and leaves no timer when the request settles after the deadline', async () => {
+      vi.useFakeTimers()
+      try {
+        let acceptLate: (() => void) | undefined
+        const createWorkflowDispatch = vi.fn(
+          async () =>
+            new Promise<void>(resolve => {
+              acceptLate = resolve
+            }),
+        )
+
+        const pending = runWith(createWorkflowDispatch, 1, silentLogger())
+        await vi.advanceTimersByTimeAsync(TIMEOUT_MS)
+        const outcome = await pending
+        expect(outcome).toEqual({succeeded: 0, failed: 0, outcomeUnknown: 1})
+
+        // GitHub accepts the request after the loop moved on: nothing changes, nothing is pending.
+        acceptLate?.()
+        await vi.advanceTimersByTimeAsync(TIMEOUT_MS * 2)
+
+        expect(outcome).toEqual({succeeded: 0, failed: 0, outcomeUnknown: 1})
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not leak an unhandled rejection when an aborted request rejects after the deadline', async () => {
+      vi.useFakeTimers()
+      const unhandled: unknown[] = []
+      const onUnhandled = (reason: unknown): void => {
+        unhandled.push(reason)
+      }
+      process.on('unhandledRejection', onUnhandled)
+      try {
+        const createWorkflowDispatch = vi.fn(async (params: {request?: {signal?: AbortSignal}}) => {
+          const signal = params.request?.signal
+          return new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), {name: 'AbortError'})))
+          })
+        })
+
+        const pending = runWith(createWorkflowDispatch, 1, silentLogger())
+        await vi.advanceTimersByTimeAsync(TIMEOUT_MS)
+        await pending
+        await vi.advanceTimersByTimeAsync(10)
+        vi.useRealTimers()
+        await new Promise(resolve => setImmediate(resolve))
+
+        expect(unhandled).toEqual([])
+      } finally {
+        process.off('unhandledRejection', onUnhandled)
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps an ordinary rejection a failure, logged with its status and kind, and clears the timer', async () => {
+      vi.useFakeTimers()
+      try {
+        let signal: AbortSignal | undefined
+        const createWorkflowDispatch = vi.fn(async (params: {request?: {signal?: AbortSignal}}) => {
+          signal = params.request?.signal
+          throw Object.assign(new Error('server said no'), {status: 500, name: 'HttpError'})
+        })
+        const logger = silentLogger()
+
+        const outcome = await runWith(createWorkflowDispatch, 1, logger)
+
+        expect(outcome).toEqual({succeeded: 0, failed: 1, outcomeUnknown: 0})
+        expect(logger.warn).toHaveBeenCalledWith('reconcile: dispatch failed (status=500, kind=HttpError); continuing.')
+        // An ordinary rejection is not an abort: the deadline did not fire.
+        expect(signal?.aborted).toBe(false)
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('clears the timer after a successful dispatch', async () => {
+      vi.useFakeTimers()
+      try {
+        const outcome = await runWith(
+          vi.fn(async () => undefined),
+          2,
+          silentLogger(),
+        )
+
+        expect(outcome).toEqual({succeeded: 2, failed: 0, outcomeUnknown: 0})
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('continues to the next candidate after a deadline and after an ordinary rejection', async () => {
+      vi.useFakeTimers()
+      try {
+        const calls: string[] = []
+        const signals = new Map<string, AbortSignal | undefined>()
+        const createWorkflowDispatch = vi.fn(
+          async (params: {inputs: {node_id: string}; request?: {signal?: AbortSignal}}) => {
+            const id = params.inputs.node_id
+            calls.push(id)
+            signals.set(id, params.request?.signal)
+            if (id === 'R_1') {
+              return new Promise<never>((_, reject) => {
+                params.request?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+              })
+            }
+            if (id === 'R_2') throw Object.assign(new Error('boom'), {status: 502})
+            return undefined
+          },
+        )
+
+        const pending = runWith(createWorkflowDispatch, 3, silentLogger())
+        await vi.advanceTimersByTimeAsync(TIMEOUT_MS)
+        const outcome = await pending
+
+        expect(calls).toEqual(['R_1', 'R_2', 'R_3'])
+        expect(outcome).toEqual({succeeded: 1, failed: 1, outcomeUnknown: 1})
+        // Each dispatch owns its signal: aborting the first never reaches the later ones.
+        expect(signals.get('R_1')?.aborted).toBe(true)
+        expect(signals.get('R_3')?.aborted).toBe(false)
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 
@@ -10104,8 +10312,8 @@ describe('rename detection', () => {
 
       // A missing field falls back to 0 through `// 0`, so a rename in the result type would fail silently in the summary.
       const paths = [...workflow.matchAll(/jq '\.([A-Za-z][\w.]*) \/\/ (?:0|false)'/gu)].map(match => match[1] ?? '')
-      expect(paths).toHaveLength(27)
-      expect(new Set(paths).size).toBe(27)
+      expect(paths).toHaveLength(28)
+      expect(new Set(paths).size).toBe(28)
       for (const path of paths) {
         let value: unknown = result
         for (const segment of path.split('.')) {
