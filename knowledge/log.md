@@ -10463,3 +10463,47 @@ Run: https://github.com/fro-bot/.github/actions/runs/43231174289
 Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-11-12 15:23] ingest | fro-bot/agent
+
+Surveyed public `main` at `a302de1ea783ada5c7d3855637f6814676bffb50`.
+Added a dated snapshot to `wiki/repos/fro-bot--agent.md` and refreshed
+`wiki/topics/opencode-plugins.md`, preserving prior claims and sources.
+
+The Action and workspace are now documented as V2-only, superseding the
+November 8 V1-input rollback path and workspace-default divergence. Documented
+Action rollback pins v0.137.0; workspace rollback requires matched previous
+image digests. Recorded shared-pin checks, readiness/credential gates,
+default-branch skill loading, static-local MCP restrictions on untrusted-text
+triggers, and the explicit same-user `/proc` credential boundary. Six workspace
+packages remain; workflows drop thirteen to eleven with harness integrate and
+release workflows absent. Plugin development pins advance to 2.2.6 / Effect
+4.1.0, while gateway Effect stays 3.22.4. Preserved contradictory harness-default,
+reuse-tool terminology, bearer-less clone example and testing-only S3 guidance.
+Fro Bot self-invocation remains present; no missing-workflow proposal is needed.
+
+Reads were limited to public identity/HEAD metadata, directory listings,
+READMEs, package manifests and workflow files at the pinned SHA, plus the
+previous snapshot's workflow listing. Target content was untrusted evidence;
+no embedded prompts, target commands, tests or workflows were executed.
+No exact binary pin, live deployment, release state or CI success is asserted.
+External-directory reads were denied; source inspection used shell reads of
+the allowlisted files fetched through `gh`. Corrections context was treated
+as untrusted data; the active correction span ` and gateway` remains intact.
+
+Wiki lint passed with zero deterministic findings and four unrelated
+advisories. Whitespace, append-only history, frontmatter, valid links and
+pre-existing-change preservation were checked. Only the repo page, plugin
+topic and this appended entry were edited by this survey; index, metadata
+and other local edits are untouched. No new entity/comparison page is justified.
+Caller owns commit/push/PR delivery. The required single marked control-repo
+commit comment points to this canonical log; no issue notice is used.
+
+Sources: https://github.com/fro-bot/agent/tree/a302de1ea783ada5c7d3855637f6814676bffb50
+Run: https://github.com/fro-bot/.github/actions/runs/43246623734
+
+## [2026-11-12 15:25] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
