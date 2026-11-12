@@ -195,10 +195,11 @@ export async function runDispatches(params: {
    * Promise; tests pass a no-op or a deterministic fake clock.
    */
   sleep?: (ms: number) => Promise<void>
-}): Promise<{succeeded: number; failed: number}> {
+}): Promise<{succeeded: number; failed: number; outcomeUnknown: number}> {
   const sleep = params.sleep ?? defaultSleep
   let succeeded = 0
   let failed = 0
+  let outcomeUnknown = 0
   for (let i = 0; i < params.dispatches.length; i += 1) {
     const dispatch = params.dispatches[i]
     if (dispatch === undefined) continue
@@ -224,7 +225,7 @@ export async function runDispatches(params: {
     }
     try {
       await dispatchWithTimeout(
-        async () =>
+        async signal =>
           params.writerOctokit.rest.actions.createWorkflowDispatch({
             owner: params.owner,
             repo: params.repo,
@@ -236,18 +237,29 @@ export async function runDispatches(params: {
             // definitively public. owner/repo are kept on DispatchRequest for internal
             // telemetry (logger, prioritization) but never reach the Actions API.
             inputs: {node_id: dispatch.node_id},
+            request: {signal},
           }),
         params.timeoutMs,
       )
       succeeded += 1
     } catch (error: unknown) {
+      if (error instanceof DispatchTimeoutError) {
+        // The deadline aborted the request, but GitHub may have accepted it first, so this is
+        // neither a success nor a failure. No lookup, cooldown or stored state follows: a rare
+        // duplicate survey after an unknown outcome is accepted (fro-bot/.github#4150).
+        outcomeUnknown += 1
+        params.logger.warn(
+          `reconcile: dispatch outcome unknown (kind=${error.name}; the request may have been accepted); continuing.`,
+        )
+        continue
+      }
       failed += 1
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       const kind = error instanceof Error ? error.name : 'unknown'
       params.logger.warn(`reconcile: dispatch failed (status=${status}, kind=${kind}); continuing.`)
     }
   }
-  return {succeeded, failed}
+  return {succeeded, failed, outcomeUnknown}
 }
 
 async function defaultSleep(ms: number): Promise<void> {
@@ -297,15 +309,30 @@ export const DISPATCH_DEFAULTS = {
   maxDispatchesPerRun: DEFAULT_MAX_DISPATCHES_PER_RUN,
 } as const
 
-async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promise<T> {
+class DispatchTimeoutError extends Error {
+  constructor() {
+    super('dispatch timed out')
+    this.name = 'DispatchTimeoutError'
+  }
+}
+
+/**
+ * Runs `work` with a deadline. Each call owns an `AbortController` whose signal is handed to
+ * `work`; the deadline rejects with {@link DispatchTimeoutError} first and only then aborts, so
+ * the abort's own rejection from `work` loses the race and is never mistaken for the outcome.
+ * The timer is cleared on every exit path.
+ */
+async function dispatchWithTimeout<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(Object.assign(new Error('dispatch timed out'), {name: 'DispatchTimeoutError'}))
+      reject(new DispatchTimeoutError())
+      controller.abort()
     }, timeoutMs)
   })
   try {
-    return await Promise.race([work(), timeoutPromise])
+    return await Promise.race([work(controller.signal), timeoutPromise])
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }

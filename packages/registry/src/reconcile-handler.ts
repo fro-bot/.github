@@ -154,8 +154,13 @@ export interface HandleReconcileResult {
   summary: ReconcileSummary
   /** Count of successful dispatches. */
   dispatches: number
-  /** Count of dispatch failures (timed out, HTTP error, etc.). */
+  /** Count of dispatch failures (HTTP error, etc.); a deadline is counted in `dispatchesOutcomeUnknown`. */
   dispatchesFailed: number
+  /**
+   * Count of dispatches that hit the deadline and were aborted. GitHub may or may not have
+   * accepted them, so they are counted apart from `dispatchesFailed`.
+   */
+  dispatchesOutcomeUnknown: number
   /**
    * Count of dispatch candidates deferred to a future run because this run hit the
    * `maxDispatchesPerRun` cap. Zero when every eligible candidate was dispatched.
@@ -542,6 +547,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     summary: plan.summary,
     dispatches: dispatchOutcome.succeeded,
     dispatchesFailed: dispatchOutcome.failed,
+    dispatchesOutcomeUnknown: dispatchOutcome.outcomeUnknown,
     dispatchesDeferred,
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
