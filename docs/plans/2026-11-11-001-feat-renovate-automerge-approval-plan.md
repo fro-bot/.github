@@ -1,7 +1,7 @@
 ---
 title: "feat: approve automerge-labelled Renovate PRs from a default-branch sweep"
 type: feat
-status: active
+status: completed
 date: 2026-11-11
 origin: docs/brainstorms/2026-11-11-renovate-automerge-approval-requirements.md
 ---
@@ -367,7 +367,7 @@ flowchart TD
 
 **Verification:** `bun run lint` passes, and the registry CLI count in the instructions matches the package.
 
-- [ ] **Unit 5: Rollout read-backs**
+- [x] **Unit 5: Rollout read-backs**
 
 **Goal:** Prove the dry run and the first live approval on real PRs before leaving the variable on.
 
@@ -390,6 +390,14 @@ flowchart TD
 **Test scenarios:** Test expectation: none -- live verification of shipped behaviour.
 
 **Verification:** One Renovate PR merged with no operator action other than setting the variable, and the read-back is recorded in this plan.
+
+**Results (2026-11-11 and 2026-11-12):**
+
+- **Dry run.** #4186 merged at 21:59Z with the variable unset. Ten sweeps ran in the next 12 minutes, all started by CI completions, and a sweep job took about 17 seconds. Run [43109441401](https://github.com/fro-bot/.github/actions/runs/43109441401) reported `#4179 would-approve`, and #4179 had no review. Read by hand, #4179 had one commit authored by `fro-bot[bot]` and committed by `web-flow` with a `valid` signature, was 0 commits behind `main`, had every required check passed and had auto-merge armed.
+- **First live approval.** #4179 was the only open candidate, so no holds were needed. The operator set `RENOVATE_APPROVE` to `on` at 22:54Z. One dispatched sweep ([43116504533](https://github.com/fro-bot/.github/actions/runs/43116504533)) logged `#4179 approved`: `fro-bot` approved at the head `f9f6186` at 23:01:31Z and auto-merge merged the PR at 23:01:43Z. GitHub counted the approval as the required review, and the merge followed it by 12 seconds.
+- **First unattended merge.** #4192 was opened at 02:48:24Z. Three sweeps reported `checks-pending`, the sweep at 02:52:34Z approved it at 02:52:48Z, and it merged at 02:53:04Z: 4 minutes 40 seconds from open to merge with no operator action. A second sweep that started 6 seconds later reported `already-approved`.
+- **Schedule.** The first scheduled sweep ran at 02:52Z, 4 hours 53 minutes after the merge; none of the earlier half-hour slots produced a run. In the first five hours there were 76 runs: 74 from CI completions (14 of them replaced while pending, which GitHub shows as cancelled), 1 scheduled and 1 dispatched. CI completions are what start sweeps in practice.
+- **Not done.** No grouped Renovate PR was open, so the grouped-PR label check did not happen before the variable was turned on. Both approved PRs were single-package agent pin updates across five workflows. The check is still owed on the first grouped PR. The request count per sweep was not measured.
 
 ## System-Wide Impact
 
