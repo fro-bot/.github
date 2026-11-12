@@ -11,14 +11,15 @@ export interface FrontmatterDocument {
 
 /**
  * Parse a validated wiki document while retaining its raw body. A document with no block, or with a block that is
- * never closed, is missing its frontmatter. An empty block is an empty mapping; any other block must parse to one.
+ * never closed, is missing its frontmatter. A block with no lines is an empty mapping; any other block must parse to one.
  */
 export function parseFrontmatterDocument(content: string): FrontmatterDocument {
   const split = splitFrontmatterBlock(content)
   if (split.kind !== 'block') {
     throw new Error('validated wiki page is missing frontmatter')
   }
-  const parsed: unknown = split.text === '' ? {} : parse(split.text)
+  // Only a block with no lines is an empty mapping. A block of one blank line parses to null, like any blank text.
+  const parsed: unknown = split.text === '' && split.textEnding === '' ? {} : parse(split.text)
   if (!isRecord(parsed)) throw new Error('validated wiki page frontmatter is not an object')
   return {values: parsed, body: split.body}
 }

@@ -198,6 +198,11 @@ interface Site<Outcome> {
   readonly actual: (content: string) => Outcome
   /** What the reader must return, from how the document was built. */
   readonly expected: (entry: CorpusCase) => Outcome
+  /**
+   * An output of this reader that is wrong by one position: its body or written page starts one character late, or,
+   * for a reader that only accepts or rejects a page, the decision at the block's end is wrong.
+   */
+  readonly offByOne: (outcome: Outcome) => Outcome
 }
 
 /** The conditions that change a reader whose old regex was the LF-only, prefix-close, non-empty one. */
@@ -251,13 +256,15 @@ function documentReaderSite(): Site<DocumentOutcome> {
     expected(entry) {
       if (entry.expected.kind !== 'block') return {error: 'validated wiki page is missing frontmatter'}
       try {
-        const parsed: unknown = entry.expected.text === '' ? {} : parse(entry.expected.text)
+        const parsed: unknown =
+          entry.expected.text === '' && entry.expected.textEnding === '' ? {} : parse(entry.expected.text)
         if (!isRecord(parsed)) return {error: 'validated wiki page frontmatter is not an object'}
         return {values: parsed, body: entry.expected.body}
       } catch (error: unknown) {
         return {error: errorMessage(error)}
       }
     },
+    offByOne: outcome => ({...outcome, body: outcome.body?.slice(1)}),
   }
 }
 
@@ -289,6 +296,7 @@ function pageReaderSite(): Site<PageReaderOutcome> {
     actual(content) {
       return {...splitFrontmatter(content)}
     },
+    offByOne: outcome => ({...outcome, body: outcome.body.slice(1)}),
     expected(entry) {
       if (entry.expected.kind === 'none') return {frontmatter: {}, body: entry.content.trim()}
       if (entry.expected.kind === 'malformed') {
@@ -337,11 +345,11 @@ function ingestActual(content: string): IngestOutcome {
 }
 
 /** The ingest page parser's checks, then the `database_id` rewrite, for a topic page. Shared by old and expected. */
-function ingestFromBlock(content: string, text: string | undefined, body: string): IngestOutcome {
+function ingestFromBlock(content: string, text: string | undefined, body: string, empty = false): IngestOutcome {
   if (text === undefined) return {error: `${INGEST_PATH} is missing YAML frontmatter`}
   let parsed: unknown
   try {
-    parsed = text === '' ? {} : parse(text)
+    parsed = empty ? {} : parse(text)
   } catch (error: unknown) {
     return {error: errorMessage(error)}
   }
@@ -377,12 +385,14 @@ function ingestParserSite(): Site<IngestOutcome> {
       const outcome = ingestActual(content)
       return outcome.error === undefined ? {} : {error: outcome.error}
     },
+    offByOne: outcome => (outcome.error === undefined ? {error: 'wrong decision at the end of the block'} : {}),
     expected(entry) {
       const split = entry.expected
       const outcome = ingestFromBlock(
         entry.content,
         split.kind === 'block' ? split.text : undefined,
         split.kind === 'block' ? split.body : '',
+        split.kind === 'block' && split.text === '' && split.textEnding === '',
       )
       return outcome.error === undefined ? {} : {error: outcome.error}
     },
@@ -399,12 +409,14 @@ function ingestDocumentReaderSite(): Site<IngestOutcome> {
       return ingestFromBlock(content, match?.[1], match === null ? '' : content.slice(match[0].length))
     },
     actual: ingestActual,
+    offByOne: outcome => (outcome.written === undefined ? outcome : {written: outcome.written.slice(1)}),
     expected(entry) {
       const split = entry.expected
       return ingestFromBlock(
         entry.content,
         split.kind === 'block' ? split.text : undefined,
         split.kind === 'block' ? split.body : '',
+        split.kind === 'block' && split.text === '' && split.textEnding === '',
       )
     },
   }
@@ -459,7 +471,7 @@ function moveSite(): Site<MoveOutcome> {
   return {
     name: 'repo-page-move.ts editRelatedText (the text edit)',
     source: moveLines,
-    changedBy: new Set<Trait>([...WITHOUT_EMPTY_BLOCK, 'crlf-inner']),
+    changedBy: new Set<Trait>([...WITHOUT_EMPTY_BLOCK, 'crlf-inner', 'crlf-close']),
     old(content) {
       const match = OLD_LF_PREFIX.exec(content)
       if (match === null || match[1] === undefined) return {blocked: 'unparseable-page'}
@@ -477,6 +489,7 @@ function moveSite(): Site<MoveOutcome> {
       return {topic: content.slice(0, 4) + lines.join('\n') + content.slice(4 + match[1].length)}
     },
     actual: moveActual,
+    offByOne: outcome => (outcome.topic === undefined ? outcome : {topic: outcome.topic.slice(1)}),
     expected(entry) {
       const split = entry.expected
       if (split.kind !== 'block') return {blocked: 'unparseable-page'}
@@ -490,7 +503,10 @@ function moveSite(): Site<MoveOutcome> {
 
       // The text edit declines for a CRLF layout; the page is then re-rendered from its parsed values.
       const lineFeedLayout =
-        !split.opening.includes('\r') && !split.textEnding.includes('\r') && !split.text.includes('\r\n')
+        !split.opening.includes('\r') &&
+        !split.textEnding.includes('\r') &&
+        !split.text.includes('\r\n') &&
+        !split.closing.includes('\r')
       if (lineFeedLayout) return {topic: entry.content.replace(OLD_SLUG, NEW_SLUG)}
 
       const related = (parsed.related as string[]).map(entry => (entry === OLD_SLUG ? NEW_SLUG : entry))
@@ -535,20 +551,38 @@ function compareSite<Outcome>(
   return {outside, inside, isolated}
 }
 
-/** An offset that is wrong: the reader sees the content without its last character. */
-function withWrongOffset<Outcome>(actual: (content: string) => Outcome): (content: string) => Outcome {
-  return content => actual(content.slice(0, -1))
+/** Replaces one reader's output for one input, and leaves every other output alone. */
+function injectOutputFault<Outcome>(
+  actual: (content: string) => Outcome,
+  target: string,
+  fault: (outcome: Outcome) => Outcome,
+): (content: string) => Outcome {
+  return content => (content === target ? fault(actual(content)) : actual(content))
 }
 
-/** A decision that is wrong for the changed conditions: any line that starts with three dashes closes the block. */
-function withPrefixClose<Outcome>(actual: (content: string) => Outcome): (content: string) => Outcome {
-  return content =>
-    actual(
-      content
-        .split('\n')
-        .map((line, index) => (index > 0 && line.startsWith('---') ? '---' : line))
-        .join('\n'),
-    )
+/** Gives one input the output of a reader whose close test is a prefix match: a line of `---x` ends the block. */
+function injectPrefixClose<Outcome>(
+  actual: (content: string) => Outcome,
+  target: string,
+): (content: string) => Outcome {
+  return content => (content === target ? actual(rewriteNoiseAsClose(content)) : actual(content))
+}
+
+/** The content as a reader with a prefix-match close sees it: every later line that starts with `---` is a close. */
+function rewriteNoiseAsClose(content: string): string {
+  return content
+    .split('\n')
+    .map((line, index) => (index > 0 && line.startsWith('---') ? '---' : line))
+    .join('\n')
+}
+
+/** The first input that one of the site's changed conditions applies to and where the fault shows. */
+function firstInside<Outcome>(
+  site: Site<Outcome>,
+  corpus: readonly CorpusCase[],
+  shows: (entry: CorpusCase) => boolean,
+): CorpusCase | undefined {
+  return corpus.find(entry => [...entry.traits].some(trait => site.changedBy.has(trait)) && shows(entry))
 }
 
 const SIZE = 2500
@@ -590,14 +624,31 @@ describe.each(sites)('against the old regex: $name', site => {
     expect([...isolated].toSorted()).toStrictEqual([...compare.changedBy].toSorted())
   })
 
-  it('fails when an offset is wrong', () => {
-    const {outside, inside} = compareSite(compare, corpus, withWrongOffset(compare.actual))
-    expect(outside.length + inside.length).toBeGreaterThan(0)
+  it("reports a violation for one input when a reader's output is wrong by one position", () => {
+    const target = firstInside(
+      compare,
+      corpus,
+      entry => !same(compare.offByOne(compare.expected(entry)), compare.expected(entry)),
+    )
+    expect(target).toBeDefined()
+    const {outside, inside} = compareSite(
+      compare,
+      corpus,
+      injectOutputFault(compare.actual, target?.content ?? '', compare.offByOne),
+    )
+    expect(outside).toStrictEqual([])
+    expect(new Set(inside)).toStrictEqual(new Set([JSON.stringify(target?.content)]))
   })
 
-  it('fails when the decision is wrong for a changed condition', () => {
-    const {outside, inside} = compareSite(compare, corpus, withPrefixClose(compare.actual))
-    expect(outside.length + inside.length).toBeGreaterThan(0)
+  it('reports a violation for one input when a ---x line ends the block', () => {
+    const target = firstInside(compare, corpus, entry => {
+      if (!entry.traits.has('noise') || entry.expected.kind !== 'block') return false
+      return !same(compare.actual(rewriteNoiseAsClose(entry.content)), compare.expected(entry))
+    })
+    expect(target).toBeDefined()
+    const {outside, inside} = compareSite(compare, corpus, injectPrefixClose(compare.actual, target?.content ?? ''))
+    expect(outside).toStrictEqual([])
+    expect(new Set(inside)).toStrictEqual(new Set([JSON.stringify(target?.content)]))
   })
 })
 
@@ -714,6 +765,9 @@ describe('the frontmatter document reader', () => {
     ['comments only', '---\n# a note\n---\n'],
     ['null', '---\nnull\n---\n'],
     ['a document end marker', '---\n...\n---\n'],
+    ['one blank line, LF', '---\n\n---\n'],
+    ['one blank line, CRLF', '---\r\n\r\n---\r\n'],
+    ['one blank line at the end of the content', '---\n\n---'],
     ['a list', '---\n- a\n---\n'],
     ['a scalar', '---\njust text\n---\n'],
   ])('is not an empty mapping for a block of %s', (_name, content) => {
@@ -770,6 +824,8 @@ describe('the wiki page reader', () => {
     ['comments only', '---\n# note\n---\nBody.\n'],
     ['null', '---\nnull\n---\nBody.\n'],
     ['a document end marker', '---\n...\n---\nBody.\n'],
+    ['one blank line, LF', '---\n\n---\nBody.\n'],
+    ['one blank line, CRLF', '---\r\n\r\n---\r\nBody.\r\n'],
   ])('returns empty frontmatter with no error for a block of %s', (_name, content) => {
     expect(splitFrontmatter(content)).toStrictEqual({frontmatter: {}, body: 'Body.'})
   })
@@ -778,6 +834,18 @@ describe('the wiki page reader', () => {
     const result = splitFrontmatter('---\na: 1\n...\nb: 2\n---\nBody.\n')
     expect(result.error).toMatch(/^Invalid YAML frontmatter: /u)
   })
+
+  it.each([['---'], ['---\n'], ['---\r\n']])(
+    'makes wiki lint report invalid-frontmatter for a file that is only the opening line %j',
+    content => {
+      const path = 'knowledge/wiki/topics/a.md'
+      const kinds = lintWikiSnapshot({files: {[path]: content}})
+        .deterministicFindings.filter(finding => finding.path === path)
+        .map(finding => finding.kind)
+      expect(kinds).toContain('invalid-frontmatter')
+      expect(kinds).not.toContain('missing-frontmatter')
+    },
+  )
 
   it('makes wiki lint report invalid-frontmatter, not missing-frontmatter, for an unclosed page', () => {
     const files = {
@@ -820,6 +888,25 @@ describe('the ingest page parser', () => {
   })
 
   it.each([
+    ['LF', '---\n\n---\nBody.\n'],
+    ['CRLF', '---\r\n\r\n---\r\nBody.\r\n'],
+  ])('rejects a block of one blank line, %s, as not an object, not as an empty block', (_name, content) => {
+    expect(ingestActual(content).error).toBe(`${INGEST_PATH} frontmatter must parse to an object`)
+  })
+
+  it('gives a document end marker between two keys the YAML error it has today', () => {
+    const block = 'type: topic\n...\ntitle: A\ncreated: 2026-01-01\nupdated: 2026-01-02\n'
+    let expected = ''
+    try {
+      parse(block)
+    } catch (error: unknown) {
+      expected = errorMessage(error)
+    }
+    expect(expected).not.toBe('')
+    expect(ingestActual(topicWith(block)).error).toBe(expected)
+  })
+
+  it.each([
     ['an unclosed block', `---\n${REQUIRED}`],
     ['a file that is only the opening line', '---'],
   ])('throws its missing-frontmatter error for %s', (_name, content) => {
@@ -844,6 +931,27 @@ describe('the repo-page move text edit on a CRLF page', () => {
 
   it('reads the CRLF page and re-renders its block structurally, with LF endings and a trimmed body', () => {
     expect(moveActual(topic('\r\n')).topic).toBe(
+      [
+        '---',
+        'type: topic',
+        'title: A',
+        'created: 2026-01-01',
+        'updated: 2026-01-02',
+        'related:',
+        `  - ${NEW_SLUG}`,
+        '  - other',
+        '---',
+        '',
+        'Body.',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('re-renders structurally a page that is LF everywhere except a close with a CRLF ending', () => {
+    const content = topic('\n').replace('\n---\n', '\n---\r\n')
+    expect(content).toContain('---\r\n')
+    expect(moveActual(content).topic).toBe(
       [
         '---',
         'type: topic',

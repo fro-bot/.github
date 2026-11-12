@@ -406,8 +406,8 @@ function repairRelated(content: string, oldSlug: string, newSlug: string): strin
 
 /**
  * Edit only the `related:` lines of the frontmatter text, so the rest of the page keeps its bytes.
- * Returns `undefined` for a layout it does not recognize, and for a block with CRLF line endings, which the
- * edit would otherwise leave half rewritten; the caller then re-renders structurally.
+ * Returns `undefined` for a layout it does not recognize, and for a block with a CRLF line ending anywhere in it,
+ * the closing line included, which the edit would otherwise leave half rewritten; the caller then re-renders structurally.
  */
 function editRelatedText(content: string, oldSlug: string, newSlug: string): string | undefined {
   const split = splitFrontmatterBlock(content)
@@ -469,9 +469,14 @@ function parseBlockItem(line: string): BlockItem | undefined {
 
 type FrontmatterBlock = Extract<FrontmatterBlockSplit, {readonly kind: 'block'}>
 
-/** Whether the opening line, the block text or the line before the close ends with CRLF. */
+/** Whether the opening line, the block text, the line before the close or the closing line ends with CRLF. */
 function hasCrlf(block: FrontmatterBlock): boolean {
-  return block.opening.endsWith('\r\n') || block.textEnding === '\r\n' || block.text.includes('\r\n')
+  return (
+    block.opening.endsWith('\r\n') ||
+    block.textEnding === '\r\n' ||
+    block.text.includes('\r\n') ||
+    block.closing.endsWith('\r\n')
+  )
 }
 
 /** The page with the block text replaced and every other byte of it kept. */

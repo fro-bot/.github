@@ -1310,6 +1310,115 @@ describe('buildWikiIngestChanges (the target page lists its own repository)', ()
     expect(sourcesOf(second)).toStrictEqual([{url: TARGET_URL, accessed: '2026-04-16'}])
   })
 
+  it.each([
+    ['a slash', 'repo:alice/project/other', 'alice--project-other'],
+    ['a space', 'repo:alice/pro ject', 'alice--pro-ject'],
+    ['a question mark', 'repo:alice/pro?ject', 'alice--pro-ject'],
+    ['a hash', 'repo:alice/pro#ject', 'alice--pro-ject'],
+    ['a newline', 'repo:alice/pro\nject', 'alice--pro-ject'],
+    ['a space in the owner', 'repo:al ice/project', 'al-ice--project'],
+    ['a slash after the owner and an empty name', 'repo:alice//project', 'alice--project'],
+  ])('writes the target page unchanged when the target has %s', (_name, target, slug) => {
+    const path = `knowledge/wiki/repos/${slug}.md`
+    const files = surveyTarget({page: repoPage(path), target})
+    expect(files[path]).toBeDefined()
+    expect(sourcesOf(files[path])).toBeUndefined()
+  })
+
+  it.each([
+    ['dots', 'repo:alice/my.proj', 'alice--my-proj', 'https://github.com/alice/my.proj'],
+    ['underscores', 'repo:alice/my_proj', 'alice--my-proj', 'https://github.com/alice/my_proj'],
+    ['dashes', 'repo:alice/my-proj', 'alice--my-proj', 'https://github.com/alice/my-proj'],
+    ['a leading dot', 'repo:alice/.github', 'alice--github', 'https://github.com/alice/.github'],
+    ['digits and capitals', 'repo:Alice9/Proj-2', 'alice9--proj-2', 'https://github.com/Alice9/Proj-2'],
+  ])('still stamps a target whose name has %s', (_name, target, slug, url) => {
+    const path = `knowledge/wiki/repos/${slug}.md`
+    const files = surveyTarget({page: repoPage(path), target})
+    expect(sourcesOf(files[path])).toStrictEqual([{url, accessed: '2026-04-16'}])
+  })
+
+  it('adds no entry to a migrated page when the target is not a plain GitHub name', () => {
+    const path = 'knowledge/wiki/repos/alice--project-other.md'
+    const oldPath = 'knowledge/wiki/repos/alice--old-name.md'
+    const files = surveyTarget({
+      page: repoPage(path),
+      target: 'repo:alice/project/other',
+      existing: {
+        [oldPath]: repoPage(
+          oldPath,
+          ['node_id: R_repo', 'sources:', '  - url: https://github.com/alice/old-name', '    accessed: 2026-04-15'],
+          'alice/old-name',
+        ).content,
+      },
+    })
+    expect(sourcesOf(files[path])).toStrictEqual([{url: 'https://github.com/alice/old-name', accessed: '2026-04-15'}])
+  })
+
+  it.each([
+    ['null', 'sources: null', null],
+    ['a string', 'sources: nothing', 'nothing'],
+  ])('writes incoming sources that are %s as they are, whatever the existing page lists', (_name, line, expected) => {
+    const existing = repoPage(TARGET_PATH, ['sources:', `  - url: ${TARGET_URL}`, '    accessed: 2026-03-01']).content
+    const files = surveyTarget({page: repoPage(TARGET_PATH, [line]), existing: {[TARGET_PATH]: existing}})
+    expect(sourcesOf(files[TARGET_PATH])).toBe(expected)
+  })
+
+  it('carries the existing sources whole, in order, when they include the target and others', () => {
+    const entries = [
+      {url: 'https://github.com/alice/elsewhere', accessed: '2026-02-01'},
+      {url: TARGET_URL, accessed: '2026-03-01'},
+      {url: 'https://example.com/docs', accessed: '2026-03-15'},
+    ]
+    const existing = repoPage(TARGET_PATH, [
+      'sources:',
+      ...entries.flatMap(entry => [`  - url: ${entry.url}`, `    accessed: ${entry.accessed}`]),
+    ]).content
+    const files = surveyTarget({page: repoPage(TARGET_PATH), existing: {[TARGET_PATH]: existing}})
+    expect(sourcesOf(files[TARGET_PATH])).toStrictEqual(entries)
+  })
+
+  it('stamps the single new entry when the existing sources do not include the target', () => {
+    const existing = repoPage(TARGET_PATH, [
+      'sources:',
+      '  - url: https://github.com/alice/elsewhere',
+      '    accessed: 2026-02-01',
+    ]).content
+    const files = surveyTarget({page: repoPage(TARGET_PATH), existing: {[TARGET_PATH]: existing}})
+    expect(sourcesOf(files[TARGET_PATH])).toStrictEqual([{url: TARGET_URL, accessed: '2026-04-16'}])
+  })
+
+  it('keeps both URLs through repeat ingests after a node-ID migration', () => {
+    const oldPath = 'knowledge/wiki/repos/alice--old.md'
+    const oldPage = repoPage(
+      oldPath,
+      ['node_id: R_repo', 'sources:', '  - url: https://github.com/alice/old', '    accessed: 2026-04-15'],
+      'alice/old',
+    ).content
+    const ingestOver = (existing: Record<string, string>): Record<string, string> =>
+      buildWikiIngestChanges({
+        existingFiles: {...createEmptyWikiFiles(), ...existing},
+        operation: 'survey',
+        target: 'repo:alice/project',
+        summary: 'Surveyed the repository.',
+        timestamp: TIMESTAMP,
+        sources: [],
+        targetNodeId: 'R_repo',
+        pages: [repoPage(TARGET_PATH)],
+      }).files
+
+    const first = ingestOver({[oldPath]: oldPage})[TARGET_PATH] ?? ''
+    const second = ingestOver({[TARGET_PATH]: first})[TARGET_PATH] ?? ''
+    const third = ingestOver({[TARGET_PATH]: second})[TARGET_PATH] ?? ''
+
+    expect(sourcesOf(first)).toStrictEqual([
+      {url: 'https://github.com/alice/old', accessed: '2026-04-15'},
+      {url: TARGET_URL, accessed: '2026-04-16'},
+    ])
+    expect(sourcesOf(second)).toStrictEqual(sourcesOf(first))
+    expect(sourcesOf(third)).toStrictEqual(sourcesOf(first))
+    expect(third).toBe(second)
+  })
+
   describe('after a node-ID migration', () => {
     const OLD_PATH = 'knowledge/wiki/repos/alice--old-name.md'
     const migrate = (oldSources: string[], incomingSources: string[] = []): Record<string, string> =>

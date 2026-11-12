@@ -1017,7 +1017,8 @@ function parseFrontmatter(path: string, content: string): WikiFrontmatter {
     })
   }
 
-  const parsed: unknown = split.text === '' ? {} : parse(split.text)
+  // Only a block with no lines is an empty mapping. A block of one blank line parses to null, like any blank text.
+  const parsed: unknown = split.text === '' && split.textEnding === '' ? {} : parse(split.text)
   if (!isRecord(parsed)) {
     throw new WikiIngestError({
       code: 'INVALID_FRONTMATTER',
@@ -1209,7 +1210,9 @@ function buildTargetStamp(
   existingContent: string | undefined,
 ): TargetStamp | undefined {
   const parts = repoTargetParts(params.target)
-  if (parts === undefined) return undefined
+  // Only a target whose owner and name are plain GitHub names is listed on its page. Anything else is written
+  // without a stamp, as before, and never makes the ingest throw.
+  if (parts === undefined || !isPlainGitHubName(parts.owner) || !isPlainGitHubName(parts.name)) return undefined
   return {
     owner: parts.owner,
     name: parts.name,
@@ -1219,17 +1222,22 @@ function buildTargetStamp(
   }
 }
 
+/** A GitHub owner or repository name: ASCII letters, digits, `.`, `_` and `-`, and not `.` or `..`. */
+function isPlainGitHubName(value: string): boolean {
+  return value !== '.' && value !== '..' && /^[\w.-]+$/u.test(value)
+}
+
 /**
  * Lists the target on its own page when the page lists no sources: no `sources` key, or an empty list. A page that
  * lists any source is never changed, and neither is a `sources` value that is not a list. When the page on the
- * branch already has an entry for the target, that entry is kept as it is, date included, so a repeat write changes
- * nothing.
+ * branch already lists the target, the whole `sources` list it has is carried over as it is, dates and other
+ * entries included, so a repeat write changes nothing. Otherwise the page gets the one new entry.
  */
 function stampEmptySources(values: Record<string, unknown>, stamp: TargetStamp): void {
   const sources = values.sources
   if (sources !== undefined && !Array.isArray(sources)) return
   if (sources !== undefined && sources.length > 0) return
-  values.sources = [findExistingTargetSource(stamp) ?? {url: stamp.url, accessed: stamp.accessed}]
+  values.sources = findExistingSourcesWithTarget(stamp) ?? [{url: stamp.url, accessed: stamp.accessed}]
 }
 
 /** Adds the target to a migrated page's sources when no entry matches it, keeping every other entry. */
@@ -1241,11 +1249,12 @@ function addTargetSource(values: Record<string, unknown>, stamp: TargetStamp): v
   values.sources = [...listed, {url: stamp.url, accessed: stamp.accessed}]
 }
 
-function findExistingTargetSource(stamp: TargetStamp): unknown {
+/** The `sources` list of the page on the branch, when it has an entry for the target. */
+function findExistingSourcesWithTarget(stamp: TargetStamp): unknown[] | undefined {
   if (stamp.existingContent === undefined) return undefined
   try {
     const sources = parseFrontmatterDocument(stamp.existingContent).values.sources
-    return Array.isArray(sources) ? sources.find(entry => sourceMatchesTarget(entry, stamp)) : undefined
+    return Array.isArray(sources) && sources.some(entry => sourceMatchesTarget(entry, stamp)) ? sources : undefined
   } catch {
     return undefined
   }
