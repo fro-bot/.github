@@ -2285,6 +2285,22 @@ describe('survey-repo.yaml re-run after a wiki page conflict', () => {
     expect(result.status).toBe(status)
   })
 
+  it('a concurrent-writer refusal (ingest exit 3) sets conflict=true, which the re-run job is gated on', () => {
+    const refusal =
+      '::error::wiki-ingest: wiki ingest did not replay onto fro-bot/.github@data: another writer changed a path in the write set. Another writer updated the data branch concurrently. Retry the workflow so it rebuilds on the new head.'
+
+    const result = runStep(
+      ingestStep?.run ?? '',
+      {},
+      {bun: routedBun(String.raw`printf '%s\n' '${refusal}' >&2; exit 3`)},
+    )
+
+    expect(result.status).toBe(3)
+    expect(result.output).toBe('conflict=true\n')
+    expect(persistJob?.outputs?.conflict).toBe(`${expressionStart} steps.wiki-commit.outputs.conflict }}`)
+    expect(String(redispatchJob?.if ?? '')).toContain("needs.survey-persist.outputs.conflict == 'true'")
+  })
+
   it('puts the dropped-agent-log-entries warning in the persist step summary', () => {
     const warning = '{"code":"agent-log-entries-dropped","reason":"not-append-only"}'
 

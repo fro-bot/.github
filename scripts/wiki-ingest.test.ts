@@ -3118,7 +3118,7 @@ function failing(code: ConstructorParameters<typeof WikiIngestError>[0]['code'])
   }
 }
 
-describe('runWikiIngestEntry (exit code for a page conflict)', () => {
+describe('runWikiIngestEntry (exit code for a conflict)', () => {
   const originalExitCode = process.exitCode
 
   function restoreExitCode(): void {
@@ -3138,7 +3138,21 @@ describe('runWikiIngestEntry (exit code for a page conflict)', () => {
     }
   })
 
-  it.each(['CONFLICT_EXHAUSTED', 'HANDOFF_BASE_INVALID', 'INVALID_PAYLOAD'] as const)(
+  it('sets exit code 3 and reports the refusal when another writer changed a path in the write set', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      await runWikiIngestEntry(failing('CONFLICT_EXHAUSTED'))
+
+      expect(process.exitCode).toBe(3)
+      expect(stderr.mock.calls.map(call => String(call[0]))).toStrictEqual([
+        '::error::wiki-ingest: wiki ingest refused. Re-run.\n',
+      ])
+    } finally {
+      restoreExitCode()
+    }
+  })
+
+  it.each(['HANDOFF_BASE_INVALID', 'INVALID_PAYLOAD'] as const)(
     'rethrows %s so it keeps failing with exit code 1',
     async code => {
       process.exitCode = undefined
