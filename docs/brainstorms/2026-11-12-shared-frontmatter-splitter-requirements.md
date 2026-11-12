@@ -83,7 +83,7 @@ A _public repo page_ is a page directly under `knowledge/wiki/repos/` whose slug
 
 **The writer**
 
-- R23. When the ingest writes the target repository's page and that page has no `sources` or an empty `sources` list, the page's `sources` holds that repository's URL. The ingest never changes a page that lists sources, and it stamps no other repo page in the same write.
+- R23. When the ingest writes the target repository's page and that page has no `sources` or an empty `sources` list, the page's `sources` holds that repository's URL. When the ingest moves a page to the target's slug by a trusted node-ID match, the merged page also gains that URL if no entry matches it, and keeps its other entries. Otherwise the ingest never changes a page that lists sources, and it stamps no other repo page in the same write.
 
 ---
 
@@ -98,7 +98,7 @@ Apart from R23, these are the only inputs for which a site's result differs from
 - **An unclosed block.** It is malformed and each site reacts as R16 says. Today it is read as "no frontmatter": solutions search, the wiki page reader and pattern synthesis keep such a document with its whole text as body, and after the change they skip, drop or exclude it.
 - **The privacy gate.** A public repo page without a valid block and `sources` is blocked, where the body URL could pass it (R13).
 - **The plan-status corrector.** It makes no correction for a block that is not a YAML mapping, where it rewrote any `status:` line it found (R18).
-- **The ingest's repo page.** It adds the target repository's URL to the target's page when that page lists no sources (R23).
+- **The ingest's repo page.** It adds the target repository's URL to the target's page when that page lists no sources, and to a page it migrates by a trusted node ID when no entry matches (R23).
 
 ---
 
