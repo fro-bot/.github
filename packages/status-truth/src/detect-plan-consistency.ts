@@ -3,6 +3,8 @@
  */
 
 import type {FileLister, FileReader} from './detect-extract.ts'
+
+import {parseFrontmatterDocument, splitFrontmatterBlock} from '@fro.bot/wiki-write-core/frontmatter'
 import {
   computeClaimFingerprint,
   type PublicStatusTruthFinding,
@@ -17,6 +19,25 @@ import {
 export const SUPPORTED_PLAN_STATUSES: readonly string[] = ['active', 'complete', 'draft', 'cancelled', 'superseded']
 
 /**
+ * The line of a frontmatter block that holds the plan's status: the first top-level `status:` line, found by
+ * splitting the block text at `\n` only (one trailing `\r` belongs to the line ending, and U+2028 and U+2029 are
+ * not line boundaries). The pattern is single-line, so no whitespace match can cross a line ending.
+ *
+ * The resolver and the corrector both use it, so they agree about which line is the status line: the PR step
+ * re-verifies the corrected file through the resolver.
+ */
+function findPlanStatusLine(
+  blockText: string,
+): {readonly lines: readonly string[]; readonly index: number; readonly value: string} | undefined {
+  const lines = blockText.split('\n')
+  for (const [index, line] of lines.entries()) {
+    const match = /^status:\s*["']?(\w+)["']?\s*$/u.exec(line.endsWith('\r') ? line.slice(0, -1) : line)
+    if (match?.[1] !== undefined) return {lines, index, value: match[1]}
+  }
+  return undefined
+}
+
+/**
  * Parse YAML frontmatter from plan file content.
  *
  * Returns the `status` field value if present and non-empty, or null otherwise.
@@ -25,24 +46,18 @@ export const SUPPORTED_PLAN_STATUSES: readonly string[] = ['active', 'complete',
  * Pure function: no I/O.
  */
 function parsePlanFrontmatterStatus(content: string): string | null {
-  // Match YAML frontmatter block: ---\n...\n--- (supports both LF and CRLF line endings)
-  const frontmatterMatch = /^---\r?\n([\s\S]+?)\r?\n---/u.exec(content)
-  if (frontmatterMatch === null || frontmatterMatch[1] === undefined) {
+  // The block comes from the shared splitter. A document with no block, or a block that is never closed, has no status.
+  const split = splitFrontmatterBlock(content)
+  if (split.kind !== 'block') {
     return null
   }
-
-  const frontmatterText = frontmatterMatch[1]
 
   // Extract status field from frontmatter text using a simple line-based match.
   // This avoids a full YAML parse dependency while being robust for the known
   // plan frontmatter format (status is always a simple scalar string value).
   // Supports unquoted, double-quoted, and single-quoted values (e.g. status: "active").
-  const statusMatch = /^status:\s*["']?(\w+)["']?\s*$/mu.exec(frontmatterText)
-  if (statusMatch === null || statusMatch[1] === undefined) {
-    return null
-  }
-
-  return statusMatch[1].toLowerCase()
+  const statusLine = findPlanStatusLine(split.text)
+  return statusLine === undefined ? null : statusLine.value.toLowerCase()
 }
 
 /**
@@ -278,37 +293,42 @@ export function resolvePlanConsistencyVerdict(params: {
  * Bounded pure corrector for the plan-consistency claim kind.
  *
  * Rewrites exactly the frontmatter `status:` line to `status: complete`,
- * preserving every other byte of the input. Handles unquoted, double-quoted,
+ * preserving every other byte of the input, including the line ending of that
+ * line and the blank lines after it. Handles unquoted, double-quoted,
  * and single-quoted status values; the corrected line is always the
  * canonical unquoted form. `status:` occurrences in the plan body (outside
  * the frontmatter block) are never touched.
  *
  * Returns `null` — a no-correction signal — when the content has no
- * parseable frontmatter block or the frontmatter has no `status:` line.
+ * frontmatter block, the block is never closed, the block is not a YAML
+ * mapping, or the frontmatter has no `status:` line.
  * Never returns a mangled file: the output is always either the original
  * content with only the frontmatter status line changed, or `null`.
  *
  * Pure function: no I/O.
  */
 export function correctPlanConsistencyStatusLine(content: string): string | null {
-  const frontmatterMatch = /^(---\r?\n)([\s\S]+?)(\r?\n---)/u.exec(content)
-  if (frontmatterMatch === null) return null
+  const split = splitFrontmatterBlock(content)
+  if (split.kind !== 'block') return null
 
-  const [fullMatch, openDelim, frontmatterText, closeDelim] = frontmatterMatch
-  if (openDelim === undefined || frontmatterText === undefined || closeDelim === undefined) return null
+  // Correct only a block that is a YAML mapping: a list, a scalar or invalid YAML is not plan frontmatter.
+  try {
+    parseFrontmatterDocument(content)
+  } catch {
+    return null
+  }
 
-  const statusLinePattern = /^status:\s*["']?(\w+)["']?\s*$/mu
-  const statusMatch = statusLinePattern.exec(frontmatterText)
-  if (statusMatch === null) return null
+  const statusLine = findPlanStatusLine(split.text)
+  if (statusLine === undefined) return null
 
-  const correctedFrontmatterText = frontmatterText.replace(statusLinePattern, 'status: complete')
-  const correctedFrontmatterBlock = `${openDelim}${correctedFrontmatterText}${closeDelim}`
+  // Only the status line changes: it becomes the canonical `status: complete` and keeps the CR of its line ending.
+  // Every other line, blank lines included, and every other byte of the file goes back as the splitter found it.
+  const lines = [...statusLine.lines]
+  const original = lines[statusLine.index] ?? ''
+  lines[statusLine.index] = original.endsWith('\r') ? 'status: complete\r' : 'status: complete'
 
-  return (
-    content.slice(0, frontmatterMatch.index) +
-    correctedFrontmatterBlock +
-    content.slice((frontmatterMatch.index ?? 0) + fullMatch.length)
-  )
+  // Every piece the splitter returned goes back in its place, so only the status line changes.
+  return `${split.opening}${lines.join('\n')}${split.textEnding}${split.closing}${split.body}`
 }
 
 /**

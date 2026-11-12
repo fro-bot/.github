@@ -196,8 +196,8 @@ const FRONTMATTER_CASES = [
 const bodyLines = (input: string) => input.split('\n').length - 2
 
 /**
- * The document never closes, so the lazy scan runs to its end: with a closing fence appended, the whole body
- * parses to a mapping that holds every line. A long value is one key.
+ * The document never closes, so the splitter reads to its end before it reports the block malformed: with a
+ * closing fence appended, the whole body parses to a mapping that holds every line. A long value is one key.
  */
 function frontmatterScanReachesTheEnd(input: string): boolean {
   if (Object.keys(splitFrontmatter(input)).length > 0) return false
@@ -206,7 +206,7 @@ function frontmatterScanReachesTheEnd(input: string): boolean {
   return expected > 0 && Object.keys(closed).length === expected
 }
 
-/** Inputs of the shapes this suite used before: the first fence-like line closed them, or no fence began them. */
+/** Inputs of the shapes this suite used before: the first fence-like line closed them, or no fence began them */
 const OLD_FRONTMATTER_INPUTS = [
   {name: 'repeated fence-like lines, which close at the first one', input: `---\n${repeat('\n---')(1000)}x`},
   {name: 'repeated near-closing lines that are not a mapping', input: `---\n${repeat('\n--x')(1000)}`},

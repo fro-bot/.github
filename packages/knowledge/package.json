@@ -29,11 +29,11 @@
     "@fro-bot/core": "workspace:*",
     "@fro-bot/privacy": "workspace:*",
     "@fro-bot/wiki-ops": "workspace:*",
+    "@fro.bot/wiki-write-core": "workspace:*",
     "@octokit/rest": "^22.0.1",
     "yaml": "^2.6.0"
   },
   "devDependencies": {
-    "@fro-bot/test-kit": "workspace:*",
-    "@fro.bot/wiki-write-core": "workspace:*"
+    "@fro-bot/test-kit": "workspace:*"
   }
 }

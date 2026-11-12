@@ -201,10 +201,10 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/dispatch`](packages/dispatch/README.md) | In the repository | The dispatchers: `cross-repo-dispatch` (split into seven modules by responsibility) and `dispatch-renovate`. `scripts/` keeps one entrypoint per CLI. |
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
-| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. |
+| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. It depends on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the plan frontmatter block. |
 | [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild, the corrections lifecycle and context, `knowledge-mcp`, the `knowledge` MCP server that serves wiki and solutions lookups to agent runs, and `route-stderr`, the warning router that lifts routed stderr lines into the job summary. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety`, `wiki-change-detect-core`, `knowledge-mcp` and `route-stderr` are held at 100% mutation kills. |
-| [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It does not import `@fro-bot/status-truth`. |
-| [`@fro-bot/reports`](packages/reports/README.md) | In the repository | The improvement-metrics loop (`improvement-metrics-detect`, `-report` and `-core`), `daily-digest-counts` and `gateway-announce`. `scripts/` keeps one entrypoint per CLI. The four CLI modules and `gateway-announce` are held at 100% mutation kills. It depends only on `@fro-bot/core` and `@fro-bot/privacy`. |
+| [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It imports `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the solution-doc block, and never `@fro-bot/status-truth`. |
+| [`@fro-bot/reports`](packages/reports/README.md) | In the repository | The improvement-metrics loop (`improvement-metrics-detect`, `-report` and `-core`), `daily-digest-counts` and `gateway-announce`. `scripts/` keeps one entrypoint per CLI. The four CLI modules and `gateway-announce` are held at 100% mutation kills. It depends only on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`. |
 | [`@fro-bot/ci-checks`](packages/ci-checks/README.md) | In the repository | The repository checks: the mutation gate (`check-mutation-guards`, which resolves its root from the package; in CI it runs as three shards, `mutation-shard`, and a final `mutation-merge` job) with `mutation-guards-reach` and `mutation-shard-lists`, the `md-links`, `override-floors` and `solutions-examples` lints, and the Renovate tooling (`install-renovate`, `check-renovate-config`, `check-renovate-ranges`, `renovate-runtime`). `scripts/` keeps one entrypoint per CLI. The seven CLI modules, `barrel-exports`, `check-override-floors`, `install-renovate`, `mutation-guards-reach`, `mutation-shard`, `mutation-shard-lists`, `mutation-merge` and `repository-root` are held at 100% mutation kills. It depends on `@fro-bot/core`, `@fro.bot/wiki-write-core`, `typescript` and `yaml`. |
 
 `scripts/package-layout.test.ts` enforces the package rules: every `@fro-bot/` package is `private` and `type: module`, internal dependencies are `workspace:*`, every import is declared, no relative import leaves its package, no non-test module imports the test kit, the dependency graph has no cycle, and each manifest matches its `bun.lock` workspace entry.
@@ -234,16 +234,15 @@ flowchart BT
   wikiops -. "dev: fixtures" .-> testkit
   registry -. "dev: fixtures" .-> testkit
   knowledge -. "dev: fixtures" .-> testkit
-  knowledge -. "dev: fixtures" .-> wwc
   reports -. "dev: fixtures" .-> testkit
   cichecks -. "dev: fixtures" .-> testkit
   privacy --> core & wwc
   registry --> core & wwc
   dispatch --> core & wwc
   wikiops --> core & wwc & privacy
-  statustruth --> core & privacy
-  knowledge --> core & privacy & wikiops
-  reports --> core & privacy
+  statustruth --> core & privacy & wwc
+  knowledge --> core & privacy & wikiops & wwc
+  reports --> core & privacy & wwc
   cichecks --> core & wwc
 ```
 
@@ -291,6 +290,7 @@ C4Container
   Rel(scripts, statustruth, "fronts")
   Rel(statustruth, core, "imports")
   Rel(statustruth, privacy, "imports")
+  Rel(statustruth, wwc, "imports")
   Rel(scripts, wikiops, "fronts")
   Rel(wikiops, core, "imports")
   Rel(wikiops, wwc, "imports")
@@ -299,9 +299,11 @@ C4Container
   Rel(knowledge, core, "imports")
   Rel(knowledge, privacy, "imports")
   Rel(knowledge, wikiops, "imports")
+  Rel(knowledge, wwc, "imports")
   Rel(scripts, reports, "fronts")
   Rel(reports, core, "imports")
   Rel(reports, privacy, "imports")
+  Rel(reports, wwc, "imports")
   Rel(scripts, cichecks, "fronts")
   Rel(cichecks, core, "imports")
   Rel(cichecks, wwc, "imports")
@@ -324,13 +326,16 @@ C4Container
   UpdateRelStyle(scripts, statustruth, $offsetX="-40", $offsetY="-70")
   UpdateRelStyle(statustruth, core, $offsetX="60", $offsetY="20")
   UpdateRelStyle(statustruth, privacy, $offsetX="-60", $offsetY="40")
+  UpdateRelStyle(statustruth, wwc, $offsetX="20", $offsetY="-50")
   UpdateRelStyle(scripts, knowledge, $offsetX="60", $offsetY="-40")
   UpdateRelStyle(knowledge, core, $offsetX="-30", $offsetY="30")
   UpdateRelStyle(knowledge, privacy, $offsetX="40", $offsetY="-20")
   UpdateRelStyle(knowledge, wikiops, $offsetX="-50", $offsetY="20")
+  UpdateRelStyle(knowledge, wwc, $offsetX="30", $offsetY="-30")
   UpdateRelStyle(scripts, reports, $offsetX="-60", $offsetY="50")
   UpdateRelStyle(reports, core, $offsetX="50", $offsetY="-30")
   UpdateRelStyle(reports, privacy, $offsetX="-20", $offsetY="-40")
+  UpdateRelStyle(reports, wwc, $offsetX="-40", $offsetY="20")
   UpdateRelStyle(scripts, cichecks, $offsetX="20", $offsetY="10")
   UpdateRelStyle(cichecks, core, $offsetX="-20", $offsetY="-10")
   UpdateRelStyle(cichecks, wwc, $offsetX="20", $offsetY="-30")

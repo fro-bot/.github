@@ -184,7 +184,7 @@ describe('the repository slug trim scales linearly', {timeout: SUITE_TIMEOUT_MIL
 const SOLUTION_PATH = 'docs/solutions/best-practices/a.md'
 const SOLUTION_TAIL = 'x'.repeat(2000)
 
-function solutionsContext(text: string, withFrontmatter = true) {
+function solutionsContext(text: string, withFrontmatter = true, warn?: (line: string) => void) {
   const body = `monorepo ${text}${SOLUTION_TAIL}`
   const content = withFrontmatter ? `---\ntitle: monorepo\nproblem_type: build_error\n---\n\n${body}` : body
   return assembleSolutionsContext({
@@ -194,6 +194,7 @@ function solutionsContext(text: string, withFrontmatter = true) {
     now: new Date('2026-11-01T00:00:00.000Z'),
     // The section is about 130 bytes longer than the body; this budget cuts it inside the `x` tail.
     maxBytes: Buffer.byteLength(body, 'utf8') + 60,
+    ...(warn === undefined ? {} : {warn}),
   })
 }
 
@@ -208,8 +209,22 @@ const SOLUTION_CASES = [
 
 describe('the solution page patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
   it.each(SOLUTION_CASES)('solutions-query: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, text => solutionsContext(text))).toBeLessThan(CEILING)
+    expect(growthRatio(make, SMALL, text => solutionsContext(text, true, () => {}))).toBeLessThan(CEILING)
   })
+
+  // A fence that never closes is skipped with the fixed reason, so the second document (the case text itself) does
+  // reach the end of the scan.
+  it.each(SOLUTION_CASES.filter(({name}) => name.includes('frontmatter fence')))(
+    'solutions-query: $name is skipped as an unclosed block',
+    ({make}) => {
+      const warnings: string[] = []
+      const result = solutionsContext(make(SMALL), true, line => warnings.push(line))
+      expect(warnings).toEqual([
+        'solutions-query: skipped 1 doc on malformed frontmatter (path: docs/solutions/best-practices/b.md): unclosed-frontmatter\n',
+      ])
+      expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/b.md')
+    },
+  )
 
   // The documents must reach the truncation, or the replacement-character cases measure nothing. A
   // truncated section ends in the ellipsis, keeps the replacement run it was cut inside, and is selected.

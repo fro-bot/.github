@@ -5,6 +5,7 @@ import process from 'node:process'
 import {buildWikiIngestChanges} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
+import YAML from 'yaml'
 import {
   buildPublicSlugMap,
   buildPublicSlugs,
@@ -32,8 +33,7 @@ vi.mock('node:fs/promises', () => ({
   readdir: mockReaddir,
 }))
 
-// Suppress stderr during tests to avoid polluting output with legacy-attribution warnings.
-// Individual tests that want to assert on stderr capture it explicitly.
+// Suppress stderr during tests. The gate writes nothing to it; tests that assert that read this spy.
 const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
 beforeEach(() => {
@@ -49,6 +49,28 @@ beforeEach(() => {
 function page(filename: string, hash: string, content = ''): WikiPageSnapshot {
   const stem = filename.replace(/\.md$/i, '').toLowerCase()
   return {filename, stem, hash, content}
+}
+
+/** A repo page with a valid frontmatter block whose `sources` lists `url`. */
+function sourced(url: string, body = 'Body.'): string {
+  return ['---', 'type: repo', 'sources:', `  - url: ${url}`, '    accessed: 2026-11-12', '---', body, ''].join('\n')
+}
+
+function widgetSlugMap(): Map<string, RepoEntry[]> {
+  return new Map([['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]]])
+}
+
+/** Detection over one public repo page for `acme/widget`. */
+function widgetLeaks(content: string) {
+  return detectPrivateWikiLeaks({
+    dataWikiPages: [page('acme--widget.md', 'h1', content)],
+    publicSlugMap: widgetSlugMap(),
+    grandfatherPages: [],
+  })
+}
+
+function expectBlockedWidget(content: string): void {
+  expect(widgetLeaks(content)).toStrictEqual([{filename: 'acme--widget.md', reason: 'unattributable-page'}])
 }
 
 /**
@@ -84,8 +106,8 @@ describe('detectPrivateWikiLeaks', () => {
       // #then no leaks are reported
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [
-          page('marcusrbrown--cart.md', 'hash1', 'url: https://github.com/marcusrbrown/cart'),
-          page('some-org--some-repo.md', 'hash2', 'url: https://github.com/some-org/some-repo'),
+          page('marcusrbrown--cart.md', 'hash1', sourced('https://github.com/marcusrbrown/cart')),
+          page('some-org--some-repo.md', 'hash2', sourced('https://github.com/some-org/some-repo')),
         ],
         publicSlugMap: new Map([
           ['marcusrbrown--cart', [{owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry]],
@@ -115,7 +137,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #when detection runs
       // #then no leak is reported (no page = no exposure)
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('some-org--public.md', 'h1', 'url: https://github.com/some-org/public')],
+        dataWikiPages: [page('some-org--public.md', 'h1', sourced('https://github.com/some-org/public'))],
         publicSlugMap: new Map([
           ['some-org--public', [{owner: 'some-org', name: 'public', private: false} as unknown as RepoEntry]],
         ]),
@@ -162,7 +184,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #when detection runs
       // #then passes — it is a public repo, attribution URL present
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'new-hash', 'url: https://github.com/acme/widget updated content')],
+        dataWikiPages: [page('acme--widget.md', 'new-hash', sourced('https://github.com/acme/widget'))],
         publicSlugMap: new Map([
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
@@ -192,7 +214,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #when detection runs
       // #then BLOCKED with ambiguous-public-slug (fail closed)
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--foo-bar.md', 'h1', 'url: https://github.com/acme/foo-bar')],
+        dataWikiPages: [page('acme--foo-bar.md', 'h1', sourced('https://github.com/acme/foo-bar'))],
         publicSlugMap: new Map([
           [
             'acme--foo-bar',
@@ -213,7 +235,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #when detection runs
       // #then passes (unambiguous, attribution satisfied)
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', 'url: https://github.com/acme/widget')],
+        dataWikiPages: [page('acme--widget.md', 'h1', sourced('https://github.com/acme/widget'))],
         publicSlugMap: new Map([
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
@@ -279,7 +301,7 @@ describe('detectPrivateWikiLeaks', () => {
       expect(slug).toBe('marcusrbrown--dotfiles')
 
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('marcusrbrown--dotfiles.md', 'h1', 'url: https://github.com/marcusrbrown/.dotfiles')],
+        dataWikiPages: [page('marcusrbrown--dotfiles.md', 'h1', sourced('https://github.com/marcusrbrown/.dotfiles'))],
         publicSlugMap: new Map([
           [slug, [{owner: 'marcusrbrown', name: '.dotfiles', private: false} as unknown as RepoEntry]],
         ]),
@@ -446,11 +468,11 @@ describe('detectPrivateWikiLeaks', () => {
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
 
-    it('legacy fallback (no over-block): page with NO sources key in frontmatter — body URL passes via fallback', () => {
+    it('blocks: a mapping with NO sources key — the body URL does not attribute the page', () => {
       // #given a page with YAML frontmatter that has NO sources key at all
       //        but whose body contains the expected URL
       // #when detection runs
-      // #then passes via legacy substring fallback — no sources key means no structured authority
+      // #then blocked — the body is never consulted
       const content = [
         '---',
         'type: repo',
@@ -458,103 +480,60 @@ describe('detectPrivateWikiLeaks', () => {
         '---',
         'See https://github.com/acme/widget for details.',
       ].join('\n')
-      const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', content)],
-        publicSlugMap: new Map([
-          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
-        ]),
-        grandfatherPages: [],
-      })
-      expect(result).toEqual([])
+      expectBlockedWidget(content)
     })
 
-    it('legacy fallback (no over-block): page with no frontmatter at all — body URL passes via fallback', () => {
-      // #given a page with no YAML frontmatter markers (legacy prose-only page)
-      //        whose body contains the expected URL
+    it('blocks: a page with no frontmatter at all — the body URL does not attribute the page', () => {
+      // #given a prose-only page whose body contains the expected URL
       // #when detection runs
-      // #then passes via legacy substring fallback — exactly as the pre-existing substring check
-      const content = 'See https://github.com/acme/widget for details.'
-      const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', content)],
-        publicSlugMap: new Map([
-          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
-        ]),
-        grandfatherPages: [],
-      })
-      expect(result).toEqual([])
+      // #then blocked — there is no block to read
+      expectBlockedWidget('See https://github.com/acme/widget for details.')
     })
 
-    it('unparseable frontmatter with body URL — falls back to substring and passes', () => {
+    it('blocks: unparseable frontmatter — the body URL does not attribute the page', () => {
       // #given a page with YAML frontmatter fences but invalid YAML content
       //        and the expected URL appears in the body
       // #when detection runs
-      // #then falls back to legacy substring check and passes (no over-block)
+      // #then blocked — invalid YAML is no attribution
       const content = [
         '---',
         ': invalid: yaml: content: [[[',
         '---',
         'See https://github.com/acme/widget for details.',
       ].join('\n')
-      const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', content)],
-        publicSlugMap: new Map([
-          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
-        ]),
-        grandfatherPages: [],
-      })
-      expect(result).toEqual([])
+      expectBlockedWidget(content)
     })
 
     it('negative case: no sources, no URL in body — flagged as before', () => {
       // #given a page with no structured sources and no URL in body
       // #when detection runs
-      // #then flagged — both structured and substring checks fail
-      const content = 'Nothing useful here.'
-      const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', content)],
-        publicSlugMap: new Map([
-          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
-        ]),
-        grandfatherPages: [],
-      })
-      expect(result).toHaveLength(1)
-      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+      // #then flagged
+      expectBlockedWidget('Nothing useful here.')
     })
 
-    it('legacy fallback emits redaction-safe stderr warning — parsed JSON contains only slug, never sensitive names', () => {
-      // #given a page that passes via legacy substring fallback (no sources frontmatter)
-      //        where 'widget-super-secret' is a sensitive private repo name that must never appear
+    it('a blocked page writes no warning line, and nothing from the page reaches the leak list', () => {
+      // #given pages that would once have passed by body URL, each carrying text that must never surface
+      //        ('widget-super-secret' stands for page text and a YAML parser message could echo)
       // #when detection runs
-      // #then a warning is written to stderr as parseable JSON containing ONLY the public slug,
-      //        with NO sensitive private name in the output
+      // #then each is blocked with the fixed reason and nothing is written to stderr
       const sensitiveName = 'widget-super-secret'
-      const content = `See https://github.com/acme/widget for details. Internal name: ${sensitiveName}`
-      detectPrivateWikiLeaks({
-        dataWikiPages: [page('acme--widget.md', 'h1', content)],
-        publicSlugMap: new Map([
-          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
-        ]),
-        grandfatherPages: [],
-      })
-      expect(stderrSpy).toHaveBeenCalled()
-      const written = stderrSpy.mock.calls.map(args => String(args[0])).join('')
-      // Parse the JSON to assert structure (not just substring presence)
-      const line = written.trim().split('\n')[0] ?? ''
-      const parsed = JSON.parse(line) as Record<string, unknown>
-      // Only allowed keys: level, event, message, slug
-      expect(Object.keys(parsed).sort()).toEqual(['event', 'level', 'message', 'slug'])
-      // Exact values — these are contract strings other tooling may grep/filter on
-      expect(parsed.level).toBe('warn')
-      expect(parsed.event).toBe('legacy-substring-attribution')
-      expect(parsed.message).toBe(
-        'Page attributed via body substring; add structured frontmatter sources for stronger attribution',
-      )
-      // Slug must be the safe public identifier
-      expect(parsed.slug).toBe('acme--widget')
-      // The sensitive private name must be absent from the entire stderr output
-      expect(written).not.toContain(sensitiveName)
-      // No raw filename (which would leak the owner--repo identity)
-      expect(written).not.toContain('acme--widget.md')
+      const pages = [
+        `See https://github.com/acme/widget for details. Internal name: ${sensitiveName}`,
+        `---\ntype: repo\ninternal: ${sensitiveName}\n---\nhttps://github.com/acme/widget`,
+        `---\n${sensitiveName}: [unclosed\n---\nhttps://github.com/acme/widget`,
+        `---\n- ${sensitiveName}\n---\nhttps://github.com/acme/widget`,
+        `---\ntype: repo\ninternal: ${sensitiveName}\nhttps://github.com/acme/widget`,
+      ]
+      for (const content of pages) {
+        const result = detectPrivateWikiLeaks({
+          dataWikiPages: [page('acme--widget.md', 'h1', content)],
+          publicSlugMap: widgetSlugMap(),
+          grandfatherPages: [],
+        })
+        expect(result).toStrictEqual([{filename: 'acme--widget.md', reason: 'unattributable-page'}])
+        expect(JSON.stringify(result)).not.toContain(sensitiveName)
+      }
+      expect(stderrSpy).not.toHaveBeenCalled()
     })
   })
 
@@ -623,9 +602,8 @@ describe('detectPrivateWikiLeaks', () => {
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
 
-    it('passes: sources key ABSENT (no sources property), body URL → legacy substring fallback (no over-block)', () => {
-      // sources key is completely absent from frontmatter → return null → substring fallback → attributed
-      // This is the pre-existing legacy case that must keep passing
+    it('flags: sources key ABSENT (no sources property), body URL — the body is never consulted', () => {
+      // sources key is completely absent from a valid mapping → no attribution → flagged
       const content = [
         '---',
         'type: repo',
@@ -640,19 +618,19 @@ describe('detectPrivateWikiLeaks', () => {
         ]),
         grandfatherPages: [],
       })
-      expect(result).toEqual([])
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
   })
 
   describe('parseFrontmatterSources grammar edge cases (null-parsed frontmatter, non-object sources entries)', () => {
-    it('frontmatter body parses to exactly null (bare "null") — falls back to substring, no throw', () => {
+    it('frontmatter body parses to exactly null (bare "null") — flagged, no throw', () => {
       // #given frontmatter whose YAML content is the literal scalar `null` (not absent, not an
-      //        object) — typeof null === 'object' in JS, so this must be excluded by an explicit
-      //        `parsed === null` check, not a typeof check alone
+      //        object) — typeof null === 'object' in JS, so this must be excluded as a non-mapping
       const content = ['---', 'null', '---', 'See https://github.com/acme/widget for details.'].join('\n')
       // #when detection runs
-      // #then it must not throw (Object.prototype.hasOwnProperty.call(null, ...) throws) and must
-      // fall back to the legacy substring check, which passes here
+      // #then it must not throw (Object.prototype.hasOwnProperty.call(null, ...) throws) and the
+      // page is flagged, because the body URL is never consulted
       expect(() =>
         detectPrivateWikiLeaks({
           dataWikiPages: [page('acme--widget.md', 'h1', content)],
@@ -669,7 +647,8 @@ describe('detectPrivateWikiLeaks', () => {
         ]),
         grandfatherPages: [],
       })
-      expect(result).toEqual([])
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
 
     it('sources array contains a null element — skipped without throwing, not treated as an object', () => {
@@ -724,7 +703,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #when detection runs
       // #then matched case-insensitively against publicSlugMap
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('MarcusRBrown--Cart.md', 'h1', 'url: https://github.com/marcusrbrown/cart')],
+        dataWikiPages: [page('MarcusRBrown--Cart.md', 'h1', sourced('https://github.com/marcusrbrown/cart'))],
         publicSlugMap: new Map([
           ['marcusrbrown--cart', [{owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry]],
         ]),
@@ -741,7 +720,7 @@ describe('detectPrivateWikiLeaks', () => {
       // #then only uncovered pages are flagged
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [
-          page('acme--public.md', 'h1', 'url: https://github.com/acme/public'), // in publicSlugMap, attribution ok
+          page('acme--public.md', 'h1', sourced('https://github.com/acme/public')), // in publicSlugMap, attribution ok
           page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting'), // unchanged grandfather
           page('acme--secret.md', 'h3', 'private content'), // neither → leak
         ],
@@ -1004,7 +983,7 @@ describe('findStructuralViolations', () => {
     // #when both functions are called and results merged
     // #then structural leak is present; public page does not appear in detectPrivateWikiLeaks results
     mockReaddir.mockResolvedValue([dirent('acme--secret', 'dir'), dirent('acme--public.md')])
-    mockReadFile.mockResolvedValue('url: https://github.com/acme/public\n')
+    mockReadFile.mockResolvedValue(sourced('https://github.com/acme/public'))
 
     const structuralLeaks = await findStructuralViolations('knowledge/wiki/repos')
     const pages = await loadWikiPages('knowledge/wiki/repos')
@@ -1255,7 +1234,7 @@ describe('slug-variant + collision regression', () => {
     const publicSlugMap = buildPublicSlugMap([{owner: 'acme', name: 'foo_bar', private: false} as unknown as RepoEntry])
     // Page content references a wrong repo (no acme/foo_bar URL)
     const result = detectPrivateWikiLeaks({
-      dataWikiPages: [page('acme--foo-bar.md', 'h1', 'url: https://github.com/acme/foo-bar')],
+      dataWikiPages: [page('acme--foo-bar.md', 'h1', sourced('https://github.com/acme/foo-bar'))],
       publicSlugMap,
       grandfatherPages: [],
     })
@@ -1600,13 +1579,10 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
 // ---------------------------------------------------------------------------
 
 describe('false-frontmatter guard — body-embedded block must not be treated as authoritative', () => {
-  it('body-embedded wrong-url block does not block a page that has correct URL in plain body text', () => {
-    // Content starts with prose (no leading ---), body has an embedded --- block with wrong URL,
-    // but also has the expected URL in the leading prose.
-    // Before fix (with /m): embedded block parsed as structured sources (wrong URL) → authoritative →
-    //   body substring skipped → FLAGGED (over-block)
-    // After fix (without /m): no leading frontmatter → null → falls back to substring →
-    //   expected URL found in prose → PASSES (correct)
+  it('a body-embedded block is not read, and the URL in the leading prose does not rescue the page', () => {
+    // Content starts with prose (no leading ---), body has an embedded --- block with a wrong URL, and the
+    // expected URL appears in the leading prose. There is no block at the start of the page, so the page has no
+    // attribution; the prose URL is never consulted. (Before the splitter this page passed by the body fallback.)
     const content = [
       'See https://github.com/acme/widget for details.',
       '',
@@ -1622,7 +1598,8 @@ describe('false-frontmatter guard — body-embedded block must not be treated as
       ]),
       grandfatherPages: [],
     })
-    expect(result).toEqual([])
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
   })
 
   it('real leading frontmatter is still parsed correctly — no regression from removing /m', () => {
@@ -1817,6 +1794,361 @@ describe('a page the ingest wrote for its target', () => {
     })
     expect(leaks).toHaveLength(1)
     expect(leaks[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+})
+
+describe('the block rule at the gate: a public repo page passes only with a valid block and a matching source', () => {
+  const widgetUrl = 'https://github.com/acme/widget'
+  const decoyBody = `See ${widgetUrl} for details.`
+
+  it('passes a page with a matching source, whatever its body contains', () => {
+    for (const body of ['', 'Body.', decoyBody, '---\nsources: []\n---', 'text\n---\nmore']) {
+      expect(widgetLeaks(sourced(widgetUrl, body))).toStrictEqual([])
+    }
+  })
+
+  it.each([
+    ['no block', decoyBody],
+    ['an unclosed block', `---\ntype: repo\nsources:\n  - url: ${widgetUrl}\n\n${decoyBody}\n`],
+    ['a file that is only ---', '---'],
+    ['invalid YAML', `---\n: bad: [[[\n---\n${decoyBody}`],
+    ['a list block', `---\n- ${widgetUrl}\n---\n${decoyBody}`],
+    ['a scalar block', `---\njust text\n---\n${decoyBody}`],
+    ['an empty block', `---\n---\n${decoyBody}`],
+    ['a block of one blank line', `---\n\n---\n${decoyBody}`],
+    ['a block of only comments', `---\n# nothing here\n---\n${decoyBody}`],
+    ['a block of null', `---\nnull\n---\n${decoyBody}`],
+    ['a block of ...', `---\n...\n---\n${decoyBody}`],
+    ['a mapping with no sources key', `---\ntype: repo\n---\n${decoyBody}`],
+    ['a first line of --- with a trailing space', `--- \nsources:\n  - url: ${widgetUrl}\n---\n${decoyBody}`],
+    ['a byte-order mark before the opening line', `\uFEFF---\nsources:\n  - url: ${widgetUrl}\n---\n${decoyBody}`],
+    ['a blank line before the opening line', `\n---\nsources:\n  - url: ${widgetUrl}\n---\n${decoyBody}`],
+  ])('blocks %s as unattributable-page, with the repository URL in the body', (_label, content) => {
+    expectBlockedWidget(content)
+  })
+
+  it.each(['---x', '----', '--- text'])(
+    'blocks non-matching sources followed by a %s line and a later ---, with the URL in the body',
+    decoyLine => {
+      const content = [
+        '---',
+        'type: repo',
+        'sources:',
+        '  - url: https://github.com/attacker/private-repo',
+        decoyLine,
+        '---',
+        decoyBody,
+      ].join('\n')
+      expectBlockedWidget(content)
+    },
+  )
+
+  it('reads a ---x: y line as a key of the mapping, so the sources after it count', () => {
+    // #given the block does not end at ---x: y, so the matching sources after that key are in the block
+    const content = `---\ntype: repo\n---x: y\nsources:\n  - url: ${widgetUrl}\n---\nBody.`
+    expect(widgetLeaks(content)).toStrictEqual([])
+  })
+
+  it('does not let a ---x: y line hide the real sources behind a body URL', () => {
+    // #given the sources after the ---x: y line are the attacker's, and the body names the repository
+    const content = `---\ntype: repo\n---x: y\nsources:\n  - url: https://github.com/attacker/private-repo\n---\n${decoyBody}`
+    expectBlockedWidget(content)
+  })
+
+  it('reads a CRLF page and judges it on its sources', () => {
+    const matching = ['---', 'type: repo', 'sources:', `  - url: ${widgetUrl}`, '---', 'Body.', ''].join('\r\n')
+    const other = matching.replace('acme/widget', 'attacker/private-repo').replace('Body.', decoyBody)
+    expect(widgetLeaks(matching)).toStrictEqual([])
+    expectBlockedWidget(other)
+  })
+
+  it('reads a page whose close has trailing spaces or a tab', () => {
+    for (const close of ['---  ', '---\t', '--- \t ']) {
+      const matching = `---\nsources:\n  - url: ${widgetUrl}\n${close}\nBody.`
+      const other = `---\nsources:\n  - url: https://github.com/attacker/private-repo\n${close}\n${decoyBody}`
+      expect(widgetLeaks(matching)).toStrictEqual([])
+      expectBlockedWidget(other)
+    }
+  })
+
+  it('still blocks present-but-empty and non-array sources', () => {
+    for (const sources of ['sources: []', 'sources: nope', 'sources: null', 'sources:\n  - name: widget']) {
+      expectBlockedWidget(`---\ntype: repo\n${sources}\n---\n${decoyBody}`)
+    }
+  })
+
+  it('still reports a slug shared by two public repositories as ambiguous-public-slug', () => {
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--foo-bar.md', 'h1', sourced('https://github.com/acme/foo-bar'))],
+      publicSlugMap: new Map([
+        [
+          'acme--foo-bar',
+          [
+            {owner: 'acme', name: 'foo-bar', private: false} as unknown as RepoEntry,
+            {owner: 'acme', name: 'foo_bar', private: false} as unknown as RepoEntry,
+          ],
+        ],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toStrictEqual([{filename: 'acme--foo-bar.md', reason: 'ambiguous-public-slug'}])
+  })
+
+  it('passes a non-public page equal to its main copy without reading its block, and blocks a changed one', () => {
+    // #given page content that no reader could parse: an unclosed block
+    const unreadable = '---\n: bad: [[[\nnever closed'
+    const unchanged = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--private.md', 'same', unreadable)],
+      publicSlugMap: new Map(),
+      grandfatherPages: [page('acme--private.md', 'same', unreadable)],
+    })
+    const changed = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--private.md', 'new', sourced(widgetUrl))],
+      publicSlugMap: new Map(),
+      grandfatherPages: [page('acme--private.md', 'old', unreadable)],
+    })
+    expect(unchanged).toStrictEqual([])
+    expect(changed).toStrictEqual([{filename: 'acme--private.md', reason: 'unattributable-page'}])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Differential: the gate's frozen old decision against the new one over a seeded corpus
+// ---------------------------------------------------------------------------
+
+/** The gate's URL match before the splitter, kept verbatim as a reference. */
+function oldSourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(sourceUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:') return false
+  if (parsed.hostname !== 'github.com') return false
+  if (parsed.port !== '') return false
+  const segments = parsed.pathname.split('/').filter(s => s.length > 0)
+  return segments[0]?.toLowerCase() === owner.toLowerCase() && segments[1]?.toLowerCase() === name.toLowerCase()
+}
+
+/** The gate's three-state read before the splitter, kept verbatim: the regex that found the block, then the parse. */
+function oldParseFrontmatterSources(text: string): string[] | null {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
+  if (!match) return null
+  let parsed: unknown
+  try {
+    parsed = YAML.parse(match[1] as string)
+  } catch {
+    // unparseable → null below
+  }
+  if (parsed === null || parsed === undefined) return null
+  const obj = parsed as Record<string, unknown>
+  if (!Object.prototype.hasOwnProperty.call(obj, 'sources')) return null
+  const sources = obj.sources
+  if (!Array.isArray(sources)) return []
+  const urls: string[] = []
+  for (const src of sources) {
+    const url = (src as Record<string, unknown> | null | undefined)?.url
+    if (typeof url === 'string') urls.push(url)
+  }
+  return urls
+}
+
+/**
+ * The gate's decision before the splitter for one public page of `acme/widget`: the three-state read and the
+ * body-URL fallback. It returns `true` for a pass.
+ */
+function oldGatePasses(content: string): boolean {
+  const structured = oldParseFrontmatterSources(content)
+  if (structured !== null) return structured.some(url => oldSourceUrlMatchesRepo(url, 'acme', 'widget'))
+  // The removed fallback was a plain text search of the page for the repository URL. Splitting on it is the same
+  // search, written so it is not read as a URL check.
+  return content.split('https://github.com/acme/widget').length > 1
+}
+
+/** Mulberry32: a small seeded generator, so a failing case reproduces. */
+function seeded(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = Math.trunc(state + 0x6d2b79f5)
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+interface DifferentialCase {
+  readonly content: string
+  /** The decision the spec states for this case, built from what the case was made of, never from its text. */
+  readonly expectedPass: boolean
+  /** Whether the case holds a condition the splitter changed. Outside those, old and new must agree. */
+  readonly changed: boolean
+}
+
+/**
+ * Builds one case from named ingredients. The expected decision follows from the ingredients alone: a public
+ * page passes only when its opening line is exact, its block is closed, the block is a YAML mapping with no
+ * line that breaks the YAML, and its `sources` has a matching URL.
+ */
+function buildCase(random: () => number): DifferentialCase {
+  const pick = <T>(choices: readonly T[]): T => choices[Math.floor(random() * choices.length)] as T
+  const opener = pick([
+    'exact',
+    'exact',
+    'exact',
+    'exact',
+    'exact',
+    'trailing-space',
+    'bom',
+    'blank-first',
+    'none',
+  ] as const)
+  const closer = pick(['---', '---', '---  ', '---\t', 'missing'] as const)
+  const shape = pick([
+    'mapping',
+    'mapping',
+    'mapping',
+    'mapping',
+    'empty',
+    'blank',
+    'comment',
+    'list',
+    'scalar',
+    'null',
+    'bad-yaml',
+  ] as const)
+  const sources = pick(['match', 'match', 'match-path', 'both', 'other', 'empty-list', 'scalar', 'absent'] as const)
+  const extra = pick(['none', 'none', 'none', 'none', 'none', 'dash-x', 'dash-four', 'dash-text'] as const)
+  const extraAt = pick(['before', 'after'] as const)
+  const eol = pick(['lf', 'crlf', 'mixed'] as const)
+  const bodyKind = pick(['empty', 'prose', 'url', 'dashes'] as const)
+  const finalNewline = random() < 0.5
+
+  const sourcesLines: Record<typeof sources, string[]> = {
+    match: ['sources:', '  - url: https://github.com/acme/widget'],
+    'match-path': ['sources:', '  - url: https://github.com/acme/widget/blob/main/README.md'],
+    other: ['sources:', '  - url: https://github.com/attacker/private-repo'],
+    both: ['sources:', '  - url: https://github.com/attacker/private-repo', '  - url: https://github.com/acme/widget'],
+    'empty-list': ['sources: []'],
+    scalar: ['sources: nope'],
+    absent: [],
+  }
+  const extraLines: Record<typeof extra, string[]> = {
+    none: [],
+    'dash-x': ['---x: y'],
+    'dash-four': ['----'],
+    'dash-text': ['--- text'],
+  }
+  const blockLines: string[] = []
+  if (shape === 'mapping') {
+    const head = ['type: repo']
+    blockLines.push(...head, ...(extraAt === 'before' ? extraLines[extra] : []), ...sourcesLines[sources])
+    if (extraAt === 'after') blockLines.push(...extraLines[extra])
+  } else {
+    const fixed: Record<Exclude<typeof shape, 'mapping'>, string[]> = {
+      empty: [],
+      blank: [''],
+      comment: ['# nothing here'],
+      list: ['- https://github.com/acme/widget'],
+      scalar: ['just text'],
+      null: ['null'],
+      'bad-yaml': ['key: [unclosed', 'other: {'],
+    }
+    blockLines.push(...fixed[shape])
+  }
+
+  const bodyLines: Record<typeof bodyKind, string[]> = {
+    empty: [],
+    prose: ['Some prose.'],
+    url: ['See https://github.com/acme/widget for details.'],
+    dashes: ['Intro.', '---', 'more', '---'],
+  }
+  // A body that holds a --- line closes a block that was left open, so an unclosed case never carries one.
+  const body = closer === 'missing' && bodyKind === 'dashes' ? bodyLines.url : bodyLines[bodyKind]
+
+  const openerLine = {exact: '---', 'trailing-space': '--- ', bom: '\uFEFF---', 'blank-first': '', none: undefined}[
+    opener
+  ]
+  const lines: string[] = []
+  if (opener === 'blank-first') lines.push('', '---')
+  else if (openerLine !== undefined) lines.push(openerLine)
+  lines.push(...blockLines)
+  if (closer !== 'missing') lines.push(closer)
+  lines.push(...body)
+  let content = ''
+  for (const [index, line] of lines.entries()) {
+    const ending = eol === 'lf' ? '\n' : eol === 'crlf' ? '\r\n' : random() < 0.5 ? '\n' : '\r\n'
+    const last = index === lines.length - 1
+    content += last && !finalNewline ? line : line + ending
+  }
+
+  const yamlBreaks = extra === 'dash-four' || extra === 'dash-text'
+  const mappingOk = shape === 'mapping' && !yamlBreaks
+  const sourcesMatch = sources === 'match' || sources === 'match-path' || sources === 'both'
+  const expectedPass = opener === 'exact' && closer !== 'missing' && mappingOk && sourcesMatch
+  const changed =
+    opener !== 'exact' || closer === 'missing' || shape !== 'mapping' || sources === 'absent' || extra !== 'none'
+  return {content, expectedPass, changed}
+}
+
+function runDifferential(
+  newPasses: (content: string) => boolean,
+  expectedOf: (testCase: DifferentialCase) => boolean = testCase => testCase.expectedPass,
+): {
+  disagreements: string[]
+  cases: number
+  passing: number
+  blocked: number
+  changed: number
+  unchanged: number
+} {
+  const random = seeded(20261112)
+  const disagreements: string[] = []
+  let passing = 0
+  let changed = 0
+  const total = 4000
+  for (let index = 0; index < total; index += 1) {
+    const testCase = buildCase(random)
+    const decision = newPasses(testCase.content)
+    if (decision) passing += 1
+    if (testCase.changed) changed += 1
+    if (decision !== expectedOf(testCase)) disagreements.push(`#${index} new ${JSON.stringify(testCase.content)}`)
+    if (!testCase.changed && oldGatePasses(testCase.content) !== decision) {
+      disagreements.push(`#${index} old≠new ${JSON.stringify(testCase.content)}`)
+    }
+  }
+  return {disagreements, cases: total, passing, blocked: total - passing, changed, unchanged: total - changed}
+}
+
+describe('the gate decision against its frozen old decision over a seeded corpus', () => {
+  const newGatePasses = (content: string): boolean => widgetLeaks(content).length === 0
+
+  it('agrees with the old decision outside the changed conditions and with the stated result inside them', () => {
+    const result = runDifferential(newGatePasses)
+    expect(result.disagreements).toStrictEqual([])
+    // The corpus reaches both outcomes, changed and unchanged cases, in volume.
+    expect(result.passing).toBeGreaterThan(200)
+    expect(result.blocked).toBeGreaterThan(200)
+    expect(result.changed).toBeGreaterThan(200)
+    expect(result.unchanged).toBeGreaterThan(200)
+  })
+
+  it('the old reference differs from the new decision on the changed conditions, so the corpus can tell them apart', () => {
+    const body = 'See https://github.com/acme/widget for details.'
+    expect(oldGatePasses(body)).toBe(true)
+    expect(newGatePasses(body)).toBe(false)
+  })
+
+  it('test of the test: a wrong decision for a changed condition fails the differential', () => {
+    // #given the old decision stands in for a new gate that kept the body-URL fallback
+    const result = runDifferential(oldGatePasses)
+    // #then the differential reports it
+    expect(result.disagreements.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong stated result fails the differential', () => {
+    const result = runDifferential(newGatePasses, testCase => !testCase.expectedPass)
+    expect(result.disagreements.length).toBeGreaterThan(0)
   })
 })
 

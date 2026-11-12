@@ -2,7 +2,7 @@
 
 The learning capture, pattern synthesis and drafted solution doc tools of the Fro Bot control plane: the weekly harvest of merged PRs into `learning-proposal` issues, the pattern clustering and `pattern-proposal` issues built on them, and the three-job drafted-solutions pipeline (harvest, an agent that drafts without write access, and a trusted publish). The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
-It depends on `@fro-bot/core` (guards, env, output, JSON lines, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the fail-closed denylist, the redacted-ID loader and the public-output gate), `@fro-bot/wiki-ops` (`solution-docs-paths` and the `wiki-handoff-core` contract that the drafted handoff shares with the wiki), `@octokit/rest` (a type) and `yaml`. It does not import `@fro-bot/status-truth`. Tests also import `@fro-bot/test-kit` (the spawn helper) and `@fro.bot/wiki-write-core`.
+It depends on `@fro-bot/core` (guards, env, output, JSON lines, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the fail-closed denylist, the redacted-ID loader and the public-output gate), `@fro-bot/wiki-ops` (`solution-docs-paths` and the `wiki-handoff-core` contract that the drafted handoff shares with the wiki), `@fro.bot/wiki-write-core` (the frontmatter splitter that `capture-learnings-harvest` and `capture-patterns-synthesis` read a solution doc's block through), `@octokit/rest` (a type) and `yaml`. It does not import `@fro-bot/status-truth`. Tests also import `@fro-bot/test-kit` (the spawn helper).
 
 Nothing here holds a credential of its own. Every module that writes to GitHub checks the privacy gate first and fails closed: `capture-learnings-open` and `capture-patterns-open` run each issue title and body through the denylist and the public-output gate, and `drafted-solutions-publish` gates every file, row and reason before its first write. The harvest and detect halves are fail-soft by design (a failed scan writes an empty digest and exits 0), and the open and publish halves are fail-hard (a missing input exits 1 before any write). The harvest-to-open and harvest-to-publish digest files are an artifact contract between jobs of different ages, so their key sets and bytes do not change. Each CLI keeps a six-line `scripts/<name>.ts` entrypoint that calls `main` from the package's `*-cli` module, so workflow paths do not change.
 
@@ -71,6 +71,7 @@ C4Component
   System_Ext(core, "@fro-bot/core", "cli, env, guards, json, output, github")
   System_Ext(privacy, "@fro-bot/privacy", "capture-learnings-privacy, redacted-ids, status-truth-public-output")
   System_Ext(wikiops, "@fro-bot/wiki-ops", "solution-docs-paths, wiki-handoff-core")
+  System_Ext(wwc, "@fro.bot/wiki-write-core", "frontmatter splitter")
   System_Ext(github, "GitHub", "REST and Git Data API")
 
   Rel(entrypoints, capture_learnings_harvest_cli, "main")
@@ -104,6 +105,7 @@ C4Component
   Rel(drafted_solutions_validate_rows_cli, drafted_solutions_validate_rows, "imports")
   Rel(capture_learnings_harvest, core, "imports")
   Rel(capture_learnings_harvest, privacy, "imports")
+  Rel(capture_learnings_harvest, wwc, "imports")
   Rel(capture_learnings_harvest_cli, core, "runs on")
   Rel(capture_learnings_open, core, "imports")
   Rel(capture_learnings_open, privacy, "imports")
@@ -117,6 +119,7 @@ C4Component
   Rel(capture_patterns_open_cli, core, "runs on")
   Rel(capture_patterns_synthesis, core, "imports")
   Rel(capture_patterns_synthesis, wikiops, "imports")
+  Rel(capture_patterns_synthesis, wwc, "imports")
   Rel(drafted_solutions_handoff_build, core, "imports")
   Rel(drafted_solutions_handoff_build, wikiops, "imports")
   Rel(drafted_solutions_handoff_build_cli, core, "runs on")
@@ -168,6 +171,7 @@ C4Component
   UpdateRelStyle(drafted_solutions_validate_rows_cli, drafted_solutions_validate_rows, $offsetX="-22", $offsetY="15")
   UpdateRelStyle(capture_learnings_harvest, core, $offsetX="-7", $offsetY="-47")
   UpdateRelStyle(capture_learnings_harvest, privacy, $offsetX="-63", $offsetY="22")
+  UpdateRelStyle(capture_learnings_harvest, wwc, $offsetX="40", $offsetY="-30")
   UpdateRelStyle(capture_learnings_harvest_cli, core, $offsetX="-53", $offsetY="1")
   UpdateRelStyle(capture_learnings_open, core, $offsetX="-53", $offsetY="-13")
   UpdateRelStyle(capture_learnings_open, privacy, $offsetX="18", $offsetY="-42")
@@ -181,6 +185,7 @@ C4Component
   UpdateRelStyle(capture_patterns_open_cli, core, $offsetX="-11", $offsetY="-7")
   UpdateRelStyle(capture_patterns_synthesis, core, $offsetX="-58", $offsetY="-11")
   UpdateRelStyle(capture_patterns_synthesis, wikiops, $offsetX="5", $offsetY="-49")
+  UpdateRelStyle(capture_patterns_synthesis, wwc, $offsetX="-20", $offsetY="30")
   UpdateRelStyle(drafted_solutions_handoff_build, core, $offsetX="24", $offsetY="47")
   UpdateRelStyle(drafted_solutions_handoff_build, wikiops, $offsetX="-50", $offsetY="-33")
   UpdateRelStyle(drafted_solutions_handoff_build_cli, core, $offsetX="-17", $offsetY="40")

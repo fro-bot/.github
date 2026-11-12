@@ -26,7 +26,7 @@ import {requiredEnv} from '@fro-bot/core/env'
 import {createOctokit} from '@fro-bot/core/github'
 import {isRecord} from '@fro-bot/core/guards'
 import {formatJsonLine} from '@fro-bot/core/json'
-import {parse} from 'yaml'
+import {parseFrontmatterDocument} from '@fro.bot/wiki-write-core/frontmatter'
 import {
   buildClassKey,
   buildEdgeFingerprint,
@@ -558,18 +558,16 @@ export async function loadSolutionDocFilesFromDisk(
   return {files, readFailures}
 }
 
+/**
+ * The frontmatter mapping of a solution doc. Any failure is no metadata: no block, a block that is never closed,
+ * invalid YAML and a block that is not a mapping all give `{}`. Only a block with no lines is an empty mapping.
+ */
 export function splitFrontmatter(content: string): Record<string, unknown> {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) return {}
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) return {}
-  let parsed: unknown
   try {
-    parsed = parse(frontmatterText)
+    return parseFrontmatterDocument(content).values
   } catch {
     return {}
   }
-  return isRecord(parsed) ? parsed : {}
 }
 
 /**

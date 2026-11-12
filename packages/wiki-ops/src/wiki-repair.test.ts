@@ -536,9 +536,12 @@ describe('gateWikiRepairs', () => {
       'title: Fro Bot .github',
       'created: 2026-04-16',
       'updated: 2026-04-16',
+      'sources:',
+      '  - url: https://github.com/fro-bot/github',
+      '    accessed: 2026-04-16',
       '---',
       '',
-      'https://github.com/fro-bot/github',
+      'Body.',
       '',
     ].join('\n')
 
@@ -599,6 +602,75 @@ describe('gateWikiRepairs', () => {
 
     expect(result.ok).toBe(false)
     expect(result.leaks.some(l => l.reason === 'ambiguous-public-slug')).toBe(true)
+  })
+})
+
+describe('runWikiRepair with a blocked public repo page', () => {
+  it('aborts the run as privacy-leak before any commit', async () => {
+    // #given an index drift the repair would fix, and a public repo page whose body names the repository
+    //        but whose block lists no sources
+    const files = buildCleanFiles()
+    files['knowledge/index.md'] = buildIndex([
+      '## Repos',
+      '',
+      '- [[fro-bot--github]] — Fro Bot .github',
+      '- [[ghost--repo]] — Ghost Repo',
+      '',
+      '## Topics',
+      '',
+      '- [[github-actions-ci]] — GitHub Actions CI',
+      '',
+      '## Entities',
+      '',
+      '_No entity pages yet._',
+      '',
+      '## Comparisons',
+      '',
+      '_No comparison pages yet._',
+    ])
+    files['knowledge/wiki/repos/fro-bot--github.md'] = [
+      '---',
+      'type: repo',
+      'title: Fro Bot .github',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      '---',
+      '',
+      'See https://github.com/fro-bot/github.',
+      '',
+    ].join('\n')
+    const repos: RepoEntry[] = [
+      {
+        owner: 'fro-bot',
+        name: 'github',
+        added: '2026-01-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: true,
+        has_renovate: false,
+        private: false,
+      },
+    ]
+    const commit = vi.fn(async () => ({committed: true, commitSha: 'sha-1', attempts: 1}))
+    const loadTree = vi.fn(async () => ({
+      tipSha: 'tip-1',
+      wikiFiles: files,
+      publicSlugMap: buildPublicSlugMap(repos),
+      grandfatherPages: [],
+    }))
+
+    // #when the repair runs
+    const result = await runWikiRepair({
+      loadTree,
+      getCurrentDataTipSha: vi.fn(async () => 'tip-1'),
+      commitWikiChanges: commit,
+    })
+
+    // #then it aborts as a privacy block and nothing is committed
+    expect(result.aborted).toBe(1)
+    expect(result.privacy_blocked).toBe(1)
+    expect(commit).not.toHaveBeenCalled()
   })
 })
 

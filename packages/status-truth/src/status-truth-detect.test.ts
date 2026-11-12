@@ -40,6 +40,7 @@ import {
   resolvePlanStatusClaim,
   reverifyPlanConsistencyCorrection,
   scanPlanConsistencyFindings,
+  SUPPORTED_PLAN_STATUSES,
 } from './detect-plan-consistency.ts'
 import {loadRolloutSnapshot, resolveRolloutTrackerClaim} from './detect-rollout.ts'
 import {
@@ -5194,5 +5195,483 @@ describe('plan-consistency corrector: bounded status-line rewrite', () => {
     const result = reverifyPlanConsistencyCorrection('docs/plans/incomplete-plan.md', correctedContent)
     // status: complete + an unchecked unit → unresolved, not current.
     expect(result.verdict).toBe('unresolved')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Plan frontmatter: the shared block rule
+// ---------------------------------------------------------------------------
+
+async function liveState(content: string): Promise<string | null> {
+  const result = await resolvePlanStatusClaim({claimedPath: 'docs/plans/my-plan.md', fileReader: async () => content})
+  return result.status === 'resolved' ? result.state : null
+}
+
+describe('resolvePlanStatusClaim: the block rule', () => {
+  it('still reads a status line from a closed block, in LF, in CRLF and with a close that has trailing spaces', async () => {
+    await expect(liveState('---\ntitle: P\nstatus: active\n---\n\nBody')).resolves.toBe('active')
+    await expect(liveState('---\r\ntitle: P\r\nstatus: draft\r\n---\r\n\r\nBody')).resolves.toBe('draft')
+    await expect(liveState('---\ntitle: P\nstatus: complete\n---  \n\nBody')).resolves.toBe('complete')
+  })
+
+  it.each([
+    ['an unclosed block', '---\ntitle: P\nstatus: active\n\nBody with no close\n'],
+    ['an unclosed block with a ---- line in the body', '---\ntitle: P\nstatus: active\n\n----\n'],
+    ['a file that is only ---', '---'],
+    ['an unclosed CRLF block', '---\r\nstatus: active\r\n'],
+  ])('reports the status unavailable for %s', async (_label, content) => {
+    await expect(liveState(content)).resolves.toBeNull()
+  })
+
+  it('does not take a status from text inside a quoted scalar after U+2028', async () => {
+    await expect(liveState('---\ntitle: "a\u2028status: draft"\n---\n\nBody')).resolves.toBeNull()
+  })
+
+  it('does not take a status whose value is on a later line, or the next key as the value', async () => {
+    await expect(liveState('---\nstatus:\n  active\n---\n\nBody')).resolves.toBeNull()
+    await expect(liveState('---\nstatus:\nactive: yes\n---\n\nBody')).resolves.toBeNull()
+  })
+
+  it('reads a status line after a ---x: y line, which is a key of the block', async () => {
+    await expect(liveState('---\ntitle: P\n---x: y\nstatus: active\n---\n\nBody')).resolves.toBe('active')
+  })
+})
+
+describe('correctPlanConsistencyStatusLine: the block rule', () => {
+  const ACTIVE = (lines: string[], eol = '\n', close = '---') =>
+    ['---', ...lines, close, '', '# Plan', '', 'status: active is also in the body', ''].join(eol)
+
+  it('corrects a valid mapping and keeps every other byte, in LF, in CRLF and with a close that has trailing spaces', () => {
+    for (const [eol, close] of [
+      ['\n', '---'],
+      ['\r\n', '---'],
+      ['\n', '---  '],
+      ['\n', '---\t'],
+      ['\r\n', '--- '],
+    ] as const) {
+      // The status line is the last line of the block, so its line ending is not part of the replaced text.
+      const original = ACTIVE(['title: P', 'status: active'], eol, close)
+      expect(correctPlanConsistencyStatusLine(original)).toBe(
+        original.replace('\nstatus: active', '\nstatus: complete'),
+      )
+    }
+  })
+
+  it('still corrects a status after a ---x: y line, which is a key of a valid mapping', () => {
+    const original = ACTIVE(['title: P', '---x: y', 'status: active', 'date: 2026-01-01'])
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      original.replace('\nstatus: active\n', '\nstatus: complete\n'),
+    )
+  })
+
+  it.each([
+    ['an unclosed block', '---\ntitle: P\nstatus: active\n\nBody with no close\n'],
+    ['an unclosed block with a ---- line in the body', '---\ntitle: P\nstatus: active\n\n----\n'],
+    ['a file that is only ---', '---'],
+    ['a --- text line before the status line', '---\ntitle: P\n--- text\nstatus: active\n---\nBody'],
+    ['a ---- line before the status line', '---\ntitle: P\n----\nstatus: active\n---\nBody'],
+    ['a list block', '---\n- item\nstatus: active\n---\nBody'],
+    ['a scalar block', '---\n|\nstatus: active\n---\nBody'],
+    ['a block that parses to null', '---\n# only a comment\n...\n---\nBody'],
+    ['an empty block', '---\n---\nstatus: active\n'],
+    ['invalid YAML', '---\nstatus: active\nother: [unclosed\n---\nBody'],
+  ])('makes no correction for %s', (_label, content) => {
+    expect(correctPlanConsistencyStatusLine(content)).toBeNull()
+  })
+
+  it('replaces only the status value: blank lines after the status line stay', () => {
+    const original = '---\ntitle: x\n---x: y\nstatus: active\n\n\nother: x\n---\nbody'
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      '---\ntitle: x\n---x: y\nstatus: complete\n\n\nother: x\n---\nbody',
+    )
+  })
+
+  it('keeps the CRLF of the status line when it is not the last line of the block', () => {
+    const original = '---\r\n---x: y\r\nstatus: active\r\ndate: 2026-01-01\r\n---\r\nBody'
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      '---\r\n---x: y\r\nstatus: complete\r\ndate: 2026-01-01\r\n---\r\nBody',
+    )
+  })
+
+  it('does not treat U+2028 as a line start: text inside a quoted scalar is not a status line', () => {
+    const inScalar = '---\ntitle: "see\u2028status: active"\n---\nbody'
+    expect(correctPlanConsistencyStatusLine(inScalar)).toBeNull()
+    const withRealLine = '---\ntitle: "see\u2028status: active"\nstatus: active\n---\nbody'
+    expect(correctPlanConsistencyStatusLine(withRealLine)).toBe(
+      '---\ntitle: "see\u2028status: active"\nstatus: complete\n---\nbody',
+    )
+  })
+
+  it.each(['\n', '\r\n'])('corrects the status line first, in the middle and last, with eol %j, byte for byte', eol => {
+    const lines = {
+      first: ['status: active', 'title: P', 'date: 2026-01-01'],
+      middle: ['title: P', 'status: active', 'date: 2026-01-01'],
+      last: ['title: P', 'date: 2026-01-01', 'status: active'],
+    }
+    for (const fields of Object.values(lines)) {
+      const render = (status: string) =>
+        [
+          '---',
+          ...fields.map(line => (line === 'status: active' ? status : line)),
+          '---',
+          '',
+          '- [x] **Unit 1: A**',
+          '',
+        ].join(eol)
+      const corrected = correctPlanConsistencyStatusLine(render('status: active'))
+      expect(corrected).toBe(render('status: complete'))
+      expect(reverifyPlanConsistencyCorrection('docs/plans/p.md', corrected ?? '').verdict).toBe('current')
+    }
+  })
+
+  it.each(['\n', '\r\n'])('drops trailing spaces of the status line and keeps its ending, with eol %j', eol => {
+    const original = ['---', 'status: active   ', 'title: P', '---', 'body', ''].join(eol)
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      ['---', 'status: complete', 'title: P', '---', 'body', ''].join(eol),
+    )
+  })
+
+  it.each(['status: "active"', "status: 'active'", 'status:   active', 'status: "active"  '])(
+    'corrects the quoted or spaced status line %j to the canonical value',
+    line => {
+      for (const eol of ['\n', '\r\n']) {
+        const original = ['---', 'title: P', line, 'date: 2026-01-01', '---', '- [x] **Unit 1: A**', ''].join(eol)
+        const corrected = correctPlanConsistencyStatusLine(original)
+        expect(corrected).toBe(
+          ['---', 'title: P', 'status: complete', 'date: 2026-01-01', '---', '- [x] **Unit 1: A**', ''].join(eol),
+        )
+        expect(reverifyPlanConsistencyCorrection('docs/plans/p.md', corrected ?? '').verdict).toBe('current')
+      }
+    },
+  )
+
+  it('does not correct a status key indented inside a nested mapping', () => {
+    expect(correctPlanConsistencyStatusLine('---\nmeta:\n  status: active\ntitle: P\n---\nbody')).toBeNull()
+  })
+
+  it('does not take a status: key whose value is on a later line', () => {
+    expect(correctPlanConsistencyStatusLine('---\nstatus:\n  active\n---\nbody')).toBeNull()
+    expect(correctPlanConsistencyStatusLine('---\nstatus:\ntitle: x\n---\nbody')).toBeNull()
+  })
+
+  it('leaves a status: line in the body untouched', () => {
+    const original = '---\ntitle: P\nstatus: active\n---\nstatus: active\n'
+    expect(correctPlanConsistencyStatusLine(original)).toBe('---\ntitle: P\nstatus: complete\n---\nstatus: active\n')
+  })
+})
+// ---------------------------------------------------------------------------
+// Differential corpus: seeded ingredients, a renderer, and the result the block rule states for them
+// ---------------------------------------------------------------------------
+
+type Opener = 'exact' | 'trailing-space' | 'bom' | 'blank-first' | 'none'
+type Closer = 'plain' | 'spaces' | 'tab' | 'missing'
+type Shape = 'mapping' | 'empty' | 'blank' | 'comment' | 'list' | 'scalar' | 'null' | 'bad-yaml'
+type Extra = 'none' | 'dash-x' | 'dash-four' | 'dash-text'
+type BodyKind = 'empty' | 'prose' | 'dashes'
+type Outcome = 'fields' | 'empty' | 'bad-yaml' | 'unclosed'
+
+interface Ingredients {
+  readonly opener: Opener
+  readonly closer: Closer
+  readonly shape: Shape
+  readonly extra: Extra
+  readonly extraBefore: boolean
+  readonly eol: 'lf' | 'crlf' | 'mixed'
+  readonly body: BodyKind
+  readonly finalNewline: boolean
+}
+
+/** Mulberry32: a small seeded generator, so a failing case reproduces. */
+function seededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = Math.trunc(state + 0x6d2b79f5)
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function drawIngredients(random: () => number): Ingredients {
+  const pick = <T>(choices: readonly T[]): T => choices[Math.floor(random() * choices.length)] as T
+  const closer = pick(['plain', 'plain', 'spaces', 'tab', 'missing'] as const)
+  return {
+    opener: pick(['exact', 'exact', 'exact', 'exact', 'trailing-space', 'bom', 'blank-first', 'none'] as const),
+    closer,
+    shape: pick([
+      'mapping',
+      'mapping',
+      'mapping',
+      'empty',
+      'blank',
+      'comment',
+      'list',
+      'scalar',
+      'null',
+      'bad-yaml',
+    ] as const),
+    extra: pick(['none', 'none', 'none', 'dash-x', 'dash-four', 'dash-text'] as const),
+    extraBefore: random() < 0.5,
+    eol: pick(['lf', 'lf', 'crlf', 'mixed'] as const),
+    // A body with a --- line closes a block that was left open, so an unclosed case never carries one.
+    body: closer === 'missing' ? pick(['empty', 'prose'] as const) : pick(['empty', 'prose', 'dashes'] as const),
+    finalNewline: random() < 0.5,
+  }
+}
+
+/** The text of a document made of `ingredients`, with `fieldLines` as the mapping's own lines. */
+function renderCase(ingredients: Ingredients, fieldLines: readonly string[]): string {
+  const extraLine = {none: undefined, 'dash-x': '---x: y', 'dash-four': '----', 'dash-text': '--- text'}[
+    ingredients.extra
+  ]
+  const blockLines: string[] = []
+  if (ingredients.shape === 'mapping') {
+    if (extraLine !== undefined && ingredients.extraBefore) blockLines.push(extraLine)
+    blockLines.push(...fieldLines)
+    if (extraLine !== undefined && !ingredients.extraBefore) blockLines.push(extraLine)
+  } else {
+    const fixed = {
+      empty: [],
+      blank: [''],
+      comment: ['# nothing here'],
+      list: ['- a', '- b'],
+      scalar: ['just text'],
+      null: ['null'],
+      'bad-yaml': ['key: [unclosed', 'other: {'],
+    }
+    blockLines.push(...fixed[ingredients.shape])
+  }
+  const lines: string[] = []
+  if (ingredients.opener === 'blank-first') lines.push('', '---')
+  else if (ingredients.opener === 'none') lines.push('Prose first.')
+  else lines.push({exact: '---', 'trailing-space': '--- ', bom: '\uFEFF---'}[ingredients.opener])
+  lines.push(...blockLines)
+  if (ingredients.closer !== 'missing') lines.push({plain: '---', spaces: '---  ', tab: '---\t'}[ingredients.closer])
+  lines.push(...{empty: [], prose: ['Some prose.'], dashes: ['Intro.', '---', 'more', '---']}[ingredients.body])
+  let content = ''
+  for (const [index, line] of lines.entries()) {
+    const crlf = ingredients.eol === 'crlf' || (ingredients.eol === 'mixed' && index % 2 === 1)
+    const last = index === lines.length - 1
+    content += last && !ingredients.finalNewline ? line : line + (crlf ? '\r\n' : '\n')
+  }
+  return content
+}
+
+/** What the block rule says reading `ingredients` gives, stated from the ingredients and never from the text. */
+function expectedOutcome(ingredients: Ingredients): Outcome {
+  if (ingredients.opener !== 'exact') return 'empty'
+  if (ingredients.closer === 'missing') return 'unclosed'
+  if (ingredients.shape === 'bad-yaml') return 'bad-yaml'
+  if (ingredients.shape !== 'mapping') return 'empty'
+  return ingredients.extra === 'dash-four' || ingredients.extra === 'dash-text' ? 'bad-yaml' : 'fields'
+}
+
+/**
+ * Whether `ingredients` hold a condition the splitter changed: an unclosed block, a line starting with `---` that
+ * is not a close, an empty block, and (for a reader that took LF only) a CRLF line ending. Everywhere else the
+ * old reader and the new one must agree.
+ */
+function holdsChangedCondition(ingredients: Ingredients, readerWasLfOnly: boolean): boolean {
+  if (ingredients.opener !== 'exact') return false
+  return (
+    ingredients.closer === 'missing' ||
+    ingredients.extra !== 'none' ||
+    ingredients.shape === 'empty' ||
+    (readerWasLfOnly && ingredients.eol !== 'lf')
+  )
+}
+
+function drawCorpus(count: number, fieldLines: readonly string[], lfOnly: boolean, seed = 20261112) {
+  const random = seededRandom(seed)
+  return Array.from({length: count}, () => {
+    const drawn = drawIngredients(random)
+    const ingredients: Ingredients = lfOnly ? {...drawn, eol: 'lf'} : drawn
+    return {ingredients, content: renderCase(ingredients, fieldLines)}
+  })
+}
+
+interface DifferentialReport {
+  readonly mismatches: string[]
+  readonly outcomes: Record<Outcome, number>
+  readonly changed: number
+  readonly unchanged: number
+}
+
+/**
+ * Reads a seeded corpus with `read`. Every case must give the result `expectedFor` states for its outcome. A case
+ * that holds no changed condition must also give what `oldRead`, the frozen reader the splitter replaced, gives.
+ */
+function runDifferential<T>(params: {
+  readonly fieldLines: readonly string[]
+  readonly readerWasLfOnly: boolean
+  readonly lfOnly?: boolean
+  readonly extraChanged?: (ingredients: Ingredients) => boolean
+  readonly read: (content: string) => T
+  readonly oldRead: (content: string) => T
+  readonly expectedFor: (outcome: Outcome, ingredients: Ingredients) => T
+}): DifferentialReport {
+  const mismatches: string[] = []
+  const outcomes: Record<Outcome, number> = {fields: 0, empty: 0, 'bad-yaml': 0, unclosed: 0}
+  let changed = 0
+  for (const {ingredients, content} of drawCorpus(3000, params.fieldLines, params.lfOnly ?? false)) {
+    const outcome = expectedOutcome(ingredients)
+    outcomes[outcome] += 1
+    const actual = JSON.stringify(params.read(content))
+    if (actual !== JSON.stringify(params.expectedFor(outcome, ingredients))) {
+      mismatches.push(`stated ${outcome}: ${JSON.stringify(content)} gave ${actual}`)
+    }
+    if (
+      holdsChangedCondition(ingredients, params.readerWasLfOnly) ||
+      (ingredients.opener === 'exact' &&
+        ingredients.shape === 'mapping' &&
+        ingredients.closer !== 'missing' &&
+        (params.extraChanged?.(ingredients) ?? false))
+    ) {
+      changed += 1
+    } else if (actual !== JSON.stringify(params.oldRead(content))) {
+      mismatches.push(`old reader: ${JSON.stringify(content)} gave ${actual}`)
+    }
+  }
+  return {mismatches, outcomes, changed, unchanged: 3000 - changed}
+}
+
+/** The corpus reaches every outcome and both kinds of case in volume. */
+function expectCorpusVolume(report: DifferentialReport): void {
+  expect(report.outcomes.fields).toBeGreaterThan(100)
+  expect(report.outcomes.empty).toBeGreaterThan(100)
+  expect(report.outcomes['bad-yaml']).toBeGreaterThan(100)
+  expect(report.outcomes.unclosed).toBeGreaterThan(100)
+  expect(report.changed).toBeGreaterThan(100)
+  expect(report.unchanged).toBeGreaterThan(100)
+}
+
+function oldPlanStatus(content: string): string | null {
+  const match = /^---\r?\n([\s\S]+?)\r?\n---/u.exec(content)
+  if (match === null || match[1] === undefined) return null
+  const status = /^status:\s*["']?(\w+)["']?\s*$/mu.exec(match[1])
+  if (status === null || status[1] === undefined) return null
+  return status[1].toLowerCase()
+}
+
+function oldCorrect(content: string): string | null {
+  const frontmatterMatch = /^(---\r?\n)([\s\S]+?)(\r?\n---)/u.exec(content)
+  if (frontmatterMatch === null) return null
+  const [fullMatch, openDelim, frontmatterText, closeDelim] = frontmatterMatch
+  if (openDelim === undefined || frontmatterText === undefined || closeDelim === undefined) return null
+  const statusLinePattern = /^status:\s*["']?(\w+)["']?\s*$/mu
+  if (statusLinePattern.exec(frontmatterText) === null) return null
+  return `${content.slice(
+    0,
+    frontmatterMatch.index,
+  )}${openDelim}${frontmatterText.replace(statusLinePattern, 'status: complete')}${closeDelim}${content.slice(
+    frontmatterMatch.index + fullMatch.length,
+  )}`
+}
+
+describe('the plan status resolver against the regex reader it replaced, over a seeded corpus', () => {
+  const fieldLines = ['title: P', 'status: active']
+  const read = (content: string) => buildPlanConsistencyClaim('docs/plans/p.md', content).claimedState
+  // The sentinel claim state of a plan with no readable status, written out here and not read from the new reader.
+  const UNSUPPORTED = 'unsupported'
+  const oldRead = (content: string) => {
+    const status = oldPlanStatus(content)
+    return status !== null && SUPPORTED_PLAN_STATUSES.includes(status) ? status : UNSUPPORTED
+  }
+  // The status line is read from the lines of the block, whatever else the block holds. A document with no block
+  // or an unclosed block has none.
+  const expectedFor = (outcome: Outcome, ingredients: Ingredients) =>
+    outcome !== 'unclosed' && ingredients.opener === 'exact' && ingredients.shape === 'mapping' ? 'active' : UNSUPPORTED
+
+  it('agrees with the old reader outside the changed conditions and with the stated result inside them', () => {
+    const report = runDifferential({fieldLines, readerWasLfOnly: false, read, oldRead, expectedFor})
+    expect(report.mismatches).toEqual([])
+    expectCorpusVolume(report)
+  })
+
+  it('test of the test: a reader that kept the old boundaries fails the differential', () => {
+    const report = runDifferential({fieldLines, readerWasLfOnly: false, read: oldRead, oldRead, expectedFor})
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong stated result fails the differential', () => {
+    const wrong = (outcome: Outcome, ingredients: Ingredients) =>
+      expectedFor(outcome === 'unclosed' ? 'fields' : outcome, ingredients)
+    const report = runDifferential({fieldLines, readerWasLfOnly: false, read, oldRead, expectedFor: wrong})
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong fallback for an unclosed block is reported', () => {
+    // #given a reader that still yields the status of a block that is never closed
+    const faulty = (content: string) => {
+      const unclosedStatus = /^---\r?\n(?:[^\n]*\n)*?status:[ \t]*(\w+)/u.exec(content)
+      return unclosedStatus?.[1] ?? read(content)
+    }
+    const report = runDifferential({fieldLines, readerWasLfOnly: false, read: faulty, oldRead, expectedFor})
+    expect(report.mismatches.some(line => line.startsWith('stated unclosed'))).toBe(true)
+  })
+})
+
+describe('the plan status corrector against the regex reader it replaced, over a seeded corpus', () => {
+  // The expected text is the same document drawn again with the corrected status line, so it is built from the
+  // ingredients and not from the corrector's output. The corpus holds LF, CRLF and mixed line endings.
+  const read = (content: string) => correctPlanConsistencyStatusLine(content)
+  const fixtures = [
+    // The status line is last in the block, so the old pattern kept its CRLF.
+    {name: 'status last', fieldLines: ['title: P', 'status: active'], rendered: ['title: P', 'status: complete']},
+    // The status line is first, so a CRLF status line is not last in its block: the old pattern took its CR.
+    {name: 'status first', fieldLines: ['status: active', 'title: P'], rendered: ['status: complete', 'title: P']},
+  ]
+  // A CRLF status line that is not last in its block is a stated changed condition: the old corrector took its CR.
+  const crlfNotLast = (ingredients: Ingredients) => ingredients.eol !== 'lf'
+
+  it.each(fixtures)(
+    'agrees with the old corrector outside the changed conditions and with the stated bytes inside them ($name)',
+    ({fieldLines, rendered, name}) => {
+      const report = runDifferential({
+        fieldLines,
+        readerWasLfOnly: false,
+        extraChanged: name === 'status first' ? crlfNotLast : undefined,
+        read,
+        oldRead: oldCorrect,
+        expectedFor: (outcome, ingredients) => (outcome === 'fields' ? renderCase(ingredients, rendered) : null),
+      })
+      expect(report.mismatches).toEqual([])
+      expectCorpusVolume(report)
+    },
+  )
+
+  it('has CRLF blocks whose status line is not last in the corpus, and the old corrector differs on them', () => {
+    let crlfNotLastCases = 0
+    for (const {ingredients, content} of drawCorpus(3000, ['status: active', 'title: P'], false)) {
+      if (expectedOutcome(ingredients) !== 'fields' || ingredients.eol !== 'crlf') continue
+      crlfNotLastCases += 1
+      expect(oldCorrect(content)).not.toBe(renderCase(ingredients, ['status: complete', 'title: P']))
+      expect(read(content)).toBe(renderCase(ingredients, ['status: complete', 'title: P']))
+    }
+    expect(crlfNotLastCases).toBeGreaterThan(20)
+  })
+
+  it('test of the test: a corrector that kept the old boundaries fails the differential', () => {
+    const report = runDifferential({
+      fieldLines: ['title: P', 'status: active'],
+      readerWasLfOnly: false,
+      read: oldCorrect,
+      oldRead: oldCorrect,
+      expectedFor: (outcome, ingredients) =>
+        outcome === 'fields' ? renderCase(ingredients, ['title: P', 'status: complete']) : null,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong stated result fails the differential', () => {
+    const report = runDifferential({
+      fieldLines: ['title: P', 'status: active'],
+      readerWasLfOnly: false,
+      read,
+      oldRead: oldCorrect,
+      expectedFor: (outcome, ingredients) =>
+        outcome === 'empty' ? renderCase(ingredients, ['title: P', 'status: complete']) : null,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
   })
 })

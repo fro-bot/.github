@@ -10,11 +10,13 @@
 import nodeProcess from 'node:process'
 import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {describe, expect, it, vi} from 'vitest'
+import {parse} from 'yaml'
 import {
   applyEnrichmentScanAvailability,
   buildCandidateDigest,
   buildLogExcerpt,
   buildMergeShaMarker,
+  collectSolutionDocs,
   DEPENDENCY_LABELS,
   fetchMergedPrsInWindow,
   fetchOpenedLearningShas,
@@ -4390,5 +4392,356 @@ describe('buildCandidateDigest — mixed threat types in dual-trigger candidate'
     const serialized = JSON.stringify(result)
     expect(serialized).not.toContain('testowner/secret-repo')
     expect(serialized).not.toContain('ghp_')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Solution-doc frontmatter: raw inputs whose reading does not change
+// ---------------------------------------------------------------------------
+
+describe('collectSolutionDocs: raw frontmatter inputs', () => {
+  const DOC_PATH = 'docs/solutions/best-practices/doc.md'
+  const read = (content: string) => collectSolutionDocs({[DOC_PATH]: content})
+  const EMPTY = [{path: DOC_PATH, module: '', tags: [], problemType: ''}]
+
+  it('reads module, tags and problem_type from a well-formed LF block', () => {
+    expect(read('---\nmodule: scripts/foo.ts\ntags:\n  - a\n  - b\nproblem_type: best_practice\n---\nBody\n')).toEqual([
+      {path: DOC_PATH, module: 'scripts/foo.ts', tags: ['a', 'b'], problemType: 'best_practice'},
+    ])
+  })
+
+  it('reads a block whose close is the last line with no line ending', () => {
+    expect(read('---\nmodule: m\n---')).toEqual([{path: DOC_PATH, module: 'm', tags: [], problemType: ''}])
+  })
+
+  it('does not read a --- line in the body as a second block', () => {
+    expect(read('---\nmodule: m\n---\nIntro\n---\nmodule: other\n---\n')).toEqual([
+      {path: DOC_PATH, module: 'm', tags: [], problemType: ''},
+    ])
+  })
+
+  it.each([
+    ['no frontmatter', 'Just prose.\n'],
+    ['a first line of --- with a trailing space', '--- \nmodule: m\n---\n'],
+    ['a byte-order mark before the opening line', '\uFEFF---\nmodule: m\n---\n'],
+    ['a blank line before the opening line', '\n---\nmodule: m\n---\n'],
+  ])('keeps the document with no metadata for %s', (_label, content) => {
+    expect(read(content)).toEqual(EMPTY)
+  })
+
+  it.each([
+    ['a list', '---\n- a\n- b\n---\nBody'],
+    ['a scalar', '---\njust text\n---\nBody'],
+    ['null', '---\nnull\n---\nBody'],
+    ['only comments', '---\n# nothing here\n---\nBody'],
+    ['only ...', '---\n...\n---\nBody'],
+  ])('keeps the document with no metadata for a block that is %s', (_label, content) => {
+    expect(read(content)).toEqual(EMPTY)
+  })
+
+  it('reads a mapping that ends with a ... line', () => {
+    expect(read('---\nmodule: m\n...\n---\nBody')).toEqual([{path: DOC_PATH, module: 'm', tags: [], problemType: ''}])
+  })
+
+  it.each([
+    ['invalid YAML', '---\ntitle: [unclosed bracket\n---\nBody'],
+    ['a ... line between two keys', '---\nmodule: m\n...\ntags: [a]\n---\nBody'],
+  ])('skips the document without a message for %s', (_label, content) => {
+    expect(read(content)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Solution-doc frontmatter: the shared block rule
+// ---------------------------------------------------------------------------
+
+describe('collectSolutionDocs: the block rule', () => {
+  const DOC_PATH = 'docs/solutions/best-practices/doc.md'
+  const read = (content: string) => collectSolutionDocs({[DOC_PATH]: content})
+  const withModule = (module: string, tags: string[] = []) => [{path: DOC_PATH, module, tags, problemType: ''}]
+  const EMPTY = withModule('')
+
+  it('reads a CRLF document', () => {
+    expect(read('---\r\nmodule: m\r\ntags:\r\n  - a\r\n---\r\nBody\r\n')).toEqual(withModule('m', ['a']))
+  })
+
+  it.each([
+    ['an unclosed block', '---\nmodule: m\nBody with no close\n'],
+    ['a file that is only ---', '---'],
+    ['a file that is --- and a line ending', '---\n'],
+    ['an unclosed CRLF block', '---\r\nmodule: m\r\n'],
+  ])('skips %s silently', (_label, content) => {
+    const stderr = vi.spyOn(nodeProcess.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(read(content)).toEqual([])
+      expect(stderr).not.toHaveBeenCalled()
+    } finally {
+      stderr.mockRestore()
+    }
+  })
+
+  it('reads an empty block as an empty mapping, and the lines after it as the body', () => {
+    expect(read('---\n---\nBody\n')).toEqual(EMPTY)
+    expect(read('---\n---\nmodule: m\n---\nBody\n')).toEqual(EMPTY)
+  })
+
+  it('reads a ---x: y line as a key of the block, so the keys after it count', () => {
+    expect(read('---\nmodule: m\n---x: y\ntags:\n  - a\n---\nBody')).toEqual(withModule('m', ['a']))
+  })
+
+  it.each(['----', '--- text'])('ends the block at the later --- when a %s line is inside it', line => {
+    // #given the line makes the block invalid YAML, which skips the document
+    expect(read(`---\nmodule: m\n${line}\n---\nBody`)).toEqual([])
+  })
+
+  it('closes a block at --- followed by spaces or tabs', () => {
+    expect(read('---\nmodule: m\n---  \nBody')).toEqual(withModule('m'))
+    expect(read('---\nmodule: m\n---\t\nBody')).toEqual(withModule('m'))
+  })
+})
+// ---------------------------------------------------------------------------
+// Differential corpus: seeded ingredients, a renderer, and the result the block rule states for them
+// ---------------------------------------------------------------------------
+
+type Opener = 'exact' | 'trailing-space' | 'bom' | 'blank-first' | 'none'
+type Closer = 'plain' | 'spaces' | 'tab' | 'missing'
+type Shape = 'mapping' | 'empty' | 'blank' | 'comment' | 'list' | 'scalar' | 'null' | 'bad-yaml'
+type Extra = 'none' | 'dash-x' | 'dash-four' | 'dash-text'
+type BodyKind = 'empty' | 'prose' | 'dashes'
+type Outcome = 'fields' | 'empty' | 'bad-yaml' | 'unclosed'
+
+interface Ingredients {
+  readonly opener: Opener
+  readonly closer: Closer
+  readonly shape: Shape
+  readonly extra: Extra
+  readonly extraBefore: boolean
+  readonly eol: 'lf' | 'crlf' | 'mixed'
+  readonly body: BodyKind
+  readonly finalNewline: boolean
+}
+
+/** Mulberry32: a small seeded generator, so a failing case reproduces. */
+function seededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = Math.trunc(state + 0x6d2b79f5)
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function drawIngredients(random: () => number): Ingredients {
+  const pick = <T>(choices: readonly T[]): T => choices[Math.floor(random() * choices.length)] as T
+  const closer = pick(['plain', 'plain', 'spaces', 'tab', 'missing'] as const)
+  return {
+    opener: pick(['exact', 'exact', 'exact', 'exact', 'trailing-space', 'bom', 'blank-first', 'none'] as const),
+    closer,
+    shape: pick([
+      'mapping',
+      'mapping',
+      'mapping',
+      'empty',
+      'blank',
+      'comment',
+      'list',
+      'scalar',
+      'null',
+      'bad-yaml',
+    ] as const),
+    extra: pick(['none', 'none', 'none', 'dash-x', 'dash-four', 'dash-text'] as const),
+    extraBefore: random() < 0.5,
+    eol: pick(['lf', 'lf', 'crlf', 'mixed'] as const),
+    // A body with a --- line closes a block that was left open, so an unclosed case never carries one.
+    body: closer === 'missing' ? pick(['empty', 'prose'] as const) : pick(['empty', 'prose', 'dashes'] as const),
+    finalNewline: random() < 0.5,
+  }
+}
+
+/** The text of a document made of `ingredients`, with `fieldLines` as the mapping's own lines. */
+function renderCase(ingredients: Ingredients, fieldLines: readonly string[]): string {
+  const extraLine = {none: undefined, 'dash-x': '---x: y', 'dash-four': '----', 'dash-text': '--- text'}[
+    ingredients.extra
+  ]
+  const blockLines: string[] = []
+  if (ingredients.shape === 'mapping') {
+    if (extraLine !== undefined && ingredients.extraBefore) blockLines.push(extraLine)
+    blockLines.push(...fieldLines)
+    if (extraLine !== undefined && !ingredients.extraBefore) blockLines.push(extraLine)
+  } else {
+    const fixed = {
+      empty: [],
+      blank: [''],
+      comment: ['# nothing here'],
+      list: ['- a', '- b'],
+      scalar: ['just text'],
+      null: ['null'],
+      'bad-yaml': ['key: [unclosed', 'other: {'],
+    }
+    blockLines.push(...fixed[ingredients.shape])
+  }
+  const lines: string[] = []
+  if (ingredients.opener === 'blank-first') lines.push('', '---')
+  else if (ingredients.opener === 'none') lines.push('Prose first.')
+  else lines.push({exact: '---', 'trailing-space': '--- ', bom: '\uFEFF---'}[ingredients.opener])
+  lines.push(...blockLines)
+  if (ingredients.closer !== 'missing') lines.push({plain: '---', spaces: '---  ', tab: '---\t'}[ingredients.closer])
+  lines.push(...{empty: [], prose: ['Some prose.'], dashes: ['Intro.', '---', 'more', '---']}[ingredients.body])
+  let content = ''
+  for (const [index, line] of lines.entries()) {
+    const crlf = ingredients.eol === 'crlf' || (ingredients.eol === 'mixed' && index % 2 === 1)
+    const last = index === lines.length - 1
+    content += last && !ingredients.finalNewline ? line : line + (crlf ? '\r\n' : '\n')
+  }
+  return content
+}
+
+/** What the block rule says reading `ingredients` gives, stated from the ingredients and never from the text. */
+function expectedOutcome(ingredients: Ingredients): Outcome {
+  if (ingredients.opener !== 'exact') return 'empty'
+  if (ingredients.closer === 'missing') return 'unclosed'
+  if (ingredients.shape === 'bad-yaml') return 'bad-yaml'
+  if (ingredients.shape !== 'mapping') return 'empty'
+  return ingredients.extra === 'dash-four' || ingredients.extra === 'dash-text' ? 'bad-yaml' : 'fields'
+}
+
+/**
+ * Whether `ingredients` hold a condition the splitter changed: an unclosed block, a line starting with `---` that
+ * is not a close, an empty block, and (for a reader that took LF only) a CRLF line ending. Everywhere else the
+ * old reader and the new one must agree.
+ */
+function holdsChangedCondition(ingredients: Ingredients, readerWasLfOnly: boolean): boolean {
+  if (ingredients.opener !== 'exact') return false
+  return (
+    ingredients.closer === 'missing' ||
+    ingredients.extra !== 'none' ||
+    ingredients.shape === 'empty' ||
+    (readerWasLfOnly && ingredients.eol !== 'lf')
+  )
+}
+
+function drawCorpus(count: number, fieldLines: readonly string[], lfOnly: boolean, seed = 20261112) {
+  const random = seededRandom(seed)
+  return Array.from({length: count}, () => {
+    const drawn = drawIngredients(random)
+    const ingredients: Ingredients = lfOnly ? {...drawn, eol: 'lf'} : drawn
+    return {ingredients, content: renderCase(ingredients, fieldLines)}
+  })
+}
+
+interface DifferentialReport {
+  readonly mismatches: string[]
+  readonly outcomes: Record<Outcome, number>
+  readonly changed: number
+  readonly unchanged: number
+}
+
+/**
+ * Reads a seeded corpus with `read`. Every case must give the result `expectedFor` states for its outcome. A case
+ * that holds no changed condition must also give what `oldRead`, the frozen reader the splitter replaced, gives.
+ */
+function runDifferential<T>(params: {
+  readonly fieldLines: readonly string[]
+  readonly readerWasLfOnly: boolean
+  readonly lfOnly?: boolean
+  readonly read: (content: string) => T
+  readonly oldRead: (content: string) => T
+  readonly expectedFor: (outcome: Outcome, ingredients: Ingredients) => T
+}): DifferentialReport {
+  const mismatches: string[] = []
+  const outcomes: Record<Outcome, number> = {fields: 0, empty: 0, 'bad-yaml': 0, unclosed: 0}
+  let changed = 0
+  for (const {ingredients, content} of drawCorpus(3000, params.fieldLines, params.lfOnly ?? false)) {
+    const outcome = expectedOutcome(ingredients)
+    outcomes[outcome] += 1
+    const actual = JSON.stringify(params.read(content))
+    if (actual !== JSON.stringify(params.expectedFor(outcome, ingredients))) {
+      mismatches.push(`stated ${outcome}: ${JSON.stringify(content)} gave ${actual}`)
+    }
+    if (holdsChangedCondition(ingredients, params.readerWasLfOnly)) {
+      changed += 1
+    } else if (actual !== JSON.stringify(params.oldRead(content))) {
+      mismatches.push(`old reader: ${JSON.stringify(content)} gave ${actual}`)
+    }
+  }
+  return {mismatches, outcomes, changed, unchanged: 3000 - changed}
+}
+
+/** The corpus reaches every outcome and both kinds of case in volume. */
+function expectCorpusVolume(report: DifferentialReport): void {
+  expect(report.outcomes.fields).toBeGreaterThan(100)
+  expect(report.outcomes.empty).toBeGreaterThan(100)
+  expect(report.outcomes['bad-yaml']).toBeGreaterThan(100)
+  expect(report.outcomes.unclosed).toBeGreaterThan(100)
+  expect(report.changed).toBeGreaterThan(100)
+  expect(report.unchanged).toBeGreaterThan(100)
+}
+
+function oldHarvestRead(content: string) {
+  const docPath = 'docs/solutions/best-practices/doc.md'
+  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  let frontmatter: Record<string, unknown> = {}
+  if (match?.[1] !== undefined) {
+    let parsed: unknown
+    try {
+      parsed = parse(match[1])
+    } catch {
+      return []
+    }
+    frontmatter =
+      typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+  }
+  return [
+    {
+      path: docPath,
+      module: typeof frontmatter.module === 'string' ? frontmatter.module : '',
+      tags: [],
+      problemType: '',
+    },
+  ]
+}
+
+describe('collectSolutionDocs against the regex reader it replaced, over a seeded corpus', () => {
+  const docPath = 'docs/solutions/best-practices/doc.md'
+  const read = (content: string) => collectSolutionDocs({[docPath]: content})
+  const expectedFor = (outcome: Outcome) => {
+    if (outcome === 'bad-yaml' || outcome === 'unclosed') return []
+    return [{path: docPath, module: outcome === 'fields' ? 'm' : '', tags: [], problemType: ''}]
+  }
+
+  it('agrees with the old reader outside the changed conditions and with the stated result inside them', () => {
+    const report = runDifferential({
+      fieldLines: ['module: m'],
+      readerWasLfOnly: true,
+      read,
+      oldRead: oldHarvestRead,
+      expectedFor,
+    })
+    expect(report.mismatches).toEqual([])
+    expectCorpusVolume(report)
+  })
+
+  it('test of the test: a reader that kept the old boundaries fails the differential', () => {
+    const report = runDifferential({
+      fieldLines: ['module: m'],
+      readerWasLfOnly: true,
+      read: oldHarvestRead,
+      oldRead: oldHarvestRead,
+      expectedFor,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong stated result fails the differential', () => {
+    const wrong = (outcome: Outcome) => expectedFor(outcome === 'unclosed' ? 'empty' : outcome)
+    const report = runDifferential({
+      fieldLines: ['module: m'],
+      readerWasLfOnly: true,
+      read,
+      oldRead: oldHarvestRead,
+      expectedFor: wrong,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
   })
 })

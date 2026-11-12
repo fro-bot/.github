@@ -2,8 +2,8 @@ import type {Dirent} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
 import {join, resolve} from 'node:path'
-import process from 'node:process'
 
+import {parseFrontmatterDocument} from '@fro.bot/wiki-write-core/frontmatter'
 import {assertReposFile, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import YAML from 'yaml'
@@ -31,57 +31,42 @@ export interface PrivateWikiLeak {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse the YAML frontmatter of a wiki page and return the `sources` attribution
- * state with the following tri-state contract:
+ * Read the `sources` attribution of a wiki page from its YAML frontmatter.
  *
- * - `null`       → `sources` key is ABSENT, frontmatter is missing/unparseable, or
- *                  the parsed value is not an object. Caller falls back to the legacy
- *                  body-substring check (no over-block of pre-existing pages).
- * - `[]`         → `sources` key IS PRESENT but is not an array (e.g. a scalar, null),
- *                  OR is an array with no entries that have a `url` string.
- *                  Key presence is authoritative — caller treats this as a failed
- *                  attribution check (page flagged; body substring is NOT consulted).
- * - `string[]`   → `sources` key IS PRESENT and is an array with at least one usable
- *                  URL string. Authoritative; caller checks each URL against the repo.
+ * - `null`       → the page has no readable block: no block, a block that is never
+ *                  closed, a block that is not valid YAML, or a block that is not a
+ *                  mapping. The page body is never read, and no parser message is kept.
+ * - `[]`         → the block is a mapping with no `sources` key, a `sources` value that
+ *                  is not an array (e.g. a scalar, null), or an array with no entries
+ *                  that have a `url` string.
+ * - `string[]`   → `sources` is an array with at least one usable URL string. The
+ *                  caller checks each URL against the repo.
  *
- * The critical distinction is key PRESENCE (`'sources' in obj`) vs absence:
- * - Present → always return an array (possibly empty) → authoritative.
- * - Absent  → return null → caller falls back to substring.
+ * Both `null` and `[]` end in `unattributable-page`: no state leaves the caller a way to
+ * pass a page without a matching source.
+ *
+ * Where the block starts and ends is decided by `splitFrontmatterBlock` (through
+ * `parseFrontmatterDocument`); this function only judges what the block says.
  */
 function parseFrontmatterSources(content: string): string[] | null {
-  // Match YAML frontmatter fences anchored to the true start of the file.
-  // The /m flag is intentionally absent so that ^ is string-start only —
-  // body-embedded ---...--- blocks must not be treated as authoritative frontmatter.
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)
-  if (!match) return null
-
-  // Capturing group always participates when the regex matches.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const frontmatter = match[1]!
-
-  let parsed: unknown
+  let values: Record<string, unknown>
   try {
-    parsed = YAML.parse(frontmatter)
+    values = parseFrontmatterDocument(content).values
   } catch {
-    // unparseable → parsed stays undefined → null below
+    // No block, an unclosed block, invalid YAML and a non-mapping all end here. The error is dropped:
+    // a parser message can carry page text, and this gate's output must not.
+    return null
   }
 
-  // hasOwnProperty.call throws only for null/undefined receivers.
-  if (parsed === null || parsed === undefined) return null
+  const sources = values.sources
 
-  const obj = parsed as Record<string, unknown>
-
-  // Key ABSENT → return null so callers fall back to legacy substring.
-  if (!Object.prototype.hasOwnProperty.call(obj, 'sources')) return null
-
-  const sources = obj.sources
-
-  // Key PRESENT but not an array → authoritative empty result (fail-closed).
+  // No `sources` key, or a value that is not an array (a scalar, null) → an empty list, which matches no
+  // repository (fail-closed).
   // Stryker disable next-line ArrayDeclaration: sourceUrlMatchesRepo's `new URL(...)` throws
   // (caught, returns false) for any non-URL string, so a non-empty seed here can't affect .some().
   if (!Array.isArray(sources)) return []
 
-  // Key PRESENT and is an array → extract url strings (possibly returns []).
+  // An array → extract url strings (possibly returns []).
   // Stryker disable next-line ArrayDeclaration: same reasoning — sourceUrlMatchesRepo rejects any
   // non-URL seed string via the URL constructor throw, so it can't affect .some()'s result.
   const urls: string[] = []
@@ -131,37 +116,35 @@ function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): b
 }
 
 // ---------------------------------------------------------------------------
-// detectPrivateWikiLeaks — emits redaction-safe stderr warnings on substring-fallback path
+// detectPrivateWikiLeaks — classifies each data wiki page
 // ---------------------------------------------------------------------------
 
 /**
  * Flag data wiki pages that cannot be attributed to a known-public
  * or unchanged-grandfathered repo.
  *
- * Note: this function writes redaction-safe JSON warnings to stderr when a page
- * is attributed via the legacy body-substring fallback path. Only the public slug
- * is emitted — no private owner/name is ever logged.
- *
  * For each data page its stem is checked in this order:
  *
  * 1. If `publicSlugMap` has 2+ entries for the stem → `ambiguous-public-slug`
  *    (two public repos share the slug after sanitization; fail closed).
  *
- * 2. If `publicSlugMap` has exactly 1 entry for the stem AND the page content
- *    contains `https://github.com/{owner}/{name}` for that entry → **passes**
- *    (explicitly public AND attributable).
- *    If the URL is absent → `unattributable-page` (slug collision via content spoofing).
+ * 2. If `publicSlugMap` has exactly 1 entry for the stem, the page passes only when it
+ *    has a valid frontmatter block (found by `splitFrontmatterBlock`) that parses to a
+ *    YAML mapping whose `sources` lists a URL for that repository. No block, a block
+ *    that is never closed, invalid YAML, a non-mapping, a mapping with no `sources` key
+ *    and non-matching sources all report `unattributable-page`. The page body is never
+ *    read, and nothing from the page reaches the result or stderr.
  *
  * 3. If the stem appears in `grandfatherPages` with the **same hash** as the
  *    corresponding data page → **passes** (content-identical to what is already on
- *    main; e.g. `marcusrbrown/copiloting` with `lost-access`).
- *    A modified page (different hash) falls through to step 4.
+ *    main; e.g. `marcusrbrown/copiloting` with `lost-access`). The page's block is
+ *    not read. A modified page (different hash) falls through to step 4.
  *
  * 4. Otherwise → `unattributable-page`.
  *
  * This design requires NO GraphQL. Unchanged grandfathered pages (even absent-
  * `private` entries like `marcusrbrown/copiloting`) are handled gracefully.
- * Modified or new unattirbutable pages are blocked.
+ * Modified or new unattributable pages are blocked.
  */
 export function detectPrivateWikiLeaks(params: {
   dataWikiPages: readonly WikiPageSnapshot[]
@@ -192,39 +175,14 @@ export function detectPrivateWikiLeaks(params: {
       // entries.length === 1 here: the `entries.length > 1` branch above already continued.
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const entry = entries[0]!
-      const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
-      const structuredSources = parseFrontmatterSources(page.content)
+      const sources = parseFrontmatterSources(page.content)
 
-      if (structuredSources !== null) {
-        // Structured sources are present and parseable — they are authoritative.
-        // Attribution is satisfied iff at least one source URL matches the expected URL.
-        // Body substring is deliberately ignored here; structured sources close the decoy-URL spoof vector.
-        if (structuredSources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
-          continue // passes: structured attribution
-        }
-        // Structured sources exist but none match — treat as unattributable.
-        // Body substring is NOT checked as a rescue when structured sources are present.
-        leaks.push({filename: page.filename, reason: 'unattributable-page'})
+      // A public repo page passes only with a valid frontmatter block whose `sources` has a URL for this
+      // repository. The body is never consulted: no block, an unclosed block, invalid YAML, a non-mapping,
+      // a mapping with no `sources` key and non-matching sources are all unattributable.
+      if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
         continue
       }
-
-      // No parseable structured sources (frontmatter absent, unparseable, or no sources key).
-      // Fall back to legacy body substring check so pre-existing pages are not over-blocked.
-      if (page.content.includes(expectedUrl)) {
-        // Emit a migration signal: this page passed via legacy substring attribution only.
-        // The public slug is safe to log; never log private repo owner/name here.
-        process.stderr.write(
-          `${JSON.stringify({
-            level: 'warn',
-            event: 'legacy-substring-attribution',
-            message: 'Page attributed via body substring; add structured frontmatter sources for stronger attribution',
-            slug: page.stem,
-          })}\n`,
-        )
-        continue // passes: legacy substring fallback
-      }
-
-      // Content doesn't reference the expected repo — possible slug collision.
       leaks.push({filename: page.filename, reason: 'unattributable-page'})
       continue
     }
