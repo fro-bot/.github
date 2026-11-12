@@ -2472,9 +2472,20 @@ describe('sweep: one budget for every request', () => {
   })
 
   it('does not approve when the budget ran out before the review request', async () => {
+    // The last read before the review request is the re-check of the open list.
+    const w = world({prs: [pr(1)], cost: (name, call) => (name === 'list' && call === 2 ? BUDGET : 0)})
+    const result = await LIVE(w)
+    expect(outcomes(result)).toEqual({1: 'error'})
+    expect(w.named('approve')).toEqual([])
+    expect(w.named('list')).toHaveLength(2)
+  })
+
+  it('does not re-check the list, or approve, when the budget ran out at the variable read', async () => {
     const w = world({prs: [pr(1)], cost: (name, call) => (name === 'getVariable' && call === 1 ? BUDGET : 0)})
     const result = await LIVE(w)
     expect(outcomes(result)).toEqual({1: 'error'})
+    expect(rowOf(result, 1).detail).toBe('budget-exhausted')
+    expect(w.named('list')).toHaveLength(1)
     expect(w.named('approve')).toEqual([])
   })
 
