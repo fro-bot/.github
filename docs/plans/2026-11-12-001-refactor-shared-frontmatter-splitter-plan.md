@@ -54,6 +54,7 @@ Every observable change, in one place. The differential tests and the pinned-cor
 - The rename path (`packages/registry/src/rename-tracked-repo.ts`) reads CRLF pages and `---x` blocks through `parseFrontmatterDocument`. Each of its reads returned false or fell back when the reader threw, so a CRLF page that was treated as unattributed is now attributed when its node ID and sources match.
 - A document whose first line is `---` with no later close is malformed at every site. A thematic break at the top of a file with no frontmatter is one example. The sites read it as no block before.
 - The `legacy-substring-attribution` warning is gone. Only the gate emitted it, and nothing else in the repository reads it.
+- The plan-status corrector replaces only the status value on its own line. It finds the first top-level `status:` line by splitting the block at `\n` only, so a CRLF status line keeps its CRLF, the blank lines after it are kept, and U+2028 and U+2029 are not line starts. Before, its multiline pattern let `\s*` cross line endings: it deleted blank lines after the status line, turned a CRLF status line into LF when another line followed it in the block, and rewrote `status:` text inside a quoted scalar after a U+2028. The plan-status resolver uses the same line rule, so the two agree about which line is the status line. A `status:` whose value is on a later line is no status line for either.
 
 ## Context & Research
 
@@ -345,7 +346,7 @@ What each site does with the three outcomes, after both PRs:
 - Survey persist: survey run 43246623734 on 2026-11-12 passed and rewrote `knowledge/wiki/repos/fro-bot--agent.md` on `data` with its sources intact and a new entry dated 2026-11-12. That page already listed its repository, so the stamp did not need to add one.
 - Dashboard marker: the marker on `main` reads version 1.
 - Next promotion passes both gates: pending.
-- Next wiki lint run reports no new finding: pending.
+- Wiki lint run 43254822656 on 2026-11-12 (dry run) reported 0 deterministic findings and skipped repair.
 
 ### Phase 2: the private packages and the gate (second PR, no release)
 
@@ -405,9 +406,9 @@ What each site does with the three outcomes, after both PRs:
 
 - Each site keeps its reaction and its body handling from the table above. Solutions search reports an unclosed block through its existing warning with the fixed reason `unclosed-frontmatter`, and the closed-vocabulary test in `solutions-query.test.ts` gains it.
 - Only empty block text becomes an empty mapping. The four sites that parse already return empty frontmatter for a block that parses to a non-mapping, so they need no change for `null`.
-- The plan-status resolver stays line-based. The corrector makes no correction unless `parseFrontmatterDocument` accepts the block, and splices through the splitter's layout.
+- The plan-status resolver stays line-based. The corrector makes no correction unless `parseFrontmatterDocument` accepts the block, and splices through the splitter's layout. Both find the status line with one shared single-line rule (see Intended Behaviour Changes), and the corrector replaces only that line's value.
 - `reports` keeps its exported `splitFrontmatter` as a thin wrapper over the splitter. No production code imports it. It stays for its own `regex-scaling.test.ts` and the README row.
-- `knowledge` moves the package from a development dependency to a production one. `reports` and `status-truth` add it. The lockfile changes by those four lines only.
+- `knowledge` moves the package from a development dependency to a production one. `reports` and `status-truth` add it. The lockfile changes by three added lines and the `knowledge` entry moved from development to production, and nothing else.
 
 **Execution note:** Add raw-input characterization tests for harvest, synthesis and metrics before changing them. They have no frontmatter-shape tests today.
 
@@ -421,7 +422,7 @@ What each site does with the three outcomes, after both PRs:
 - Edge case: a close with trailing spaces leaves no stray whitespace at the start of the body.
 - Error path: the resolver reports unavailable for an unclosed plan and still reads a status line from a closed block.
 - Error path: the corrector makes no correction for an unclosed plan, for a block with a `--- text` line before the status line, for a list block and for a block of `null`.
-- Edge case: the corrector still corrects a valid mapping and keeps every other byte, with LF and with CRLF, and with a close that has trailing spaces.
+- Edge case: the corrector still corrects a valid mapping and keeps every other byte, with LF and with CRLF, and with a close that has trailing spaces. It replaces only the status line's value: blank lines after it stay, a CRLF status line keeps its CRLF wherever it sits in the block, and text after a U+2028 inside a quoted scalar is not a status line.
 - Edge case: a `---x: y` line followed by `status:` is a valid mapping, and the corrector still corrects that status.
 - Integration: per site, over the seeded corpus, the frozen old regex and the new reader are equal outside the changed conditions, and inside them the new reader equals the stated expected result. A deliberately wrong offset or decision fails each.
 - Integration: every Markdown file under `docs/` reads the same before and after at every site that reads `docs/`.
@@ -488,7 +489,7 @@ What each site does with the three outcomes, after both PRs:
 | Risk | Mitigation |
 | --- | --- |
 | The strict gate blocks a page and promotions stop | The writer stamps the target's page one PR earlier. Unit 3 reads a stamped page from `data`. The strict gate runs over the then-current `data` and `main` commits immediately before the second PR is pushed, and Unit 7 reads the first promotion. |
-| A repo page for another repository, written by the content or Observe job without `sources`, or a dashboard save that removes a page's sources, is written and then blocked at promotion. Today its body URL would pass it. | No writer stamps such a page: the stamp covers only the target's page, and those jobs target this repository. Recovery is a survey of that repository, which rewrites its page, or a dashboard edit that restores the source. No page on `data` is in this state at `62f9a45`. No write-time gate is added. |
+| A repo page for another repository, written by the content or Observe job without `sources`, or a dashboard save that removes a page's sources, is written and then blocked at promotion. Today its body URL would pass it. | No writer stamps such a page: the stamp covers only the target's page, and those jobs target this repository. Recovery is a survey of that repository, which rewrites its page, or a dashboard edit that restores the source. No page on `data` is in this state at `62f9a45`. No write-time gate is added. A blocked public repo page on `data` also makes wiki repair abort as `privacy-leak` before it commits, for every repair in that run, until the page is fixed by a survey of that repository or a dashboard edit. |
 | A public repo page is blocked after the second PR | A survey of that repository or a dashboard edit fixes it. A changed non-public page is blocked today as well and is outside this change. Reverting the gate is the last resort and reopens the body-URL route. |
 | A reader's result changes for a real file | The differential test per site, the CI test over `docs/`, and the pinned-corpus run recorded in each PR. At the measured commits (`origin/data` `62f9a45`, `docs/` at `f9affca`) no file has a changed shape. |
 | One unclosed page empties the wiki context for every agent run | It behaves as invalid YAML does today. Wiki lint reports the page. The fix is deferred to a separate task. |

@@ -109,18 +109,36 @@ describe('every Markdown file under docs/solutions reads the same as before at e
       expect(synthesis.sources.map(source => source.signals.tags)).toEqual([tagsField(old)])
     }
 
-    // Solutions search: no document in the corpus is skipped for its frontmatter.
+    // Solutions search: what the site yields for this one file is what the frozen reader's metadata and body give.
+    // The event carries the first word of the document's own title, so the document is always selected, and the
+    // budget is far above the document's size, so nothing is cut.
+    const oldMatch = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+    const oldTitle = old !== 'invalid-yaml' && typeof old.title === 'string' ? old.title : path
+    const oldBody = oldMatch === null ? content.trim() : content.slice(oldMatch[0].length).trim()
+    const token = /[a-z0-9]{3,}/u.exec(oldTitle.toLowerCase())?.[0] ?? 'docs'
     const warnings: string[] = []
-    assembleSolutionsContext({
+    const result = assembleSolutionsContext({
       files,
-      event: {eventName: 'issues', title: 'frontmatter', body: ''},
+      event: {eventName: 'issues', title: token, body: ''},
       privateNames: [],
       now: new Date('2026-11-12'),
+      maxBytes: 10_000_000,
       warn: line => warnings.push(line),
     })
-    expect(warnings.filter(line => line.includes('malformed frontmatter'))).toEqual(
-      old === 'invalid-yaml' ? [expect.stringContaining(`(path: ${path})`)] : [],
-    )
+    if (old === 'invalid-yaml') {
+      expect(warnings).toEqual([expect.stringContaining(`(path: ${path})`)])
+      expect(result.selectedPaths).toEqual([])
+    } else {
+      expect(warnings).toEqual([])
+      expect(result.selectedPaths).toEqual([path])
+      const problemType = stringField(old, 'problem_type')
+      const lastUpdated = typeof old.last_updated === 'string' ? old.last_updated : null
+      const lastUpdatedLine = lastUpdated === null ? 'Last updated: unknown' : `Last updated: ${lastUpdated}`
+      expect(result.excerpt).toContain(
+        `## ${oldTitle}\nPath: ${path}\nproblem_type: ${problemType}\n${lastUpdatedLine}\n`,
+      )
+      expect(result.excerpt.endsWith(`\n${oldBody.replaceAll(/\s+/gu, ' ').trim()}\n\n`)).toBe(true)
+    }
   })
 })
 

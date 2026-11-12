@@ -5223,6 +5223,15 @@ describe('resolvePlanStatusClaim: the block rule', () => {
     await expect(liveState(content)).resolves.toBeNull()
   })
 
+  it('does not take a status from text inside a quoted scalar after U+2028', async () => {
+    await expect(liveState('---\ntitle: "a\u2028status: draft"\n---\n\nBody')).resolves.toBeNull()
+  })
+
+  it('does not take a status whose value is on a later line, or the next key as the value', async () => {
+    await expect(liveState('---\nstatus:\n  active\n---\n\nBody')).resolves.toBeNull()
+    await expect(liveState('---\nstatus:\nactive: yes\n---\n\nBody')).resolves.toBeNull()
+  })
+
   it('reads a status line after a ---x: y line, which is a key of the block', async () => {
     await expect(liveState('---\ntitle: P\n---x: y\nstatus: active\n---\n\nBody')).resolves.toBe('active')
   })
@@ -5270,13 +5279,84 @@ describe('correctPlanConsistencyStatusLine: the block rule', () => {
     expect(correctPlanConsistencyStatusLine(content)).toBeNull()
   })
 
-  it("pins today's result for a CRLF block whose status line is not the last: the replaced text takes that line's CR", () => {
-    // The status pattern ends in `\\s*$` under the m flag, so it consumes the CR of its own line. The corrector did
-    // this before the splitter and still does; the splitter changes where the block ends, not this pattern.
-    const original = '---\r\ntitle: P\r\nstatus: active\r\ndate: 2026-01-01\r\n---\r\nBody\r\n'
+  it('replaces only the status value: blank lines after the status line stay', () => {
+    const original = '---\ntitle: x\n---x: y\nstatus: active\n\n\nother: x\n---\nbody'
     expect(correctPlanConsistencyStatusLine(original)).toBe(
-      '---\r\ntitle: P\r\nstatus: complete\ndate: 2026-01-01\r\n---\r\nBody\r\n',
+      '---\ntitle: x\n---x: y\nstatus: complete\n\n\nother: x\n---\nbody',
     )
+  })
+
+  it('keeps the CRLF of the status line when it is not the last line of the block', () => {
+    const original = '---\r\n---x: y\r\nstatus: active\r\ndate: 2026-01-01\r\n---\r\nBody'
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      '---\r\n---x: y\r\nstatus: complete\r\ndate: 2026-01-01\r\n---\r\nBody',
+    )
+  })
+
+  it('does not treat U+2028 as a line start: text inside a quoted scalar is not a status line', () => {
+    const inScalar = '---\ntitle: "see\u2028status: active"\n---\nbody'
+    expect(correctPlanConsistencyStatusLine(inScalar)).toBeNull()
+    const withRealLine = '---\ntitle: "see\u2028status: active"\nstatus: active\n---\nbody'
+    expect(correctPlanConsistencyStatusLine(withRealLine)).toBe(
+      '---\ntitle: "see\u2028status: active"\nstatus: complete\n---\nbody',
+    )
+  })
+
+  it.each(['\n', '\r\n'])('corrects the status line first, in the middle and last, with eol %j, byte for byte', eol => {
+    const lines = {
+      first: ['status: active', 'title: P', 'date: 2026-01-01'],
+      middle: ['title: P', 'status: active', 'date: 2026-01-01'],
+      last: ['title: P', 'date: 2026-01-01', 'status: active'],
+    }
+    for (const fields of Object.values(lines)) {
+      const render = (status: string) =>
+        [
+          '---',
+          ...fields.map(line => (line === 'status: active' ? status : line)),
+          '---',
+          '',
+          '- [x] **Unit 1: A**',
+          '',
+        ].join(eol)
+      const corrected = correctPlanConsistencyStatusLine(render('status: active'))
+      expect(corrected).toBe(render('status: complete'))
+      expect(reverifyPlanConsistencyCorrection('docs/plans/p.md', corrected ?? '').verdict).toBe('current')
+    }
+  })
+
+  it.each(['\n', '\r\n'])('drops trailing spaces of the status line and keeps its ending, with eol %j', eol => {
+    const original = ['---', 'status: active   ', 'title: P', '---', 'body', ''].join(eol)
+    expect(correctPlanConsistencyStatusLine(original)).toBe(
+      ['---', 'status: complete', 'title: P', '---', 'body', ''].join(eol),
+    )
+  })
+
+  it.each(['status: "active"', "status: 'active'", 'status:   active', 'status: "active"  '])(
+    'corrects the quoted or spaced status line %j to the canonical value',
+    line => {
+      for (const eol of ['\n', '\r\n']) {
+        const original = ['---', 'title: P', line, 'date: 2026-01-01', '---', '- [x] **Unit 1: A**', ''].join(eol)
+        const corrected = correctPlanConsistencyStatusLine(original)
+        expect(corrected).toBe(
+          ['---', 'title: P', 'status: complete', 'date: 2026-01-01', '---', '- [x] **Unit 1: A**', ''].join(eol),
+        )
+        expect(reverifyPlanConsistencyCorrection('docs/plans/p.md', corrected ?? '').verdict).toBe('current')
+      }
+    },
+  )
+
+  it('does not correct a status key indented inside a nested mapping', () => {
+    expect(correctPlanConsistencyStatusLine('---\nmeta:\n  status: active\ntitle: P\n---\nbody')).toBeNull()
+  })
+
+  it('does not take a status: key whose value is on a later line', () => {
+    expect(correctPlanConsistencyStatusLine('---\nstatus:\n  active\n---\nbody')).toBeNull()
+    expect(correctPlanConsistencyStatusLine('---\nstatus:\ntitle: x\n---\nbody')).toBeNull()
+  })
+
+  it('leaves a status: line in the body untouched', () => {
+    const original = '---\ntitle: P\nstatus: active\n---\nstatus: active\n'
+    expect(correctPlanConsistencyStatusLine(original)).toBe('---\ntitle: P\nstatus: complete\n---\nstatus: active\n')
   })
 })
 // ---------------------------------------------------------------------------
@@ -5425,6 +5505,7 @@ function runDifferential<T>(params: {
   readonly fieldLines: readonly string[]
   readonly readerWasLfOnly: boolean
   readonly lfOnly?: boolean
+  readonly extraChanged?: (ingredients: Ingredients) => boolean
   readonly read: (content: string) => T
   readonly oldRead: (content: string) => T
   readonly expectedFor: (outcome: Outcome, ingredients: Ingredients) => T
@@ -5439,7 +5520,13 @@ function runDifferential<T>(params: {
     if (actual !== JSON.stringify(params.expectedFor(outcome, ingredients))) {
       mismatches.push(`stated ${outcome}: ${JSON.stringify(content)} gave ${actual}`)
     }
-    if (holdsChangedCondition(ingredients, params.readerWasLfOnly)) {
+    if (
+      holdsChangedCondition(ingredients, params.readerWasLfOnly) ||
+      (ingredients.opener === 'exact' &&
+        ingredients.shape === 'mapping' &&
+        ingredients.closer !== 'missing' &&
+        (params.extraChanged?.(ingredients) ?? false))
+    ) {
       changed += 1
     } else if (actual !== JSON.stringify(params.oldRead(content))) {
       mismatches.push(`old reader: ${JSON.stringify(content)} gave ${actual}`)
@@ -5484,16 +5571,16 @@ function oldCorrect(content: string): string | null {
 describe('the plan status resolver against the regex reader it replaced, over a seeded corpus', () => {
   const fieldLines = ['title: P', 'status: active']
   const read = (content: string) => buildPlanConsistencyClaim('docs/plans/p.md', content).claimedState
+  // The sentinel claim state of a plan with no readable status, written out here and not read from the new reader.
+  const UNSUPPORTED = 'unsupported'
   const oldRead = (content: string) => {
     const status = oldPlanStatus(content)
-    return status !== null && SUPPORTED_PLAN_STATUSES.includes(status) ? status : read('---\n---\n')
+    return status !== null && SUPPORTED_PLAN_STATUSES.includes(status) ? status : UNSUPPORTED
   }
   // The status line is read from the lines of the block, whatever else the block holds. A document with no block
   // or an unclosed block has none.
   const expectedFor = (outcome: Outcome, ingredients: Ingredients) =>
-    outcome !== 'unclosed' && ingredients.opener === 'exact' && ingredients.shape === 'mapping'
-      ? 'active'
-      : read('---\n---\n')
+    outcome !== 'unclosed' && ingredients.opener === 'exact' && ingredients.shape === 'mapping' ? 'active' : UNSUPPORTED
 
   it('agrees with the old reader outside the changed conditions and with the stated result inside them', () => {
     const report = runDifferential({fieldLines, readerWasLfOnly: false, read, oldRead, expectedFor})
@@ -5512,52 +5599,78 @@ describe('the plan status resolver against the regex reader it replaced, over a 
     const report = runDifferential({fieldLines, readerWasLfOnly: false, read, oldRead, expectedFor: wrong})
     expect(report.mismatches.length).toBeGreaterThan(0)
   })
+
+  it('test of the test: a wrong fallback for an unclosed block is reported', () => {
+    // #given a reader that still yields the status of a block that is never closed
+    const faulty = (content: string) => {
+      const unclosedStatus = /^---\r?\n(?:[^\n]*\n)*?status:[ \t]*(\w+)/u.exec(content)
+      return unclosedStatus?.[1] ?? read(content)
+    }
+    const report = runDifferential({fieldLines, readerWasLfOnly: false, read: faulty, oldRead, expectedFor})
+    expect(report.mismatches.some(line => line.startsWith('stated unclosed'))).toBe(true)
+  })
 })
 
 describe('the plan status corrector against the regex reader it replaced, over a seeded corpus', () => {
-  const fieldLines = ['title: P', 'status: active']
   // The expected text is the same document drawn again with the corrected status line, so it is built from the
-  // ingredients and not from the corrector's output. The corpus is LF only: the pattern takes the CR of a CRLF
-  // status line that is not the last in its block, which a separate test pins.
+  // ingredients and not from the corrector's output. The corpus holds LF, CRLF and mixed line endings.
   const read = (content: string) => correctPlanConsistencyStatusLine(content)
-  const expectedFor = (outcome: Outcome, ingredients: Ingredients) =>
-    outcome === 'fields' ? renderCase(ingredients, ['title: P', 'status: complete']) : null
+  const fixtures = [
+    // The status line is last in the block, so the old pattern kept its CRLF.
+    {name: 'status last', fieldLines: ['title: P', 'status: active'], rendered: ['title: P', 'status: complete']},
+    // The status line is first, so a CRLF status line is not last in its block: the old pattern took its CR.
+    {name: 'status first', fieldLines: ['status: active', 'title: P'], rendered: ['status: complete', 'title: P']},
+  ]
+  // A CRLF status line that is not last in its block is a stated changed condition: the old corrector took its CR.
+  const crlfNotLast = (ingredients: Ingredients) => ingredients.eol !== 'lf'
 
-  it('agrees with the old corrector outside the changed conditions and with the stated result inside them', () => {
-    const report = runDifferential({
-      fieldLines,
-      readerWasLfOnly: false,
-      lfOnly: true,
-      read,
-      oldRead: oldCorrect,
-      expectedFor,
-    })
-    expect(report.mismatches).toEqual([])
-    expectCorpusVolume(report)
+  it.each(fixtures)(
+    'agrees with the old corrector outside the changed conditions and with the stated bytes inside them ($name)',
+    ({fieldLines, rendered, name}) => {
+      const report = runDifferential({
+        fieldLines,
+        readerWasLfOnly: false,
+        extraChanged: name === 'status first' ? crlfNotLast : undefined,
+        read,
+        oldRead: oldCorrect,
+        expectedFor: (outcome, ingredients) => (outcome === 'fields' ? renderCase(ingredients, rendered) : null),
+      })
+      expect(report.mismatches).toEqual([])
+      expectCorpusVolume(report)
+    },
+  )
+
+  it('has CRLF blocks whose status line is not last in the corpus, and the old corrector differs on them', () => {
+    let crlfNotLastCases = 0
+    for (const {ingredients, content} of drawCorpus(3000, ['status: active', 'title: P'], false)) {
+      if (expectedOutcome(ingredients) !== 'fields' || ingredients.eol !== 'crlf') continue
+      crlfNotLastCases += 1
+      expect(oldCorrect(content)).not.toBe(renderCase(ingredients, ['status: complete', 'title: P']))
+      expect(read(content)).toBe(renderCase(ingredients, ['status: complete', 'title: P']))
+    }
+    expect(crlfNotLastCases).toBeGreaterThan(20)
   })
 
   it('test of the test: a corrector that kept the old boundaries fails the differential', () => {
     const report = runDifferential({
-      fieldLines,
+      fieldLines: ['title: P', 'status: active'],
       readerWasLfOnly: false,
-      lfOnly: true,
       read: oldCorrect,
       oldRead: oldCorrect,
-      expectedFor,
+      expectedFor: (outcome, ingredients) =>
+        outcome === 'fields' ? renderCase(ingredients, ['title: P', 'status: complete']) : null,
     })
     expect(report.mismatches.length).toBeGreaterThan(0)
   })
 
   it('test of the test: a wrong stated result fails the differential', () => {
-    const wrong = (outcome: Outcome, ingredients: Ingredients) =>
-      expectedFor(outcome === 'fields' ? 'empty' : outcome, ingredients)
     const report = runDifferential({
-      fieldLines,
+      fieldLines: ['title: P', 'status: active'],
       readerWasLfOnly: false,
-      lfOnly: true,
       read,
       oldRead: oldCorrect,
-      expectedFor: wrong,
+      expectedFor: (outcome, ingredients) =>
+        outcome === 'empty' ? renderCase(ingredients, ['title: P', 'status: complete']) : null,
     })
     expect(report.mismatches.length).toBeGreaterThan(0)
   })

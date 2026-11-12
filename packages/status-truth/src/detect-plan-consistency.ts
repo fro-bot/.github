@@ -19,6 +19,25 @@ import {
 export const SUPPORTED_PLAN_STATUSES: readonly string[] = ['active', 'complete', 'draft', 'cancelled', 'superseded']
 
 /**
+ * The line of a frontmatter block that holds the plan's status: the first top-level `status:` line, found by
+ * splitting the block text at `\n` only (one trailing `\r` belongs to the line ending, and U+2028 and U+2029 are
+ * not line boundaries). The pattern is single-line, so no whitespace match can cross a line ending.
+ *
+ * The resolver and the corrector both use it, so they agree about which line is the status line: the PR step
+ * re-verifies the corrected file through the resolver.
+ */
+function findPlanStatusLine(
+  blockText: string,
+): {readonly lines: readonly string[]; readonly index: number; readonly value: string} | undefined {
+  const lines = blockText.split('\n')
+  for (const [index, line] of lines.entries()) {
+    const match = /^status:\s*["']?(\w+)["']?\s*$/u.exec(line.endsWith('\r') ? line.slice(0, -1) : line)
+    if (match?.[1] !== undefined) return {lines, index, value: match[1]}
+  }
+  return undefined
+}
+
+/**
  * Parse YAML frontmatter from plan file content.
  *
  * Returns the `status` field value if present and non-empty, or null otherwise.
@@ -37,12 +56,8 @@ function parsePlanFrontmatterStatus(content: string): string | null {
   // This avoids a full YAML parse dependency while being robust for the known
   // plan frontmatter format (status is always a simple scalar string value).
   // Supports unquoted, double-quoted, and single-quoted values (e.g. status: "active").
-  const statusMatch = /^status:\s*["']?(\w+)["']?\s*$/mu.exec(split.text)
-  if (statusMatch === null || statusMatch[1] === undefined) {
-    return null
-  }
-
-  return statusMatch[1].toLowerCase()
+  const statusLine = findPlanStatusLine(split.text)
+  return statusLine === undefined ? null : statusLine.value.toLowerCase()
 }
 
 /**
@@ -278,7 +293,8 @@ export function resolvePlanConsistencyVerdict(params: {
  * Bounded pure corrector for the plan-consistency claim kind.
  *
  * Rewrites exactly the frontmatter `status:` line to `status: complete`,
- * preserving every other byte of the input. Handles unquoted, double-quoted,
+ * preserving every other byte of the input, including the line ending of that
+ * line and the blank lines after it. Handles unquoted, double-quoted,
  * and single-quoted status values; the corrected line is always the
  * canonical unquoted form. `status:` occurrences in the plan body (outside
  * the frontmatter block) are never touched.
@@ -302,13 +318,17 @@ export function correctPlanConsistencyStatusLine(content: string): string | null
     return null
   }
 
-  const statusLinePattern = /^status:\s*["']?(\w+)["']?\s*$/mu
-  if (statusLinePattern.exec(split.text) === null) return null
+  const statusLine = findPlanStatusLine(split.text)
+  if (statusLine === undefined) return null
 
-  const correctedText = split.text.replace(statusLinePattern, 'status: complete')
+  // Only the status line changes: it becomes the canonical `status: complete` and keeps the CR of its line ending.
+  // Every other line, blank lines included, and every other byte of the file goes back as the splitter found it.
+  const lines = [...statusLine.lines]
+  const original = lines[statusLine.index] ?? ''
+  lines[statusLine.index] = original.endsWith('\r') ? 'status: complete\r' : 'status: complete'
 
   // Every piece the splitter returned goes back in its place, so only the status line changes.
-  return `${split.opening}${correctedText}${split.textEnding}${split.closing}${split.body}`
+  return `${split.opening}${lines.join('\n')}${split.textEnding}${split.closing}${split.body}`
 }
 
 /**
